@@ -1,0 +1,22 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: dotshelf-api
+
+  profiles:
+    default: local
+
+  # OAuth2 client: add providers/registrations when needed
+  # security:
+  #   oauth2:
+  #     client:
+  #       registration:
+  #         google:
+  #           client-id: ${GOOGLE_CLIENT_ID}
+  #           client-secret: ${GOOGLE_CLIENT_SECRET}
+
+logging:
+  level:
+    org.springframework.security: info
