@@ -1,0 +1,42 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "Reality Composer Pro Version 2.0 (494.100.6)"
+    }
+    defaultPrim = "Root"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+def Xform "Root"
+{
+    def Material "GlassMaterial"
+    {
+        token outputs:mtlx:surface.connect = </Root/GlassMaterial/PreviewSurface.outputs:out>
+        token outputs:realitykit:vertex
+        float2 ui:nodegraph:realitykit:subgraphOutputs:pos = (335.25, 100.5)
+        int ui:nodegraph:realitykit:subgraphOutputs:stackingOrder = 13
+
+        def Shader "PreviewSurface"
+        {
+            uniform token info:id = "ND_UsdPreviewSurface_surfaceshader"
+            float inputs:clearcoat = 1
+            float inputs:clearcoatRoughness = 0.03
+            color3f inputs:diffuseColor = (0.87553513, 0.9519916, 0.9063993) (
+                colorSpace = "srgb_displayp3"
+            )
+            color3f inputs:emissiveColor = (0.8954677, 0.9476937, 0.9203767) (
+                colorSpace = "lin_srgb"
+            )
+            float inputs:occlusion = 0.4
+            float inputs:opacity = 0.22
+            float inputs:opacityThreshold
+            float inputs:roughness = 0.02
+            token outputs:out
+            float2 ui:nodegraph:node:pos = (93.5, 100.5)
+            int ui:nodegraph:node:stackingOrder = 14
+            string[] ui:nodegraph:realitykit:node:attributesShowingChildren = ["Advanced", "inputs:emissiveColor"]
+        }
+    }
+}
+

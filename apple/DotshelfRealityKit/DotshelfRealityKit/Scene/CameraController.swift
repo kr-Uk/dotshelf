@@ -29,6 +29,24 @@ enum CameraController {
         applyOverview(to: camera, bookshelfZ: bookshelfZ, animated: true, duration: duration)
     }
 
+    /// 디버그용 외부 뷰: 창 바깥에서 통창을 통해 방 내부를 비스듬히 들여다봄.
+    /// 천장 아래(y<3.1), 앞벽 앞(z<2.5)에 위치해 박스에 막히지 않고 통창 개구부로 내부 확인.
+    static func moveToDebug(camera: PerspectiveCamera, duration: TimeInterval = 0.7) {
+        camera.camera.fieldOfViewInDegrees = 55
+        let camPos = SIMD3<Float>(5.5, 2.0, 1.5)
+        let lookAt = SIMD3<Float>(-1.0, 1.2, -0.8)
+        animateLook(camera: camera, from: camPos, at: lookAt, duration: duration)
+    }
+
+    /// 실내 조감 뷰: 방 안쪽 모서리(천장 아래, 앞벽 앞)에서 책장 반대편으로 향함.
+    /// 방 내부 전체 + 통창 + 화이트보드 + 천장 내벽을 한 번에 확인.
+    static func moveToInteriorOverview(camera: PerspectiveCamera, duration: TimeInterval = 0.7) {
+        camera.camera.fieldOfViewInDegrees = 65
+        let camPos = SIMD3<Float>(1.8, 2.5, 2.2)
+        let lookAt = SIMD3<Float>(-0.5, 1.0, -1.0)
+        animateLook(camera: camera, from: camPos, at: lookAt, duration: duration)
+    }
+
     /// 화이트보드(좌측 벽) 정면 뷰로 카메라 애니메이션
     static func moveToWhiteboard(camera: PerspectiveCamera, wallX: Float = -2.0, duration: TimeInterval = 0.7) {
         camera.camera.fieldOfViewInDegrees = 45

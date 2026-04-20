@@ -9,7 +9,7 @@ enum RoomEnvironment {
 
         // 치수
         let floorSize: Float = 5.0         // 바닥 한 변
-        let wallHeight: Float = 2.8
+        let wallHeight: Float = 3.1
         let backWallDistance: Float = 1.0  // 책장 뒤 벽까지의 거리 (책장 뒷면은 z ≈ -0.125)
         let sideWallDistance: Float = 2.0  // 중앙에서 측벽까지의 거리
 
@@ -18,10 +18,26 @@ enum RoomEnvironment {
         let holeHeight: Float = 1.7   // 책장 높이 1.6 + 여유
         let alcoveDepth: Float = 0.9  // 회전 스윕 반경(~0.81) 수용
 
-        room.addChild(makeFloor(size: floorSize))
+        // 실내 바닥: 벽 안쪽(x ∈ [-2, 2], z ∈ [-2.5, 2.5])
+        room.addChild(makeFloor(width: 2 * sideWallDistance, depth: floorSize, centerX: 0))
+        // 창 너머 실외 풀밭 — 실내 바닥보다 5cm 낮게 배치해 threshold 연출
+        let outdoorY: Float = -0.05
+        room.addChild(makeOutdoorGround(
+            startX: sideWallDistance, endX: sideWallDistance + 10,
+            depth: floorSize + 7, y: outdoorY
+        ))
+        // 실내외 경계의 수직 스텝 (안쪽 바닥 색 매치) — x=+2, 창 개구부 z 범위
+        room.addChild(makeThresholdStep(
+            x: sideWallDistance,
+            zStart: -backWallDistance, zEnd: floorSize / 2,
+            stepHeight: -outdoorY
+        ))
+        // 원거리 하늘 배경 (shadow frustum 밖)
+        room.addChild(makeSkyBackdrop(x: sideWallDistance + 12))
+        // 뒷벽: 실내 폭(x ∈ [-2, 2])에 맞게 크롭 — 야외 쪽으로 연장되지 않게
         addBackWallWithHole(
             to: room,
-            wallWidth: floorSize, wallHeight: wallHeight, wallZ: -backWallDistance,
+            wallWidth: 2 * sideWallDistance, wallHeight: wallHeight, wallZ: -backWallDistance,
             holeWidth: holeWidth, holeHeight: holeHeight
         )
         addAlcoveInteriorWalls(
@@ -30,7 +46,14 @@ enum RoomEnvironment {
             frontZ: -backWallDistance, depth: alcoveDepth
         )
         room.addChild(makeLeftWall(depth: floorSize, height: wallHeight, x: -sideWallDistance))
-        room.addChild(makeRightWall(depth: floorSize, height: wallHeight, x: sideWallDistance))
+        // 앞벽: 방의 남쪽 면(z=+floorSize/2) 막음. 카메라 방향 뒤쪽이라 일반 뷰에는 안 보이지만
+        // 디버그/외부 관점에서 방이 열려보이는 문제 해결.
+        room.addChild(makeFrontWall(width: 2 * sideWallDistance, height: wallHeight, z: floorSize / 2))
+        // 천장: IBL 하늘 빛이 창 위 벽에 직접 내리쏟는 걸 차단 — 물리적으로 맞는 그림자 연출.
+        // 카메라는 모두 y ≤ 1.5에서 아래를 바라보므로 시야에 안 들어옴.
+        room.addChild(makeCeiling(width: 2 * sideWallDistance, depth: floorSize, y: wallHeight))
+        // 우측은 벽 없이 통창(WindowEntity)만 배치 — 외곽 프레임만 렌더링
+        room.addChild(WindowEntity.createRightWall(wallX: sideWallDistance))
         room.addChild(makeWhiteboardOnLeftWall(wallX: -sideWallDistance))
 
         return room
@@ -133,23 +156,64 @@ enum RoomEnvironment {
 
     // MARK: - 파트 생성
 
-    private static func makeFloor(size: Float) -> ModelEntity {
-        let mesh = MeshResource.generatePlane(width: size, depth: size)
+    private static func makeFloor(width: Float, depth: Float, centerX: Float) -> ModelEntity {
+        let mesh = MeshResource.generatePlane(width: width, depth: depth)
         let material = MaterialFactory.floorMaterial()
         let entity = ModelEntity(mesh: mesh, materials: [material])
         entity.name = "room_floor"
-        entity.position = SIMD3<Float>(0, 0, 0)
+        entity.position = SIMD3<Float>(centerX, 0, 0)
 
-        // 물리 시뮬레이션용 — 책이 떨어질 때 부딪힐 수 있도록 static 콜리전
-        // 얇은 박스(두께 1cm)로 바닥 덮음
         entity.components.set(CollisionComponent(
-            shapes: [.generateBox(width: size, height: 0.01, depth: size)]
+            shapes: [.generateBox(width: width, height: 0.01, depth: depth)]
         ))
         entity.components.set(PhysicsBodyComponent(
             massProperties: .default,
             material: .generate(friction: 0.6, restitution: 0.1),
             mode: .static
         ))
+        return entity
+    }
+
+    /// 창 너머 실외 풀밭 (x 방향 연장). y는 실내 바닥(0)보다 살짝 낮게 주면 threshold 감이 생김.
+    private static func makeOutdoorGround(startX: Float, endX: Float, depth: Float, y: Float = 0) -> ModelEntity {
+        let width = endX - startX
+        let mesh = MeshResource.generatePlane(width: width, depth: depth)
+        let entity = ModelEntity(mesh: mesh, materials: [MaterialFactory.grassMaterial()])
+        entity.name = "outdoor_ground"
+        entity.position = SIMD3<Float>((startX + endX) / 2, y, 0)
+        return entity
+    }
+
+    /// 실내외 바닥 높이차를 시각화하는 수직 stepper (어두운 원목 톤)
+    private static func makeThresholdStep(x: Float, zStart: Float, zEnd: Float, stepHeight: Float) -> ModelEntity {
+        let depth = zEnd - zStart
+        let mesh = MeshResource.generateBox(width: 0.02, height: stepHeight, depth: depth)
+        let entity = ModelEntity(mesh: mesh, materials: [MaterialFactory.floorMaterial()])
+        entity.name = "threshold_step"
+        entity.position = SIMD3<Float>(x, -stepHeight / 2, (zStart + zEnd) / 2)
+        return entity
+    }
+
+    /// 창문 상단 헤더 — 플라스터 벽 밴드로 창이 벽에 박혀있다는 감각 제공
+    private static func makeWindowHeader(x: Float, zStart: Float, zEnd: Float, yBottom: Float, yTop: Float) -> ModelEntity {
+        let depth = zEnd - zStart
+        let height = yTop - yBottom
+        let mesh = MeshResource.generateBox(width: 0.01, height: height, depth: depth)
+        let entity = ModelEntity(mesh: mesh, materials: [MaterialFactory.wallMaterial()])
+        entity.name = "window_header"
+        entity.position = SIMD3<Float>(x, (yBottom + yTop) / 2, (zStart + zEnd) / 2)
+        return entity
+    }
+
+    /// 원거리 하늘 배경 — 창 바깥에 서 있는 큰 vertical plane, unlit.
+    /// shadow 맵 최대 거리 바깥에 배치해 그림자 계산에서 제외된다.
+    private static func makeSkyBackdrop(x: Float) -> ModelEntity {
+        let mesh = MeshResource.generatePlane(width: 40, height: 25)
+        let entity = ModelEntity(mesh: mesh, materials: [MaterialFactory.skyMaterial()])
+        entity.name = "sky_backdrop"
+        entity.position = SIMD3<Float>(x, 12.5, 0)
+        // 기본 plane 노멀 +Z → 회전해 -X 방향으로 향하게 (방 쪽을 바라봄)
+        entity.orientation = simd_quatf(angle: -.pi / 2, axis: SIMD3<Float>(0, 1, 0))
         return entity
     }
 
@@ -165,6 +229,27 @@ enum RoomEnvironment {
         return entity
     }
 
+    /// 방 앞벽 (남쪽 면) — 유리 통면. 외부에서 방 내부가 투시되면서도 geometry가 IBL/공간을 정의.
+    private static func makeFrontWall(width: Float, height: Float, z: Float) -> ModelEntity {
+        let mesh = MeshResource.generateBox(width: width, height: height, depth: 0.015)
+        let entity = ModelEntity(mesh: mesh, materials: [MaterialFactory.windowGlassMaterial()])
+        entity.name = "room_wall_front"
+        entity.position = SIMD3<Float>(0, height / 2, z)
+        return entity
+    }
+
+    /// 방 천장. 얇은 box로 위·아래 모두 렌더 — 디버그 오버헤드 뷰에서도 보이도록.
+    /// IBL 간접광이 창 위 벽에 수직으로 내리쏟는 경로를 차단하는 역할.
+    private static func makeCeiling(width: Float, depth: Float, y: Float) -> ModelEntity {
+        let thickness: Float = 0.02
+        let mesh = MeshResource.generateBox(width: width, height: thickness, depth: depth)
+        let entity = ModelEntity(mesh: mesh, materials: [MaterialFactory.wallMaterial()])
+        entity.name = "room_ceiling"
+        // 천장 아랫면이 y=wallHeight에 맞도록 중심은 그 위 thickness/2만큼.
+        entity.position = SIMD3<Float>(0, y + thickness / 2, 0)
+        return entity
+    }
+
     private static func makeLeftWall(depth: Float, height: Float, x: Float) -> ModelEntity {
         let mesh = MeshResource.generatePlane(width: depth, height: height)
         let material = MaterialFactory.wallMaterial()
@@ -173,24 +258,6 @@ enum RoomEnvironment {
         entity.position = SIMD3<Float>(x, height / 2, 0)
         entity.orientation = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(0, 1, 0))
         // Collision: entity-local에서 x=길이(평면방향), z=두께(벽 수직) 순서. Ry(π/2) 회전 반영.
-        entity.components.set(CollisionComponent(
-            shapes: [.generateBox(width: depth, height: height, depth: 0.1)]
-        ))
-        entity.components.set(PhysicsBodyComponent(
-            massProperties: .default,
-            material: .generate(friction: 0.5, restitution: 0.1),
-            mode: .static
-        ))
-        return entity
-    }
-
-    private static func makeRightWall(depth: Float, height: Float, x: Float) -> ModelEntity {
-        let mesh = MeshResource.generatePlane(width: depth, height: height)
-        let material = MaterialFactory.wallMaterial()
-        let entity = ModelEntity(mesh: mesh, materials: [material])
-        entity.name = "room_wall_right"
-        entity.position = SIMD3<Float>(x, height / 2, 0)
-        entity.orientation = simd_quatf(angle: -.pi / 2, axis: SIMD3<Float>(0, 1, 0))
         entity.components.set(CollisionComponent(
             shapes: [.generateBox(width: depth, height: height, depth: 0.1)]
         ))

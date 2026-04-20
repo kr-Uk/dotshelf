@@ -1,10 +1,13 @@
 import SwiftUI
 import RealityKit
+import BasicAssets
 
 enum CameraViewMode {
     case overview    // 코너 3/4 구도
     case frontal     // 책장 정면
     case whiteboard  // 화이트보드 정면
+    case debug       // 창 바깥에서 통창 통해 내부 확인
+    case interior    // 방 안쪽 모서리에서 내부 전체 조감
 }
 
 struct ContentView: View {
@@ -29,6 +32,8 @@ struct ContentView: View {
     @State private var whiteboardSurface: ModelEntity?
     @State private var likeCount: Int = 234
     @State private var isLiked: Bool = false
+    // 동일 내용 재렌더 방지용 캐시 키 (bookCount-likeCount-isLiked)
+    @State private var lastWhiteboardKey: String?
 
     // 정면 뷰에서 카메라 팬 드래그 시작점
     @State private var cameraPanStart: SIMD3<Float>?
@@ -160,18 +165,45 @@ struct ContentView: View {
             }
             bookshelfState.installInitialShelves()
 
-            // HDRI 환경맵: IBL 조명 + 반사 (보이는 배경은 SwiftUI에서 처리)
+            // HDRI 환경맵: 야외 sky IBL. 0.8 ≈ 1.74× — 그림자 진 영역의 ambient fill 추가 강화.
             if let envResource = EnvironmentSetup.loadEnvironmentResource() {
                 let iblEntity = Entity()
-                let iblComponent = ImageBasedLightComponent(source: .single(envResource), intensityExponent: 1.0)
+                let iblComponent = ImageBasedLightComponent(source: .single(envResource), intensityExponent: 0.8)
                 iblEntity.components.set(iblComponent)
                 iblEntity.components.set(ImageBasedLightReceiverComponent(imageBasedLight: iblEntity))
                 content.add(iblEntity)
             }
 
+            // 창문 밖에서 날아다니는 새 (그림자가 책장에 드리움)
+            let bird = BirdEntity.create()
+            BirdEntity.initializeFlight(on: bird)
+            content.add(bird)
+
             let camera = CameraController.createOverviewCamera(bookshelfZ: bookshelfZ)
             content.add(camera)
             cameraEntity = camera
+
+            // Reality Composer Pro(ShaderGraphMaterial) 유리 비동기 로드 후 교체.
+            // 실패 시 폴백: 기존 PhysicallyBasedMaterial 유리 유지 (WindowEntity.createRightWall에서 이미 적용).
+            Task { @MainActor in
+                do {
+                    let glassMat = try await ShaderGraphMaterial(
+                        named: "/Root/GlassMaterial",
+                        from: "Scene",
+                        in: basicAssetsBundle
+                    )
+                    // 우측 통창 유리 + 앞벽 유리 모두 교체
+                    // 유리가 햇빛을 차단하지 않도록 dynamic light shadow pass에서 제외.
+                    for name in ["window_glass", "room_wall_front"] {
+                        if let glass = room.findEntity(named: name) as? ModelEntity {
+                            glass.model?.materials = [glassMat]
+                            glass.components.set(DynamicLightShadowComponent(castsShadow: false))
+                        }
+                    }
+                } catch {
+                    print("⚠️ ShaderGraphMaterial 로드 실패: \(error)")
+                }
+            }
         }
         .simultaneousGesture(
             TapGesture()
@@ -345,6 +377,47 @@ struct ContentView: View {
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
+                .padding(12)
+                .transition(.opacity)
+            } else if cameraMode == .overview && !interactionState.isViewingBook {
+                // 오버뷰에서 두 가지 디버그 뷰로 진입 (외부 / 실내)
+                VStack(spacing: 8) {
+                    Button(action: {
+                        if let camera = cameraEntity {
+                            CameraController.moveToDebug(camera: camera)
+                            cameraMode = .debug
+                        }
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "cube.transparent")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("디버그 뷰")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        if let camera = cameraEntity {
+                            CameraController.moveToInteriorOverview(camera: camera)
+                            cameraMode = .interior
+                        }
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "house")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("실내 조감")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                }
                 .padding(12)
                 .transition(.opacity)
             }
@@ -674,13 +747,18 @@ struct ContentView: View {
     private func renderWhiteboardTexture() {
         guard let surface = whiteboardSurface else { return }
 
+        // onChange가 여러 소스에서 연속 트리거될 수 있음 — 내용 동일하면 재렌더 생략
+        let key = "\(totalBookCount)-\(likeCount)-\(isLiked)"
+        if key == lastWhiteboardKey { return }
+        lastWhiteboardKey = key
+
         let dashboard = WhiteboardDashboard(
             bookCount: totalBookCount,
             likeCount: likeCount,
             isLiked: isLiked
         )
         let renderer = ImageRenderer(content: dashboard)
-        renderer.scale = 3.0   // 해상도 업 (3600×2250) → 텍스트 선명도 대폭 향상
+        renderer.scale = 2.0   // 2400×1500. 3.0은 32MB RGBA라 VRAM 부담 커서 낮춤.
         renderer.isOpaque = true
 
         guard let cgImage = renderer.cgImage else { return }

@@ -2,25 +2,25 @@ import RealityKit
 
 enum EnvironmentSetup {
     static func configureLighting(root: Entity) {
-        // 메인 방향광 (은은한 배경 조명)
+        // 메인 방향광 (은은한 배경 조명 / fill)
+        // shadow는 IBL ambient가 fill 역할을 겸하므로 생략 — GPU shadow pass 2장 → 1장.
+        // 창 햇살의 sunRay 그림자가 씬의 핵심 연출이라 그쪽만 유지.
+        // 그림자 진 영역이 너무 어두워지지 않도록 intensity 상향.
         let sunLight = DirectionalLight()
         sunLight.light.color = .init(red: 1.0, green: 0.96, blue: 0.9, alpha: 1.0)
-        sunLight.light.intensity = 2000
-        sunLight.shadow = DirectionalLightComponent.Shadow(
-            maximumDistance: 10, depthBias: 0.5
-        )
+        sunLight.light.intensity = 3000
         sunLight.look(at: [0, 0, 0], from: [-2, 3, 2], relativeTo: nil)
         root.addChild(sunLight)
 
-        // 책장 반대편(앞-위)에서 내리쬐는 강한 햇빛 — 따뜻한 오후 햇살 느낌
+        // 우측 창문을 통과해 책장을 비추는 햇살. 야외 HDRI가 IBL을 채워주므로 강도 다소 낮춤.
+        // shadow maximumDistance는 4.5m — 책장 shadow는 유지, 창 프레임의 과한 줄무늬 그림자는 cull.
         let sunRay = DirectionalLight()
-        sunRay.light.color = .init(red: 1.0, green: 0.90, blue: 0.75, alpha: 1.0)
-        sunRay.light.intensity = 5500
+        sunRay.light.color = .init(red: 1.0, green: 0.92, blue: 0.78, alpha: 1.0)
+        sunRay.light.intensity = 4000
         sunRay.shadow = DirectionalLightComponent.Shadow(
-            maximumDistance: 10, depthBias: 0.8
+            maximumDistance: 4.5, depthBias: 0.8
         )
-        // 오른쪽-위-앞에서 왼쪽-아래-뒤(책장 쪽)로 비추기
-        sunRay.look(at: [-1.0, 0.3, -0.8], from: [2.5, 3.2, 2.0], relativeTo: nil)
+        sunRay.look(at: [0, 0.8, -0.7], from: [3.8, 1.95, 0.6], relativeTo: nil)
         root.addChild(sunRay)
 
         let lamp1 = PointLight()
@@ -38,11 +38,11 @@ enum EnvironmentSetup {
         root.addChild(lamp2)
     }
 
-    /// 샘플 HDRI 환경맵 (brown_photostudio_04_4k.exr)
-    /// - 간접광 + 반사를 한번에 처리하는 IBL(Image-Based Lighting)
-    /// - Poly Haven에서 다운로드한 CC0 에셋
+    /// HDRI 환경맵 (kloofendal_48d_partly_cloudy_puresky_1k.exr)
+    /// - 야외 하늘 IBL: 간접광 + 반사를 한번에 처리 (Poly Haven CC0)
+    /// - 통창 씬과 매칭 — 내부 간접광 톤이 자연스러운 야외 분위기로
     static func loadEnvironmentResource() -> EnvironmentResource? {
-        try? EnvironmentResource.load(named: "brown_photostudio_04_4k")
+        try? EnvironmentResource.load(named: "kloofendal_48d_partly_cloudy_puresky_1k")
     }
 
 }

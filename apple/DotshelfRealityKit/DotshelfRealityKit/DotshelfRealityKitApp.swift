@@ -1,8 +1,14 @@
 import SwiftUI
+import RealityKit
 
 @main
 struct DotshelfRealityKitApp: App {
-    var body: some Scene {
+    init() {
+        BirdComponent.registerComponent()
+        BirdSystem.registerSystem()
+    }
+
+    var body: some SwiftUI.Scene {
         WindowGroup {
             ContentView()
         }

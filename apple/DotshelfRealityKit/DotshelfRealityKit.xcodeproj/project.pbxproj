@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		B256B8492F953ABD0093C2A8 /* BasicAssets in Frameworks */ = {isa = PBXBuildFile; productRef = B256B8482F953ABD0093C2A8 /* BasicAssets */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		B2DE79AA2F8AD18D00D0F666 /* DotshelfRealityKit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DotshelfRealityKit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B256B8492F953ABD0093C2A8 /* BasicAssets in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = DotshelfRealityKit;
 			packageProductDependencies = (
+				B256B8482F953ABD0093C2A8 /* BasicAssets */,
 			);
 			productName = DotshelfRealityKit;
 			productReference = B2DE79AA2F8AD18D00D0F666 /* DotshelfRealityKit.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = B2DE79A12F8AD18D00D0F666;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B256B8472F953ABD0093C2A8 /* XCLocalSwiftPackageReference "../Dotshelf_RCP/BasicAssets" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B2DE79AB2F8AD18D00D0F666 /* Products */;
 			projectDirPath = "";
@@ -349,6 +358,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		B256B8472F953ABD0093C2A8 /* XCLocalSwiftPackageReference "../Dotshelf_RCP/BasicAssets" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Dotshelf_RCP/BasicAssets;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B256B8482F953ABD0093C2A8 /* BasicAssets */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BasicAssets;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = B2DE79A22F8AD18D00D0F666 /* Project object */;
 }
