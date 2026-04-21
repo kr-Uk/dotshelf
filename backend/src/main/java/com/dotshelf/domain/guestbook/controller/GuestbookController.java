@@ -17,9 +17,11 @@ import com.dotshelf.domain.guestbook.service.GuestbookService;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+@Tag(name = "Guestbook", description = "공간 방명록 / 답글")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/v1")

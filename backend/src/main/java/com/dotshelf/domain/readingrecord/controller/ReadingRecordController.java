@@ -21,9 +21,11 @@ import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
 import com.dotshelf.global.common.ToggleResponse;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+@Tag(name = "ReadingRecord", description = "독서 기록 CRUD / 좋아요 / 댓글")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/v1")

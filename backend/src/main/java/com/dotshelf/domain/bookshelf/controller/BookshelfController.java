@@ -24,9 +24,11 @@ import com.dotshelf.domain.bookshelf.service.BookshelfService;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+@Tag(name = "Bookshelf", description = "책장 / 섹션 / 배치 / 인테리어 오브젝트")
 @RestController
 @RequiredArgsConstructor
 public class BookshelfController {

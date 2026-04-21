@@ -1,6 +1,6 @@
 package com.dotshelf.domain.auth.service;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -23,6 +23,7 @@ import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.common.IdResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
+import com.dotshelf.global.security.JwtTokenProvider;
 
 import lombok.RequiredArgsConstructor;
 
@@ -38,6 +39,7 @@ public class AuthService {
     private final AuthRefreshTokenRepository refreshTokenRepository;
     private final GuestMigrationImportRepository guestMigrationImportRepository;
     private final UserService userService;
+    private final JwtTokenProvider jwtTokenProvider;
 
     @Transactional
     public AuthTokenResponse socialLogin(SocialLoginRequest request) {
@@ -59,8 +61,12 @@ public class AuthService {
 
     @Transactional
     public AuthTokenResponse refresh(TokenRefreshRequest request) {
+        Long tokenUserId = jwtTokenProvider.parseRefreshUserId(request.refreshToken());
         AuthRefreshToken oldToken = refreshTokenRepository.findByTokenHash(request.refreshToken())
                 .orElseThrow(() -> new CustomException(ErrorCode.INVALID_TOKEN));
+        if (!oldToken.getUserId().equals(tokenUserId)) {
+            throw new CustomException(ErrorCode.INVALID_TOKEN);
+        }
         if (!oldToken.isActive()) {
             oldToken.markReuseDetected();
             throw new CustomException(ErrorCode.INVALID_TOKEN);
@@ -116,12 +122,13 @@ public class AuthService {
     }
 
     private TokenPair issueTokens(Long userId) {
-        String accessToken = "access-" + UUID.randomUUID();
-        String refreshToken = "refresh-" + UUID.randomUUID();
+        String accessToken = jwtTokenProvider.issueAccessToken(userId);
+        String refreshToken = jwtTokenProvider.issueRefreshToken(userId);
+        Instant expiresAt = Instant.now().plusSeconds(jwtTokenProvider.getRefreshTokenValiditySeconds());
         refreshTokenRepository.save(AuthRefreshToken.builder()
                 .userId(userId)
                 .tokenHash(refreshToken)
-                .expiresAt(LocalDateTime.now().plusDays(30))
+                .expiresAt(expiresAt)
                 .build());
         return new TokenPair(accessToken, refreshToken);
     }

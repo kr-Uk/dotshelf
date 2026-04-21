@@ -10,8 +10,10 @@ import com.dotshelf.domain.feed.service.FeedService;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
+@Tag(name = "Feed", description = "팔로잉 피드 / 추천 피드 / 도서 프로모션")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/v1/feed")

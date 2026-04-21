@@ -23,9 +23,11 @@ import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
 import com.dotshelf.global.common.ToggleResponse;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+@Tag(name = "Space", description = "공간 / 레이아웃 / 공개 범위 / 방문")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/v1/spaces")

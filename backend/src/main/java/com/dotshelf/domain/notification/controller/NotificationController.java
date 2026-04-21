@@ -12,8 +12,10 @@ import com.dotshelf.domain.notification.service.NotificationService;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
+@Tag(name = "Notification", description = "알림 조회 / 읽음 처리")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/v1/notifications")

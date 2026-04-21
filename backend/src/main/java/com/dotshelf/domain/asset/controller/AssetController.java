@@ -17,8 +17,10 @@ import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
 import com.dotshelf.global.common.ToggleResponse;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
+@Tag(name = "Asset", description = "꾸미기 에셋 카탈로그 / 구매 / 보유")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/v1/assets")
