@@ -1,6 +1,6 @@
 package com.dotshelf.domain.auth.entity;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import com.dotshelf.global.common.BaseEntity;
 
@@ -41,20 +41,20 @@ public class AuthRefreshToken extends BaseEntity {
     private String ipAddress;
 
     @Column(nullable = false)
-    private LocalDateTime issuedAt = LocalDateTime.now();
+    private Instant issuedAt = Instant.now();
 
     @Column(nullable = false)
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
 
-    private LocalDateTime revokedAt;
+    private Instant revokedAt;
 
     private Long replacedByTokenId;
 
-    private LocalDateTime reuseDetectedAt;
+    private Instant reuseDetectedAt;
 
     @Builder
     private AuthRefreshToken(Long userId, String tokenHash, String deviceId,
-                             String userAgent, String ipAddress, LocalDateTime expiresAt) {
+                             String userAgent, String ipAddress, Instant expiresAt) {
         this.userId = userId;
         this.tokenHash = tokenHash;
         this.deviceId = deviceId;
@@ -64,19 +64,19 @@ public class AuthRefreshToken extends BaseEntity {
     }
 
     public boolean isActive() {
-        return revokedAt == null && expiresAt.isAfter(LocalDateTime.now());
+        return revokedAt == null && expiresAt.isAfter(Instant.now());
     }
 
     public void rotateTo(Long newTokenId) {
-        this.revokedAt = LocalDateTime.now();
+        this.revokedAt = Instant.now();
         this.replacedByTokenId = newTokenId;
     }
 
     public void revoke() {
-        this.revokedAt = LocalDateTime.now();
+        this.revokedAt = Instant.now();
     }
 
     public void markReuseDetected() {
-        this.reuseDetectedAt = LocalDateTime.now();
+        this.reuseDetectedAt = Instant.now();
     }
 }

@@ -8,6 +8,15 @@ spring:
   profiles:
     default: local
 
+  jackson:
+    time-zone: UTC
+    default-property-inclusion: non_null
+
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
   # OAuth2 client: add providers/registrations when needed
   # security:
   #   oauth2:
@@ -17,6 +26,17 @@ spring:
   #           client-id: ${GOOGLE_CLIENT_ID}
   #           client-secret: ${GOOGLE_CLIENT_SECRET}
 
-logging:
-  level:
-    org.springframework.security: info
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    doc-expansion: none
+
+jwt:
+  secret: ${JWT_SECRET:local-dev-secret-change-me-32bytes-minimum-length}
+  access-token-validity-seconds: ${JWT_ACCESS_TTL:1800}
+  refresh-token-validity-seconds: ${JWT_REFRESH_TTL:2592000}
+  issuer: dotshelf
