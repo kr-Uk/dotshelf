@@ -1,0 +1,80 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  GRADLE_USER_HOME: "$CI_PROJECT_DIR/backend/.gradle"
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.caching=true"
+  JAR_ARTIFACT_PATH: backend/build/libs
+
+.backend-rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      changes:
+        - backend/**/*
+        - .gitlab-ci.yml
+        - .ci/**/*
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - backend/**/*
+        - .gitlab-ci.yml
+        - .ci/**/*
+
+.deploy-rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      changes:
+        - backend/**/*
+        - .gitlab-ci.yml
+        - .ci/**/*
+
+cache:
+  key:
+    files:
+      - backend/build.gradle.kts
+      - backend/settings.gradle.kts
+  paths:
+    - backend/.gradle/caches
+    - backend/.gradle/wrapper
+
+backend:build:
+  extends: .backend-rules
+  stage: build
+  image: eclipse-temurin:21-jdk
+  before_script:
+    - cd backend
+    - chmod +x ./gradlew
+  script:
+    - ./gradlew bootJar --no-daemon
+  artifacts:
+    name: "dotshelf-api-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - $JAR_ARTIFACT_PATH/*-SNAPSHOT.jar
+    expire_in: 1 week
+
+backend:deploy:
+  extends: .deploy-rules
+  stage: deploy
+  image: alpine:3.20
+  needs:
+    - job: backend:build
+      artifacts: true
+  before_script:
+    - apk add --no-cache openssh-client rsync curl
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+    - chmod 600 ~/.ssh/id_ed25519
+    - echo "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+    - chmod 600 ~/.ssh/known_hosts
+  script:
+    - JAR=$(ls $JAR_ARTIFACT_PATH/*-SNAPSHOT.jar | head -1)
+    - echo "Deploying $JAR to $EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH"
+    - ssh "$EC2_USER@$EC2_HOST" "mkdir -p $EC2_DEPLOY_PATH/api/build/libs && rm -f $EC2_DEPLOY_PATH/api/build/libs/*.jar"
+    - rsync -az "$JAR" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/api/build/libs/"
+    - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose build api && docker compose up -d api && docker image prune -f"
+    - sh .ci/wait_for_api_healthy.sh
+    - 'ssh "$EC2_USER@$EC2_HOST" "curl -fsS -H ''Host: api.dotshelf.digital'' -k https://localhost/api/health"'
+    - curl -fsS https://api.dotshelf.digital/api/health
+  environment:
+    name: dev
+    url: https://api.dotshelf.digital
