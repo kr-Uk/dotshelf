@@ -20,7 +20,7 @@ public class GlobalExceptionHandler {
         log.warn("CustomException: {} - {}", errorCode.getCode(), e.getMessage());
         return ResponseEntity
                 .status(errorCode.getStatus())
-                .body(ApiResponse.error(e.getMessage()));
+                .body(ApiResponse.error(errorCode.getStatus().value(), errorCode.getCode(), e.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -31,7 +31,11 @@ public class GlobalExceptionHandler {
                 .orElse(ErrorCode.INVALID_INPUT.getMessage());
         return ResponseEntity
                 .status(ErrorCode.INVALID_INPUT.getStatus())
-                .body(ApiResponse.error(message));
+                .body(ApiResponse.error(
+                        ErrorCode.INVALID_INPUT.getStatus().value(),
+                        ErrorCode.INVALID_INPUT.getCode(),
+                        message
+                ));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -39,7 +43,11 @@ public class GlobalExceptionHandler {
         log.warn("IllegalArgumentException: {}", e.getMessage());
         return ResponseEntity
                 .status(ErrorCode.INVALID_INPUT.getStatus())
-                .body(ApiResponse.error(e.getMessage()));
+                .body(ApiResponse.error(
+                        ErrorCode.INVALID_INPUT.getStatus().value(),
+                        ErrorCode.INVALID_INPUT.getCode(),
+                        e.getMessage()
+                ));
     }
 
     @ExceptionHandler(Exception.class)
@@ -48,6 +56,6 @@ public class GlobalExceptionHandler {
         ErrorCode errorCode = ErrorCode.INTERNAL_SERVER_ERROR;
         return ResponseEntity
                 .status(errorCode.getStatus())
-                .body(ApiResponse.error(errorCode.getMessage()));
+                .body(ApiResponse.error(errorCode.getStatus().value(), errorCode.getCode(), errorCode.getMessage()));
     }
 }
