@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.error.ErrorCode;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +23,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class SecurityEntryPoints {
 
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
 
     public AuthenticationEntryPoint authenticationEntryPoint() {
         return (HttpServletRequest request, HttpServletResponse response, AuthenticationException e)
@@ -43,6 +43,6 @@ public class SecurityEntryPoints {
                 errorCode.getCode(),
                 errorCode.getMessage()
         );
-        response.getWriter().write(objectMapper.writeValueAsString(body));
+        response.getWriter().write(jsonMapper.writeValueAsString(body));
     }
 }
