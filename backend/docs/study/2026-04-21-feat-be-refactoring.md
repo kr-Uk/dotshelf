@@ -3,7 +3,7 @@
 "좋은 학생 프로젝트" 수준의 코드를 "실무 신입이 바로 붙어도 되는" 수준으로 올리기 위해 4개 감사 에이전트를 병렬로 돌려 현상을 파악하고, 리뷰 리포트에 따라 **Stage 1 + 2 + 3 + 5** 를 한 MR 에 묶어 반영한 날.
 
 연결 문서:
-- 리뷰 리포트: [`docs/architecture/2026-04-21-review-report.md`](../architecture/2026-04-21-review-report.md)
+- 리뷰 리포트: [`docs/architecture/reviews/2026-04-21-review-report.md`](../architecture/reviews/2026-04-21-review-report.md)
 - 아키텍처 컨벤션: [`docs/architecture/patterns.md`](../architecture/patterns.md)
 - 인프라 작업 기록: [`docs/infra/2026-04-21-runner-and-jwt.md`](../infra/2026-04-21-runner-and-jwt.md)
 

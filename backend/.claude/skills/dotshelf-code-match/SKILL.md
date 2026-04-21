@@ -87,6 +87,8 @@ DotShelf 백엔드의 신규 코드를 작성할 때 **기존 패턴과 품질�
 - ❌ Jackson 2 API 참조 (Spring Boot 4는 Jackson 3 = `tools.jackson.*`)
 - ❌ `ddl-auto: create` 상태에서 실제 데이터 넣어놓고 다른 브랜치로 왔다갔다
 - ❌ 엔티티 setter 추가 (상태 변경은 반드시 엔티티 메서드로)
+- ❌ springdoc-openapi 2.8 의 Querydsl 통합을 그대로 두기 — Spring Data 4 에서 `org.springframework.data.util.TypeInformation` 이 사라져 `queryDslQuerydslPredicateOperationCustomizer` 빈이 `NoClassDefFoundError` 로 컨텍스트 초기화 실패. 회피용 `global/config/SpringDocQuerydslWorkaround` 를 임의로 제거하지 말 것 (springdoc 가 SB4 정식 지원 버전을 낼 때까지 유지)
+- ❌ feature 브랜치만 push 하고 `dev` 머지를 잊기 — CD 가 `dev` 푸시에만 트리거되므로 머지 누락 시 배포 0건. push 후 반드시 MR/머지까지 확인
 
 ## 요약
 

@@ -224,17 +224,9 @@ EOF
 
 변경된 파일에 `.env`, `.env.example`, `*.env`, `application-*.yml`(민감 값 포함 가능) 등이 포함되어 있으면 다음을 **반드시** 사용자에게 알린다:
 
-> ⚠️ env 관련 변경 감지. 이 값이 실제 서버 배포에 반영되려면 **GitLab Settings → CI/CD → Variables**에 `ENV_<TARGET>_<KEY>` 형식으로 추가해야 합니다.
+> ⚠️ env 관련 변경 감지. 이 값이 실제 서버 배포에 반영되려면 **GitLab Settings → CI/CD → Variables** 에 같은 키를 추가/갱신해야 합니다. 변수 네이밍·플래그(Protected ✅, Masked ❌, multiline 처리)·값 형식은 [`docs/infra/gitlab-ci-variables.md`](../../../docs/infra/gitlab-ci-variables.md) 를 단일 진실 소스로 따릅니다.
 >
-> 네이밍 규칙:
-> - 공통값: `ENV_BASE_*`
-> - BE dev: `ENV_DEV_BACKEND_*`
-> - FE dev: `ENV_DEV_FRONTEND_*`
-> - AI dev: `ENV_DEV_AI_*`
->
-> 예: `AUTH_USE_MOCK=true` → `ENV_DEV_BACKEND_AUTH_USE_MOCK=true`
->
-> `.env.example`만 수정하면 배포에 반영되지 않습니다. MR 설명에 GitLab Variables 업데이트 TODO를 포함하시겠어요?
+> `.env.example` 만 수정하면 배포에 반영되지 않습니다. MR 설명에 GitLab Variables 업데이트 TODO 를 포함하시겠어요?
 
 민감값(Secret, API key, DB 비밀번호)이 diff에 보이면 **커밋을 중단시키고** GitLab Variables로 옮기도록 안내한다.
 

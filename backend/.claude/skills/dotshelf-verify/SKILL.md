@@ -145,10 +145,12 @@ wait $APP_PID 2>/dev/null
 ```
 
 **헬스 엔드포인트 탐색 순서** (프로젝트마다 다름):
-1. `/api/health` — 이 프로젝트(DotShelf) 기본
+1. `/api/health` — 이 프로젝트(DotShelf) 기본 (`HealthController` 매핑)
 2. `/actuator/health` — Spring Boot Actuator 기본
 3. `/health`
 4. 사용자에게 확인
+
+**컨테이너 healthcheck 와 일치 확인**: `Dockerfile` 또는 `docker-compose.yml` 의 `HEALTHCHECK` 가 같은 엔드포인트를 폴링하는지 본다. 로컬 verify 는 통과해도 컨테이너 healthcheck 가 다른 path 를 보고 있으면 운영에선 영영 unhealthy 로 남는다 (실사례: `dotshelf-api` 가 `localhost:8080` 폴링 → 앱 부팅 자체가 실패하면 starting 으로만 머묾).
 
 포트도 고정값 아님. `application*.yml`의 `server.port` 또는 환경변수 확인. 기본 8080.
 
