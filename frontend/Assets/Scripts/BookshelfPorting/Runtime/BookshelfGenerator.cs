@@ -410,7 +410,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            book.ApplyMetadata(item.Book, item.UserBook);
+            book.ApplyMetadata(item.Book, item.UserBook, item.ReadingRecord);
             if (item.Book != null && !string.IsNullOrWhiteSpace(item.Book.BookId))
             {
                 book.gameObject.name = $"Shelf{variantIndex}_{item.Book.BookId}_{sectionIndex}_{bookIndex}";

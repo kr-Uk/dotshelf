@@ -1,31 +1,50 @@
+using System;
+
 namespace App.Domain
 {
     public enum ReadingStatus
     {
-        Wishlist,
+        Unread,
         Reading,
-        Completed
+        Read
     }
 
-    public enum Visibility
+    public enum StorageStatus
+    {
+        OnShelf,
+        Archived,
+        Deleted
+    }
+
+    public enum VisibilityScope
     {
         Public,
+        Followers,
         Private
     }
 
     public sealed class UserBook
     {
-        public string UserBookId { get; }
+        public string Id { get; }
+        public string UserBookId => Id;
+        public string UserId { get; }
         public string BookId { get; }
-        public ReadingStatus Status { get; set; }
-        public int Rating { get; set; }
-        public string OneLineReview { get; set; }
-        public Visibility ReviewVisibility { get; set; } = Visibility.Public;
+        public string SelectedCoverProductId { get; set; }
+        public ReadingStatus ReadingStatus { get; set; } = ReadingStatus.Unread;
+        public StorageStatus StorageStatus { get; set; } = StorageStatus.OnShelf;
+        public decimal? OwnerRating { get; set; }
+        public bool IsLiked { get; set; }
+        public DateTimeOffset AddedAt { get; }
+        public DateTimeOffset UpdatedAt { get; set; }
+        public DateTimeOffset? DeletedAt { get; set; }
 
-        public UserBook(string userBookId, string bookId)
+        public UserBook(string id, string userId, string bookId, DateTimeOffset? addedAt = null, DateTimeOffset? updatedAt = null)
         {
-            UserBookId = userBookId;
+            Id = id;
+            UserId = userId;
             BookId = bookId;
+            AddedAt = addedAt ?? DateTimeOffset.MinValue;
+            UpdatedAt = updatedAt ?? DateTimeOffset.MinValue;
         }
     }
 }

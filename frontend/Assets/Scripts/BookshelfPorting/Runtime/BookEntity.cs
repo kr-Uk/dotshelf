@@ -55,7 +55,7 @@ namespace BookshelfPorting.Runtime
             ApplyOrientationVisualsImmediate();
         }
 
-        public void ApplyMetadata(Book book, UserBook userBook)
+        public void ApplyMetadata(Book book, UserBook userBook, ReadingRecord readingRecord)
         {
             if (book != null)
             {
@@ -71,10 +71,12 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            rating = userBook.Rating;
-            isRead = userBook.Status == ReadingStatus.Completed;
-            isPublic = userBook.ReviewVisibility == Visibility.Public;
-            memoPreview = userBook.OneLineReview;
+            rating = userBook.OwnerRating.HasValue ? Mathf.RoundToInt((float)userBook.OwnerRating.Value) : 0;
+            isRead = userBook.ReadingStatus == ReadingStatus.Read;
+            isPublic = readingRecord == null || readingRecord.VisibilityScope == VisibilityScope.Public;
+            memoPreview = readingRecord != null && !string.IsNullOrWhiteSpace(readingRecord.Content)
+                ? readingRecord.Content
+                : description;
         }
 
         public void SetSection(ShelfSection section, bool markOriginal = false)

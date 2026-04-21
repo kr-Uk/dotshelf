@@ -1,4 +1,6 @@
 using App.Application.Books;
+using App.Config;
+using App.Infrastructure.Api;
 using App.Infrastructure.Mock;
 using UnityEngine;
 #if UNITY_EDITOR
@@ -14,6 +16,10 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private bool bootstrapOnAwake = true;
         [SerializeField] private bool installInEditMode = true;
         [SerializeField] private bool saveGeneratedContentInEditMode = true;
+        [SerializeField] private AppApiConfig apiConfig;
+        [SerializeField] private bool useApiRepository = true;
+        [SerializeField] private string defaultApiBaseUrl = "http://localhost:3001";
+        [SerializeField] private int defaultRequestTimeoutSeconds = 10;
 
         private void Awake()
         {
@@ -83,10 +89,20 @@ namespace BookshelfPorting.Runtime
 
         public void InstallScene(bool forceGenerate)
         {
-            InstallIntoActiveScene(forceGenerate);
+            InstallIntoActiveScene(forceGenerate, apiConfig, useApiRepository, defaultApiBaseUrl, defaultRequestTimeoutSeconds);
         }
 
         public static void InstallIntoActiveScene(bool forceGenerate)
+        {
+            InstallIntoActiveScene(forceGenerate, null, true, "http://localhost:3001", 10);
+        }
+
+        private static void InstallIntoActiveScene(
+            bool forceGenerate,
+            AppApiConfig apiConfig,
+            bool useApiRepository,
+            string defaultApiBaseUrl,
+            int defaultRequestTimeoutSeconds)
         {
             var mainCamera = Camera.main;
             if (mainCamera == null)
@@ -106,7 +122,7 @@ namespace BookshelfPorting.Runtime
             var runtimeDataStore = GetOrAddComponent<BookshelfRuntimeDataStore>(systems);
             var experienceManager = GetOrAddComponent<BookshelfExperienceManager>(systems);
             var environment = GetOrAddComponent<EnvironmentSetup>(systems);
-            var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(new MockBookCatalogRepository());
+            var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(apiConfig, useApiRepository, defaultApiBaseUrl, defaultRequestTimeoutSeconds));
 
             var camerasRoot = FindOrCreateRoot("Cameras").transform;
             var overviewPosition = new Vector3(1.55f, 1.30f, -1.95f);
@@ -166,6 +182,25 @@ namespace BookshelfPorting.Runtime
             {
                 cameraController.MoveToMode(CameraMode.Overview);
             }
+        }
+
+        private static IBookCatalogRepository CreateBookCatalogRepository(
+            AppApiConfig apiConfig,
+            bool useApiRepository,
+            string defaultApiBaseUrl,
+            int defaultRequestTimeoutSeconds)
+        {
+            var mockRepository = new MockBookCatalogRepository();
+            if (!useApiRepository)
+            {
+                return mockRepository;
+            }
+
+            var baseUrl = apiConfig != null ? apiConfig.ResolveBaseUrl() : defaultApiBaseUrl;
+            var timeoutSeconds = apiConfig != null
+                ? apiConfig.RequestTimeoutSeconds
+                : defaultRequestTimeoutSeconds;
+            return new ApiBookCatalogRepository(baseUrl, timeoutSeconds, mockRepository);
         }
 
         private static bool HasGeneratedContent(BookshelfGenerator generator)

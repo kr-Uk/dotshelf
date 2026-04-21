@@ -120,11 +120,13 @@ namespace App.Editor
             var cameraState = systems.AddComponent<CameraStateController>();
             var installer = systems.AddComponent<BookshelfSceneInstaller>();
             var debugHud = systems.AddComponent<DebugHudComponent>();
+            var apiConfig = EnsureApiConfigAsset();
 
             var statusText = CreateDebugStatusText(debugCanvas.transform);
             AssignSerializedReference(debugHud, "roomStateController", roomState);
             AssignSerializedReference(debugHud, "cameraStateController", cameraState);
             AssignSerializedReference(debugHud, "statusText", statusText);
+            AssignSerializedReference(installer, "apiConfig", apiConfig);
 
             CreateEventSystem();
             installer.InstallScene(forceGenerate: true);
