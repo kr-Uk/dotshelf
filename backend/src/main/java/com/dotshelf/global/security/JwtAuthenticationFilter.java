@@ -12,7 +12,7 @@ import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -34,7 +34,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtTokenProvider jwtTokenProvider;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
 
     @Override
     protected void doFilterInternal(
@@ -78,6 +78,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 errorCode.getCode(),
                 errorCode.getMessage()
         );
-        response.getWriter().write(objectMapper.writeValueAsString(body));
+        response.getWriter().write(jsonMapper.writeValueAsString(body));
     }
 }
