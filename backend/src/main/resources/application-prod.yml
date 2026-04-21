@@ -29,7 +29,8 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: false
         jdbc:
-          time_zone: Asia/Seoul
+          # 모든 시간 필드는 UTC 로 저장. 표시용 타임존 변환은 클라이언트 책임.
+          time_zone: UTC
     show-sql: false
     open-in-view: false
 

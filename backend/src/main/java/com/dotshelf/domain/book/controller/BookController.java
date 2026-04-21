@@ -22,9 +22,11 @@ import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
 import com.dotshelf.global.common.ToggleResponse;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+@Tag(name = "Book", description = "도서 검색 / 내 책 (user_books) 관리 / 좋아요")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/v1")
