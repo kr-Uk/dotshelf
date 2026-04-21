@@ -1,0 +1,47 @@
+server:
+  port: 8080
+  forward-headers-strategy: framework
+  tomcat:
+    accesslog:
+      enabled: false
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:postgres}:${DB_PORT:5432}/${DB_NAME:dotshelf}
+    username: ${DB_USER:dotshelf}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 10000
+
+  jpa:
+    hibernate:
+      # dev 전용: 스키마 자동 반영. 실서비스 전환 시 none + Flyway 로 이관 필요
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+        jdbc:
+          time_zone: Asia/Seoul
+    show-sql: false
+    open-in-view: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      timeout: 3s
+
+logging:
+  level:
+    root: info
+    com.dotshelf: info
+    org.hibernate.SQL: warn
+    org.springframework.security: warn

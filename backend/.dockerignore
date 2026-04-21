@@ -1,0 +1,17 @@
+.git
+.gradle
+.idea
+.vscode
+build
+!build/libs/*-SNAPSHOT.jar
+*.log
+.env
+.env.*
+docs
+.claude
+AGENTS.md
+HELP.md
+Dockerfile
+.dockerignore
+docker-compose.yml
+src/test
