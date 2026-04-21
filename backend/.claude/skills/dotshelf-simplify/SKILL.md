@@ -75,6 +75,7 @@ description: 방금 작성하거나 수정한 백엔드 코드를 DotShelf 팀 �
 - Service에서 HttpServletRequest/ResponseEntity 참조 → Controller로 이동
 - Jackson 2 API 참조 → Jackson 3 (`tools.jackson.*`)
 - 쿼리 문자열 concat → JPQL/QueryDSL
+- `SpringDocQuerydslWorkaround` 같은 SB4 호환 워크어라운드를 "쓸모없어 보인다"고 임의 제거 → **금지**. 제거 전에 springdoc 가 SB4 정식 지원 버전을 냈는지 먼저 확인 (의심되면 사용자에게 물어볼 것)
 
 ### 구조 개선 (판단 필요, 사용자 확인)
 - 메서드가 너무 길다(50줄 이상) → 의미 단위로 분해
