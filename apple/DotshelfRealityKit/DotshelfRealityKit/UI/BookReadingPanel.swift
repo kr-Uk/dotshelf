@@ -1,62 +1,15 @@
 import SwiftUI
 
-enum ReadingStatus {
-    case notStarted, reading, completed
-
-    var label: String {
-        switch self {
-        case .notStarted: return "읽기 전"
-        case .reading: return "읽는 중"
-        case .completed: return "완독"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .notStarted: return "hourglass"
-        case .reading: return "book.fill"
-        case .completed: return "checkmark.seal.fill"
-        }
-    }
-
-    var tint: Color {
-        switch self {
-        case .notStarted: return .gray
-        case .reading: return .blue
-        case .completed: return .green
-        }
-    }
-}
-
-struct BookComment: Identifiable {
-    let id = UUID()
-    let name: String
-    let initials: String
-    let avatarColor: Color
-    let time: String
-    let message: String
-}
-
-struct BookRecord {
-    let title: String
-    let author: String
-    let rating: Double     // 0 ~ 5
-    let startedAt: String?
-    let finishedAt: String?
-    let status: ReadingStatus
-    let personalNote: String
-    var comments: [BookComment]
-}
-
+/// 책 확대 상태에서 우측에 붙는 독서 정보 패널.
+/// 모델은 BookRecord / 저장소는 BookRecordStore.
 struct BookReadingPanel: View {
     let bookName: String
-    @State private var record: BookRecord
+    let store: BookRecordStore
+    var onOpenReadingRecord: () -> Void = {}
+
     @State private var commentInput: String = ""
 
-    init(bookName: String) {
-        self.bookName = bookName
-        self._record = State(initialValue: Self.makeRecord(for: bookName))
-    }
+    private var record: BookRecord { store.record(for: bookName) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -65,6 +18,8 @@ struct BookReadingPanel: View {
                     bookInfoSection
                     Divider()
                     readingRecordSection
+                    Divider()
+                    readingRecordCTA
                     Divider()
                     commentsSection
                 }
@@ -85,38 +40,40 @@ struct BookReadingPanel: View {
         .clipShape(RoundedRectangle(cornerRadius: 18))
     }
 
-    // MARK: - 책 정보
+    // MARK: - 책 정보 (제목/저자/별점 편집)
+
     private var bookInfoSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(record.title)
-                .font(.system(size: 22, weight: .bold))
-            Text(record.author)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
-            HStack(spacing: 6) {
-                StarRating(rating: record.rating)
-                Text(String(format: "%.1f", record.rating))
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.title)
+                        .font(.system(size: 22, weight: .bold))
+                    Text(record.author)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if record.liked {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.red)
+                }
+            }
+            EditableStarRating(rating: record.rating) { newValue in
+                store.update(bookName) { $0.rating = newValue }
             }
         }
     }
 
-    // MARK: - 독서 기록
+    // MARK: - 독서 상태 + 날짜 + 메모
+
     private var readingRecordSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader("독서 기록", systemImage: "book.closed.fill")
 
-            HStack(spacing: 8) {
-                Image(systemName: record.status.systemImage)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(record.status.tint)
-                Text(record.status.label)
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
+            ReadingStatusPicker(status: record.status) { newStatus in
+                store.update(bookName) { $0.status = newStatus }
             }
-            .padding(10)
-            .background(record.status.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
 
             if record.startedAt != nil || record.finishedAt != nil {
                 HStack(spacing: 10) {
@@ -148,7 +105,38 @@ struct BookReadingPanel: View {
         }
     }
 
+    // MARK: - 독서기록 화면 진입 CTA (페이즈 B 연결)
+
+    private var readingRecordCTA: some View {
+        Button(action: onOpenReadingRecord) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("독서기록 보기")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("감상을 길게 기록하고 댓글로 이야기해요")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.accentColor.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - 댓글
+
     private var commentsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader("댓글 \(record.comments.count)", systemImage: "bubble.left.fill")
@@ -212,113 +200,108 @@ struct BookReadingPanel: View {
     private func addComment() {
         let trimmed = commentInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        record.comments.append(BookComment(
+        let new = BookComment(
             name: "나",
             initials: "나",
             avatarColor: .accentColor,
             time: "방금 전",
             message: trimmed
-        ))
+        )
+        store.update(bookName) { $0.comments.append(new) }
         commentInput = ""
-    }
-
-    // MARK: - Fake 데이터 (책 이름 해시로 결정적 매핑)
-
-    static func makeRecord(for bookName: String) -> BookRecord {
-        let templates: [BookRecord] = [
-            BookRecord(
-                title: "달러구트 꿈 백화점",
-                author: "이미예",
-                rating: 4.5,
-                startedAt: "2026-02-14",
-                finishedAt: "2026-03-10",
-                status: .completed,
-                personalNote: "꿈이라는 소재를 이렇게 따뜻하게 풀어내다니. 잠자기 전에 읽기 좋은 책.",
-                comments: [
-                    BookComment(name: "지호", initials: "J", avatarColor: .orange, time: "2일 전", message: "이 책 나도 완독! 2권도 추천"),
-                    BookComment(name: "수민", initials: "S", avatarColor: .cyan, time: "어제", message: "대기자 수 많던데 ㅠ"),
-                ]
-            ),
-            BookRecord(
-                title: "코스모스",
-                author: "칼 세이건",
-                rating: 4.8,
-                startedAt: "2025-11-02",
-                finishedAt: nil,
-                status: .reading,
-                personalNote: "우주 얘기인데 왜 이렇게 시적으로 쓰는지… 챕터 하나씩 천천히.",
-                comments: [
-                    BookComment(name: "민준", initials: "M", avatarColor: .green, time: "3일 전", message: "4장부터 속도 붙더라"),
-                ]
-            ),
-            BookRecord(
-                title: "미드나잇 라이브러리",
-                author: "매트 헤이그",
-                rating: 4.2,
-                startedAt: "2026-01-20",
-                finishedAt: "2026-02-05",
-                status: .completed,
-                personalNote: "\"다른 삶을 살았다면\" 이라는 질문에 대한 답.",
-                comments: [
-                    BookComment(name: "유나", initials: "Y", avatarColor: .pink, time: "1주 전", message: "영화도 나온대 💕"),
-                    BookComment(name: "지호", initials: "J", avatarColor: .orange, time: "5일 전", message: "결말 스포 금지!"),
-                    BookComment(name: "수민", initials: "S", avatarColor: .cyan, time: "3일 전", message: "빌려줘요"),
-                ]
-            ),
-            BookRecord(
-                title: "작별하지 않는다",
-                author: "한강",
-                rating: 4.6,
-                startedAt: nil,
-                finishedAt: nil,
-                status: .notStarted,
-                personalNote: "",
-                comments: []
-            ),
-            BookRecord(
-                title: "사피엔스",
-                author: "유발 하라리",
-                rating: 4.4,
-                startedAt: "2025-09-10",
-                finishedAt: "2025-12-22",
-                status: .completed,
-                personalNote: "인류사의 큰 흐름을 한 권으로. 두 번 읽었음.",
-                comments: [
-                    BookComment(name: "민준", initials: "M", avatarColor: .green, time: "1달 전", message: "호모 데우스도 재밌던데"),
-                ]
-            ),
-            BookRecord(
-                title: "아몬드",
-                author: "손원평",
-                rating: 4.3,
-                startedAt: "2026-03-25",
-                finishedAt: nil,
-                status: .reading,
-                personalNote: "감정을 느끼지 못하는 아이. 초반부터 몰입됨.",
-                comments: []
-            ),
-        ]
-        let idx = abs(bookName.hashValue) % templates.count
-        return templates[idx]
     }
 }
 
-// MARK: - Sub views
+// MARK: - 편집 가능한 별점 (0.5 단위)
 
-private struct StarRating: View {
+struct EditableStarRating: View {
     let rating: Double
+    var onChange: (Double) -> Void
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(0..<5) { i in
-                let fill = max(0, min(1, rating - Double(i)))
-                Image(systemName: fill >= 0.9 ? "star.fill" : (fill >= 0.3 ? "star.leadinghalf.filled" : "star"))
-                    .font(.system(size: 12))
+                starGlyph(for: i)
+                    .font(.system(size: 16))
                     .foregroundStyle(.yellow)
+                    .contentShape(Rectangle())
+                    .overlay {
+                        // 좌/우 반쪽 탭 영역
+                        HStack(spacing: 0) {
+                            Color.clear.contentShape(Rectangle())
+                                .onTapGesture { tap(star: i, half: true) }
+                            Color.clear.contentShape(Rectangle())
+                                .onTapGesture { tap(star: i, half: false) }
+                        }
+                    }
             }
+            Text(String(format: "%.1f", rating))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+        }
+    }
+
+    private func starGlyph(for i: Int) -> Image {
+        let fill = max(0, min(1, rating - Double(i)))
+        if fill >= 0.9 { return Image(systemName: "star.fill") }
+        if fill >= 0.3 { return Image(systemName: "star.leadinghalf.filled") }
+        return Image(systemName: "star")
+    }
+
+    private func tap(star i: Int, half: Bool) {
+        let newValue = Double(i) + (half ? 0.5 : 1.0)
+        // 같은 값 두 번 누르면 그 별을 해제 (반 단계씩 줄어드는 느낌)
+        if abs(newValue - rating) < 0.01 {
+            onChange(max(0, newValue - 0.5))
+        } else {
+            onChange(newValue)
         }
     }
 }
+
+// MARK: - 독서 상태 세그먼트 피커
+
+struct ReadingStatusPicker: View {
+    let status: ReadingStatus
+    var onChange: (ReadingStatus) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(ReadingStatus.allCases, id: \.self) { s in
+                pickerItem(for: s)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pickerItem(for s: ReadingStatus) -> some View {
+        let selected = (s == status)
+        let bgFill: Color = selected ? s.tint.opacity(0.2) : Color.gray.opacity(0.08)
+        let borderColor: Color = selected ? s.tint.opacity(0.45) : Color.clear
+        let labelColor: Color = selected ? s.tint : .primary
+
+        Button {
+            onChange(s)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: s.systemImage)
+                    .font(.system(size: 11, weight: .bold))
+                Text(s.label)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 8).fill(bgFill))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(borderColor, lineWidth: 1))
+            .foregroundStyle(labelColor)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - 댓글 row
 
 private struct CommentRow: View {
     let comment: BookComment

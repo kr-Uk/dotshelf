@@ -103,10 +103,35 @@ struct ShelfSection {
     }
 }
 
+/// 책장 공개 범위 — 명세 §2.
+enum ShelfVisibility: CaseIterable {
+    case `public`
+    case followers
+    case `private`
+
+    var label: String {
+        switch self {
+        case .public: return "전체 공개"
+        case .followers: return "팔로워 공개"
+        case .private: return "비공개"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .public: return "globe"
+        case .followers: return "person.2"
+        case .private: return "lock"
+        }
+    }
+}
+
 /// 한 권의 책장 단위 (엔티티 + 섹션 상태)
 struct Bookshelf {
     let entity: Entity
     var sections: [ShelfSection]
+    var name: String = "책장"
+    var visibility: ShelfVisibility = .public
 }
 
 enum SwitchDirection {
@@ -140,7 +165,7 @@ class BookshelfState {
 
     // 회전 중 연타 방지 — 진행 중이면 다음 클릭은 큐에 저장
     private var isFlipping: Bool = false
-    private var queuedDirection: SwitchDirection?
+    private var queuedDirections: [SwitchDirection] = []
 
     // MARK: - 빌드/팝퓰레이트 (static — 각 책장마다 별도로 호출)
 
@@ -178,12 +203,180 @@ class BookshelfState {
 
     // MARK: - 다중 책장 관리
 
-    func addBookshelf(entity: Entity, sections newSections: [ShelfSection]) {
-        bookshelves.append(Bookshelf(entity: entity, sections: newSections))
+    func addBookshelf(entity: Entity, sections newSections: [ShelfSection], name: String = "책장") {
+        let shelfName = name == "책장" ? "책장 \(bookshelves.count + 1)" : name
+        bookshelves.append(Bookshelf(entity: entity, sections: newSections, name: shelfName))
         if bookshelves.count == 1 {
             self.sections = newSections
             self.shelfRoot = entity
             self.currentIndex = 0
+        }
+    }
+
+    // MARK: - 페이즈 C — 책장 편집
+
+    /// 현재 책장 이름.
+    var currentBookshelfName: String {
+        guard currentIndex < bookshelves.count else { return "책장" }
+        return bookshelves[currentIndex].name
+    }
+
+    /// 현재 책장 공개 범위.
+    var currentBookshelfVisibility: ShelfVisibility {
+        guard currentIndex < bookshelves.count else { return .public }
+        return bookshelves[currentIndex].visibility
+    }
+
+    func renameCurrentBookshelf(to name: String) {
+        guard currentIndex < bookshelves.count else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        bookshelves[currentIndex].name = String(trimmed.prefix(30))
+    }
+
+    func setCurrentBookshelfVisibility(_ v: ShelfVisibility) {
+        guard currentIndex < bookshelves.count else { return }
+        bookshelves[currentIndex].visibility = v
+    }
+
+    /// 빈 책장 생성 + 턴테이블에 장착하고 자동으로 해당 책장으로 전환.
+    /// 호출 측: UI 편집 메뉴의 "책장 추가".
+    /// - Returns: 새 책장의 index
+    @discardableResult
+    func addEmptyBookshelfAndSwitch() -> Int? {
+        guard let turntable else { return nil }
+        _ = turntable  // 사용 경고 방지
+
+        let shelfEntity = BookshelfEntity.create()
+        var sec = BookshelfState.makeDefaultSections()
+        BookshelfState.populateSectionClickAreas(
+            in: sec, parent: shelfEntity, bookshelfIndex: bookshelves.count
+        )
+
+        // 저장 — 이 시점에 bookshelves.count가 이전 값이므로 이름 "책장 N+1"
+        let newIndex = bookshelves.count
+        addBookshelf(entity: shelfEntity, sections: sec)
+
+        // 현재가 유일한 책장이면 슬롯0이 비어있을 수도 — 안전하게 처리
+        if bookshelves.count == 1, let slot0 = slots.first {
+            slot0.addChild(shelfEntity)
+            return 0
+        }
+
+        // 전환 애니메이션으로 새 책장으로 이동 (최단 방향)
+        let count = bookshelves.count
+        let forward = (newIndex - currentIndex + count) % count
+        let backward = (currentIndex - newIndex + count) % count
+        let direction: SwitchDirection = forward <= backward ? .right : .left
+        let steps = min(forward, backward)
+        for _ in 0..<steps {
+            switchTo(direction: direction)
+        }
+        return newIndex
+    }
+
+    /// 현재 책장을 삭제. 2개 이상일 때만 가능. 책/오브젝트는 다른 책장의 빈 공간으로 자동 이전,
+    /// 공간이 부족하면 archive 클로저로 넘김(보관함). 삭제 완료 후 인접 책장으로 이동.
+    /// - Parameter archiveFallback: 메타데이터를 받아 보관 처리(또는 포기). 어떤 책이든 호출됨.
+    /// - Returns: 삭제 성공 여부
+    @discardableResult
+    func removeCurrentBookshelf(archiveFallback: (Entity) -> Void) -> Bool {
+        guard bookshelves.count > 1 else { return false }
+
+        let removeIdx = currentIndex
+        let removedShelf = bookshelves[removeIdx]
+
+        // 삭제될 책장의 섹션별 책들을 모두 수집
+        var bookQueue: [Entity] = []
+        for sec in removedShelf.sections {
+            bookQueue.append(contentsOf: sec.books)
+        }
+
+        // 다른 책장들의 섹션에 빈 공간 있으면 이전, 없으면 archiveFallback
+        for book in bookQueue {
+            guard let comp = book.components[BookComponent.self] else {
+                archiveFallback(book); continue
+            }
+            let footprint = comp.footprint
+
+            var placed = false
+            for bi in 0..<bookshelves.count where bi != removeIdx {
+                if let targetSecIdx = bookshelves[bi].sections.firstIndex(where: { $0.canFit(extraFootprint: footprint) }) {
+                    // 재부모화 + 데이터 이전
+                    book.setParent(bookshelves[bi].entity, preservingWorldTransform: false)
+                    bookshelves[bi].sections[targetSecIdx].books.append(book)
+                    placed = true
+                    break
+                }
+            }
+            if !placed {
+                archiveFallback(book)
+            }
+        }
+
+        // 책장 엔티티 제거
+        removedShelf.entity.removeFromParent()
+        bookshelves.remove(at: removeIdx)
+
+        // 인덱스/포인터 조정: 우선 인접(removeIdx) 쪽으로 current 이동
+        let newCount = bookshelves.count
+        let newCurrent = min(removeIdx, newCount - 1)
+        currentIndex = newCurrent
+        sections = bookshelves[newCurrent].sections
+        shelfRoot = bookshelves[newCurrent].entity
+
+        remountSlotsToCurrent()
+        return true
+    }
+
+    /// 현재 책장의 순서를 `to` 인덱스로 이동. 현 책장의 sections를 먼저 저장하고
+    /// currentIndex를 재계산한 뒤 슬롯 재장착까지 자동.
+    func moveBookshelf(from: Int, to: Int) {
+        guard from >= 0, from < bookshelves.count,
+              to >= 0, to < bookshelves.count,
+              from != to else { return }
+
+        // 1. 현재 활성 섹션을 bookshelves[currentIndex]에 반영
+        if currentIndex < bookshelves.count {
+            bookshelves[currentIndex].sections = sections
+        }
+
+        // 2. 배열 재배치
+        let moved = bookshelves.remove(at: from)
+        bookshelves.insert(moved, at: to)
+
+        // 3. currentIndex 재계산
+        if currentIndex == from {
+            currentIndex = to
+        } else if from < currentIndex && to >= currentIndex {
+            currentIndex -= 1
+        } else if from > currentIndex && to <= currentIndex {
+            currentIndex += 1
+        }
+
+        // 4. 상태 동기화 + 슬롯 재장착
+        sections = bookshelves[currentIndex].sections
+        shelfRoot = bookshelves[currentIndex].entity
+        remountSlotsToCurrent()
+    }
+
+    /// 현재 `currentIndex` 기준으로 슬롯을 재세팅. 턴테이블 각도도 0으로 복귀.
+    /// remove/move 후 공통으로 호출.
+    private func remountSlotsToCurrent() {
+        guard !bookshelves.isEmpty, let frontSlot = slots.first else { return }
+        frontSlot.children.forEach { $0.removeFromParent() }
+        frontSlot.addChild(bookshelves[currentIndex].entity)
+        frontSlotIdx = 0
+        turntableAngle = 0
+        if let turntable {
+            var t = turntable.transform
+            t.rotation = simd_quatf(angle: 0, axis: SIMD3<Float>(0, 1, 0))
+            turntable.move(to: t, relativeTo: turntable.parent, duration: 0.3)
+        }
+        if bookshelves.count >= 2, slots.count == 2 {
+            slots[1].children.forEach { $0.removeFromParent() }
+            let nextIdx = (currentIndex + 1) % bookshelves.count
+            slots[1].addChild(bookshelves[nextIdx].entity)
         }
     }
 
@@ -196,13 +389,12 @@ class BookshelfState {
         }
     }
 
-    /// 턴테이블 180° 회전으로 전환. 연타 시 현재 애니메이션이 끝날 때까지 큐잉.
+    /// 턴테이블 180° 회전으로 전환. 연속 호출 시 순차 실행(FIFO 큐).
     func switchTo(direction: SwitchDirection) {
         guard bookshelves.count > 1, let turntable, slots.count == 2 else { return }
 
-        // 회전 중이면 큐에 저장하고 반환 (최근 한 건만 유지)
         if isFlipping {
-            queuedDirection = direction
+            queuedDirections.append(direction)
             return
         }
 
@@ -240,13 +432,13 @@ class BookshelfState {
         sections = bookshelves[targetIdx].sections
         shelfRoot = targetEntity
 
-        // 애니메이션 완료 후 큐잉된 다음 플립 실행
+        // 애니메이션 완료 후 큐잉된 다음 플립 실행 (FIFO)
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(duration))
             self.isFlipping = false
-            if let queued = self.queuedDirection {
-                self.queuedDirection = nil
-                self.switchTo(direction: queued)
+            if !self.queuedDirections.isEmpty {
+                let next = self.queuedDirections.removeFirst()
+                self.switchTo(direction: next)
             }
         }
     }
@@ -271,6 +463,7 @@ class BookshelfState {
     }
 
     /// 섹션 배열에 책을 채움 (colors 팔레트에서 순환)
+    @MainActor
     static func populateBooks(
         into sections: inout [ShelfSection],
         parent: Entity,
@@ -323,13 +516,16 @@ class BookshelfState {
                 let height = Float.random(in: 0.20...0.27)
                 let color = colors[bookIndex % colors.count]
 
-                let book = BookEntity.create(
+                let name = "book_\(bookIndex)"
+                let record = BookRecord.sample(for: name)
+                let book = BookEntity.createWithFaces(
                     thickness: thickness,
                     height: height,
                     width: 0.16,
-                    color: color
+                    color: color,
+                    record: record
                 )
-                book.name = "book_\(bookIndex)"
+                book.name = name
 
                 let posY = sec.shelfTopY + height / 2
                 book.position = SIMD3(x + thickness / 2, posY, 0)

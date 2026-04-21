@@ -48,11 +48,13 @@ enum CameraController {
     }
 
     /// 화이트보드(좌측 벽) 정면 뷰로 카메라 애니메이션
+    /// 화이트보드 크기 1.2×0.75m. 거리 0.95m + FOV 45°에서 세로 방향 0.787m 시야 →
+    /// 화이트보드 세로 0.75m가 화면의 ~95%를 차지하여 화면을 거의 꽉 채운다.
     static func moveToWhiteboard(camera: PerspectiveCamera, wallX: Float = -2.0, duration: TimeInterval = 0.7) {
         camera.camera.fieldOfViewInDegrees = 45
         // 화이트보드 중심 월드좌표: (wallX + 0.005, 1.25, 0)
         let targetX = wallX + 0.005
-        let camPos = SIMD3<Float>(targetX + 1.8, 1.25, 0)
+        let camPos = SIMD3<Float>(targetX + 0.95, 1.25, 0)
         let lookAt = SIMD3<Float>(targetX, 1.25, 0)
         animateLook(camera: camera, from: camPos, at: lookAt, duration: duration)
     }

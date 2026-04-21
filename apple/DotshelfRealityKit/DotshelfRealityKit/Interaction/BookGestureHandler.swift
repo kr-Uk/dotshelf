@@ -37,6 +37,9 @@ class BookInteractionState {
         viewedBook = entity
         viewedBookOriginalTransform = entity.transform
         isViewingBook = true
+        // 책 포커싱 중에는 그림자 캐스트 비활성 — 카메라 앞에 떠있는 책이 바닥/주변에
+        // 어색한 그림자를 남기지 않도록. 해제 시 복원.
+        Self.setCastsShadow(entity, false)
         // 책 우측이 표지라는 컨벤션과 일치: -π/2 회전으로 표지(앞면)가 카메라를 향함
         viewBaseRotation = simd_quatf(angle: -.pi / 2, axis: SIMD3(0, 1, 0))
         viewCurrentRotation = viewBaseRotation
@@ -95,6 +98,9 @@ class BookInteractionState {
     func dismissBook(state: BookshelfState? = nil) {
         guard isViewingBook, let book = viewedBook else { return }
 
+        // 그림자 캐스트 복원
+        Self.setCastsShadow(book, true)
+
         // 해당 책이 속한 섹션을 재레이아웃하여 현재 방향으로 배치
         if let state = state,
            let secIdx = state.sections.firstIndex(where: { $0.books.contains(where: { $0 === book }) }) {
@@ -109,6 +115,26 @@ class BookInteractionState {
         viewingLocalTransform = nil
         viewBaseRotation = simd_quatf(angle: 0, axis: SIMD3(0, 1, 0))
         viewCurrentRotation = viewBaseRotation
+    }
+
+    /// dismissBook 을 우회하고 포커싱 상태만 즉시 해제할 때 ContentView에서 호출.
+    /// 그림자 오버라이드만 복원.
+    func restoreShadowForViewedBook() {
+        guard let book = viewedBook else { return }
+        Self.setCastsShadow(book, true)
+    }
+
+    /// 엔티티 트리에 재귀적으로 DynamicLightShadowComponent를 토글.
+    /// 책은 보통 container + 자식 plane/mesh들의 복합체라 재귀가 필요.
+    static func setCastsShadow(_ entity: Entity, _ casts: Bool) {
+        if casts {
+            entity.components.remove(DynamicLightShadowComponent.self)
+        } else {
+            entity.components.set(DynamicLightShadowComponent(castsShadow: false))
+        }
+        for child in entity.children {
+            setCastsShadow(child, casts)
+        }
     }
 
     /// 뷰잉 중인 책의 책장 꽂기 방향 변경. 섹션 오버플로우 시 다른 책들이 근처로 밀려남.

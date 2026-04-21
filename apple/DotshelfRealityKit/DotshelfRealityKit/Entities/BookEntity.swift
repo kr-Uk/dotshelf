@@ -50,11 +50,56 @@ enum PlacementOrientation: CaseIterable {
     }
 }
 
+/// 책장 내 꾸미기 오브젝트 프리셋 — 페이즈 C 스텝 5.
+enum DecorationPreset: String, CaseIterable, Identifiable {
+    case biplane
+    case greenPot
+    case blueCube
+    case goldClock
+    case coralFrame
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .biplane:    return "복엽기"
+        case .greenPot:   return "화분"
+        case .blueCube:   return "파란 큐브"
+        case .goldClock:  return "황동 시계"
+        case .coralFrame: return "액자"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .biplane:    return "airplane"
+        case .greenPot:   return "leaf.fill"
+        case .blueCube:   return "cube.fill"
+        case .goldClock:  return "clock.fill"
+        case .coralFrame: return "photo"
+        }
+    }
+
+    /// 갤러리 미리보기용 컬러 (SwiftUI)
+    var previewRGB: (Double, Double, Double) {
+        switch self {
+        case .biplane:    return (0.60, 0.55, 0.50)
+        case .greenPot:   return (0.38, 0.58, 0.32)
+        case .blueCube:   return (0.24, 0.42, 0.72)
+        case .goldClock:  return (0.86, 0.70, 0.24)
+        case .coralFrame: return (0.86, 0.48, 0.40)
+        }
+    }
+}
+
 struct BookComponent: Component {
     var thickness: Float
     var height: Float
     var width: Float
     var orientation: PlacementOrientation = .spine
+    /// 보관함에서 복구할 때 동일한 색으로 재생성하기 위한 팔레트 tint.
+    /// 스캔/biplane 같이 프로시저럴이 아닌 책은 nil — 보관 불가로 취급.
+    var tintColor: PlatformColor?
 
     /// 현재 방향에서 책장에 차지하는 가로 공간
     var footprint: Float {
@@ -85,7 +130,12 @@ enum BookEntity {
             shapes: [.generateBox(width: thickness, height: height, depth: width)]
         )
         entity.components.set(InputTargetComponent())
-        entity.components.set(BookComponent(thickness: thickness, height: height, width: width))
+        entity.components.set(BookComponent(
+            thickness: thickness,
+            height: height,
+            width: width,
+            tintColor: color
+        ))
 
         return entity
     }
@@ -113,6 +163,128 @@ enum BookEntity {
         )
         entity.components.set(InputTargetComponent())
         entity.components.set(BookComponent(thickness: thickness, height: height, width: width))
+        return entity
+    }
+
+    /// 기본 박스 책 + 표지/책등/후면 텍스트 plane 부착.
+    /// `.spine` orientation 기준: +X=표지, -X=후면, +Z=책등(카메라를 향함).
+    @MainActor
+    static func createWithFaces(
+        thickness: Float = 0.03,
+        height: Float = 0.24,
+        width: Float = 0.16,
+        color: PlatformColor,
+        record: BookRecord
+    ) -> ModelEntity {
+        let entity = create(thickness: thickness, height: height, width: width, color: color)
+        attachFaces(to: entity, thickness: thickness, height: height, width: width, color: color, record: record)
+        return entity
+    }
+
+    @MainActor
+    private static func attachFaces(
+        to entity: ModelEntity,
+        thickness: Float,
+        height: Float,
+        width: Float,
+        color: PlatformColor,
+        record: BookRecord
+    ) {
+        let offset: Float = 0.0005  // z-fighting 방지
+
+        // 표지 (+X) — plane normal +Z → Y축 +90° 회전으로 +X 향함
+        if let mat = BookFaceRenderer.coverMaterial(record: record, bgColor: color) {
+            let mesh = MeshResource.generatePlane(width: width, height: height)
+            let plane = ModelEntity(mesh: mesh, materials: [mat])
+            plane.position = SIMD3(thickness / 2 + offset, 0, 0)
+            plane.orientation = simd_quatf(angle: .pi / 2, axis: SIMD3(0, 1, 0))
+            entity.addChild(plane)
+        }
+        // 후면 (-X) — Y축 -90° 회전
+        if let mat = BookFaceRenderer.backMaterial(record: record, bgColor: color) {
+            let mesh = MeshResource.generatePlane(width: width, height: height)
+            let plane = ModelEntity(mesh: mesh, materials: [mat])
+            plane.position = SIMD3(-(thickness / 2 + offset), 0, 0)
+            plane.orientation = simd_quatf(angle: -.pi / 2, axis: SIMD3(0, 1, 0))
+            entity.addChild(plane)
+        }
+        // 책등 (+Z) — identity rotation, 크기 thickness × height
+        if let mat = BookFaceRenderer.spineMaterial(record: record, bgColor: color) {
+            let mesh = MeshResource.generatePlane(width: thickness, height: height)
+            let plane = ModelEntity(mesh: mesh, materials: [mat])
+            plane.position = SIMD3(0, 0, width / 2 + offset)
+            entity.addChild(plane)
+        }
+    }
+
+    // MARK: - 책장 내 꾸미기 오브젝트 (페이즈 C 스텝 5)
+
+    /// 이름 prefix "deco_"로 탭 대상에서 제외되는 꾸미기 오브젝트.
+    /// BookComponent를 가져 기존 섹션 시스템(정렬·이동 등)과 호환.
+    @MainActor
+    static func createDecoration(kind: DecorationPreset) -> Entity {
+        switch kind {
+        case .biplane:
+            if let b = loadBiplaneDecoration(targetSize: 0.12) {
+                b.name = "deco_biplane_\(UUID().uuidString.prefix(6))"
+                return b
+            }
+            return createDecorationBox(
+                color: PlatformColor.gray,
+                thickness: 0.05, height: 0.10, width: 0.10,
+                name: "deco_fallback_\(UUID().uuidString.prefix(6))"
+            )
+        case .greenPot:
+            return createDecorationBox(
+                color: PlatformColor(red: 0.38, green: 0.58, blue: 0.32, alpha: 1),
+                thickness: 0.08, height: 0.14, width: 0.08,
+                name: "deco_pot_\(UUID().uuidString.prefix(6))"
+            )
+        case .blueCube:
+            return createDecorationBox(
+                color: PlatformColor(red: 0.24, green: 0.42, blue: 0.72, alpha: 1),
+                thickness: 0.08, height: 0.08, width: 0.08,
+                name: "deco_cube_\(UUID().uuidString.prefix(6))"
+            )
+        case .goldClock:
+            return createDecorationBox(
+                color: PlatformColor(red: 0.86, green: 0.70, blue: 0.24, alpha: 1),
+                thickness: 0.04, height: 0.10, width: 0.10,
+                name: "deco_clock_\(UUID().uuidString.prefix(6))"
+            )
+        case .coralFrame:
+            return createDecorationBox(
+                color: PlatformColor(red: 0.86, green: 0.48, blue: 0.40, alpha: 1),
+                thickness: 0.02, height: 0.12, width: 0.10,
+                name: "deco_frame_\(UUID().uuidString.prefix(6))"
+            )
+        }
+    }
+
+    private static func createDecorationBox(
+        color: PlatformColor,
+        thickness: Float,
+        height: Float,
+        width: Float,
+        name: String
+    ) -> ModelEntity {
+        let mesh = MeshResource.generateBox(
+            width: thickness, height: height, depth: width,
+            cornerRadius: 0.005
+        )
+        var mat = PhysicallyBasedMaterial()
+        mat.baseColor = .init(tint: color)
+        mat.roughness = .init(floatLiteral: 0.5)
+        mat.metallic = .init(floatLiteral: 0.0)
+        let entity = ModelEntity(mesh: mesh, materials: [mat])
+        entity.name = name
+        entity.collision = CollisionComponent(
+            shapes: [.generateBox(width: thickness, height: height, depth: width)]
+        )
+        entity.components.set(InputTargetComponent())
+        entity.components.set(BookComponent(
+            thickness: thickness, height: height, width: width, tintColor: color
+        ))
         return entity
     }
 

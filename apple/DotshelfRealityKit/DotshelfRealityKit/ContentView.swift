@@ -11,6 +11,9 @@ enum CameraViewMode {
 }
 
 struct ContentView: View {
+    /// 루트에서 주입되는 세션. 로그아웃/탈퇴 시 Settings → Auth 연결.
+    var auth: AuthStore = AuthStore()
+
     /// 책장을 뒷벽에 붙인 위치 (뒷벽 z=-1.0, 책장 깊이 0.25, 뒷판 위치 -0.122, 5mm 간격)
     private let bookshelfZ: Float = -0.873
 
@@ -18,6 +21,8 @@ struct ContentView: View {
     @State private var cameraMode: CameraViewMode = .overview
     @State private var bookshelfState = BookshelfState()
     @State private var interactionState = BookInteractionState()
+    @State private var recordStore = BookRecordStore()
+    @State private var archiveStore = ArchiveStore()
 
     // 배치 변경 UI 상태
     @State private var isEditingOrientation = false
@@ -32,13 +37,126 @@ struct ContentView: View {
     @State private var whiteboardSurface: ModelEntity?
     @State private var likeCount: Int = 234
     @State private var isLiked: Bool = false
-    // 동일 내용 재렌더 방지용 캐시 키 (bookCount-likeCount-isLiked)
+    // 동일 내용 재렌더 방지용 캐시 키
     @State private var lastWhiteboardKey: String?
+
+    // 페이즈 D — 방명록/프로필 편집 오버레이 상태
+    @State private var guestbookStore = GuestbookStore()
+    @State private var isGuestbookComposerOpen = false
+    @State private var replyTargetEntry: GuestbookEntry?
+    @State private var isBioEditorOpen = false
+    @State private var isDashboardDetailOpen = false
+    @State private var dashboardInitialTab: DashboardFocusOverlay.Tab = .summary
+
+    // 페이즈 J — 설정 오버레이
+    @State private var settingsStore = SettingsStore()
+    @State private var isSettingsOpen = false
+
+    // 페이즈 F — 노트북 포커싱
+    @State private var marketStore = MarketStore()
+    @State private var isLaptopOpen = false
+
+    // 페이즈 B — 독서기록 2D 오버레이
+    @State private var isReadingRecordOpen = false
+    @State private var readingRecordBookName: String?
+
+    // 페이즈 C — 책장 편집 오버레이
+    @State private var isBookshelfEditOpen = false
+    @State private var isBookSearchOpen = false
+    @State private var isArchiveOpen = false
+    @State private var isReorderOpen = false
+    @State private var isDecorationGalleryOpen = false
+
+    // 페이즈 E — 쿼터뷰 사회적 액션
+    /// 디버그용 — 주인/방문자 시점 토글. 실제 서비스에선 로그인한 사용자와 공간 주인의 일치 여부로 판정.
+    @State private var isVisitorMode: Bool = false
+    @State private var isFollowingSpace: Bool = false
+    @State private var hasLikedSpace: Bool = false
+    @State private var spaceLikeCount: Int = 128
+    @State private var isRoomEditPlaceholderOn: Bool = false  // 페이즈 G 진입 stub
 
     // 정면 뷰에서 카메라 팬 드래그 시작점
     @State private var cameraPanStart: SIMD3<Float>?
 
     var body: some View {
+        sceneCore
+            .overlay(alignment: .topLeading) { debugStatusBadge }
+            .overlay { flipButtonsLayer }
+            .overlay(alignment: .topTrailing) { topTrailingControls }
+            .overlay(alignment: .bottom) { bookActionBarLayer }
+            .overlay(alignment: .trailing) { bookReadingPanelLayer }
+            .overlay(alignment: .topTrailing) { adBookHeaderLayer }
+            .overlay { orientationEditorLayer }
+            .overlay { sectionAlignmentLayer }
+            .overlay(alignment: .bottom) { whiteboardActionBarBlock }
+            .overlay { whiteboardComposerBlock }
+            .overlay { whiteboardReplyBlock }
+            .overlay { whiteboardBioEditorBlock }
+            .overlay { settingsOverlayBlock }
+            .overlay { laptopFocusLayer }
+            .overlay { dashboardDetailLayer }
+            .overlay(alignment: .bottomLeading) { viewedBookBackButton }
+            .overlay { readingRecordLayer }
+            .overlay(alignment: .topLeading) { bookshelfEditMenuLayer }
+            .overlay { bookSearchOverlayView }
+            .overlay { archiveOverlayView }
+            .overlay { reorderOverlayView }
+            .overlay { decorationGalleryOverlayView }
+            .overlay(alignment: .topLeading) { quarterViewSocialHUD }
+            .onChange(of: guestbookStore.entries.count) { _, _ in
+                renderWhiteboardTexture()
+                syncDashboardEntryHits()
+            }
+            .onChange(of: whiteboardSurface) { _, _ in
+                syncDashboardEntryHits()
+                renderWhiteboardTexture()
+            }
+            .onChange(of: guestbookStore.bioText) { _, _ in renderWhiteboardTexture() }
+            .onChange(of: guestbookStore.listVisibility) { _, _ in renderWhiteboardTexture() }
+            .onChange(of: likeCount) { _, _ in renderWhiteboardTexture() }
+            .onChange(of: isLiked) { _, _ in renderWhiteboardTexture() }
+            .onChange(of: cameraMode) { _, new in
+                if new == .whiteboard { renderWhiteboardTexture() }
+                if isEditingOrientation { cancelEditing() }
+            }
+            .animation(.easeInOut(duration: 0.2), value: isGuestbookComposerOpen)
+            .animation(.easeInOut(duration: 0.2), value: isBioEditorOpen)
+            .animation(.easeInOut(duration: 0.2), value: replyTargetEntry?.id)
+            .animation(.easeInOut(duration: 0.2), value: isSettingsOpen)
+            .animation(.easeInOut(duration: 0.3), value: cameraMode)
+            .animation(.easeInOut(duration: 0.25), value: isEditingOrientation)
+            .animation(.easeInOut(duration: 0.2), value: selectedSectionForAlignment)
+            .animation(.easeInOut(duration: 0.22), value: isReadingRecordOpen)
+            .animation(.easeInOut(duration: 0.22), value: isBookshelfEditOpen)
+            .animation(.easeInOut(duration: 0.22), value: isBookSearchOpen)
+            .animation(.easeInOut(duration: 0.22), value: isArchiveOpen)
+            .animation(.easeInOut(duration: 0.3), value: interactionState.isViewingBook)
+            .background {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.95, green: 0.91, blue: 0.85),
+                        Color(red: 0.88, green: 0.83, blue: 0.76),
+                        Color(red: 0.78, green: 0.72, blue: 0.65)
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .ignoresSafeArea()
+            }
+            #if os(macOS)
+            .frame(minWidth: 800, minHeight: 600)
+            .background {
+                ScrollZoomCaptureView { delta in
+                    guard let camera = cameraEntity else { return }
+                    guard !interactionState.isViewingBook else { return }
+                    guard cameraMode == .frontal else { return }
+                    CameraController.zoom(camera: camera, delta: -delta, targetZ: bookshelfZ)
+                }
+            }
+            #endif
+    }
+
+    /// RealityView + gesture chain만 포함. type-check 부담 축소용 추출.
+    private var sceneCore: some View {
         RealityView { content in
             // 방 환경 (바닥 + 벽)
             let room = RoomEnvironment.create()
@@ -210,9 +328,10 @@ struct ContentView: View {
                 .targetedToAnyEntity()
                 .onEnded { value in
                     let name = value.entity.name
-                    // 책 탭 → 책 보기
+                    // 책 탭 → 책 보기 (배치 편집 중이면 자동 취소 후 진입)
                     if name.hasPrefix("book_") {
                         guard !interactionState.isDragging else { return }
+                        if isEditingOrientation { cancelEditing() }
                         selectedSectionForAlignment = nil
                         interactionState.viewBook(entity: value.entity, camera: cameraEntity)
                         return
@@ -236,12 +355,21 @@ struct ContentView: View {
                             cameraMode = .frontal
                         }
                     }
-                    // 화이트보드 탭 → 화이트보드 정면 뷰
-                    if name == "whiteboard_frame" {
+                    // 노트북 탭 → §5 노트북 포커싱 2D 오버레이
+                    if name == "laptop_hit" {
+                        isLaptopOpen = true
+                        return
+                    }
+                    // 화이트보드 프레임/표면 탭 → 화이트보드 뷰 전환 (하위 element hit은 아래에서 처리)
+                    if name == "whiteboard_frame" || name == "whiteboard_surface" {
                         if let camera = cameraEntity {
                             CameraController.moveToWhiteboard(camera: camera)
                             cameraMode = .whiteboard
                         }
+                    }
+                    // 페이즈 D — 대시보드 element별 hit 박스 탭 (whiteboard 모드에서만 반응)
+                    if cameraMode == .whiteboard {
+                        handleDashboardHit(name: name)
                     }
                 }
         )
@@ -323,305 +451,420 @@ struct ContentView: View {
                 }
         )
         #endif
-        .overlay(alignment: .topLeading) {
-            // 디버그: glTF 책 로드 상태 표시
-            Text("glTF: \(BookEntity.scannedBookLoadStatus)")
-                .font(.system(size: 12, design: .monospaced))
-                .padding(8)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
-                .padding(12)
-        }
-        .overlay {
-            // 책장 양 옆에 플립 버튼 (책장 좌/우 가장자리의 월드좌표를 스크린에 투영)
-            if bookshelfState.bookshelves.count > 1,
-               !interactionState.isViewingBook, !isEditingOrientation,
-               cameraMode != .whiteboard,
-               let camera = cameraEntity {
-                GeometryReader { geo in
-                    TimelineView(.animation) { _ in
-                        // 책장 좌/우 엣지 바깥쪽 (책장 폭 1.6m, 높이 중심 0.8m)
-                        let leftWorld = SIMD3<Float>(-0.95, 0.8, bookshelfZ)
-                        let rightWorld = SIMD3<Float>(0.95, 0.8, bookshelfZ)
-                        let leftScreen = Self.projectWorldToScreen(worldPos: leftWorld, camera: camera, viewSize: geo.size)
-                        let rightScreen = Self.projectWorldToScreen(worldPos: rightWorld, camera: camera, viewSize: geo.size)
-
-                        if let p = leftScreen {
-                            flipButton(direction: .left)
-                                .position(x: p.x, y: p.y)
-                        }
-                        if let p = rightScreen {
-                            flipButton(direction: .right)
-                                .position(x: p.x, y: p.y)
-                        }
-                    }
-                }
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            // 오버뷰가 아닌 뷰에서 오버뷰로 돌아가는 버튼
-            if cameraMode != .overview && !interactionState.isViewingBook {
-                Button(action: {
-                    if let camera = cameraEntity {
-                        CameraController.moveToOverview(camera: camera, bookshelfZ: bookshelfZ)
-                        cameraMode = .overview
-                    }
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("방 전체")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-                .padding(12)
-                .transition(.opacity)
-            } else if cameraMode == .overview && !interactionState.isViewingBook {
-                // 오버뷰에서 두 가지 디버그 뷰로 진입 (외부 / 실내)
-                VStack(spacing: 8) {
-                    Button(action: {
-                        if let camera = cameraEntity {
-                            CameraController.moveToDebug(camera: camera)
-                            cameraMode = .debug
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "cube.transparent")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text("디버그 뷰")
-                                .font(.system(size: 13, weight: .medium))
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(action: {
-                        if let camera = cameraEntity {
-                            CameraController.moveToInteriorOverview(camera: camera)
-                            cameraMode = .interior
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "house")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text("실내 조감")
-                                .font(.system(size: 13, weight: .medium))
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(12)
-                .transition(.opacity)
-            }
-        }
-        .overlay(alignment: .bottom) {
-            // 책 뷰잉 중: "배치 변경" 버튼
-            if interactionState.isViewingBook && !isEditingOrientation {
-                changePlacementButton
-                    .padding(.bottom, 24)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-        }
-        .overlay(alignment: .trailing) {
-            // 책 확대 시 우측에 독서기록 + 댓글 패널 (광고 책은 제외)
-            if interactionState.isViewingBook && !isEditingOrientation,
-               let viewedBook = interactionState.viewedBook,
-               !viewedBook.name.contains("_ad") {
-                BookReadingPanel(bookName: viewedBook.name)
-                    .padding(.trailing, 24)
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            // 광고 책 확대 시 AD 배지 + X 닫기
-            if interactionState.isViewingBook,
-               let viewedBook = interactionState.viewedBook,
-               viewedBook.name.contains("_ad") {
-                HStack(spacing: 12) {
-                    Text("AD")
-                        .font(.system(size: 12, weight: .black))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color.orange, in: Capsule())
-                    Text("광고")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button(action: { dismissAdBook(viewedBook) }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 28))
-                            .foregroundStyle(.white, .black.opacity(0.5))
-                            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(20)
-                .transition(.opacity)
-            }
-        }
-        .overlay {
-            // 배치 편집 중: 책 근처에 옵션 + 확인/취소
-            if isEditingOrientation, let editingBook, let camera = cameraEntity {
-                GeometryReader { geo in
-                    TimelineView(.animation) { _ in
-                        let worldPos = editingBook.position(relativeTo: nil)
-                        let projected = Self.projectWorldToScreen(
-                            worldPos: worldPos,
-                            camera: camera,
-                            viewSize: geo.size
-                        )
-                        let fallback = CGPoint(x: geo.size.width / 2, y: geo.size.height * 0.7)
-                        let screenPos = projected ?? fallback
-                        // 책 아래쪽에 UI 배치, 화면 경계 내로 클램프
-                        let uiY = min(screenPos.y + 140, geo.size.height - 70)
-                        let uiX = min(max(screenPos.x, 140), geo.size.width - 140)
-                        orientationEditor
-                            .position(x: uiX, y: uiY)
-                    }
-                }
-                .transition(.opacity)
-            }
-        }
-        .overlay {
-            // 섹션 정렬 선택 UI (섹션 탭 시)
-            if let secIdx = selectedSectionForAlignment, let camera = cameraEntity,
-               secIdx < bookshelfState.sections.count,
-               let shelfRoot = bookshelfState.shelfRoot {
-                GeometryReader { geo in
-                    TimelineView(.animation) { _ in
-                        let sec = bookshelfState.sections[secIdx]
-                        let localCenter = SIMD3<Float>(
-                            (sec.leftBound + sec.rightBound) / 2,
-                            sec.shelfTopY + sec.sectionHeight / 2,
-                            0
-                        )
-                        let worldPos = shelfRoot.position(relativeTo: nil) + localCenter
-                        let projected = Self.projectWorldToScreen(
-                            worldPos: worldPos,
-                            camera: camera,
-                            viewSize: geo.size
-                        )
-                        let fallback = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
-                        let screenPos = projected ?? fallback
-                        let uiY = max(min(screenPos.y + 80, geo.size.height - 50), 50)
-                        let uiX = min(max(screenPos.x, 100), geo.size.width - 100)
-                        alignmentPicker(for: secIdx)
-                            .position(x: uiX, y: uiY)
-                    }
-                }
-                .transition(.opacity)
-            }
-        }
-        .overlay(alignment: .bottom) {
-            // 화이트보드 뷰에서 좋아요 인터랙션 버튼 (대시보드 자체는 화이트보드 텍스처로 렌더링)
-            if cameraMode == .whiteboard {
-                Button(action: toggleLike) {
-                    HStack(spacing: 8) {
-                        Image(systemName: isLiked ? "heart.fill" : "heart")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(isLiked ? .red : .primary)
-                        Text(isLiked ? "좋아요 취소" : "좋아요")
-                            .font(.system(size: 14, weight: .medium))
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
-                }
-                .buttonStyle(.plain)
-                .padding(.bottom, 24)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-        }
-        .animation(.easeInOut(duration: 0.3), value: cameraMode)
-        .onChange(of: whiteboardSurface) { _, _ in renderWhiteboardTexture() }
-        .onChange(of: likeCount) { _, _ in renderWhiteboardTexture() }
-        .onChange(of: isLiked) { _, _ in renderWhiteboardTexture() }
-        .onChange(of: cameraMode) { _, new in
-            if new == .whiteboard { renderWhiteboardTexture() }  // 최신 책 개수 반영
-        }
-        .animation(.easeInOut(duration: 0.25), value: isEditingOrientation)
-        .animation(.easeInOut(duration: 0.2), value: selectedSectionForAlignment)
-        .overlay(alignment: .bottomLeading) {
-            if interactionState.isViewingBook {
-                Button(action: {
-                    interactionState.dismissBook(state: bookshelfState)
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("뒤로")
-                            .font(.system(size: 14, weight: .medium))
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-                .padding(20)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-        }
-        .animation(.easeInOut(duration: 0.3), value: interactionState.isViewingBook)
-        #if os(macOS)
-        .frame(minWidth: 800, minHeight: 600)
-        #endif
-        .background {
-            // 따뜻한 스튜디오 느낌 그라데이션 배경
-            LinearGradient(
-                colors: [
-                    Color(red: 0.95, green: 0.91, blue: 0.85),
-                    Color(red: 0.88, green: 0.83, blue: 0.76),
-                    Color(red: 0.78, green: 0.72, blue: 0.65)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-        }
-        #if os(macOS)
-        .background {
-            ScrollZoomCaptureView { delta in
-                guard let camera = cameraEntity else { return }
-                guard !interactionState.isViewingBook else { return }
-                guard cameraMode == .frontal else { return }  // 오버뷰에서는 줌 비활성
-                CameraController.zoom(camera: camera, delta: -delta, targetZ: bookshelfZ)
-            }
-        }
-        #endif
     }
 
-    // MARK: - "배치 변경" 버튼 (책 확대 상태에서 표시)
-    private var changePlacementButton: some View {
-        Button(action: {
-            guard let book = interactionState.viewedBook else { return }
-            let orient = book.components[BookComponent.self]?.orientation ?? .spine
-            editingBook = book
-            editingBookOriginalOrientation = orient
-            stagedOrientation = orient
-            interactionState.dismissBook(state: bookshelfState)
-            isEditingOrientation = true
-        }) {
-            HStack(spacing: 6) {
-                Image(systemName: "rotate.3d")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("배치 변경")
-                    .font(.system(size: 13, weight: .medium))
+    // MARK: - 책 확대 시 액션 (페이즈 A — §3 명세)
+
+    private func startPlacementEditing() {
+        guard let book = interactionState.viewedBook else { return }
+        let orient = book.components[BookComponent.self]?.orientation ?? .spine
+        editingBook = book
+        editingBookOriginalOrientation = orient
+        stagedOrientation = orient
+        interactionState.dismissBook(state: bookshelfState)
+        isEditingOrientation = true
+    }
+
+    /// 책장 변경: 책을 화면 앞(world-fixed dragLayer)에 유지한 채 target 책장으로 턴테이블 회전,
+    /// 회전 완료 후 target 섹션 자리로 꽂히는 애니메이션 + 포커싱 해제.
+    private func moveViewedBookToBookshelf(_ targetIdx: Int) {
+        guard let book = interactionState.viewedBook else { return }
+        let count = bookshelfState.bookshelves.count
+        guard targetIdx >= 0, targetIdx < count, targetIdx != bookshelfState.currentIndex else { return }
+
+        let bookComp = book.components[BookComponent.self]
+        let footprint = bookComp?.footprint ?? 0.03
+
+        // 1) 현재 책장 섹션에서 제거 (데이터만)
+        var removedFromCurrent = false
+        for i in 0..<bookshelfState.sections.count {
+            if let idx = bookshelfState.sections[i].books.firstIndex(where: { $0 === book }) {
+                bookshelfState.sections[i].books.remove(at: idx)
+                bookshelfState.layoutSection(i, duration: 0.25)
+                removedFromCurrent = true
+                break
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+        }
+        guard removedFromCurrent else { return }
+
+        // 2) target 책장의 fit 가능한 섹션 찾기 + 데이터 삽입
+        var targetSections = bookshelfState.bookshelves[targetIdx].sections
+        guard let targetSecIdx = targetSections.firstIndex(where: { $0.canFit(extraFootprint: footprint) }) else {
+            print("⚠️ 타겟 책장 \(targetIdx + 1)에 공간 없음 — 원래 책장으로 복구")
+            // 원래 책장의 fit 가능한 섹션에 다시 삽입
+            for i in 0..<bookshelfState.sections.count where bookshelfState.sections[i].canFit(extraFootprint: footprint) {
+                bookshelfState.sections[i].books.append(book)
+                bookshelfState.layoutSection(i, duration: 0.3)
+                break
+            }
+            return
+        }
+        targetSections[targetSecIdx].books.append(book)
+        bookshelfState.bookshelves[targetIdx].sections = targetSections
+
+        // 3) 회전 동안 책이 카메라 앞에 고정되도록 world-identity dragLayer로 재부모화
+        if let dragLayer = bookshelfState.dragLayer {
+            book.setParent(dragLayer, preservingWorldTransform: true)
+            // viewingLocalTransform을 새 parent 기준으로 업데이트 (혹시 회전 입력이 들어올 때 안전)
+            interactionState.viewingLocalTransform = book.transform
+        }
+
+        // 4) 최단 방향으로 회전 (다단계면 FIFO 큐잉)
+        let forward = (targetIdx - bookshelfState.currentIndex + count) % count
+        let backward = (bookshelfState.currentIndex - targetIdx + count) % count
+        let direction: SwitchDirection = forward <= backward ? .right : .left
+        let steps = min(forward, backward)
+        for _ in 0..<steps {
+            bookshelfState.switchTo(direction: direction)
+        }
+
+        // 5) 회전 완료 후 target 책장으로 재부모화 + 섹션 자리로 꽂히는 애니메이션 + 포커싱 해제
+        let rotationSeconds: Double = Double(steps) * 1.0 + 0.05  // 각 flip 1초 + 소량 버퍼
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(rotationSeconds))
+            let targetEntity = bookshelfState.bookshelves[targetIdx].entity
+            book.setParent(targetEntity, preservingWorldTransform: true)
+            // dismissBook은 책이 속한 섹션을 찾아 layoutSection으로 제자리로 애니메이션 (0.4초)
+            interactionState.dismissBook(state: bookshelfState)
+        }
+    }
+
+    private func archiveViewedBook() {
+        guard let book = interactionState.viewedBook else { return }
+        // 엔티티 제거 전에 메타 데이터 사진 찍기
+        _ = archiveStore.archiveBookEntity(book, using: recordStore)
+        recordStore.update(book.name) { $0.isArchived = true }
+        removeBookFromShelf(book)
+        dismissViewingDirectly()
+    }
+
+    private func deleteViewedBook() {
+        guard let book = interactionState.viewedBook else { return }
+        recordStore.remove(book.name)
+        removeBookFromShelf(book)
+        dismissViewingDirectly()
+    }
+
+    private func openReadingRecordForViewedBook() {
+        guard let name = interactionState.viewedBook?.name else { return }
+        readingRecordBookName = name
+        isReadingRecordOpen = true
+    }
+
+    private func removeBookFromShelf(_ book: Entity) {
+        for bi in 0..<bookshelfState.bookshelves.count {
+            for si in 0..<bookshelfState.bookshelves[bi].sections.count {
+                if let idx = bookshelfState.bookshelves[bi].sections[si].books.firstIndex(where: { $0 === book }) {
+                    bookshelfState.bookshelves[bi].sections[si].books.remove(at: idx)
+                    if bi == bookshelfState.currentIndex, si < bookshelfState.sections.count {
+                        bookshelfState.sections[si].books.removeAll { $0 === book }
+                        bookshelfState.layoutSection(si, duration: 0.25)
+                    }
+                    break
+                }
+            }
+        }
+        book.removeFromParent()
+    }
+
+    private func dismissViewingDirectly() {
+        interactionState.restoreShadowForViewedBook()
+        interactionState.isViewingBook = false
+        interactionState.viewedBook = nil
+        interactionState.viewedBookOriginalTransform = nil
+        interactionState.viewingLocalTransform = nil
+    }
+
+    // MARK: - 페이즈 C — 책장 편집 액션
+
+    private func addBookshelfAction() {
+        bookshelfState.addEmptyBookshelfAndSwitch()
+    }
+
+    private func removeBookshelfAction() {
+        _ = bookshelfState.removeCurrentBookshelf { book in
+            // tintColor가 있는 기본 박스 책만 보관함으로. 나머지는 그냥 제거.
+            if archiveStore.archiveBookEntity(book, using: recordStore) {
+                recordStore.update(book.name) { $0.isArchived = true }
+            }
+            book.removeFromParent()
+        }
+        isBookshelfEditOpen = false
+    }
+
+    /// 꾸미기 프리셋을 현재 책장의 첫 fit 섹션에 삽입.
+    private func addDecoration(_ preset: DecorationPreset) -> Bool {
+        let entity = BookEntity.createDecoration(kind: preset)
+        return insertBookIntoCurrentShelf(entity, seedRecord: nil, bookName: entity.name)
+    }
+
+    // MARK: - 오버레이 뷰 (컴파일러 타입 추론 부담 완화를 위해 분리)
+
+    @ViewBuilder
+    private var bookSearchOverlayView: some View {
+        if isBookSearchOpen {
+            BookSearchOverlay(
+                onAdd: { cb in addBookFromCatalog(cb) },
+                onClose: { isBookSearchOpen = false }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        }
+    }
+
+    @ViewBuilder
+    private var archiveOverlayView: some View {
+        if isArchiveOpen {
+            ArchiveView(
+                store: archiveStore,
+                onRestore: { item in restoreBookFromArchive(item) },
+                onDeletePermanently: { item in archiveStore.remove(id: item.id) },
+                onClose: { isArchiveOpen = false }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        }
+    }
+
+    @ViewBuilder
+    private var reorderOverlayView: some View {
+        if isReorderOpen {
+            BookshelfReorderOverlay(
+                state: bookshelfState,
+                onMove: { from, to in bookshelfState.moveBookshelf(from: from, to: to) },
+                onClose: { isReorderOpen = false }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        }
+    }
+
+    @ViewBuilder
+    private var decorationGalleryOverlayView: some View {
+        if isDecorationGalleryOpen {
+            DecorationGalleryOverlay(
+                onAdd: { preset in addDecoration(preset) },
+                onClose: { isDecorationGalleryOpen = false }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        }
+    }
+
+    // MARK: - 페이즈 E — 쿼터뷰 사회적 액션 (팔로우/공간 좋아요/편집 진입)
+
+    @ViewBuilder
+    private var quarterViewSocialHUD: some View {
+        if cameraMode == .overview
+            && !interactionState.isViewingBook
+            && !isSettingsOpen
+            && !isLaptopOpen
+            && !isDashboardDetailOpen
+        {
+            VStack(alignment: .leading, spacing: 10) {
+                viewerModeTogglePill
+                if isVisitorMode {
+                    HStack(spacing: 8) {
+                        followSpaceButton
+                        spaceLikeButton
+                    }
+                } else {
+                    editRoomButton
+                }
+                if isRoomEditPlaceholderOn {
+                    roomEditComingSoonBanner
+                }
+            }
+            .padding(.top, 54)   // 좌상단 debug 배지 아래
+            .padding(.leading, 12)
+            .transition(.opacity)
+        }
+    }
+
+    private var viewerModeTogglePill: some View {
+        Button {
+            isVisitorMode.toggle()
+            isRoomEditPlaceholderOn = false
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: isVisitorMode ? "person" : "crown.fill")
+                    .font(.system(size: 11, weight: .bold))
+                Text(isVisitorMode ? "방문자 시점" : "주인 시점")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(isVisitorMode ? Color.primary : Color.orange)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(.ultraThinMaterial, in: Capsule())
         }
         .buttonStyle(.plain)
+        .help(isVisitorMode ? "내 공간을 내가 방문한 모습으로 미리보기" : "주인 시점 — 편집 가능")
+    }
+
+    private var followSpaceButton: some View {
+        Button {
+            isFollowingSpace.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: isFollowingSpace ? "checkmark" : "plus")
+                    .font(.system(size: 11, weight: .bold))
+                Text(isFollowingSpace ? "팔로잉" : "팔로우")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(isFollowingSpace ? Color.primary : Color.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(
+                Capsule().fill(isFollowingSpace ? Color.gray.opacity(0.2) : Color.accentColor)
+            )
+            .overlay(
+                Capsule().strokeBorder(isFollowingSpace ? Color.primary.opacity(0.2) : .clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var spaceLikeButton: some View {
+        Button {
+            if hasLikedSpace {
+                hasLikedSpace = false
+                spaceLikeCount = max(0, spaceLikeCount - 1)
+            } else {
+                hasLikedSpace = true
+                spaceLikeCount += 1
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: hasLikedSpace ? "heart.fill" : "heart")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(hasLikedSpace ? Color.red : Color.primary)
+                Text("\(spaceLikeCount)")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("공간 좋아요 — 대시보드에만 카운트 표시")
+    }
+
+    /// 주인 시점 — 공간 편집(페이즈 G) 진입 버튼. MVP는 stub 배너.
+    private var editRoomButton: some View {
+        Button {
+            isRoomEditPlaceholderOn.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "wand.and.stars")
+                    .font(.system(size: 11, weight: .bold))
+                Text("공간 편집")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("공간 편집 서랍 (페이즈 G)")
+    }
+
+    private var roomEditComingSoonBanner: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "hourglass")
+                .font(.system(size: 10, weight: .bold))
+            Text("공간 편집 서랍(§1.1)은 곧 열려요")
+                .font(.system(size: 11, weight: .medium))
+            Spacer(minLength: 0)
+            Button {
+                isRoomEditPlaceholderOn = false
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: 240, alignment: .leading)
+        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.accentColor.opacity(0.3), lineWidth: 1)
+        )
+        .foregroundStyle(Color.accentColor)
+    }
+
+    // MARK: - 책 추가/복구 공통 (스텝 4)
+
+    /// 카탈로그의 책을 현재 책장의 첫 fit 섹션에 추가.
+    private func addBookFromCatalog(_ cb: CatalogBook) -> Bool {
+        let tint = bookPaletteColor(at: cb.paletteIndex)
+        let bookName = "book_custom_\(UUID().uuidString.prefix(8))"
+        let book = BookEntity.createWithFaces(
+            thickness: cb.thickness,
+            height: cb.height,
+            width: 0.16,
+            color: tint,
+            record: cb.record
+        )
+        book.name = bookName
+        return insertBookIntoCurrentShelf(book, seedRecord: cb.record, bookName: bookName)
+    }
+
+    /// 보관함 아이템을 메타데이터로 재생성해 현재 책장에 복구.
+    private func restoreBookFromArchive(_ item: ArchiveStore.Item) -> Bool {
+        let tint = PlatformColor(
+            red: CGFloat(item.tintR),
+            green: CGFloat(item.tintG),
+            blue: CGFloat(item.tintB),
+            alpha: CGFloat(item.tintA)
+        )
+        let rec = recordStore.record(for: item.bookName)
+        let book = BookEntity.createWithFaces(
+            thickness: item.thickness,
+            height: item.height,
+            width: item.width,
+            color: tint,
+            record: rec
+        )
+        book.name = item.bookName
+        let ok = insertBookIntoCurrentShelf(book, seedRecord: nil, bookName: item.bookName)
+        if ok {
+            recordStore.update(item.bookName) { $0.isArchived = false }
+            archiveStore.remove(id: item.id)
+        }
+        return ok
+    }
+
+    /// 생성된 책 엔티티를 현재 책장의 첫 fit 섹션에 삽입. 성공 여부 반환.
+    private func insertBookIntoCurrentShelf(_ book: Entity, seedRecord: BookRecord?, bookName: String) -> Bool {
+        let comp = book.components[BookComponent.self]
+        let footprint = comp?.footprint ?? 0.03
+        guard let secIdx = bookshelfState.sections.firstIndex(where: { $0.canFit(extraFootprint: footprint) }) else {
+            return false
+        }
+        if let rec = seedRecord {
+            recordStore.update(bookName) { $0 = rec }
+        }
+        bookshelfState.sections[secIdx].books.append(book)
+        bookshelfState.shelfRoot?.addChild(book)
+        bookshelfState.layoutSection(secIdx, duration: 0.3)
+        return true
+    }
+
+    /// populateBooks와 동일한 팔레트 — 카탈로그 paletteIndex로 결정적 색 선택.
+    private func bookPaletteColor(at idx: Int) -> PlatformColor {
+        let palette: [PlatformColor] = [
+            PlatformColor(red: 0.75, green: 0.22, blue: 0.17, alpha: 1),
+            PlatformColor(red: 0.18, green: 0.35, blue: 0.65, alpha: 1),
+            PlatformColor(red: 0.22, green: 0.55, blue: 0.30, alpha: 1),
+            PlatformColor(red: 0.55, green: 0.35, blue: 0.18, alpha: 1),
+            PlatformColor(red: 0.30, green: 0.25, blue: 0.55, alpha: 1),
+            PlatformColor(red: 0.90, green: 0.88, blue: 0.82, alpha: 1),
+            PlatformColor(red: 0.15, green: 0.15, blue: 0.18, alpha: 1),
+            PlatformColor(red: 0.85, green: 0.68, blue: 0.20, alpha: 1),
+            PlatformColor(red: 0.80, green: 0.40, blue: 0.15, alpha: 1),
+            PlatformColor(red: 0.60, green: 0.20, blue: 0.45, alpha: 1),
+            PlatformColor(red: 0.35, green: 0.55, blue: 0.65, alpha: 1),
+            PlatformColor(red: 0.70, green: 0.30, blue: 0.30, alpha: 1),
+        ]
+        return palette[idx % palette.count]
     }
 
     // MARK: - 배치 편집 UI (옵션 + 확인/취소) — 책 근처에 플로팅
@@ -732,6 +975,477 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - body 경량화용 분리 overlay 블록
+
+    private var debugStatusBadge: some View {
+        Text("glTF: \(BookEntity.scannedBookLoadStatus)")
+            .font(.system(size: 12, design: .monospaced))
+            .padding(8)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
+            .padding(12)
+    }
+
+    @ViewBuilder
+    private var viewedBookBackButton: some View {
+        if interactionState.isViewingBook {
+            Button(action: { interactionState.dismissBook(state: bookshelfState) }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("뒤로")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .padding(20)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+
+    @ViewBuilder
+    private var readingRecordLayer: some View {
+        if isReadingRecordOpen, let name = readingRecordBookName {
+            ReadingRecordView(
+                bookName: name,
+                store: recordStore,
+                onDismiss: { isReadingRecordOpen = false }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        }
+    }
+
+    @ViewBuilder
+    private var bookshelfEditMenuLayer: some View {
+        if isBookshelfEditOpen, cameraMode == .frontal {
+            BookshelfEditMenu(
+                state: bookshelfState,
+                archiveCount: archiveStore.items.count,
+                onAddBookshelf: { addBookshelfAction() },
+                onRemoveBookshelf: { removeBookshelfAction() },
+                onAddBook: { isBookSearchOpen = true },
+                onOpenArchive: { isArchiveOpen = true },
+                onAddDecoration: { isDecorationGalleryOpen = true },
+                onReorder: { isReorderOpen = true },
+                onClose: { isBookshelfEditOpen = false }
+            )
+            .padding(.top, 20).padding(.leading, 20)
+            .transition(.opacity.combined(with: .move(edge: .leading)))
+        }
+    }
+
+
+    @ViewBuilder
+    private var flipButtonsLayer: some View {
+        if bookshelfState.bookshelves.count > 1,
+           !interactionState.isViewingBook, !isEditingOrientation,
+           cameraMode != .whiteboard,
+           let camera = cameraEntity {
+            GeometryReader { geo in
+                TimelineView(.animation) { _ in
+                    let leftWorld = SIMD3<Float>(-0.95, 0.8, bookshelfZ)
+                    let rightWorld = SIMD3<Float>(0.95, 0.8, bookshelfZ)
+                    let leftScreen = Self.projectWorldToScreen(worldPos: leftWorld, camera: camera, viewSize: geo.size)
+                    let rightScreen = Self.projectWorldToScreen(worldPos: rightWorld, camera: camera, viewSize: geo.size)
+                    if let p = leftScreen {
+                        flipButton(direction: .left).position(x: p.x, y: p.y)
+                    }
+                    if let p = rightScreen {
+                        flipButton(direction: .right).position(x: p.x, y: p.y)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var bookActionBarLayer: some View {
+        if interactionState.isViewingBook && !isEditingOrientation,
+           let viewedBook = interactionState.viewedBook,
+           !viewedBook.name.contains("_ad") {
+            BookActionBar(
+                bookName: viewedBook.name,
+                store: recordStore,
+                bookshelfNames: (0..<bookshelfState.bookshelves.count).map { "책장 \($0 + 1)" },
+                currentBookshelfIndex: bookshelfState.currentIndex,
+                onChangePlacement: { startPlacementEditing() },
+                onChangeBookshelf: { targetIdx in moveViewedBookToBookshelf(targetIdx) },
+                onArchive: { archiveViewedBook() },
+                onDelete: { deleteViewedBook() },
+                onOpenReadingRecord: { openReadingRecordForViewedBook() }
+            )
+            .padding(.bottom, 24)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+
+    @ViewBuilder
+    private var bookReadingPanelLayer: some View {
+        if interactionState.isViewingBook && !isEditingOrientation,
+           let viewedBook = interactionState.viewedBook,
+           !viewedBook.name.contains("_ad") {
+            BookReadingPanel(
+                bookName: viewedBook.name,
+                store: recordStore,
+                onOpenReadingRecord: { openReadingRecordForViewedBook() }
+            )
+            .padding(.trailing, 24)
+            .transition(.opacity.combined(with: .move(edge: .trailing)))
+        }
+    }
+
+    @ViewBuilder
+    private var adBookHeaderLayer: some View {
+        if interactionState.isViewingBook,
+           let viewedBook = interactionState.viewedBook,
+           viewedBook.name.contains("_ad") {
+            HStack(spacing: 12) {
+                Text("AD")
+                    .font(.system(size: 12, weight: .black))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Color.orange, in: Capsule())
+                Text("광고")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(action: { dismissAdBook(viewedBook) }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.white, .black.opacity(0.5))
+                        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(20)
+            .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder
+    private var orientationEditorLayer: some View {
+        if isEditingOrientation, let editingBook, let camera = cameraEntity {
+            GeometryReader { geo in
+                TimelineView(.animation) { _ in
+                    let worldPos = editingBook.position(relativeTo: nil)
+                    let projected = Self.projectWorldToScreen(worldPos: worldPos, camera: camera, viewSize: geo.size)
+                    let fallback = CGPoint(x: geo.size.width / 2, y: geo.size.height * 0.7)
+                    let screenPos = projected ?? fallback
+                    let uiY = min(screenPos.y + 140, geo.size.height - 70)
+                    let uiX = min(max(screenPos.x, 140), geo.size.width - 140)
+                    orientationEditor.position(x: uiX, y: uiY)
+                }
+            }
+            .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder
+    private var sectionAlignmentLayer: some View {
+        if let secIdx = selectedSectionForAlignment, let camera = cameraEntity,
+           secIdx < bookshelfState.sections.count,
+           let shelfRoot = bookshelfState.shelfRoot {
+            GeometryReader { geo in
+                TimelineView(.animation) { _ in
+                    let sec = bookshelfState.sections[secIdx]
+                    let localCenter = SIMD3<Float>(
+                        (sec.leftBound + sec.rightBound) / 2,
+                        sec.shelfTopY + sec.sectionHeight / 2,
+                        0
+                    )
+                    let worldPos = shelfRoot.position(relativeTo: nil) + localCenter
+                    let projected = Self.projectWorldToScreen(worldPos: worldPos, camera: camera, viewSize: geo.size)
+                    let fallback = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
+                    let screenPos = projected ?? fallback
+                    let uiY = max(min(screenPos.y + 80, geo.size.height - 50), 50)
+                    let uiX = min(max(screenPos.x, 100), geo.size.width - 100)
+                    alignmentPicker(for: secIdx).position(x: uiX, y: uiY)
+                }
+            }
+            .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder
+    private var dashboardDetailLayer: some View {
+        if cameraMode == .whiteboard, isDashboardDetailOpen {
+            DashboardFocusOverlay(
+                store: guestbookStore,
+                totalBookCount: totalBookCount,
+                likeCount: likeCount,
+                isLiked: isLiked,
+                initialTab: dashboardInitialTab,
+                onClose: { isDashboardDetailOpen = false },
+                onOpenComposer: { isGuestbookComposerOpen = true },
+                onOpenBioEditor: { isBioEditorOpen = true },
+                onReply: { entry in replyTargetEntry = entry },
+                onToggleLike: toggleLike,
+                onVisitUser: { _ in }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        }
+    }
+
+    // MARK: - 상단 우측 컨트롤 (body 경량화용)
+    @ViewBuilder
+    private var topTrailingControls: some View {
+        if cameraMode != .overview && !interactionState.isViewingBook {
+            nonOverviewControls
+        } else if cameraMode == .overview && !interactionState.isViewingBook {
+            overviewControls
+        }
+    }
+
+    private var nonOverviewControls: some View {
+        HStack(spacing: 8) {
+            if cameraMode == .frontal, !isEditingOrientation, !isBookshelfEditOpen {
+                Button { isBookshelfEditOpen = true } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.stack.3d.up")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("편집")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+            Button(action: {
+                if let camera = cameraEntity {
+                    CameraController.moveToOverview(camera: camera, bookshelfZ: bookshelfZ)
+                    cameraMode = .overview
+                    isBookshelfEditOpen = false
+                }
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("방 전체").font(.system(size: 13, weight: .medium))
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .transition(.opacity)
+    }
+
+    private var overviewControls: some View {
+        VStack(spacing: 8) {
+            Button(action: { isSettingsOpen = true }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "gearshape.fill").font(.system(size: 14, weight: .semibold))
+                    Text("설정").font(.system(size: 13, weight: .medium))
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+
+            Button(action: {
+                if let camera = cameraEntity {
+                    CameraController.moveToDebug(camera: camera)
+                    cameraMode = .debug
+                }
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "cube.transparent").font(.system(size: 13, weight: .semibold))
+                    Text("디버그 뷰").font(.system(size: 13, weight: .medium))
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+
+            Button(action: {
+                if let camera = cameraEntity {
+                    CameraController.moveToInteriorOverview(camera: camera)
+                    cameraMode = .interior
+                }
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "house").font(.system(size: 13, weight: .semibold))
+                    Text("실내 조감").font(.system(size: 13, weight: .medium))
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .transition(.opacity)
+    }
+
+    // MARK: - 페이즈 D: whiteboard 전용 overlay 블록 (body 경량화용)
+    @ViewBuilder
+    private var whiteboardActionBarBlock: some View {
+        if cameraMode == .whiteboard {
+            whiteboardActionBar
+                .padding(.bottom, 24)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+
+    @ViewBuilder
+    private var whiteboardComposerBlock: some View {
+        if cameraMode == .whiteboard, isGuestbookComposerOpen {
+            GuestbookComposerOverlay(
+                store: guestbookStore,
+                onClose: { isGuestbookComposerOpen = false }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+        }
+    }
+
+    @ViewBuilder
+    private var whiteboardReplyBlock: some View {
+        if cameraMode == .whiteboard, let entry = replyTargetEntry {
+            GuestbookReplySheet(
+                store: guestbookStore,
+                entry: entry,
+                onClose: { replyTargetEntry = nil }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+        }
+    }
+
+    @ViewBuilder
+    private var whiteboardBioEditorBlock: some View {
+        if cameraMode == .whiteboard, isBioEditorOpen {
+            ProfileBioEditor(
+                store: guestbookStore,
+                onClose: { isBioEditorOpen = false }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+        }
+    }
+
+    // MARK: - 페이즈 F: 노트북 포커싱 오버레이 블록
+    @ViewBuilder
+    private var laptopFocusLayer: some View {
+        if isLaptopOpen {
+            LaptopFocusOverlay(
+                market: marketStore,
+                settings: settingsStore,
+                onClose: { isLaptopOpen = false }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        }
+    }
+
+    // MARK: - 페이즈 J: 설정 오버레이 블록
+    @ViewBuilder
+    private var settingsOverlayBlock: some View {
+        if isSettingsOpen {
+            SettingsOverlay(
+                settings: settingsStore,
+                guestbook: guestbookStore,
+                onClose: { isSettingsOpen = false },
+                onLogout: {
+                    isSettingsOpen = false
+                    auth.logout()
+                },
+                onLogin: {
+                    isSettingsOpen = false
+                    auth.logout()
+                },
+                onWithdraw: {
+                    isSettingsOpen = false
+                    auth.withdraw()
+                }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        }
+    }
+
+    // MARK: - 페이즈 D: 대시보드 element 탭 핸들러
+    private func handleDashboardHit(name: String) {
+        switch name {
+        case DashboardHitRegions.bioName:
+            isBioEditorOpen = true
+        case DashboardHitRegions.likeName:
+            toggleLike()
+        case DashboardHitRegions.booksName:
+            dashboardInitialTab = .summary
+            isDashboardDetailOpen = true
+        case DashboardHitRegions.followersName:
+            dashboardInitialTab = .followers
+            isDashboardDetailOpen = true
+        case DashboardHitRegions.followingName:
+            dashboardInitialTab = .following
+            isDashboardDetailOpen = true
+        case DashboardHitRegions.guestbookHeaderName:
+            dashboardInitialTab = .guestbook
+            isDashboardDetailOpen = true
+        default:
+            // 개별 방명록 카드 탭 → 바로 답장 시트
+            if let entryId = DashboardHitRegions.entryId(fromHitName: name),
+               let entry = guestbookStore.entries.first(where: { $0.id == entryId }) {
+                replyTargetEntry = entry
+            }
+        }
+    }
+
+    private func syncDashboardEntryHits() {
+        guard let surface = whiteboardSurface else { return }
+        DashboardHitRegions.syncEntryHits(
+            on: surface,
+            surfaceWidth: DashboardLayout.surfaceWidth,
+            surfaceHeight: DashboardLayout.surfaceHeight,
+            entryIds: guestbookStore.entries.map { $0.id }
+        )
+    }
+
+    // MARK: - 페이즈 D: 화이트보드 뷰 액션바 + 최근 방명록 패널
+    @ViewBuilder
+    private var whiteboardActionBar: some View {
+        HStack(spacing: 10) {
+            Button(action: toggleLike) {
+                HStack(spacing: 6) {
+                    Image(systemName: isLiked ? "heart.fill" : "heart")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(isLiked ? .red : .primary)
+                    Text(isLiked ? "좋아요 취소" : "좋아요")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: Capsule())
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { isGuestbookComposerOpen = true }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("방명록 남기기")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: Capsule())
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { isBioEditorOpen = true }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.text.rectangle")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("프로필 편집")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+    }
+
     // MARK: - 좋아요
     private func toggleLike() {
         if isLiked {
@@ -748,14 +1462,22 @@ struct ContentView: View {
         guard let surface = whiteboardSurface else { return }
 
         // onChange가 여러 소스에서 연속 트리거될 수 있음 — 내용 동일하면 재렌더 생략
-        let key = "\(totalBookCount)-\(likeCount)-\(isLiked)"
+        let entriesHash = guestbookStore.entries.reduce(into: 0) { acc, e in
+            acc &+= e.id.hashValue &+ e.message.hashValue &+ e.replies.count
+        }
+        let key = "\(totalBookCount)-\(likeCount)-\(isLiked)-\(guestbookStore.bioText.hashValue)-\(guestbookStore.listVisibility.rawValue)-\(entriesHash)"
         if key == lastWhiteboardKey { return }
         lastWhiteboardKey = key
 
         let dashboard = WhiteboardDashboard(
             bookCount: totalBookCount,
             likeCount: likeCount,
-            isLiked: isLiked
+            isLiked: isLiked,
+            bioText: guestbookStore.bioText,
+            entries: guestbookStore.entries,
+            visibility: guestbookStore.listVisibility,
+            followerCount: guestbookStore.visibleFollowers.count,
+            followingCount: guestbookStore.visibleFollowing.count
         )
         let renderer = ImageRenderer(content: dashboard)
         renderer.scale = 2.0   // 2400×1500. 3.0은 32MB RGBA라 VRAM 부담 커서 낮춤.

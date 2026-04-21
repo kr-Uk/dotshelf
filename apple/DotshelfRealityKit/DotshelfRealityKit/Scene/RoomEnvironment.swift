@@ -55,6 +55,8 @@ enum RoomEnvironment {
         // 우측은 벽 없이 통창(WindowEntity)만 배치 — 외곽 프레임만 렌더링
         room.addChild(WindowEntity.createRightWall(wallX: sideWallDistance))
         room.addChild(makeWhiteboardOnLeftWall(wallX: -sideWallDistance))
+        // 공간1 (좌측 벽 앞): 책상 + 노트북. 노트북을 탭하면 §5 노트북 포커싱 진입.
+        room.addChild(DeskLaptopEntity.create(wallX: -sideWallDistance))
 
         return room
     }
@@ -302,6 +304,15 @@ enum RoomEnvironment {
         // 프레임에 Collision + InputTarget (화이트보드 탭 감지)
         frame.collision = CollisionComponent(shapes: [.generateBox(width: width, height: height, depth: 0.01)])
         frame.components.set(InputTargetComponent())
+
+        // 표면(대시보드 내용물)은 element별 hit 박스(DashboardHitRegions)가 탭을 대신 받는다.
+        // surface 자체 InputTarget은 달지 않음 — hit region miss 시 frame으로 전파되도록.
+        // element별 hit 박스 설치 (고정 element: bio/like/stats/guestbook header)
+        let surfaceWidth = width - frameThickness * 2
+        let surfaceHeight = height - frameThickness * 2
+        DashboardHitRegions.install(on: surface,
+                                    surfaceWidth: surfaceWidth,
+                                    surfaceHeight: surfaceHeight)
 
         return whiteboard
     }
