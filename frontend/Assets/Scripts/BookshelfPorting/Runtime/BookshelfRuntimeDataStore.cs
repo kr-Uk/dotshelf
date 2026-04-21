@@ -202,11 +202,36 @@ namespace BookshelfPorting.Runtime
             return new BookMetaData
             {
                 bookId = book.bookId,
-                title = book.bookId.Replace('_', ' '),
-                isRead = false,
-                isPublic = true,
-                memoPreview = "No review yet. Add a short note in the next step."
+                title = ResolveBookTitle(book),
+                isRead = book.isRead,
+                isPublic = book.isPublic,
+                memoPreview = ResolveMemoPreview(book)
             };
+        }
+
+        private static string ResolveBookTitle(BookEntity book)
+        {
+            if (!string.IsNullOrWhiteSpace(book.title))
+            {
+                return book.title;
+            }
+
+            return string.IsNullOrWhiteSpace(book.bookId) ? "Untitled Book" : book.bookId.Replace('_', ' ');
+        }
+
+        private static string ResolveMemoPreview(BookEntity book)
+        {
+            if (!string.IsNullOrWhiteSpace(book.memoPreview))
+            {
+                return book.memoPreview;
+            }
+
+            if (!string.IsNullOrWhiteSpace(book.description))
+            {
+                return book.description;
+            }
+
+            return "No review yet. Add a short note in the next step.";
         }
     }
 }

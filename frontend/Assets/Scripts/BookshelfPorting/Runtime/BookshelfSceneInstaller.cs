@@ -1,3 +1,5 @@
+using App.Application.Books;
+using App.Infrastructure.Mock;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -104,6 +106,7 @@ namespace BookshelfPorting.Runtime
             var runtimeDataStore = GetOrAddComponent<BookshelfRuntimeDataStore>(systems);
             var experienceManager = GetOrAddComponent<BookshelfExperienceManager>(systems);
             var environment = GetOrAddComponent<EnvironmentSetup>(systems);
+            var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(new MockBookCatalogRepository());
 
             var camerasRoot = FindOrCreateRoot("Cameras").transform;
             var overviewPosition = new Vector3(1.55f, 1.30f, -1.95f);
@@ -135,7 +138,7 @@ namespace BookshelfPorting.Runtime
 
             cameraController.Configure(mainCamera, overviewAnchor, frontalAnchor, whiteboardAnchor, notebookAnchor, bookViewAnchor);
             cameraController.ConfigureViewSettings(58f, 55f, 56f, 24f, 0.65f);
-            generator.Configure(state, materialFactory);
+            generator.Configure(state, materialFactory, loadBooksUseCase);
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);
             experienceManager.Configure(state, cameraController, interactionController, materialFactory, runtimeDataStore, generator);
@@ -150,6 +153,10 @@ namespace BookshelfPorting.Runtime
             if (forceGenerate || !HasGeneratedContent(generator))
             {
                 generator.Generate();
+            }
+            else
+            {
+                generator.ApplyBookCatalogDataToExistingBooks();
             }
 
             generator.NormalizeNotebookStationPlacement();

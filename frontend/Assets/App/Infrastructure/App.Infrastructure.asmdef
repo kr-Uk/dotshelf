@@ -1,7 +1,10 @@
 {
   "name": "App.Infrastructure",
   "rootNamespace": "App.Infrastructure",
-  "references": [],
+  "references": [
+    "App.Domain",
+    "App.Application"
+  ],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

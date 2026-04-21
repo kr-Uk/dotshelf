@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using App.Application.Books;
 using UnityEngine;
 
 namespace BookshelfPorting.Runtime
@@ -58,6 +59,8 @@ namespace BookshelfPorting.Runtime
         private Material qaBooksAltMaterial;
         private Coroutine bookshelfSwitchCoroutine;
         private int activeBookshelfIndex;
+        private LoadMyBookshelfBooksUseCase loadBooksUseCase;
+        private IReadOnlyList<BookCatalogItem> bookCatalogItems = System.Array.Empty<BookCatalogItem>();
 
         public Transform BooksRoot => booksRoot;
         public bool IsBookshelfSwitching => bookshelfSwitchCoroutine != null;
@@ -69,6 +72,13 @@ namespace BookshelfPorting.Runtime
         {
             state = bookshelfState;
             materialFactory = factory;
+        }
+
+        public void Configure(BookshelfState bookshelfState, MaterialFactory factory, LoadMyBookshelfBooksUseCase booksUseCase)
+        {
+            state = bookshelfState;
+            materialFactory = factory;
+            loadBooksUseCase = booksUseCase;
         }
 
         private void Start()
@@ -85,10 +95,37 @@ namespace BookshelfPorting.Runtime
         public void Generate()
         {
             EnsureRoots();
+            LoadBookCatalog();
             ClearGenerated();
             BuildRoom();
             BuildBookshelf();
             NormalizeNotebookStationPlacement();
+        }
+
+        public void ApplyBookCatalogDataToExistingBooks()
+        {
+            if (booksRoot == null)
+            {
+                booksRoot = transform.Find("BookshelfRoot/BooksRoot");
+            }
+
+            if (booksRoot == null)
+            {
+                return;
+            }
+
+            EnsureBookCatalog();
+            if (bookCatalogItems.Count == 0)
+            {
+                return;
+            }
+
+            var books = booksRoot.GetComponentsInChildren<BookEntity>(true);
+            for (var i = 0; i < books.Length; i++)
+            {
+                var catalogIndex = (activeBookshelfIndex * books.Length + i) % bookCatalogItems.Count;
+                ApplyBookCatalogData(books[i], bookCatalogItems[catalogIndex], activeBookshelfIndex, i / booksPerSection, i % booksPerSection);
+            }
         }
 
         public void NormalizeNotebookStationPlacement()
@@ -312,6 +349,7 @@ namespace BookshelfPorting.Runtime
 
         private void SpawnBooks(List<ShelfSection> sections, int variantIndex)
         {
+            EnsureBookCatalog();
             Random.InitState(randomSeed + variantIndex * 137);
             var prefabs = GetQaBookPrefabs();
 
@@ -331,8 +369,51 @@ namespace BookshelfPorting.Runtime
                         book = CreateProceduralBook(variantIndex, i, j);
                     }
 
+                    ApplyBookCatalogData(book, GetBookCatalogItem(variantIndex, i, j, sections.Count), variantIndex, i, j);
                     state.AddBookToSection(book, section);
                 }
+            }
+        }
+
+        private void LoadBookCatalog()
+        {
+            bookCatalogItems = loadBooksUseCase != null
+                ? loadBooksUseCase.Execute() ?? System.Array.Empty<BookCatalogItem>()
+                : System.Array.Empty<BookCatalogItem>();
+        }
+
+        private void EnsureBookCatalog()
+        {
+            if (bookCatalogItems.Count > 0)
+            {
+                return;
+            }
+
+            LoadBookCatalog();
+        }
+
+        private BookCatalogItem GetBookCatalogItem(int variantIndex, int sectionIndex, int bookIndex, int sectionCount)
+        {
+            if (bookCatalogItems.Count == 0)
+            {
+                return null;
+            }
+
+            var catalogIndex = variantIndex * sectionCount * booksPerSection + sectionIndex * booksPerSection + bookIndex;
+            return bookCatalogItems[catalogIndex % bookCatalogItems.Count];
+        }
+
+        private static void ApplyBookCatalogData(BookEntity book, BookCatalogItem item, int variantIndex, int sectionIndex, int bookIndex)
+        {
+            if (book == null || item == null)
+            {
+                return;
+            }
+
+            book.ApplyMetadata(item.Book, item.UserBook);
+            if (item.Book != null && !string.IsNullOrWhiteSpace(item.Book.BookId))
+            {
+                book.gameObject.name = $"Shelf{variantIndex}_{item.Book.BookId}_{sectionIndex}_{bookIndex}";
             }
         }
 

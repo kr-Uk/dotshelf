@@ -1,3 +1,4 @@
+using App.Domain;
 using UnityEngine;
 
 namespace BookshelfPorting.Runtime
@@ -14,6 +15,15 @@ namespace BookshelfPorting.Runtime
         [Header("Visuals")]
         public MeshRenderer[] tintRenderers;
         public string bookId;
+        public string title;
+        public string author;
+        public string publisher;
+        [TextArea]
+        public string description;
+        public string memoPreview;
+        public int rating;
+        public bool isRead;
+        public bool isPublic = true;
 
         public ShelfSection CurrentSection { get; private set; }
         public ShelfSection OriginalSection { get; private set; }
@@ -43,6 +53,28 @@ namespace BookshelfPorting.Runtime
 
             ApplyTint(color);
             ApplyOrientationVisualsImmediate();
+        }
+
+        public void ApplyMetadata(Book book, UserBook userBook)
+        {
+            if (book != null)
+            {
+                bookId = book.BookId;
+                title = book.Title;
+                author = book.Author;
+                publisher = book.Publisher;
+                description = book.Description;
+            }
+
+            if (userBook == null)
+            {
+                return;
+            }
+
+            rating = userBook.Rating;
+            isRead = userBook.Status == ReadingStatus.Completed;
+            isPublic = userBook.ReviewVisibility == Visibility.Public;
+            memoPreview = userBook.OneLineReview;
         }
 
         public void SetSection(ShelfSection section, bool markOriginal = false)
