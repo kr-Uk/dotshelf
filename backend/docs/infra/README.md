@@ -7,7 +7,6 @@ DotShelf 백엔드 운영 인프라 문서. 앞으로 인프라 관련 작업은
 | 날짜 | 문서 | 요약 |
 |------|------|------|
 | 2026-04-20 | [2026-04-20-initial-setup.md](./2026-04-20-initial-setup.md) | EC2/Cloudflare/Nginx/Docker/GitLab CI 초기 구축 |
-| 2026-04-21 | [gitlab-ci-variables.md](./gitlab-ci-variables.md) | GitLab CI/CD Variables 5개 복붙 가이드 (Runner = EC2 기준) |
 
 ## 작성 규칙
 
