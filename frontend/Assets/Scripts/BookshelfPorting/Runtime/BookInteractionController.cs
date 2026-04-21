@@ -17,6 +17,23 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private MaterialFactory materialFactory = null;
         [SerializeField] private BookshelfExperienceManager experienceManager = null;
         [SerializeField] private float viewMoveDuration = 0.25f;
+        [SerializeField] private float dragStartThresholdPixels = 5f;
+        [SerializeField] private float validDropDuration = 0.3f;
+        [SerializeField] private float invalidDropMaxDuration = 3f;
+        [SerializeField] private float invalidDropBookMass = 0.18f;
+        [SerializeField] private float invalidDropMinHorizontalSpeed = 0.45f;
+        [SerializeField] private float invalidDropBookBounciness = 0.05f;
+        [SerializeField] private float invalidDropBoundaryBounciness = 0.18f;
+        [SerializeField] private float invalidDropFriction = 0.4f;
+        [SerializeField] private float roomFloorY = 0f;
+        [SerializeField] private float roomLeftWallX = -2.01f;
+        [SerializeField] private float roomRightWallX = 2.01f;
+        [SerializeField] private float roomFrontWallZ = -2.05f;
+        [SerializeField] private float roomBackWallZ = 1.41f;
+        [SerializeField] private float roomPhysicsDepth = 4.2f;
+        [SerializeField] private float roomWallHeight = 2.8f;
+        [SerializeField] private float roomWallThickness = 0.08f;
+        [SerializeField] private float dragWallSkin = 0.015f;
         [SerializeField] private float dragHeight = 1.0f;
         [SerializeField] private float viewRotationSpeed = 0.25f;
         [SerializeField] private float viewedBookScaleMultiplier = 3.6f;
@@ -28,8 +45,14 @@ namespace BookshelfPorting.Runtime
         private BookEntity pressedBook;
         private BookEntity draggingBook;
         private GameObject ghostPreview;
+        private Transform dropPhysicsRoot;
+        private PhysicsMaterial dropBookMaterial;
+        private PhysicsMaterial dropBoundaryMaterial;
         private ShelfSection originalSectionBeforeDrag;
         private Vector2 lastPointer;
+        private float shelfBookPointerTravel;
+        private Vector3 lastDragWorldPosition;
+        private Vector3 dragWorldVelocity;
         private Canvas runtimeCanvas;
         private Button backButton;
         private BookInteractionHitArea activeViewedHitArea;
@@ -37,6 +60,7 @@ namespace BookshelfPorting.Runtime
         private bool viewedBookPressStartedOnBook;
         private float viewedBookPointerTravel;
         private PointerTarget currentPointerTarget;
+        private readonly List<BoxCollider> dropBoundaryColliders = new List<BoxCollider>();
         private readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
 
         public void Configure(
@@ -234,6 +258,7 @@ namespace BookshelfPorting.Runtime
                 {
                     experienceManager.SelectEditBook(currentPointerTarget.Book);
                     lastPointer = pointer;
+                    shelfBookPointerTravel = 0f;
                     pressedBook = currentPointerTarget.Book;
                     return;
                 }
@@ -241,6 +266,7 @@ namespace BookshelfPorting.Runtime
                 if (currentPointerTarget.Type == PointerTargetType.EditSectionMarker)
                 {
                     lastPointer = pointer;
+                    shelfBookPointerTravel = 0f;
                     pressedBook = experienceManager.SelectedEditBook;
                     return;
                 }
@@ -260,6 +286,7 @@ namespace BookshelfPorting.Runtime
             }
 
             lastPointer = pointer;
+            shelfBookPointerTravel = 0f;
             pressedBook = currentPointerTarget.Book;
         }
 
@@ -289,7 +316,8 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (draggingBook == null && delta.magnitude > 5f)
+            shelfBookPointerTravel += delta.magnitude;
+            if (draggingBook == null && shelfBookPointerTravel > dragStartThresholdPixels)
             {
                 BeginDrag(pressedBook);
             }
@@ -355,6 +383,7 @@ namespace BookshelfPorting.Runtime
             }
 
             pressedBook = null;
+            shelfBookPointerTravel = 0f;
         }
 
         private bool CanInteractWithShelfBooks()
@@ -403,6 +432,8 @@ namespace BookshelfPorting.Runtime
             draggingBook = null;
             state.ActiveDraggedBook = null;
             originalSectionBeforeDrag = null;
+            shelfBookPointerTravel = 0f;
+            dragWorldVelocity = Vector3.zero;
         }
 
         private PointerTarget RaycastPointerTarget(Vector2 pointer)
@@ -520,9 +551,17 @@ namespace BookshelfPorting.Runtime
 
         private void BeginDrag(BookEntity book)
         {
+            DisableDropPhysics(book);
+            if (generator != null && generator.BooksRoot != null && book.transform.parent != generator.BooksRoot)
+            {
+                book.transform.SetParent(generator.BooksRoot, true);
+            }
+
             draggingBook = book;
             state.ActiveDraggedBook = book;
             originalSectionBeforeDrag = book.CurrentSection;
+            lastDragWorldPosition = book.transform.position;
+            dragWorldVelocity = Vector3.zero;
 
             if (originalSectionBeforeDrag != null)
             {
@@ -539,13 +578,19 @@ namespace BookshelfPorting.Runtime
             var ray = sceneCamera.ScreenPointToRay(pointer);
             if (plane.Raycast(ray, out var enter))
             {
-                var world = ray.GetPoint(enter);
+                var world = ClampDraggedBookToRoom(ray.GetPoint(enter), draggingBook);
+                if (Time.deltaTime > 0f)
+                {
+                    dragWorldVelocity = (world - lastDragWorldPosition) / Time.deltaTime;
+                }
+
+                lastDragWorldPosition = world;
                 draggingBook.transform.position = world;
                 draggingBook.transform.rotation = Quaternion.Euler(15f, 0f, 0f);
 
                 var local = generator.BooksRoot.parent.InverseTransformPoint(world);
-                var nearest = state.FindNearestAvailableSection(local, draggingBook, null);
-                UpdateGhostPreview(nearest, draggingBook);
+                var dropSection = state.FindAvailableDropSection(local, draggingBook);
+                UpdateGhostPreview(dropSection, draggingBook);
             }
         }
 
@@ -553,25 +598,7 @@ namespace BookshelfPorting.Runtime
         {
             var movedBook = draggingBook;
             var localPosition = generator.BooksRoot.parent.InverseTransformPoint(draggingBook.transform.position);
-            var destination = state.FindNearestAvailableSection(localPosition, draggingBook, null);
-
-            if (destination != null && state.TryPlaceBook(draggingBook, destination, this, true))
-            {
-                state.LayoutSection(destination, this, true);
-            }
-            else if (originalSectionBeforeDrag != null && state.TryPlaceBook(draggingBook, originalSectionBeforeDrag, this, true))
-            {
-                state.LayoutSection(originalSectionBeforeDrag, this, true);
-            }
-            else
-            {
-                var fallback = state.FindNearestAvailableSection(localPosition, draggingBook, null);
-                if (fallback != null)
-                {
-                    state.TryPlaceBook(draggingBook, fallback, this, true);
-                    state.LayoutSection(fallback, this, true);
-                }
-            }
+            var destination = state.FindAvailableDropSection(localPosition, draggingBook);
 
             if (ghostPreview != null)
             {
@@ -579,13 +606,366 @@ namespace BookshelfPorting.Runtime
             }
 
             draggingBook = null;
-            state.ActiveDraggedBook = null;
             originalSectionBeforeDrag = null;
+            shelfBookPointerTravel = 0f;
 
-            if (IsEditModeActive() && movedBook != null)
+            if (destination != null &&
+                state.TryPlaceBookForDrop(movedBook, destination, out var targetLocalPosition, out var targetLocalRotation, out var targetLocalScale))
             {
-                experienceManager.SelectEditBook(movedBook);
+                if (generator != null && generator.BooksRoot != null && movedBook.transform.parent != generator.BooksRoot)
+                {
+                    movedBook.transform.SetParent(generator.BooksRoot, true);
+                }
+
+                state.LayoutSectionExcept(destination, this, true, movedBook);
+                StartCoroutine(AnimateValidDrop(movedBook, targetLocalPosition, targetLocalRotation, targetLocalScale));
+
+                if (IsEditModeActive() && movedBook != null)
+                {
+                    experienceManager.SelectEditBook(movedBook);
+                }
+
+                return;
             }
+
+            StartCoroutine(AnimateInvalidDrop(movedBook));
+        }
+
+        private IEnumerator AnimateValidDrop(
+            BookEntity book,
+            Vector3 targetLocalPosition,
+            Quaternion targetLocalRotation,
+            Vector3 targetLocalScale)
+        {
+            if (book == null)
+            {
+                ReleaseActiveDraggedBook(null);
+                yield break;
+            }
+
+            var target = book.transform;
+            var startPosition = target.localPosition;
+            var startRotation = target.localRotation;
+            var startScale = target.localScale;
+            var elapsed = 0f;
+
+            while (elapsed < validDropDuration)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.Clamp01(elapsed / validDropDuration);
+                var horizontalT = Mathf.SmoothStep(0f, 1f, t);
+                var fallT = t * t;
+
+                var nextPosition = Vector3.Lerp(startPosition, targetLocalPosition, horizontalT);
+                nextPosition.y = Mathf.Lerp(startPosition.y, targetLocalPosition.y, fallT);
+
+                target.localPosition = nextPosition;
+                target.localRotation = Quaternion.Slerp(startRotation, targetLocalRotation, horizontalT);
+                target.localScale = Vector3.Lerp(startScale, targetLocalScale, horizontalT);
+                yield return null;
+            }
+
+            target.localPosition = targetLocalPosition;
+            target.localRotation = targetLocalRotation;
+            target.localScale = targetLocalScale;
+            ReleaseActiveDraggedBook(book);
+        }
+
+        private IEnumerator AnimateInvalidDrop(BookEntity book)
+        {
+            if (book == null)
+            {
+                ReleaseActiveDraggedBook(null);
+                yield break;
+            }
+
+            var dropRoot = EnsureDropPhysicsRoot();
+            if (dropRoot == null)
+            {
+                ReleaseActiveDraggedBook(book);
+                yield break;
+            }
+
+            var target = book.transform;
+            var collider = EnsureBookCollider(book);
+            if (collider == null)
+            {
+                ReleaseActiveDraggedBook(book);
+                yield break;
+            }
+
+            DisableDropPhysics(book);
+            EnsureDropPhysicsBounds();
+            target.SetParent(dropRoot, true);
+            collider.isTrigger = false;
+            collider.material = GetDropBookMaterial();
+            book.SetSection(null);
+
+            var body = target.gameObject.AddComponent<Rigidbody>();
+            body.mass = Mathf.Max(0.01f, invalidDropBookMass);
+            body.useGravity = true;
+            body.isKinematic = false;
+            body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+            body.interpolation = RigidbodyInterpolation.Interpolate;
+            body.linearVelocity = ResolveInvalidDropVelocity(book);
+            body.angularVelocity = new Vector3(
+                Random.Range(-1.5f, 1.5f),
+                Random.Range(-0.8f, 0.8f),
+                Random.Range(-1.5f, 1.5f));
+
+            var elapsed = 0f;
+
+            while (elapsed < invalidDropMaxDuration)
+            {
+                elapsed += Time.deltaTime;
+                if (HasTouchedDropFloor(book))
+                {
+                    break;
+                }
+
+                yield return null;
+            }
+
+            ReleaseActiveDraggedBook(book);
+        }
+
+        private Vector3 ResolveInvalidDropVelocity(BookEntity book)
+        {
+            var velocity = dragWorldVelocity;
+            velocity.y = Mathf.Min(velocity.y, 0f);
+
+            var horizontal = new Vector2(velocity.x, velocity.z);
+            if (horizontal.magnitude < invalidDropMinHorizontalSpeed)
+            {
+                var side = book != null && book.transform.position.x < 0f ? -1f : 1f;
+                horizontal = new Vector2(side * invalidDropMinHorizontalSpeed, -invalidDropMinHorizontalSpeed * 0.5f);
+            }
+
+            velocity.x = horizontal.x;
+            velocity.z = horizontal.y;
+            dragWorldVelocity = Vector3.zero;
+            return velocity;
+        }
+
+        private Vector3 ClampDraggedBookToRoom(Vector3 worldPosition, BookEntity book)
+        {
+            var root = generator != null ? generator.transform : null;
+            if (root == null || book == null)
+            {
+                return worldPosition;
+            }
+
+            var localPosition = root.InverseTransformPoint(worldPosition);
+            var halfExtent = GetDragBoundaryHalfExtent(book);
+            var skin = Mathf.Max(0f, dragWallSkin);
+            var minX = roomLeftWallX + halfExtent.x + skin;
+            var maxX = roomRightWallX - halfExtent.x - skin;
+            if (minX <= maxX)
+            {
+                localPosition.x = Mathf.Clamp(localPosition.x, minX, maxX);
+            }
+
+            var minZ = roomFrontWallZ + halfExtent.z + skin;
+            var maxZ = roomBackWallZ - halfExtent.z - skin;
+            if (minZ <= maxZ)
+            {
+                localPosition.z = Mathf.Clamp(localPosition.z, minZ, maxZ);
+            }
+
+            return root.TransformPoint(localPosition);
+        }
+
+        private static Vector3 GetDragBoundaryHalfExtent(BookEntity book)
+        {
+            if (book == null)
+            {
+                return new Vector3(0.04f, 0.12f, 0.04f);
+            }
+
+            var horizontalHalf = Mathf.Max(book.thickness, book.depth, 0.02f) * 0.5f;
+            return new Vector3(
+                horizontalHalf,
+                Mathf.Max(book.height, 0.02f) * 0.5f,
+                horizontalHalf);
+        }
+
+        private Transform EnsureDropPhysicsRoot()
+        {
+            if (dropPhysicsRoot != null)
+            {
+                return dropPhysicsRoot;
+            }
+
+            var rootObject = new GameObject("BookDropPhysicsRoot");
+            var parent = generator != null ? generator.transform : transform;
+            rootObject.transform.SetParent(parent, false);
+            dropPhysicsRoot = rootObject.transform;
+            return dropPhysicsRoot;
+        }
+
+        private void EnsureDropPhysicsBounds()
+        {
+            if (dropBoundaryColliders.Count > 0 || EnsureDropPhysicsRoot() == null)
+            {
+                return;
+            }
+
+            var roomWidth = Mathf.Abs(roomRightWallX - roomLeftWallX);
+            var wallThickness = Mathf.Max(0.02f, roomWallThickness);
+            CreateDropBoundary(
+                "DropFloor",
+                new Vector3((roomLeftWallX + roomRightWallX) * 0.5f, roomFloorY - wallThickness * 0.5f, 0f),
+                new Vector3(roomWidth + wallThickness * 2f, wallThickness, roomPhysicsDepth));
+            CreateDropBoundary(
+                "DropLeftWall",
+                new Vector3(roomLeftWallX - wallThickness * 0.5f, roomWallHeight * 0.5f, 0f),
+                new Vector3(wallThickness, roomWallHeight, roomPhysicsDepth));
+            CreateDropBoundary(
+                "DropRightWall",
+                new Vector3(roomRightWallX + wallThickness * 0.5f, roomWallHeight * 0.5f, 0f),
+                new Vector3(wallThickness, roomWallHeight, roomPhysicsDepth));
+            CreateDropBoundary(
+                "DropFrontWall",
+                new Vector3((roomLeftWallX + roomRightWallX) * 0.5f, roomWallHeight * 0.5f, roomFrontWallZ - wallThickness * 0.5f),
+                new Vector3(roomWidth + wallThickness * 2f, roomWallHeight, wallThickness));
+            CreateDropBoundary(
+                "DropBackWall",
+                new Vector3((roomLeftWallX + roomRightWallX) * 0.5f, roomWallHeight * 0.5f, roomBackWallZ + wallThickness * 0.5f),
+                new Vector3(roomWidth + wallThickness * 2f, roomWallHeight, wallThickness));
+        }
+
+        private void CreateDropBoundary(string boundaryName, Vector3 localPosition, Vector3 size)
+        {
+            var boundary = new GameObject(boundaryName);
+            boundary.transform.SetParent(dropPhysicsRoot, false);
+            boundary.transform.localPosition = localPosition;
+            boundary.transform.localRotation = Quaternion.identity;
+
+            var collider = boundary.AddComponent<BoxCollider>();
+            collider.size = size;
+            collider.material = GetDropBoundaryMaterial();
+            dropBoundaryColliders.Add(collider);
+        }
+
+        private Collider EnsureBookCollider(BookEntity book)
+        {
+            if (book == null)
+            {
+                return null;
+            }
+
+            var collider = book.GetComponent<Collider>();
+            if (collider != null)
+            {
+                return collider;
+            }
+
+            var box = book.gameObject.AddComponent<BoxCollider>();
+            box.size = new Vector3(
+                Mathf.Max(book.thickness, 0.02f),
+                Mathf.Max(book.height, 0.02f),
+                Mathf.Max(book.depth, 0.02f));
+            return box;
+        }
+
+        private void DisableDropPhysics(BookEntity book)
+        {
+            if (book == null)
+            {
+                return;
+            }
+
+            var body = book.GetComponent<Rigidbody>();
+            if (body != null)
+            {
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+                body.useGravity = false;
+                body.isKinematic = true;
+                body.detectCollisions = false;
+                DestroyRuntimeComponent(body);
+            }
+
+            var collider = book.GetComponent<Collider>();
+            if (collider != null)
+            {
+                collider.isTrigger = false;
+                collider.material = null;
+            }
+        }
+
+        private bool HasTouchedDropFloor(BookEntity book)
+        {
+            var collider = book != null ? book.GetComponent<Collider>() : null;
+            var floorWorldY = generator != null
+                ? generator.transform.TransformPoint(new Vector3(0f, roomFloorY, 0f)).y
+                : roomFloorY;
+            return collider != null
+                ? collider.bounds.min.y <= floorWorldY + 0.015f
+                : book != null && book.transform.position.y <= floorWorldY;
+        }
+
+        private PhysicsMaterial GetDropBookMaterial()
+        {
+            if (dropBookMaterial != null)
+            {
+                return dropBookMaterial;
+            }
+
+            dropBookMaterial = new PhysicsMaterial("BookDrop_Book")
+            {
+                dynamicFriction = invalidDropFriction,
+                staticFriction = invalidDropFriction,
+                bounciness = invalidDropBookBounciness,
+                frictionCombine = PhysicsMaterialCombine.Average,
+                bounceCombine = PhysicsMaterialCombine.Maximum
+            };
+            return dropBookMaterial;
+        }
+
+        private PhysicsMaterial GetDropBoundaryMaterial()
+        {
+            if (dropBoundaryMaterial != null)
+            {
+                return dropBoundaryMaterial;
+            }
+
+            dropBoundaryMaterial = new PhysicsMaterial("BookDrop_Boundary")
+            {
+                dynamicFriction = invalidDropFriction,
+                staticFriction = invalidDropFriction,
+                bounciness = invalidDropBoundaryBounciness,
+                frictionCombine = PhysicsMaterialCombine.Average,
+                bounceCombine = PhysicsMaterialCombine.Maximum
+            };
+            return dropBoundaryMaterial;
+        }
+
+        private static void DestroyRuntimeComponent(Component component)
+        {
+            if (component == null)
+            {
+                return;
+            }
+
+            if (Application.isPlaying)
+            {
+                Destroy(component);
+            }
+            else
+            {
+                DestroyImmediate(component);
+            }
+        }
+
+        private void ReleaseActiveDraggedBook(BookEntity book)
+        {
+            if (state == null || (book != null && state.ActiveDraggedBook != book))
+            {
+                return;
+            }
+
+            state.ActiveDraggedBook = null;
         }
 
         private void EnsureViewedBookHitArea(BookEntity book)
