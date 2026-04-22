@@ -17,6 +17,8 @@ import com.dotshelf.domain.auth.entity.UserSocialAccount;
 import com.dotshelf.domain.auth.repository.AuthRefreshTokenRepository;
 import com.dotshelf.domain.auth.repository.GuestMigrationImportRepository;
 import com.dotshelf.domain.auth.repository.UserSocialAccountRepository;
+import com.dotshelf.domain.auth.service.social.SocialTokenVerifierRegistry;
+import com.dotshelf.domain.auth.service.social.SocialUserInfo;
 import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.domain.user.service.UserService;
@@ -40,14 +42,16 @@ public class AuthService {
     private final GuestMigrationImportRepository guestMigrationImportRepository;
     private final UserService userService;
     private final JwtTokenProvider jwtTokenProvider;
+    private final SocialTokenVerifierRegistry socialTokenVerifierRegistry;
 
     @Transactional
     public AuthTokenResponse socialLogin(SocialLoginRequest request) {
+        SocialUserInfo socialUser = socialTokenVerifierRegistry.verify(request.provider(), request.token());
         UserSocialAccount socialAccount = socialAccountRepository
-                .findByProviderAndProviderUserId(request.provider(), request.providerUserId())
+                .findByProviderAndProviderUserId(socialUser.provider(), socialUser.providerUserId())
                 .orElse(null);
         boolean newUser = socialAccount == null;
-        User user = newUser ? createUserAndSocialAccount(request) : userService.getUser(socialAccount.getUserId());
+        User user = newUser ? createUserAndSocialAccount(socialUser) : userService.getUser(socialAccount.getUserId());
         user.markLogin();
         TokenPair tokenPair = issueTokens(user.getId());
         return new AuthTokenResponse(
@@ -101,24 +105,54 @@ public class AuthService {
         return new IdResponse(migrationImport.getId());
     }
 
-    private User createUserAndSocialAccount(SocialLoginRequest request) {
-        String nickname = request.nickname() == null || request.nickname().isBlank()
-                ? "user-" + UUID.randomUUID().toString().substring(0, 8)
-                : request.nickname();
-        if (userRepository.existsByNickname(nickname)) {
-            nickname = nickname + "-" + UUID.randomUUID().toString().substring(0, 4);
-        }
+    private User createUserAndSocialAccount(SocialUserInfo socialUser) {
+        String nickname = resolveNickname(socialUser.nickname());
         User user = userRepository.save(User.builder()
-                .email(request.email())
+                .email(resolveEmail(socialUser.email()))
                 .nickname(nickname)
+                .profileImageUrl(socialUser.profileImageUrl())
                 .build());
         socialAccountRepository.save(UserSocialAccount.builder()
                 .userId(user.getId())
-                .provider(request.provider())
-                .providerUserId(request.providerUserId())
-                .emailAtProvider(request.email())
+                .provider(socialUser.provider())
+                .providerUserId(socialUser.providerUserId())
+                .emailAtProvider(socialUser.email())
                 .build());
         return user;
+    }
+
+    private String resolveEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        String normalizedEmail = email.trim();
+        return userRepository.existsByEmail(normalizedEmail) ? null : normalizedEmail;
+    }
+
+    private String resolveNickname(String nickname) {
+        String baseNickname = normalizeNickname(nickname);
+        for (int i = 0; i < 10; i++) {
+            String candidate = i == 0 ? baseNickname : appendNicknameSuffix(baseNickname);
+            if (!userRepository.existsByNickname(candidate)) {
+                return candidate;
+            }
+        }
+        return "user-" + UUID.randomUUID().toString().substring(0, 12);
+    }
+
+    private String normalizeNickname(String nickname) {
+        if (nickname == null || nickname.isBlank()) {
+            return "user-" + UUID.randomUUID().toString().substring(0, 8);
+        }
+        String normalized = nickname.trim();
+        return normalized.length() <= 50 ? normalized : normalized.substring(0, 50);
+    }
+
+    private String appendNicknameSuffix(String nickname) {
+        String suffix = "-" + UUID.randomUUID().toString().substring(0, 4);
+        int maxBaseLength = 50 - suffix.length();
+        String base = nickname.length() <= maxBaseLength ? nickname : nickname.substring(0, maxBaseLength);
+        return base + suffix;
     }
 
     private TokenPair issueTokens(Long userId) {

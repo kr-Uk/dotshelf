@@ -11,11 +11,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import com.dotshelf.global.security.JwtAuthenticationFilter;
 import com.dotshelf.global.security.JwtProperties;
 import com.dotshelf.global.security.SecurityEntryPoints;
+import com.dotshelf.global.security.SocialLoginProperties;
 
 import lombok.RequiredArgsConstructor;
 
 @Configuration
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, SocialLoginProperties.class})
 @RequiredArgsConstructor
 public class SecurityConfig {
 
