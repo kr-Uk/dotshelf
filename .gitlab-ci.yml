@@ -68,12 +68,12 @@ backend:deploy:
     - chmod 600 ~/.ssh/known_hosts
   script:
     - JAR=$(ls $JAR_ARTIFACT_PATH/*-SNAPSHOT.jar | head -1)
-    - echo "Deploying $JAR to $EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH"
+    - echo "Deploying $JAR to $EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH (app server, via Tailscale-backed stack)"
     - ssh "$EC2_USER@$EC2_HOST" "mkdir -p $EC2_DEPLOY_PATH/api/build/libs && rm -f $EC2_DEPLOY_PATH/api/build/libs/*.jar"
     - rsync -az "$JAR" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/api/build/libs/"
-    - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose build api && docker compose up -d api && docker image prune -f"
+    - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose up -d --build api && docker image prune -f"
     - sh .ci/wait_for_api_healthy.sh
-    - 'ssh "$EC2_USER@$EC2_HOST" "curl -fsS -H ''Host: api.dotshelf.digital'' -k https://localhost/api/health"'
+    - 'ssh "$EC2_USER@$EC2_HOST" "curl -fsS http://100.74.2.103:8080/api/health"'
     - curl -fsS https://api.dotshelf.digital/api/health
   environment:
     name: dev
