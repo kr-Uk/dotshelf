@@ -59,7 +59,7 @@ namespace App.Editor
                 return false;
             }
 
-            return systems.transform.Find("BookshelfRoot") != null &&
+            return systems.transform.Find("BookshelfTurntableRoot/BookshelfRoot") != null &&
                    systems.transform.Find("RoomRoot") != null;
         }
     }

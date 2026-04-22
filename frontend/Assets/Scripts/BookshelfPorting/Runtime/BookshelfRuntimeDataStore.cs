@@ -37,7 +37,6 @@ namespace BookshelfPorting.Runtime
     public class ExperienceStateData
     {
         public string currentFocusArea;
-        public bool isEditMode;
         public string selectedBookId;
         public string selectedTheme;
     }
@@ -94,13 +93,12 @@ namespace BookshelfPorting.Runtime
             return guestbookEntries;
         }
 
-        public BookshelfRuntimeSnapshotData CreateSnapshot(ExperienceFocusArea focusArea, bool isEditMode, BookEntity selectedBook)
+        public BookshelfRuntimeSnapshotData CreateSnapshot(ExperienceFocusArea focusArea, BookEntity selectedBook)
         {
             EnsureSeedData();
 
             var snapshot = new BookshelfRuntimeSnapshotData();
             snapshot.experience.currentFocusArea = focusArea.ToString();
-            snapshot.experience.isEditMode = isEditMode;
             snapshot.experience.selectedBookId = selectedBook != null ? selectedBook.bookId : string.Empty;
             snapshot.experience.selectedTheme = materialFactory != null ? materialFactory.CurrentTheme.ToString() : BookshelfThemeStyle.Default.ToString();
 

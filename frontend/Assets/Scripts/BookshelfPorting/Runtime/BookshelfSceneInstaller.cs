@@ -157,7 +157,7 @@ namespace BookshelfPorting.Runtime
             generator.Configure(state, materialFactory, loadBooksUseCase);
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);
-            experienceManager.Configure(state, cameraController, interactionController, materialFactory, runtimeDataStore, generator);
+            experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
             environment.Configure(probe, null);
 
             mainCamera.transform.position = overviewAnchor.position;
@@ -211,7 +211,8 @@ namespace BookshelfPorting.Runtime
             }
 
             var root = generator.transform;
-            return root.Find("RoomRoot") != null && root.Find("BookshelfRoot") != null;
+            return root.Find("RoomRoot") != null &&
+                   root.Find("BookshelfTurntableRoot/BookshelfRoot") != null;
         }
 
         private static GameObject FindOrCreateRoot(string name)
