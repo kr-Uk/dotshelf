@@ -6,11 +6,14 @@ namespace BookshelfPorting.Runtime
 {
     public class BookshelfState : MonoBehaviour
     {
+        private const float SectionDropAreaMargin = 0.08f;
+
         [SerializeField] private float bookPadding = 0.01f;
         [SerializeField] private float shelfFrontInset = 0.01f;
         [SerializeField] private float animationDuration = 0.18f;
 
         private readonly List<ShelfSection> sections = new List<ShelfSection>();
+        private readonly List<BookLayoutTarget> layoutTargets = new List<BookLayoutTarget>();
 
         public IReadOnlyList<ShelfSection> Sections => sections;
         public bool IsViewingBook { get; set; }
@@ -62,6 +65,32 @@ namespace BookshelfPorting.Runtime
             return true;
         }
 
+        public bool TryPlaceBookForDrop(
+            BookEntity book,
+            ShelfSection target,
+            out Vector3 localPosition,
+            out Quaternion localRotation,
+            out Vector3 localScale)
+        {
+            localPosition = default;
+            localRotation = Quaternion.identity;
+            localScale = Vector3.one;
+
+            if (!TryInsertIntoSection(book, target))
+            {
+                return false;
+            }
+
+            if (TryGetBookLayoutTransform(book, target, out localPosition, out localRotation, out localScale))
+            {
+                return true;
+            }
+
+            target.books.Remove(book);
+            book.SetSection(null);
+            return false;
+        }
+
         public void LayoutAll(MonoBehaviour runner, bool animate)
         {
             for (var i = 0; i < sections.Count; i++)
@@ -72,38 +101,75 @@ namespace BookshelfPorting.Runtime
 
         public void LayoutSection(ShelfSection section, MonoBehaviour runner, bool animate)
         {
+            LayoutSection(section, runner, animate, null);
+        }
+
+        public void LayoutSectionExcept(ShelfSection section, MonoBehaviour runner, bool animate, BookEntity excludedBook)
+        {
+            LayoutSection(section, runner, animate, excludedBook);
+        }
+
+        private void LayoutSection(ShelfSection section, MonoBehaviour runner, bool animate, BookEntity excludedBook)
+        {
             if (section == null)
             {
                 return;
             }
 
-            RemoveMissingBooks(section);
-            var x = section.leftBound + bookPadding;
-            for (var i = 0; i < section.books.Count; i++)
+            BuildSectionLayout(section, layoutTargets);
+            for (var i = 0; i < layoutTargets.Count; i++)
             {
-                var book = section.books[i];
-                var footprint = book.GetFootprint();
-                var targetPosition = new Vector3(
-                    x + footprint * 0.5f,
-                    section.shelfTopY + book.height * 0.5f,
-                    section.frontZ - shelfFrontInset);
-                var targetRotation = BookFootprintUtility.GetVisualRotation(book.orientation);
+                var target = layoutTargets[i];
+                var book = target.Book;
 
-                var targetScale = book.BaseLocalScale;
+                if (book == excludedBook)
+                {
+                    continue;
+                }
 
                 if (animate && runner != null && book.gameObject.activeInHierarchy)
                 {
-                    runner.StartCoroutine(AnimateBookTo(book.transform, targetPosition, targetRotation, targetScale));
+                    runner.StartCoroutine(AnimateBookTo(book.transform, target.LocalPosition, target.LocalRotation, target.LocalScale));
                 }
                 else
                 {
-                    book.transform.localPosition = targetPosition;
-                    book.transform.localRotation = targetRotation;
-                    book.transform.localScale = targetScale;
+                    book.transform.localPosition = target.LocalPosition;
+                    book.transform.localRotation = target.LocalRotation;
+                    book.transform.localScale = target.LocalScale;
                 }
-
-                x += footprint + bookPadding;
             }
+        }
+
+        public bool TryGetBookLayoutTransform(
+            BookEntity targetBook,
+            ShelfSection section,
+            out Vector3 localPosition,
+            out Quaternion localRotation,
+            out Vector3 localScale)
+        {
+            localPosition = default;
+            localRotation = Quaternion.identity;
+            localScale = Vector3.one;
+
+            if (targetBook == null || section == null)
+            {
+                return false;
+            }
+
+            BuildSectionLayout(section, layoutTargets);
+            for (var i = 0; i < layoutTargets.Count; i++)
+            {
+                var target = layoutTargets[i];
+                if (target.Book == targetBook)
+                {
+                    localPosition = target.LocalPosition;
+                    localRotation = target.LocalRotation;
+                    localScale = target.LocalScale;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public bool ChangeBookOrientation(BookEntity book, BookOrientation nextOrientation, MonoBehaviour runner)
@@ -162,6 +228,44 @@ namespace BookshelfPorting.Runtime
             }
 
             return best;
+        }
+
+        public ShelfSection FindAvailableDropSection(Vector3 localPosition, BookEntity book, float margin = SectionDropAreaMargin)
+        {
+            ShelfSection best = null;
+            var bestDistance = float.MaxValue;
+
+            for (var i = 0; i < sections.Count; i++)
+            {
+                var section = sections[i];
+                if (!IsInsideSectionDropBounds(localPosition, section, margin) ||
+                    !section.CanFit(book, bookPadding))
+                {
+                    continue;
+                }
+
+                var distance = Vector3.Distance(localPosition, section.Center);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = section;
+                }
+            }
+
+            return best;
+        }
+
+        private static bool IsInsideSectionDropBounds(Vector3 localPosition, ShelfSection section, float margin)
+        {
+            if (section == null)
+            {
+                return false;
+            }
+
+            return localPosition.x >= section.leftBound - margin &&
+                   localPosition.x <= section.rightBound + margin &&
+                   localPosition.y >= section.shelfTopY - margin &&
+                   localPosition.y <= section.shelfTopY + section.sectionHeight + margin;
         }
 
         public ShelfSection GetSection(int row, int column)
@@ -233,6 +337,34 @@ namespace BookshelfPorting.Runtime
             return occupied <= section.Width;
         }
 
+        private void BuildSectionLayout(ShelfSection section, List<BookLayoutTarget> targets)
+        {
+            targets.Clear();
+
+            if (section == null)
+            {
+                return;
+            }
+
+            RemoveMissingBooks(section);
+            var x = section.leftBound + bookPadding;
+            for (var i = 0; i < section.books.Count; i++)
+            {
+                var book = section.books[i];
+                var footprint = book.GetFootprint();
+                targets.Add(new BookLayoutTarget(
+                    book,
+                    new Vector3(
+                        x + footprint * 0.5f,
+                        section.shelfTopY + book.height * 0.5f,
+                        section.frontZ - shelfFrontInset),
+                    BookFootprintUtility.GetVisualRotation(book.orientation),
+                    book.BaseLocalScale));
+
+                x += footprint + bookPadding;
+            }
+        }
+
         private static BookEntity FindLargestBookExcept(ShelfSection section, BookEntity except)
         {
             if (section == null)
@@ -298,6 +430,22 @@ namespace BookshelfPorting.Runtime
             target.localPosition = localPosition;
             target.localRotation = localRotation;
             target.localScale = localScale;
+        }
+
+        private readonly struct BookLayoutTarget
+        {
+            public BookLayoutTarget(BookEntity book, Vector3 localPosition, Quaternion localRotation, Vector3 localScale)
+            {
+                Book = book;
+                LocalPosition = localPosition;
+                LocalRotation = localRotation;
+                LocalScale = localScale;
+            }
+
+            public BookEntity Book { get; }
+            public Vector3 LocalPosition { get; }
+            public Quaternion LocalRotation { get; }
+            public Vector3 LocalScale { get; }
         }
     }
 }

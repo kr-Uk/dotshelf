@@ -13407,6 +13407,23 @@ MonoBehaviour:
   materialFactory: {fileID: 617729538}
   experienceManager: {fileID: 617729533}
   viewMoveDuration: 0.25
+  dragStartThresholdPixels: 5
+  validDropDuration: 0.3
+  invalidDropMaxDuration: 3
+  invalidDropBookMass: 0.18
+  invalidDropMinHorizontalSpeed: 0.75
+  invalidDropBookBounciness: 0.05
+  invalidDropBoundaryBounciness: 0.18
+  invalidDropFriction: 0.4
+  roomFloorY: 0
+  roomLeftWallX: -2.01
+  roomRightWallX: 2.01
+  roomFrontWallZ: -2.05
+  roomBackWallZ: 1.41
+  roomPhysicsDepth: 4.2
+  roomWallHeight: 2.8
+  roomWallThickness: 0.08
+  dragWallSkin: 0.015
   dragHeight: 1
   viewRotationSpeed: 0.25
   viewedBookScaleMultiplier: 1.9
