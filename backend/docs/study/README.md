@@ -14,6 +14,8 @@ push 단위 변경분에 대한 한국어 학습 노트. 무엇을 / 왜 / 어�
 |------|--------|------|----------|
 | 2026-04-20 | `chore/be/deploy-infra` | [`2026-04-20-chore-be-deploy-infra.md`](./2026-04-20-chore-be-deploy-infra.md) | EC2 배포 파이프라인 + Cloudflare + GitLab CI 골격 구축 |
 | 2026-04-21 | `feat/be/refactoring` | [`2026-04-21-feat-be-refactoring.md`](./2026-04-21-feat-be-refactoring.md) | Swagger / JWT / Cursor / UTC 4-구멍 보강, patterns.md 공식화 |
+| 2026-04-22 | `docs/be/codex-skills` | [`2026-04-22-docs-be-codex-skills.md`](./2026-04-22-docs-be-codex-skills.md) | Codex 스킬 설치 흐름과 DB 스키마 문서화 |
+| 2026-04-22 | `feat/be/social_login` | [`2026-04-22-feat-be-social-login.md`](./2026-04-22-feat-be-social-login.md) | Google/Kakao/Apple 소셜 로그인 토큰 검증과 Unity 클라이언트 설정 흐름 정리 |
 
 ## 작성 규칙
 
