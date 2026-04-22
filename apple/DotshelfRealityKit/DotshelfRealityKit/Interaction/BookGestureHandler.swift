@@ -331,8 +331,10 @@ class BookInteractionState {
                     }
                 }
             } else {
-                // 책장 범위 밖 → 책장에서 분리 후 바닥에 떨어뜨리기
-                dropToFloor(entity: entity, state: state)
+                // MVP: 책장 범위 밖 드롭 → 원래 섹션으로 복귀.
+                // 추후 버전에서 "손에서 놓친듯한 바닥 낙하"로 재활성화 예정.
+                // 물리 낙하 코드는 `dropToFloor(entity:state:)`에 보존되어 있음 (호출 지점만 비활성).
+                restoreToOriginalSection(entity: entity, state: state)
             }
         }
 
@@ -385,7 +387,26 @@ class BookInteractionState {
         hoveredInsertionIdx = nil
     }
 
+    /// MVP 드롭 실패 복구: 원래 섹션의 원래 index로 되돌림.
+    /// 책장이 이동/회전 중이어도 shelfRoot 상대 좌표 기반이라 안전.
+    private func restoreToOriginalSection(entity: Entity, state: BookshelfState) {
+        guard let origSec = originalSectionIdx,
+              let origIdx = originalBookIndex,
+              origSec < state.sections.count else { return }
+
+        let idx = min(origIdx, state.sections[origSec].books.count)
+        state.sections[origSec].books.insert(entity, at: idx)
+        state.layoutSection(origSec, duration: 0.3)
+
+        let positions = state.sections[origSec].computePositions()
+        if idx < positions.count {
+            BookAnimation.snapToPosition(entity: entity, position: positions[idx], duration: 0.3)
+        }
+    }
+
     /// 책이 책장 밖에서 놓이면 책장에서 분리 후 물리 엔진으로 자유낙하.
+    /// ⚠️ MVP에서 비활성 — `endDrag`의 "책장 범위 밖" 분기에서 호출하지 않음.
+    ///   추후 버전(v1.1+)에서 다시 호출하도록 복원 예정. 코드 자체는 보존.
     /// - 책장(회전/이동)에 종속되어 있으면 물리 시뮬레이션과 parent transform이 충돌 →
     ///   월드 고정 레이어(dragLayer)로 재부모화해서 독립된 물리 객체로 만듦.
     private func dropToFloor(entity: Entity, state: BookshelfState) {

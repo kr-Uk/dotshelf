@@ -292,7 +292,11 @@ class BookshelfState {
             bookQueue.append(contentsOf: sec.books)
         }
 
-        // 다른 책장들의 섹션에 빈 공간 있으면 이전, 없으면 archiveFallback
+        // 다른 책장들의 섹션에 빈 공간 있으면 이전, 없으면 archiveFallback.
+        // 여러 책이 같은 섹션에 들어갈 수 있어 targetsToRelayout에 (bi, si) 추적 후
+        // 루프 끝에 한 번만 재배치.
+        var targetsToRelayout: Set<[Int]> = []
+
         for book in bookQueue {
             guard let comp = book.components[BookComponent.self] else {
                 archiveFallback(book); continue
@@ -305,6 +309,7 @@ class BookshelfState {
                     // 재부모화 + 데이터 이전
                     book.setParent(bookshelves[bi].entity, preservingWorldTransform: false)
                     bookshelves[bi].sections[targetSecIdx].books.append(book)
+                    targetsToRelayout.insert([bi, targetSecIdx])
                     placed = true
                     break
                 }
@@ -312,6 +317,13 @@ class BookshelfState {
             if !placed {
                 archiveFallback(book)
             }
+        }
+
+        // 수신 측 섹션들을 shelf-local 좌표로 재배치.
+        // 활성 책장이 아니므로 기존 `layoutSection(_:)`(sections 미러 기반)은 쓸 수 없어
+        // 비활성 책장용 경로가 필요.
+        for pair in targetsToRelayout {
+            layoutSectionOffShelf(bookshelfIndex: pair[0], sectionIndex: pair[1], duration: 0)
         }
 
         // 책장 엔티티 제거
@@ -358,6 +370,33 @@ class BookshelfState {
         sections = bookshelves[currentIndex].sections
         shelfRoot = bookshelves[currentIndex].entity
         remountSlotsToCurrent()
+    }
+
+    /// 비활성 책장의 특정 섹션을 shelf-local 좌표로 재배치.
+    /// `layoutSection(_:)`은 활성 `sections` 미러만 동작하므로, 책장 삭제 시 다른 책장으로
+    /// 이전된 책들을 제자리에 세우기 위해 직접 계산해 transform 적용.
+    func layoutSectionOffShelf(
+        bookshelfIndex bi: Int,
+        sectionIndex si: Int,
+        duration: TimeInterval = 0
+    ) {
+        guard bi >= 0, bi < bookshelves.count else { return }
+        guard si >= 0, si < bookshelves[bi].sections.count else { return }
+        let positions = bookshelves[bi].sections[si].computePositions()
+        let books = bookshelves[bi].sections[si].books
+        for (i, pos) in positions.enumerated() {
+            guard i < books.count else { break }
+            let b = books[i]
+            let orientation = b.components[BookComponent.self]?.orientation ?? .spine
+            var t = b.transform
+            t.translation = pos
+            t.rotation = orientation.rotation
+            if duration > 0 {
+                b.move(to: t, relativeTo: b.parent, duration: duration)
+            } else {
+                b.transform = t
+            }
+        }
     }
 
     /// 현재 `currentIndex` 기준으로 슬롯을 재세팅. 턴테이블 각도도 0으로 복귀.

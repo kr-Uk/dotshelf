@@ -27,6 +27,7 @@ struct LaptopFocusOverlay: View {
     let market: MarketStore
     let settings: SettingsStore
     var onClose: () -> Void
+    var onReport: (ReportTarget) -> Void = { _ in }
 
     @State private var tab: Tab = .feed
     @State private var showAd: Bool = true
@@ -143,7 +144,7 @@ struct LaptopFocusOverlay: View {
         switch tab {
         case .market:     MarketTab(market: market)
         case .spaces:     SpacesTab(market: market)
-        case .feed:       FeedTab(market: market)
+        case .feed:       FeedTab(market: market, onReport: onReport)
         case .decoration: DecorationTab(market: market, balance: settings.pageBalance)
         }
     }
@@ -452,6 +453,7 @@ private struct SpacesTab: View {
 
 private struct FeedTab: View {
     let market: MarketStore
+    var onReport: (ReportTarget) -> Void = { _ in }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -506,8 +508,12 @@ private struct FeedTab: View {
                     }
                     Spacer()
                     Menu {
-                        Button(role: .destructive) {} label: { Label("신고", systemImage: "exclamationmark.triangle") }
-                        Button(role: .destructive) {} label: { Label("작성자 차단", systemImage: "nosign") }
+                        Button(role: .destructive) {
+                            onReport(ReportTarget(kind: .feedItem, displayText: "\(item.actorName) · \(item.headline)"))
+                        } label: { Label("신고", systemImage: "exclamationmark.triangle") }
+                        Button(role: .destructive) {
+                            onReport(ReportTarget(kind: .user, displayText: item.actorName))
+                        } label: { Label("작성자 차단", systemImage: "nosign") }
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 12, weight: .bold))

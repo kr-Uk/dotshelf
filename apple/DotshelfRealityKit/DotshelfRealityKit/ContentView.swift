@@ -56,6 +56,19 @@ struct ContentView: View {
     @State private var marketStore = MarketStore()
     @State private var isLaptopOpen = false
 
+    // 페이즈 D/F 공통 — 신고 모달
+    @State private var reportTarget: ReportTarget?
+
+    /// 현재 뷰어의 공간 권한. MVP는 "방문자 모드 토글" 기반 디버그.
+    /// E 에이전트의 `isVisitorMode`/`isFollowingSpace`와 AuthStore를 조합.
+    var permission: SpacePermission {
+        SpacePermissionContext.debug(
+            auth: auth,
+            isVisitorMode: isVisitorMode,
+            isFollowingSpace: isFollowingSpace
+        ).permission
+    }
+
     // 페이즈 B — 독서기록 2D 오버레이
     @State private var isReadingRecordOpen = false
     @State private var readingRecordBookName: String?
@@ -73,7 +86,20 @@ struct ContentView: View {
     @State private var isFollowingSpace: Bool = false
     @State private var hasLikedSpace: Bool = false
     @State private var spaceLikeCount: Int = 128
-    @State private var isRoomEditPlaceholderOn: Bool = false  // 페이즈 G 진입 stub
+
+    // 페이즈 G — 공간 편집 서랍
+    @State private var roomEditStore = RoomEditStore()
+    @State private var isRoomEditDrawerOpen: Bool = false
+    /// 벽 material tint 갱신용 엔티티 참조 (RealityView make에서 수집).
+    @State private var wallEntities: [ModelEntity] = []
+    /// 조명 프리셋 적용용 (configureLighting에서 반환).
+    @State private var lightingHandles: LightingHandles?
+    /// 방 배치 꾸미기 — 씬에 추가된 데코 오브젝트 저장소.
+    @State private var roomDecorStore = RoomDecorStore()
+    /// 모든 roomdeco_ 엔티티가 들어갈 월드-레벨 컨테이너.
+    @State private var decorContainer: Entity?
+    /// 드래그 시작 시 원점 — end 시 스냅 기준.
+    @State private var decorDragStart: SIMD3<Float>?
 
     // 정면 뷰에서 카메라 팬 드래그 시작점
     @State private var cameraPanStart: SIMD3<Float>?
@@ -89,12 +115,7 @@ struct ContentView: View {
             .overlay { orientationEditorLayer }
             .overlay { sectionAlignmentLayer }
             .overlay(alignment: .bottom) { whiteboardActionBarBlock }
-            .overlay { whiteboardComposerBlock }
-            .overlay { whiteboardReplyBlock }
-            .overlay { whiteboardBioEditorBlock }
-            .overlay { settingsOverlayBlock }
-            .overlay { laptopFocusLayer }
-            .overlay { dashboardDetailLayer }
+            .overlay { dotshelfModalStack }
             .overlay(alignment: .bottomLeading) { viewedBookBackButton }
             .overlay { readingRecordLayer }
             .overlay(alignment: .topLeading) { bookshelfEditMenuLayer }
@@ -103,6 +124,11 @@ struct ContentView: View {
             .overlay { reorderOverlayView }
             .overlay { decorationGalleryOverlayView }
             .overlay(alignment: .topLeading) { quarterViewSocialHUD }
+            .overlay(alignment: .bottom) { roomEditDrawerLayer }
+            .onChange(of: roomEditStore.wallpaper) { _, new in applyWallpaperTint(new) }
+            .onChange(of: roomEditStore.indoorLight) { _, new in applyIndoorLight(new) }
+            .onChange(of: roomEditStore.outdoorLight) { _, new in applyOutdoorLight(new) }
+            .animation(.easeInOut(duration: 0.28), value: isRoomEditDrawerOpen)
             .onChange(of: guestbookStore.entries.count) { _, _ in
                 renderWhiteboardTexture()
                 syncDashboardEntryHits()
@@ -162,6 +188,15 @@ struct ContentView: View {
             let room = RoomEnvironment.create()
             content.add(room)
 
+            // 페이즈 G — 벽 엔티티 수집 (벽지 tint 실시간 적용용)
+            collectWallEntities(from: room)
+
+            // 페이즈 G — 배치 꾸미기 오브젝트가 들어갈 월드 컨테이너 (room 좌표와 동일)
+            let decor = Entity()
+            decor.name = "roomdeco_container"
+            content.add(decor)
+            decorContainer = decor
+
             // 화이트보드 표면 엔티티 참조 저장 (텍스처 업데이트용)
             if let surface = room.findEntity(named: "whiteboard_surface") as? ModelEntity {
                 whiteboardSurface = surface
@@ -171,7 +206,7 @@ struct ContentView: View {
             let lightContainer = Entity()
             lightContainer.position = SIMD3<Float>(0, 0, bookshelfZ)
             content.add(lightContainer)
-            EnvironmentSetup.configureLighting(root: lightContainer)
+            lightingHandles = EnvironmentSetup.configureLighting(root: lightContainer)
 
             // 회전축(turntable): 벽 평면 자체를 피벗
             let armLength: Float = 0.127
@@ -328,6 +363,11 @@ struct ContentView: View {
                 .targetedToAnyEntity()
                 .onEnded { value in
                     let name = value.entity.name
+                    // 방 배치 꾸미기 탭 → 선택 토글
+                    if name.hasPrefix("roomdeco_") {
+                        tapRoomDecor(value.entity)
+                        return
+                    }
                     // 책 탭 → 책 보기 (배치 편집 중이면 자동 취소 후 진입)
                     if name.hasPrefix("book_") {
                         guard !interactionState.isDragging else { return }
@@ -378,6 +418,12 @@ struct ContentView: View {
                 .targetedToAnyEntity()
                 .onChanged { value in
                     let entity = value.entity
+                    // 방 배치 꾸미기 드래그 분기
+                    if entity.name.hasPrefix("roomdeco_") {
+                        if decorDragStart == nil { beginDecorDrag(entity) }
+                        updateDecorDrag(entity, screenTranslation: value.gestureValue.translation)
+                        return
+                    }
                     guard entity.name.hasPrefix("book_") else { return }
 
                     if interactionState.isViewingBook {
@@ -404,6 +450,10 @@ struct ContentView: View {
                 }
                 .onEnded { value in
                     let entity = value.entity
+                    if entity.name.hasPrefix("roomdeco_") {
+                        endDecorDrag(entity)
+                        return
+                    }
                     guard entity.name.hasPrefix("book_") else { return }
                     if interactionState.isViewingBook {
                         interactionState.finishRotation()
@@ -667,9 +717,6 @@ struct ContentView: View {
                 } else {
                     editRoomButton
                 }
-                if isRoomEditPlaceholderOn {
-                    roomEditComingSoonBanner
-                }
             }
             .padding(.top, 54)   // 좌상단 debug 배지 아래
             .padding(.leading, 12)
@@ -680,7 +727,6 @@ struct ContentView: View {
     private var viewerModeTogglePill: some View {
         Button {
             isVisitorMode.toggle()
-            isRoomEditPlaceholderOn = false
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: isVisitorMode ? "person" : "crown.fill")
@@ -745,10 +791,10 @@ struct ContentView: View {
         .help("공간 좋아요 — 대시보드에만 카운트 표시")
     }
 
-    /// 주인 시점 — 공간 편집(페이즈 G) 진입 버튼. MVP는 stub 배너.
+    /// 주인 시점 — 공간 편집(페이즈 G) 서랍 열기.
     private var editRoomButton: some View {
         Button {
-            isRoomEditPlaceholderOn.toggle()
+            isRoomEditDrawerOpen = true
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "wand.and.stars")
@@ -761,33 +807,187 @@ struct ContentView: View {
             .background(.ultraThinMaterial, in: Capsule())
         }
         .buttonStyle(.plain)
-        .help("공간 편집 서랍 (페이즈 G)")
+        .help("공간 편집 서랍 (§1.1)")
     }
 
-    private var roomEditComingSoonBanner: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "hourglass")
-                .font(.system(size: 10, weight: .bold))
-            Text("공간 편집 서랍(§1.1)은 곧 열려요")
-                .font(.system(size: 11, weight: .medium))
-            Spacer(minLength: 0)
-            Button {
-                isRoomEditPlaceholderOn = false
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-            }
-            .buttonStyle(.plain)
+    @ViewBuilder
+    private var roomEditDrawerLayer: some View {
+        if isRoomEditDrawerOpen, cameraMode == .overview {
+            RoomEditDrawer(
+                store: roomEditStore,
+                decorStore: roomDecorStore,
+                onAddDecor: { kind in addRoomDecor(kind) },
+                onRemoveDecor: { id in removeRoomDecor(id: id) },
+                onClose: { isRoomEditDrawerOpen = false }
+            )
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .frame(maxWidth: 240, alignment: .leading)
-        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(Color.accentColor.opacity(0.3), lineWidth: 1)
+    }
+
+    // MARK: - 페이즈 G — 벽지 실시간 적용
+
+    /// RealityView make 시점에 벽 엔티티를 수집해 `wallEntities`에 저장.
+    func collectWallEntities(from root: Entity) {
+        var found: [ModelEntity] = []
+        collectWalls(from: root, into: &found)
+        wallEntities = found
+    }
+
+    private func collectWalls(from entity: Entity, into out: inout [ModelEntity]) {
+        let name = entity.name
+        if name.hasPrefix("room_wall_") && !name.contains("front"),
+           let me = entity as? ModelEntity {
+            // 유리인 front 벽은 제외 — shader graph 처리 중
+            out.append(me)
+        }
+        for child in entity.children {
+            collectWalls(from: child, into: &out)
+        }
+    }
+
+    // MARK: - 페이즈 G — 배치 꾸미기 추가/삭제/드래그
+
+    /// 프리셋을 방 안 기본 위치에 추가. 같은 종류가 겹치지 않도록 카운트 기반 오프셋.
+    private func addRoomDecor(_ kind: RoomDecorKind) {
+        guard let container = decorContainer else { return }
+        let entity = RoomDecorEntity.create(kind: kind)
+
+        // 기본 배치 위치
+        let base: SIMD3<Float>
+        if kind.isWallMounted {
+            // 좌측 벽(x=-1.98) 앞, 눈높이
+            base = [-1.98, 1.40, 0.3]
+            // 벽걸이는 좌측 벽을 향하도록 Y축 +90° 회전
+            entity.orientation = simd_quatf(angle: .pi / 2, axis: [0, 1, 0])
+        } else {
+            // 공간1 바닥 (x=-1.2 근방, z=0.6)
+            base = [-1.2, 0, 0.6]
+        }
+
+        // 기존 같은 종류 개수로 살짝 오프셋 (0.3m 간격)
+        let sameKindCount = roomDecorStore.items.filter { $0.kind == kind }.count
+        let offset: SIMD3<Float> = kind.isWallMounted
+            ? [0, 0, Float(sameKindCount) * 0.35]
+            : [Float(sameKindCount) * 0.3, 0, 0]
+        let pos = base + offset
+
+        entity.setPosition(pos, relativeTo: nil)
+        container.addChild(entity)
+        roomDecorStore.add(kind: kind, entity: entity, at: pos)
+    }
+
+    private func removeRoomDecor(id: UUID) {
+        if let entity = roomDecorStore.remove(id: id) {
+            entity.removeFromParent()
+        }
+    }
+
+    /// 데코 탭 → 선택 상태 토글. 선택된 항목은 서랍에서 강조.
+    private func tapRoomDecor(_ entity: Entity) {
+        if let item = roomDecorStore.item(for: entity) {
+            roomDecorStore.selectedId = (roomDecorStore.selectedId == item.id) ? nil : item.id
+        }
+    }
+
+    /// 드래그: 바닥 오브젝트는 X/Z, 벽걸이는 Y/Z. 드래그 종료 시 0.1m 스냅.
+    private func beginDecorDrag(_ entity: Entity) {
+        guard roomDecorStore.item(for: entity) != nil else { return }
+        decorDragStart = entity.position(relativeTo: nil)
+    }
+
+    private func updateDecorDrag(_ entity: Entity, screenTranslation: CGSize) {
+        guard let start = decorDragStart,
+              let item = roomDecorStore.item(for: entity) else { return }
+        let s: Float = 0.005  // 스크린 px → 월드 m
+        let dx = Float(screenTranslation.width) * s
+        let dy = Float(-screenTranslation.height) * s
+
+        var newPos = start
+        if item.kind.isWallMounted {
+            // 벽걸이 — 벽 평면(Z축 드래그 + Y축 올리기)
+            newPos.z = start.z + dx
+            newPos.y = max(0.2, start.y + dy)
+        } else {
+            // 바닥 — X/Z 평면
+            newPos.x = clamp(start.x + dx, min: -1.9, max: 1.9)
+            newPos.z = clamp(start.z + dy, min: -0.9, max: 1.9)
+        }
+        entity.setPosition(newPos, relativeTo: nil)
+    }
+
+    private func endDecorDrag(_ entity: Entity) {
+        guard let item = roomDecorStore.item(for: entity) else {
+            decorDragStart = nil; return
+        }
+        // 0.1m 스냅
+        var p = entity.position(relativeTo: nil)
+        p.x = snapTo(p.x, step: 0.1)
+        p.z = snapTo(p.z, step: 0.1)
+        if item.kind.isWallMounted {
+            p.y = snapTo(p.y, step: 0.1)
+        }
+        entity.setPosition(p, relativeTo: nil)
+        roomDecorStore.updatePosition(id: item.id, to: p)
+        decorDragStart = nil
+    }
+
+    private func snapTo(_ v: Float, step: Float) -> Float {
+        (v / step).rounded() * step
+    }
+
+    private func clamp(_ v: Float, min lo: Float, max hi: Float) -> Float {
+        Swift.max(lo, Swift.min(hi, v))
+    }
+
+    /// 내부 조명(램프) 프리셋 실시간 적용.
+    func applyIndoorLight(_ preset: IndoorLightPreset) {
+        guard let lh = lightingHandles else { return }
+        let c = preset.lampColor
+        let color = PlatformColor(
+            red: CGFloat(c.r), green: CGFloat(c.g), blue: CGFloat(c.b), alpha: 1
         )
-        .foregroundStyle(Color.accentColor)
+        let scale = Float(preset.intensityScale)
+        lh.lamp1.light.color = color
+        lh.lamp2.light.color = color
+        lh.lamp1.light.intensity = LightingHandles.baseLamp1Intensity * scale
+        lh.lamp2.light.intensity = LightingHandles.baseLamp2Intensity * scale
+    }
+
+    /// 외부 조명(태양광) 프리셋 실시간 적용.
+    func applyOutdoorLight(_ preset: OutdoorLightPreset) {
+        guard let lh = lightingHandles else { return }
+        let c = preset.sunColor
+        let color = PlatformColor(
+            red: CGFloat(c.r), green: CGFloat(c.g), blue: CGFloat(c.b), alpha: 1
+        )
+        let scale = Float(preset.intensityScale)
+        lh.sunLight.light.color = color
+        lh.sunRay.light.color = color
+        lh.sunLight.light.intensity = LightingHandles.baseSunIntensity * scale
+        lh.sunRay.light.intensity = LightingHandles.baseSunRayIntensity * scale
+    }
+
+    /// 벽지 변경 시 수집된 벽 엔티티들의 material tint를 즉시 갱신.
+    func applyWallpaperTint(_ preset: WallpaperPreset) {
+        let t = preset.tint
+        let color = PlatformColor(
+            red: CGFloat(t.r), green: CGFloat(t.g), blue: CGFloat(t.b), alpha: 1
+        )
+        for wall in wallEntities {
+            guard var mats = wall.model?.materials else { continue }
+            for i in 0..<mats.count {
+                if var pbr = mats[i] as? PhysicallyBasedMaterial {
+                    // 기존 textureCoordinateTransform 등은 유지하고 tint만 교체
+                    if let existing = pbr.baseColor.texture {
+                        pbr.baseColor = .init(tint: color, texture: existing)
+                    } else {
+                        pbr.baseColor = .init(tint: color)
+                    }
+                    mats[i] = pbr
+                }
+            }
+            wall.model?.materials = mats
+        }
     }
 
     // MARK: - 책 추가/복구 공통 (스텝 4)
@@ -1181,9 +1381,22 @@ struct ContentView: View {
                 onOpenBioEditor: { isBioEditorOpen = true },
                 onReply: { entry in replyTargetEntry = entry },
                 onToggleLike: toggleLike,
-                onVisitUser: { _ in }
+                onVisitUser: { _ in },
+                onReport: { target in reportTarget = target }
             )
             .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        }
+    }
+
+    @ViewBuilder
+    private var reportComposerLayer: some View {
+        if let target = reportTarget {
+            ReportComposer(
+                settings: settingsStore,
+                target: target,
+                onClose: { reportTarget = nil }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
         }
     }
 
@@ -1323,6 +1536,23 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - 페이즈 D/F/J/신고/이전 공용 모달 스택
+    /// 내가 담당한 모든 2D 풀 오버레이·시트를 한 자리에 모은다.
+    /// body chain에 `.overlay { dotshelfModalStack }` 하나로만 걸어 type-check 부담 감소.
+    /// 조건부 분기라 비활성 modal은 EmptyView가 되어 hit-test/렌더 비용 없음.
+    @ViewBuilder
+    private var dotshelfModalStack: some View {
+        ZStack {
+            settingsOverlayBlock
+            laptopFocusLayer
+            dashboardDetailLayer
+            whiteboardComposerBlock
+            whiteboardReplyBlock
+            whiteboardBioEditorBlock
+            reportComposerLayer
+        }
+    }
+
     // MARK: - 페이즈 F: 노트북 포커싱 오버레이 블록
     @ViewBuilder
     private var laptopFocusLayer: some View {
@@ -1330,7 +1560,8 @@ struct ContentView: View {
             LaptopFocusOverlay(
                 market: marketStore,
                 settings: settingsStore,
-                onClose: { isLaptopOpen = false }
+                onClose: { isLaptopOpen = false },
+                onReport: { target in reportTarget = target }
             )
             .transition(.opacity.combined(with: .scale(scale: 0.98)))
         }

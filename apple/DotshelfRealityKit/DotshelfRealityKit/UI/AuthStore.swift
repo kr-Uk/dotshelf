@@ -14,6 +14,21 @@ enum AuthProvider: String {
     }
 }
 
+struct GuestSessionSummary {
+    let bookCount: Int
+    let bookshelfCount: Int
+    let guestbookCount: Int
+    let decorationCount: Int
+
+    var hasAnything: Bool {
+        bookCount > 0 || guestbookCount > 0 || decorationCount > 0
+    }
+
+    var description: String {
+        "책 \(bookCount) · 책장 \(bookshelfCount) · 방명록 \(guestbookCount) · 꾸미기 \(decorationCount)"
+    }
+}
+
 enum AuthRoute: Equatable {
     /// 최초 진입 or 로그아웃 상태.
     case login
@@ -38,22 +53,47 @@ final class AuthStore {
     var bio: String = ""
     var avatarSystemImage: String = "person.crop.circle.fill"
 
+    /// 게스트 세션에서 정식 소셜 계정으로 업그레이드 중 — 데이터 이전 모달 표시 플래그.
+    var pendingGuestMigration: Bool = false
+    /// 직전 게스트 세션 요약 (이전 모달에서 표시).
+    var pendingGuestSummary: GuestSessionSummary?
+
     /// 이미 사용 중인 닉네임 mock (중복 체크용).
     let takenNicknames: Set<String> = ["admin", "test", "owner", "guest", "dotshelf"]
 
     /// 로그인 플로우 시작 (mock: 0.6초 딜레이 후 성공 → onboarding으로).
-    func signIn(with provider: AuthProvider) {
+    /// 게스트 세션 → 소셜 업그레이드인 경우 `guestSummary`로 이전 모달을 띄울 수 있게 플래그 세팅.
+    func signIn(with provider: AuthProvider, guestSummary: GuestSessionSummary? = nil) {
         errorMessage = nil
         isAuthenticating = true
+        let wasGuest = self.isGuest
         self.provider = provider
         self.isGuest = (provider == .guest)
 
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(600))
             isAuthenticating = false
-            // 게스트는 프로필 단계 스킵하는 간소 온보딩 — OnboardingFlow 내부에서 분기.
-            route = .onboarding
+            // 게스트 → 정식 계정 업그레이드: 이전 모달 표시 후 onboarding
+            if wasGuest, provider != .guest, let guestSummary, guestSummary.hasAnything {
+                pendingGuestSummary = guestSummary
+                pendingGuestMigration = true
+                route = .onboarding
+            } else {
+                // 게스트는 프로필 단계 스킵하는 간소 온보딩 — OnboardingFlow 내부에서 분기.
+                route = .onboarding
+            }
         }
+    }
+
+    func resolveGuestMigration(keepData: Bool) {
+        if keepData {
+            // mock: 실제로는 GuestbookStore/BookshelfState/ArchiveStore를 서버 계정에 업로드.
+            print("✅ 게스트 로컬 데이터를 계정으로 이전 — \(pendingGuestSummary?.description ?? "")")
+        } else {
+            print("🆕 새로 시작 — 이전 게스트 데이터는 버림")
+        }
+        pendingGuestMigration = false
+        pendingGuestSummary = nil
     }
 
     func finishOnboarding() {

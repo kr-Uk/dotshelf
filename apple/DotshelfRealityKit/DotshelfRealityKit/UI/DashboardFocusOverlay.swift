@@ -37,6 +37,7 @@ struct DashboardFocusOverlay: View {
     var onReply: (GuestbookEntry) -> Void
     var onToggleLike: () -> Void
     var onVisitUser: (FollowUser) -> Void = { _ in }
+    var onReport: (ReportTarget) -> Void = { _ in }
 
     var initialTab: Tab = .summary
 
@@ -52,7 +53,8 @@ struct DashboardFocusOverlay: View {
          onOpenBioEditor: @escaping () -> Void,
          onReply: @escaping (GuestbookEntry) -> Void,
          onToggleLike: @escaping () -> Void,
-         onVisitUser: @escaping (FollowUser) -> Void = { _ in }) {
+         onVisitUser: @escaping (FollowUser) -> Void = { _ in },
+         onReport: @escaping (ReportTarget) -> Void = { _ in }) {
         self.store = store
         self.totalBookCount = totalBookCount
         self.likeCount = likeCount
@@ -64,6 +66,7 @@ struct DashboardFocusOverlay: View {
         self.onReply = onReply
         self.onToggleLike = onToggleLike
         self.onVisitUser = onVisitUser
+        self.onReport = onReport
         _tab = State(initialValue: initialTab)
     }
 
@@ -347,7 +350,10 @@ struct DashboardFocusOverlay: View {
                             GuestbookDetailRow(
                                 entry: entry,
                                 onReply: { onReply(entry) },
-                                onDelete: { store.removeEntry(id: entry.id) }
+                                onDelete: { store.removeEntry(id: entry.id) },
+                                onReport: {
+                                    onReport(ReportTarget(kind: .guestbook, displayText: entry.message))
+                                }
                             )
                         }
                     }
@@ -363,6 +369,7 @@ private struct GuestbookDetailRow: View {
     let entry: GuestbookEntry
     var onReply: () -> Void
     var onDelete: () -> Void
+    var onReport: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -397,6 +404,7 @@ private struct GuestbookDetailRow: View {
                 Spacer(minLength: 0)
                 Menu {
                     Button(action: onReply) { Label("답장", systemImage: "arrowshape.turn.up.left") }
+                    Button(role: .destructive, action: onReport) { Label("신고", systemImage: "exclamationmark.triangle") }
                     Button(role: .destructive, action: onDelete) { Label("삭제", systemImage: "trash") }
                 } label: {
                     Image(systemName: "ellipsis")

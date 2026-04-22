@@ -37,7 +37,14 @@ private struct RootRouter: View {
                 ContentView(auth: auth)
                     .transition(.opacity)
             }
+
+            // 게스트 → 정식 가입 시 데이터 이전 모달 (§8)
+            if auth.pendingGuestMigration, let summary = auth.pendingGuestSummary {
+                GuestMigrationModal(auth: auth, summary: summary)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
         }
         .animation(.easeInOut(duration: 0.3), value: auth.route)
+        .animation(.easeInOut(duration: 0.2), value: auth.pendingGuestMigration)
     }
 }
