@@ -6,11 +6,14 @@ namespace BookshelfPorting.Runtime
 {
     public class BookshelfState : MonoBehaviour
     {
+        private const float SectionDropAreaMargin = 0.08f;
+
         [SerializeField] private float bookPadding = 0.01f;
         [SerializeField] private float shelfFrontInset = 0.01f;
         [SerializeField] private float animationDuration = 0.18f;
 
         private readonly List<ShelfSection> sections = new List<ShelfSection>();
+        private readonly List<BookLayoutTarget> layoutTargets = new List<BookLayoutTarget>();
 
         public IReadOnlyList<ShelfSection> Sections => sections;
         public bool IsViewingBook { get; set; }
@@ -113,38 +116,27 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            RemoveMissingBooks(section);
-            var x = section.leftBound + bookPadding;
-            for (var i = 0; i < section.books.Count; i++)
+            BuildSectionLayout(section, layoutTargets);
+            for (var i = 0; i < layoutTargets.Count; i++)
             {
-                var book = section.books[i];
-                var footprint = book.GetFootprint();
-                var targetPosition = new Vector3(
-                    x + footprint * 0.5f,
-                    section.shelfTopY + book.height * 0.5f,
-                    section.frontZ - shelfFrontInset);
-                var targetRotation = BookFootprintUtility.GetVisualRotation(book.orientation);
-
-                var targetScale = book.BaseLocalScale;
+                var target = layoutTargets[i];
+                var book = target.Book;
 
                 if (book == excludedBook)
                 {
-                    x += footprint + bookPadding;
                     continue;
                 }
 
                 if (animate && runner != null && book.gameObject.activeInHierarchy)
                 {
-                    runner.StartCoroutine(AnimateBookTo(book.transform, targetPosition, targetRotation, targetScale));
+                    runner.StartCoroutine(AnimateBookTo(book.transform, target.LocalPosition, target.LocalRotation, target.LocalScale));
                 }
                 else
                 {
-                    book.transform.localPosition = targetPosition;
-                    book.transform.localRotation = targetRotation;
-                    book.transform.localScale = targetScale;
+                    book.transform.localPosition = target.LocalPosition;
+                    book.transform.localRotation = target.LocalRotation;
+                    book.transform.localScale = target.LocalScale;
                 }
-
-                x += footprint + bookPadding;
             }
         }
 
@@ -164,24 +156,17 @@ namespace BookshelfPorting.Runtime
                 return false;
             }
 
-            RemoveMissingBooks(section);
-            var x = section.leftBound + bookPadding;
-            for (var i = 0; i < section.books.Count; i++)
+            BuildSectionLayout(section, layoutTargets);
+            for (var i = 0; i < layoutTargets.Count; i++)
             {
-                var book = section.books[i];
-                var footprint = book.GetFootprint();
-                if (book == targetBook)
+                var target = layoutTargets[i];
+                if (target.Book == targetBook)
                 {
-                    localPosition = new Vector3(
-                        x + footprint * 0.5f,
-                        section.shelfTopY + book.height * 0.5f,
-                        section.frontZ - shelfFrontInset);
-                    localRotation = BookFootprintUtility.GetVisualRotation(book.orientation);
-                    localScale = book.BaseLocalScale;
+                    localPosition = target.LocalPosition;
+                    localRotation = target.LocalRotation;
+                    localScale = target.LocalScale;
                     return true;
                 }
-
-                x += footprint + bookPadding;
             }
 
             return false;
@@ -245,7 +230,7 @@ namespace BookshelfPorting.Runtime
             return best;
         }
 
-        public ShelfSection FindAvailableDropSection(Vector3 localPosition, BookEntity book, float margin = 0.08f)
+        public ShelfSection FindAvailableDropSection(Vector3 localPosition, BookEntity book, float margin = SectionDropAreaMargin)
         {
             ShelfSection best = null;
             var bestDistance = float.MaxValue;
@@ -352,6 +337,34 @@ namespace BookshelfPorting.Runtime
             return occupied <= section.Width;
         }
 
+        private void BuildSectionLayout(ShelfSection section, List<BookLayoutTarget> targets)
+        {
+            targets.Clear();
+
+            if (section == null)
+            {
+                return;
+            }
+
+            RemoveMissingBooks(section);
+            var x = section.leftBound + bookPadding;
+            for (var i = 0; i < section.books.Count; i++)
+            {
+                var book = section.books[i];
+                var footprint = book.GetFootprint();
+                targets.Add(new BookLayoutTarget(
+                    book,
+                    new Vector3(
+                        x + footprint * 0.5f,
+                        section.shelfTopY + book.height * 0.5f,
+                        section.frontZ - shelfFrontInset),
+                    BookFootprintUtility.GetVisualRotation(book.orientation),
+                    book.BaseLocalScale));
+
+                x += footprint + bookPadding;
+            }
+        }
+
         private static BookEntity FindLargestBookExcept(ShelfSection section, BookEntity except)
         {
             if (section == null)
@@ -417,6 +430,22 @@ namespace BookshelfPorting.Runtime
             target.localPosition = localPosition;
             target.localRotation = localRotation;
             target.localScale = localScale;
+        }
+
+        private readonly struct BookLayoutTarget
+        {
+            public BookLayoutTarget(BookEntity book, Vector3 localPosition, Quaternion localRotation, Vector3 localScale)
+            {
+                Book = book;
+                LocalPosition = localPosition;
+                LocalRotation = localRotation;
+                LocalScale = localScale;
+            }
+
+            public BookEntity Book { get; }
+            public Vector3 LocalPosition { get; }
+            public Quaternion LocalRotation { get; }
+            public Vector3 LocalScale { get; }
         }
     }
 }

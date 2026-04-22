@@ -10,6 +10,8 @@ namespace BookshelfPorting.Runtime
 {
     public class BookInteractionController : MonoBehaviour
     {
+        private const int DragVelocitySampleLimit = 5;
+
         [SerializeField] private Camera sceneCamera = null;
         [SerializeField] private BookshelfState state = null;
         [SerializeField] private BookshelfGenerator generator = null;
@@ -22,6 +24,8 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float invalidDropMaxDuration = 3f;
         [SerializeField] private float invalidDropBookMass = 0.18f;
         [SerializeField] private float invalidDropMinHorizontalSpeed = 0.45f;
+        [SerializeField] private float invalidDropMaxHorizontalSpeed = 2.4f;
+        [SerializeField] private float invalidDropThrowSpinMultiplier = 0.9f;
         [SerializeField] private float invalidDropBookBounciness = 0.05f;
         [SerializeField] private float invalidDropBoundaryBounciness = 0.18f;
         [SerializeField] private float invalidDropFriction = 0.4f;
@@ -62,6 +66,7 @@ namespace BookshelfPorting.Runtime
         private PointerTarget currentPointerTarget;
         private readonly List<BoxCollider> dropBoundaryColliders = new List<BoxCollider>();
         private readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
+        private readonly Queue<Vector3> dragVelocitySamples = new Queue<Vector3>();
 
         public void Configure(
             BookshelfState bookshelfState,
@@ -433,7 +438,7 @@ namespace BookshelfPorting.Runtime
             state.ActiveDraggedBook = null;
             originalSectionBeforeDrag = null;
             shelfBookPointerTravel = 0f;
-            dragWorldVelocity = Vector3.zero;
+            ResetDragVelocity();
         }
 
         private PointerTarget RaycastPointerTarget(Vector2 pointer)
@@ -561,7 +566,7 @@ namespace BookshelfPorting.Runtime
             state.ActiveDraggedBook = book;
             originalSectionBeforeDrag = book.CurrentSection;
             lastDragWorldPosition = book.transform.position;
-            dragWorldVelocity = Vector3.zero;
+            ResetDragVelocity();
 
             if (originalSectionBeforeDrag != null)
             {
@@ -581,7 +586,7 @@ namespace BookshelfPorting.Runtime
                 var world = ClampDraggedBookToRoom(ray.GetPoint(enter), draggingBook);
                 if (Time.deltaTime > 0f)
                 {
-                    dragWorldVelocity = (world - lastDragWorldPosition) / Time.deltaTime;
+                    TrackDragVelocity((world - lastDragWorldPosition) / Time.deltaTime);
                 }
 
                 lastDragWorldPosition = world;
@@ -707,11 +712,9 @@ namespace BookshelfPorting.Runtime
             body.isKinematic = false;
             body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             body.interpolation = RigidbodyInterpolation.Interpolate;
-            body.linearVelocity = ResolveInvalidDropVelocity(book);
-            body.angularVelocity = new Vector3(
-                Random.Range(-1.5f, 1.5f),
-                Random.Range(-0.8f, 0.8f),
-                Random.Range(-1.5f, 1.5f));
+            var initialVelocity = ResolveInvalidDropVelocity(book);
+            body.linearVelocity = initialVelocity;
+            body.angularVelocity = ResolveInvalidDropAngularVelocity(initialVelocity);
 
             var elapsed = 0f;
 
@@ -740,11 +743,59 @@ namespace BookshelfPorting.Runtime
                 var side = book != null && book.transform.position.x < 0f ? -1f : 1f;
                 horizontal = new Vector2(side * invalidDropMinHorizontalSpeed, -invalidDropMinHorizontalSpeed * 0.5f);
             }
+            else
+            {
+                var maxHorizontalSpeed = Mathf.Max(invalidDropMinHorizontalSpeed, invalidDropMaxHorizontalSpeed);
+                horizontal = Vector2.ClampMagnitude(horizontal, maxHorizontalSpeed);
+            }
 
             velocity.x = horizontal.x;
             velocity.z = horizontal.y;
-            dragWorldVelocity = Vector3.zero;
+            ResetDragVelocity();
             return velocity;
+        }
+
+        private Vector3 ResolveInvalidDropAngularVelocity(Vector3 initialVelocity)
+        {
+            var spin = Mathf.Max(0f, invalidDropThrowSpinMultiplier);
+            var xSpin = Mathf.Clamp(-initialVelocity.z * spin + Random.Range(-0.4f, 0.4f), -3f, 3f);
+            var zSpin = Mathf.Clamp(initialVelocity.x * spin + Random.Range(-0.4f, 0.4f), -3f, 3f);
+            return new Vector3(xSpin, Random.Range(-0.8f, 0.8f), zSpin);
+        }
+
+        private void TrackDragVelocity(Vector3 velocity)
+        {
+            if (!IsFinite(velocity))
+            {
+                return;
+            }
+
+            dragVelocitySamples.Enqueue(velocity);
+            while (dragVelocitySamples.Count > DragVelocitySampleLimit)
+            {
+                dragVelocitySamples.Dequeue();
+            }
+
+            var total = Vector3.zero;
+            foreach (var sample in dragVelocitySamples)
+            {
+                total += sample;
+            }
+
+            dragWorldVelocity = total / dragVelocitySamples.Count;
+        }
+
+        private void ResetDragVelocity()
+        {
+            dragWorldVelocity = Vector3.zero;
+            dragVelocitySamples.Clear();
+        }
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
+                   !float.IsNaN(value.y) && !float.IsInfinity(value.y) &&
+                   !float.IsNaN(value.z) && !float.IsInfinity(value.z);
         }
 
         private Vector3 ClampDraggedBookToRoom(Vector3 worldPosition, BookEntity book)
