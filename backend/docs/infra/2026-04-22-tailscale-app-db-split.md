@@ -280,6 +280,7 @@ services:
 - `build:` 와 `image:` 를 **둘 다 둠** — CI 는 `up -d --build` 로 재빌드, 평소엔 image 참조로 기동
 - api 서비스 하나뿐이라 `networks:` 블록 생략 (Docker default bridge 사용)
 - `depends_on:` 없음 (DB 가 다른 호스트에 있으니 의미 없음)
+- **`extra_hosts: - "dotshelf-prod:100.86.247.88"`** 필수 — Tailscale MagicDNS 는 호스트 `/etc/hosts` 까지만 업데이트하고 컨테이너까진 전파 안 됨. JDBC(PostgreSQL) 는 Java 기본 InetAddress 리졸버가 /etc/hosts 의 FQDN 부분 매칭으로 운 좋게 해결하지만, **Lettuce(Redis) 가 쓰는 Netty DNS 리졸버는 /etc/hosts 를 무시**하고 DNS 서버만 조회 → `dotshelf-prod` SERVFAIL → Redis health DOWN. extra_hosts 로 컨테이너 /etc/hosts 에 고정 매핑하면 해결.
 
 ### 6-4. 아키텍처 주의 — amd64 재빌드
 
@@ -547,12 +548,12 @@ User: dotshelf
 
 ## 14. 남은 숙제 (TODO)
 
-- [ ] **CI 파이프라인 실제 push 로 검증** — 오늘 수정만 하고 실전 돌리지 않음
+- [ ] **CI 파이프라인 실제 push 로 검증** — 오늘 수정만 하고 실전 돌리지 않음 (MR 머지 시 첫 검증)
 - [ ] **DB 외부 백업** — S3/R2 또는 정기 scp. 데이터 쌓이기 전에 결정
 - [ ] **SSAFY 서버 소멸 D-day 확정** + 앱 이전 대안 서버 선정
 - [ ] 영구 서버의 gitlab-runner.service 용도 정리 — 이제 prod 에서 빌드 안 함 (SSAFY 는 CI 가 deploy 만 수행). runner 자체가 불필요해졌는지 검토
 - [ ] Tailscale ACL 제한 설정 (현재는 전노드 풀 오픈 상태)
-- [ ] DB 마이그레이션을 **Flyway** 로 전환 (이전 문서 TODO 유지)
+- [x] ~~DB 마이그레이션을 **Flyway** 로 전환~~ — 같은 날 오후 완료. [2026-04-22-flyway-and-health.md §1](./2026-04-22-flyway-and-health.md) 참조
 - [ ] UFW 인바운드를 Cloudflare IP 대역으로 한정 (prod 80/443) — 여전히 TODO
 
 ## 15. 배운 것
