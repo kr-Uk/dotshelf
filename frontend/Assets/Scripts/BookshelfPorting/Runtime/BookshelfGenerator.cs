@@ -11,6 +11,14 @@ namespace BookshelfPorting.Runtime
         private const float BookshelfAnchorZ = 1.285f;
         private const float BookshelfFadeDuration = 0.22f;
         private const string HamhamAssetPath = "Assets/Meshy_AI_Hamham_0416082404_texture.glb";
+        private const string BookStackAssetPath = "Assets/Arts/Models/Props/book_stack.glb";
+        private const string RugAssetPath = "Assets/Arts/Models/Furniture/rug_natural.glb";
+        private const string LampAssetPath = "Assets/Arts/Models/Furniture/lamp_floor.glb";
+        private const string TableNaturalAssetPath = "Assets/Arts/Models/Furniture/table_natural.glb";
+        private const string ClockHamhamAssetPath = "Assets/Arts/Models/Props/clock_hamham.glb";
+        private const float DeskTargetWidthX = 0.54f;
+        private const float DeskTargetHeightY = 0.41f;
+        private const float DeskTargetDepthZ = 0.86f;
         private const string QABooksBaseTexturePath = "Assets/QA_Books/Textures/BooksA_bc.tga";
         private const string QABooksNormalTexturePath = "Assets/QA_Books/Textures/BooksA_n.tga";
         private const string QABooksMetallicTexturePath = "Assets/QA_Books/Textures/BooksA_m_ao_g.tga";
@@ -27,6 +35,11 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private Transform bookshelfRoot = null;
         [SerializeField] private Transform booksRoot = null;
         [SerializeField] private GameObject hamhamModelAsset = null;
+        [SerializeField] private GameObject bookStackAsset = null;
+        [SerializeField] private GameObject rugAsset = null;
+        [SerializeField] private GameObject lampAsset = null;
+        [SerializeField] private GameObject tableNaturalAsset = null;
+        [SerializeField] private GameObject clockHamhamAsset = null;
         [SerializeField] private Texture2D qaBooksBaseMap = null;
         [SerializeField] private Texture2D qaBooksNormalMap = null;
         [SerializeField] private Texture2D qaBooksMaskMap = null;
@@ -202,6 +215,15 @@ namespace BookshelfPorting.Runtime
             DestroyBookEntitiesUnderBooksRoot();
         }
 
+        private static readonly HashSet<string> PreservedRoomChildNames = new HashSet<string>
+        {
+            "LampFloor",
+            "BookStack",
+            "RugNatural",
+            "Ceiling",
+            "ClockHamham"
+        };
+
         private void ClearRoomChildren()
         {
             if (roomRoot == null)
@@ -209,7 +231,22 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            ClearChildren(roomRoot, null);
+            var children = new List<GameObject>();
+            for (var i = 0; i < roomRoot.childCount; i++)
+            {
+                var child = roomRoot.GetChild(i);
+                if (PreservedRoomChildNames.Contains(child.name))
+                {
+                    continue;
+                }
+
+                children.Add(child.gameObject);
+            }
+
+            for (var i = 0; i < children.Count; i++)
+            {
+                DestroySpawnedObject(children[i]);
+            }
         }
 
         private void ClearBookshelfShellChildren()
@@ -289,6 +326,196 @@ namespace BookshelfPorting.Runtime
 
             BuildGuestbookBoard();
             BuildNotebookStation();
+            EnsureRoomDecorations();
+        }
+
+        private static readonly Vector3 LampFloorLocalPosition = new Vector3(-1.05f, 0f, 1.05f);
+        private static readonly Quaternion LampFloorLocalRotation = Quaternion.Euler(0f, 35f, 0f);
+        private static readonly Vector3 LampFloorLocalScale = Vector3.one * 0.8f;
+
+        private static readonly Vector3 BookStackLocalPosition = new Vector3(-1.72f, 0f, -0.42f);
+        private static readonly Quaternion BookStackLocalRotation = Quaternion.Euler(0f, 18f, 0f);
+        private static readonly Vector3 BookStackLocalScale = Vector3.one * 0.2f;
+
+        private static readonly Vector3 RugNaturalLocalPosition = new Vector3(0.4f, 0.002f, -0.55f);
+        private static readonly Quaternion RugNaturalLocalRotation = Quaternion.identity;
+        private static readonly Vector3 RugNaturalLocalScale = Vector3.one * 0.6f;
+
+        private static readonly Vector3 ClockHamhamLocalPosition = new Vector3(-2.0f, 1.72f, -1.15f);
+        private static readonly Quaternion ClockHamhamLocalRotation = Quaternion.Euler(0f, 90f, 0f);
+        private const float ClockHamhamTargetMaxDimension = 0.38f;
+        private const float ClockHamhamAlignTopToY = 1.72f;
+
+        public void EnsureRoomDecorations()
+        {
+            EnsureRoots();
+            if (roomRoot == null)
+            {
+                return;
+            }
+
+            if (roomRoot.Find("LampFloor") == null)
+            {
+                SpawnDecoration(
+                    ref lampAsset, LampAssetPath, "LampFloor",
+                    LampFloorLocalPosition, LampFloorLocalRotation, LampFloorLocalScale,
+                    alignToFloor: true);
+            }
+
+            if (roomRoot.Find("BookStack") == null)
+            {
+                SpawnDecoration(
+                    ref bookStackAsset, BookStackAssetPath, "BookStack",
+                    BookStackLocalPosition, BookStackLocalRotation, BookStackLocalScale,
+                    alignToFloor: true);
+            }
+
+            if (roomRoot.Find("RugNatural") == null)
+            {
+                SpawnDecoration(
+                    ref rugAsset, RugAssetPath, "RugNatural",
+                    RugNaturalLocalPosition, RugNaturalLocalRotation, RugNaturalLocalScale,
+                    alignToFloor: false);
+            }
+
+            if (roomRoot.Find("ClockHamham") == null)
+            {
+                SpawnWallMountedDecoration(
+                    ref clockHamhamAsset, ClockHamhamAssetPath, "ClockHamham",
+                    ClockHamhamLocalPosition, ClockHamhamLocalRotation, ClockHamhamTargetMaxDimension,
+                    ClockHamhamAlignTopToY);
+            }
+        }
+
+        private void SpawnWallMountedDecoration(ref GameObject cachedAsset, string assetPath, string rootName, Vector3 localPosition, Quaternion localRotation, float targetMaxDimension, float? alignTopToY = null)
+        {
+            var asset = ResolveAsset(cachedAsset, assetPath);
+            if (asset == null)
+            {
+                return;
+            }
+
+            cachedAsset = asset;
+
+            var decoRoot = new GameObject(rootName);
+            decoRoot.transform.SetParent(roomRoot, false);
+            decoRoot.transform.localPosition = localPosition;
+            decoRoot.transform.localRotation = localRotation;
+            decoRoot.transform.localScale = Vector3.one;
+
+            var instance = Instantiate(asset, decoRoot.transform);
+            instance.name = asset.name;
+            instance.transform.localPosition = Vector3.zero;
+            instance.transform.localRotation = Quaternion.identity;
+            instance.transform.localScale = Vector3.one;
+
+            var bounds = CalculateLocalBoundsFromMeshes(decoRoot.transform);
+            if (bounds.size.sqrMagnitude > 0.0001f)
+            {
+                var maxDim = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
+                if (maxDim > 0.0001f)
+                {
+                    decoRoot.transform.localScale = Vector3.one * (targetMaxDimension / maxDim);
+                }
+            }
+
+            if (alignTopToY.HasValue)
+            {
+                var parentBounds = CalculateBoundsOfSubtreeInSpace(decoRoot.transform, roomRoot);
+                if (parentBounds.size.sqrMagnitude > 0.0001f)
+                {
+                    var yShift = alignTopToY.Value - parentBounds.max.y;
+                    var lp = decoRoot.transform.localPosition;
+                    decoRoot.transform.localPosition = new Vector3(lp.x, lp.y + yShift, lp.z);
+                }
+            }
+        }
+
+        private static Bounds CalculateBoundsOfSubtreeInSpace(Transform subtreeRoot, Transform coordinateSpace)
+        {
+            var hasBounds = false;
+            var bounds = new Bounds(Vector3.zero, Vector3.zero);
+            var meshFilters = subtreeRoot.GetComponentsInChildren<MeshFilter>(true);
+            for (var i = 0; i < meshFilters.Length; i++)
+            {
+                var mf = meshFilters[i];
+                if (mf == null || mf.sharedMesh == null)
+                {
+                    continue;
+                }
+
+                var localBounds = mf.sharedMesh.bounds;
+                var mft = mf.transform;
+                var lmin = localBounds.min;
+                var lmax = localBounds.max;
+                for (var cx = 0; cx < 2; cx++)
+                {
+                    var x = cx == 0 ? lmin.x : lmax.x;
+                    for (var cy = 0; cy < 2; cy++)
+                    {
+                        var y = cy == 0 ? lmin.y : lmax.y;
+                        for (var cz = 0; cz < 2; cz++)
+                        {
+                            var z = cz == 0 ? lmin.z : lmax.z;
+                            var worldPoint = mft.TransformPoint(new Vector3(x, y, z));
+                            var spacePoint = coordinateSpace.InverseTransformPoint(worldPoint);
+                            if (!hasBounds)
+                            {
+                                bounds = new Bounds(spacePoint, Vector3.zero);
+                                hasBounds = true;
+                            }
+                            else
+                            {
+                                bounds.Encapsulate(spacePoint);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return bounds;
+        }
+
+        private void SpawnDecoration(ref GameObject cachedAsset, string assetPath, string rootName, Vector3 localPosition, Quaternion localRotation, Vector3 localScale, bool alignToFloor)
+        {
+            var asset = ResolveAsset(cachedAsset, assetPath);
+            if (asset == null)
+            {
+                return;
+            }
+
+            cachedAsset = asset;
+
+            var decoRoot = new GameObject(rootName);
+            decoRoot.transform.SetParent(roomRoot, false);
+            decoRoot.transform.localPosition = localPosition;
+            decoRoot.transform.localRotation = localRotation;
+            decoRoot.transform.localScale = localScale;
+
+            var instance = Instantiate(asset, decoRoot.transform);
+            instance.name = asset.name;
+            instance.transform.localPosition = Vector3.zero;
+            instance.transform.localRotation = Quaternion.identity;
+            instance.transform.localScale = Vector3.one;
+
+            if (alignToFloor)
+            {
+                AlignModelToFloor(decoRoot.transform, instance.transform);
+            }
+        }
+
+        private static GameObject ResolveAsset(GameObject asset, string assetPath)
+        {
+            if (asset != null)
+            {
+                return asset;
+            }
+
+#if UNITY_EDITOR
+            return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+#else
+            return null;
+#endif
         }
 
         private void BuildBookshelf()
@@ -965,7 +1192,6 @@ namespace BookshelfPorting.Runtime
             notebookStation.transform.localRotation = Quaternion.identity;
             generatedGeometry.Add(notebookStation);
 
-            var wood = materialFactory.GetFurnitureWoodMaterial();
             var aluminum = materialFactory.CreateBookMaterial(new Color(0.72f, 0.73f, 0.71f));
             var darkGlass = materialFactory.CreateBookMaterial(new Color(0.015f, 0.018f, 0.022f));
             var screenGlow = materialFactory.CreateBookMaterial(new Color(0.10f, 0.16f, 0.24f));
@@ -973,27 +1199,17 @@ namespace BookshelfPorting.Runtime
             var keyLetterTone = materialFactory.CreateBookMaterial(new Color(0.12f, 0.125f, 0.13f));
             var trackpadTone = materialFactory.CreateBookMaterial(new Color(0.60f, 0.61f, 0.59f));
 
-            const float deskHeight = 0.38f;
-            const float deskThickness = 0.06f;
-            const float deskDepth = 0.54f;
-            const float deskWidth = 0.86f;
-            const float legThickness = 0.06f;
-
             var desk = new GameObject("Desk");
             desk.transform.SetParent(notebookStation.transform, false);
             desk.transform.localPosition = Vector3.zero;
             desk.transform.localRotation = Quaternion.identity;
             generatedGeometry.Add(desk);
 
-            CreateBox("Desktop", desk.transform, new Vector3(0f, deskHeight, 0f), new Vector3(deskDepth, deskThickness, deskWidth), wood);
-            CreateBox("DeskLegA", desk.transform, new Vector3(-(deskDepth * 0.5f - 0.11f), deskHeight * 0.5f, -(deskWidth * 0.5f - 0.10f)), new Vector3(legThickness, deskHeight, legThickness), wood);
-            CreateBox("DeskLegB", desk.transform, new Vector3(deskDepth * 0.5f - 0.11f, deskHeight * 0.5f, -(deskWidth * 0.5f - 0.10f)), new Vector3(legThickness, deskHeight, legThickness), wood);
-            CreateBox("DeskLegC", desk.transform, new Vector3(-(deskDepth * 0.5f - 0.11f), deskHeight * 0.5f, deskWidth * 0.5f - 0.10f), new Vector3(legThickness, deskHeight, legThickness), wood);
-            CreateBox("DeskLegD", desk.transform, new Vector3(deskDepth * 0.5f - 0.11f, deskHeight * 0.5f, deskWidth * 0.5f - 0.10f), new Vector3(legThickness, deskHeight, legThickness), wood);
+            var deskTopY = BuildDeskSurface(desk.transform);
 
             var notebook = new GameObject("Notebook");
             notebook.transform.SetParent(desk.transform, false);
-            notebook.transform.localPosition = new Vector3(0.10f, deskHeight + deskThickness * 0.5f + 0.009f, 0f);
+            notebook.transform.localPosition = new Vector3(0.10f, deskTopY + 0.009f, 0f);
             notebook.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
             generatedGeometry.Add(notebook);
 
@@ -1030,6 +1246,116 @@ namespace BookshelfPorting.Runtime
             generatedGeometry.Add(hitArea);
 
             notebook.AddComponent<NotebookScreenController>();
+        }
+
+        private float BuildDeskSurface(Transform deskRoot)
+        {
+            var tableAsset = ResolveAsset(tableNaturalAsset, TableNaturalAssetPath);
+            tableNaturalAsset = tableAsset;
+
+            if (tableAsset != null)
+            {
+                var tableInstance = Instantiate(tableAsset, deskRoot);
+                tableInstance.name = tableAsset.name;
+                tableInstance.transform.localPosition = Vector3.zero;
+                tableInstance.transform.localScale = Vector3.one;
+
+                var initialBounds = CalculateLocalBoundsFromMeshes(deskRoot);
+                if (initialBounds.size.sqrMagnitude > 0.0001f)
+                {
+                    float sx, sy, sz;
+                    if (initialBounds.size.x > initialBounds.size.z)
+                    {
+                        tableInstance.transform.localRotation = Quaternion.Euler(0f, 90f, 0f) * tableInstance.transform.localRotation;
+                        sx = DeskTargetDepthZ / Mathf.Max(initialBounds.size.x, 0.0001f);
+                        sz = DeskTargetWidthX / Mathf.Max(initialBounds.size.z, 0.0001f);
+                    }
+                    else
+                    {
+                        sx = DeskTargetWidthX / Mathf.Max(initialBounds.size.x, 0.0001f);
+                        sz = DeskTargetDepthZ / Mathf.Max(initialBounds.size.z, 0.0001f);
+                    }
+
+                    sy = DeskTargetHeightY / Mathf.Max(initialBounds.size.y, 0.0001f);
+                    tableInstance.transform.localScale = new Vector3(sx, sy, sz);
+
+                    var scaledBounds = CalculateLocalBoundsFromMeshes(deskRoot);
+                    if (scaledBounds.size.sqrMagnitude > 0.0001f)
+                    {
+                        var localPos = tableInstance.transform.localPosition;
+                        tableInstance.transform.localPosition = new Vector3(localPos.x, localPos.y - scaledBounds.min.y, localPos.z);
+                        return scaledBounds.max.y - scaledBounds.min.y;
+                    }
+
+                    return DeskTargetHeightY;
+                }
+
+                DestroyImmediate(tableInstance);
+            }
+
+            return BuildBoxDesk(deskRoot);
+        }
+
+        private static Bounds CalculateLocalBoundsFromMeshes(Transform root)
+        {
+            var hasBounds = false;
+            var bounds = new Bounds(Vector3.zero, Vector3.zero);
+            var meshFilters = root.GetComponentsInChildren<MeshFilter>(true);
+            for (var i = 0; i < meshFilters.Length; i++)
+            {
+                var mf = meshFilters[i];
+                if (mf == null || mf.sharedMesh == null)
+                {
+                    continue;
+                }
+
+                var localBounds = mf.sharedMesh.bounds;
+                var mft = mf.transform;
+                var lmin = localBounds.min;
+                var lmax = localBounds.max;
+                for (var cx = 0; cx < 2; cx++)
+                {
+                    var x = cx == 0 ? lmin.x : lmax.x;
+                    for (var cy = 0; cy < 2; cy++)
+                    {
+                        var y = cy == 0 ? lmin.y : lmax.y;
+                        for (var cz = 0; cz < 2; cz++)
+                        {
+                            var z = cz == 0 ? lmin.z : lmax.z;
+                            var rootLocal = root.InverseTransformPoint(mft.TransformPoint(new Vector3(x, y, z)));
+                            if (!hasBounds)
+                            {
+                                bounds = new Bounds(rootLocal, Vector3.zero);
+                                hasBounds = true;
+                            }
+                            else
+                            {
+                                bounds.Encapsulate(rootLocal);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return bounds;
+        }
+
+        private float BuildBoxDesk(Transform deskRoot)
+        {
+            var wood = materialFactory.GetFurnitureWoodMaterial();
+            const float deskHeight = 0.38f;
+            const float deskThickness = 0.06f;
+            const float deskDepth = 0.54f;
+            const float deskWidth = 0.86f;
+            const float legThickness = 0.06f;
+
+            CreateBox("Desktop", deskRoot, new Vector3(0f, deskHeight, 0f), new Vector3(deskDepth, deskThickness, deskWidth), wood);
+            CreateBox("DeskLegA", deskRoot, new Vector3(-(deskDepth * 0.5f - 0.11f), deskHeight * 0.5f, -(deskWidth * 0.5f - 0.10f)), new Vector3(legThickness, deskHeight, legThickness), wood);
+            CreateBox("DeskLegB", deskRoot, new Vector3(deskDepth * 0.5f - 0.11f, deskHeight * 0.5f, -(deskWidth * 0.5f - 0.10f)), new Vector3(legThickness, deskHeight, legThickness), wood);
+            CreateBox("DeskLegC", deskRoot, new Vector3(-(deskDepth * 0.5f - 0.11f), deskHeight * 0.5f, deskWidth * 0.5f - 0.10f), new Vector3(legThickness, deskHeight, legThickness), wood);
+            CreateBox("DeskLegD", deskRoot, new Vector3(deskDepth * 0.5f - 0.11f, deskHeight * 0.5f, deskWidth * 0.5f - 0.10f), new Vector3(legThickness, deskHeight, legThickness), wood);
+
+            return deskHeight + deskThickness * 0.5f;
         }
 
         private static Transform FindPrimaryNotebookStation(Transform root)

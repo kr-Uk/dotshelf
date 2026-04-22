@@ -14,6 +14,8 @@ namespace BookshelfPorting.Runtime
         [Header("Wood")]
         [SerializeField] private Texture2D woodBaseMap = null;
         [SerializeField] private Texture2D woodNormalMap = null;
+        [SerializeField] private Texture2D floorBaseMap = null;
+        [SerializeField] private Vector2 floorBaseMapTiling = new Vector2(3f, 3f);
         [SerializeField] private float bookshelfSmoothness = 0.42f;
         [SerializeField] private float floorSmoothness = 0.28f;
 
@@ -53,7 +55,14 @@ namespace BookshelfPorting.Runtime
         {
             if (floorMaterial == null)
             {
-                floorMaterial = CreateLitMaterial("FloorWood", woodBaseMap, woodNormalMap, Color.white, floorSmoothness, false);
+                var baseMap = floorBaseMap != null ? floorBaseMap : woodBaseMap;
+                var normalMap = floorBaseMap != null ? null : woodNormalMap;
+                floorMaterial = CreateLitMaterial("FloorWood", baseMap, normalMap, Color.white, floorSmoothness, false);
+                if (floorBaseMap != null)
+                {
+                    floorMaterial.SetTextureScale("_BaseMap", floorBaseMapTiling);
+                    floorMaterial.mainTextureScale = floorBaseMapTiling;
+                }
             }
 
             return floorMaterial;
