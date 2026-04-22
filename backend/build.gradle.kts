@@ -43,6 +43,12 @@ dependencies {
     // PostgreSQL
     runtimeOnly("org.postgresql:postgresql")
 
+    // Flyway (DB 스키마 마이그레이션)
+    // Spring Boot 4 부터 Flyway autoconfig 가 별도 모듈(spring-boot-flyway)로 분리됨 → 반드시 함께 포함
+    implementation("org.springframework.boot:spring-boot-flyway")
+    implementation("org.flywaydb:flyway-core")
+    implementation("org.flywaydb:flyway-database-postgresql")
+
     // Lombok
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")

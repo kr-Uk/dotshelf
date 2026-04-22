@@ -20,10 +20,15 @@ spring:
       minimum-idle: 2
       connection-timeout: 10000
 
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
   jpa:
     hibernate:
-      # dev 전용: 스키마 자동 반영. 실서비스 전환 시 none + Flyway 로 이관 필요
-      ddl-auto: update
+      # Flyway 가 스키마 소유. Hibernate 는 엔티티↔DB 정합성 검증만 수행.
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
