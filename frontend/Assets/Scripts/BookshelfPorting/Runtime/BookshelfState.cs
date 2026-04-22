@@ -7,6 +7,7 @@ namespace BookshelfPorting.Runtime
     public class BookshelfState : MonoBehaviour
     {
         private const float SectionDropAreaMargin = 0.08f;
+        private const float MinimumSectionFitScale = 0.68f;
 
         [SerializeField] private float bookPadding = 0.01f;
         [SerializeField] private float shelfFrontInset = 0.01f;
@@ -214,7 +215,7 @@ namespace BookshelfPorting.Runtime
             for (var i = 0; i < sections.Count; i++)
             {
                 var section = sections[i];
-                if (section == exclude || !section.CanFit(book, bookPadding))
+                if (section == exclude || !CanSectionContainBook(section, book))
                 {
                     continue;
                 }
@@ -239,7 +240,7 @@ namespace BookshelfPorting.Runtime
             {
                 var section = sections[i];
                 if (!IsInsideSectionDropBounds(localPosition, section, margin) ||
-                    !section.CanFit(book, bookPadding))
+                    !CanSectionContainBook(section, book))
                 {
                     continue;
                 }
@@ -328,13 +329,18 @@ namespace BookshelfPorting.Runtime
             }
 
             RemoveMissingBooks(section);
-            var occupied = bookPadding;
-            for (var i = 0; i < section.books.Count; i++)
+            return GetSectionLayoutScale(section) >= MinimumSectionFitScale;
+        }
+
+        private bool CanSectionContainBook(ShelfSection section, BookEntity book)
+        {
+            if (section == null || book == null)
             {
-                occupied += section.books[i].GetFootprint() + bookPadding;
+                return false;
             }
 
-            return occupied <= section.Width;
+            RemoveMissingBooks(section);
+            return GetSectionLayoutScale(section, book) >= MinimumSectionFitScale;
         }
 
         private void BuildSectionLayout(ShelfSection section, List<BookLayoutTarget> targets)
@@ -347,22 +353,76 @@ namespace BookshelfPorting.Runtime
             }
 
             RemoveMissingBooks(section);
+            var sectionScale = GetSectionLayoutScale(section);
             var x = section.leftBound + bookPadding;
             for (var i = 0; i < section.books.Count; i++)
             {
                 var book = section.books[i];
-                var footprint = book.GetFootprint();
+                var footprint = book.GetFootprint() * sectionScale;
+                // X uses scaled footprints while Z aligns the visual front edge inside the section depth.
                 targets.Add(new BookLayoutTarget(
                     book,
                     new Vector3(
                         x + footprint * 0.5f,
-                        section.shelfTopY + book.height * 0.5f,
-                        section.frontZ - shelfFrontInset),
+                        section.shelfTopY + book.height * sectionScale * 0.5f,
+                        section.GetFrontAlignedBookCenterZ(book, sectionScale, shelfFrontInset)),
                     BookFootprintUtility.GetVisualRotation(book.orientation),
-                    book.BaseLocalScale));
+                    book.BaseLocalScale * sectionScale));
 
                 x += footprint + bookPadding;
             }
+        }
+
+        private float GetSectionLayoutScale(ShelfSection section)
+        {
+            return GetSectionLayoutScale(section, null);
+        }
+
+        private float GetSectionLayoutScale(ShelfSection section, BookEntity candidateBook)
+        {
+            if (section == null)
+            {
+                return 1f;
+            }
+
+            var footprintSum = 0f;
+            var bookCount = 0;
+            var candidateAlreadyIncluded = false;
+            for (var i = 0; i < section.books.Count; i++)
+            {
+                var book = section.books[i];
+                if (book == null)
+                {
+                    continue;
+                }
+
+                if (book == candidateBook)
+                {
+                    candidateAlreadyIncluded = true;
+                }
+
+                footprintSum += book.GetFootprint();
+                bookCount++;
+            }
+
+            if (candidateBook != null && !candidateAlreadyIncluded)
+            {
+                footprintSum += candidateBook.GetFootprint();
+                bookCount++;
+            }
+
+            if (bookCount == 0 || footprintSum <= 0f)
+            {
+                return 1f;
+            }
+
+            var availableForBooks = section.Width - bookPadding * (bookCount + 1);
+            if (availableForBooks <= 0f)
+            {
+                return 0f;
+            }
+
+            return Mathf.Min(1f, availableForBooks / footprintSum);
         }
 
         private static BookEntity FindLargestBookExcept(ShelfSection section, BookEntity except)

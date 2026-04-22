@@ -11,6 +11,7 @@ namespace BookshelfPorting.Runtime
     public class BookInteractionController : MonoBehaviour
     {
         private const int DragVelocitySampleLimit = 5;
+        private const float DragPreviewPitchDegrees = 15f;
 
         [SerializeField] private Camera sceneCamera = null;
         [SerializeField] private BookshelfState state = null;
@@ -42,9 +43,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float viewRotationSpeed = 0.25f;
         [SerializeField] private float viewedBookScaleMultiplier = 3.6f;
         [SerializeField] private Vector3 viewedBookInteractionPadding = new Vector3(0.28f, 0.22f, 0.18f);
-        [SerializeField] private Vector3 editMarkerScalePadding = new Vector3(-0.06f, -0.12f, -0.02f);
 
-        private readonly List<ShelfSectionMarker> editMarkers = new List<ShelfSectionMarker>();
         private BookEntity hoveredBook;
         private BookEntity pressedBook;
         private BookEntity draggingBook;
@@ -110,8 +109,6 @@ namespace BookshelfPorting.Runtime
                 backButton.gameObject.SetActive(state != null && state.IsViewingBook && !useOverlayBackButton);
             }
 
-            UpdateEditMarkers();
-
             var pointer = mouse.position.ReadValue();
             currentPointerTarget = RaycastPointerTarget(pointer);
 
@@ -149,17 +146,6 @@ namespace BookshelfPorting.Runtime
             {
                 OnPointerUp(pointer);
             }
-        }
-
-        public void SetActiveBookOrientation(BookOrientation orientation)
-        {
-            var target = state.ActiveViewedBook != null ? state.ActiveViewedBook : hoveredBook;
-            if (target == null)
-            {
-                return;
-            }
-
-            state.ChangeBookOrientation(target, orientation, this);
         }
 
         public void CloseViewedBook(bool reapplyLayout)
@@ -211,26 +197,8 @@ namespace BookshelfPorting.Runtime
                 {
                     CloseViewedBook(true);
                 }
-                else if (IsEditModeActive() && experienceManager.SelectedEditBook != null)
-                {
-                    experienceManager.ClearEditSelection();
-                }
             }
 
-            if (Keyboard.current.digit1Key.wasPressedThisFrame)
-            {
-                SetActiveBookOrientation(BookOrientation.Spine);
-            }
-
-            if (Keyboard.current.digit2Key.wasPressedThisFrame)
-            {
-                SetActiveBookOrientation(BookOrientation.Front);
-            }
-
-            if (Keyboard.current.digit3Key.wasPressedThisFrame)
-            {
-                SetActiveBookOrientation(BookOrientation.Angled45);
-            }
         }
 
         private void OnPointerDown(Vector2 pointer)
@@ -254,29 +222,6 @@ namespace BookshelfPorting.Runtime
             {
                 pressedBook = null;
                 isManipulatingViewedBook = false;
-                return;
-            }
-
-            if (IsEditModeActive())
-            {
-                if (currentPointerTarget.Type == PointerTargetType.Book && currentPointerTarget.Book != null)
-                {
-                    experienceManager.SelectEditBook(currentPointerTarget.Book);
-                    lastPointer = pointer;
-                    shelfBookPointerTravel = 0f;
-                    pressedBook = currentPointerTarget.Book;
-                    return;
-                }
-
-                if (currentPointerTarget.Type == PointerTargetType.EditSectionMarker)
-                {
-                    lastPointer = pointer;
-                    shelfBookPointerTravel = 0f;
-                    pressedBook = experienceManager.SelectedEditBook;
-                    return;
-                }
-
-                pressedBook = null;
                 return;
             }
 
@@ -348,19 +293,6 @@ namespace BookshelfPorting.Runtime
             {
                 EndDrag(pointer);
             }
-            else if (IsEditModeActive())
-            {
-                if (currentPointerTarget.Type == PointerTargetType.EditSectionMarker &&
-                    experienceManager.SelectedEditBook != null)
-                {
-                    var section = state.GetSection(currentPointerTarget.Row, currentPointerTarget.Column);
-                    TryPlaceSelectedEditBook(section);
-                }
-                else if (pressedBook != null)
-                {
-                    experienceManager.SelectEditBook(pressedBook);
-                }
-            }
             else if (state.IsViewingBook)
             {
                 var pointerOverActiveBook = IsPointerOverActiveViewedBook(currentPointerTarget);
@@ -411,11 +343,6 @@ namespace BookshelfPorting.Runtime
                    !generator.IsBookshelfSwitching;
         }
 
-        private bool IsEditModeActive()
-        {
-            return experienceManager != null && experienceManager.IsEditMode;
-        }
-
         private void CancelDrag()
         {
             if (draggingBook == null)
@@ -457,8 +384,6 @@ namespace BookshelfPorting.Runtime
             var hits = Physics.RaycastAll(ray, 100f);
             System.Array.Sort(hits, (left, right) => left.distance.CompareTo(right.distance));
 
-            PointerTarget fallbackMarker = PointerTarget.None;
-
             for (var i = 0; i < hits.Length; i++)
             {
                 var hit = hits[i];
@@ -473,15 +398,9 @@ namespace BookshelfPorting.Runtime
                 {
                     return new PointerTarget(PointerTargetType.Book, book);
                 }
-
-                var marker = hit.collider.GetComponent<ShelfSectionMarker>();
-                if (marker != null && fallbackMarker.Type == PointerTargetType.None)
-                {
-                    fallbackMarker = new PointerTarget(PointerTargetType.EditSectionMarker, null, marker.Row, marker.Column);
-                }
             }
 
-            return fallbackMarker;
+            return PointerTarget.None;
         }
 
         private void ViewBook(BookEntity book)
@@ -518,39 +437,6 @@ namespace BookshelfPorting.Runtime
             for (var i = 0; i < root.childCount; i++)
             {
                 SetDynamicHierarchy(root.GetChild(i));
-            }
-        }
-
-        private void TryPlaceSelectedEditBook(ShelfSection destination)
-        {
-            var selectedBook = experienceManager.SelectedEditBook;
-            if (selectedBook == null || destination == null)
-            {
-                return;
-            }
-
-            var sourceSection = selectedBook.CurrentSection;
-            if (sourceSection == destination)
-            {
-                return;
-            }
-
-            if (sourceSection != null)
-            {
-                state.RemoveBook(selectedBook);
-                state.LayoutSection(sourceSection, this, true);
-            }
-
-            if (state.TryPlaceBook(selectedBook, destination, this, true))
-            {
-                experienceManager.SelectEditBook(selectedBook);
-                return;
-            }
-
-            if (sourceSection != null)
-            {
-                state.TryPlaceBook(selectedBook, sourceSection, this, true);
-                state.LayoutSection(sourceSection, this, true);
             }
         }
 
@@ -591,7 +477,7 @@ namespace BookshelfPorting.Runtime
 
                 lastDragWorldPosition = world;
                 draggingBook.transform.position = world;
-                draggingBook.transform.rotation = Quaternion.Euler(15f, 0f, 0f);
+                draggingBook.transform.rotation = Quaternion.Euler(DragPreviewPitchDegrees, 0f, 0f);
 
                 var local = generator.BooksRoot.parent.InverseTransformPoint(world);
                 var dropSection = state.FindAvailableDropSection(local, draggingBook);
@@ -624,11 +510,6 @@ namespace BookshelfPorting.Runtime
 
                 state.LayoutSectionExcept(destination, this, true, movedBook);
                 StartCoroutine(AnimateValidDrop(movedBook, targetLocalPosition, targetLocalRotation, targetLocalScale));
-
-                if (IsEditModeActive() && movedBook != null)
-                {
-                    experienceManager.SelectEditBook(movedBook);
-                }
 
                 return;
             }
@@ -816,6 +697,12 @@ namespace BookshelfPorting.Runtime
                 localPosition.x = Mathf.Clamp(localPosition.x, minX, maxX);
             }
 
+            var minY = roomFloorY + halfExtent.y + skin;
+            if (localPosition.y < minY)
+            {
+                localPosition.y = minY;
+            }
+
             var minZ = roomFrontWallZ + halfExtent.z + skin;
             var maxZ = roomBackWallZ - halfExtent.z - skin;
             if (minZ <= maxZ)
@@ -834,9 +721,13 @@ namespace BookshelfPorting.Runtime
             }
 
             var horizontalHalf = Mathf.Max(book.thickness, book.depth, 0.02f) * 0.5f;
+            var pitchRadians = DragPreviewPitchDegrees * Mathf.Deg2Rad;
+            var verticalHalf =
+                Mathf.Max(book.height, 0.02f) * 0.5f * Mathf.Abs(Mathf.Cos(pitchRadians)) +
+                Mathf.Max(book.depth, 0.02f) * 0.5f * Mathf.Abs(Mathf.Sin(pitchRadians));
             return new Vector3(
                 horizontalHalf,
-                Mathf.Max(book.height, 0.02f) * 0.5f,
+                verticalHalf,
                 horizontalHalf);
         }
 
@@ -1079,116 +970,11 @@ namespace BookshelfPorting.Runtime
             ghostPreview.transform.localScale = new Vector3(book.thickness, book.height, book.depth);
 
             var x = section.leftBound + state.BookPadding + book.GetFootprint() * 0.5f;
-            ghostPreview.transform.localPosition = new Vector3(x, section.shelfTopY + book.height * 0.5f, section.frontZ - 0.01f);
+            ghostPreview.transform.localPosition = new Vector3(
+                x,
+                section.shelfTopY + book.height * 0.5f,
+                section.GetFrontAlignedBookCenterZ(book, 1f, state.ShelfFrontInset));
             ghostPreview.transform.localRotation = BookFootprintUtility.GetVisualRotation(book.orientation);
-        }
-
-        private void UpdateEditMarkers()
-        {
-            RemoveMissingEditMarkers();
-            EnsureEditMarkers();
-
-            var shouldShowMarkers = IsEditModeActive() &&
-                                    CanInteractWithShelfBooks() &&
-                                    state != null &&
-                                    generator != null &&
-                                    experienceManager.SelectedEditBook != null;
-
-            for (var i = 0; i < editMarkers.Count; i++)
-            {
-                var marker = editMarkers[i];
-                if (marker == null)
-                {
-                    continue;
-                }
-
-                if (!shouldShowMarkers)
-                {
-                    marker.SetVisible(false);
-                    continue;
-                }
-
-                var section = state.GetSection(marker.Row, marker.Column);
-                var selectedBook = experienceManager.SelectedEditBook;
-                var canFit = section != null &&
-                             (section == selectedBook.CurrentSection || section.CanFit(selectedBook, state.BookPadding));
-
-                marker.SetVisible(canFit);
-            }
-        }
-
-        private void EnsureEditMarkers()
-        {
-            if (state == null || generator == null || materialFactory == null)
-            {
-                return;
-            }
-
-            RemoveMissingEditMarkers();
-
-            if (editMarkers.Count == state.Sections.Count)
-            {
-                return;
-            }
-
-            for (var i = 0; i < editMarkers.Count; i++)
-            {
-                if (editMarkers[i] != null)
-                {
-                    DestroyMarkerObject(editMarkers[i].gameObject);
-                }
-            }
-
-            editMarkers.Clear();
-
-            for (var i = 0; i < state.Sections.Count; i++)
-            {
-                var section = state.Sections[i];
-                var markerObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                markerObject.name = $"SectionMarker_{section.row}_{section.column}";
-                markerObject.transform.SetParent(generator.BooksRoot, false);
-                markerObject.transform.localPosition = new Vector3(
-                    (section.leftBound + section.rightBound) * 0.5f,
-                    section.shelfTopY + section.sectionHeight * 0.48f,
-                    section.frontZ - state.ShelfFrontInset - 0.04f);
-                markerObject.transform.localScale = new Vector3(
-                    Mathf.Max(0.08f, section.Width + editMarkerScalePadding.x),
-                    Mathf.Max(0.08f, section.sectionHeight + editMarkerScalePadding.y),
-                    Mathf.Max(0.04f, 0.08f + editMarkerScalePadding.z));
-
-                var marker = markerObject.AddComponent<ShelfSectionMarker>();
-                marker.Configure(section.row, section.column, materialFactory.GetGhostPreviewMaterial());
-                marker.SetVisible(false);
-                editMarkers.Add(marker);
-            }
-        }
-
-        private void RemoveMissingEditMarkers()
-        {
-            for (var i = editMarkers.Count - 1; i >= 0; i--)
-            {
-                if (editMarkers[i] == null)
-                {
-                    editMarkers.RemoveAt(i);
-                }
-            }
-        }
-
-        private static void DestroyMarkerObject(GameObject markerObject)
-        {
-            if (markerObject == null)
-            {
-                return;
-            }
-
-            if (Application.isPlaying)
-            {
-                Destroy(markerObject);
-            }
-            else
-            {
-                DestroyImmediate(markerObject);
-            }
         }
 
         private IEnumerator AnimateWorldMove(Transform target, Vector3 worldPosition, Quaternion worldRotation, Vector3 targetScale)
@@ -1282,24 +1068,15 @@ namespace BookshelfPorting.Runtime
 
         private readonly struct PointerTarget
         {
-            public static PointerTarget None => new PointerTarget(PointerTargetType.None, null, -1, -1);
+            public static PointerTarget None => new PointerTarget(PointerTargetType.None, null);
 
             public PointerTargetType Type { get; }
             public BookEntity Book { get; }
-            public int Row { get; }
-            public int Column { get; }
 
             public PointerTarget(PointerTargetType type, BookEntity book)
-                : this(type, book, -1, -1)
-            {
-            }
-
-            public PointerTarget(PointerTargetType type, BookEntity book, int row, int column)
             {
                 Type = type;
                 Book = book;
-                Row = row;
-                Column = column;
             }
         }
 
@@ -1307,8 +1084,7 @@ namespace BookshelfPorting.Runtime
         {
             None,
             Book,
-            ViewedBookInteractionArea,
-            EditSectionMarker
+            ViewedBookInteractionArea
         }
     }
 }

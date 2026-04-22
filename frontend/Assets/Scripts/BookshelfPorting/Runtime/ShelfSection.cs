@@ -13,12 +13,24 @@ namespace BookshelfPorting.Runtime
         public float shelfTopY;
         public float sectionHeight;
         public float frontZ;
+        public float frontBoundZ;
+        public float backBoundZ;
         public readonly List<BookEntity> books = new List<BookEntity>();
 
         public float Width => rightBound - leftBound;
+        public float Depth => backBoundZ - frontBoundZ;
         public Vector3 Center => new Vector3((leftBound + rightBound) * 0.5f, shelfTopY + sectionHeight * 0.5f, frontZ);
 
-        public ShelfSection(int row, int column, float leftBound, float rightBound, float shelfTopY, float sectionHeight, float frontZ)
+        public ShelfSection(
+            int row,
+            int column,
+            float leftBound,
+            float rightBound,
+            float shelfTopY,
+            float sectionHeight,
+            float frontZ,
+            float frontBoundZ,
+            float backBoundZ)
         {
             this.row = row;
             this.column = column;
@@ -27,6 +39,8 @@ namespace BookshelfPorting.Runtime
             this.shelfTopY = shelfTopY;
             this.sectionHeight = sectionHeight;
             this.frontZ = frontZ;
+            this.frontBoundZ = frontBoundZ;
+            this.backBoundZ = backBoundZ;
         }
 
         public bool CanFit(BookEntity book, float padding)
@@ -50,6 +64,25 @@ namespace BookshelfPorting.Runtime
 
             required += book.GetFootprint();
             return required <= Width;
+        }
+
+        public float GetFrontAlignedBookCenterZ(BookEntity book, float scale, float inset)
+        {
+            if (book == null || Depth <= 0f)
+            {
+                return frontZ;
+            }
+
+            var safeInset = Mathf.Max(0f, inset);
+            var depthExtent = BookFootprintUtility.GetDepthExtent(book.thickness, book.depth, book.orientation) * Mathf.Max(0f, scale);
+            var frontSafeCenter = frontBoundZ + safeInset + depthExtent * 0.5f;
+            var backSafeCenter = backBoundZ - safeInset - depthExtent * 0.5f;
+            if (frontSafeCenter > backSafeCenter)
+            {
+                return (frontBoundZ + backBoundZ) * 0.5f;
+            }
+
+            return frontSafeCenter;
         }
     }
 }
