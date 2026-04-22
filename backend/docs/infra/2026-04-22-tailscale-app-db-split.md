@@ -548,12 +548,12 @@ User: dotshelf
 
 ## 14. 남은 숙제 (TODO)
 
-- [ ] **CI 파이프라인 실제 push 로 검증** — 오늘 수정만 하고 실전 돌리지 않음
+- [ ] **CI 파이프라인 실제 push 로 검증** — 오늘 수정만 하고 실전 돌리지 않음 (MR 머지 시 첫 검증)
 - [ ] **DB 외부 백업** — S3/R2 또는 정기 scp. 데이터 쌓이기 전에 결정
 - [ ] **SSAFY 서버 소멸 D-day 확정** + 앱 이전 대안 서버 선정
 - [ ] 영구 서버의 gitlab-runner.service 용도 정리 — 이제 prod 에서 빌드 안 함 (SSAFY 는 CI 가 deploy 만 수행). runner 자체가 불필요해졌는지 검토
 - [ ] Tailscale ACL 제한 설정 (현재는 전노드 풀 오픈 상태)
-- [ ] DB 마이그레이션을 **Flyway** 로 전환 (이전 문서 TODO 유지)
+- [x] ~~DB 마이그레이션을 **Flyway** 로 전환~~ — 같은 날 오후 완료. [2026-04-22-flyway-and-health.md §1](./2026-04-22-flyway-and-health.md) 참조
 - [ ] UFW 인바운드를 Cloudflare IP 대역으로 한정 (prod 80/443) — 여전히 TODO
 
 ## 15. 배운 것
