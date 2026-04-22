@@ -395,34 +395,6 @@ namespace BookshelfPorting.Runtime
             return Mathf.Min(1f, availableForBooks / footprintSum);
         }
 
-        private void BuildSectionLayout(ShelfSection section, List<BookLayoutTarget> targets)
-        {
-            targets.Clear();
-
-            if (section == null)
-            {
-                return;
-            }
-
-            RemoveMissingBooks(section);
-            var x = section.leftBound + bookPadding;
-            for (var i = 0; i < section.books.Count; i++)
-            {
-                var book = section.books[i];
-                var footprint = book.GetFootprint();
-                targets.Add(new BookLayoutTarget(
-                    book,
-                    new Vector3(
-                        x + footprint * 0.5f,
-                        section.shelfTopY + book.height * 0.5f,
-                        section.frontZ - shelfFrontInset),
-                    BookFootprintUtility.GetVisualRotation(book.orientation),
-                    book.BaseLocalScale));
-
-                x += footprint + bookPadding;
-            }
-        }
-
         private static BookEntity FindLargestBookExcept(ShelfSection section, BookEntity except)
         {
             if (section == null)
