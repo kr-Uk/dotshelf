@@ -5,7 +5,7 @@ description: 백엔드 신규 코드 생성 시 프로젝트의 확립된 아키
 
 # Match Patterns
 
-DotShelf 백엔드의 신규 코드를 작성할 때 **기존 패턴과 품질을 일치**시키기 위한 스킬. 규칙 원문은 `backend/docs/architecture/patterns.md`에 있으며, 이 스킬은 그 문서를 강제하는 얇은 래퍼다.
+DotShelf 백엔드의 신규 코드를 작성할 때 **기존 패턴과 품질을 일치**시키기 위한 스킬. 규칙 원문은 **프로젝트 루트 기준** `docs/architecture/patterns.md`에 있으며, 이 스킬은 그 문서를 강제하는 얇은 래퍼다.
 
 ## 언제 트리거
 
@@ -18,10 +18,12 @@ DotShelf 백엔드의 신규 코드를 작성할 때 **기존 패턴과 품질�
 
 ## 반드시 읽을 문서 (순서)
 
+프로젝트 루트는 보통 `gradlew`, `pom.xml`, `build.gradle(.kts)`가 있는 디렉토리다. 저장소 루트에서 작업 중이면 `backend/` 아래일 수 있고, 이미 `backend` 디렉토리를 열었다면 현재 디렉토리 자체가 프로젝트 루트다.
+
 ```
-1. backend/docs/architecture/patterns.md
-2. backend/docs/architecture/exemplars/README.md
-3. backend/docs/architecture/exemplars/<관련 파일들>
+1. docs/architecture/patterns.md
+2. docs/architecture/exemplars/README.md
+3. docs/architecture/exemplars/<관련 파일들>
 4. 유사 기존 도메인 (예: 새 도메인 만들 때 가장 가까운 기존 도메인 전부 읽기)
 ```
 
@@ -61,7 +63,7 @@ DotShelf 백엔드의 신규 코드를 작성할 때 **기존 패턴과 품질�
 
 ## 셀프 리뷰
 
-작성 후 `backend/docs/architecture/checklist.md`를 열어 해당 항목을 **항목별로** 확인한다. 단순 "다 됐어요"가 아니라, 체크리스트 항목을 본인이 밟았는지 대조.
+작성 후 `docs/architecture/checklist.md`를 열어 해당 항목을 **항목별로** 확인한다. 단순 "다 됐어요"가 아니라, 체크리스트 항목을 본인이 밟았는지 대조.
 
 불합격이 있으면 수정한 후 재확인. 사용자에게 "checklist 통과 확인 완료"라고 밝히면 신뢰가 높아진다.
 
@@ -76,7 +78,7 @@ DotShelf 백엔드의 신규 코드를 작성할 때 **기존 패턴과 품질�
 
 ## Codex와의 공유
 
-이 스킬은 `backend/AGENTS.md`와 **같은 `patterns.md`를 참조**한다. 즉 Claude가 생성한 코드와 Codex가 생성한 코드가 같은 규칙을 따르므로, 리뷰 시 누가 썼는지 구분할 필요 없이 품질이 일정하다. `patterns.md`만 단일 진실 소스로 유지하면 양쪽 모두 자동 반영.
+이 스킬은 프로젝트 루트의 `AGENTS.md`가 안내하는 것과 **같은 `patterns.md`를 참조**한다. 즉 Claude가 생성한 코드와 Codex가 생성한 코드가 같은 규칙을 따르므로, 리뷰 시 누가 썼는지 구분할 필요 없이 품질이 일정하다. `patterns.md`만 단일 진실 소스로 유지하면 양쪽 모두 자동 반영.
 
 ## 자주 저지르는 실수 (방지 체크)
 

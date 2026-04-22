@@ -38,7 +38,11 @@ backend/
     └── exemplars/                  ← 모범 코드
 ```
 
-**clone만 하면 별도 설치 없이 자동 활성화된다.** Claude Code/Codex가 프로젝트를 열 때 위 파일들을 자동으로 인식한다.
+Claude Code는 위 구조만 있으면 바로 쓴다.
+
+Codex는 **두 가지 방식**으로 쓸 수 있다:
+- 이 저장소 안에서만 쓸 때: `backend/AGENTS.md` 라우터를 통해 `.claude/skills/*/SKILL.md`를 읽어 사용
+- Codex 전역 스킬로 자동 발견시키고 싶을 때: `~/.codex/skills` 아래에 링크/복사 설치
 
 ---
 
@@ -60,12 +64,43 @@ backend/
 
 ### Codex
 
-자동 트리거가 없다. `AGENTS.md`의 **스킬 라우터** 표를 보고 Codex가 해당 SKILL.md를 직접 읽는다. 키워드는 Claude와 동일하게 작동.
+이 저장소 안에서는 `AGENTS.md`의 **스킬 라우터** 표를 보고 Codex가 해당 SKILL.md를 직접 읽는다. 키워드는 Claude와 동일하게 작동한다.
 
 키워드가 모호하면 명시적으로 알려주는 게 안전:
 ```
 "backend/.claude/skills/dotshelf-commit/SKILL.md 따라서 커밋해줘"
 ```
+
+### Codex 전역 스킬로 설치
+
+Codex의 스킬 목록에도 이 5개를 띄우고 싶다면, 현재 `.claude/skills` 폴더를 `~/.codex/skills`로 연결하면 된다. 이 프로젝트에는 이를 위한 스크립트를 추가했다:
+
+```powershell
+cd backend
+.\scripts\install-codex-skills.ps1
+```
+
+기본 동작은 **Junction(link)** 생성이다. 따라서 `.claude/skills` 아래 파일을 수정하면 Codex 쪽에도 즉시 반영된다.
+
+기존 같은 이름의 스킬이 이미 있으면 덮어쓰지 않는다. 다시 연결하려면:
+
+```powershell
+cd backend
+.\scripts\install-codex-skills.ps1 -Force
+```
+
+복사본으로 설치하고 싶다면:
+
+```powershell
+cd backend
+.\scripts\install-codex-skills.ps1 -Mode Copy -Force
+```
+
+설치 후에는 Codex를 재시작하거나 새 스레드를 열어 스킬 목록을 새로고침한다.
+
+권장 방식은 **Junction 설치 + `AGENTS.md` 라우터 유지**다.
+- 전역 설치: Codex 스킬 목록/자동 발견 강화
+- AGENTS.md: 이 저장소 안에서 어떤 상황에 어떤 스킬을 읽을지 명확히 보장
 
 ---
 
@@ -209,7 +244,8 @@ backend/
 1. `.claude/skills/<스킬이름>/SKILL.md` 생성
 2. YAML frontmatter에 `name`, `description` 필수
 3. description은 트리거 키워드를 적극적으로 명시 (Claude는 description 보고 자동 발동 결정)
-4. Codex에서도 쓰려면 `AGENTS.md`의 라우팅 표에 항목 추가
+4. Codex에서도 이 저장소 안에서 쓰려면 `AGENTS.md`의 라우팅 표에 항목 추가
+5. Codex 전역 스킬 목록에도 띄우려면 `.\scripts\install-codex-skills.ps1 -Force` 다시 실행
 
 ### 패턴 변경
 - `docs/architecture/patterns.md` 수정
