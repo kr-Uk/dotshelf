@@ -215,7 +215,7 @@ namespace BookshelfPorting.Runtime
             for (var i = 0; i < sections.Count; i++)
             {
                 var section = sections[i];
-                if (section == exclude || !section.CanFit(book, bookPadding))
+                if (section == exclude || !CanSectionContainBook(section, book))
                 {
                     continue;
                 }
@@ -240,7 +240,7 @@ namespace BookshelfPorting.Runtime
             {
                 var section = sections[i];
                 if (!IsInsideSectionDropBounds(localPosition, section, margin) ||
-                    !section.CanFit(book, bookPadding))
+                    !CanSectionContainBook(section, book))
                 {
                     continue;
                 }
@@ -332,6 +332,17 @@ namespace BookshelfPorting.Runtime
             return GetSectionLayoutScale(section) >= MinimumSectionFitScale;
         }
 
+        private bool CanSectionContainBook(ShelfSection section, BookEntity book)
+        {
+            if (section == null || book == null)
+            {
+                return false;
+            }
+
+            RemoveMissingBooks(section);
+            return GetSectionLayoutScale(section, book) >= MinimumSectionFitScale;
+        }
+
         private void BuildSectionLayout(ShelfSection section, List<BookLayoutTarget> targets)
         {
             targets.Clear();
@@ -348,6 +359,7 @@ namespace BookshelfPorting.Runtime
             {
                 var book = section.books[i];
                 var footprint = book.GetFootprint() * sectionScale;
+                // X uses scaled footprints while Z aligns the visual front edge inside the section depth.
                 targets.Add(new BookLayoutTarget(
                     book,
                     new Vector3(
@@ -363,6 +375,11 @@ namespace BookshelfPorting.Runtime
 
         private float GetSectionLayoutScale(ShelfSection section)
         {
+            return GetSectionLayoutScale(section, null);
+        }
+
+        private float GetSectionLayoutScale(ShelfSection section, BookEntity candidateBook)
+        {
             if (section == null)
             {
                 return 1f;
@@ -370,14 +387,27 @@ namespace BookshelfPorting.Runtime
 
             var footprintSum = 0f;
             var bookCount = 0;
+            var candidateAlreadyIncluded = false;
             for (var i = 0; i < section.books.Count; i++)
             {
-                if (section.books[i] == null)
+                var book = section.books[i];
+                if (book == null)
                 {
                     continue;
                 }
 
-                footprintSum += section.books[i].GetFootprint();
+                if (book == candidateBook)
+                {
+                    candidateAlreadyIncluded = true;
+                }
+
+                footprintSum += book.GetFootprint();
+                bookCount++;
+            }
+
+            if (candidateBook != null && !candidateAlreadyIncluded)
+            {
+                footprintSum += candidateBook.GetFootprint();
                 bookCount++;
             }
 
@@ -389,7 +419,7 @@ namespace BookshelfPorting.Runtime
             var availableForBooks = section.Width - bookPadding * (bookCount + 1);
             if (availableForBooks <= 0f)
             {
-                return MinimumSectionFitScale;
+                return 0f;
             }
 
             return Mathf.Min(1f, availableForBooks / footprintSum);
