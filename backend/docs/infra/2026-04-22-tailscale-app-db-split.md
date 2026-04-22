@@ -280,6 +280,7 @@ services:
 - `build:` 와 `image:` 를 **둘 다 둠** — CI 는 `up -d --build` 로 재빌드, 평소엔 image 참조로 기동
 - api 서비스 하나뿐이라 `networks:` 블록 생략 (Docker default bridge 사용)
 - `depends_on:` 없음 (DB 가 다른 호스트에 있으니 의미 없음)
+- **`extra_hosts: - "dotshelf-prod:100.86.247.88"`** 필수 — Tailscale MagicDNS 는 호스트 `/etc/hosts` 까지만 업데이트하고 컨테이너까진 전파 안 됨. JDBC(PostgreSQL) 는 Java 기본 InetAddress 리졸버가 /etc/hosts 의 FQDN 부분 매칭으로 운 좋게 해결하지만, **Lettuce(Redis) 가 쓰는 Netty DNS 리졸버는 /etc/hosts 를 무시**하고 DNS 서버만 조회 → `dotshelf-prod` SERVFAIL → Redis health DOWN. extra_hosts 로 컨테이너 /etc/hosts 에 고정 매핑하면 해결.
 
 ### 6-4. 아키텍처 주의 — amd64 재빌드
 
