@@ -39,17 +39,17 @@
 - **Type**: Variable
 - **Protected**: ✅
 - **Masked**: ❌
-- **Value**: 아래 3줄 전체 복사 (2026-04-21 기준, 172.17.0.1 = Runner 컨테이너가 바라보는 EC2 호스트)
+- **Value**: 아래 3줄 전체 복사 (2026-04-22 기준, `3.36.72.58` = SSAFY 서버 = 새 App 서버 = deploy target)
 
 ```
-172.17.0.1 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC81Y3Wye2obGWDr+dnCE+6uARxxP92hcETakFu+ouED
-172.17.0.1 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDDtdCoZ3VOEgOLBr9rc+FelDIA5th0zDJj6JZ/YLeBgRLJZyJls4trRQ5WJAbBUfK1t5+B/72weFYgCKQbtSSJsMIHbNG0EpP4XOOzqRSK+7nLznfC59J0eB3mgtClUJPaFg0aVIUJynrGExnZbVqdgOZFTbKys8oTH205F2p/DTZibk6gShpyHBxHt7XYmmnL5b4dFny8Km/kLIfpvUr3GJ/a/nWkR76aoLrxJSvSQ6BHYFgpk15cTUhVtWF+YiYlg1pbwEygeP7o6H4olmDrYt89QOMEfZpxkJaXQBYErDxJ60kMuF4yXNY6W8awEbv2oFDP5/1pHX3wwpHIXUhMwXGhCRZ6Eh/dap4AMYds6JAPwFQBgQD154Mgm+IUyBhQQzz+yLYZKKg6WKaLmNFLO+DiVKFCPtwiO1boJLfzMpMNpyeUOqI6k55Y5nyHTbB8fH+vuTJim0qq771NiESZDamh1Kk1dB3PxKGdbT1hQX/6DrPIE0QlYJijt+5GA0k=
-172.17.0.1 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCGXkVCcSrJut0cYLgA5EauG8x0ZIGvl1Cm8JLu/y+R0pwdSTJ9sSVgLBLhlXtlWe5ZBat7gXESx1kKJRgjRf10=
+3.36.72.58 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCoq+panXp6uNLg8FNOfmrJaUXjfINA6n1NEv765stZ4zlJJtwa/PDuSWUm8V+JiqTYDvimrJp/QmsnpjPCdvGL+oMQ46Oy7ryEUJWPiC/311yttL9DOPVg7pqrEMsdeGnhdbN75kL/9VoziirXSi1pUltKjR9iD1+RZrIdMGmnfLW0H+w/yIB/DhUGGHrNfLNcN9UXgC7uY7iZCknWUjkN9BMqJPRgUka1Azh09KcNC2Uv5M7fSnvsnK37NC9y8ahoIkR6DltjpXMIJgE/XgwYSnYbW/ymPPykodyuSYFv79XoKQC7Qa9nQFi0dVX//pfhZR2OEHx5pKdHx56zdlQ5f9fwlGltzQM3W3ilxB0rR3hfEtYZAT7I6S+ROZkgmD5CAmcnNCpZRMC1OxgMcWt2lrmVdeCFT8L21SzL7OKmCvFtq5g1Qe4c/g7u2QSlCR7PJyNGDnwGX0Bfb7psPXT3uWB0AACe+0hXUtVXMabS938NzRAjA/CAASuSLJ0gsm0=
+3.36.72.58 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBGuqfnDGJxV2K1hLqsVjWtCpG/dYtdtJjQaneJEfShUwcoKQYdfMom3VmrfKWu3LCooq14rhRg+xSvdeuKWuIKg=
+3.36.72.58 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIILYbdib4qvmUkmr3zAa8XRb8ZfqMcouybVVflHE1pAi
 ```
 
-> 🔄 **재생성이 필요할 때** (EC2 sshd 호스트키 바뀐 경우):
+> 🔄 **재생성이 필요할 때** (SSAFY sshd 호스트키 바뀐 경우 — 서버 재생성 등):
 > ```
-> ssh -i C:/PROJECT/DOTSHELF/server/f206_jihocompany.pem ubuntu@3.38.240.110 "ssh-keyscan -t ed25519,rsa,ecdsa 172.17.0.1 2>/dev/null"
+> ssh-keyscan -t ed25519,rsa,ecdsa 3.36.72.58 2>/dev/null
 > ```
 
 ### 3. `EC2_HOST`
@@ -60,10 +60,10 @@
 - **Value**:
 
 ```
-172.17.0.1
+3.36.72.58
 ```
 
-> Runner 가 **EC2 내부** Docker 컨테이너로 돌기 때문에 "같은 머신의 Docker 브리지 게이트웨이" 주소를 쓴다. 외부 퍼블릭 IP `3.38.240.110` 은 AWS hairpin NAT 제약으로 자기 자신에게 접속이 안 됨.
+> SSAFY 서버 (`k14f206.p.ssafy.io`) 의 Public IP. GitLab Runner → SSH → SSAFY 서버로 JAR 전달 후 `docker compose up -d --build`. **prod 가 아닌 SSAFY 서버가 deploy target** 인 이유: 2026-04-22 에 app/DB 서버를 분리하면서 Spring Boot 컨테이너를 SSAFY 로 이전했기 때문. 자세한 배경은 [2026-04-22-tailscale-app-db-split.md](./2026-04-22-tailscale-app-db-split.md) 참조.
 
 ### 4. `EC2_USER`
 
@@ -101,10 +101,12 @@ ubuntu
 | 증상 | 원인 | 해결 |
 |------|------|------|
 | `Host key verification failed` | `EC2_KNOWN_HOSTS` 가 잘림/공백만 저장됨 | 이 문서 그대로 재복사. Masked 해제 확인 |
-| `Permission denied (publickey)` | `SSH_PRIVATE_KEY` 가 EC2 `authorized_keys` 에 없음 | `dotshelf-deploy.pub` 내용을 EC2 ubuntu 사용자 `~/.ssh/authorized_keys` 에 추가 |
-| `connect to host ... Operation timed out` | `EC2_HOST` 가 아직 `3.38.240.110` 로 되어 있음 | `172.17.0.1` 로 수정 |
+| `Permission denied (publickey)` | `SSH_PRIVATE_KEY` 에 해당하는 공개키가 SSAFY 서버 `authorized_keys` 에 없음 | `gitlab-ci-dotshelf-deploy` 공개키를 SSAFY ubuntu 사용자 `~/.ssh/authorized_keys` 에 추가 |
+| `connect to host ... Operation timed out` | `EC2_HOST` 가 옛 값(`172.17.0.1`, `3.38.240.110` 등) 으로 남아있음 | `3.36.72.58` (SSAFY Public IP) 로 수정 |
 | 파이프라인이 변수를 못 읽음 | Protected 변수인데 브랜치가 Protected 아님 | `Settings → Repository → Protected branches` 에서 `dev` 추가 |
+| deploy 중 `docker compose ... no such service: api` | prod (`3.38.240.110`) 로 잘못 들어갔을 때 발생 | `EC2_HOST` 가 정말 `3.36.72.58` 인지 재확인 (prod 에는 더 이상 api 서비스 없음) |
 
 ## 변경 이력
 
 - 2026-04-21 · 최초 작성 (Runner 를 EC2 로 옮기며 `EC2_HOST`·`EC2_KNOWN_HOSTS` 를 `172.17.0.1` 기준으로 갱신)
+- 2026-04-22 · **App 서버를 SSAFY 로 분리** 하면서 `EC2_HOST` 를 `3.36.72.58`, `EC2_KNOWN_HOSTS` 를 SSAFY 서버 호스트키로 교체. 이제 deploy target 은 "다른 호스트" 이므로 hairpin NAT 이슈 해당 없음 → Docker bridge(`172.17.0.1`) 불필요
