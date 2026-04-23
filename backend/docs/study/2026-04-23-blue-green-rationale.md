@@ -219,17 +219,60 @@ api-blue:
 
 ---
 
-## 9. 측정 계획 (구현 후 채움)
+## 9. 측정 결과 (2026-04-23 첫 성공 배포: `blue → green`)
 
-| 지표 | 목표 | 측정 방법 | 현재 |
+### 9-1. 핵심 증거 — 배포 중 5xx 카운트
+CI 파이프라인 deploy 잡(#339277) 의 `.ci/poll-health.sh` 마지막 JSON:
+
+```json
+{"url":"https://api.dotshelf.digital/api/health","duration":30,"attempts":28,"ok":28,"fail":0,"codes":"200:28"}
+```
+
+**30초 폴링 윈도우 내 28회 요청 전부 200. 5xx/4xx/timeout 0건.**
+
+`attempts=28` 이 30 에 못 미친 건 `curl --max-time 2 + sleep 1` 조합의 산술 특성 (요청이 2초까지 걸리면 루프 1회가 3초) 으로 설계 내 오차. 핵심은 `fail=0`.
+
+### 9-2. 주요 지표
+
+| 지표 | 목표 | **실측** | 판정 |
 |---|---|---|---|
-| 배포 중 공개 health 5xx 카운트 | **0 건** | 배포 전후 30초간 1초 간격 curl, 카운팅 | TBD |
-| TARGET healthy → 스위칭 간격 | < 5초 | 배포 스크립트에 timestamp 로그 | TBD |
-| 롤백 소요 시간 (리허설) | < 30초 | 수동 리허설 1회 | TBD |
-| 색 공존 시 host RAM 사용률 피크 | < 70% | `docker stats` + `free -h` 30초 폴링 | TBD |
-| 배포 전체 소요 | < 이전 + 30초 | 스크립트 실측 | TBD |
+| 배포 중 공개 health 5xx 카운트 | 0 건 | **0** (28/28 200) | ✅ |
+| 배포 전체 소요 (build job 제외) | < 4분 | **195.6 초** | ✅ |
+| 유예(sleep 120) 제외 실질 cutover 시간 | < 2분 | ~75 초 | ✅ |
+| TARGET healthy → Nginx reload | < 5 초 | ~1–2 초 (direct smoke 포함) | ✅ |
+| 색 당 JVM 메모리 (runtime) | < 3 GiB | **471 MiB** (컨테이너 limit 4 GiB 의 11.5%) | ✅ (한참 여유) |
+| 색 공존 시 호스트 RAM 점유 추정 | < 70% | 2 × 471 = ~940 MiB / 15 GiB = **6%** | ✅ |
+| 롤백 소요 (수동 리허설) | < 30 초 | 아직 실시 안 함 | ⏳ |
 
-→ 구현 + 리허설 후 이 표를 실제 숫자로 채운다. 포트폴리오 글의 **본체**는 이 수치 증명.
+### 9-3. 타임라인 (CI 러너 로그 기준)
+
+```
+13:34:34  build job succeeded        (backend:build  339276, 49.5s)
+13:35:30  deploy job started          (backend:deploy 339277)
+13:38:46  deploy job succeeded        (195.6s 총 소요)
+├─ ~30s   rsync + remote build
+├─ ~15s   api-green up → healthy 대기
+├─  ~2s   direct smoke
+├─  ~1s   Nginx upstream 교체 + reload   ← 실제 cutover
+├─  ~2s   공개 smoke OK
+├─ 120s   유예 sleep
+└─  ~3s   api-blue stop
+14:39     poll-health.sh 30초 폴링: 28/28 ok, 0 fail
+```
+
+### 9-4. 첫 시도 실패 2회를 통한 배운 것 (포트폴리오 자산)
+
+| 차수 | 증상 | 원인 | 수정 MR |
+|---|---|---|---|
+| 1차 | deploy job 2분 27초 타임아웃 (exit 255) | `PROD_HOST=3.38.240.110` (public IP) — CI 러너가 prod 호스트 안이라 hairpin NAT 로 자기 자신 못 돌아옴 | GitLab Variable 수정 (PROD_HOST → `172.17.0.1`) + known_hosts 9줄 |
+| 2차 | `nginx -t` 실패: `duplicate upstream` | `nginx.conf` 가 `conf.d/*.conf` 를 자동 로드하는데 `default.conf` 가 `upstream.active.conf` 를 다시 명시 include → 2중 로드. 더불어 `upstream.{blue,green}.conf` 도 conf.d 루트에 있어 자동 로드됨 | [`fix/be/blue-green-nginx-layout`](../infra/2026-04-23-blue-green.md#7-bis-첫-배포에서-터진-두-가지-함정-2026-04-23) — 명시 include 제거 + 템플릿을 `templates/` 서브디렉토리로 이동 + rsync `--delete` |
+
+이 두 함정을 [docs/infra/2026-04-23-blue-green.md §7-bis](../infra/2026-04-23-blue-green.md#7-bis-첫-배포에서-터진-두-가지-함정-2026-04-23) 와 [docs/infra/gitlab-ci-variables.md §6](../infra/gitlab-ci-variables.md#6-prod_host) 에 근거·수정·방지책까지 박제. 같은 함정이 나중에 다른 인프라 변경에서도 반복될 여지가 있어 규약화.
+
+### 9-5. 아직 안 한 것
+
+- **롤백 리허설**: 의도적으로 green → blue 로 되돌리고 동일한 JSON 폴링 증거 수집. 30분 안에 가능.
+- **동일 배포 2회 반복**: blue ↔ green 양방향 안정성 확인.
 
 ---
 

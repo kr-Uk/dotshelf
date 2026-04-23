@@ -196,17 +196,30 @@ echo blue > .active_color
 - **CI 러너 위치는 설계 변수다**. runner 가 target 호스트 안에 있으면 hairpin 이슈가 따라온다. 이걸 모르면 설계 시점엔 안 보이다가 실전에서 터진다.
 - 첫 blue-green 배포는 **bootstrap 경로** 라 일반 경로와 다르다. 이 순간이 제일 깨지기 쉬우므로 수동 리허설을 먼저 하는 게 정답이었다.
 
-## 8. 측정 결과 (첫 배포 후 채움)
+## 8. 측정 결과 (2026-04-23 첫 성공 배포: `blue → green`)
 
-| 지표 | 목표 | 실측 |
-|---|---|---|
-| 배포 중 공개 5xx 카운트 | 0 | TBD |
-| TARGET healthy → cutover 간격 | < 5s | TBD |
-| 배포 전체 소요 (build 제외) | < 4분 (유예 2분 포함) | TBD |
-| 색당 heap 사용 피크 | < 3 GiB | TBD |
-| 롤백 소요 (다음 MR 유도 시) | < 배포 전체 시간과 동일 | TBD |
+### 핵심 증거
+CI deploy job `#339277` 의 `poll-health.sh` 최종 출력:
 
-`.ci/poll-health.sh` 결과의 JSON 한 줄을 이 표에 박제 예정. [rationale §9](../study/2026-04-23-blue-green-rationale.md#9-측정-계획-구현-후-채움) 와 동기화.
+```json
+{"url":"https://api.dotshelf.digital/api/health","duration":30,"attempts":28,"ok":28,"fail":0,"codes":"200:28"}
+```
+
+**30초 폴링 윈도우 내 28 회 요청 전부 200, 5xx/timeout 0 건.**
+
+### 지표 표
+
+| 지표 | 목표 | 실측 | 판정 |
+|---|---|---|---|
+| 배포 중 공개 5xx 카운트 | 0 | **0** (28/28 200) | ✅ |
+| TARGET healthy → Nginx reload | < 5 초 | ~1–2 초 | ✅ |
+| 배포 전체 소요 (build 제외) | < 4분 (유예 2분 포함) | **195.6 초** | ✅ |
+| 유예 제외 실질 cutover 시간 | - | ~75 초 | - |
+| 색당 컨테이너 메모리 사용 | < 3 GiB | **471 MiB** (limit 4 GiB 의 11.5%) | ✅ |
+| 호스트 RAM 점유 (색 공존 추정) | < 70% | ~6% (940 MiB / 15 GiB) | ✅ |
+| 롤백 소요 (수동 리허설) | < 배포 전체 시간과 동일 | 아직 실시 안 함 | ⏳ |
+
+자세한 타임라인/배운 것은 [rationale §9](../study/2026-04-23-blue-green-rationale.md#9-측정-결과-2026-04-23-첫-성공-배포-blue--green) 참조.
 
 ## 9. 관련 문서
 
