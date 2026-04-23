@@ -271,14 +271,19 @@ A. 기술적 필요성만으로는 과잉 맞습니다. 다만 `dev` CD + Flyway
 
 1. [x] 설계 박제 (**이 문서**)
 2. [x] [팀 DB 마이그레이션 규칙](../architecture/flyway-migration-rules.md) 문서
-3. [ ] JVM 메모리 정리 — 선행 독립 MR
-4. [ ] Nginx `upstream.active.conf` 분리 (기능 변화 없음, 리팩토링)
-5. [ ] compose 에 `api-blue` / `api-green` 2 서비스 정의
-6. [ ] `deploy-blue-green.sh` 스크립트 (app/prod 2파트)
-7. [ ] `.gitlab-ci.yml` deploy 단계 교체
-8. [ ] 관찰 폴링 스크립트 + 측정 1회
-9. [ ] 롤백 리허설 + 측정
-10. [ ] 본 문서 §9 수치 채움
+3. [x] JVM 메모리 정리 — 선행 독립 MR (`chore/be/app-compose-mem-limit`, push 완료, 머지 대기 중)
+4. [x] Nginx `upstream.active.conf` 분리 (`deploy/prod/nginx/conf.d/`)
+5. [x] compose 에 `api-blue` / `api-green` 2 서비스 정의
+6. [x] `deploy-blue-green.sh` 스크립트 (app/prod 2파트)
+7. [x] `.gitlab-ci.yml` deploy 단계 교체
+8. [x] 관찰 폴링 스크립트 (`poll-health.sh`)
+9. [ ] 롤백 리허설 + 측정 (**post-merge, dev 복구 후**)
+10. [ ] 본 문서 §9 수치 채움 (**post-merge**)
+
+### Blockers
+- **Merge 순서**: `feat/be/social_login` 핫픽스 → JVM MR 머지 → blue-green MR 머지 순으로 진행. social_login 의 `RestClient.Builder` 빈 누락 이슈로 현재 dev 가 502 상태라 MR 머지 대기 중.
+- **CI 변수 추가 필요**: `PROD_HOST`, `PROD_USER`, `PROD_DEPLOY_PATH` + `EC2_KNOWN_HOSTS` 확장. [gitlab-ci-variables.md](../infra/gitlab-ci-variables.md#blue-green-도입으로-추가된-변수-3개-2026-04-23) 지침대로 사용자가 GitLab 콘솔에서 추가.
+- **prod 서버 `authorized_keys`**: CI SSH 공개키를 prod `ubuntu` 계정에 추가 필요.
 
 ---
 
