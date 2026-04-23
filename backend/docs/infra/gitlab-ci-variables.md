@@ -17,7 +17,7 @@
 
 ---
 
-## 변수 목록 8개
+## 변수 목록 12개
 
 ### 1. `SSH_PRIVATE_KEY`
 
@@ -87,7 +87,47 @@ ubuntu
 /opt/dotshelf
 ```
 
-### 6. `KAKAO_REST_API_KEY`
+### 6. `GOOGLE_SERVER_CLIENT_ID`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: ❌
+- **Value**: Google Cloud Console 의 Web OAuth Client ID
+
+> BE 가 Google authorization code 를 token endpoint 에서 교환할 때 사용하는 server client id.
+
+### 7. `GOOGLE_CLIENT_ID`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: ❌
+- **Value**: Google Cloud Console 의 Web OAuth Client ID
+
+> `GOOGLE_SERVER_CLIENT_ID` 와 같은 값을 넣어도 된다. `application.yml` fallback 과 문서 가독성을 위해 둘 다 명시한다.
+
+### 8. `GOOGLE_CLIENT_SECRET`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: ✅
+- **Value**: Google Web OAuth Client Secret
+
+> Google authorization code 교환 시 필요하다. 절대 git에 커밋하지 않는다.
+
+### 9. `GOOGLE_CLIENT_IDS`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: ❌
+- **Value**: BE 가 허용할 Google OAuth Client ID 전체 목록
+
+```
+{web-client-id},{android-client-id},{desktop-client-id},{ios-client-id}
+```
+
+> Google `id_token` 의 `aud` 검증에 사용한다. Unity 플랫폼별 client id 를 모두 포함해야 한다.
+
+### 10. `KAKAO_REST_API_KEY`
 
 - **Type**: Variable
 - **Protected**: ✅
@@ -96,7 +136,7 @@ ubuntu
 
 > Desktop REST OAuth 에서 authorization code 를 access token 으로 교환할 때 사용한다.
 
-### 7. `KAKAO_CLIENT_SECRET`
+### 11. `KAKAO_CLIENT_SECRET`
 
 - **Type**: Variable
 - **Protected**: ✅
@@ -105,7 +145,7 @@ ubuntu
 
 > 카카오 로그인 client secret 기능이 활성화되어 있으면 token API 호출에 필수다. 절대 git에 커밋하지 않는다.
 
-### 8. `KAKAO_REDIRECT_URI`
+### 12. `KAKAO_REDIRECT_URI`
 
 - **Type**: Variable
 - **Protected**: ✅
@@ -120,9 +160,9 @@ https://api.dotshelf.digital/v1/auth/kakao/callback
 
 ## 저장 후 확인 체크리스트
 
-- [ ] 8개 전부 **Protected ✅** 인지 (Variables 목록 상단에서 자물쇠 아이콘 확인)
+- [ ] 12개 전부 **Protected ✅** 인지 (Variables 목록 상단에서 자물쇠 아이콘 확인)
 - [ ] multiline 변수(`SSH_PRIVATE_KEY`, `EC2_KNOWN_HOSTS`)는 Masked 가 꺼져 있는지
-- [ ] 단일 라인 secret(`KAKAO_CLIENT_SECRET`)은 Masked 가 켜져 있는지
+- [ ] 단일 라인 secret(`GOOGLE_CLIENT_SECRET`, `KAKAO_CLIENT_SECRET`)은 Masked 가 켜져 있는지
 - [ ] `EC2_KNOWN_HOSTS` 의 Type 이 **`Variable`** (File 아님) 인지
 - [ ] `dev` 브랜치가 **Protected Branches** 에 등록돼 있는지 (Settings → Repository → Protected branches)
 
