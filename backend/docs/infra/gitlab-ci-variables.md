@@ -17,7 +17,7 @@
 
 ---
 
-## 변수 목록 5개
+## 변수 목록 12개
 
 ### 1. `SSH_PRIVATE_KEY`
 
@@ -86,6 +86,78 @@ ubuntu
 ```
 /opt/dotshelf
 ```
+
+### 6. `GOOGLE_SERVER_CLIENT_ID`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: ❌
+- **Value**: Google Cloud Console 의 Web OAuth Client ID
+
+> BE 가 Google authorization code 를 token endpoint 에서 교환할 때 사용하는 server client id.
+
+### 7. `GOOGLE_CLIENT_ID`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: ❌
+- **Value**: Google Cloud Console 의 Web OAuth Client ID
+
+> `GOOGLE_SERVER_CLIENT_ID` 와 같은 값을 넣어도 된다. `application.yml` fallback 과 문서 가독성을 위해 둘 다 명시한다.
+
+### 8. `GOOGLE_CLIENT_SECRET`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: ✅
+- **Value**: Google Web OAuth Client Secret
+
+> Google authorization code 교환 시 필요하다. 절대 git에 커밋하지 않는다.
+
+### 9. `GOOGLE_CLIENT_IDS`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: ❌
+- **Value**: BE 가 허용할 Google OAuth Client ID 전체 목록
+
+```
+{web-client-id},{android-client-id},{desktop-client-id},{ios-client-id}
+```
+
+> Google `id_token` 의 `aud` 검증에 사용한다. Unity 플랫폼별 client id 를 모두 포함해야 한다.
+
+### 10. `KAKAO_REST_API_KEY`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: 가능하면 ✅
+- **Value**: Kakao Developers 의 REST API 키
+
+> Desktop REST OAuth 에서 authorization code 를 access token 으로 교환할 때 사용한다.
+
+### 11. `KAKAO_CLIENT_SECRET`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: ✅
+- **Value**: Kakao Developers 의 카카오 로그인 client secret
+
+> 카카오 로그인 client secret 기능이 활성화되어 있으면 token API 호출에 필수다. 절대 git에 커밋하지 않는다.
+
+### 12. `KAKAO_REDIRECT_URI`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: ❌
+- **Value**:
+
+```
+http://localhost:18080/oauth/kakao/callback
+```
+
+> BE가 브라우저 callback을 직접 받는 URI가 아니다. Desktop Unity 앱이 authorization code를 수신할 때 사용한 `redirect_uri`와 token exchange 시 BE가 카카오에 보내는 `redirect_uri`가 정확히 같아야 한다.
+> Kakao Developers 의 카카오 로그인 리다이렉트 URI에도 같은 값을 등록해야 한다.
 
 ---
 
@@ -157,8 +229,9 @@ ssh dotshelf "cat >> ~/.ssh/authorized_keys" < ~/.ssh/gitlab-ci-dotshelf-deploy.
 
 ## 저장 후 확인 체크리스트
 
-- [ ] 8개 전부 **Protected ✅** 인지 (Variables 목록 상단에서 자물쇠 아이콘 확인)
-- [ ] Masked 는 전부 **꺼져 있는지**
+- [ ] 기본 변수 12개와 Blue-Green 추가 변수 3개가 전부 **Protected ✅** 인지 (Variables 목록 상단에서 자물쇠 아이콘 확인)
+- [ ] multiline 변수(`SSH_PRIVATE_KEY`, `EC2_KNOWN_HOSTS`)는 Masked 가 꺼져 있는지
+- [ ] 단일 라인 secret(`GOOGLE_CLIENT_SECRET`, `KAKAO_CLIENT_SECRET`)은 Masked 가 켜져 있는지
 - [ ] `EC2_KNOWN_HOSTS` 의 Type 이 **`Variable`** (File 아님) 이고 호스트 키 **9줄** (app 3 + prod public 3 + docker bridge 3) 모두 포함인지
 - [ ] `PROD_HOST` 가 **`172.17.0.1`** (docker bridge) 로 설정되어 있는지 — prod public IP 쓰면 hairpin NAT 로 SSH 타임아웃
 - [ ] `SSH_PRIVATE_KEY` 대응 공개키가 **app + prod 양쪽 `authorized_keys`** 에 있는지

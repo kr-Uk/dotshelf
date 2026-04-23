@@ -46,7 +46,11 @@ public class AuthService {
 
     @Transactional
     public AuthTokenResponse socialLogin(SocialLoginRequest request) {
-        SocialUserInfo socialUser = socialTokenVerifierRegistry.verify(request.provider(), request.token());
+        SocialUserInfo socialUser = socialTokenVerifierRegistry.verify(request.provider(), request.tokenType(), request.token());
+        return loginWithSocialUser(socialUser);
+    }
+
+    private AuthTokenResponse loginWithSocialUser(SocialUserInfo socialUser) {
         UserSocialAccount socialAccount = socialAccountRepository
                 .findByProviderAndProviderUserId(socialUser.provider(), socialUser.providerUserId())
                 .orElse(null);

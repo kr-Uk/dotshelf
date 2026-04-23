@@ -7,6 +7,7 @@ import java.util.Map;
 import org.springframework.stereotype.Component;
 
 import com.dotshelf.domain.auth.entity.SocialProvider;
+import com.dotshelf.domain.auth.entity.SocialTokenType;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 
@@ -25,11 +26,11 @@ public class SocialTokenVerifierRegistry {
         this.verifiers = Map.copyOf(verifierMap);
     }
 
-    public SocialUserInfo verify(SocialProvider provider, String token) {
+    public SocialUserInfo verify(SocialProvider provider, SocialTokenType tokenType, String token) {
         SocialTokenVerifier verifier = verifiers.get(provider);
         if (verifier == null) {
             throw new CustomException(ErrorCode.INVALID_INPUT, "지원하지 않는 소셜 로그인 provider 입니다.");
         }
-        return verifier.verify(token);
+        return verifier.verify(token, tokenType);
     }
 }

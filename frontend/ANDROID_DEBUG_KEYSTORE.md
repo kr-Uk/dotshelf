@@ -15,6 +15,7 @@ Alias: dotshelfdebug
 Keystore password: android
 Key password: android
 SHA-1: 40:BB:69:92:B3:77:19:1F:99:6F:37:08:0B:E5:F4:92:4C:FC:D1:7E
+Kakao key hash: QLtpkrN3GR+ZbzcIC+X0kkz80X4=
 ```
 
 Google Cloud Console의 Android OAuth Client ID에는 아래 조합을 등록한다.
@@ -22,6 +23,13 @@ Google Cloud Console의 Android OAuth Client ID에는 아래 조합을 등록한
 ```text
 Package name: Unity Player Settings의 Android Package Name
 SHA-1: 40:BB:69:92:B3:77:19:1F:99:6F:37:08:0B:E5:F4:92:4C:FC:D1:7E
+```
+
+Kakao Developers의 Android 플랫폼에는 아래 조합을 등록한다.
+
+```text
+Package name: Unity Player Settings의 Android Package Name
+Key hash: QLtpkrN3GR+ZbzcIC+X0kkz80X4=
 ```
 
 ## Unity 설정
