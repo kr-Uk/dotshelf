@@ -17,7 +17,7 @@
 
 ---
 
-## 변수 목록 5개
+## 변수 목록 8개
 
 ### 1. `SSH_PRIVATE_KEY`
 
@@ -87,12 +87,42 @@ ubuntu
 /opt/dotshelf
 ```
 
+### 6. `KAKAO_REST_API_KEY`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: 가능하면 ✅
+- **Value**: Kakao Developers 의 REST API 키
+
+> Desktop REST OAuth 에서 authorization code 를 access token 으로 교환할 때 사용한다.
+
+### 7. `KAKAO_CLIENT_SECRET`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: ✅
+- **Value**: Kakao Developers 의 카카오 로그인 client secret
+
+> 카카오 로그인 client secret 기능이 활성화되어 있으면 token API 호출에 필수다. 절대 git에 커밋하지 않는다.
+
+### 8. `KAKAO_REDIRECT_URI`
+
+- **Type**: Variable
+- **Protected**: ✅
+- **Masked**: ❌
+- **Value**:
+
+```
+https://api.dotshelf.digital/v1/auth/kakao/callback
+```
+
 ---
 
 ## 저장 후 확인 체크리스트
 
-- [ ] 5개 전부 **Protected ✅** 인지 (Variables 목록 상단에서 자물쇠 아이콘 확인)
-- [ ] Masked 는 전부 **꺼져 있는지**
+- [ ] 8개 전부 **Protected ✅** 인지 (Variables 목록 상단에서 자물쇠 아이콘 확인)
+- [ ] multiline 변수(`SSH_PRIVATE_KEY`, `EC2_KNOWN_HOSTS`)는 Masked 가 꺼져 있는지
+- [ ] 단일 라인 secret(`KAKAO_CLIENT_SECRET`)은 Masked 가 켜져 있는지
 - [ ] `EC2_KNOWN_HOSTS` 의 Type 이 **`Variable`** (File 아님) 인지
 - [ ] `dev` 브랜치가 **Protected Branches** 에 등록돼 있는지 (Settings → Repository → Protected branches)
 
