@@ -89,11 +89,60 @@ ubuntu
 
 ---
 
+## Blue-Green 도입으로 추가된 변수 3개 (2026-04-23)
+
+Blue-Green 배포는 prod 서버에서도 Nginx 설정을 rsync 하고 `nginx -s reload` 를 수행하므로 CI 가 **prod 서버에도 SSH** 해야 한다. 따라서 prod 접속용 변수 3개와 `EC2_KNOWN_HOSTS` 확장이 필요하다.
+
+### 6. `PROD_HOST`
+
+- **Type**: Variable, Protected ✅, Masked ❌
+- **Value**: prod 서버의 **Public IP** (CI 러너는 Tailscale 밖에 있으므로 공용 IP 로 접속)
+
+```
+<prod-ec2-public-ip>
+```
+
+> 값 확인: `ssh dotshelf "curl -s ifconfig.me"` 또는 AWS 콘솔의 EC2 인스턴스 Public IPv4.
+
+### 7. `PROD_USER`
+
+- **Type**: Variable, Protected ✅, Masked ❌
+- **Value**: `ubuntu`
+
+### 8. `PROD_DEPLOY_PATH`
+
+- **Type**: Variable, Protected ✅, Masked ❌
+- **Value**: `/opt/dotshelf`
+
+### `EC2_KNOWN_HOSTS` 확장 (기존 변수 수정)
+
+prod 서버의 SSH host key 3줄을 **기존 값 아래에 추가**. IP 부분은 실제 `$PROD_HOST` 값으로.
+
+```
+# (기존 3.36.72.58 3줄은 그대로 두고)
+<prod-ec2-public-ip> ssh-ed25519 AAAA...
+<prod-ec2-public-ip> ssh-rsa AAAA...
+<prod-ec2-public-ip> ecdsa-sha2-nistp256 AAAA...
+```
+
+> 획득: 로컬에서 `ssh-keyscan -t ed25519,rsa,ecdsa <prod-ec2-public-ip> 2>/dev/null`
+
+### SSH 키 공유 여부 확인
+
+`SSH_PRIVATE_KEY` 에 해당하는 공개키가 **prod 서버의 `ubuntu` 사용자 `~/.ssh/authorized_keys`** 에도 등록되어 있어야 한다. app 서버에는 이미 등록되어 있고, prod 에 추가 필요:
+
+```bash
+ssh dotshelf "cat >> ~/.ssh/authorized_keys" < ~/.ssh/gitlab-ci-dotshelf-deploy.pub
+```
+
+---
+
 ## 저장 후 확인 체크리스트
 
-- [ ] 5개 전부 **Protected ✅** 인지 (Variables 목록 상단에서 자물쇠 아이콘 확인)
+- [ ] 8개 전부 **Protected ✅** 인지 (Variables 목록 상단에서 자물쇠 아이콘 확인)
 - [ ] Masked 는 전부 **꺼져 있는지**
-- [ ] `EC2_KNOWN_HOSTS` 의 Type 이 **`Variable`** (File 아님) 인지
+- [ ] `EC2_KNOWN_HOSTS` 의 Type 이 **`Variable`** (File 아님) 이고 app + prod 호스트 키 **6줄** 모두 포함인지
+- [ ] `SSH_PRIVATE_KEY` 대응 공개키가 **app + prod 양쪽 `authorized_keys`** 에 있는지
 - [ ] `dev` 브랜치가 **Protected Branches** 에 등록돼 있는지 (Settings → Repository → Protected branches)
 
 ## 트러블슈팅
@@ -110,3 +159,4 @@ ubuntu
 
 - 2026-04-21 · 최초 작성 (Runner 를 EC2 로 옮기며 `EC2_HOST`·`EC2_KNOWN_HOSTS` 를 `172.17.0.1` 기준으로 갱신)
 - 2026-04-22 · **App 서버를 SSAFY 로 분리** 하면서 `EC2_HOST` 를 `3.36.72.58`, `EC2_KNOWN_HOSTS` 를 SSAFY 서버 호스트키로 교체. 이제 deploy target 은 "다른 호스트" 이므로 hairpin NAT 이슈 해당 없음 → Docker bridge(`172.17.0.1`) 불필요
+- 2026-04-23 · **Blue-Green 배포 도입** 으로 prod 접속용 변수 3개 (`PROD_HOST`, `PROD_USER`, `PROD_DEPLOY_PATH`) 추가. `EC2_KNOWN_HOSTS` 에 prod 호스트 키 3줄 추가. `SSH_PRIVATE_KEY` 대응 공개키를 prod 서버 `authorized_keys` 에도 등록 필요
