@@ -1,0 +1,19 @@
+{
+  "name": "App.Features",
+  "rootNamespace": "App.Features",
+  "references": [
+    "App.Core",
+    "App.Domain",
+    "App.Application",
+    "UnityEngine.UI"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
