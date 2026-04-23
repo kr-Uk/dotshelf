@@ -219,17 +219,97 @@ api-blue:
 
 ---
 
-## 9. 측정 계획 (구현 후 채움)
+## 9. 측정 결과 (2026-04-23 첫 성공 배포: `blue → green`)
 
-| 지표 | 목표 | 측정 방법 | 현재 |
+### 9-1. 핵심 증거 — 배포 중 5xx 카운트
+CI 파이프라인 deploy 잡(#339277) 의 `.ci/poll-health.sh` 마지막 JSON:
+
+```json
+{"url":"https://api.dotshelf.digital/api/health","duration":30,"attempts":28,"ok":28,"fail":0,"codes":"200:28"}
+```
+
+**30초 폴링 윈도우 내 28회 요청 전부 200. 5xx/4xx/timeout 0건.**
+
+`attempts=28` 이 30 에 못 미친 건 `curl --max-time 2 + sleep 1` 조합의 산술 특성 (요청이 2초까지 걸리면 루프 1회가 3초) 으로 설계 내 오차. 핵심은 `fail=0`.
+
+### 9-2. 주요 지표
+
+| 지표 | 목표 | **실측** | 판정 |
 |---|---|---|---|
-| 배포 중 공개 health 5xx 카운트 | **0 건** | 배포 전후 30초간 1초 간격 curl, 카운팅 | TBD |
-| TARGET healthy → 스위칭 간격 | < 5초 | 배포 스크립트에 timestamp 로그 | TBD |
-| 롤백 소요 시간 (리허설) | < 30초 | 수동 리허설 1회 | TBD |
-| 색 공존 시 host RAM 사용률 피크 | < 70% | `docker stats` + `free -h` 30초 폴링 | TBD |
-| 배포 전체 소요 | < 이전 + 30초 | 스크립트 실측 | TBD |
+| 배포 중 공개 health 5xx 카운트 | 0 건 | **0** (28/28 200) | ✅ |
+| 배포 전체 소요 (build job 제외) | < 4분 | **195.6 초** | ✅ |
+| 유예(sleep 120) 제외 실질 cutover 시간 | < 2분 | ~75 초 | ✅ |
+| TARGET healthy → Nginx reload | < 5 초 | ~1–2 초 (direct smoke 포함) | ✅ |
+| 색 당 JVM 메모리 (runtime) | < 3 GiB | **471 MiB** (컨테이너 limit 4 GiB 의 11.5%) | ✅ (한참 여유) |
+| 색 공존 시 호스트 RAM 점유 추정 | < 70% | 2 × 471 = ~940 MiB / 15 GiB = **6%** | ✅ |
+| 롤백 소요 (수동 리허설) | < 30 초 | 아직 실시 안 함 | ⏳ |
 
-→ 구현 + 리허설 후 이 표를 실제 숫자로 채운다. 포트폴리오 글의 **본체**는 이 수치 증명.
+### 9-3. 타임라인 (CI 러너 로그 기준)
+
+```
+13:34:34  build job succeeded        (backend:build  339276, 49.5s)
+13:35:30  deploy job started          (backend:deploy 339277)
+13:38:46  deploy job succeeded        (195.6s 총 소요)
+├─ ~30s   rsync + remote build
+├─ ~15s   api-green up → healthy 대기
+├─  ~2s   direct smoke
+├─  ~1s   Nginx upstream 교체 + reload   ← 실제 cutover
+├─  ~2s   공개 smoke OK
+├─ 120s   유예 sleep
+└─  ~3s   api-blue stop
+14:39     poll-health.sh 30초 폴링: 28/28 ok, 0 fail
+```
+
+### 9-4. 첫 시도 실패 2회를 통한 배운 것 (포트폴리오 자산)
+
+| 차수 | 증상 | 원인 | 수정 MR |
+|---|---|---|---|
+| 1차 | deploy job 2분 27초 타임아웃 (exit 255) | `PROD_HOST=3.38.240.110` (public IP) — CI 러너가 prod 호스트 안이라 hairpin NAT 로 자기 자신 못 돌아옴 | GitLab Variable 수정 (PROD_HOST → `172.17.0.1`) + known_hosts 9줄 |
+| 2차 | `nginx -t` 실패: `duplicate upstream` | `nginx.conf` 가 `conf.d/*.conf` 를 자동 로드하는데 `default.conf` 가 `upstream.active.conf` 를 다시 명시 include → 2중 로드. 더불어 `upstream.{blue,green}.conf` 도 conf.d 루트에 있어 자동 로드됨 | [`fix/be/blue-green-nginx-layout`](../infra/2026-04-23-blue-green.md#7-bis-첫-배포에서-터진-두-가지-함정-2026-04-23) — 명시 include 제거 + 템플릿을 `templates/` 서브디렉토리로 이동 + rsync `--delete` |
+
+이 두 함정을 [docs/infra/2026-04-23-blue-green.md §7-bis](../infra/2026-04-23-blue-green.md#7-bis-첫-배포에서-터진-두-가지-함정-2026-04-23) 와 [docs/infra/gitlab-ci-variables.md §6](../infra/gitlab-ci-variables.md#6-prod_host) 에 근거·수정·방지책까지 박제. 같은 함정이 나중에 다른 인프라 변경에서도 반복될 여지가 있어 규약화.
+
+### 9-5. 롤백 리허설 (2026-04-23 수동 실행: `green → blue`)
+
+**방법**: CI 를 거치지 않고 운영자 관점에서 직접 수행 (실전에서 급히 되돌려야 하는 상황 시뮬레이션).
+
+```
+T0 = 13:47:38   docker compose up -d api-blue      (앱 재기동 시작)
+T1 = 13:47:57   api-blue healthy                    (+19 초)
+                curl direct smoke OK
+T2 = 13:48:03   cp templates/upstream.blue.conf upstream.active.conf
+                docker exec dotshelf-nginx nginx -t  → OK
+                docker exec dotshelf-nginx nginx -s reload
+T3 = 13:48:05   cutover 완료                         (+27 초 from T0)
+                echo blue > .active_color
+                docker compose stop api-green
+```
+
+**폴링 증거** (90 초 윈도우, 롤백 진행 전/중/후):
+```json
+{"url":"https://api.dotshelf.digital/api/health","duration":90,"attempts":45,"ok":45,"fail":0,"codes":"200:45"}
+```
+
+**롤백 지표**
+
+| 지표 | 목표 | 실측 | 판정 |
+|---|---|---|---|
+| 롤백 전체 소요 | < 30 초 | **27 초** | ✅ |
+| 앱 콜드스타트 (컨테이너 재기동 → healthy) | - | 19 초 | - |
+| 실질 cutover (nginx cp + -t + reload) | < 5 초 | **2 초** | ✅ |
+| 롤백 중 공개 5xx | 0 | **0** (45/45 200) | ✅ |
+
+**배운 것**:
+- 롤백 대상 컨테이너가 **이미 빌드된 상태로 stop 되어 있었기** 때문에 `docker compose up` 이 재빌드 없이 바로 시작 → 19 초 콜드스타트로 끝났다. 구 color 를 `docker rm` 하지 않고 `stop` 만 해두는 현 설계가 이 특성을 보장한다.
+- 실질 cutover 자체는 2 초로 끝난다 (nginx reload 는 graceful 하므로 기존 inflight 요청은 구 workers 가 끝까지 처리하고 신규 요청만 새 upstream). 45/45 200 이 이걸 증명.
+- 즉 **롤백 결정 시점부터 "안전한 이전 버전 재복귀"까지 27 초 이내**. 수동 개입 가능한 범위.
+
+**포트폴리오 발화**: *"실제 배포 첫 시도에서 nginx 중복 선언과 hairpin NAT 2건을 연속으로 실전 디버깅했고, 수동 롤백 리허설까지 수행해 배포 실패 시 27초 내 이전 버전 복귀 가능함을 검증했다. 중단 0회."*
+
+### 9-6. 아직 안 한 것
+
+- **동일 배포 2회 반복**: blue ↔ green 양방향을 여러 번 돌려 상태 누수 없는지 확인.
+- **자동 롤백**: 현재는 cutover 후 `poll-health.sh` 가 실패를 감지해도 경고만 내고 롤백은 안 한다. 추후 fail > 임계값 시 이전 색으로 자동 복귀하는 옵션.
 
 ---
 
@@ -271,14 +351,19 @@ A. 기술적 필요성만으로는 과잉 맞습니다. 다만 `dev` CD + Flyway
 
 1. [x] 설계 박제 (**이 문서**)
 2. [x] [팀 DB 마이그레이션 규칙](../architecture/flyway-migration-rules.md) 문서
-3. [ ] JVM 메모리 정리 — 선행 독립 MR
-4. [ ] Nginx `upstream.active.conf` 분리 (기능 변화 없음, 리팩토링)
-5. [ ] compose 에 `api-blue` / `api-green` 2 서비스 정의
-6. [ ] `deploy-blue-green.sh` 스크립트 (app/prod 2파트)
-7. [ ] `.gitlab-ci.yml` deploy 단계 교체
-8. [ ] 관찰 폴링 스크립트 + 측정 1회
-9. [ ] 롤백 리허설 + 측정
-10. [ ] 본 문서 §9 수치 채움
+3. [x] JVM 메모리 정리 — 선행 독립 MR (`chore/be/app-compose-mem-limit`, push 완료, 머지 대기 중)
+4. [x] Nginx `upstream.active.conf` 분리 (`deploy/prod/nginx/conf.d/`)
+5. [x] compose 에 `api-blue` / `api-green` 2 서비스 정의
+6. [x] `deploy-blue-green.sh` 스크립트 (app/prod 2파트)
+7. [x] `.gitlab-ci.yml` deploy 단계 교체
+8. [x] 관찰 폴링 스크립트 (`poll-health.sh`)
+9. [ ] 롤백 리허설 + 측정 (**post-merge, dev 복구 후**)
+10. [ ] 본 문서 §9 수치 채움 (**post-merge**)
+
+### Blockers
+- **Merge 순서**: `feat/be/social_login` 핫픽스 → JVM MR 머지 → blue-green MR 머지 순으로 진행. social_login 의 `RestClient.Builder` 빈 누락 이슈로 현재 dev 가 502 상태라 MR 머지 대기 중.
+- **CI 변수 추가 필요**: `PROD_HOST`, `PROD_USER`, `PROD_DEPLOY_PATH` + `EC2_KNOWN_HOSTS` 확장. [gitlab-ci-variables.md](../infra/gitlab-ci-variables.md#blue-green-도입으로-추가된-변수-3개-2026-04-23) 지침대로 사용자가 GitLab 콘솔에서 추가.
+- **prod 서버 `authorized_keys`**: CI SSH 공개키를 prod `ubuntu` 계정에 추가 필요.
 
 ---
 

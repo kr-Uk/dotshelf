@@ -64,7 +64,7 @@ backend:deploy:
     - job: backend:build
       artifacts: true
   before_script:
-    - apk add --no-cache openssh-client rsync curl
+    - apk add --no-cache openssh-client rsync curl bash
     - mkdir -p ~/.ssh && chmod 700 ~/.ssh
     - printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
@@ -72,15 +72,22 @@ backend:deploy:
     - chmod 600 ~/.ssh/known_hosts
   script:
     - JAR=$(ls $JAR_ARTIFACT_PATH/*-SNAPSHOT.jar | head -1)
-    - COMPOSE=backend/deploy/app/docker-compose.yml
-    - echo "Deploying $JAR + $COMPOSE to $EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH (app server, via Tailscale-backed stack)"
+    - APP_COMPOSE=backend/deploy/app/docker-compose.yml
+    - DOCKERFILE=backend/Dockerfile
+    - NGINX_CONFD=backend/deploy/prod/nginx/conf.d
+    - echo "Staging payloads to app=$EC2_HOST prod=$PROD_HOST"
+    # --- Stage JAR + Dockerfile + compose to app ---
     - ssh "$EC2_USER@$EC2_HOST" "mkdir -p $EC2_DEPLOY_PATH/api/build/libs && rm -f $EC2_DEPLOY_PATH/api/build/libs/*.jar"
     - rsync -az "$JAR" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/api/build/libs/"
-    - rsync -az "$COMPOSE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/docker-compose.yml"
-    - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose up -d --build api && docker image prune -f"
-    - sh .ci/wait_for_api_healthy.sh
-    - 'ssh "$EC2_USER@$EC2_HOST" "curl -fsS http://100.74.2.103:8080/api/health"'
-    - curl -fsS https://api.dotshelf.digital/api/health
+    - rsync -az "$DOCKERFILE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/api/Dockerfile"
+    - rsync -az "$APP_COMPOSE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/docker-compose.yml"
+    # --- Stage Nginx configs to prod (excluding runtime upstream.active.conf) ---
+    - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $PROD_DEPLOY_PATH/nginx/conf.d"
+    - rsync -az --delete --exclude='upstream.active.conf' --exclude='README.md' --exclude='*.bak*' "$NGINX_CONFD/" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/"
+    # --- Blue-Green orchestration ---
+    - sh .ci/deploy-blue-green.sh
+    # --- Evidence: 30s post-cutover polling (informational, non-blocking) ---
+    - sh .ci/poll-health.sh "https://api.dotshelf.digital/api/health" 30 || echo "⚠️ 배포 후 30초 폴링에서 실패 감지"
   environment:
     name: dev
     url: https://api.dotshelf.digital
