@@ -30,7 +30,7 @@ public class AuthController {
 
     private final AuthService authService;
 
-    @Operation(summary = "소셜 로그인", description = "provider + providerUserId 로 자체 JWT 발급 (신규 가입 포함)")
+    @Operation(summary = "소셜 로그인", description = "소셜 provider 토큰 검증 후 자체 JWT 발급 (신규 가입 포함)")
     @SecurityRequirements({})
     @PostMapping("/social-login")
     public ApiResponse<AuthTokenResponse> socialLogin(@RequestBody @Valid SocialLoginRequest request) {
