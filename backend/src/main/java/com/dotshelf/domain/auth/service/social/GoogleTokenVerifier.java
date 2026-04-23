@@ -17,6 +17,9 @@ import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 import com.dotshelf.global.security.SocialLoginProperties;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Component
 public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
 
@@ -63,13 +66,11 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
         if (tokenType == null) {
             return !isJwt(token);
         }
-        if (tokenType == SocialTokenType.AUTHORIZATION_CODE) {
-            return true;
-        }
-        if (tokenType == SocialTokenType.ID_TOKEN) {
-            return false;
-        }
-        throw new CustomException(ErrorCode.INVALID_INPUT, "GOOGLE은 ID_TOKEN 또는 AUTHORIZATION_CODE만 지원합니다.");
+        return switch (tokenType) {
+            case AUTHORIZATION_CODE -> true;
+            case ID_TOKEN -> false;
+            case ACCESS_TOKEN -> throw new CustomException(ErrorCode.INVALID_INPUT, "GOOGLE은 ACCESS_TOKEN을 지원하지 않습니다.");
+        };
     }
 
     private String exchangeCodeForIdToken(String code) {
@@ -98,6 +99,7 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
             }
             return idToken;
         } catch (RestClientException e) {
+            log.warn("Google token exchange failed (code={})", mask(code), e);
             throw new CustomException(ErrorCode.INVALID_TOKEN);
         }
     }
@@ -116,5 +118,13 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
         }
         String text = String.valueOf(value).trim();
         return text.isBlank() ? null : text;
+    }
+
+    private String mask(String value) {
+        if (value == null || value.isBlank()) {
+            return "blank";
+        }
+        int visibleLength = Math.min(6, value.length());
+        return value.substring(0, visibleLength) + "***";
     }
 }

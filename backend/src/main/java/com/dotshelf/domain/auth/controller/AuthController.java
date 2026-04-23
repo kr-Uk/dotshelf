@@ -1,10 +1,8 @@
 package com.dotshelf.domain.auth.controller;
 
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dotshelf.domain.auth.dto.AuthDtos.AuthTokenResponse;
@@ -37,16 +35,6 @@ public class AuthController {
     @PostMapping("/social-login")
     public ApiResponse<AuthTokenResponse> socialLogin(@RequestBody @Valid SocialLoginRequest request) {
         return ApiResponse.success(authService.socialLogin(request));
-    }
-
-    @Operation(summary = "카카오 로그인 콜백", description = "카카오 REST OAuth authorization code 를 자체 JWT 로 교환")
-    @SecurityRequirements({})
-    @GetMapping("/kakao/callback")
-    public ApiResponse<AuthTokenResponse> kakaoCallback(
-            @RequestParam(required = false) String code,
-            @RequestParam(required = false) String error
-    ) {
-        return ApiResponse.success(authService.kakaoCallback(code, error));
     }
 
     @Operation(summary = "토큰 리프레시", description = "refresh 토큰으로 access 토큰 재발급 (rotation + reuse detection)")

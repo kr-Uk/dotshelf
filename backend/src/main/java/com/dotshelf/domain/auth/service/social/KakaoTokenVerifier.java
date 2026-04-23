@@ -17,6 +17,9 @@ import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 import com.dotshelf.global.security.SocialLoginProperties;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Component
 public class KakaoTokenVerifier implements SocialTokenVerifier {
 
@@ -68,13 +71,14 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
     }
 
     private String resolveAccessToken(String token, SocialTokenType tokenType) {
-        if (tokenType == null || tokenType == SocialTokenType.ACCESS_TOKEN) {
+        if (tokenType == null) {
             return token;
         }
-        if (tokenType == SocialTokenType.AUTHORIZATION_CODE) {
-            return exchangeCodeForAccessToken(token);
-        }
-        throw new CustomException(ErrorCode.INVALID_INPUT, "KAKAO는 ACCESS_TOKEN 또는 AUTHORIZATION_CODE만 지원합니다.");
+        return switch (tokenType) {
+            case ACCESS_TOKEN -> token;
+            case AUTHORIZATION_CODE -> exchangeCodeForAccessToken(token);
+            case ID_TOKEN -> throw new CustomException(ErrorCode.INVALID_INPUT, "KAKAO는 ID_TOKEN을 지원하지 않습니다.");
+        };
     }
 
     private String exchangeCodeForAccessToken(String code) {
@@ -101,6 +105,7 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
             }
             return accessToken;
         } catch (RestClientException e) {
+            log.warn("Kakao token exchange failed (code={})", mask(code), e);
             throw new CustomException(ErrorCode.INVALID_TOKEN);
         }
     }
@@ -117,6 +122,7 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
             }
             return response;
         } catch (RestClientException e) {
+            log.warn("Kakao user info request failed", e);
             throw new CustomException(ErrorCode.INVALID_TOKEN);
         }
     }
@@ -162,5 +168,13 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
 
     private String firstNonBlank(String first, String second) {
         return first == null ? second : first;
+    }
+
+    private String mask(String value) {
+        if (value == null || value.isBlank()) {
+            return "blank";
+        }
+        int visibleLength = Math.min(6, value.length());
+        return value.substring(0, visibleLength) + "***";
     }
 }

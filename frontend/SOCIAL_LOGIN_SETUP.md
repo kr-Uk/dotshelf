@@ -98,10 +98,11 @@ eeabd73a76a6aa3fa5619b73836df269
 
 ### Kakao Redirect URI
 
-Desktop REST OAuth 흐름에서 사용한다.
+Desktop REST OAuth 흐름에서 Unity 데스크탑 앱이 authorization code를 받을 URI다.
+BE는 이 URI를 직접 호출받지 않고, token exchange 요청의 `redirect_uri` 값으로만 사용한다.
 
 ```text
-https://api.dotshelf.digital/v1/auth/kakao/callback
+http://localhost:18080/oauth/kakao/callback
 ```
 
 ### Kakao Android / iOS BE Request
@@ -118,7 +119,14 @@ Android mobile, Android tablet, iOS는 Kakao SDK 로그인 후 받은 `accessTok
 
 ### Kakao Desktop BE Request
 
-Desktop은 Kakao REST OAuth로 받은 authorization code를 BE로 보낸다.
+Desktop은 Kakao REST OAuth로 받은 authorization code를 BE로 보낸다. 브라우저 callback 응답에서 DotShelf JWT를 직접 받는 경로는 사용하지 않는다.
+
+Desktop 구현 순서:
+
+1. 로그인 시작 시 랜덤 `state`를 생성해서 앱 메모리에 저장한다.
+2. Kakao authorize URL에 `redirect_uri`와 `state`를 함께 넣는다.
+3. Unity 데스크탑 앱이 local callback 또는 deep link로 `code`와 `state`를 받는다.
+4. 받은 `state`가 저장한 값과 같을 때만 아래 BE 요청을 보낸다.
 
 ```json
 {
@@ -126,12 +134,6 @@ Desktop은 Kakao REST OAuth로 받은 authorization code를 BE로 보낸다.
   "tokenType": "AUTHORIZATION_CODE",
   "token": "Kakao authorization code"
 }
-```
-
-Desktop에서 callback URL로 직접 받는 경우:
-
-```text
-https://api.dotshelf.digital/v1/auth/kakao/callback?code={authorization_code}
 ```
 
 ## Platform Summary
