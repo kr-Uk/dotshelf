@@ -71,7 +71,7 @@ if [ "$BOOTSTRAP" = "true" ]; then
   log "Bootstrap: removing legacy single-container dotshelf-api if present"
   ssh_app "docker rm -f dotshelf-api 2>/dev/null || true"
   log "Bootstrap: ensuring prod upstream.active.conf exists (default = blue)"
-  ssh_prod "test -f $PROD_DEPLOY_PATH/nginx/conf.d/upstream.active.conf || cp $PROD_DEPLOY_PATH/nginx/conf.d/upstream.blue.conf $PROD_DEPLOY_PATH/nginx/conf.d/upstream.active.conf"
+  ssh_prod "test -f $PROD_DEPLOY_PATH/nginx/conf.d/upstream.active.conf || cp $PROD_DEPLOY_PATH/nginx/conf.d/templates/upstream.blue.conf $PROD_DEPLOY_PATH/nginx/conf.d/upstream.active.conf"
 fi
 
 # ---------- 3. TARGET 컨테이너 빌드 + 기동 ----------
@@ -110,14 +110,14 @@ fi
 
 # ---------- 6. Nginx upstream 스위칭 ----------
 log "Switching Nginx upstream to $TARGET"
-ssh_prod "cp $PROD_DEPLOY_PATH/nginx/conf.d/upstream.$TARGET.conf $PROD_DEPLOY_PATH/nginx/conf.d/upstream.active.conf"
+ssh_prod "cp $PROD_DEPLOY_PATH/nginx/conf.d/templates/upstream.$TARGET.conf $PROD_DEPLOY_PATH/nginx/conf.d/upstream.active.conf"
 
 nginx_test_out=$(ssh_prod "docker exec dotshelf-nginx nginx -t" 2>&1) || {
   log "nginx -t FAILED:"
   printf '%s\n' "$nginx_test_out" >&2
   if [ "$BOOTSTRAP" = "false" ]; then
     log "Reverting upstream.active.conf to $ACTIVE"
-    ssh_prod "cp $PROD_DEPLOY_PATH/nginx/conf.d/upstream.$ACTIVE.conf $PROD_DEPLOY_PATH/nginx/conf.d/upstream.active.conf" || true
+    ssh_prod "cp $PROD_DEPLOY_PATH/nginx/conf.d/templates/upstream.$ACTIVE.conf $PROD_DEPLOY_PATH/nginx/conf.d/upstream.active.conf" || true
   fi
   ssh_app "docker compose -f $EC2_DEPLOY_PATH/docker-compose.yml stop api-$TARGET" || true
   fail "nginx configuration invalid"
