@@ -16,6 +16,8 @@ push 단위 변경분에 대한 한국어 학습 노트. 무엇을 / 왜 / 어�
 | 2026-04-21 | `feat/be/refactoring` | [`2026-04-21-feat-be-refactoring.md`](./2026-04-21-feat-be-refactoring.md) | Swagger / JWT / Cursor / UTC 4-구멍 보강, patterns.md 공식화 |
 | 2026-04-22 | `docs/be/codex-skills` | [`2026-04-22-docs-be-codex-skills.md`](./2026-04-22-docs-be-codex-skills.md) | Codex 스킬 설치 흐름과 DB 스키마 문서화 |
 | 2026-04-22 | `feat/be/social_login` | [`2026-04-22-feat-be-social-login.md`](./2026-04-22-feat-be-social-login.md) | Google/Kakao/Apple 소셜 로그인 토큰 검증과 Unity 클라이언트 설정 흐름 정리 |
+| 2026-04-23 | (설계) | [`2026-04-23-blue-green-rationale.md`](./2026-04-23-blue-green-rationale.md) | Blue-Green 무중단 배포 도입의 설계/트레이드오프/측정 계획·결과 박제 (rationale) |
+| 2026-04-23 | 5개 MR 통합 | [`2026-04-23-blue-green-rollout-retro.md`](./2026-04-23-blue-green-rollout-retro.md) | 하루 5개 MR (JVM→핫픽스→Blue-Green→실전 수정 2건→측정) 전체 회고 + 실전 실패 2건 배운 것 |
 
 ## 작성 규칙
 
