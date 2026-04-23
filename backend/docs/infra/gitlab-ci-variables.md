@@ -157,6 +157,7 @@ http://localhost:18080/oauth/kakao/callback
 ```
 
 > BE가 브라우저 callback을 직접 받는 URI가 아니다. Desktop Unity 앱이 authorization code를 수신할 때 사용한 `redirect_uri`와 token exchange 시 BE가 카카오에 보내는 `redirect_uri`가 정확히 같아야 한다.
+> Kakao Developers 의 카카오 로그인 리다이렉트 URI에도 같은 값을 등록해야 한다.
 
 ---
 

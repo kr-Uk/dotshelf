@@ -105,6 +105,20 @@ BE는 이 URI를 직접 호출받지 않고, token exchange 요청의 `redirect_
 http://localhost:18080/oauth/kakao/callback
 ```
 
+Kakao Developers 설정:
+
+```text
+내 애플리케이션
+-> 앱 선택
+-> 앱 설정
+-> 앱 키
+-> REST API 키 수정
+-> 카카오 로그인 리다이렉트 URI
+-> http://localhost:18080/oauth/kakao/callback 추가
+```
+
+API 서버 주소를 카카오 로그인 리다이렉트 URI로 등록하지 않는다.
+
 ### Kakao Android / iOS BE Request
 
 Android mobile, Android tablet, iOS는 Kakao SDK 로그인 후 받은 `accessToken`을 BE로 보낸다.
@@ -124,7 +138,7 @@ Desktop은 Kakao REST OAuth로 받은 authorization code를 BE로 보낸다. 브
 Desktop 구현 순서:
 
 1. 로그인 시작 시 랜덤 `state`를 생성해서 앱 메모리에 저장한다.
-2. Kakao authorize URL에 `redirect_uri`와 `state`를 함께 넣는다.
+2. Kakao authorize URL에 `redirect_uri=http://localhost:18080/oauth/kakao/callback`와 `state`를 함께 넣는다.
 3. Unity 데스크탑 앱이 local callback 또는 deep link로 `code`와 `state`를 받는다.
 4. 받은 `state`가 저장한 값과 같을 때만 아래 BE 요청을 보낸다.
 
@@ -156,4 +170,5 @@ JWT_SECRET
 Kakao Admin Key
 refresh token
 access token 고정값
+DotShelf JWT 고정값
 ```
