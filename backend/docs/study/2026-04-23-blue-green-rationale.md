@@ -269,10 +269,47 @@ CI 파이프라인 deploy 잡(#339277) 의 `.ci/poll-health.sh` 마지막 JSON:
 
 이 두 함정을 [docs/infra/2026-04-23-blue-green.md §7-bis](../infra/2026-04-23-blue-green.md#7-bis-첫-배포에서-터진-두-가지-함정-2026-04-23) 와 [docs/infra/gitlab-ci-variables.md §6](../infra/gitlab-ci-variables.md#6-prod_host) 에 근거·수정·방지책까지 박제. 같은 함정이 나중에 다른 인프라 변경에서도 반복될 여지가 있어 규약화.
 
-### 9-5. 아직 안 한 것
+### 9-5. 롤백 리허설 (2026-04-23 수동 실행: `green → blue`)
 
-- **롤백 리허설**: 의도적으로 green → blue 로 되돌리고 동일한 JSON 폴링 증거 수집. 30분 안에 가능.
-- **동일 배포 2회 반복**: blue ↔ green 양방향 안정성 확인.
+**방법**: CI 를 거치지 않고 운영자 관점에서 직접 수행 (실전에서 급히 되돌려야 하는 상황 시뮬레이션).
+
+```
+T0 = 13:47:38   docker compose up -d api-blue      (앱 재기동 시작)
+T1 = 13:47:57   api-blue healthy                    (+19 초)
+                curl direct smoke OK
+T2 = 13:48:03   cp templates/upstream.blue.conf upstream.active.conf
+                docker exec dotshelf-nginx nginx -t  → OK
+                docker exec dotshelf-nginx nginx -s reload
+T3 = 13:48:05   cutover 완료                         (+27 초 from T0)
+                echo blue > .active_color
+                docker compose stop api-green
+```
+
+**폴링 증거** (90 초 윈도우, 롤백 진행 전/중/후):
+```json
+{"url":"https://api.dotshelf.digital/api/health","duration":90,"attempts":45,"ok":45,"fail":0,"codes":"200:45"}
+```
+
+**롤백 지표**
+
+| 지표 | 목표 | 실측 | 판정 |
+|---|---|---|---|
+| 롤백 전체 소요 | < 30 초 | **27 초** | ✅ |
+| 앱 콜드스타트 (컨테이너 재기동 → healthy) | - | 19 초 | - |
+| 실질 cutover (nginx cp + -t + reload) | < 5 초 | **2 초** | ✅ |
+| 롤백 중 공개 5xx | 0 | **0** (45/45 200) | ✅ |
+
+**배운 것**:
+- 롤백 대상 컨테이너가 **이미 빌드된 상태로 stop 되어 있었기** 때문에 `docker compose up` 이 재빌드 없이 바로 시작 → 19 초 콜드스타트로 끝났다. 구 color 를 `docker rm` 하지 않고 `stop` 만 해두는 현 설계가 이 특성을 보장한다.
+- 실질 cutover 자체는 2 초로 끝난다 (nginx reload 는 graceful 하므로 기존 inflight 요청은 구 workers 가 끝까지 처리하고 신규 요청만 새 upstream). 45/45 200 이 이걸 증명.
+- 즉 **롤백 결정 시점부터 "안전한 이전 버전 재복귀"까지 27 초 이내**. 수동 개입 가능한 범위.
+
+**포트폴리오 발화**: *"실제 배포 첫 시도에서 nginx 중복 선언과 hairpin NAT 2건을 연속으로 실전 디버깅했고, 수동 롤백 리허설까지 수행해 배포 실패 시 27초 내 이전 버전 복귀 가능함을 검증했다. 중단 0회."*
+
+### 9-6. 아직 안 한 것
+
+- **동일 배포 2회 반복**: blue ↔ green 양방향을 여러 번 돌려 상태 누수 없는지 확인.
+- **자동 롤백**: 현재는 cutover 후 `poll-health.sh` 가 실패를 감지해도 경고만 내고 롤백은 안 한다. 추후 fail > 임계값 시 이전 색으로 자동 복귀하는 옵션.
 
 ---
 

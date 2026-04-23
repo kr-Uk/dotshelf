@@ -217,9 +217,34 @@ CI deploy job `#339277` 의 `poll-health.sh` 최종 출력:
 | 유예 제외 실질 cutover 시간 | - | ~75 초 | - |
 | 색당 컨테이너 메모리 사용 | < 3 GiB | **471 MiB** (limit 4 GiB 의 11.5%) | ✅ |
 | 호스트 RAM 점유 (색 공존 추정) | < 70% | ~6% (940 MiB / 15 GiB) | ✅ |
-| 롤백 소요 (수동 리허설) | < 배포 전체 시간과 동일 | 아직 실시 안 함 | ⏳ |
+| 롤백 소요 (수동 리허설: green → blue) | < 30 초 | **27 초** (fail=0/45) | ✅ |
 
 자세한 타임라인/배운 것은 [rationale §9](../study/2026-04-23-blue-green-rationale.md#9-측정-결과-2026-04-23-첫-성공-배포-blue--green) 참조.
+
+### 롤백 증거 (2026-04-23 수동 리허설)
+```json
+{"url":"https://api.dotshelf.digital/api/health","duration":90,"attempts":45,"ok":45,"fail":0,"codes":"200:45"}
+```
+
+롤백은 CI 를 거치지 않고 수동 3-단계로 수행했다 — 실전 급 상황 시뮬레이션.
+
+```bash
+# (1) 앱 서버에서 stop 되어 있던 이전 색 재기동
+ssh dotshelf-app "cd /opt/dotshelf && docker compose up -d api-blue"
+# → healthy 까지 19 초
+
+# (2) prod 서버에서 Nginx upstream 을 이전 색으로 교체
+ssh dotshelf "cp /opt/dotshelf/nginx/conf.d/templates/upstream.blue.conf /opt/dotshelf/nginx/conf.d/upstream.active.conf && \
+              docker exec dotshelf-nginx nginx -t && \
+              docker exec dotshelf-nginx nginx -s reload"
+# → cutover 2 초
+
+# (3) active_color 기록 + 현재 색 stop
+ssh dotshelf-app "echo blue > /opt/dotshelf/.active_color && \
+                  cd /opt/dotshelf && docker compose stop api-green"
+```
+
+**총 27 초**. 이전 색 컨테이너를 `stop`(not `rm`) 으로 보존하는 설계 덕분에 재빌드 없이 바로 뜬다.
 
 ## 9. 관련 문서
 
