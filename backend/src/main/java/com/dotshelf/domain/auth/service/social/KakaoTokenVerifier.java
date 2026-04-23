@@ -4,11 +4,15 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import com.dotshelf.domain.auth.entity.SocialProvider;
+import com.dotshelf.domain.auth.entity.SocialTokenType;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 import com.dotshelf.global.security.SocialLoginProperties;
@@ -33,8 +37,9 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
     }
 
     @Override
-    public SocialUserInfo verify(String token) {
-        Map<String, Object> response = requestUserInfo(token);
+    public SocialUserInfo verify(String token, SocialTokenType tokenType) {
+        String accessToken = resolveAccessToken(token, tokenType);
+        Map<String, Object> response = requestUserInfo(accessToken);
         String providerUserId = stringValue(response.get("id"));
         if (providerUserId == null) {
             throw new CustomException(ErrorCode.INVALID_TOKEN);
@@ -62,6 +67,44 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
         );
     }
 
+    private String resolveAccessToken(String token, SocialTokenType tokenType) {
+        if (tokenType == null || tokenType == SocialTokenType.ACCESS_TOKEN) {
+            return token;
+        }
+        if (tokenType == SocialTokenType.AUTHORIZATION_CODE) {
+            return exchangeCodeForAccessToken(token);
+        }
+        throw new CustomException(ErrorCode.INVALID_INPUT, "KAKAO는 ACCESS_TOKEN 또는 AUTHORIZATION_CODE만 지원합니다.");
+    }
+
+    private String exchangeCodeForAccessToken(String code) {
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        body.add("grant_type", "authorization_code");
+        body.add("client_id", restApiKey());
+        body.add("redirect_uri", redirectUri());
+        body.add("code", code);
+        String clientSecret = properties.kakao().clientSecret();
+        if (clientSecret != null && !clientSecret.isBlank()) {
+            body.add("client_secret", clientSecret);
+        }
+
+        try {
+            Map<String, Object> response = restClient.post()
+                    .uri(properties.kakao().tokenUri())
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(body)
+                    .retrieve()
+                    .body(RESPONSE_TYPE);
+            String accessToken = response == null ? null : stringValue(response.get("access_token"));
+            if (accessToken == null) {
+                throw new CustomException(ErrorCode.INVALID_TOKEN);
+            }
+            return accessToken;
+        } catch (RestClientException e) {
+            throw new CustomException(ErrorCode.INVALID_TOKEN);
+        }
+    }
+
     private Map<String, Object> requestUserInfo(String token) {
         try {
             Map<String, Object> response = restClient.get()
@@ -76,6 +119,22 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
         } catch (RestClientException e) {
             throw new CustomException(ErrorCode.INVALID_TOKEN);
         }
+    }
+
+    private String restApiKey() {
+        String restApiKey = properties.kakao().restApiKey();
+        if (restApiKey == null || restApiKey.isBlank()) {
+            throw new CustomException(ErrorCode.INVALID_TOKEN, "KAKAO_REST_API_KEY 설정이 필요합니다.");
+        }
+        return restApiKey;
+    }
+
+    private String redirectUri() {
+        String redirectUri = properties.kakao().redirectUri();
+        if (redirectUri == null || redirectUri.isBlank()) {
+            throw new CustomException(ErrorCode.INVALID_TOKEN, "KAKAO_REDIRECT_URI 설정이 필요합니다.");
+        }
+        return redirectUri;
     }
 
     private Map<String, Object> mapValue(Map<String, Object> source, String key) {

@@ -13,6 +13,8 @@ import com.dotshelf.domain.auth.dto.AuthDtos.SocialLoginRequest;
 import com.dotshelf.domain.auth.dto.AuthDtos.TokenRefreshRequest;
 import com.dotshelf.domain.auth.entity.AuthRefreshToken;
 import com.dotshelf.domain.auth.entity.GuestMigrationImport;
+import com.dotshelf.domain.auth.entity.SocialProvider;
+import com.dotshelf.domain.auth.entity.SocialTokenType;
 import com.dotshelf.domain.auth.entity.UserSocialAccount;
 import com.dotshelf.domain.auth.repository.AuthRefreshTokenRepository;
 import com.dotshelf.domain.auth.repository.GuestMigrationImportRepository;
@@ -46,7 +48,27 @@ public class AuthService {
 
     @Transactional
     public AuthTokenResponse socialLogin(SocialLoginRequest request) {
-        SocialUserInfo socialUser = socialTokenVerifierRegistry.verify(request.provider(), request.token());
+        SocialUserInfo socialUser = socialTokenVerifierRegistry.verify(request.provider(), request.tokenType(), request.token());
+        return loginWithSocialUser(socialUser);
+    }
+
+    @Transactional
+    public AuthTokenResponse kakaoCallback(String code, String error) {
+        if (error != null && !error.isBlank()) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "카카오 로그인 인가 요청이 취소되었거나 실패했습니다.");
+        }
+        if (code == null || code.isBlank()) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "카카오 authorization code가 필요합니다.");
+        }
+        SocialUserInfo socialUser = socialTokenVerifierRegistry.verify(
+                SocialProvider.KAKAO,
+                SocialTokenType.AUTHORIZATION_CODE,
+                code.trim()
+        );
+        return loginWithSocialUser(socialUser);
+    }
+
+    private AuthTokenResponse loginWithSocialUser(SocialUserInfo socialUser) {
         UserSocialAccount socialAccount = socialAccountRepository
                 .findByProviderAndProviderUserId(socialUser.provider(), socialUser.providerUserId())
                 .orElse(null);

@@ -57,7 +57,11 @@ social:
     jwks-uri: https://www.googleapis.com/oauth2/v3/certs
     token-uri: https://oauth2.googleapis.com/token
   kakao:
+    rest-api-key: ${KAKAO_REST_API_KEY:}
+    client-secret: ${KAKAO_CLIENT_SECRET:}
+    redirect-uri: ${KAKAO_REDIRECT_URI:}
     user-info-uri: https://kapi.kakao.com/v2/user/me
+    token-uri: https://kauth.kakao.com/oauth/token
   apple:
     client-ids: ${APPLE_CLIENT_IDS:${APPLE_CLIENT_ID:}}
     issuers:

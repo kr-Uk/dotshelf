@@ -13,7 +13,7 @@ public record SocialLoginProperties(
 
     public SocialLoginProperties {
         google = google == null ? new Google(null, null, null, null, null, null) : google;
-        kakao = kakao == null ? new Kakao(null) : kakao;
+        kakao = kakao == null ? new Kakao(null, null, null, null, null) : kakao;
         apple = apple == null ? new Apple(null, null, null) : apple;
     }
 
@@ -47,11 +47,29 @@ public record SocialLoginProperties(
         }
     }
 
-    public record Kakao(String userInfoUri) {
+    public record Kakao(
+            String restApiKey,
+            String clientSecret,
+            String redirectUri,
+            String userInfoUri,
+            String tokenUri
+    ) {
 
         public Kakao {
+            if (restApiKey != null && restApiKey.isBlank()) {
+                restApiKey = null;
+            }
+            if (clientSecret != null && clientSecret.isBlank()) {
+                clientSecret = null;
+            }
+            if (redirectUri != null && redirectUri.isBlank()) {
+                redirectUri = null;
+            }
             if (userInfoUri == null || userInfoUri.isBlank()) {
                 userInfoUri = "https://kapi.kakao.com/v2/user/me";
+            }
+            if (tokenUri == null || tokenUri.isBlank()) {
+                tokenUri = "https://kauth.kakao.com/oauth/token";
             }
         }
     }

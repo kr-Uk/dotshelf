@@ -12,6 +12,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import com.dotshelf.domain.auth.entity.SocialProvider;
+import com.dotshelf.domain.auth.entity.SocialTokenType;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 import com.dotshelf.global.security.SocialLoginProperties;
@@ -42,8 +43,8 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
     }
 
     @Override
-    public SocialUserInfo verify(String token) {
-        String idToken = isJwt(token) ? token : exchangeCodeForIdToken(token);
+    public SocialUserInfo verify(String token, SocialTokenType tokenType) {
+        String idToken = shouldExchangeCode(token, tokenType) ? exchangeCodeForIdToken(token) : token;
         Jwt jwt = decode(idToken);
         return new SocialUserInfo(
                 SocialProvider.GOOGLE,
@@ -56,6 +57,19 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
 
     private boolean isJwt(String token) {
         return token.chars().filter(character -> character == '.').count() == 2;
+    }
+
+    private boolean shouldExchangeCode(String token, SocialTokenType tokenType) {
+        if (tokenType == null) {
+            return !isJwt(token);
+        }
+        if (tokenType == SocialTokenType.AUTHORIZATION_CODE) {
+            return true;
+        }
+        if (tokenType == SocialTokenType.ID_TOKEN) {
+            return false;
+        }
+        throw new CustomException(ErrorCode.INVALID_INPUT, "GOOGLE은 ID_TOKEN 또는 AUTHORIZATION_CODE만 지원합니다.");
     }
 
     private String exchangeCodeForIdToken(String code) {
