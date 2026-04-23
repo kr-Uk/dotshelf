@@ -72,9 +72,11 @@ backend:deploy:
     - chmod 600 ~/.ssh/known_hosts
   script:
     - JAR=$(ls $JAR_ARTIFACT_PATH/*-SNAPSHOT.jar | head -1)
-    - echo "Deploying $JAR to $EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH (app server, via Tailscale-backed stack)"
+    - COMPOSE=backend/deploy/app/docker-compose.yml
+    - echo "Deploying $JAR + $COMPOSE to $EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH (app server, via Tailscale-backed stack)"
     - ssh "$EC2_USER@$EC2_HOST" "mkdir -p $EC2_DEPLOY_PATH/api/build/libs && rm -f $EC2_DEPLOY_PATH/api/build/libs/*.jar"
     - rsync -az "$JAR" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/api/build/libs/"
+    - rsync -az "$COMPOSE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/docker-compose.yml"
     - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose up -d --build api && docker image prune -f"
     - sh .ci/wait_for_api_healthy.sh
     - 'ssh "$EC2_USER@$EC2_HOST" "curl -fsS http://100.74.2.103:8080/api/health"'
