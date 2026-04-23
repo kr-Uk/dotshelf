@@ -83,7 +83,7 @@ backend:deploy:
     - rsync -az "$APP_COMPOSE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/docker-compose.yml"
     # --- Stage Nginx configs to prod (excluding runtime upstream.active.conf) ---
     - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $PROD_DEPLOY_PATH/nginx/conf.d"
-    - rsync -az --exclude='upstream.active.conf' --exclude='README.md' "$NGINX_CONFD/" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/"
+    - rsync -az --delete --exclude='upstream.active.conf' --exclude='README.md' --exclude='*.bak*' "$NGINX_CONFD/" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/"
     # --- Blue-Green orchestration ---
     - sh .ci/deploy-blue-green.sh
     # --- Evidence: 30s post-cutover polling (informational, non-blocking) ---

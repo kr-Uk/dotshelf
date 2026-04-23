@@ -13,11 +13,11 @@
 ### 1-1. 새 파일
 | 경로 | 역할 |
 |---|---|
-| [deploy/prod/nginx/conf.d/default.conf](../../deploy/prod/nginx/conf.d/default.conf) | prod Nginx 설정을 repo 편입. `upstream.active.conf` 를 `include` 하는 구조로 변경 |
-| [deploy/prod/nginx/conf.d/upstream.blue.conf](../../deploy/prod/nginx/conf.d/upstream.blue.conf) | Blue 색 upstream (port 8080) |
-| [deploy/prod/nginx/conf.d/upstream.green.conf](../../deploy/prod/nginx/conf.d/upstream.green.conf) | Green 색 upstream (port 8081) |
+| [deploy/prod/nginx/conf.d/default.conf](../../deploy/prod/nginx/conf.d/default.conf) | prod Nginx 가상호스트 설정을 repo 편입. `upstream dotshelf_api` 는 별도 파일(nginx 자동 로드) |
+| [deploy/prod/nginx/conf.d/templates/upstream.blue.conf](../../deploy/prod/nginx/conf.d/templates/upstream.blue.conf) | Blue 색 upstream 템플릿 (port 8080). 서브디렉토리라 nginx 가 자동 로드하지 않음 |
+| [deploy/prod/nginx/conf.d/templates/upstream.green.conf](../../deploy/prod/nginx/conf.d/templates/upstream.green.conf) | Green 색 upstream 템플릿 (port 8081) |
 | [deploy/prod/nginx/conf.d/README.md](../../deploy/prod/nginx/conf.d/README.md) | Nginx conf.d 운영 규칙 |
-| [.ci/deploy-blue-green.sh](../../../.ci/deploy-blue-green.sh) | 배포 오케스트레이션 (6506 bytes) |
+| [.ci/deploy-blue-green.sh](../../../.ci/deploy-blue-green.sh) | 배포 오케스트레이션 |
 | [.ci/poll-health.sh](../../../.ci/poll-health.sh) | 공개 health 폴링 증거 수집 |
 
 ### 1-2. 수정된 파일
@@ -83,12 +83,15 @@ GitLab CI (alpine:3.20 runner)
 - `PROD_USER` = `ubuntu`
 - `PROD_DEPLOY_PATH` = `/opt/dotshelf`
 
-### 4-2. `EC2_KNOWN_HOSTS` 에 prod 호스트 키 3줄 추가
-로컬에서:
+### 4-2. `EC2_KNOWN_HOSTS` 에 호스트 키 6줄 추가 (총 9줄)
+prod 는 **docker bridge(`172.17.0.1`)** 로 접속하므로 bridge IP 용 호스트 키 3줄이 반드시 필요하다. 자세한 배경은 [gitlab-ci-variables.md §6](./gitlab-ci-variables.md#6-prod_host) 참조. 로컬에서:
 ```
-ssh-keyscan -t ed25519,rsa,ecdsa <prod-ec2-public-ip> 2>/dev/null
+# prod public (참고용 보관)
+ssh-keyscan -t ed25519,rsa,ecdsa 3.38.240.110 2>/dev/null
+# prod docker bridge (실제 사용)
+ssh-keyscan -t ed25519,rsa,ecdsa 3.38.240.110 2>/dev/null | sed 's/^3\.38\.240\.110/172.17.0.1/'
 ```
-결과 3줄을 `EC2_KNOWN_HOSTS` 기존 값 뒤에 append.
+→ 결과 6줄을 기존 app 3줄 뒤에 append. 총 9줄이 된다.
 
 ### 4-3. SSH 공개키를 prod `authorized_keys` 에 등록
 ```
@@ -147,7 +150,7 @@ CI 로그 마지막 부분에 JSON 한 줄:
 prod 서버에서:
 ```
 cd /opt/dotshelf/nginx/conf.d
-cp upstream.blue.conf upstream.active.conf   # blue 로 되돌리려면
+cp templates/upstream.blue.conf upstream.active.conf   # blue 로 되돌리려면
 docker exec dotshelf-nginx nginx -t && docker exec dotshelf-nginx nginx -s reload
 ```
 app 서버에서:
@@ -165,7 +168,33 @@ echo blue > .active_color
 - **contract 마이그레이션 + 롤백 조합은 지원 불가**. [flyway-migration-rules.md](../architecture/flyway-migration-rules.md) 규약을 어기면 blue-green 이 롤백 수단으로 작동하지 않음.
 - **단일 호스트 제약**. app 서버가 죽으면 blue/green 둘 다 죽음. 무중단 배포는 **애플리케이션 배포 다운타임**만 제거하지 **호스트 장애**는 해결하지 않음.
 - **배포 중 CD 잡 전체 시간 증가**. 유예 2분 sleep 이 CI 시간을 잡아먹음. 급할 때 수동 bypass 옵션 필요하면 추가 예정.
-- **CI 러너 → prod 는 공용 IP 경유**. Tailscale 이 아니라서 IP 화이트리스트/방화벽 정책과 맞물림.
+- **CI 러너 → prod 는 docker bridge(`172.17.0.1`) 경유**. 러너가 prod 호스트 내부에 있으므로 public IP(`3.38.240.110`) 로 접속하면 EC2 hairpin NAT 에 막힌다. 러너가 다른 호스트로 이사하면 이 값을 바꿔야 한다.
+
+## 7-bis. 첫 배포에서 터진 두 가지 함정 (2026-04-23)
+
+> 설계/코드는 맞다고 믿고 있어도 실전에서 한번은 꼭 깨진다는 걸 보여주는 사례. 둘 다 repo 에 **방지책** 이 들어갔다.
+
+### 함정 1 — `PROD_HOST` 에 public IP 를 쓰면 hairpin NAT 로 타임아웃
+
+- **증상**: `ssh: connect to host 3.38.240.110 port 22: Operation timed out` → exit code 255
+- **근본 원인**: GitLab runner 가 **prod 호스트 내부 Docker 컨테이너** 에서 돈다. 그 컨테이너가 자신을 감싼 호스트의 Elastic IP (`3.38.240.110`) 로 돌아오려 하면 EC2 NAT Gateway 가 라우팅을 거부 (hairpin NAT 제한).
+- **수정**: `PROD_HOST = 172.17.0.1` (docker bridge). 컨테이너 → bridge → 호스트 sshd(`0.0.0.0:22`) 경로로 해결.
+- **방지책**: [gitlab-ci-variables.md §6](./gitlab-ci-variables.md#6-prod_host) 에 근거 박제 + 체크리스트에 "PROD_HOST 가 172.17.0.1 인지" 명시.
+
+### 함정 2 — `upstream.active.conf` 를 명시 `include` 하면 이중 로드
+
+- **증상**: `nginx: [emerg] duplicate upstream "dotshelf_api" in /etc/nginx/conf.d/upstream.active.conf:1`
+- **근본 원인**: Nginx 기본 `nginx.conf` 가 `include /etc/nginx/conf.d/*.conf` 로 conf.d 의 모든 .conf 를 이미 로드한다. `default.conf` 에서 다시 `include upstream.active.conf` 를 쓰면 같은 파일이 두 번 파싱됨 → `upstream dotshelf_api` 가 두 번 선언됨 → 에러.
+- 추가로 `upstream.blue.conf`, `upstream.green.conf` 를 conf.d 루트에 두면 그것들도 자동 로드돼서 같은 문제.
+- **수정 2가지**:
+  1. `default.conf` 에서 명시 `include upstream.active.conf` 라인 삭제 (auto-load 에 맡김)
+  2. 블루/그린 템플릿을 **`templates/` 서브디렉토리** 로 이동 (서브디렉토리는 `conf.d/*.conf` 와일드카드에 안 걸림)
+- **방지책**: [conf.d/README.md](../../deploy/prod/nginx/conf.d/README.md) 에 "include 절대 쓰지 말 것" 경고 박제. rsync 에 `--delete --exclude='upstream.active.conf' --exclude='README.md' --exclude='*.bak*'` 로 과거 오염 파일 자동 청소.
+
+### 배운 것
+- **"자동 로드되는 디렉토리" 는 명시 include 와 조합하면 위험**. nginx/apache/systemd 다 동일 패턴. drop-in 디렉토리의 스캔 규칙을 먼저 확인.
+- **CI 러너 위치는 설계 변수다**. runner 가 target 호스트 안에 있으면 hairpin 이슈가 따라온다. 이걸 모르면 설계 시점엔 안 보이다가 실전에서 터진다.
+- 첫 blue-green 배포는 **bootstrap 경로** 라 일반 경로와 다르다. 이 순간이 제일 깨지기 쉬우므로 수동 리허설을 먼저 하는 게 정답이었다.
 
 ## 8. 측정 결과 (첫 배포 후 채움)
 
