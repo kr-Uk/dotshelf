@@ -78,12 +78,18 @@ struct DashboardFocusOverlay: View {
         }
     }
 
+    /// 개별 요소에서 진입한 경우(.followers / .following / .guestbook) tabBar를 감춰
+        /// 해당 탭만 노출. `.summary`(booksName 등 요약 영역 hit)는 기존대로 전체 탭 노출.
+    private var isLockedToInitialTab: Bool { initialTab != .summary }
+
     private var sheet: some View {
         VStack(spacing: 0) {
             header
             Divider().opacity(0.3)
-            tabBar
-            Divider().opacity(0.3)
+            if !isLockedToInitialTab {
+                tabBar
+                Divider().opacity(0.3)
+            }
             content
         }
         .frame(maxWidth: 680, maxHeight: 620)
@@ -101,10 +107,10 @@ struct DashboardFocusOverlay: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "square.grid.2x2.fill")
+            Image(systemName: isLockedToInitialTab ? tab.systemImage : "square.grid.2x2.fill")
                 .font(.system(size: 16, weight: .bold))
                 .foregroundStyle(.tint)
-            Text("대시보드")
+            Text(isLockedToInitialTab ? tab.label : "대시보드")
                 .font(.system(size: 17, weight: .bold))
             Spacer()
             Button(action: onOpenBioEditor) {

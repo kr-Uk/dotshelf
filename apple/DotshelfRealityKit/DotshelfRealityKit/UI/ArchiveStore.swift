@@ -22,6 +22,11 @@ final class ArchiveStore {
         let tintG: Float
         let tintB: Float
         let tintA: Float
+        /// 카탈로그 원본 id — 중복 추가 방지용. 복구 시 다시 BookComponent.catalogId로 주입.
+        let catalogId: UUID?
+        /// 책장 내 꾸미기 오브젝트 프리셋 (DecorationPreset.rawValue) — 복구 시 재생성 키.
+        /// nil이면 일반 책 (tint 기반으로 재생성).
+        let decorationKind: String?
         /// 저장 시각 (정렬용)
         let archivedAt: Date
     }
@@ -34,7 +39,9 @@ final class ArchiveStore {
         thickness: Float,
         height: Float,
         width: Float,
-        tintR: Float, tintG: Float, tintB: Float, tintA: Float
+        tintR: Float, tintG: Float, tintB: Float, tintA: Float,
+        catalogId: UUID? = nil,
+        decorationKind: String? = nil
     ) {
         items.append(Item(
             bookName: bookName,
@@ -43,6 +50,8 @@ final class ArchiveStore {
             height: height,
             width: width,
             tintR: tintR, tintG: tintG, tintB: tintB, tintA: tintA,
+            catalogId: catalogId,
+            decorationKind: decorationKind,
             archivedAt: Date()
         ))
     }
@@ -56,13 +65,29 @@ final class ArchiveStore {
         items.sorted { $0.archivedAt > $1.archivedAt }
     }
 
-    /// 현재 확대된 책 엔티티를 보관함으로 이동하기 위한 편의 메서드.
-    /// BookComponent에서 메타를 읽어 저장. tintColor가 nil인 책(스캔/광고/biplane)은 보관 불가.
+    /// 엔티티를 보관함으로 이동 (메타데이터만 복사). 엔티티 removeFromParent는 호출자 책임.
+    /// - isDecoration인 꾸미기 오브젝트는 tintColor 없어도 보관 허용 — `decorationKind` rawValue로 재생성.
+    /// - 일반 책은 tintColor가 있어야 복구 가능. tintColor nil (스캔/광고)은 보관 불가.
     func archiveBookEntity(_ book: Entity, using recordStore: BookRecordStore) -> Bool {
-        guard let comp = book.components[BookComponent.self],
-              let tint = comp.tintColor else {
-            return false
+        guard let comp = book.components[BookComponent.self] else { return false }
+
+        // 꾸미기 오브젝트: tintColor 없어도 decorationKind로 복구 가능.
+        if comp.isDecoration, let kind = comp.decorationKind {
+            archive(
+                bookName: book.name,
+                title: "장식",  // 장식은 별도 제목 없음 — 보관함 표시용 라벨
+                thickness: comp.thickness,
+                height: comp.height,
+                width: comp.width,
+                tintR: 0, tintG: 0, tintB: 0, tintA: 0,
+                catalogId: nil,
+                decorationKind: kind
+            )
+            return true
         }
+
+        // 일반 책 — tintColor 필요.
+        guard let tint = comp.tintColor else { return false }
         let rec = recordStore.record(for: book.name)
 
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -79,7 +104,9 @@ final class ArchiveStore {
             thickness: comp.thickness,
             height: comp.height,
             width: comp.width,
-            tintR: Float(r), tintG: Float(g), tintB: Float(b), tintA: Float(a)
+            tintR: Float(r), tintG: Float(g), tintB: Float(b), tintA: Float(a),
+            catalogId: comp.catalogId,
+            decorationKind: nil
         )
         return true
     }

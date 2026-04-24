@@ -12,6 +12,7 @@ struct BookshelfEditMenu: View {
     var onOpenArchive: () -> Void         // 스텝 4
     var onAddDecoration: () -> Void       // 스텝 5
     var onReorder: () -> Void             // 스텝 5
+    var onSetAsMain: () -> Void = {}      // 앱 시작 시 첫 진입하는 "메인 책장" 지정
     var onClose: () -> Void
 
     @State private var isEditingName: Bool = false
@@ -169,6 +170,23 @@ struct BookshelfEditMenu: View {
                     tint: .secondary,
                     action: onOpenArchive
                 )
+                // 현재 책장이 이미 메인이면 뱃지, 아니면 "메인으로 설정" 버튼.
+                if state.isMain(index: state.currentIndex) {
+                    actionCell(
+                        label: "메인 책장",
+                        systemImage: "star.fill",
+                        tint: .yellow,
+                        action: {}
+                    )
+                    .disabled(true)
+                } else {
+                    actionCell(
+                        label: "메인으로 설정",
+                        systemImage: "star",
+                        tint: .yellow,
+                        action: onSetAsMain
+                    )
+                }
             }
         }
     }

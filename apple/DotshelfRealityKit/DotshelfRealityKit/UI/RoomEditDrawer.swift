@@ -9,9 +9,11 @@ struct RoomEditDrawer: View {
     var onRemoveDecor: (UUID) -> Void
     var onClose: () -> Void
 
+    /// 명세 §1.1 — 포스트잇은 §4 대시보드 포커싱 뷰의 '스타일 변경'에서만 편집.
+    /// 책장 내 꾸미기 오브젝트는 §2 책장 포커싱 뷰의 편집 메뉴에서만.
     enum Category: String, CaseIterable, Identifiable {
         case wallpaper, indoorLight, outdoorLight, theme
-        case skins, placement, postit  // placeholder (MVP 후속)
+        case skins, placement  // placeholder (MVP 후속)
 
         var id: String { rawValue }
 
@@ -22,7 +24,6 @@ struct RoomEditDrawer: View {
             case .outdoorLight: return "외부 조명"
             case .placement:    return "배치 꾸미기"
             case .skins:        return "필수 스킨"
-            case .postit:       return "포스트잇"
             case .theme:        return "전체 테마"
             }
         }
@@ -34,7 +35,6 @@ struct RoomEditDrawer: View {
             case .outdoorLight: return "sun.max.fill"
             case .placement:    return "sparkles.square.filled.on.square"
             case .skins:        return "cube"
-            case .postit:       return "note.text"
             case .theme:        return "paintbrush.fill"
             }
         }
@@ -42,6 +42,9 @@ struct RoomEditDrawer: View {
 
     @State private var category: Category = .wallpaper
     @State private var pendingTheme: RoomThemePreset?
+    /// 서랍이 최소화(헤더만)된 상태. 에셋 드래그·이동 시 바닥을 가리지 않도록 내릴 수 있음.
+    /// isRoomEditDrawerOpen은 그대로 true로 유지 → 꾸미기 탭/드래그는 계속 허용.
+    @State private var isMinimized: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -67,13 +70,15 @@ struct RoomEditDrawer: View {
     private var drawer: some View {
         VStack(spacing: 0) {
             header
-            Divider().opacity(0.3)
-            tabBar
-            Divider().opacity(0.3)
-            content
+            if !isMinimized {
+                Divider().opacity(0.3)
+                tabBar
+                Divider().opacity(0.3)
+                content
+            }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 340)
+        .frame(height: isMinimized ? 52 : 340)
         .background(
             UnevenRoundedRectangle(
                 topLeadingRadius: 22, bottomLeadingRadius: 0,
@@ -82,6 +87,7 @@ struct RoomEditDrawer: View {
             .fill(.ultraThinMaterial)
         )
         .shadow(color: .black.opacity(0.22), radius: 18, y: -6)
+        .animation(.easeInOut(duration: 0.22), value: isMinimized)
     }
 
     // MARK: - Header
@@ -93,7 +99,12 @@ struct RoomEditDrawer: View {
                 .foregroundStyle(.tint)
             Text("공간 편집")
                 .font(.system(size: 15, weight: .bold))
-            if let active = store.activeTheme {
+            if isMinimized {
+                Text("· 바닥이 보여요")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            if let active = store.activeTheme, !isMinimized {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 9, weight: .bold))
@@ -106,12 +117,28 @@ struct RoomEditDrawer: View {
                 .foregroundStyle(Color.accentColor)
             }
             Spacer()
-            Text("자동 저장됨")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+            if !isMinimized {
+                Text("자동 저장됨")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+
+            Button(action: { isMinimized.toggle() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: isMinimized ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                    Text(isMinimized ? "메뉴 펴기" : "내리기")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.gray.opacity(0.12), in: Capsule())
+            }
+            .buttonStyle(.plain)
+
             Button(action: onClose) {
                 HStack(spacing: 5) {
-                    Image(systemName: "chevron.down")
+                    Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .bold))
                     Text("돌아가기")
                         .font(.system(size: 11, weight: .semibold))
@@ -124,6 +151,11 @@ struct RoomEditDrawer: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // 최소화 상태에서 헤더 탭 → 펼치기 편의
+            if isMinimized { isMinimized = false }
+        }
     }
 
     // MARK: - Tab bar (카테고리 가로 스크롤)
@@ -168,7 +200,7 @@ struct RoomEditDrawer: View {
         case .outdoorLight: outdoorLightGrid
         case .theme:        themeGrid
         case .placement:    placementView
-        case .skins, .postit: placeholderGrid
+        case .skins: placeholderGrid
         }
     }
 

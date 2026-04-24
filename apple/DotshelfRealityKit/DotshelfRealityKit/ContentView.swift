@@ -1,6 +1,7 @@
 import SwiftUI
 import RealityKit
 import BasicAssets
+import Combine
 
 enum CameraViewMode {
     case overview    // 코너 3/4 구도
@@ -55,6 +56,12 @@ struct ContentView: View {
     // 페이즈 F — 노트북 포커싱
     @State private var marketStore = MarketStore()
     @State private var isLaptopOpen = false
+    /// 노트북 디스플레이 plane 참조. 포커싱 카메라 타깃 + 화면 보호기 렌더 타깃.
+    @State private var laptopScreenEntity: ModelEntity?
+    /// 60fps SCNScene 화면 보호기 렌더러 (DrawableQueue 기반).
+    @State private var screenSaverRenderer: LaptopScreenSaverRenderer?
+    /// 노트북 포커싱 진입 카메라 전환 중 (애니메이션 끝나면 오버레이 오픈).
+    @State private var isLaptopFocusing = false
 
     // 페이즈 D/F 공통 — 신고 모달
     @State private var reportTarget: ReportTarget?
@@ -68,6 +75,9 @@ struct ContentView: View {
             isFollowingSpace: isFollowingSpace
         ).permission
     }
+
+    // 페이즈 G 선행 — 바닥 꾸미기 오브젝트 (decorContainer는 G 에이전트가 이미 관리 중)
+    @State private var decorationStore = FloorDecorationStore()
 
     // 페이즈 B — 독서기록 2D 오버레이
     @State private var isReadingRecordOpen = false
@@ -115,6 +125,7 @@ struct ContentView: View {
             .overlay { orientationEditorLayer }
             .overlay { sectionAlignmentLayer }
             .overlay(alignment: .bottom) { whiteboardActionBarBlock }
+            .overlay(alignment: .bottom) { decorationActionBarLayer }
             .overlay { dotshelfModalStack }
             .overlay(alignment: .bottomLeading) { viewedBookBackButton }
             .overlay { readingRecordLayer }
@@ -129,6 +140,13 @@ struct ContentView: View {
             .onChange(of: roomEditStore.indoorLight) { _, new in applyIndoorLight(new) }
             .onChange(of: roomEditStore.outdoorLight) { _, new in applyOutdoorLight(new) }
             .animation(.easeInOut(duration: 0.28), value: isRoomEditDrawerOpen)
+            .onChange(of: isRoomEditDrawerOpen) { _, isOpen in
+                // 편집 모드 종료 시 꾸미기 선택/드래그 상태 초기화
+                if !isOpen {
+                    decorationStore.select(nil)
+                    decorationStore.endDrag()
+                }
+            }
             .onChange(of: guestbookStore.entries.count) { _, _ in
                 renderWhiteboardTexture()
                 syncDashboardEntryHits()
@@ -145,6 +163,13 @@ struct ContentView: View {
                 if new == .whiteboard { renderWhiteboardTexture() }
                 if isEditingOrientation { cancelEditing() }
             }
+            .modifier(ScreenSaverPauseObserver(
+                isFocused: isLaptopOpen,
+                onChange: { focused in
+                    if focused { screenSaverRenderer?.pause() }
+                    else { screenSaverRenderer?.resume() }
+                }
+            ))
             .animation(.easeInOut(duration: 0.2), value: isGuestbookComposerOpen)
             .animation(.easeInOut(duration: 0.2), value: isBioEditorOpen)
             .animation(.easeInOut(duration: 0.2), value: replyTargetEntry?.id)
@@ -197,9 +222,33 @@ struct ContentView: View {
             content.add(decor)
             decorContainer = decor
 
+            // 페이즈 G 선행 데모 — 햄햄 인형 하나 바닥에 배치
+            let hamhamId = UUID()
+            if let hamham = FloorDecorationEntity.load(assetKey: "doll_hamham", id: hamhamId) {
+                let baseH = hamham.components[FloorDecorationComponent.self]?.baseHeight ?? 0.3
+                hamham.position = SIMD3<Float>(0.4, baseH / 2, 0.6)
+                decor.addChild(hamham)
+                decorationStore.addActive(
+                    id: hamhamId,
+                    assetKey: "doll_hamham",
+                    displayName: "햄햄 인형",
+                    entity: hamham,
+                    position: hamham.position
+                )
+            }
+
             // 화이트보드 표면 엔티티 참조 저장 (텍스처 업데이트용)
             if let surface = room.findEntity(named: "whiteboard_surface") as? ModelEntity {
                 whiteboardSurface = surface
+            }
+
+            // 노트북 디스플레이 plane 참조 + 60fps SCNScene 화면 보호기 시작
+            if let screen = room.findEntity(named: "laptop_screen_glow") as? ModelEntity {
+                laptopScreenEntity = screen
+                if let renderer = LaptopScreenSaverRenderer() {
+                    screenSaverRenderer = renderer
+                    renderer.start(on: screen)
+                }
             }
 
             // 조명 전용 컨테이너 (책장이 전환될 때 조명은 고정)
@@ -221,6 +270,11 @@ struct ContentView: View {
             let dragLayer = Entity()
             content.add(dragLayer)
             bookshelfState.dragLayer = dragLayer
+
+            // 꾸미기 오브젝트를 책장 밖에 드롭 시 보관함으로 이동 (명세 §2)
+            interactionState.onDecorationDroppedOutside = { [self] entity in
+                archiveDroppedDecoration(entity)
+            }
 
             // 고정된 2개의 슬롯 (책장 개수와 무관하게 turntable 자체 회전이 슬롯 위치를 바꿈)
             let slot0 = Entity()
@@ -253,63 +307,40 @@ struct ContentView: View {
                 )
 
                 // 첫 번째 책장: 우측 상단에 광고 칸 (section 15)
+                // 배경 backdrop은 제거 — 대신 책 표지에 AD 스티커로 구분.
                 if i == 0 {
                     let adSecIdx = 15
                     if adSecIdx < sec.count {
                         for book in sec[adSecIdx].books { book.removeFromParent() }
                         sec[adSecIdx].books.removeAll()
+                        // 광고 섹션은 읽기 전용 — 드래그/정렬/배치 편집 차단.
+                        sec[adSecIdx].isAd = true
 
-                        // 광고 섹션 배경 (금색 발광 → 시각적으로 구분)
                         let adSec = sec[adSecIdx]
-                        let secW = adSec.rightBound - adSec.leftBound
-                        let secH = adSec.sectionHeight
                         let secCX = (adSec.leftBound + adSec.rightBound) / 2
-                        let secCY = adSec.shelfTopY + secH / 2
 
-                        let bgMesh = MeshResource.generatePlane(width: secW - 0.01, height: secH - 0.01)
-                        var bgMat = PhysicallyBasedMaterial()
-                        bgMat.baseColor = .init(tint: PlatformColor(red: 1.0, green: 0.88, blue: 0.35, alpha: 1.0))
-                        bgMat.emissiveColor = .init(color: PlatformColor(red: 1.0, green: 0.88, blue: 0.35, alpha: 1.0))
-                        bgMat.emissiveIntensity = 0.5
-                        bgMat.roughness = .init(floatLiteral: 0.9)
-                        bgMat.metallic = .init(floatLiteral: 0.0)
-                        let adBg = ModelEntity(mesh: bgMesh, materials: [bgMat])
-                        adBg.name = "ad_backdrop"
-                        adBg.position = SIMD3<Float>(secCX, secCY, -0.11)
-                        shelfEntity.addChild(adBg)
-
-                        // 광고 책 배치
-                        let ad = BookEntity.createAdBook()
-                        ad.name = "book_ad_\(i)"
+                        // 광고 책을 BookFactory 경로로 생성 — 표지·책등·후면 텍스트 + 표지 좌측 상단 AD 스티커.
+                        // API 연동 시 광고 spec에 scannedAsset이 오면 3D 스캔 모델로 자동 전환.
+                        let adSpec = BookSpec(
+                            name: "book_ad_\(i)",
+                            record: BookRecord.adSample(),
+                            tint: PlatformColor(red: 0.95, green: 0.78, blue: 0.20, alpha: 1.0),
+                            thickness: 0.045,
+                            height: 0.26,
+                            width: 0.17,
+                            scannedAsset: nil,
+                            isAd: true
+                        )
+                        let ad = BookFactory.make(from: adSpec)
                         ad.position = SIMD3<Float>(secCX, adSec.shelfTopY + 0.13, 0)
                         shelfEntity.addChild(ad)
                         sec[adSecIdx].books.append(ad)
                     }
                 }
 
-                // 첫 번째 책장 상단-좌측 칸에 복엽기 배치
-                if i == 0, let biplane = BookEntity.loadBiplaneDecoration(targetSize: 0.12) {
-                    let decoSecIdx = 12  // 상단-좌측으로 이동 (기존 15 → 광고 칸으로 양보)
-                    if decoSecIdx < sec.count {
-                        // 해당 칸의 책들 제거
-                        for book in sec[decoSecIdx].books {
-                            book.removeFromParent()
-                        }
-                        sec[decoSecIdx].books.removeAll()
-
-                        biplane.name = "book_\(i * 100 + 99)_biplane"  // 고유 이름
-                        let bpHeight = biplane.components[BookComponent.self]?.height ?? 0.12
-                        let section = sec[decoSecIdx]
-                        let centerX = (section.leftBound + section.rightBound) / 2
-                        biplane.position = SIMD3<Float>(
-                            centerX,
-                            section.shelfTopY + bpHeight / 2,
-                            0
-                        )
-                        shelfEntity.addChild(biplane)
-                        // SlotSystem의 books 배열에 등록 → drag/drop/layoutSection 대상
-                    }
-                }
+                // 비행기(책장 내 꾸미기 오브젝트)는 더 이상 하드코딩하지 않음 —
+                // 사용자가 책장 편집 메뉴 → "오브젝트 추가" (DecorationGalleryOverlay)에서 직접 추가.
+                // 보관함 ↔ 책장 왕래도 동일 흐름으로 통일. (명세 §2)
 
                 BookshelfState.populateSectionClickAreas(
                     in: sec, parent: shelfEntity, bookshelfIndex: i
@@ -363,6 +394,10 @@ struct ContentView: View {
                 .targetedToAnyEntity()
                 .onEnded { value in
                     let name = value.entity.name
+                    // 섹션 정렬 UI 열림 상태에서 섹션 외 구역 탭 → 정렬 UI 닫기
+                    if selectedSectionForAlignment != nil, !name.hasPrefix("section_") {
+                        selectedSectionForAlignment = nil
+                    }
                     // 방 배치 꾸미기 탭 → 선택 토글
                     if name.hasPrefix("roomdeco_") {
                         tapRoomDecor(value.entity)
@@ -371,10 +406,27 @@ struct ContentView: View {
                     // 책 탭 → 책 보기 (배치 편집 중이면 자동 취소 후 진입)
                     if name.hasPrefix("book_") {
                         guard !interactionState.isDragging else { return }
+                        // 책장 내 꾸미기 오브젝트(§2) — 탭 시 45° 단위 Y축 회전.
+                        if value.entity.components[BookComponent.self]?.isDecoration == true {
+                            rotateDecoration45(entity: value.entity)
+                            return
+                        }
                         if isEditingOrientation { cancelEditing() }
                         selectedSectionForAlignment = nil
+                        decorationStore.select(nil)
                         interactionState.viewBook(entity: value.entity, camera: cameraEntity)
                         return
+                    }
+                    // 바닥 꾸미기 탭 → 편집 서랍 열려 있을 때만 선택 허용 (§1.1)
+                    if let decoId = FloorDecorationEntity.id(fromEntityName: name) {
+                        guard isRoomEditDrawerOpen else { return }
+                        guard !interactionState.isDragging, !decorationStore.isDragging else { return }
+                        decorationStore.select(decoId)
+                        return
+                    }
+                    // 다른 엔티티 탭 시 꾸미기 선택 해제
+                    if decorationStore.selectedId != nil {
+                        decorationStore.select(nil)
                     }
                     guard !interactionState.isViewingBook, !interactionState.isDragging else { return }
                     // 섹션 영역 탭 → 정렬 UI 표시. 이름 형식: "section_<bookshelfIdx>_<secIdx>"
@@ -383,7 +435,9 @@ struct ContentView: View {
                         if parts.count == 2,
                            let bsIdx = Int(parts[0]),
                            let secIdx = Int(parts[1]),
-                           bsIdx == bookshelfState.currentIndex {
+                           bsIdx == bookshelfState.currentIndex,
+                           secIdx < bookshelfState.sections.count,
+                           !bookshelfState.sections[secIdx].isAd {
                             selectedSectionForAlignment = (selectedSectionForAlignment == secIdx) ? nil : secIdx
                         }
                         return
@@ -395,9 +449,9 @@ struct ContentView: View {
                             cameraMode = .frontal
                         }
                     }
-                    // 노트북 탭 → §5 노트북 포커싱 2D 오버레이
+                    // 노트북 탭 → 디스플레이 포커싱 애니메이션 후 §5 2D 오버레이
                     if name == "laptop_hit" {
-                        isLaptopOpen = true
+                        focusOnLaptopAndOpen()
                         return
                     }
                     // 화이트보드 프레임/표면 탭 → 화이트보드 뷰 전환 (하위 element hit은 아래에서 처리)
@@ -418,6 +472,10 @@ struct ContentView: View {
                 .targetedToAnyEntity()
                 .onChanged { value in
                     let entity = value.entity
+                    // 드래그 시작 시 섹션 정렬 UI 닫기
+                    if selectedSectionForAlignment != nil {
+                        selectedSectionForAlignment = nil
+                    }
                     // 방 배치 꾸미기 드래그 분기
                     if entity.name.hasPrefix("roomdeco_") {
                         if decorDragStart == nil { beginDecorDrag(entity) }
@@ -471,6 +529,10 @@ struct ContentView: View {
                     guard !interactionState.isViewingBook, !isEditingOrientation else { return }
                     guard let camera = cameraEntity else { return }
 
+                    // 빈 공간 드래그 시작 시 섹션 정렬 UI 닫기
+                    if cameraPanStart == nil, selectedSectionForAlignment != nil {
+                        selectedSectionForAlignment = nil
+                    }
                     if cameraPanStart == nil {
                         cameraPanStart = camera.position
                     }
@@ -501,6 +563,35 @@ struct ContentView: View {
                 }
         )
         #endif
+        // 페이즈 G 선행 — 바닥 꾸미기 오브젝트 드래그 (편집 서랍 열림 시에만 유효)
+        .simultaneousGesture(
+            DragGesture()
+                .targetedToAnyEntity()
+                .onChanged { value in
+                    guard isRoomEditDrawerOpen else { return }
+                    let entity = value.entity
+                    guard let decoId = FloorDecorationEntity.id(fromEntityName: entity.name) else { return }
+                    if !decorationStore.isDragging {
+                        decorationStore.beginDrag(id: decoId)
+                        decorationStore.select(decoId)
+                    }
+                    guard let start = decorationStore.dragStartPosition else { return }
+                    let t = value.gestureValue.translation
+                    let scale: Float = 0.003
+                    let worldDx = Float(t.width) * scale
+                    let worldDz = Float(t.height) * scale  // 화면 아래로 → 카메라 시선 기준 +z
+                    let baseH = entity.components[FloorDecorationComponent.self]?.baseHeight ?? 0.3
+                    let candidate = SIMD3<Float>(start.x + worldDx, 0, start.z + worldDz)
+                    entity.position = FloorDecorationEntity.clampedSnap(candidate, baseHeight: baseH)
+                }
+                .onEnded { value in
+                    guard isRoomEditDrawerOpen else { return }
+                    let entity = value.entity
+                    guard let decoId = FloorDecorationEntity.id(fromEntityName: entity.name) else { return }
+                    decorationStore.updatePosition(id: decoId, to: entity.position)
+                    decorationStore.endDrag()
+                }
+        )
     }
 
     // MARK: - 책 확대 시 액션 (페이즈 A — §3 명세)
@@ -537,12 +628,16 @@ struct ContentView: View {
         }
         guard removedFromCurrent else { return }
 
-        // 2) target 책장의 fit 가능한 섹션 찾기 + 데이터 삽입
+        // 2) target 책장의 fit 가능한 섹션 찾기 + 데이터 삽입 (광고 섹션 제외)
         var targetSections = bookshelfState.bookshelves[targetIdx].sections
-        guard let targetSecIdx = targetSections.firstIndex(where: { $0.canFit(extraFootprint: footprint) }) else {
+        guard let targetSecIdx = targetSections.firstIndex(where: {
+            $0.acceptsUserBooks && $0.canFit(extraFootprint: footprint)
+        }) else {
             print("⚠️ 타겟 책장 \(targetIdx + 1)에 공간 없음 — 원래 책장으로 복구")
             // 원래 책장의 fit 가능한 섹션에 다시 삽입
-            for i in 0..<bookshelfState.sections.count where bookshelfState.sections[i].canFit(extraFootprint: footprint) {
+            for i in 0..<bookshelfState.sections.count
+            where bookshelfState.sections[i].acceptsUserBooks
+                && bookshelfState.sections[i].canFit(extraFootprint: footprint) {
                 bookshelfState.sections[i].books.append(book)
                 bookshelfState.layoutSection(i, duration: 0.3)
                 break
@@ -655,7 +750,8 @@ struct ContentView: View {
         if isBookSearchOpen {
             BookSearchOverlay(
                 onAdd: { cb in addBookFromCatalog(cb) },
-                onClose: { isBookSearchOpen = false }
+                onClose: { isBookSearchOpen = false },
+                existingCatalogIds: existingCatalogIds
             )
             .transition(.opacity.combined(with: .scale(scale: 0.97)))
         }
@@ -845,6 +941,36 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - 책장 내 꾸미기 오브젝트 보관 (드래그로 책장 밖 드롭 시)
+
+    /// 꾸미기 엔티티를 ArchiveStore에 저장하고 씬에서 제거. 성공 시 true.
+    /// 실패 시 호출 측(endDrag)이 원래 위치 복귀 경로를 탐.
+    private func archiveDroppedDecoration(_ entity: Entity) -> Bool {
+        let ok = archiveStore.archiveBookEntity(entity, using: recordStore)
+        guard ok else { return false }
+        // 현재 sections[*].books에서도 제거 (drag 시작에서 이미 제거됐지만 방어적 정리).
+        for i in 0..<bookshelfState.sections.count {
+            bookshelfState.sections[i].books.removeAll { $0 === entity }
+        }
+        entity.removeFromParent()
+        return true
+    }
+
+    // MARK: - 책장 내 꾸미기 45° 회전 (§2)
+
+    /// 꾸미기 오브젝트 탭 → BookComponent.yawSteps 증가 + 로컬 Y축 회전 적용.
+    /// 이후 layoutSection 재호출 시에도 SlotSystem에서 yawSteps를 반영.
+    private func rotateDecoration45(entity: Entity) {
+        guard var comp = entity.components[BookComponent.self], comp.isDecoration else { return }
+        let next = (comp.yawSteps + 1) % 8
+        comp.yawSteps = next
+        entity.components.set(comp)
+
+        var transform = entity.transform
+        transform.rotation = simd_quatf(angle: Float.pi / 4 * Float(next), axis: SIMD3<Float>(0, 1, 0))
+        entity.move(to: transform, relativeTo: entity.parent, duration: 0.18)
+    }
+
     // MARK: - 페이즈 G — 배치 꾸미기 추가/삭제/드래그
 
     /// 프리셋을 방 안 기본 위치에 추가. 같은 종류가 겹치지 않도록 카운트 기반 오프셋.
@@ -994,6 +1120,9 @@ struct ContentView: View {
 
     /// 카탈로그의 책을 현재 책장의 첫 fit 섹션에 추가.
     private func addBookFromCatalog(_ cb: CatalogBook) -> Bool {
+        // 중복 추가 방지: 이미 책장/보관함에 있으면 reject (UI도 disable이지만 안전망).
+        if existingCatalogIds.contains(cb.id) { return false }
+
         let tint = bookPaletteColor(at: cb.paletteIndex)
         let bookName = "book_custom_\(UUID().uuidString.prefix(8))"
         let book = BookEntity.createWithFaces(
@@ -1004,11 +1133,47 @@ struct ContentView: View {
             record: cb.record
         )
         book.name = bookName
+        // catalogId 주입 — 중복 체크 + 보관함 왕복 시 동일성 유지
+        if var comp = book.components[BookComponent.self] {
+            comp.catalogId = cb.id
+            book.components.set(comp)
+        }
         return insertBookIntoCurrentShelf(book, seedRecord: cb.record, bookName: bookName)
+    }
+
+    /// 현재 책장·보관함에 존재하는 catalog id 집합. BookSearchOverlay의 disable 판정에 사용.
+    private var existingCatalogIds: Set<UUID> {
+        var ids: Set<UUID> = []
+        for shelf in bookshelfState.bookshelves {
+            for sec in shelf.sections {
+                for book in sec.books {
+                    if let cid = book.components[BookComponent.self]?.catalogId {
+                        ids.insert(cid)
+                    }
+                }
+            }
+        }
+        for item in archiveStore.items {
+            if let cid = item.catalogId { ids.insert(cid) }
+        }
+        return ids
     }
 
     /// 보관함 아이템을 메타데이터로 재생성해 현재 책장에 복구.
     private func restoreBookFromArchive(_ item: ArchiveStore.Item) -> Bool {
+        // 책장 내 꾸미기 오브젝트 복구: decorationKind rawValue로 프리셋 재생성.
+        if let kindRaw = item.decorationKind,
+           let preset = DecorationPreset(rawValue: kindRaw) {
+            let deco = BookEntity.createDecoration(kind: preset)
+            // 원래 이름을 유지해 동일 identity로 복구 (BookRecordStore 키 일관성)
+            deco.name = item.bookName
+            let ok = insertBookIntoCurrentShelf(deco, seedRecord: nil, bookName: item.bookName)
+            if ok {
+                archiveStore.remove(id: item.id)
+            }
+            return ok
+        }
+
         let tint = PlatformColor(
             red: CGFloat(item.tintR),
             green: CGFloat(item.tintG),
@@ -1024,6 +1189,12 @@ struct ContentView: View {
             record: rec
         )
         book.name = item.bookName
+        // catalogId 복구 — 복구 후에도 중복 추가 방지 상태 유지
+        if let cid = item.catalogId,
+           var comp = book.components[BookComponent.self] {
+            comp.catalogId = cid
+            book.components.set(comp)
+        }
         let ok = insertBookIntoCurrentShelf(book, seedRecord: nil, bookName: item.bookName)
         if ok {
             recordStore.update(item.bookName) { $0.isArchived = false }
@@ -1036,7 +1207,9 @@ struct ContentView: View {
     private func insertBookIntoCurrentShelf(_ book: Entity, seedRecord: BookRecord?, bookName: String) -> Bool {
         let comp = book.components[BookComponent.self]
         let footprint = comp?.footprint ?? 0.03
-        guard let secIdx = bookshelfState.sections.firstIndex(where: { $0.canFit(extraFootprint: footprint) }) else {
+        guard let secIdx = bookshelfState.sections.firstIndex(where: {
+            $0.acceptsUserBooks && $0.canFit(extraFootprint: footprint)
+        }) else {
             return false
         }
         if let rec = seedRecord {
@@ -1228,6 +1401,7 @@ struct ContentView: View {
                 onOpenArchive: { isArchiveOpen = true },
                 onAddDecoration: { isDecorationGalleryOpen = true },
                 onReorder: { isReorderOpen = true },
+                onSetAsMain: { bookshelfState.setCurrentAsMain() },
                 onClose: { isBookshelfEditOpen = false }
             )
             .padding(.top, 20).padding(.leading, 20)
@@ -1300,7 +1474,7 @@ struct ContentView: View {
         if interactionState.isViewingBook,
            let viewedBook = interactionState.viewedBook,
            viewedBook.name.contains("_ad") {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Text("AD")
                     .font(.system(size: 12, weight: .black))
                     .foregroundStyle(.white)
@@ -1310,13 +1484,8 @@ struct ContentView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button(action: { dismissAdBook(viewedBook) }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.white, .black.opacity(0.5))
-                        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
-                }
-                .buttonStyle(.plain)
+                // 광고 책은 사용자가 직접 제거할 수 없음 — 닫기 버튼 제거.
+                // 포커싱 해제는 좌하단 "뒤로" 버튼으로.
             }
             .padding(20)
             .transition(.opacity)
@@ -1536,6 +1705,58 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - 페이즈 G 선행: 바닥 꾸미기 선택 액션바
+    @ViewBuilder
+    private var decorationActionBarLayer: some View {
+        if let id = decorationStore.selectedId,
+           let item = decorationStore.active(id: id),
+           cameraMode == .overview,
+           isRoomEditDrawerOpen,
+           !interactionState.isViewingBook {
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Text("🧸").font(.system(size: 18))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(item.displayName)
+                            .font(.system(size: 12, weight: .bold))
+                        Text("드래그해서 이동 · 0.1m 스냅")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 6)
+
+                Divider().frame(height: 20)
+
+                Button(action: { decorationStore.rotate45(id: id) }) {
+                    Label("45° 회전", systemImage: "rotate.right.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: { decorationStore.archive(id: id) }) {
+                    Label("보관함으로", systemImage: "archivebox.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: { decorationStore.select(nil) }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.secondary, .quaternary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
+            .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+            .padding(.bottom, 84)   // 다른 액션바들과 겹치지 않게
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+
     // MARK: - 페이즈 D/F/J/신고/이전 공용 모달 스택
     /// 내가 담당한 모든 2D 풀 오버레이·시트를 한 자리에 모은다.
     /// body chain에 `.overlay { dotshelfModalStack }` 하나로만 걸어 type-check 부담 감소.
@@ -1553,14 +1774,47 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - 페이즈 F: 노트북 포커싱 오버레이 블록
+    // MARK: - 페이즈 F: 노트북 포커싱 애니메이션 + 오버레이
+
+    // `renderLaptopScreenTexture` (구 ImageRenderer 방식)는 LaptopScreenSaverRenderer로 대체됨.
+
+    /// 노트북 디스플레이에 카메라를 맞춘 뒤, 전환 애니메이션(0.6초)이 끝나면
+    /// LaptopFocusOverlay(2D 풀스크린)을 올린다. 디스플레이 참조를 못 찾으면 즉시 오픈.
+    private func focusOnLaptopAndOpen() {
+        guard let screen = laptopScreenEntity, let camera = cameraEntity else {
+            isLaptopOpen = true
+            return
+        }
+        isLaptopFocusing = true
+        let m = screen.transformMatrix(relativeTo: nil)
+        let pos = SIMD3<Float>(m.columns.3.x, m.columns.3.y, m.columns.3.z)
+        // plane의 로컬 +Z를 월드로 변환 = 디스플레이 앞 방향(카메라 쪽).
+        let forwardCol = m.columns.2
+        let normal = SIMD3<Float>(forwardCol.x, forwardCol.y, forwardCol.z)
+        CameraController.moveToLaptop(camera: camera, screenPos: pos, screenNormal: normal)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(620))
+            isLaptopOpen = true
+            isLaptopFocusing = false
+        }
+    }
+
+    /// LaptopFocusOverlay 닫을 때 호출 — 오버레이 해제 + 카메라 overview 복귀.
+    private func dismissLaptop() {
+        isLaptopOpen = false
+        if let camera = cameraEntity {
+            CameraController.moveToOverview(camera: camera, bookshelfZ: bookshelfZ)
+            cameraMode = .overview
+        }
+    }
+
     @ViewBuilder
     private var laptopFocusLayer: some View {
         if isLaptopOpen {
             LaptopFocusOverlay(
                 market: marketStore,
                 settings: settingsStore,
-                onClose: { isLaptopOpen = false },
+                onClose: { dismissLaptop() },
                 onReport: { target in reportTarget = target }
             )
             .transition(.opacity.combined(with: .scale(scale: 0.98)))
@@ -1826,6 +2080,15 @@ struct ContentView: View {
         let screenX = CGFloat((ndcX + 1) / 2) * viewSize.width
         let screenY = CGFloat((1 - ndcY) / 2) * viewSize.height
         return CGPoint(x: screenX, y: screenY)
+    }
+}
+
+/// `isLaptopOpen` 변화에 따라 화면 보호기 pause/resume — body type-check 부담 축소용 분리.
+private struct ScreenSaverPauseObserver: ViewModifier {
+    let isFocused: Bool
+    let onChange: (Bool) -> Void
+    func body(content: Content) -> some View {
+        content.onChange(of: isFocused) { _, new in onChange(new) }
     }
 }
 

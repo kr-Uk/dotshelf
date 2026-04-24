@@ -4,6 +4,11 @@ import simd
 
 @Observable
 class BookInteractionState {
+    /// 꾸미기 오브젝트를 책장 밖에 드롭했을 때 호출되는 콜백.
+    /// ContentView가 ArchiveStore에 저장하고 씬에서 엔티티를 제거하는 역할 담당.
+    /// 반환값은 "보관 성공" 여부 — false면 원래 자리로 복귀 시도.
+    var onDecorationDroppedOutside: ((Entity) -> Bool)?
+
     // 드래그 상태
     var draggedBook: Entity?
     var dragStartWorldPos: SIMD3<Float>?
@@ -152,6 +157,11 @@ class BookInteractionState {
 
     func beginDrag(entity: Entity, state: BookshelfState) {
         guard entity.name.hasPrefix("book_"), !isViewingBook else { return }
+        // 광고(읽기 전용) 섹션의 책은 드래그 금지.
+        if let sec = state.sections.first(where: { $0.books.contains(where: { $0 === entity }) }),
+           sec.isAd {
+            return
+        }
         draggedBook = entity
         dragStartWorldPos = entity.position
         isDragging = true
@@ -229,7 +239,8 @@ class BookInteractionState {
         let xInRange = bookWorldPos.x > sec.leftBound - 0.1 && bookWorldPos.x < sec.rightBound + 0.1
         let canFit = sec.canFit(extraFootprint: bookFootprint)
 
-        guard yInRange && xInRange && canFit else {
+        // 광고 섹션은 드롭 대상에서 제외
+        guard yInRange && xInRange && canFit && sec.acceptsUserBooks else {
             clearHover(state: state)
             return
         }
@@ -309,7 +320,7 @@ class BookInteractionState {
                     let bookFootprint = bookComp?.footprint ?? 0.03
                     let insertIdx = sec.findInsertionIndex(worldX: dropPos.x)
 
-                    if sec.canFit(extraFootprint: bookFootprint) {
+                    if sec.canFit(extraFootprint: bookFootprint) && sec.acceptsUserBooks {
                         state.sections[nearestSecIdx].books.insert(entity, at: insertIdx)
                         let positions = state.sections[nearestSecIdx].computePositions()
                         let targetPos = positions[insertIdx]
@@ -331,10 +342,15 @@ class BookInteractionState {
                     }
                 }
             } else {
-                // MVP: 책장 범위 밖 드롭 → 원래 섹션으로 복귀.
-                // 추후 버전에서 "손에서 놓친듯한 바닥 낙하"로 재활성화 예정.
-                // 물리 낙하 코드는 `dropToFloor(entity:state:)`에 보존되어 있음 (호출 지점만 비활성).
-                restoreToOriginalSection(entity: entity, state: state)
+                // 책장 범위 밖 드롭:
+                // - 꾸미기 오브젝트(isDecoration) → ContentView 콜백으로 보관함 이동 (명세 §2 "삭제 없음, 보관함으로만")
+                // - 일반 책 → 원래 섹션으로 복귀 (MVP; v1.1+ 바닥 낙하 후보. `dropToFloor` 보존)
+                let isDecoration = entity.components[BookComponent.self]?.isDecoration ?? false
+                if isDecoration, let handler = onDecorationDroppedOutside, handler(entity) {
+                    // 보관 성공 — 엔티티는 ContentView가 씬에서 제거함. 여기선 drag 상태만 정리.
+                } else {
+                    restoreToOriginalSection(entity: entity, state: state)
+                }
             }
         }
 

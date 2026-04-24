@@ -99,11 +99,11 @@ enum DeskLaptopEntity {
         base.position = SIMD3<Float>(0, baseH / 2, 0)
         laptop.addChild(base)
 
-        // Screen (디스플레이 덮개) — clamshell 약간 열린 각도 110°
+        // Screen (디스플레이 덮개) — 0°가 수직 열림, 뒤로 20° 젖혀 110° 열림 상태 연출
         let screenW = baseW
         let screenH: Float = 0.22
         let screenThickness: Float = 0.01
-        let screenAngle: Float = -.pi * 110 / 180  // -110° (뒤로 젖힘)
+        let screenAngle: Float = -.pi * 20 / 180  // -20° (수직에서 뒤로 20° 젖힘 = 실제 100~110° 열림)
 
         // Hinge 그룹 — 베이스 뒤쪽 가장자리 기준 회전
         let hinge = Entity()

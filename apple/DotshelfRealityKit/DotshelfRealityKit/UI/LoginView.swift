@@ -91,15 +91,20 @@ struct LoginView: View {
                 Image(systemName: icon).font(.system(size: 16, weight: .semibold))
                 Text("\(provider.label)로 계속하기")
                     .font(.system(size: 14, weight: .semibold))
-                if auth.isAuthenticating && auth.provider == provider {
-                    Spacer()
-                    ProgressView().controlSize(.small)
-                }
             }
             .foregroundStyle(fg)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .background(Capsule().fill(bg))
+            // ProgressView를 overlay로 띄워 HStack 레이아웃을 흔들지 않음
+            .overlay(alignment: .trailing) {
+                if auth.isAuthenticating && auth.provider == provider {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(fg)
+                        .padding(.trailing, 14)
+                }
+            }
             .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
         }
         .buttonStyle(.plain)

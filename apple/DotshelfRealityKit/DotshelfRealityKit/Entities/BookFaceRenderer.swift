@@ -30,11 +30,16 @@ enum BookFaceRenderer {
     }
 
     @MainActor
-    static func coverMaterial(record: BookRecord, bgColor: PlatformColor) -> (any RealityKit.Material)? {
+    static func coverMaterial(
+        record: BookRecord,
+        bgColor: PlatformColor,
+        isAd: Bool = false
+    ) -> (any RealityKit.Material)? {
         let view = BookCoverFace(
             record: record,
             bgColor: Color(platformColor: bgColor),
-            textColor: contrastTextColor(for: bgColor)
+            textColor: contrastTextColor(for: bgColor),
+            isAd: isAd
         )
         return makeFaceMaterial(view: view, pixelWidth: coverPixelWidth, pixelHeight: coverPixelHeight)
     }
@@ -89,14 +94,15 @@ private extension Color {
 
 // MARK: - Face views
 
-/// 표지: 제목·저자·출판사
+/// 표지: 제목·저자·출판사 (+ 광고 책일 때 좌측 상단 AD 스티커)
 private struct BookCoverFace: View {
     let record: BookRecord
     let bgColor: Color
     let textColor: Color
+    var isAd: Bool = false
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             bgColor
             // 배경 위에 아주 옅은 비네트로 깊이감
             LinearGradient(
@@ -124,7 +130,28 @@ private struct BookCoverFace: View {
                 }
                 Spacer(minLength: 14)
             }
+
+            if isAd {
+                adBadge
+                    .padding(8)
+            }
         }
+    }
+
+    private var adBadge: some View {
+        Text("AD")
+            .font(.system(size: 14, weight: .black))
+            .tracking(0.5)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Capsule().fill(Color.red)
+            )
+            .overlay(
+                Capsule().strokeBorder(Color.white.opacity(0.8), lineWidth: 1.2)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
     }
 }
 

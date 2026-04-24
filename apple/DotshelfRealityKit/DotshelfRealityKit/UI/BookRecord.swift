@@ -193,6 +193,26 @@ struct CatalogBook: Identifiable {
 }
 
 extension BookRecord {
+    /// 광고 책 전용 샘플 레코드 — 표지에 AD 스티커가 씌워지고,
+    /// 책 포커싱 시 Panel 대신 AD 오버레이가 뜨게 name prefix "book_ad_"와 함께 사용.
+    /// API 연동 시 서버 `adCopy` 필드에서 title/publisher/summary를 채워 넣으면 됩니다.
+    static func adSample() -> BookRecord {
+        BookRecord(
+            title: "이번 주 추천",
+            author: "팩토리나인",
+            publisher: "스폰서드 콘텐츠",
+            summary: "출판사가 이달 밀어주는 신간. 지금 유료 표지를 구매하면 30% 할인!",
+            rating: 0,
+            startedAt: nil,
+            finishedAt: nil,
+            status: .notStarted,
+            personalNote: "",
+            comments: []
+        )
+    }
+}
+
+extension BookRecord {
     /// 정적 카탈로그. 실제 구현에선 API로 대체.
     static let searchCatalog: [CatalogBook] = [
         CatalogBook(

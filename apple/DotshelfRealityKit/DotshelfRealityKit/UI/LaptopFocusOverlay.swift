@@ -34,8 +34,9 @@ struct LaptopFocusOverlay: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.55).ignoresSafeArea()
-                .onTapGesture { onClose() }
+            // 배경 검은 오버레이 제거 — 뒤의 3D 노트북/디스플레이가 비쳐 보이도록.
+            // 카메라가 디스플레이를 꽉 채운 상태라 실제로는 sheet가 화면을 덮어
+            // "노트북 디스플레이 안에서 앱이 전체화면으로 실행" 되는 느낌을 준다.
             sheet
             if showAd {
                 adOverlay
@@ -53,17 +54,17 @@ struct LaptopFocusOverlay: View {
             Divider().opacity(0.3)
             content
         }
-        .frame(maxWidth: 960, maxHeight: 660)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 22)
+            RoundedRectangle(cornerRadius: 6)
                 .fill(.regularMaterial)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .strokeBorder(.white.opacity(0.1), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.4), radius: 24, y: 12)
-        .padding(20)
+        .shadow(color: .black.opacity(0.35), radius: 20, y: 6)
+        .padding(10)
     }
 
     private var header: some View {

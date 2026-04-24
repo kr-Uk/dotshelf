@@ -1,9 +1,11 @@
 {
   "pathsToIds" : {
-    "\/Untitled\/Sources\/Untitled\/Untitled.rkassets\/Scene.usda" : "899CBA4E-F9F5-43ED-B54A-3EB6D3923952"
+    "\/Untitled\/Sources\/Untitled\/Untitled.rkassets\/Scene.usda" : "899CBA4E-F9F5-43ED-B54A-3EB6D3923952",
+    "Untitled\/Sources\/Untitled\/Untitled.rkassets\/Scene.usda" : "D6A178CF-62F2-45B7-BDFE-CBB0563CFB65"
   },
   "projectID" : -6053546382952591021,
   "uuidToIntID" : {
-    "899CBA4E-F9F5-43ED-B54A-3EB6D3923952" : -9088971898989270774
+    "899CBA4E-F9F5-43ED-B54A-3EB6D3923952" : -9088971898989270774,
+    "D6A178CF-62F2-45B7-BDFE-CBB0563CFB65" : -260317220420738008
   }
 }

@@ -59,6 +59,37 @@ enum CameraController {
         animateLook(camera: camera, from: camPos, at: lookAt, duration: duration)
     }
 
+    /// 노트북 디스플레이 정면 뷰 (LaptopFocusOverlay 진입 직전 전환 애니메이션용).
+    /// 디스플레이 plane(`laptop_screen_glow`)의 월드 transform에서 위치·법선을 뽑아
+    /// 화면 정면 `distance`(m) 앞에 카메라를 정렬한다. 이후 2D 오버레이가 화면을 덮으므로
+    /// 카메라 자체는 보조적이지만, 오버레이 ultraThin material을 통해 살짝 비치는 배경이
+    /// 노트북 디스플레이와 일치하는 느낌을 준다.
+    /// 노트북 디스플레이 앞 포커싱.
+    /// 베젤을 뷰포트 밖으로 밀어내기 위해 **glow plane 실제 크기(베젤 제외)** 기준으로
+    /// 거리를 자동 계산한다. LaptopFocusOverlay는 뷰포트 전체를 덮으므로,
+    /// 결과적으로 오버레이가 디스플레이 내부(베젤 안쪽)에만 렌더된다.
+    ///
+    /// - screenHeight: glow plane의 실제 세로(m). `DeskLaptopEntity`에서 0.22 - 0.02 = 0.20.
+    /// - fillRatio: 뷰포트 높이 대비 glow 높이 비율 (1.0 이상이면 살짝 잘려 베젤이 완전히 사라짐).
+    static func moveToLaptop(
+        camera: PerspectiveCamera,
+        screenPos: SIMD3<Float>,
+        screenNormal: SIMD3<Float>,
+        screenHeight: Float = 0.20,
+        fillRatio: Float = 1.02,
+        fovDeg: Float = 25,
+        duration: TimeInterval = 0.6
+    ) {
+        camera.camera.fieldOfViewInDegrees = fovDeg
+        let fovRad = fovDeg * .pi / 180
+        // 수직 시야(m) = 2·d·tan(FOV/2). 이걸 screenHeight/fillRatio 와 같게 해서 d 역산.
+        let viewportHeightAtD = screenHeight / fillRatio
+        let distance = viewportHeightAtD / (2 * tan(fovRad / 2))
+        let n = simd_normalize(screenNormal)
+        let camPos = screenPos + n * distance
+        animateLook(camera: camera, from: camPos, at: screenPos, duration: duration)
+    }
+
     /// 타겟을 기준으로 +z 방향 거리 클램프
     static func zoom(camera: PerspectiveCamera, delta: Float, targetZ: Float = 0) {
         let currentZ = camera.position.z

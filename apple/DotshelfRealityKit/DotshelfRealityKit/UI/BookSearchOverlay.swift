@@ -5,9 +5,11 @@ import SwiftUI
 struct BookSearchOverlay: View {
     var onAdd: (CatalogBook) -> Bool
     var onClose: () -> Void
+    /// 부모가 관리하는 "이미 책장/보관함에 있는" catalog id 집합 (중복 추가 방지).
+    /// 책을 완전히 삭제한 경우에만 부모가 해당 id를 제거한다.
+    var existingCatalogIds: Set<UUID> = []
 
     @State private var query: String = ""
-    @State private var addedIds: Set<UUID> = []
     @State private var errorMessage: String?
 
     private var results: [CatalogBook] {
@@ -122,7 +124,7 @@ struct BookSearchOverlay: View {
 
     @ViewBuilder
     private func row(for cb: CatalogBook) -> some View {
-        let added = addedIds.contains(cb.id)
+        let alreadyOwned = existingCatalogIds.contains(cb.id)
         HStack(spacing: 12) {
             // 미리보기 — 팔레트 인덱스로 결정적 색상
             RoundedRectangle(cornerRadius: 4)
@@ -146,27 +148,30 @@ struct BookSearchOverlay: View {
             Spacer()
 
             Button {
-                if added {
-                    // 다시 한 번 추가 허용 (같은 책 여러 권 가능)
-                }
+                guard !alreadyOwned else { return }  // 중복 추가 방지
                 let ok = onAdd(cb)
                 if ok {
-                    addedIds.insert(cb.id)
                     errorMessage = nil
                 } else {
                     errorMessage = "책장에 빈 공간이 없어요"
                 }
             } label: {
-                Text(added ? "한 번 더" : "추가")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(added ? Color.secondary : Color.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(
-                        Capsule().fill(added ? Color.gray.opacity(0.15) : Color.accentColor)
-                    )
+                HStack(spacing: 4) {
+                    if alreadyOwned {
+                        Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+                    }
+                    Text(alreadyOwned ? "이미 있음" : "추가")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(alreadyOwned ? Color.secondary : Color.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(
+                    Capsule().fill(alreadyOwned ? Color.gray.opacity(0.18) : Color.accentColor)
+                )
             }
             .buttonStyle(.plain)
+            .disabled(alreadyOwned)
         }
         .padding(10)
         .background(Color.gray.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))

@@ -17,6 +17,11 @@ struct ShelfSection {
     let sectionHeight: Float
     var books: [Entity] = []
     var alignment: SectionAlignment = .left
+    /// 광고(혹은 외부 주입) 섹션 — 책 리스트·배치 상태는 표시만, 드래그/정렬/배치 편집 불가.
+    var isAd: Bool = false
+
+    /// 사용자 책이 자동 배치될 수 있는 섹션인지. 광고(읽기 전용)는 제외.
+    var acceptsUserBooks: Bool { !isAd }
 
     var usableWidth: Float { rightBound - leftBound }
 
@@ -128,10 +133,13 @@ enum ShelfVisibility: CaseIterable {
 
 /// 한 권의 책장 단위 (엔티티 + 섹션 상태)
 struct Bookshelf {
+    let id: UUID = UUID()
     let entity: Entity
     var sections: [ShelfSection]
     var name: String = "책장"
     var visibility: ShelfVisibility = .public
+    /// 앱 시작 시 기본으로 표시되는 "메인 책장" 플래그. 항상 정확히 1개만 true.
+    var isMain: Bool = false
 }
 
 enum SwitchDirection {
@@ -205,11 +213,42 @@ class BookshelfState {
 
     func addBookshelf(entity: Entity, sections newSections: [ShelfSection], name: String = "책장") {
         let shelfName = name == "책장" ? "책장 \(bookshelves.count + 1)" : name
-        bookshelves.append(Bookshelf(entity: entity, sections: newSections, name: shelfName))
-        if bookshelves.count == 1 {
+        // 첫 책장은 자동으로 메인 책장 지정 (앱 시작 시 표시되는 책장).
+        let isFirst = bookshelves.isEmpty
+        bookshelves.append(Bookshelf(entity: entity, sections: newSections, name: shelfName, isMain: isFirst))
+        if isFirst {
             self.sections = newSections
             self.shelfRoot = entity
             self.currentIndex = 0
+        }
+    }
+
+    // MARK: - 메인 책장 (§2 — 앱 시작 시 표시되는 기본 책장)
+
+    /// 메인 책장 index. 없으면 0번을 fallback.
+    var mainBookshelfIndex: Int {
+        bookshelves.firstIndex(where: { $0.isMain }) ?? 0
+    }
+
+    /// 주어진 index가 메인 책장인지.
+    func isMain(index: Int) -> Bool {
+        guard index < bookshelves.count else { return false }
+        return bookshelves[index].isMain
+    }
+
+    /// 현재 책장을 메인으로 설정. 다른 책장의 메인 플래그는 해제.
+    func setCurrentAsMain() {
+        guard currentIndex < bookshelves.count else { return }
+        for i in bookshelves.indices {
+            bookshelves[i].isMain = (i == currentIndex)
+        }
+    }
+
+    /// 특정 index를 메인으로 설정.
+    func setMainBookshelf(index: Int) {
+        guard index < bookshelves.count else { return }
+        for i in bookshelves.indices {
+            bookshelves[i].isMain = (i == index)
         }
     }
 
@@ -305,7 +344,9 @@ class BookshelfState {
 
             var placed = false
             for bi in 0..<bookshelves.count where bi != removeIdx {
-                if let targetSecIdx = bookshelves[bi].sections.firstIndex(where: { $0.canFit(extraFootprint: footprint) }) {
+                if let targetSecIdx = bookshelves[bi].sections.firstIndex(where: {
+                    $0.acceptsUserBooks && $0.canFit(extraFootprint: footprint)
+                }) {
                     // 재부모화 + 데이터 이전
                     book.setParent(bookshelves[bi].entity, preservingWorldTransform: false)
                     bookshelves[bi].sections[targetSecIdx].books.append(book)
@@ -422,20 +463,25 @@ class BookshelfState {
     /// 턴테이블 설치 후 첫 2개 책장을 슬롯에 장착
     func installInitialShelves() {
         guard slots.count == 2, !bookshelves.isEmpty else { return }
-        slots[0].addChild(bookshelves[0].entity)
+        // 메인 책장을 currentIndex로 설정하고 앞 슬롯(slot0)에 배치.
+        let mainIdx = mainBookshelfIndex
+        currentIndex = mainIdx
+        sections = bookshelves[mainIdx].sections
+        shelfRoot = bookshelves[mainIdx].entity
+        slots[0].addChild(bookshelves[mainIdx].entity)
+        // 뒷 슬롯에는 다음 index의 책장을 파킹 (있다면)
         if bookshelves.count >= 2 {
-            slots[1].addChild(bookshelves[1].entity)
+            let nextIdx = (mainIdx + 1) % bookshelves.count
+            slots[1].addChild(bookshelves[nextIdx].entity)
         }
     }
 
-    /// 턴테이블 180° 회전으로 전환. 연속 호출 시 순차 실행(FIFO 큐).
+    /// 턴테이블 180° 회전으로 전환.
+    /// 연타 시 입력을 큐잉하지 않고 **무시** — 진행 중인 flip 1회만 유효하게 해서
+    /// 버튼을 여러 번 눌러도 손 뗄 때 더 돌아가지 않는다.
     func switchTo(direction: SwitchDirection) {
         guard bookshelves.count > 1, let turntable, slots.count == 2 else { return }
-
-        if isFlipping {
-            queuedDirections.append(direction)
-            return
-        }
+        guard !isFlipping else { return }   // 연타 차단
 
         isFlipping = true
         performFlip(direction: direction, turntable: turntable)
@@ -471,14 +517,10 @@ class BookshelfState {
         sections = bookshelves[targetIdx].sections
         shelfRoot = targetEntity
 
-        // 애니메이션 완료 후 큐잉된 다음 플립 실행 (FIFO)
+        // 애니메이션 완료 후 다음 flip 허용 (큐잉 없음 — 연타 무시)
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(duration))
             self.isFlipping = false
-            if !self.queuedDirections.isEmpty {
-                let next = self.queuedDirections.removeFirst()
-                self.switchTo(direction: next)
-            }
         }
     }
 
@@ -532,6 +574,9 @@ class BookshelfState {
             let sec = sections[secIdx]
             var x = sec.leftBound + 0.005
 
+            // 현재는 번들 testbook.usdz를 직접 로드. API 연동 시 이 블록은 삭제되고,
+            // `BookRepository`가 반환한 BookSpec 중 `scannedAsset != nil`인 항목이 자연스럽게
+            // `BookFactory.make(from:)`를 통해 스캔 모델 경로로 생성되어 이 loop에 흘러듭니다.
             if secIdx == 0, !scannedBookInserted, let scanned = BookEntity.loadScannedBook(targetHeight: 0.24) {
                 let comp = scanned.components[BookComponent.self]
                 let thickness = comp?.thickness ?? 0.04
@@ -606,10 +651,17 @@ class BookshelfState {
         let positions = sections[secIdx].computePositions(gapIndex: gapIndex, gapWidth: gapWidth)
         for (i, pos) in positions.enumerated() {
             let book = sections[secIdx].books[i]
-            let orientation = book.components[BookComponent.self]?.orientation ?? .spine
+            let comp = book.components[BookComponent.self]
             var transform = book.transform
             transform.translation = pos
-            transform.rotation = orientation.rotation
+            if comp?.isDecoration == true {
+                // 꾸미기 오브젝트 — 명세 §2 45° 회전 반영. spine/front/45° 프리셋 무시.
+                let yaw = Float.pi / 4 * Float(comp?.yawSteps ?? 0)
+                transform.rotation = simd_quatf(angle: yaw, axis: SIMD3<Float>(0, 1, 0))
+            } else {
+                let orientation = comp?.orientation ?? .spine
+                transform.rotation = orientation.rotation
+            }
             book.move(to: transform, relativeTo: book.parent, duration: duration)
         }
     }
