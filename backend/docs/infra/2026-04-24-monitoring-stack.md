@@ -214,101 +214,118 @@ management:
 - [Tailscale App/DB 분리 (prod/app 분리 배경)](./2026-04-22-tailscale-app-db-split.md)
 - [GitLab CI Variables](./gitlab-ci-variables.md)
 
-## 9. Grafana 접근 — SSH tunnel 전용 (2026-04-24 강화)
+## 9. Grafana 접근 — Cloudflare Access (Zero Trust)
 
-### 왜 공개 URL 을 내렸나
+### 접근 방식의 진화 (2026-04-24 하루 내 3번 바뀜)
 
-초기 배포 시 `https://grafana.dotshelf.digital` 로 공개 접근을 열었으나, 같은 날 공격 면(attack surface) 을 줄이기 위해 **공개 엔드포인트를 전면 폐쇄** 하고 SSH tunnel 전용으로 전환했다.
+| 시점 | 방식 | 결정 배경 |
+|---|---|---|
+| 초기 | `grafana.dotshelf.digital` 공개 + Grafana admin 비밀번호만 | 간단함 우선 |
+| 당일 오후 | **공개 URL 폐쇄 + SSH tunnel 전용** | brute force · CVE · 비번 유출 공격 면 차단 |
+| 당일 저녁 | **공개 URL 복구 + Cloudflare Access (Zero Trust)** ⭐ 현재 | SSH tunnel 의 팀원/심사위원 접근 불편 해소. CF Access 가 앞단에서 이메일 기반 인증을 강제 → 보안 + 편의 둘 다 달성 |
 
-| 위협 (공개 URL 유지 시) | 대응 (SSH-only 전환 후) |
-|---|---|
-| Grafana 로그인 페이지 brute force | 로그인 페이지 자체 외부 노출 없음 |
-| Grafana CVE 악용 (예: CVE-2021-43798) | Grafana 가 공개 인터넷에서 보이지 않음 |
-| admin 비밀번호 유출 시 즉시 전세계 노출 | SSH authorized_keys 에 없으면 접근 불가 |
-| 봇 스캐너의 `/login` `/api/datasources` 등 probing | 공개 포트 없음, 스캔 대상 아님 |
-
-**비용**: 발표 시 데모 머신에 SSH key + tunnel 명령 필요. 링크 공유 불가 (스크린쉐어로 대체).
-
-### Nginx 동작 방식 (현재)
-
-```nginx
-# grafana.dotshelf.digital 호스트로 들어오는 요청은
-# 명시된 server 블록이 없으므로 default_server 블록에 걸림:
-server {
-    listen 443 ssl default_server;
-    server_name _;
-    return 444;   # Nginx 가 응답 없이 connection close
-}
-```
-
-- DNS 는 Cloudflare 에 `grafana → 3.38.240.110 (proxied)` 로 유지됨 (제거해도 무방)
-- Cloudflare 가 origin 444 를 받으면 클라이언트에 **520 "Web server is returning an unknown error"** 를 반환
-- 외부 공격자 관점: "서브도메인은 있는데 origin 이 응답 안 함" → 추가 공격 포기
-
-### 접근 방법
-
-#### 방법 1: 매번 수동으로 tunnel
-
-```bash
-ssh -L 3000:172.17.0.1:3000 dotshelf
-# 세션 유지한 채로 브라우저 → http://localhost:3000
-```
-
-#### 방법 2: `~/.ssh/config` alias 로 1줄 접속
-
-`~/.ssh/config` 에 추가:
+### 현재 접속 흐름
 
 ```
-Host dotshelf-grafana
-    HostName 3.38.240.110
-    User ubuntu
-    IdentityFile ~/.ssh/dotshelf.pem
-    LocalForward 3000 172.17.0.1:3000
-    ServerAliveInterval 60
+사용자 → https://grafana.dotshelf.digital
+    ↓
+[1] Cloudflare Access (Zero Trust)
+    • 팀원 이메일 allowlist 검증
+    • One-time PIN 이메일 인증
+    • CF_Authorization 쿠키 24h 유지 (Application 설정값)
+    ↓ (통과)
+[2] Nginx origin (prod host, 443)
+    • server_name grafana.dotshelf.digital
+    • upstream → 172.17.0.1:3000
+    ↓
+[3] Grafana 컨테이너
+    • 자체 로그인 페이지 (admin + 비밀번호)
+    • grafana_session 쿠키 30일 유지
+    ↓ (통과)
+[4] 대시보드 🎉
 ```
 
-이후 접속:
-```bash
-ssh dotshelf-grafana
-# 다른 탭에서 브라우저 → http://localhost:3000
-```
+**이중 인증**: Cloudflare Access (신원) + Grafana Login (권한). 둘 중 하나만 뚫려도 접근 불가.
 
-#### 방법 3: 백그라운드 tunnel (세션 유지하고 싶지 않을 때)
+### 공격 면 비교
 
-```bash
-ssh -L 3000:172.17.0.1:3000 -N -f dotshelf
-# → 프로세스가 백그라운드로 내려감. 브라우저에서 http://localhost:3000 바로 접속 가능
-# 해제: pkill -f 'ssh -L 3000:172.17.0.1:3000'
-```
+| 위협 | 공개+비번만 | SSH tunnel 전용 | **CF Access + 비번** (현재) |
+|---|---|---|---|
+| 로그인 페이지 brute force | ❌ 노출 | ✅ 차단 | ✅ 차단 (CF Access 먼저) |
+| Grafana CVE 악용 | ❌ 가능 | ✅ 차단 | ✅ 차단 (CF Access 먼저) |
+| admin 비번 유출 시 즉시 전세계 노출 | ❌ | ✅ | ✅ (CF Access 없으면 로그인 페이지조차 못 봄) |
+| 봇 스캐너 probing | ❌ | ✅ | ✅ |
+| 팀원 온보딩 비용 | 🟢 낮음 | 🔴 PEM + config + SG | 🟢 이메일 추가 한 줄 |
+| 심사위원에게 URL 공유 | ✅ 가능 (비번도 필요) | ❌ 불가 | ✅ 가능 (이메일 allowlist 추가) |
+
+### Cloudflare Access 설정 요약 (이미 완료됨)
+
+- **Application**: `DotShelf Grafana` (Self-hosted)
+- **Application domain**: `grafana.dotshelf.digital` (path 전체 보호)
+- **Session Duration**: 24 hours (기본) — 필요 시 대시보드에서 늘릴 수 있음 (7d/30d)
+- **Identity Provider**: One-time PIN (이메일 OTP) — 기본 제공
+- **Policy**: `DotShelf team` (Allow + 팀원 이메일 allowlist)
 
 ### 팀원 온보딩 (신규 팀원 합류 시)
 
-1. 신규 팀원이 자신의 `~/.ssh/id_ed25519.pub` (또는 다른 공개키) 를 기존 팀원에게 공유
-2. 기존 팀원이 prod 호스트에 등록:
-   ```bash
-   ssh dotshelf "echo 'ssh-ed25519 AAAA... name@host' >> ~/.ssh/authorized_keys"
-   ```
-3. 신규 팀원은 자신의 머신에서 `ssh -L 3000:172.17.0.1:3000 ubuntu@3.38.240.110` 로 접속 확인
+1. **팀장이 Cloudflare Zero Trust 대시보드에서**:
+   - Access → Applications → `DotShelf Grafana` → Policy → Emails 에 신규 이메일 추가
+2. **신규 팀원**:
+   - `https://grafana.dotshelf.digital` 접속
+   - 이메일 입력 → OTP 받기 → 코드 입력
+   - Grafana 로그인 (admin + 비밀번호)
+3. **완료** — PEM 키, SSH 설정, SG 등록 전부 불필요.
 
 ### 팀원 이탈 시
 
-`ssh dotshelf` 로 들어가서 `~/.ssh/authorized_keys` 에서 해당 줄 삭제. 즉시 효력 발생.
+Cloudflare Zero Trust 대시보드 → `DotShelf Grafana` → Policy → Emails 목록에서 해당 줄 제거. **즉시** 효력.
+
+### 한 번 로그인하면?
+
+- **CF Access 쿠키 (24h)**: 같은 브라우저에선 24시간 동안 OTP 재입력 불필요
+- **Grafana 세션 쿠키 (30일)**: 같은 브라우저에선 30일 동안 비밀번호 재입력 불필요
+- **실질 재인증 주기**: **24h** (더 짧은 쪽)
+- **Session Duration** 을 `7d` 로 늘리면 일주일에 한 번만 OTP
+
+### 비인가 이메일로 시도하면?
+
+- CF Access 는 **OTP 를 발송** (이메일 존재 여부 leak 방지)
+- 코드 입력 후 **"You don't have permission to access this application"** 차단
+- → 허용 이메일이 아니면 어떻게 해도 접근 불가
 
 ### 발표 리허설 체크리스트
 
-발표 하루 전 반드시 확인:
-- [ ] 데모 머신에 SSH key 있고 prod 접속 됨
-- [ ] `ssh -L 3000:172.17.0.1:3000 dotshelf` 터널 생성 성공
-- [ ] 브라우저에서 `http://localhost:3000` 로 Grafana 로그인 페이지 표시
-- [ ] 대시보드 "DotShelf · Blue-Green 관측" 접근
-- [ ] 스크린쉐어 시 화면 선명
-- [ ] (옵션) Blue-Green 실시간 배포 시연 준비 — 색별 RPS X자 그래프 관찰
+발표 하루 전:
+- [ ] 데모 머신의 브라우저로 `https://grafana.dotshelf.digital` 접속
+- [ ] CF Access OTP 로그인 성공
+- [ ] Grafana 로그인 성공
+- [ ] "DotShelf · Blue-Green 관측" 대시보드 표시
+- [ ] Session Duration 충분한지 확인 (24h 기본 → 발표 당일 직전 로그인 권장)
+- [ ] (옵션) 심사위원 이메일 필요 시 미리 Policy 에 추가
 
-### 다시 공개 URL 로 되돌리려면
+### 비상시 fallback: SSH tunnel
 
-위 [§7-3 Nginx grafana 서브도메인 복구](#7-3-nginx-grafana-서브도메인만-내리기) 의 반대로:
-1. `deploy/prod/nginx/conf.d/default.conf` 에 `upstream dotshelf_grafana` + `server { server_name grafana.dotshelf.digital; ... }` 블록 복원
-2. WebSocket upgrade map 복원 (`map $http_upgrade $connection_upgrade`)
+Cloudflare Access 가 장애 등으로 접근 불가능해지면 SSH tunnel 로 우회 가능:
+
+```bash
+ssh -L 3000:172.17.0.1:3000 -N -f dotshelf
+# 브라우저: http://localhost:3000
+```
+
+Grafana 컨테이너는 `172.17.0.1:3000` docker bridge 에 계속 바인딩되어 있음 — 호스트에 SSH 접근되는 사람은 언제든 tunnel 가능.
+
+### 다시 SSH-only 로 되돌리려면
+
+1. `deploy/prod/nginx/conf.d/default.conf` 에서 grafana server block + upstream + WebSocket map 제거
+2. Cloudflare Zero Trust 대시보드에서 Application 삭제 (선택)
 3. `docker exec dotshelf-nginx nginx -t && docker exec dotshelf-nginx nginx -s reload`
 
-단, 공개 URL 복원 시 **반드시 Basic Auth / Cloudflare Access 등 추가 인증 레이어** 를 같이 도입할 것. 단순 Grafana 로그인만 노출하는 구성으로 되돌리지 말 것.
+### CI 배포와의 상호작용
+
+`.gitlab-ci.yml` 의 `backend:deploy` 단계가 매 배포마다 `deploy/prod/nginx/conf.d/` 트리를 prod 로 **`rsync --delete`** 한다. 따라서:
+
+- **repo 의 `default.conf` 가 진실의 원천(single source of truth)**
+- prod 에서 수동 편집해도 **다음 배포 때 repo 버전으로 원복됨**
+- Nginx 관련 변경은 반드시 **repo 수정 → MR → dev 머지** 경로로 진행할 것
+
+2026-04-24 실제로 한 번 이 함정에 걸렸다 — prod 에 수동 rsync 한 변경을 CI 가 dev 기준으로 덮어써서 520 에러 발생. 교훈: **"수동 변경은 레이스 컨디션" — MR 머지 전엔 prod 가 언제든 원상복귀될 수 있다.**
