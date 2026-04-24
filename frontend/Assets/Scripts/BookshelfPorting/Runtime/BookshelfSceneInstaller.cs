@@ -170,7 +170,7 @@ namespace BookshelfPorting.Runtime
             generator.Configure(state, materialFactory, loadBooksUseCase);
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);
-            experienceManager.Configure(state, cameraController, interactionController, materialFactory, runtimeDataStore, generator);
+            experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
             environment.Configure(probe, null);
 
             mainCamera.transform.position = overviewAnchor.position;
@@ -189,6 +189,7 @@ namespace BookshelfPorting.Runtime
             }
 
             generator.NormalizeNotebookStationPlacement();
+            generator.EnsureRoomDecorations();
             AlignNotebookAnchor(notebookAnchor);
 
             if (Application.isPlaying)
@@ -269,7 +270,52 @@ namespace BookshelfPorting.Runtime
             }
 
             var root = generator.transform;
-            return root.Find("RoomRoot") != null && root.Find("BookshelfRoot") != null;
+            if (root.Find("RoomRoot") == null ||
+                root.Find("BookshelfTurntableRoot/BookshelfRoot") == null)
+            {
+                return false;
+            }
+
+            var guestbook = root.Find("RoomRoot/GuestbookBoard");
+            if (guestbook == null)
+            {
+                return false;
+            }
+
+            if (guestbook.Find("dashboard_natural") != null)
+            {
+                return false;
+            }
+
+            if (guestbook.Find("Frame") == null || guestbook.Find("Surface") == null)
+            {
+                return false;
+            }
+
+            var desk = guestbook.Find("NotebookStation/Desk");
+            if (desk == null)
+            {
+                return false;
+            }
+
+            if (desk.Find("Desktop") != null)
+            {
+                return false;
+            }
+
+            var table = desk.Find("table_natural");
+            if (table == null)
+            {
+                return false;
+            }
+
+            var s = table.localScale;
+            if (Mathf.Approximately(s.x, 1f) && Mathf.Approximately(s.y, 1f) && Mathf.Approximately(s.z, 1f))
+            {
+                return false;
+            }
+
+            return true;
         }
 
         private static GameObject FindOrCreateRoot(string name)

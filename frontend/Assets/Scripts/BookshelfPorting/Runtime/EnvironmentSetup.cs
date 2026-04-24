@@ -47,8 +47,8 @@ namespace BookshelfPorting.Runtime
 
             CreateOrUpdateLight("WarmDirectional", new Vector3(40f, -25f, 0f), new Color(1f, 0.88f, 0.74f), LightType.Directional, 1.1f, 6500f);
             CreateOrUpdateLight("AccentDirectional", new Vector3(18f, 145f, 0f), new Color(0.86f, 0.9f, 1f), LightType.Directional, 0.45f, 0f);
-            CreateOrUpdatePoint("WarmPointLeft", new Vector3(-1.25f, 1.95f, -0.55f), new Color(1f, 0.76f, 0.58f), 18f, 4.5f);
-            CreateOrUpdatePoint("WarmPointRight", new Vector3(1.15f, 1.75f, -0.3f), new Color(1f, 0.81f, 0.66f), 14f, 3.8f);
+            CreateOrUpdatePoint("WarmPointLeft", new Vector3(-0.39f, 2.0f, -0.3f), new Color(1f, 0.76f, 0.58f), 10f, 4.5f);
+            CreateOrUpdatePoint("WarmPointRight", new Vector3(1.42f, 2.0f, -0.3f), new Color(1f, 0.81f, 0.66f), 10f, 3.8f);
         }
 
         private void CreateOrUpdatePoint(string name, Vector3 localPosition, Color color, float intensity, float range)

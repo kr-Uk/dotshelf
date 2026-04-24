@@ -20,6 +20,22 @@ namespace BookshelfPorting.Runtime
             }
         }
 
+        public static float GetDepthExtent(float thickness, float depth, BookOrientation orientation)
+        {
+            switch (orientation)
+            {
+                case BookOrientation.Spine:
+                    return depth;
+                case BookOrientation.Front:
+                    return thickness;
+                case BookOrientation.Angled45:
+                    return Mathf.Abs(thickness * Mathf.Sin(Mathf.Deg2Rad * 45f)) +
+                           Mathf.Abs(depth * Mathf.Cos(Mathf.Deg2Rad * 45f));
+                default:
+                    return depth;
+            }
+        }
+
         public static Quaternion GetVisualRotation(BookOrientation orientation)
         {
             switch (orientation)

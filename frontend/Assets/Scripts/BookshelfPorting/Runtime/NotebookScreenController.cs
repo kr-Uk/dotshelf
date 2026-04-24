@@ -16,11 +16,11 @@ namespace BookshelfPorting.Runtime
     {
         private static readonly string[] DefaultAdFolders =
         {
-            "Assets/Art/UI/LaptopAds",
-            "Assets/Arts/UI/LaptopAds"
+            "Assets/Arts/UI/Ads"
         };
-        private const string MissingAdsWarning = "NotebookScreenController: No ad sprites assigned. Assign Sprite assets from Assets/Art/UI/LaptopAds or Assets/Arts/UI/LaptopAds to adImages.";
+        private const string MissingAdsWarning = "NotebookScreenController: No ad sprites assigned. Assign Sprite assets from Assets/Arts/UI/Ads to adImages.";
         private const string NotebookPanelSettingsResource = "NotebookPanelSettings";
+
         private enum NotebookUiState
         {
             ScreenSaver,
