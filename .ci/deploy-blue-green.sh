@@ -16,7 +16,7 @@
 #  3. app: TARGET 컨테이너 healthy 될 때까지 대기
 #  4. app: 직격 smoke (Tailscale 바인딩 포트)
 #  5. prod: upstream.active.conf 를 TARGET 으로 교체, nginx -t, nginx -s reload
-#  6. 공개 smoke (https://api.dotshelf.digital/api/health)
+#  6. 공개 smoke (https://api.dotshelf.digital/health)
 #  7. .active_color 갱신
 #  8. 유예 시간 후 구 ACTIVE 색 stop
 #
@@ -34,7 +34,7 @@ set -eu
 : "${PROD_HOST:?PROD_HOST required (prod server Tailscale IP)}"
 : "${PROD_DEPLOY_PATH:?PROD_DEPLOY_PATH required}"
 
-HEALTH_URL_PUBLIC=${HEALTH_URL_PUBLIC:-https://api.dotshelf.digital/api/health}
+HEALTH_URL_PUBLIC=${HEALTH_URL_PUBLIC:-https://api.dotshelf.digital/health}
 HEALTH_TIMEOUT_SECONDS=${HEALTH_TIMEOUT_SECONDS:-60}
 GRACE_PERIOD_SECONDS=${GRACE_PERIOD_SECONDS:-120}
 
@@ -102,8 +102,8 @@ if [ "$status" != "healthy" ]; then
 fi
 
 # ---------- 5. 직격 smoke (Nginx 우회) ----------
-log "Direct smoke: http://100.74.2.103:$TARGET_PORT/api/health"
-if ! ssh_app "curl -fsS --max-time 5 http://100.74.2.103:$TARGET_PORT/api/health" >/dev/null; then
+log "Direct smoke: http://100.74.2.103:$TARGET_PORT/health"
+if ! ssh_app "curl -fsS --max-time 5 http://100.74.2.103:$TARGET_PORT/health" >/dev/null; then
   ssh_app "docker compose -f $EC2_DEPLOY_PATH/docker-compose.yml stop api-$TARGET" || true
   fail "direct smoke failed on $TARGET_PORT"
 fi

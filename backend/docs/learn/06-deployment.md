@@ -199,8 +199,8 @@ backend:deploy:
     - rsync -az "$COMPOSE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/docker-compose.yml"
     - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose up -d --build api"
     - sh .ci/wait_for_api_healthy.sh
-    - 'ssh ... "curl http://100.74.2.103:8080/api/health"'
-    - curl -fsS https://api.dotshelf.digital/api/health
+    - 'ssh ... "curl http://100.74.2.103:8080/health"'
+    - curl -fsS https://api.dotshelf.digital/health
 ```
 
 안에서 일어나는 일:
@@ -213,7 +213,7 @@ backend:deploy:
 6. **rsync 로 JAR + docker-compose.yml 을 SSAFY 서버로 전송**
 7. **SSH 로 다시 접속해서 `docker compose up -d --build api`** 실행
 8. 헬스체크 대기 (`.ci/wait_for_api_healthy.sh` 가 최대 1분 폴링)
-9. SSAFY 로컬에서 `/api/health` 직접 호출 → UP 확인
+9. SSAFY 로컬에서 `/health` 직접 호출 → UP 확인
 10. Cloudflare 경유 공용 URL 로 한 번 더 호출 → 전 경로 OK 확인
 
 ### 단계 4: SSAFY 서버에서 실제로 일어나는 일
@@ -338,7 +338,7 @@ Variables 는 **Protected** 로 설정 → dev / master 같은 보호 브랜치�
 
 ### 7-2. 공용 URL 호출
 ```bash
-curl https://api.dotshelf.digital/api/health | jq
+curl https://api.dotshelf.digital/health | jq
 # 예상: status=UP, components.db/redis 전부 UP
 ```
 
