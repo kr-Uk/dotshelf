@@ -74,6 +74,15 @@ if [ "$BOOTSTRAP" = "true" ]; then
   ssh_prod "test -f $PROD_DEPLOY_PATH/nginx/conf.d/upstream.active.conf || cp $PROD_DEPLOY_PATH/nginx/conf.d/templates/upstream.blue.conf $PROD_DEPLOY_PATH/nginx/conf.d/upstream.active.conf"
 fi
 
+# ---------- 2-bis. Promtail (로그 수집기) 보장 ----------
+# Promtail 은 api-blue/green 과 독립된 lifecycle 로 돌아야 한다 (로그는 배포와 무관하게 수집).
+# --force-recreate 로 매 배포마다 재기동 → promtail-config.yml 변경사항 즉시 반영.
+# --no-deps 는 연쇄로 다른 서비스까지 재시작 안 하게.
+# positions 는 named volume(promtail-positions) 에 저장되므로 재기동해도 offset 유지 → 중복 적재 없음.
+# 실패해도 배포는 진행 (모니터링 스택 장애가 앱 배포를 막지 않도록).
+log "Ensuring Promtail is running (log shipper to Loki)"
+ssh_app "cd $EC2_DEPLOY_PATH && docker compose up -d --force-recreate --no-deps promtail" || log "WARN: promtail 기동 실패 (배포는 계속 진행). 수동 확인 필요."
+
 # ---------- 3. TARGET 컨테이너 빌드 + 기동 ----------
 log "Building api-$TARGET"
 ssh_app "cd $EC2_DEPLOY_PATH && docker compose build api-$TARGET"
