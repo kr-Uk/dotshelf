@@ -180,6 +180,7 @@ Blue-Green 배포를 돌리는 동안 Grafana 대시보드를 열어두면:
 - **Alert rules 없음**: Prometheus alertmanager 미구성. 지금은 대시보드 시각 확인만. 알림 필요 시 Grafana Alerting 으로 대체 가능.
 - **Loki retention 7일**: 디스크 여유 있으면 14일로 확장. `loki-config.yml` 의 `retention_period: 168h` 수정.
 - **Promtail positions 유실**: 컨테이너 재시작 시 중복 log ingestion 발생할 수 있음 — `promtail-positions` 볼륨으로 방지했지만 볼륨 삭제 시 reset.
+- **Promtail 자동 기동**: `.ci/deploy-blue-green.sh` 의 §2-bis 단계가 매 배포마다 `docker compose up -d --force-recreate --no-deps promtail` 을 수행한다. 덕분에 (1) 첫 배포 직후 promtail 자동 기동, (2) `promtail-config.yml` 수정 후 재배포만으로 설정 반영, (3) positions 볼륨은 보존되어 중복 적재 방지 — 세 가지가 동시에 해결됨. 실패해도 배포는 계속 진행 (모니터링 스택 장애가 앱 배포를 막지 않도록).
 - **grafana-data 백업 없음**: 대시보드 JSON 은 repo 에 있으므로 DataSource/유저만 날아감. 중요하면 주기적 `docker compose cp` 백업.
 - **외부 `api.dotshelf.digital/actuator`** 차단은 했지만, 내부 Tailscale 경로(`100.74.2.103:8080/actuator/*`) 는 열려있음. Tailscale ACL 로 Prometheus 컨테이너만 접근하도록 제한하는 추가 강화 여지 있음.
 
