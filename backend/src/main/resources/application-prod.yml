@@ -49,7 +49,8 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        # prometheus 는 Tailscale 내부에서만 스크레이프. 외부 노출은 Nginx /actuator 차단으로 방지.
+        include: health,prometheus,info
   endpoint:
     health:
       show-details: always
@@ -58,6 +59,20 @@ management:
   health:
     defaults:
       enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      # Blue/Green 구분 라벨. Prometheus 에서 color="blue|green" 으로 쿼리 가능.
+      application: dotshelf-api
+      color: ${DEPLOY_COLOR:unknown}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.5, 0.95, 0.99
 
 logging:
   level:

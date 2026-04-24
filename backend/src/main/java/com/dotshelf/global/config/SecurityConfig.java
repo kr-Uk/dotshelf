@@ -24,6 +24,9 @@ public class SecurityConfig {
             "/api/health",
             "/actuator/health",
             "/actuator/health/**",
+            // Prometheus 스크레이프용. 공개 Nginx 에서 /actuator 는 404 차단되므로
+            // 실제 접근은 Tailscale 내부(prod 호스트의 Prometheus)에서만 가능.
+            "/actuator/prometheus",
             "/v1/auth/**",
             "/swagger-ui/**",
             "/swagger-ui.html",

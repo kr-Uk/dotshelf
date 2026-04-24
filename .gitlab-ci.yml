@@ -73,14 +73,16 @@ backend:deploy:
   script:
     - JAR=$(ls $JAR_ARTIFACT_PATH/*-SNAPSHOT.jar | head -1)
     - APP_COMPOSE=backend/deploy/app/docker-compose.yml
+    - APP_PROMTAIL=backend/deploy/app/promtail
     - DOCKERFILE=backend/Dockerfile
     - NGINX_CONFD=backend/deploy/prod/nginx/conf.d
     - echo "Staging payloads to app=$EC2_HOST prod=$PROD_HOST"
-    # --- Stage JAR + Dockerfile + compose to app ---
-    - ssh "$EC2_USER@$EC2_HOST" "mkdir -p $EC2_DEPLOY_PATH/api/build/libs && rm -f $EC2_DEPLOY_PATH/api/build/libs/*.jar"
+    # --- Stage JAR + Dockerfile + compose + promtail config to app ---
+    - ssh "$EC2_USER@$EC2_HOST" "mkdir -p $EC2_DEPLOY_PATH/api/build/libs $EC2_DEPLOY_PATH/promtail && rm -f $EC2_DEPLOY_PATH/api/build/libs/*.jar"
     - rsync -az "$JAR" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/api/build/libs/"
     - rsync -az "$DOCKERFILE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/api/Dockerfile"
     - rsync -az "$APP_COMPOSE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/docker-compose.yml"
+    - rsync -az --delete "$APP_PROMTAIL/" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/promtail/"
     # --- Stage Nginx configs to prod (excluding runtime upstream.active.conf) ---
     - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $PROD_DEPLOY_PATH/nginx/conf.d"
     - rsync -az --delete --exclude='upstream.active.conf' --exclude='README.md' --exclude='*.bak*' "$NGINX_CONFD/" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/"

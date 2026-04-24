@@ -33,6 +33,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
 
+    // Micrometer Prometheus registry — /actuator/prometheus 엔드포인트 노출
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
+
     // OpenAPI / Swagger
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.0")
 
