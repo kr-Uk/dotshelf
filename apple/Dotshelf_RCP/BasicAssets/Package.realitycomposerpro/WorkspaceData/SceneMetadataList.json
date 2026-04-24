@@ -1,0 +1,23 @@
+{
+  "E31FA0FA-9C4D-41F5-A289-4C891DEE2EF7" : {
+    "objectMetadataList" : [
+      [
+        "E31FA0FA-9C4D-41F5-A289-4C891DEE2EF7",
+        "Root",
+        "GlassMaterial"
+      ],
+      {
+        "isExpanded" : true,
+        "isLocked" : false
+      },
+      [
+        "E31FA0FA-9C4D-41F5-A289-4C891DEE2EF7",
+        "Root"
+      ],
+      {
+        "isExpanded" : true,
+        "isLocked" : false
+      }
+    ]
+  }
+}

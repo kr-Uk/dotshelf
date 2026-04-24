@@ -1,0 +1,107 @@
+services:
+  # Blue-Green 무중단 배포용 2-color 컨테이너.
+  # - 색당 포트: blue=8080, green=8081 (Tailscale IP 에 바인딩)
+  # - 어느 색이 트래픽을 받는지는 prod Nginx upstream.active.conf 로 결정
+  # - deploy-blue-green.sh 가 두 색 중 idle 쪽만 재시작하고 Nginx 스위칭 후 구 color stop
+  # - mem_limit=4g: JVM 2개 공존 시 호스트 15 GiB 중 8 GiB 점유로 OOM 방지 (MaxRAMPercentage=60 기준 heap ~2.4 GiB)
+  api-blue:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    image: dotshelf/api:latest
+    container_name: dotshelf-api-blue
+    restart: unless-stopped
+    extra_hosts:
+      - "dotshelf-prod:100.86.247.88"
+    ports:
+      - "100.74.2.103:8080:8080"
+    mem_limit: 4g
+    environment:
+      DEPLOY_COLOR: blue
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL}
+      GOOGLE_SERVER_CLIENT_ID: ${GOOGLE_SERVER_CLIENT_ID}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS}
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+      TZ: Asia/Seoul
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api-green:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    image: dotshelf/api:latest
+    container_name: dotshelf-api-green
+    restart: unless-stopped
+    extra_hosts:
+      - "dotshelf-prod:100.86.247.88"
+    ports:
+      - "100.74.2.103:8081:8080"
+    mem_limit: 4g
+    environment:
+      DEPLOY_COLOR: green
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL}
+      GOOGLE_SERVER_CLIENT_ID: ${GOOGLE_SERVER_CLIENT_ID}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS}
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+      TZ: Asia/Seoul
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------- Promtail (로그 수집기) ----------
+  # dotshelf-api-* 컨테이너의 Docker json-file 로그를 수집해 prod 호스트 Loki(100.86.247.88:3100) 로 push.
+  # - api-blue / api-green 과 독립 life-cycle (배포 시 재시작 안 됨)
+  # - promtail/promtail-config.yml 은 repo 에서 rsync 돼야 한다 (.gitlab-ci.yml 에 추가 예정)
+  promtail:
+    image: grafana/promtail:3.2.1
+    container_name: dotshelf-promtail
+    restart: unless-stopped
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      # 컨테이너 로그 & 메타데이터 read-only 마운트
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - promtail-positions:/tmp
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes:
+  promtail-positions:

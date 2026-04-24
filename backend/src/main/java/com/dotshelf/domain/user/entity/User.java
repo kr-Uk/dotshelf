@@ -1,5 +1,7 @@
 package com.dotshelf.domain.user.entity;
 
+import java.time.Instant;
+
 import com.dotshelf.global.common.BaseEntity;
 
 import jakarta.persistence.Column;
@@ -23,15 +25,55 @@ public class User extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 100)
+    @Column(unique = true, length = 100)
     private String email;
 
     @Column(nullable = false, length = 50)
     private String nickname;
 
+    @Column(length = 500)
+    private String profileImageUrl;
+
+    @Column(length = 255)
+    private String introduction;
+
+    @Column(nullable = false, length = 20)
+    private String role = "USER";
+
+    @Column(nullable = false, length = 20)
+    private String status = "ACTIVE";
+
+    @Column(nullable = false)
+    private boolean isOnboarded = false;
+
+    private Instant lastLoginAt;
+
+    private Instant deletedAt;
+
     @Builder
-    private User(String email, String nickname) {
+    private User(String email, String nickname, String profileImageUrl, String introduction) {
         this.email = email;
         this.nickname = nickname;
+        this.profileImageUrl = profileImageUrl;
+        this.introduction = introduction;
+    }
+
+    public void updateProfile(String nickname, String profileImageUrl, String introduction) {
+        this.nickname = nickname;
+        this.profileImageUrl = profileImageUrl;
+        this.introduction = introduction;
+    }
+
+    public void completeOnboarding() {
+        this.isOnboarded = true;
+    }
+
+    public void markLogin() {
+        this.lastLoginAt = Instant.now();
+    }
+
+    public void delete() {
+        this.status = "DELETED";
+        this.deletedAt = Instant.now();
     }
 }
