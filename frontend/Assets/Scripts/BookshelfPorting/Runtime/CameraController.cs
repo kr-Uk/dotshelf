@@ -26,18 +26,31 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float notebookFieldOfView = 24f;
         [SerializeField] private float notebookTransitionDuration = 0.75f;
         [SerializeField] private float frontalDefaultFieldOfView = 60f;
-        [SerializeField] private float frontalZoomSpeed = 4f;
-        [SerializeField] private float frontalMinFov = 25f;
-        [SerializeField] private float frontalMaxFov = 55f;
+        [SerializeField] private float frontalDefaultZoomDistance = 2.15f;
+        [SerializeField] private float frontalMinZoomDistance = 0.8f;
+        [SerializeField] private float frontalMaxZoomDistance = 4.5f;
+        [SerializeField] private float frontalScrollZoomStep = 0.45f;
+        [SerializeField] private float frontalZoomSmoothDuration = 0.15f;
+        [SerializeField] private float wheelScrollReference = 120f;
 
         private CameraTransitionSegment activeSegment;
         private bool isTransitioning;
+        private bool isFrontalZooming;
+        private float frontalZoomStartDistance;
+        private float frontalZoomCurrentDistance;
+        private float frontalZoomTargetDistance;
+        private float frontalZoomElapsed;
         public event Action<CameraMode> ModeChanged;
         public event Action<CameraMode> TransitionCompleted;
 
         public CameraMode CurrentMode { get; private set; } = CameraMode.Overview;
         public bool IsTransitioning => isTransitioning;
         public Transform BookViewAnchor => bookViewAnchor;
+        public float FrontalZoomDistance => frontalZoomCurrentDistance;
+        public float FrontalZoomInAmount => Mathf.InverseLerp(
+            Mathf.Max(frontalMinZoomDistance, frontalMaxZoomDistance),
+            Mathf.Min(frontalMinZoomDistance, frontalMaxZoomDistance),
+            frontalZoomCurrentDistance);
 
         private struct CameraTransitionSegment
         {
@@ -100,6 +113,8 @@ namespace BookshelfPorting.Runtime
             {
                 targetCamera = Camera.main;
             }
+
+            ResetFrontalZoomState();
         }
 
         private void Update()
@@ -109,10 +124,8 @@ namespace BookshelfPorting.Runtime
                 var scroll = Mouse.current.scroll.ReadValue().y;
                 if (Mathf.Abs(scroll) > 0.001f)
                 {
-                    targetCamera.fieldOfView = Mathf.Clamp(
-                        targetCamera.fieldOfView - scroll * Time.deltaTime * frontalZoomSpeed,
-                        frontalMinFov,
-                        frontalMaxFov);
+                    var scrollSteps = NormalizeWheelScroll(scroll);
+                    SetFrontalZoomTarget(frontalZoomTargetDistance - scrollSteps * frontalScrollZoomStep);
                 }
             }
         }
@@ -122,6 +135,11 @@ namespace BookshelfPorting.Runtime
             if (isTransitioning)
             {
                 StepTransition(Time.deltaTime);
+            }
+
+            if (!isTransitioning && CurrentMode == CameraMode.Frontal)
+            {
+                StepFrontalZoom(Time.deltaTime);
             }
         }
 
@@ -139,6 +157,11 @@ namespace BookshelfPorting.Runtime
             var targetPosition = anchor.position;
             var targetRotation = anchor.rotation;
             var targetFieldOfView = GetFieldOfView(mode);
+
+            if (mode == CameraMode.Frontal)
+            {
+                ResetFrontalZoomState();
+            }
 
             CurrentMode = mode;
             ModeChanged?.Invoke(mode);
@@ -201,7 +224,7 @@ namespace BookshelfPorting.Runtime
                 case CameraMode.Overview:
                     return overviewFieldOfView;
                 case CameraMode.Frontal:
-                    return Mathf.Clamp(frontalDefaultFieldOfView, frontalMinFov, frontalMaxFov);
+                    return frontalDefaultFieldOfView;
                 case CameraMode.Whiteboard:
                     return whiteboardFieldOfView;
                 case CameraMode.Notebook:
@@ -215,6 +238,82 @@ namespace BookshelfPorting.Runtime
         {
             activeSegment = CreateSegmentFromCurrent(targetPosition, targetRotation, targetFov, duration);
             isTransitioning = true;
+        }
+
+        private float NormalizeWheelScroll(float scroll)
+        {
+            if (Mathf.Abs(scroll) > 10f && wheelScrollReference > 0f)
+            {
+                return scroll / wheelScrollReference;
+            }
+
+            return scroll;
+        }
+
+        private void ResetFrontalZoomState()
+        {
+            frontalZoomCurrentDistance = ClampFrontalZoomDistance(frontalDefaultZoomDistance);
+            frontalZoomTargetDistance = frontalZoomCurrentDistance;
+            frontalZoomStartDistance = frontalZoomCurrentDistance;
+            frontalZoomElapsed = 0f;
+            isFrontalZooming = false;
+        }
+
+        private void SetFrontalZoomTarget(float distance)
+        {
+            var nextDistance = ClampFrontalZoomDistance(distance);
+            if (Mathf.Abs(nextDistance - frontalZoomTargetDistance) <= 0.001f)
+            {
+                return;
+            }
+
+            frontalZoomStartDistance = frontalZoomCurrentDistance;
+            frontalZoomTargetDistance = nextDistance;
+            frontalZoomElapsed = 0f;
+            isFrontalZooming = true;
+        }
+
+        private float ClampFrontalZoomDistance(float distance)
+        {
+            var minDistance = Mathf.Min(frontalMinZoomDistance, frontalMaxZoomDistance);
+            var maxDistance = Mathf.Max(frontalMinZoomDistance, frontalMaxZoomDistance);
+            return Mathf.Clamp(distance, minDistance, maxDistance);
+        }
+
+        private void StepFrontalZoom(float deltaTime)
+        {
+            if (targetCamera == null || frontalAnchor == null)
+            {
+                return;
+            }
+
+            if (isFrontalZooming)
+            {
+                frontalZoomElapsed += deltaTime;
+                var normalizedTime = Mathf.Clamp01(frontalZoomElapsed / Mathf.Max(0.01f, frontalZoomSmoothDuration));
+                var t = Mathf.SmoothStep(0f, 1f, normalizedTime);
+                frontalZoomCurrentDistance = Mathf.Lerp(frontalZoomStartDistance, frontalZoomTargetDistance, t);
+
+                if (normalizedTime >= 1f)
+                {
+                    frontalZoomCurrentDistance = frontalZoomTargetDistance;
+                    isFrontalZooming = false;
+                }
+            }
+
+            ApplyFrontalZoomPosition();
+        }
+
+        private void ApplyFrontalZoomPosition()
+        {
+            var anchorPosition = frontalAnchor.position;
+            var focusZ = anchorPosition.z + ClampFrontalZoomDistance(frontalDefaultZoomDistance);
+            targetCamera.transform.position = new Vector3(
+                anchorPosition.x,
+                anchorPosition.y,
+                focusZ - frontalZoomCurrentDistance);
+            targetCamera.transform.rotation = frontalAnchor.rotation;
+            targetCamera.fieldOfView = frontalDefaultFieldOfView;
         }
 
         private void StartNotebookReturnTransition(Vector3 targetPosition, Quaternion targetRotation, float targetFov)

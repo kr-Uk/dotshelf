@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace BookshelfPorting.Runtime
@@ -33,6 +34,7 @@ namespace BookshelfPorting.Runtime
         private Material whiteboardFrameMaterial;
         private Material whiteboardSurfaceMaterial;
         private Material ghostMaterial;
+        private readonly Dictionary<BookshelfThemeStyle, Material> bookshelfStyleMaterials = new Dictionary<BookshelfThemeStyle, Material>();
         public BookshelfThemeStyle CurrentTheme { get; private set; } = BookshelfThemeStyle.Default;
 
         public void Configure(Texture2D woodBase, Texture2D woodNormal)
@@ -43,12 +45,35 @@ namespace BookshelfPorting.Runtime
 
         public Material GetBookshelfWoodMaterial()
         {
-            if (bookshelfWoodMaterial == null)
+            return GetBookshelfWoodMaterial(CurrentTheme);
+        }
+
+        public Material GetBookshelfWoodMaterial(BookshelfThemeStyle style)
+        {
+            if (style == CurrentTheme)
             {
-                bookshelfWoodMaterial = CreateLitMaterial("BookshelfWood", woodBaseMap, woodNormalMap, bookshelfTint, bookshelfSmoothness, false);
+                bookshelfTint = ResolveBookshelfTint(style);
             }
 
-            return bookshelfWoodMaterial;
+            if (bookshelfStyleMaterials.TryGetValue(style, out var cached) && cached != null)
+            {
+                return cached;
+            }
+
+            var material = CreateLitMaterial($"BookshelfWood_{style}", woodBaseMap, woodNormalMap, ResolveBookshelfTint(style), bookshelfSmoothness, false);
+            bookshelfStyleMaterials[style] = material;
+
+            if (style == CurrentTheme)
+            {
+                bookshelfWoodMaterial = material;
+            }
+
+            return material;
+        }
+
+        public Color GetBookshelfStyleColor(BookshelfThemeStyle style)
+        {
+            return ResolveBookshelfTint(style);
         }
 
         public Material GetFloorMaterial()
@@ -131,21 +156,23 @@ namespace BookshelfPorting.Runtime
         public void ApplyTheme(BookshelfThemeStyle theme)
         {
             CurrentTheme = theme;
+            bookshelfTint = ResolveBookshelfTint(theme);
+            bookshelfWoodMaterial = GetBookshelfWoodMaterial(theme);
 
+            ApplyThemeToMaterial(bookshelfWoodMaterial, bookshelfTint, bookshelfSmoothness);
+        }
+
+        private static Color ResolveBookshelfTint(BookshelfThemeStyle theme)
+        {
             switch (theme)
             {
                 case BookshelfThemeStyle.Warm:
-                    bookshelfTint = new Color(1f, 0.88f, 0.74f);
-                    break;
+                    return new Color(1f, 0.88f, 0.74f);
                 case BookshelfThemeStyle.Dark:
-                    bookshelfTint = new Color(0.36f, 0.30f, 0.26f);
-                    break;
+                    return new Color(0.36f, 0.30f, 0.26f);
                 default:
-                    bookshelfTint = Color.white;
-                    break;
+                    return Color.white;
             }
-
-            ApplyThemeToMaterial(bookshelfWoodMaterial, bookshelfTint, bookshelfSmoothness);
         }
 
         private static void ApplyThemeToMaterial(Material material, Color color, float smoothness)

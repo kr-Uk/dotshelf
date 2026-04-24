@@ -13,6 +13,12 @@ namespace BookshelfPorting.Runtime
         private const int DragVelocitySampleLimit = 5;
         private const float DragPreviewPitchDegrees = 15f;
 
+        private enum InvalidDropBehavior
+        {
+            ReturnToOriginalSlot,
+            PhysicsFloorDrop
+        }
+
         [SerializeField] private Camera sceneCamera = null;
         [SerializeField] private BookshelfState state = null;
         [SerializeField] private BookshelfGenerator generator = null;
@@ -22,6 +28,8 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float viewMoveDuration = 0.25f;
         [SerializeField] private float dragStartThresholdPixels = 5f;
         [SerializeField] private float validDropDuration = 0.3f;
+        [SerializeField] private float invalidReturnDuration = 0.35f;
+        [SerializeField] private InvalidDropBehavior invalidDropBehavior = InvalidDropBehavior.ReturnToOriginalSlot;
         [SerializeField] private float invalidDropMaxDuration = 3f;
         [SerializeField] private float invalidDropBookMass = 0.18f;
         [SerializeField] private float invalidDropMinHorizontalSpeed = 0.45f;
@@ -42,16 +50,29 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float dragHeight = 1.0f;
         [SerializeField] private float viewRotationSpeed = 0.25f;
         [SerializeField] private float viewedBookScaleMultiplier = 3.6f;
+        [SerializeField] private float viewedBookZoomForwardOffset = 0.35f;
         [SerializeField] private Vector3 viewedBookInteractionPadding = new Vector3(0.28f, 0.22f, 0.18f);
+        [SerializeField] private Color bookHoverColor = new Color(1f, 0.68f, 0.28f, 0.20f);
+        [SerializeField] private Color sectionHoverColor = new Color(0.40f, 0.78f, 1f, 0.16f);
+        [SerializeField] private float bookHoverScaleMultiplier = 1.12f;
+        [SerializeField] private float sectionHoverWidthInset = 0.025f;
+        [SerializeField] private float sectionHoverHeightInset = 0.025f;
 
         private BookEntity hoveredBook;
         private BookEntity pressedBook;
         private BookEntity draggingBook;
         private GameObject ghostPreview;
+        private GameObject bookHoverIndicator;
+        private GameObject sectionHoverIndicator;
+        private Material bookHoverMaterial;
+        private Material sectionHoverMaterial;
         private Transform dropPhysicsRoot;
         private PhysicsMaterial dropBookMaterial;
         private PhysicsMaterial dropBoundaryMaterial;
+        private ShelfSection hoveredSection;
+        private ShelfSection pressedSection;
         private ShelfSection originalSectionBeforeDrag;
+        private int originalIndexBeforeDrag = -1;
         private Vector2 lastPointer;
         private float shelfBookPointerTravel;
         private Vector3 lastDragWorldPosition;
@@ -115,9 +136,11 @@ namespace BookshelfPorting.Runtime
             if (!CanViewShelfBooks())
             {
                 hoveredBook = null;
+                hoveredSection = null;
                 pressedBook = null;
+                pressedSection = null;
 
-                if (draggingBook != null)
+                if (draggingBook != null && (generator == null || !generator.IsBookshelfSwitching))
                 {
                     CancelDrag();
                 }
@@ -125,12 +148,16 @@ namespace BookshelfPorting.Runtime
             else
             {
                 hoveredBook = currentPointerTarget.Book;
+                hoveredSection = currentPointerTarget.Book == null ? currentPointerTarget.Section : null;
             }
 
             if (state.IsViewingBook)
             {
                 hoveredBook = IsPointerOverActiveViewedBook(currentPointerTarget) ? currentPointerTarget.Book : null;
+                hoveredSection = null;
             }
+
+            UpdateHoverIndicators(pointer);
 
             if (mouse.leftButton.wasPressedThisFrame)
             {
@@ -206,6 +233,7 @@ namespace BookshelfPorting.Runtime
             if (state == null)
             {
                 pressedBook = null;
+                pressedSection = null;
                 isManipulatingViewedBook = false;
                 return;
             }
@@ -213,6 +241,7 @@ namespace BookshelfPorting.Runtime
             if (!CanViewShelfBooks() && !state.IsViewingBook)
             {
                 pressedBook = null;
+                pressedSection = null;
                 return;
             }
 
@@ -221,6 +250,7 @@ namespace BookshelfPorting.Runtime
             if (IsPointerOverUi(pointer))
             {
                 pressedBook = null;
+                pressedSection = null;
                 isManipulatingViewedBook = false;
                 return;
             }
@@ -238,6 +268,7 @@ namespace BookshelfPorting.Runtime
             lastPointer = pointer;
             shelfBookPointerTravel = 0f;
             pressedBook = currentPointerTarget.Book;
+            pressedSection = currentPointerTarget.Section;
         }
 
         private void OnPointerDrag(Vector2 pointer)
@@ -258,6 +289,11 @@ namespace BookshelfPorting.Runtime
 
             if (pressedBook == null)
             {
+                if (pressedSection != null && !state.IsViewingBook)
+                {
+                    shelfBookPointerTravel += delta.magnitude;
+                }
+
                 return;
             }
 
@@ -283,6 +319,7 @@ namespace BookshelfPorting.Runtime
             if (state == null)
             {
                 pressedBook = null;
+                pressedSection = null;
                 isManipulatingViewedBook = false;
                 return;
             }
@@ -316,10 +353,26 @@ namespace BookshelfPorting.Runtime
                      !state.IsViewingBook &&
                      (hoveredBook == pressedBook || currentPointerTarget.Book == pressedBook))
             {
-                ViewBook(pressedBook);
+                if (IsBookshelfEditMode())
+                {
+                    experienceManager?.OpenBookEditPanel(pressedBook);
+                }
+                else
+                {
+                    ViewBook(pressedBook);
+                }
+            }
+            else if (IsBookshelfEditMode() &&
+                     pressedBook == null &&
+                     pressedSection != null &&
+                     currentPointerTarget.Section == pressedSection &&
+                     shelfBookPointerTravel <= dragStartThresholdPixels)
+            {
+                experienceManager?.OpenSectionAlignmentPanel(pressedSection);
             }
 
             pressedBook = null;
+            pressedSection = null;
             shelfBookPointerTravel = 0f;
         }
 
@@ -331,6 +384,11 @@ namespace BookshelfPorting.Runtime
                    cameraController.CurrentMode == CameraMode.Frontal &&
                    generator != null &&
                    !generator.IsBookshelfSwitching;
+        }
+
+        private bool IsBookshelfEditMode()
+        {
+            return experienceManager != null && experienceManager.IsBookshelfEditMode;
         }
 
         private bool CanViewShelfBooks()
@@ -352,8 +410,7 @@ namespace BookshelfPorting.Runtime
 
             if (originalSectionBeforeDrag != null)
             {
-                state.TryPlaceBook(draggingBook, originalSectionBeforeDrag, this, true);
-                state.LayoutSection(originalSectionBeforeDrag, this, true);
+                state.TryPlaceBookAt(draggingBook, originalSectionBeforeDrag, originalIndexBeforeDrag, this, true);
             }
 
             if (ghostPreview != null)
@@ -364,6 +421,7 @@ namespace BookshelfPorting.Runtime
             draggingBook = null;
             state.ActiveDraggedBook = null;
             originalSectionBeforeDrag = null;
+            originalIndexBeforeDrag = -1;
             shelfBookPointerTravel = 0f;
             ResetDragVelocity();
         }
@@ -390,17 +448,247 @@ namespace BookshelfPorting.Runtime
                 var hitArea = hit.collider.GetComponent<BookInteractionHitArea>();
                 if (hitArea != null && hitArea.Owner != null)
                 {
-                    return new PointerTarget(PointerTargetType.ViewedBookInteractionArea, hitArea.Owner);
+                    return new PointerTarget(PointerTargetType.ViewedBookInteractionArea, hitArea.Owner, hitArea.Owner.CurrentSection);
                 }
 
                 var book = hit.collider.GetComponentInParent<BookEntity>();
                 if (book != null)
                 {
-                    return new PointerTarget(PointerTargetType.Book, book);
+                    return new PointerTarget(PointerTargetType.Book, book, book.CurrentSection);
+                }
+            }
+
+            for (var i = 0; i < hits.Length; i++)
+            {
+                var hit = hits[i];
+                if (TryResolveSectionFromHit(hit, out var section))
+                {
+                    return new PointerTarget(PointerTargetType.Section, null, section);
                 }
             }
 
             return PointerTarget.None;
+        }
+
+        private bool TryResolveSectionFromHit(RaycastHit hit, out ShelfSection section)
+        {
+            section = null;
+            if (state == null || generator == null || generator.BooksRoot == null || generator.BooksRoot.parent == null)
+            {
+                return false;
+            }
+
+            var local = generator.BooksRoot.parent.InverseTransformPoint(hit.point);
+            section = state.FindSectionAt(local, 0.01f);
+            return section != null;
+        }
+
+        private void UpdateHoverIndicators(Vector2 pointer)
+        {
+            if (state == null ||
+                draggingBook != null ||
+                (state.ActiveDraggedBook != null && state.ActiveDraggedBook != draggingBook) ||
+                IsPointerOverUi(pointer))
+            {
+                HideHoverIndicators();
+                return;
+            }
+
+            var canShowShelfHover = CanViewShelfBooks() && !state.IsViewingBook;
+            if (!canShowShelfHover)
+            {
+                HideHoverIndicators();
+                return;
+            }
+
+            if (hoveredBook != null)
+            {
+                ShowBookHoverIndicator(hoveredBook);
+                HideSectionHoverIndicator();
+                return;
+            }
+
+            HideBookHoverIndicator();
+            if (IsBookshelfEditMode() && hoveredSection != null)
+            {
+                ShowSectionHoverIndicator(hoveredSection);
+            }
+            else
+            {
+                HideSectionHoverIndicator();
+            }
+        }
+
+        private void ShowBookHoverIndicator(BookEntity book)
+        {
+            if (book == null)
+            {
+                HideBookHoverIndicator();
+                return;
+            }
+
+            EnsureBookHoverIndicator();
+            if (bookHoverIndicator == null)
+            {
+                return;
+            }
+
+            bookHoverIndicator.transform.SetParent(book.transform, false);
+            bookHoverIndicator.transform.localPosition = ResolveBookHoverCenter(book);
+            bookHoverIndicator.transform.localRotation = Quaternion.identity;
+            bookHoverIndicator.transform.localScale = ResolveBookHoverSize(book);
+            bookHoverIndicator.SetActive(true);
+        }
+
+        private Vector3 ResolveBookHoverCenter(BookEntity book)
+        {
+            var box = book != null ? book.GetComponent<BoxCollider>() : null;
+            return box != null ? box.center : Vector3.zero;
+        }
+
+        private Vector3 ResolveBookHoverSize(BookEntity book)
+        {
+            var box = book != null ? book.GetComponent<BoxCollider>() : null;
+            var size = box != null ? box.size : Vector3.one;
+            return AbsVector(size) * Mathf.Max(1f, bookHoverScaleMultiplier);
+        }
+
+        private void ShowSectionHoverIndicator(ShelfSection section)
+        {
+            if (section == null || generator == null || generator.BooksRoot == null || generator.BooksRoot.parent == null)
+            {
+                HideSectionHoverIndicator();
+                return;
+            }
+
+            EnsureSectionHoverIndicator();
+            if (sectionHoverIndicator == null)
+            {
+                return;
+            }
+
+            var parent = generator.BooksRoot.parent;
+            var width = Mathf.Max(0.02f, section.Width - sectionHoverWidthInset * 2f);
+            var height = Mathf.Max(0.02f, section.sectionHeight - sectionHoverHeightInset * 2f);
+            var centerX = (section.leftBound + section.rightBound) * 0.5f;
+            var centerY = section.shelfTopY + section.sectionHeight * 0.5f;
+            var frontZ = section.frontBoundZ - 0.012f;
+
+            sectionHoverIndicator.transform.SetParent(parent, false);
+            sectionHoverIndicator.transform.localPosition = new Vector3(centerX, centerY, frontZ);
+            sectionHoverIndicator.transform.localRotation = Quaternion.identity;
+            sectionHoverIndicator.transform.localScale = new Vector3(width, height, 0.006f);
+            sectionHoverIndicator.SetActive(true);
+        }
+
+        private void HideHoverIndicators()
+        {
+            HideBookHoverIndicator();
+            HideSectionHoverIndicator();
+        }
+
+        private void HideBookHoverIndicator()
+        {
+            if (bookHoverIndicator != null)
+            {
+                bookHoverIndicator.SetActive(false);
+            }
+        }
+
+        private void HideSectionHoverIndicator()
+        {
+            if (sectionHoverIndicator != null)
+            {
+                sectionHoverIndicator.SetActive(false);
+            }
+        }
+
+        private void EnsureBookHoverIndicator()
+        {
+            if (bookHoverIndicator != null)
+            {
+                return;
+            }
+
+            bookHoverIndicator = CreateHoverIndicator("BookHoverIndicator", GetBookHoverMaterial());
+        }
+
+        private void EnsureSectionHoverIndicator()
+        {
+            if (sectionHoverIndicator != null)
+            {
+                return;
+            }
+
+            sectionHoverIndicator = CreateHoverIndicator("SectionHoverIndicator", GetSectionHoverMaterial());
+        }
+
+        private static GameObject CreateHoverIndicator(string name, Material material)
+        {
+            var indicator = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            indicator.name = name;
+            var collider = indicator.GetComponent<Collider>();
+            if (collider != null)
+            {
+                Destroy(collider);
+            }
+
+            var renderer = indicator.GetComponent<MeshRenderer>();
+            if (renderer != null)
+            {
+                renderer.sharedMaterial = material;
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+            }
+
+            indicator.SetActive(false);
+            return indicator;
+        }
+
+        private Material GetBookHoverMaterial()
+        {
+            if (bookHoverMaterial == null)
+            {
+                bookHoverMaterial = CreateHoverMaterial("BookHover", bookHoverColor);
+            }
+
+            return bookHoverMaterial;
+        }
+
+        private Material GetSectionHoverMaterial()
+        {
+            if (sectionHoverMaterial == null)
+            {
+                sectionHoverMaterial = CreateHoverMaterial("SectionHover", sectionHoverColor);
+            }
+
+            return sectionHoverMaterial;
+        }
+
+        private static Material CreateHoverMaterial(string name, Color color)
+        {
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null)
+            {
+                shader = Shader.Find("Standard");
+            }
+
+            var material = new Material(shader) { name = name };
+            material.SetColor("_BaseColor", color);
+            material.color = color;
+            material.SetFloat("_Smoothness", 0.2f);
+            material.SetFloat("_Surface", 1f);
+            material.SetFloat("_Blend", 0f);
+            material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            material.SetFloat("_ZWrite", 0f);
+            material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            return material;
+        }
+
+        private static Vector3 AbsVector(Vector3 value)
+        {
+            return new Vector3(Mathf.Abs(value.x), Mathf.Abs(value.y), Mathf.Abs(value.z));
         }
 
         private void ViewBook(BookEntity book)
@@ -421,9 +709,19 @@ namespace BookshelfPorting.Runtime
             activeViewedHitArea.SetActive(true);
             StartCoroutine(AnimateWorldMove(
                 book.transform,
-                cameraController.BookViewAnchor.position,
+                ResolveBookViewPosition(),
                 viewRotation,
                 book.StoredScale * viewedBookScaleMultiplier));
+        }
+
+        private Vector3 ResolveBookViewPosition()
+        {
+            var position = cameraController.BookViewAnchor.position;
+            var zoomInAmount = cameraController.CurrentMode == CameraMode.Frontal
+                ? cameraController.FrontalZoomInAmount
+                : 0f;
+            position.z += Mathf.Max(0f, viewedBookZoomForwardOffset) * zoomInAmount;
+            return position;
         }
 
         private static void SetDynamicHierarchy(Transform root)
@@ -451,6 +749,7 @@ namespace BookshelfPorting.Runtime
             draggingBook = book;
             state.ActiveDraggedBook = book;
             originalSectionBeforeDrag = book.CurrentSection;
+            originalIndexBeforeDrag = originalSectionBeforeDrag != null ? originalSectionBeforeDrag.books.IndexOf(book) : -1;
             lastDragWorldPosition = book.transform.position;
             ResetDragVelocity();
 
@@ -481,15 +780,19 @@ namespace BookshelfPorting.Runtime
 
                 var local = generator.BooksRoot.parent.InverseTransformPoint(world);
                 var dropSection = state.FindAvailableDropSection(local, draggingBook);
-                UpdateGhostPreview(dropSection, draggingBook);
+                var insertIndex = dropSection != null ? state.ComputeDropInsertIndex(local, dropSection, draggingBook) : 0;
+                UpdateGhostPreview(dropSection, draggingBook, insertIndex);
             }
         }
 
         private void EndDrag(Vector2 pointer)
         {
             var movedBook = draggingBook;
+            var returnSection = originalSectionBeforeDrag;
+            var returnIndex = originalIndexBeforeDrag;
             var localPosition = generator.BooksRoot.parent.InverseTransformPoint(draggingBook.transform.position);
             var destination = state.FindAvailableDropSection(localPosition, draggingBook);
+            var insertIndex = destination != null ? state.ComputeDropInsertIndex(localPosition, destination, draggingBook) : 0;
 
             if (ghostPreview != null)
             {
@@ -498,10 +801,11 @@ namespace BookshelfPorting.Runtime
 
             draggingBook = null;
             originalSectionBeforeDrag = null;
+            originalIndexBeforeDrag = -1;
             shelfBookPointerTravel = 0f;
 
             if (destination != null &&
-                state.TryPlaceBookForDrop(movedBook, destination, out var targetLocalPosition, out var targetLocalRotation, out var targetLocalScale))
+                state.TryPlaceBookForDrop(movedBook, destination, insertIndex, out var targetLocalPosition, out var targetLocalRotation, out var targetLocalScale))
             {
                 if (generator != null && generator.BooksRoot != null && movedBook.transform.parent != generator.BooksRoot)
                 {
@@ -514,7 +818,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            StartCoroutine(AnimateInvalidDrop(movedBook));
+            HandleInvalidDrop(movedBook, returnSection, returnIndex);
         }
 
         private IEnumerator AnimateValidDrop(
@@ -548,6 +852,63 @@ namespace BookshelfPorting.Runtime
                 target.localPosition = nextPosition;
                 target.localRotation = Quaternion.Slerp(startRotation, targetLocalRotation, horizontalT);
                 target.localScale = Vector3.Lerp(startScale, targetLocalScale, horizontalT);
+                yield return null;
+            }
+
+            target.localPosition = targetLocalPosition;
+            target.localRotation = targetLocalRotation;
+            target.localScale = targetLocalScale;
+            ReleaseActiveDraggedBook(book);
+        }
+
+        private void HandleInvalidDrop(BookEntity book, ShelfSection returnSection, int returnIndex)
+        {
+            if (invalidDropBehavior == InvalidDropBehavior.PhysicsFloorDrop)
+            {
+                StartCoroutine(AnimateInvalidDrop(book));
+                return;
+            }
+
+            StartCoroutine(AnimateInvalidReturn(book, returnSection, returnIndex));
+        }
+
+        private IEnumerator AnimateInvalidReturn(BookEntity book, ShelfSection returnSection, int returnIndex)
+        {
+            if (book == null)
+            {
+                ReleaseActiveDraggedBook(null);
+                yield break;
+            }
+
+            DisableDropPhysics(book);
+            if (returnSection == null ||
+                !state.TryPlaceBookForDrop(book, returnSection, returnIndex, out var targetLocalPosition, out var targetLocalRotation, out var targetLocalScale))
+            {
+                ReleaseActiveDraggedBook(book);
+                yield break;
+            }
+
+            if (generator != null && generator.BooksRoot != null && book.transform.parent != generator.BooksRoot)
+            {
+                book.transform.SetParent(generator.BooksRoot, true);
+            }
+
+            state.LayoutSectionExcept(returnSection, this, true, book);
+
+            var target = book.transform;
+            var startPosition = target.localPosition;
+            var startRotation = target.localRotation;
+            var startScale = target.localScale;
+            var elapsed = 0f;
+            var duration = Mathf.Max(0.01f, invalidReturnDuration);
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / duration));
+                target.localPosition = Vector3.Lerp(startPosition, targetLocalPosition, t);
+                target.localRotation = Quaternion.Slerp(startRotation, targetLocalRotation, t);
+                target.localScale = Vector3.Lerp(startScale, targetLocalScale, t);
                 yield return null;
             }
 
@@ -952,7 +1313,7 @@ namespace BookshelfPorting.Runtime
             ghostPreview.transform.localScale = new Vector3(book.thickness, book.height, book.depth);
         }
 
-        private void UpdateGhostPreview(ShelfSection section, BookEntity book)
+        private void UpdateGhostPreview(ShelfSection section, BookEntity book, int insertIndex)
         {
             if (ghostPreview == null)
             {
@@ -965,16 +1326,18 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (!state.TryGetBookPreviewTransform(book, section, insertIndex, out var localPosition, out var localRotation, out _))
+            {
+                ghostPreview.SetActive(false);
+                return;
+            }
+
             ghostPreview.SetActive(true);
             ghostPreview.transform.SetParent(generator.BooksRoot, false);
-            ghostPreview.transform.localScale = new Vector3(book.thickness, book.height, book.depth);
-
-            var x = section.leftBound + state.BookPadding + book.GetFootprint() * 0.5f;
-            ghostPreview.transform.localPosition = new Vector3(
-                x,
-                section.shelfTopY + book.height * 0.5f,
-                section.GetFrontAlignedBookCenterZ(book, 1f, state.ShelfFrontInset));
-            ghostPreview.transform.localRotation = BookFootprintUtility.GetVisualRotation(book.orientation);
+            var layoutScale = state.GetDropLayoutScale(section, book);
+            ghostPreview.transform.localScale = new Vector3(book.thickness, book.height, book.depth) * layoutScale;
+            ghostPreview.transform.localPosition = localPosition;
+            ghostPreview.transform.localRotation = localRotation;
         }
 
         private IEnumerator AnimateWorldMove(Transform target, Vector3 worldPosition, Quaternion worldRotation, Vector3 targetScale)
@@ -1068,15 +1431,17 @@ namespace BookshelfPorting.Runtime
 
         private readonly struct PointerTarget
         {
-            public static PointerTarget None => new PointerTarget(PointerTargetType.None, null);
+            public static PointerTarget None => new PointerTarget(PointerTargetType.None, null, null);
 
             public PointerTargetType Type { get; }
             public BookEntity Book { get; }
+            public ShelfSection Section { get; }
 
-            public PointerTarget(PointerTargetType type, BookEntity book)
+            public PointerTarget(PointerTargetType type, BookEntity book, ShelfSection section)
             {
                 Type = type;
                 Book = book;
+                Section = section;
             }
         }
 
@@ -1084,7 +1449,8 @@ namespace BookshelfPorting.Runtime
         {
             None,
             Book,
-            ViewedBookInteractionArea
+            ViewedBookInteractionArea,
+            Section
         }
     }
 }

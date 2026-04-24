@@ -145,7 +145,7 @@ namespace BookshelfPorting.Runtime
                 "NotebookAnchor",
                 notebookPosition,
                 Quaternion.LookRotation((notebookTarget - notebookPosition).normalized, Vector3.up));
-            var bookViewAnchor = FindOrCreateAnchor(camerasRoot, "BookViewAnchor", new Vector3(0f, 0.88f, -0.15f), Quaternion.Euler(0f, 0f, 0f));
+            var bookViewAnchor = FindOrCreateAnchor(camerasRoot, "BookViewAnchor", new Vector3(0f, 0.88f, 0.10f), Quaternion.Euler(0f, 0f, 0f));
 
             var environmentRoot = FindOrCreateRoot("Environment");
             var probeObject = FindOrCreateChild(environmentRoot.transform, "ReflectionProbe");
