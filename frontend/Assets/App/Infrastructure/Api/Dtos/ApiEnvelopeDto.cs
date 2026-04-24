@@ -10,11 +10,17 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("isSuccess")]
         public bool IsSuccess { get; set; }
 
+        [JsonProperty("success")]
+        public bool Success { get; set; }
+
+        [JsonIgnore]
+        public bool Succeeded => IsSuccess || Success;
+
         [JsonProperty("message")]
         public string Message { get; set; }
 
         [JsonProperty("code")]
-        public int Code { get; set; }
+        public string Code { get; set; }
 
         [JsonProperty("result")]
         public T Result { get; set; }
