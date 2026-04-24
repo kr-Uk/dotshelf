@@ -6,8 +6,8 @@
 - **배치**:
   - prod 호스트 (100.86.247.88) — Prometheus + Loki + Grafana
   - SSAFY 앱 호스트 (100.74.2.103) — Promtail (blue/green 컨테이너 로그 수집)
-- **외부 노출**: `https://grafana.dotshelf.digital` (Nginx reverse proxy → docker bridge 172.17.0.1:3000). Prometheus/Loki 는 외부 비노출.
-- **보안**: 공개 Nginx 에서 `/actuator` 는 404 차단 → `/actuator/prometheus` 는 Tailscale 내부 스크레이프만 허용.
+- **외부 노출**: **없음.** Grafana 는 SSH tunnel 로만 접근 (아래 §9 참조). Prometheus/Loki 도 외부 비노출.
+- **보안**: 공개 Nginx 에서 `/actuator` 는 404 차단. `grafana.dotshelf.digital` 서브도메인은 살아있지만 Nginx 에서 444 (connection close) 로 드롭. Grafana 컨테이너 자체는 `172.17.0.1:3000` docker bridge 에 바인딩되어 SSH tunnel 로만 도달 가능.
 - **핵심 쿼리**: `sum(rate(http_server_requests_seconds_count{job="dotshelf-api"}[1m])) by (color)` — Blue-Green 전환이 그래프로 가시화.
 
 ## 1. 구조
@@ -29,13 +29,12 @@
 │                                                                                 │
 │   dotshelf-loki        :3100 ◄──────────────── Promtail push (Tailscale)        │
 │                                                                                 │
-│   dotshelf-grafana     172.17.0.1:3000 ◄─── dotshelf-nginx ◄── HTTPS 443        │
-│                         (docker bridge 바인딩)      │                           │
-│                                                     └─ grafana.dotshelf.digital │
+│   dotshelf-grafana     172.17.0.1:3000 ◄─── SSH tunnel 만 접근 가능             │
+│                         (docker bridge 바인딩)                                   │
 │                                                                                 │
 │   dotshelf-nginx       api.dotshelf.digital   → dotshelf_api (blue|green)       │
-│                        grafana.dotshelf.digital → dotshelf_grafana              │
 │                        /actuator → 404 (보안)                                   │
+│                        grafana.dotshelf.digital → 444 (connection close)        │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -214,3 +213,102 @@ management:
 - [Blue-Green 배포 (선행 MR)](./2026-04-23-blue-green.md)
 - [Tailscale App/DB 분리 (prod/app 분리 배경)](./2026-04-22-tailscale-app-db-split.md)
 - [GitLab CI Variables](./gitlab-ci-variables.md)
+
+## 9. Grafana 접근 — SSH tunnel 전용 (2026-04-24 강화)
+
+### 왜 공개 URL 을 내렸나
+
+초기 배포 시 `https://grafana.dotshelf.digital` 로 공개 접근을 열었으나, 같은 날 공격 면(attack surface) 을 줄이기 위해 **공개 엔드포인트를 전면 폐쇄** 하고 SSH tunnel 전용으로 전환했다.
+
+| 위협 (공개 URL 유지 시) | 대응 (SSH-only 전환 후) |
+|---|---|
+| Grafana 로그인 페이지 brute force | 로그인 페이지 자체 외부 노출 없음 |
+| Grafana CVE 악용 (예: CVE-2021-43798) | Grafana 가 공개 인터넷에서 보이지 않음 |
+| admin 비밀번호 유출 시 즉시 전세계 노출 | SSH authorized_keys 에 없으면 접근 불가 |
+| 봇 스캐너의 `/login` `/api/datasources` 등 probing | 공개 포트 없음, 스캔 대상 아님 |
+
+**비용**: 발표 시 데모 머신에 SSH key + tunnel 명령 필요. 링크 공유 불가 (스크린쉐어로 대체).
+
+### Nginx 동작 방식 (현재)
+
+```nginx
+# grafana.dotshelf.digital 호스트로 들어오는 요청은
+# 명시된 server 블록이 없으므로 default_server 블록에 걸림:
+server {
+    listen 443 ssl default_server;
+    server_name _;
+    return 444;   # Nginx 가 응답 없이 connection close
+}
+```
+
+- DNS 는 Cloudflare 에 `grafana → 3.38.240.110 (proxied)` 로 유지됨 (제거해도 무방)
+- Cloudflare 가 origin 444 를 받으면 클라이언트에 **520 "Web server is returning an unknown error"** 를 반환
+- 외부 공격자 관점: "서브도메인은 있는데 origin 이 응답 안 함" → 추가 공격 포기
+
+### 접근 방법
+
+#### 방법 1: 매번 수동으로 tunnel
+
+```bash
+ssh -L 3000:172.17.0.1:3000 dotshelf
+# 세션 유지한 채로 브라우저 → http://localhost:3000
+```
+
+#### 방법 2: `~/.ssh/config` alias 로 1줄 접속
+
+`~/.ssh/config` 에 추가:
+
+```
+Host dotshelf-grafana
+    HostName 3.38.240.110
+    User ubuntu
+    IdentityFile ~/.ssh/dotshelf.pem
+    LocalForward 3000 172.17.0.1:3000
+    ServerAliveInterval 60
+```
+
+이후 접속:
+```bash
+ssh dotshelf-grafana
+# 다른 탭에서 브라우저 → http://localhost:3000
+```
+
+#### 방법 3: 백그라운드 tunnel (세션 유지하고 싶지 않을 때)
+
+```bash
+ssh -L 3000:172.17.0.1:3000 -N -f dotshelf
+# → 프로세스가 백그라운드로 내려감. 브라우저에서 http://localhost:3000 바로 접속 가능
+# 해제: pkill -f 'ssh -L 3000:172.17.0.1:3000'
+```
+
+### 팀원 온보딩 (신규 팀원 합류 시)
+
+1. 신규 팀원이 자신의 `~/.ssh/id_ed25519.pub` (또는 다른 공개키) 를 기존 팀원에게 공유
+2. 기존 팀원이 prod 호스트에 등록:
+   ```bash
+   ssh dotshelf "echo 'ssh-ed25519 AAAA... name@host' >> ~/.ssh/authorized_keys"
+   ```
+3. 신규 팀원은 자신의 머신에서 `ssh -L 3000:172.17.0.1:3000 ubuntu@3.38.240.110` 로 접속 확인
+
+### 팀원 이탈 시
+
+`ssh dotshelf` 로 들어가서 `~/.ssh/authorized_keys` 에서 해당 줄 삭제. 즉시 효력 발생.
+
+### 발표 리허설 체크리스트
+
+발표 하루 전 반드시 확인:
+- [ ] 데모 머신에 SSH key 있고 prod 접속 됨
+- [ ] `ssh -L 3000:172.17.0.1:3000 dotshelf` 터널 생성 성공
+- [ ] 브라우저에서 `http://localhost:3000` 로 Grafana 로그인 페이지 표시
+- [ ] 대시보드 "DotShelf · Blue-Green 관측" 접근
+- [ ] 스크린쉐어 시 화면 선명
+- [ ] (옵션) Blue-Green 실시간 배포 시연 준비 — 색별 RPS X자 그래프 관찰
+
+### 다시 공개 URL 로 되돌리려면
+
+위 [§7-3 Nginx grafana 서브도메인 복구](#7-3-nginx-grafana-서브도메인만-내리기) 의 반대로:
+1. `deploy/prod/nginx/conf.d/default.conf` 에 `upstream dotshelf_grafana` + `server { server_name grafana.dotshelf.digital; ... }` 블록 복원
+2. WebSocket upgrade map 복원 (`map $http_upgrade $connection_upgrade`)
+3. `docker exec dotshelf-nginx nginx -t && docker exec dotshelf-nginx nginx -s reload`
+
+단, 공개 URL 복원 시 **반드시 Basic Auth / Cloudflare Access 등 추가 인증 레이어** 를 같이 도입할 것. 단순 Grafana 로그인만 노출하는 구성으로 되돌리지 말 것.
