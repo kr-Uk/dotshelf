@@ -89,7 +89,7 @@ backend:deploy:
     # --- Blue-Green orchestration ---
     - sh .ci/deploy-blue-green.sh
     # --- Evidence: 30s post-cutover polling (informational, non-blocking) ---
-    - sh .ci/poll-health.sh "https://api.dotshelf.digital/api/health" 30 || echo "⚠️ 배포 후 30초 폴링에서 실패 감지"
+    - sh .ci/poll-health.sh "https://api.dotshelf.digital/health" 30 || echo "⚠️ 배포 후 30초 폴링에서 실패 감지"
   environment:
     name: dev
     url: https://api.dotshelf.digital

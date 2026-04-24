@@ -272,7 +272,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 **인증 필요 없는 URL** 은 `SecurityConfig` 의 whitelist 에 등록:
 ```java
 private static final String[] PUBLIC_ENDPOINTS = {
-    "/api/health",
+    "/health",
     "/actuator/health",
     "/v1/auth/**",      // 로그인 자체는 인증 안 된 상태에서 해야 하므로 제외
     "/swagger-ui/**",
@@ -359,7 +359,7 @@ Body: { "refreshToken": "eyJ..." }
 - 현재 prod / SSAFY 양쪽 서버에 동일 값 박혀있음.
 - 유출 시 **즉시 새 값으로 교체** 하고 모든 활성 토큰 무효화 (유저 전원 재로그인 필요).
 
-### Q. `/v1/auth/**` 가 인증 없이 되는 건 알겠는데, `/api/health` 는 왜 열어둠?
+### Q. `/v1/auth/**` 가 인증 없이 되는 건 알겠는데, `/health` 는 왜 열어둠?
 - 헬스체크는 외부 모니터링/로드밸런서가 로그인 없이 호출해야 함
 - CI/CD 파이프라인도 이 엔드포인트 씀
 - 민감한 정보 안 주므로 공개해도 안전

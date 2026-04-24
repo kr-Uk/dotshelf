@@ -14,7 +14,7 @@
 #
 set -u
 
-URL=${1:-${HEALTH_URL_PUBLIC:-https://api.dotshelf.digital/api/health}}
+URL=${1:-${HEALTH_URL_PUBLIC:-https://api.dotshelf.digital/health}}
 DURATION=${2:-60}
 
 end_ts=$(( $(date +%s) + DURATION ))

@@ -21,7 +21,7 @@ import lombok.RequiredArgsConstructor;
 public class SecurityConfig {
 
     private static final String[] PUBLIC_ENDPOINTS = {
-            "/api/health",
+            "/health",
             "/actuator/health",
             "/actuator/health/**",
             // Prometheus 스크레이프용. 공개 Nginx 에서 /actuator 는 404 차단되므로

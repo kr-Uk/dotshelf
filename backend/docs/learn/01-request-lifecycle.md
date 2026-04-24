@@ -74,7 +74,7 @@ DNS 답: "3.38.240.110 이야"
 
 ## 2. 전체 여정 미리 보기
 
-우리 프로젝트에서 **`curl https://api.dotshelf.digital/api/health`** 한 번이 갈 길:
+우리 프로젝트에서 **`curl https://api.dotshelf.digital/health`** 한 번이 갈 길:
 
 ```
  ①              ②                   ③                 ④
@@ -104,7 +104,7 @@ DNS 답: "3.38.240.110 이야"
 
 예:
 ```
-GET https://api.dotshelf.digital/api/health
+GET https://api.dotshelf.digital/health
 ```
 
 > **왜 `https://` ?**
@@ -289,11 +289,11 @@ Controller 가 내보내는 데이터는 `ApiResponse` 라는 공통 포장지�
 
 ---
 
-## 4. 실제 예시: `/api/health` 호출하면?
+## 4. 실제 예시: `/health` 호출하면?
 
 간단한 헬스체크 요청을 따라가보면:
 
-1. `curl https://api.dotshelf.digital/api/health`
+1. `curl https://api.dotshelf.digital/health`
 2. DNS → Cloudflare IP 받음
 3. Cloudflare → 통과 (캐시 안 되는 동적 엔드포인트)
 4. 영구 서버 443 → Nginx

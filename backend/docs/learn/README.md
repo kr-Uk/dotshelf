@@ -124,7 +124,7 @@
 - **API** — Application Programming Interface. "기계 간 대화 규칙". 예: `GET /api/books/1` 를 보내면 책 1번 정보가 돌아옴
 - **HTTP** — 웹에서 쓰는 대화 프로토콜. "메시지를 어떤 형식으로 주고받을지" 정해놓은 규칙
 - **HTTPS** — HTTP 인데 내용이 암호화된 것 (S = Secure)
-- **URL** — 웹 주소. 예: `https://api.dotshelf.digital/api/health`
+- **URL** — 웹 주소. 예: `https://api.dotshelf.digital/health`
 - **IP 주소** — 컴퓨터마다 달린 숫자 번호표. 예: `3.38.240.110`
 - **포트(port)** — 같은 IP 안에서 어느 프로그램에 갈지 구분하는 번호. 예: `:5432` = PostgreSQL
 - **서버** — 늘 켜져서 요청을 받아주는 컴퓨터
