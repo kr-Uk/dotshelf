@@ -253,12 +253,6 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (CurrentFocusArea == ExperienceFocusArea.QuarterView && TryHitBookshelf())
-            {
-                FocusBookshelf();
-                return;
-            }
-
             if (TryHitNotebook())
             {
                 FocusNotebook();
@@ -268,6 +262,12 @@ namespace BookshelfPorting.Runtime
             if (TryHitGuestbookBoard())
             {
                 FocusGuestbook();
+                return;
+            }
+
+            if (CurrentFocusArea == ExperienceFocusArea.QuarterView && TryHitBookshelf())
+            {
+                FocusBookshelf();
                 return;
             }
         }
@@ -763,12 +763,13 @@ namespace BookshelfPorting.Runtime
             focusBackButton = CreateButton(canvasObject.transform, "FocusBackButton", "Back", new Vector2(20f, -20f), ReturnToQuarterView, new Vector2(120f, 44f), new Vector2(0f, 1f));
             StyleHudPanel(focusBackButton.GetComponent<Image>(), new Color(0.08f, 0.09f, 0.11f, 0.78f));
 
-            hamburgerMenuPanel = CreatePanel(canvasObject.transform, "HamburgerMenuPanel", new Vector2(-20f, -74f), new Vector2(190f, 204f), new Vector2(1f, 1f));
+            hamburgerMenuPanel = CreatePanel(canvasObject.transform, "HamburgerMenuPanel", new Vector2(-20f, -74f), new Vector2(190f, 252f), new Vector2(1f, 1f));
             StyleHudPanel(hamburgerMenuPanel.GetComponent<Image>(), new Color(0.08f, 0.09f, 0.11f, 0.84f));
             CreateButton(hamburgerMenuPanel.transform, "QuarterViewButton", "Quarter View", new Vector2(-10f, -10f), () => RunMenuAction(FocusQuarterView));
             CreateButton(hamburgerMenuPanel.transform, "BookshelfButton", "Bookshelf", new Vector2(-10f, -58f), () => RunMenuAction(FocusBookshelf));
-            CreateButton(hamburgerMenuPanel.transform, "GuestbookButton", "Guestbook", new Vector2(-10f, -106f), () => RunMenuAction(FocusGuestbook));
-            editModeButton = CreateButton(hamburgerMenuPanel.transform, "EditModeButton", "Edit Mode: Off", new Vector2(-10f, -154f), () => RunMenuAction(ToggleEditMode));
+            CreateButton(hamburgerMenuPanel.transform, "NotebookButton", "Notebook", new Vector2(-10f, -106f), () => RunMenuAction(FocusNotebook));
+            CreateButton(hamburgerMenuPanel.transform, "GuestbookButton", "Guestbook", new Vector2(-10f, -154f), () => RunMenuAction(FocusGuestbook));
+            editModeButton = CreateButton(hamburgerMenuPanel.transform, "EditModeButton", "Edit Mode: Off", new Vector2(-10f, -202f), () => RunMenuAction(ToggleEditMode));
 
             editModePanel = CreatePanel(canvasObject.transform, "BookshelfStatusPanel", new Vector2(20f, -76f), new Vector2(372f, 110f), new Vector2(0f, 1f));
             StyleHudPanel(editModePanel.GetComponent<Image>(), new Color(0.08f, 0.10f, 0.13f, 0.78f));
@@ -925,7 +926,8 @@ namespace BookshelfPorting.Runtime
 
             if (focusBackButton != null)
             {
-                var showBackButton = CurrentFocusArea != ExperienceFocusArea.QuarterView;
+                var showBackButton = CurrentFocusArea != ExperienceFocusArea.QuarterView &&
+                                     CurrentFocusArea != ExperienceFocusArea.Notebook;
                 focusBackButton.gameObject.SetActive(showBackButton);
                 focusBackButton.interactable = showBackButton && (cameraController == null || !cameraController.IsTransitioning);
                 StyleHudButton(
@@ -2844,7 +2846,11 @@ namespace BookshelfPorting.Runtime
             }
 
             var screenTransform = notebookScreenController.transform.Find("Screen");
-            notebookScreenController.Configure(screenTransform, Camera.main, () => notebookScreenController.ReturnToScreenSaver());
+            notebookScreenController.Configure(
+                screenTransform,
+                Camera.main,
+                () => notebookScreenController.ReturnToScreenSaver(),
+                CloseNotebookFocus);
         }
 
         private void ShowNotebookScreen()

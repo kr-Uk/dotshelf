@@ -1,0 +1,3 @@
+.notebook-dashboard-placeholder {
+    display: none;
+}

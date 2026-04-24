@@ -29,5 +29,6 @@
 
 .DS_Store
 .build/
+output/
 apple/DotshelfRealityKit/swiftStudy/
 frontend/SOCIAL_LOGIN_SETUP_PRIVATE.md
