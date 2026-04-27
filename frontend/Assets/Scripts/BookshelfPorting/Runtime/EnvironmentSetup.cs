@@ -38,6 +38,8 @@ namespace BookshelfPorting.Runtime
             {
                 reflectionProbe.mode = UnityEngine.Rendering.ReflectionProbeMode.Realtime;
                 reflectionProbe.refreshMode = UnityEngine.Rendering.ReflectionProbeRefreshMode.ViaScripting;
+                reflectionProbe.timeSlicingMode = UnityEngine.Rendering.ReflectionProbeTimeSlicingMode.IndividualFaces;
+                reflectionProbe.resolution = 64;
                 reflectionProbe.intensity = 1f;
                 reflectionProbe.size = new Vector3(4.2f, 2.8f, 4.2f);
                 reflectionProbe.RenderProbe();
@@ -72,7 +74,9 @@ namespace BookshelfPorting.Runtime
             light.color = color;
             light.intensity = intensity;
             light.range = range;
-            light.shadows = LightShadows.Soft;
+            light.shadows = name == "WarmDirectional" ? LightShadows.Hard : LightShadows.None;
+            light.shadowStrength = name == "WarmDirectional" ? 0.42f : 0f;
+            light.shadowResolution = UnityEngine.Rendering.LightShadowResolution.Low;
             return light;
         }
     }

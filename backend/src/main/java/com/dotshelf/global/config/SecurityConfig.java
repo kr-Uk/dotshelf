@@ -11,18 +11,22 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import com.dotshelf.global.security.JwtAuthenticationFilter;
 import com.dotshelf.global.security.JwtProperties;
 import com.dotshelf.global.security.SecurityEntryPoints;
+import com.dotshelf.global.security.SocialLoginProperties;
 
 import lombok.RequiredArgsConstructor;
 
 @Configuration
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, SocialLoginProperties.class})
 @RequiredArgsConstructor
 public class SecurityConfig {
 
     private static final String[] PUBLIC_ENDPOINTS = {
-            "/api/health",
+            "/health",
             "/actuator/health",
             "/actuator/health/**",
+            // Prometheus 스크레이프용. 공개 Nginx 에서 /actuator 는 404 차단되므로
+            // 실제 접근은 Tailscale 내부(prod 호스트의 Prometheus)에서만 가능.
+            "/actuator/prometheus",
             "/v1/auth/**",
             "/swagger-ui/**",
             "/swagger-ui.html",

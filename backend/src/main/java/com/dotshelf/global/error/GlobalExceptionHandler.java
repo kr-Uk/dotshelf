@@ -3,6 +3,7 @@ package com.dotshelf.global.error;
 import java.util.stream.Collectors;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
@@ -43,6 +44,15 @@ public class GlobalExceptionHandler {
                         ErrorCode.INVALID_INPUT.getCode(),
                         message
                 ));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNotReadable(HttpMessageNotReadableException e) {
+        log.warn("HttpMessageNotReadableException: {}", e.getMessage());
+        ErrorCode errorCode = ErrorCode.INVALID_INPUT;
+        return ResponseEntity
+                .status(errorCode.getStatus())
+                .body(ApiResponse.error(errorCode.getStatus().value(), errorCode.getCode(), errorCode.getMessage()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

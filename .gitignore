@@ -1,5 +1,6 @@
 .DS_Store
 .build/
+output/
 apple/DotshelfRealityKit/swiftStudy/
 /[Aa]ssets/
 /[Pp]ackages/
@@ -29,3 +30,4 @@ apple/DotshelfRealityKit/swiftStudy/
 *.mdb
 *.opendb
 *.VC.db
+frontend/SOCIAL_LOGIN_SETUP_PRIVATE.md

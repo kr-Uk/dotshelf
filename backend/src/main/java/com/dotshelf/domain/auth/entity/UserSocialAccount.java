@@ -1,11 +1,13 @@
 package com.dotshelf.domain.auth.entity;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import com.dotshelf.global.common.BaseEntity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -35,8 +37,9 @@ public class UserSocialAccount extends BaseEntity {
     @Column(nullable = false)
     private Long userId;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
-    private String provider;
+    private SocialProvider provider;
 
     @Column(nullable = false, length = 100)
     private String providerUserId;
@@ -45,10 +48,10 @@ public class UserSocialAccount extends BaseEntity {
     private String emailAtProvider;
 
     @Column(nullable = false)
-    private LocalDateTime linkedAt = LocalDateTime.now();
+    private Instant linkedAt = Instant.now();
 
     @Builder
-    private UserSocialAccount(Long userId, String provider, String providerUserId, String emailAtProvider) {
+    private UserSocialAccount(Long userId, SocialProvider provider, String providerUserId, String emailAtProvider) {
         this.userId = userId;
         this.provider = provider;
         this.providerUserId = providerUserId;

@@ -163,14 +163,14 @@ cd backend
 2. Docker compose 의존성 서비스 확인
 3. 빌드
 4. 테스트
-5. 앱 부팅 + 헬스체크 (`/api/health` 200 확인)
+5. 앱 부팅 + 헬스체크 (`/health` 200 확인)
 6. 백그라운드 프로세스 정리
 
 **리포트**:
 ```
 ✅ 빌드: 23s
 ✅ 테스트: 47 passed
-✅ 부팅 smoke: /api/health → 200
+✅ 부팅 smoke: /health → 200
 
 → push 안전합니다.
 ```

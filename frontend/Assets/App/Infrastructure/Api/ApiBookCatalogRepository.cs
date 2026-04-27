@@ -5,6 +5,7 @@ using App.Application.Books;
 using App.Domain;
 using App.Infrastructure.Api.Dtos;
 using Newtonsoft.Json;
+using UnityEngine;
 
 namespace App.Infrastructure.Api
 {
@@ -38,9 +39,9 @@ namespace App.Infrastructure.Api
                     return MapToCatalog(items);
                 }
             }
-            catch (Exception)
+            catch (Exception exception)
             {
-                // Runtime demo should stay usable when the mock server is not running.
+                Debug.LogWarning($"Book catalog API fallback is active: {baseUrl} ({exception.Message})");
             }
 
             return fallbackRepository != null
@@ -56,7 +57,7 @@ namespace App.Infrastructure.Api
                 var url = $"{baseUrl}/v1/books?category=RANKING&limit={Rows * Columns * BooksPerSection}";
                 var json = client.GetStringAsync(url).GetAwaiter().GetResult();
                 var envelope = JsonConvert.DeserializeObject<ApiEnvelopeDto<BookListResponseDto>>(json);
-                if (envelope == null || !envelope.IsSuccess || envelope.Result == null)
+                if (envelope == null || !envelope.Succeeded || envelope.Result == null)
                 {
                     return null;
                 }
@@ -154,7 +155,7 @@ namespace App.Infrastructure.Api
         {
             if (string.IsNullOrWhiteSpace(value))
             {
-                return "http://localhost:3001";
+                return "https://api.dotshelf.digital";
             }
 
             return value.Trim().TrimEnd('/');

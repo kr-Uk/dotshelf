@@ -1,9 +1,11 @@
 {
   "pathsToIds" : {
-    "\/BasicAssets\/Sources\/BasicAssets\/BasicAssets.rkassets\/Scene.usda" : "E31FA0FA-9C4D-41F5-A289-4C891DEE2EF7"
+    "\/BasicAssets\/Sources\/BasicAssets\/BasicAssets.rkassets\/Scene.usda" : "E31FA0FA-9C4D-41F5-A289-4C891DEE2EF7",
+    "BasicAssets\/Sources\/BasicAssets\/BasicAssets.rkassets\/Scene.usda" : "C484F27D-2D8E-4187-9D58-F62633095278"
   },
   "projectID" : 7410559523989120601,
   "uuidToIntID" : {
+    "C484F27D-2D8E-4187-9D58-F62633095278" : -6065165740902574778,
     "E31FA0FA-9C4D-41F5-A289-4C891DEE2EF7" : 76991698126246196
   }
 }

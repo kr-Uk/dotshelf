@@ -216,7 +216,7 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
 3. 토큰 만료/서명 오류는 `401 A003` (`ErrorCode.INVALID_TOKEN`)
 
 ### 화이트리스트 (SecurityConfig)
-- `/api/health`
+- `/health`
 - `/api/auth/**` (로그인/리프레시)
 - `/swagger-ui/**`, `/v3/api-docs/**`
 - 나머지는 `authenticated()`

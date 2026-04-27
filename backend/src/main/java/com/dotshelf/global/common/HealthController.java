@@ -9,7 +9,6 @@ import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
 import org.springframework.boot.health.contributor.Status;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,7 +18,6 @@ import lombok.RequiredArgsConstructor;
 
 @Tag(name = "Health", description = "서비스 상태 확인")
 @RestController
-@RequestMapping("/api")
 @RequiredArgsConstructor
 public class HealthController {
 
