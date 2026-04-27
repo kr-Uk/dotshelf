@@ -12,12 +12,18 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.dotshelf.domain.book.dto.BookDtos.AddBookToShelfRequest;
 import com.dotshelf.domain.book.dto.BookDtos.AddKakaoBookToShelfRequest;
+import com.dotshelf.domain.book.dto.BookDtos.BookListResponse;
 import com.dotshelf.domain.book.dto.BookDtos.BookResponse;
+import com.dotshelf.domain.book.dto.BookDtos.BookReviewListResponse;
+import com.dotshelf.domain.book.dto.BookDtos.BookReviewRequest;
+import com.dotshelf.domain.book.dto.BookDtos.BookReviewResponse;
 import com.dotshelf.domain.book.dto.BookDtos.BookSearchListResponse;
 import com.dotshelf.domain.book.dto.BookDtos.MoveUserBookRequest;
 import com.dotshelf.domain.book.dto.BookDtos.UpdateUserBookRequest;
 import com.dotshelf.domain.book.dto.BookDtos.UserBookListResponse;
+import com.dotshelf.domain.book.dto.BookDtos.UserBookPlacementListResponse;
 import com.dotshelf.domain.book.dto.BookDtos.UserBookResponse;
+import com.dotshelf.domain.book.service.BookReviewService;
 import com.dotshelf.domain.book.service.BookService;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
@@ -35,6 +41,7 @@ import lombok.RequiredArgsConstructor;
 public class BookController {
 
     private final BookService bookService;
+    private final BookReviewService bookReviewService;
 
     @Operation(summary = "도서 검색", description = "로컬 도서와 Kakao 도서 검색 결과를 함께 조회합니다.")
     @GetMapping("/books/search")
@@ -46,9 +53,48 @@ public class BookController {
         return ApiResponse.success(bookService.searchBooks(keyword, page, size));
     }
 
+    @GetMapping("/books/recommended")
+    public ApiResponse<BookListResponse> recommended(
+            @CurrentUser Long userId,
+            @RequestParam(defaultValue = "12") int limit
+    ) {
+        return ApiResponse.success(bookService.getRecommended(userId, limit));
+    }
+
+    @GetMapping("/books/ranking")
+    public ApiResponse<BookListResponse> ranking(
+            @CurrentUser Long userId,
+            @RequestParam(required = false) String genre,
+            @RequestParam(required = false) String priceType,
+            @RequestParam(defaultValue = "POPULAR") String sort,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") int limit
+    ) {
+        return ApiResponse.success(bookService.getRanking(userId, sort, limit));
+    }
+
     @GetMapping("/books/{bookId}")
-    public ApiResponse<BookResponse> getBook(@PathVariable Long bookId) {
-        return ApiResponse.success(bookService.getBook(bookId));
+    public ApiResponse<BookResponse> getBook(@CurrentUser Long userId, @PathVariable Long bookId) {
+        return ApiResponse.success(bookService.getBook(userId, bookId));
+    }
+
+    @GetMapping("/books/{bookId}/reviews")
+    public ApiResponse<BookReviewListResponse> getReviews(
+            @PathVariable Long bookId,
+            @RequestParam(defaultValue = "POPULAR") String sort,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") int limit
+    ) {
+        return ApiResponse.success(bookReviewService.getReviews(bookId, sort, limit));
+    }
+
+    @PostMapping("/books/{bookId}/reviews")
+    public ApiResponse<BookReviewResponse> createReview(
+            @CurrentUser Long userId,
+            @PathVariable Long bookId,
+            @RequestBody @Valid BookReviewRequest request
+    ) {
+        return ApiResponse.success(bookReviewService.createReview(userId, bookId, request));
     }
 
     @PostMapping("/bookshelves/{bookshelfId}/books")
@@ -102,6 +148,26 @@ public class BookController {
     @GetMapping("/user-books/archived")
     public ApiResponse<UserBookListResponse> getArchived(@CurrentUser Long userId) {
         return ApiResponse.success(bookService.getArchived(userId));
+    }
+
+    @GetMapping("/user-books")
+    public ApiResponse<UserBookPlacementListResponse> getUserBooks(
+            @CurrentUser Long userId,
+            @RequestParam(required = false) String storageStatus,
+            @RequestParam(required = false) String readingStatus,
+            @RequestParam(required = false) Long bookshelfId,
+            @RequestParam(required = false) Long sectionId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "50") int limit
+    ) {
+        return ApiResponse.success(bookService.getUserBooks(
+                userId,
+                storageStatus,
+                readingStatus,
+                bookshelfId,
+                sectionId,
+                limit
+        ));
     }
 
     @PostMapping("/user-books/{userBookId}/like")

@@ -3,6 +3,7 @@ package com.dotshelf.domain.asset.dto;
 import java.util.List;
 
 import com.dotshelf.domain.asset.entity.Asset;
+import com.dotshelf.domain.asset.entity.AssetCategory;
 import com.dotshelf.domain.asset.entity.AssetPurchase;
 import com.dotshelf.domain.asset.entity.UserAssetInventory;
 
@@ -41,6 +42,26 @@ public final class AssetDtos {
     }
 
     public record AssetListResponse(List<AssetResponse> assets) {
+    }
+
+    public record AssetCategoryResponse(
+            Long categoryId,
+            String code,
+            String name,
+            int displayOrder
+    ) {
+
+        public static AssetCategoryResponse from(AssetCategory category) {
+            return new AssetCategoryResponse(
+                    category.getId(),
+                    category.getCode(),
+                    category.getName(),
+                    category.getDisplayOrder()
+            );
+        }
+    }
+
+    public record AssetCategoryListResponse(List<AssetCategoryResponse> categories) {
     }
 
     public record InventoryResponse(List<Long> assetIds) {

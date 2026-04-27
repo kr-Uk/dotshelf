@@ -1,27 +1,35 @@
 package com.dotshelf.domain.book.service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dotshelf.domain.book.dto.BookDtos.AddBookToShelfRequest;
 import com.dotshelf.domain.book.dto.BookDtos.AddKakaoBookToShelfRequest;
+import com.dotshelf.domain.book.dto.BookDtos.BookListResponse;
 import com.dotshelf.domain.book.dto.BookDtos.BookResponse;
 import com.dotshelf.domain.book.dto.BookDtos.BookSearchListResponse;
 import com.dotshelf.domain.book.dto.BookDtos.BookSearchResponse;
 import com.dotshelf.domain.book.dto.BookDtos.MoveUserBookRequest;
 import com.dotshelf.domain.book.dto.BookDtos.UpdateUserBookRequest;
 import com.dotshelf.domain.book.dto.BookDtos.UserBookListResponse;
+import com.dotshelf.domain.book.dto.BookDtos.UserBookPlacementListResponse;
+import com.dotshelf.domain.book.dto.BookDtos.UserBookPlacementResponse;
 import com.dotshelf.domain.book.dto.BookDtos.UserBookResponse;
 import com.dotshelf.domain.book.entity.Book;
 import com.dotshelf.domain.book.entity.UserBook;
 import com.dotshelf.domain.book.repository.BookRepository;
+import com.dotshelf.domain.book.repository.BookReviewRepository;
 import com.dotshelf.domain.book.repository.UserBookRepository;
 import com.dotshelf.domain.bookshelf.entity.BookshelfItem;
 import com.dotshelf.domain.bookshelf.repository.BookshelfItemRepository;
@@ -42,13 +50,17 @@ public class BookService {
     private static final int MAX_SEARCH_PAGE = 50;
     private static final int MIN_SEARCH_SIZE = 1;
     private static final int MAX_SEARCH_SIZE = 50;
+    private static final int DEFAULT_LIST_LIMIT = 20;
+    private static final int MAX_LIST_LIMIT = 50;
     private static final int MAX_TITLE_LENGTH = 255;
     private static final int MAX_AUTHOR_LENGTH = 255;
     private static final int MAX_PUBLISHER_LENGTH = 255;
     private static final int MAX_DESCRIPTION_LENGTH = 5000;
     private static final int MAX_COVER_IMAGE_URL_LENGTH = 500;
+    private static final String ACTIVE = "ACTIVE";
 
     private final BookRepository bookRepository;
+    private final BookReviewRepository bookReviewRepository;
     private final UserBookRepository userBookRepository;
     private final BookshelfItemRepository bookshelfItemRepository;
     private final BookshelfService bookshelfService;
@@ -78,7 +90,33 @@ public class BookService {
     }
 
     public BookResponse getBook(Long bookId) {
-        return BookResponse.from(getBookEntity(bookId));
+        return toBookResponse(getBookEntity(bookId), null, null);
+    }
+
+    @Transactional
+    public BookResponse getBook(Long userId, Long bookId) {
+        Book book = getBookEntity(bookId);
+        book.increaseViewCount();
+        return toBookResponse(book, userId, null);
+    }
+
+    public BookListResponse getRecommended(Long userId, int limit) {
+        int validLimit = validateListLimit(limit);
+        List<Book> books = bookRepository.findAll().stream()
+                .sorted(Comparator.comparing(this::recommendedScore).reversed()
+                        .thenComparing(Book::getId, Comparator.reverseOrder()))
+                .limit(validLimit)
+                .toList();
+        return toBookListResponse(books, userId, false);
+    }
+
+    public BookListResponse getRanking(Long userId, String sort, int limit) {
+        int validLimit = validateListLimit(limit);
+        List<Book> books = bookRepository.findAll().stream()
+                .sorted(rankingComparator(sort))
+                .limit(validLimit)
+                .toList();
+        return toBookListResponse(books, userId, true);
     }
 
     @Transactional
@@ -195,6 +233,31 @@ public class BookService {
                 .toList());
     }
 
+    public UserBookPlacementListResponse getUserBooks(
+            Long userId,
+            String storageStatus,
+            String readingStatus,
+            Long bookshelfId,
+            Long sectionId,
+            int limit
+    ) {
+        Long currentUserId = userService.requireUserId(userId);
+        int validLimit = validateListLimit(limit);
+        List<UserBook> userBooks = userBookRepository.findByUserIdAndStorageStatusNotOrderByAddedAtDesc(currentUserId, "DELETED")
+                .stream()
+                .filter(userBook -> matches(storageStatus, userBook.getStorageStatus()))
+                .filter(userBook -> matches(readingStatus, userBook.getReadingStatus()))
+                .toList();
+        Map<Long, BookshelfItem> itemMap = activeItemMap(userBooks);
+        List<UserBookPlacementResponse> books = userBooks.stream()
+                .map(userBook -> toPlacementResponse(userBook, itemMap.get(userBook.getId())))
+                .filter(response -> bookshelfId == null || bookshelfId.equals(response.bookshelfId()))
+                .filter(response -> sectionId == null || sectionId.equals(response.sectionId()))
+                .limit(validLimit)
+                .toList();
+        return new UserBookPlacementListResponse(books, null);
+    }
+
     @Transactional
     public ToggleResponse like(Long userId, Long userBookId) {
         Long currentUserId = userService.requireUserId(userId);
@@ -235,6 +298,138 @@ public class BookService {
                 .stream()
                 .map(BookSearchResponse::from)
                 .toList();
+    }
+
+    private BookListResponse toBookListResponse(List<Book> books, Long userId, boolean includeRank) {
+        Map<Long, UserBook> ownedBooks = ownedBooks(userId, books);
+        Map<Long, Long> reviewCounts = reviewCounts(books);
+        List<BookResponse> items = new ArrayList<>();
+        for (int i = 0; i < books.size(); i++) {
+            Book book = books.get(i);
+            UserBook userBook = ownedBooks.get(book.getId());
+            items.add(BookResponse.from(
+                    book,
+                    userBook != null,
+                    userBook == null ? null : userBook.getId(),
+                    reviewCounts.getOrDefault(book.getId(), 0L),
+                    includeRank ? i + 1 : null
+            ));
+        }
+        return new BookListResponse(items, null);
+    }
+
+    private BookResponse toBookResponse(Book book, Long userId, Integer rank) {
+        UserBook userBook = userId == null
+                ? null
+                : userBookRepository.findByUserIdAndBookId(userId, book.getId()).orElse(null);
+        return BookResponse.from(
+                book,
+                userBook != null,
+                userBook == null ? null : userBook.getId(),
+                bookReviewRepository.countByBookIdAndStatus(book.getId(), ACTIVE),
+                rank
+        );
+    }
+
+    private Map<Long, UserBook> ownedBooks(Long userId, List<Book> books) {
+        if (userId == null || books.isEmpty()) {
+            return Map.of();
+        }
+        Set<Long> bookIds = books.stream()
+                .map(Book::getId)
+                .collect(Collectors.toSet());
+        return userBookRepository.findByUserIdAndStorageStatusNot(userId, "DELETED").stream()
+                .filter(userBook -> bookIds.contains(userBook.getBookId()))
+                .collect(Collectors.toMap(UserBook::getBookId, Function.identity(), (left, right) -> left));
+    }
+
+    private Map<Long, Long> reviewCounts(List<Book> books) {
+        if (books.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> bookIds = books.stream()
+                .map(Book::getId)
+                .toList();
+        return bookReviewRepository.findByBookIdInAndStatus(bookIds, ACTIVE).stream()
+                .collect(Collectors.groupingBy(review -> review.getBookId(), Collectors.counting()));
+    }
+
+    private Map<Long, BookshelfItem> activeItemMap(List<UserBook> userBooks) {
+        List<Long> userBookIds = userBooks.stream()
+                .map(UserBook::getId)
+                .toList();
+        if (userBookIds.isEmpty()) {
+            return Map.of();
+        }
+        return bookshelfItemRepository.findByUserBookIdInAndStatus(userBookIds, ACTIVE).stream()
+                .collect(Collectors.toMap(BookshelfItem::getUserBookId, Function.identity(), (left, right) -> left));
+    }
+
+    private UserBookPlacementResponse toPlacementResponse(UserBook userBook, BookshelfItem item) {
+        return new UserBookPlacementResponse(
+                userBook.getId(),
+                userBook.getUserId(),
+                userBook.getBookId(),
+                userBook.getReadingStatus(),
+                userBook.getStorageStatus(),
+                userBook.getOwnerRating(),
+                userBook.isLiked(),
+                item == null ? null : item.getBookshelfId(),
+                item == null ? null : item.getBookshelfSectionId(),
+                item == null ? null : item.getSlotNo(),
+                item == null ? null : item.getDisplayStyle()
+        );
+    }
+
+    private Comparator<Book> rankingComparator(String sort) {
+        if ("RATING".equalsIgnoreCase(sort)) {
+            return Comparator.comparing(this::averageRating)
+                    .reversed()
+                    .thenComparing(Book::getId, Comparator.reverseOrder());
+        }
+        if ("REVIEW".equalsIgnoreCase(sort)) {
+            return Comparator.comparing(Book::getRatingCount)
+                    .reversed()
+                    .thenComparing(Book::getId, Comparator.reverseOrder());
+        }
+        if ("VIEW".equalsIgnoreCase(sort)) {
+            return Comparator.comparing(Book::getViewCount)
+                    .reversed()
+                    .thenComparing(Book::getId, Comparator.reverseOrder());
+        }
+        if ("RECORD".equalsIgnoreCase(sort)) {
+            return Comparator.comparing(Book::getBookshelfAddCount)
+                    .reversed()
+                    .thenComparing(Book::getId, Comparator.reverseOrder());
+        }
+        if ("RECENT".equalsIgnoreCase(sort)) {
+            return Comparator.comparing(Book::getId, Comparator.reverseOrder());
+        }
+        return Comparator.comparing(this::popularScore)
+                .reversed()
+                .thenComparing(Book::getId, Comparator.reverseOrder());
+    }
+
+    private double recommendedScore(Book book) {
+        return popularScore(book) + averageRating(book) * 10;
+    }
+
+    private double popularScore(Book book) {
+        return book.getBookshelfAddCount() * 3.0
+                + book.getLikeCount() * 2.0
+                + book.getViewCount()
+                + book.getRatingCount() * 2.0;
+    }
+
+    private double averageRating(Book book) {
+        if (book.getRatingCount() == 0) {
+            return 0;
+        }
+        return book.getRatingSum().doubleValue() / book.getRatingCount();
+    }
+
+    private boolean matches(String expected, String actual) {
+        return expected == null || expected.isBlank() || expected.equalsIgnoreCase(actual);
     }
 
     private List<BookSearchResponse> mergeSearchResults(
@@ -309,6 +504,13 @@ public class BookService {
             throw new CustomException(ErrorCode.INVALID_INPUT, "size는 1~50 사이여야 합니다.");
         }
         return size;
+    }
+
+    private int validateListLimit(int limit) {
+        if (limit <= 0) {
+            return DEFAULT_LIST_LIMIT;
+        }
+        return Math.min(limit, MAX_LIST_LIMIT);
     }
 
     private String requiredText(String value) {

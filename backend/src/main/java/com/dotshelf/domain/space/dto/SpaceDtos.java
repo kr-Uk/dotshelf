@@ -49,6 +49,27 @@ public final class SpaceDtos {
     ) {
     }
 
+    public record SpaceListItemResponse(
+            Long spaceId,
+            Long ownerUserId,
+            String ownerNickname,
+            String ownerProfileImageUrl,
+            String spaceName,
+            String mood,
+            String description,
+            String thumbnailUrl,
+            String visibilityScope,
+            long visitCount,
+            long likeCount,
+            long followerCount,
+            boolean liked,
+            boolean following
+    ) {
+    }
+
+    public record SpaceListResponse(List<SpaceListItemResponse> spaces, String nextCursor) {
+    }
+
     public record LayoutSaveRequest(
             @NotBlank(message = "layoutPayload은 필수입니다.")
             String layoutPayload,

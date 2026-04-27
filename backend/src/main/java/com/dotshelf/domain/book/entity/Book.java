@@ -98,6 +98,15 @@ public class Book extends BaseEntity {
         this.bookshelfAddCount += 1;
     }
 
+    public void increaseViewCount() {
+        this.viewCount += 1;
+    }
+
+    public void addReviewRating(BigDecimal rating) {
+        this.ratingSum = this.ratingSum.add(rating);
+        this.ratingCount += 1;
+    }
+
     public static String normalizeTitleSearch(String title) {
         if (title == null) {
             return null;

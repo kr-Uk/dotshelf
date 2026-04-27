@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.BookshelfItemRequest;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.BookshelfItemResponse;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.BookshelfListResponse;
+import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.BookshelfRenderResponse;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.BookshelfResponse;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.CreateBookshelfRequest;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.InteriorObjectRequest;
@@ -38,6 +39,11 @@ public class BookshelfController {
     @GetMapping("/v1/spaces/{spaceId}/bookshelves")
     public ApiResponse<BookshelfListResponse> getBookshelves(@PathVariable Long spaceId) {
         return ApiResponse.success(bookshelfService.getBookshelves(spaceId));
+    }
+
+    @GetMapping("/v1/bookshelves/{bookshelfId}/items")
+    public ApiResponse<BookshelfRenderResponse> getItems(@PathVariable Long bookshelfId) {
+        return ApiResponse.success(bookshelfService.getItems(bookshelfId));
     }
 
     @PostMapping("/v1/bookshelves")

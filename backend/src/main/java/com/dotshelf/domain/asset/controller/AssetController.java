@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetListResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryListResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetPurchaseResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.InventoryResponse;
@@ -41,6 +42,11 @@ public class AssetController {
     @GetMapping("/{assetId}")
     public ApiResponse<AssetResponse> getAsset(@CurrentUser Long userId, @PathVariable Long assetId) {
         return ApiResponse.success(assetService.getAsset(userId, assetId));
+    }
+
+    @GetMapping("/categories")
+    public ApiResponse<AssetCategoryListResponse> getCategories() {
+        return ApiResponse.success(assetService.getCategories());
     }
 
     @GetMapping("/me/inventory")

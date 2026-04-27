@@ -45,6 +45,13 @@ public class PaymentService {
                 .toList());
     }
 
+    public WalletResponse getWallet(Long userId) {
+        Long currentUserId = userService.requireUserId(userId);
+        return pageWalletRepository.findByUserId(currentUserId)
+                .map(WalletResponse::from)
+                .orElseGet(() -> new WalletResponse(currentUserId, 0));
+    }
+
     public PaymentMethodListResponse getMethods(Long userId) {
         userService.requireUserId(userId);
         return new PaymentMethodListResponse(List.of());

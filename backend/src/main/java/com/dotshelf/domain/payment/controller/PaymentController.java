@@ -39,6 +39,11 @@ public class PaymentController {
         return ApiResponse.success(paymentService.getPurchases(userId));
     }
 
+    @GetMapping("/wallet")
+    public ApiResponse<WalletResponse> getWallet(@CurrentUser Long userId) {
+        return ApiResponse.success(paymentService.getWallet(userId));
+    }
+
     @GetMapping("/methods")
     public ApiResponse<PaymentMethodListResponse> getMethods(@CurrentUser Long userId) {
         return ApiResponse.success(paymentService.getMethods(userId));

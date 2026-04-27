@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.dotshelf.domain.space.dto.SpaceDtos.DashboardResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyRequest;
@@ -38,6 +39,17 @@ public class SpaceController {
     @GetMapping("/me")
     public ApiResponse<SpaceResponse> getMySpace(@CurrentUser Long userId) {
         return ApiResponse.success(spaceService.getMySpace(userId));
+    }
+
+    @GetMapping
+    public ApiResponse<SpaceListResponse> getSpaces(
+            @CurrentUser Long userId,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "POPULAR") String sort,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") int limit
+    ) {
+        return ApiResponse.success(spaceService.getSpaces(userId, keyword, sort, limit));
     }
 
     @GetMapping("/{spaceId}")

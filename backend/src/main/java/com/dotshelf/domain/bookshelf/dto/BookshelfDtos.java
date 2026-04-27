@@ -42,6 +42,42 @@ public final class BookshelfDtos {
     public record BookshelfListResponse(List<BookshelfResponse> bookshelves) {
     }
 
+    public record BookshelfRenderResponse(
+            BookshelfResponse bookshelf,
+            List<SectionResponse> sections,
+            List<BookshelfRenderItemResponse> items
+    ) {
+    }
+
+    public record BookshelfRenderItemResponse(
+            Long bookshelfItemId,
+            String itemType,
+            Long sectionId,
+            Integer slotNo,
+            String displayStyle,
+            Long userBookId,
+            BookSummaryResponse book,
+            Long assetInventoryId,
+            AssetSummaryResponse asset
+    ) {
+    }
+
+    public record BookSummaryResponse(
+            Long bookId,
+            String title,
+            String author,
+            String coverImageUrl
+    ) {
+    }
+
+    public record AssetSummaryResponse(
+            Long assetId,
+            String code,
+            String name,
+            String previewImageUrl
+    ) {
+    }
+
     public record CreateBookshelfRequest(
             @NotNull(message = "spaceId는 필수입니다.")
             Long spaceId,
