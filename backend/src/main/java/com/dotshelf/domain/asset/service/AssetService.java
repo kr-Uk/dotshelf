@@ -7,6 +7,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetListResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryListResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetPurchaseResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.InventoryResponse;
@@ -65,6 +67,12 @@ public class AssetService {
 
     public InventoryResponse getInventory(Long userId) {
         return InventoryResponse.from(inventoryRepository.findByUserId(userService.requireUserId(userId)));
+    }
+
+    public AssetCategoryListResponse getCategories() {
+        return new AssetCategoryListResponse(assetCategoryRepository.findByIsActiveTrueOrderByDisplayOrderAsc().stream()
+                .map(AssetCategoryResponse::from)
+                .toList());
     }
 
     @Transactional

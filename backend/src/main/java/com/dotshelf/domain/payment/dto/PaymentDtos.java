@@ -1,6 +1,7 @@
 package com.dotshelf.domain.payment.dto;
 
 import java.util.List;
+import java.time.Instant;
 
 import com.dotshelf.domain.asset.entity.AssetPurchase;
 import com.dotshelf.domain.payment.entity.PageWallet;
@@ -21,10 +22,14 @@ public final class PaymentDtos {
     ) {
     }
 
-    public record WalletResponse(Long userId, int balancePages) {
+    public record WalletResponse(Long userId, int balancePages, Instant updatedAt) {
+
+        public WalletResponse(Long userId, int balancePages) {
+            this(userId, balancePages, null);
+        }
 
         public static WalletResponse from(PageWallet wallet) {
-            return new WalletResponse(wallet.getUserId(), wallet.getBalancePages());
+            return new WalletResponse(wallet.getUserId(), wallet.getBalancePages(), wallet.getUpdatedAt());
         }
     }
 

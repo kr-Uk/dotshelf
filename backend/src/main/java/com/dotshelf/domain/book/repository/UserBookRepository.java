@@ -15,5 +15,7 @@ public interface UserBookRepository extends JpaRepository<UserBook, Long> {
 
     List<UserBook> findByUserIdAndStorageStatusNot(Long userId, String storageStatus);
 
+    List<UserBook> findByUserIdAndStorageStatusNotOrderByAddedAtDesc(Long userId, String storageStatus);
+
     long countByUserIdAndStorageStatusNot(Long userId, String storageStatus);
 }

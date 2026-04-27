@@ -2,6 +2,7 @@ package com.dotshelf.domain.bookshelf.repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -12,6 +13,8 @@ public interface BookshelfItemRepository extends JpaRepository<BookshelfItem, Lo
     List<BookshelfItem> findByBookshelfIdAndStatusOrderByBookshelfSectionIdAscSlotNoAsc(Long bookshelfId, String status);
 
     Optional<BookshelfItem> findByUserBookIdAndStatus(Long userBookId, String status);
+
+    List<BookshelfItem> findByUserBookIdInAndStatus(Collection<Long> userBookIds, String status);
 
     long countByBookshelfIdAndStatus(Long bookshelfId, String status);
 }
