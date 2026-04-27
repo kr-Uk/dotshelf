@@ -16,6 +16,12 @@ namespace BookshelfPorting.Runtime
         Notebook
     }
 
+    public enum MainCameraViewMode
+    {
+        MainView,
+        QuarterView
+    }
+
     public class BookshelfExperienceManager : MonoBehaviour
     {
         private const int GuestbookVisibleRows = 3;
@@ -146,6 +152,12 @@ namespace BookshelfPorting.Runtime
         public ExperienceFocusArea CurrentFocusArea { get; private set; } = ExperienceFocusArea.QuarterView;
         public bool IsBookshelfFocused => CurrentFocusArea == ExperienceFocusArea.Bookshelf;
         public BookEntity ActiveDetailBook { get; private set; }
+
+        // Tracks which of the two main-scene poses (MainView default, QuarterView via
+        // toggle) is currently active. Independent of bookshelf/guestbook/notebook focus —
+        // those don't change which main pose the camera should return to next.
+        private MainCameraViewMode currentMainViewMode = MainCameraViewMode.MainView;
+        public MainCameraViewMode CurrentMainViewMode => currentMainViewMode;
 
         public void Configure(
             BookshelfState bookshelfState,
@@ -288,7 +300,47 @@ namespace BookshelfPorting.Runtime
             }
 
             PrepareQuarterViewReturn();
+            currentMainViewMode = MainCameraViewMode.QuarterView;
             cameraController.MoveToMode(CameraMode.Overview);
+        }
+
+        public void FocusMainView()
+        {
+            if (!CanStartCameraFocus())
+            {
+                return;
+            }
+
+            PrepareQuarterViewReturn();
+            currentMainViewMode = MainCameraViewMode.MainView;
+            cameraController.MoveToMainView();
+        }
+
+        // Toggles only the main-scene camera pose (MainView ↔ QuarterView). When the
+        // camera is in a focus mode (Frontal/Whiteboard/Notebook) this is a no-op, so
+        // pressing the button mid-focus never disrupts those flows.
+        public void ToggleMainViewMode()
+        {
+            if (cameraController == null || cameraController.IsTransitioning)
+            {
+                return;
+            }
+
+            if (cameraController.CurrentMode != CameraMode.Overview)
+            {
+                return;
+            }
+
+            if (currentMainViewMode == MainCameraViewMode.MainView)
+            {
+                currentMainViewMode = MainCameraViewMode.QuarterView;
+                cameraController.MoveToQuarterView();
+            }
+            else
+            {
+                currentMainViewMode = MainCameraViewMode.MainView;
+                cameraController.MoveToMainView();
+            }
         }
 
         public void FocusBookshelf()
@@ -759,12 +811,12 @@ namespace BookshelfPorting.Runtime
 
             if (hamburgerMenuPanel != null)
             {
-                hamburgerMenuPanel.SetActive(isHamburgerMenuOpen && !isBookshelfFocused);
+                hamburgerMenuPanel.SetActive(false);
             }
 
             if (hamburgerButton != null)
             {
-                hamburgerButton.gameObject.SetActive(CurrentFocusArea != ExperienceFocusArea.Notebook && !isBookshelfFocused);
+                hamburgerButton.gameObject.SetActive(false);
             }
 
             if (focusBackButton != null)

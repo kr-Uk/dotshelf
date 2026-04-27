@@ -75,6 +75,7 @@ namespace App.Bootstrap
         private GameObject step1Panel;
         private GameObject step2Panel;
         private GameObject step3Panel;
+        private GameObject completionModalRoot;
 
         private Image profilePreviewImage;
         private TMP_InputField nicknameInput;
@@ -340,6 +341,105 @@ namespace App.Bootstrap
             step1Panel = BuildStep1Panel(contentRoot.transform);
             step2Panel = BuildStep2Panel(contentRoot.transform);
             step3Panel = BuildStep3Panel(canvasObject.transform);
+            completionModalRoot = BuildCompletionModal(canvasObject.transform);
+        }
+
+        private GameObject BuildCompletionModal(Transform parent)
+        {
+            var modalRoot = CreateRectObject("CompletionModalRoot", parent);
+            StretchToParent((RectTransform)modalRoot.transform);
+
+            var dim = CreateImage(modalRoot.transform, "Dim", new Color(0f, 0f, 0f, 0.55f));
+            StretchToParent(dim.rectTransform);
+            // Block clicks behind the modal so only the 확인 button is interactable.
+            var dimButton = dim.gameObject.AddComponent<Button>();
+            dimButton.transition = Selectable.Transition.None;
+
+            var card = CreateImage(modalRoot.transform, "Card", CardColor);
+            card.sprite = roundedRectSprite;
+            card.type = Image.Type.Sliced;
+            var cardRect = card.rectTransform;
+            cardRect.anchorMin = new Vector2(0.5f, 0.5f);
+            cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+            cardRect.pivot = new Vector2(0.5f, 0.5f);
+            cardRect.sizeDelta = new Vector2(640f, 360f);
+            cardRect.anchoredPosition = Vector2.zero;
+
+            var cardShadow = card.gameObject.AddComponent<Shadow>();
+            cardShadow.effectColor = WithAlpha(TextColor, 0.18f);
+            cardShadow.effectDistance = new Vector2(0f, -10f);
+
+            var title = CreateText(
+                card.transform,
+                "Title",
+                "온보딩이 완료되었습니다",
+                26f,
+                FontStyles.Bold,
+                TextColor,
+                TextAlignmentOptions.Center,
+                new Vector2(0f, -56f),
+                new Vector2(540f, 40f));
+
+            var body = CreateText(
+                card.transform,
+                "Body",
+                "이제 나만의 책장을 자유롭게 꾸며보세요.",
+                18f,
+                FontStyles.Normal,
+                MutedTextColor,
+                TextAlignmentOptions.Center,
+                new Vector2(0f, -148f),
+                new Vector2(540f, 60f));
+
+            var confirmButton = CreateButton(
+                card.transform,
+                "ConfirmButton",
+                "확인",
+                PrimaryColor,
+                Color.white,
+                new Vector2(0f, -284f),
+                new Vector2(280f, PrimaryControlHeight),
+                false,
+                BorderColor);
+            confirmButton.onClick.AddListener(OnCompletionConfirmClicked);
+
+            modalRoot.SetActive(false);
+            return modalRoot;
+        }
+
+        private void ShowCompletionModal()
+        {
+            if (completionModalRoot == null)
+            {
+                return;
+            }
+
+            // Push to the front so it visually overlays the Step 3 navigation card.
+            completionModalRoot.transform.SetAsLastSibling();
+            completionModalRoot.SetActive(true);
+        }
+
+        private void HideCompletionModal()
+        {
+            if (completionModalRoot != null)
+            {
+                completionModalRoot.SetActive(false);
+            }
+        }
+
+        private void OnCompletionConfirmClicked()
+        {
+            HideCompletionModal();
+
+            // Return the main-scene camera to the new MainView default. This must run
+            // before CompleteOnboarding's tear-down because the onboarding GameObject —
+            // and this controller — get destroyed there.
+            if (TryGetBookshelfExperienceManager(out var experienceManager) && experienceManager != null)
+            {
+                experienceManager.FocusMainView();
+            }
+
+            CompleteOnboarding();
         }
 
         private GameObject BuildStep1Panel(Transform parent)
@@ -607,7 +707,7 @@ namespace App.Bootstrap
             previousButton.onClick.AddListener(ShowStep2);
             CreateFlexibleSpacer(navigationRow);
             var completeButton = CreateFixedButton(navigationRow, "CompleteButton", "완료", PrimaryColor, Color.white, false, BorderColor, new Vector2(220f, PrimaryControlHeight));
-            completeButton.onClick.AddListener(CompleteOnboarding);
+            completeButton.onClick.AddListener(ShowCompletionModal);
 
             SetStep3LoadingPanelVisible(true);
             SetStep3StatusVisible(false);
@@ -1149,6 +1249,16 @@ namespace App.Bootstrap
             BookshelfExperienceManager experienceManager = null;
             CameraController cameraController = null;
             BookshelfGenerator bookshelfGenerator = null;
+
+            // Step 3 special case: the player must see QuarterView (not the new MainView
+            // default) before the bookshelf-focus transition kicks in. Snap before the
+            // loading cover hides so there is no MainView flash.
+            if (TryGetBookshelfSceneDependencies(out _, out var initialCameraController, out _) &&
+                initialCameraController != null)
+            {
+                initialCameraController.ApplyQuarterView();
+            }
+
             SetStep3LoadingCoverVisible(false);
             yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
             var readyDeadline = Time.unscaledTime + MainViewReadyTimeoutSeconds;
