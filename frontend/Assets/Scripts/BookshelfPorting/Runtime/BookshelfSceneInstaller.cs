@@ -153,7 +153,7 @@ namespace BookshelfPorting.Runtime
             var probe = GetOrAddComponent<ReflectionProbe>(probeObject);
 
             cameraController.Configure(mainCamera, overviewAnchor, frontalAnchor, whiteboardAnchor, notebookAnchor, bookViewAnchor);
-            cameraController.ConfigureViewSettings(58f, 55f, 56f, 24f, 0.65f);
+            cameraController.ConfigureViewSettings(55f, 45f, 45f, 24f, 0.7f);
             generator.Configure(state, materialFactory, loadBooksUseCase);
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);

@@ -32,6 +32,11 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float frontalScrollZoomStep = 0.45f;
         [SerializeField] private float frontalZoomSmoothDuration = 0.15f;
         [SerializeField] private float wheelScrollReference = 120f;
+        [SerializeField] private float frontalPanSensitivity = 0.002f;
+        [SerializeField] private float frontalMinPanX = -0.9f;
+        [SerializeField] private float frontalMaxPanX = 0.9f;
+        [SerializeField] private float frontalMinCameraY = 0.3f;
+        [SerializeField] private float frontalMaxCameraY = 1.8f;
 
         private CameraTransitionSegment activeSegment;
         private bool isTransitioning;
@@ -40,6 +45,7 @@ namespace BookshelfPorting.Runtime
         private float frontalZoomCurrentDistance;
         private float frontalZoomTargetDistance;
         private float frontalZoomElapsed;
+        private Vector2 frontalPanOffset;
         public event Action<CameraMode> ModeChanged;
         public event Action<CameraMode> TransitionCompleted;
 
@@ -161,6 +167,7 @@ namespace BookshelfPorting.Runtime
             if (mode == CameraMode.Frontal)
             {
                 ResetFrontalZoomState();
+                ResetFrontalPanState();
             }
 
             CurrentMode = mode;
@@ -259,6 +266,30 @@ namespace BookshelfPorting.Runtime
             isFrontalZooming = false;
         }
 
+        private void ResetFrontalPanState()
+        {
+            frontalPanOffset = Vector2.zero;
+        }
+
+        public void PanFrontalCamera(Vector2 screenDelta)
+        {
+            if (CurrentMode != CameraMode.Frontal || frontalAnchor == null)
+            {
+                return;
+            }
+
+            frontalPanOffset.x = Mathf.Clamp(
+                frontalPanOffset.x - screenDelta.x * frontalPanSensitivity,
+                frontalMinPanX,
+                frontalMaxPanX);
+
+            var nextCameraY = Mathf.Clamp(
+                frontalAnchor.position.y + frontalPanOffset.y - screenDelta.y * frontalPanSensitivity,
+                frontalMinCameraY,
+                frontalMaxCameraY);
+            frontalPanOffset.y = nextCameraY - frontalAnchor.position.y;
+        }
+
         private void SetFrontalZoomTarget(float distance)
         {
             var nextDistance = ClampFrontalZoomDistance(distance);
@@ -309,8 +340,8 @@ namespace BookshelfPorting.Runtime
             var anchorPosition = frontalAnchor.position;
             var focusZ = anchorPosition.z + ClampFrontalZoomDistance(frontalDefaultZoomDistance);
             targetCamera.transform.position = new Vector3(
-                anchorPosition.x,
-                anchorPosition.y,
+                anchorPosition.x + frontalPanOffset.x,
+                anchorPosition.y + frontalPanOffset.y,
                 focusZ - frontalZoomCurrentDistance);
             targetCamera.transform.rotation = frontalAnchor.rotation;
             targetCamera.fieldOfView = frontalDefaultFieldOfView;

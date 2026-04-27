@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using App.Application.Books;
 using App.Domain;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace BookshelfPorting.Runtime
 {
@@ -27,6 +28,14 @@ namespace BookshelfPorting.Runtime
         private const float BookshelfSwitchFullAngle = 180f;
         private const float MinimumSectionFitScale = 0.68f;
         private const float SectionWallClearance = 0.012f;
+        private const string BookCoverLabelsName = "BookCoverLabels";
+        private const float BookCoverSurfaceOffset = 0.506f;
+        private const float BookCoverCanvasWidthCoverage = 0.78f;
+        private const float BookCoverCanvasHeightCoverage = 0.78f;
+        private const float BookCoverCanvasPadding = 12f;
+        private const int BookCoverFrontTitleLineLength = 7;
+        private const int BookCoverFrontAuthorLineLength = 9;
+        private const int BookCoverBackDescriptionLineLength = 11;
         private const string HamhamAssetPath = "Assets/Meshy_AI_Hamham_0416082404_texture.glb";
         private const string BookStackAssetPath = "Assets/Arts/Models/Props/book_stack.glb";
         private const string RugAssetPath = "Assets/Arts/Models/Furniture/rug_natural.glb";
@@ -42,6 +51,7 @@ namespace BookshelfPorting.Runtime
         private const string QABooksAltBaseTexturePath = "Assets/QA_Books/Textures/Books_bc.tga";
         private const string QABooksAltNormalTexturePath = "Assets/QA_Books/Textures/Books_n.tga";
         private const string QABooksAltMetallicTexturePath = "Assets/QA_Books/Textures/Books_m_ao_g.tga";
+        private static readonly Vector2 BookCoverCanvasSize = new Vector2(144f, 216f);
         private static readonly Vector3 MainSceneNotebookStationLocalPosition = new Vector3(0.72f, -1.18f, 0f);
         private static readonly Vector3 FallbackNotebookStationLocalPosition = new Vector3(-1.275f, 0f, 0.12f);
 
@@ -94,6 +104,7 @@ namespace BookshelfPorting.Runtime
         private Transform transitionBookshelfRoot;
         private Transform transitionBooksRoot;
         private int pendingBookshelfIndex = -1;
+        private int queuedBookshelfSwitchDirection;
         private int bookshelfCount = InitialBookshelfCount;
         private LoadMyBookshelfBooksUseCase loadBooksUseCase;
         private IReadOnlyList<BookCatalogItem> bookCatalogItems = System.Array.Empty<BookCatalogItem>();
@@ -129,6 +140,7 @@ namespace BookshelfPorting.Runtime
 
         private void Start()
         {
+            RefreshExistingBookCoverVisuals();
             if (state != null && state.Sections.Count > 0 && booksRoot != null && booksRoot.childCount > 0)
             {
                 return;
@@ -278,6 +290,7 @@ namespace BookshelfPorting.Runtime
             bookshelfLayoutSnapshots.Clear();
             activeBookshelfIndex = 0;
             pendingBookshelfIndex = -1;
+            queuedBookshelfSwitchDirection = 0;
             bookshelfCount = InitialBookshelfCount;
 
             ClearRoomChildren();
@@ -905,7 +918,7 @@ namespace BookshelfPorting.Runtime
             return bookCatalogItems[catalogIndex % bookCatalogItems.Count];
         }
 
-        private static void ApplyBookCatalogData(BookEntity book, BookCatalogItem item, int variantIndex, int sectionIndex, int bookIndex)
+        private void ApplyBookCatalogData(BookEntity book, BookCatalogItem item, int variantIndex, int sectionIndex, int bookIndex)
         {
             if (book == null || item == null)
             {
@@ -917,6 +930,277 @@ namespace BookshelfPorting.Runtime
             {
                 book.gameObject.name = $"Shelf{variantIndex}_{item.Book.BookId}_{sectionIndex}_{bookIndex}";
             }
+
+            RefreshBookCoverVisuals(book);
+        }
+
+        private void RefreshBookCoverVisuals(BookEntity book)
+        {
+            if (book == null)
+            {
+                return;
+            }
+
+            RemoveBookCoverLabels(book);
+            var renderer = book.GetComponent<MeshRenderer>();
+            if (renderer == null)
+            {
+                return;
+            }
+
+            var coverColor = ResolveBookCoverColor(book);
+            ApplySolidBookCoverMaterial(book, coverColor, renderer);
+            RebuildBookCoverLabels(book, coverColor);
+        }
+
+        private void RefreshExistingBookCoverVisuals()
+        {
+            if (booksRoot == null)
+            {
+                booksRoot = transform.Find("BookshelfTurntableRoot/BookshelfRoot/BooksRoot");
+            }
+
+            if (booksRoot == null)
+            {
+                booksRoot = transform.Find("BookshelfRoot/BooksRoot");
+            }
+
+            if (booksRoot == null)
+            {
+                return;
+            }
+
+            var books = booksRoot.GetComponentsInChildren<BookEntity>(true);
+            for (var i = 0; i < books.Length; i++)
+            {
+                RefreshBookCoverVisuals(books[i]);
+            }
+        }
+
+        private void ApplySolidBookCoverMaterial(BookEntity book, Color coverColor, MeshRenderer renderer)
+        {
+            if (book == null || renderer == null)
+            {
+                return;
+            }
+
+            book.tintRenderers = new[] { renderer };
+            renderer.sharedMaterial = CreateBookCoverMaterial(coverColor);
+        }
+
+        private void RemoveBookCoverLabels(BookEntity book)
+        {
+            var existingLabels = book.transform.Find(BookCoverLabelsName);
+            if (existingLabels != null)
+            {
+                DestroySpawnedObject(existingLabels.gameObject);
+            }
+        }
+
+        private void RebuildBookCoverLabels(BookEntity book, Color coverColor)
+        {
+            if (book.isDecoration)
+            {
+                return;
+            }
+
+            var labelsRoot = new GameObject(BookCoverLabelsName);
+            labelsRoot.transform.SetParent(book.transform, false);
+            labelsRoot.transform.localPosition = Vector3.zero;
+            labelsRoot.transform.localRotation = Quaternion.identity;
+            labelsRoot.transform.localScale = Vector3.one;
+
+            var textColor = GetCoverTextColor(coverColor);
+            CreateBookCoverCanvas(
+                labelsRoot.transform,
+                "FrontCoverCanvas",
+                FormatFrontCoverText(book),
+                new Vector3(BookCoverSurfaceOffset, 0.02f, 0f),
+                Quaternion.Euler(0f, -90f, 0f),
+                18,
+                textColor);
+            CreateBookCoverCanvas(
+                labelsRoot.transform,
+                "BackCoverCanvas",
+                FormatBackCoverText(book),
+                new Vector3(-BookCoverSurfaceOffset, 0f, 0f),
+                Quaternion.Euler(0f, 90f, 0f),
+                13,
+                textColor);
+        }
+
+        private static void CreateBookCoverCanvas(
+            Transform parent,
+            string name,
+            string text,
+            Vector3 localPosition,
+            Quaternion localRotation,
+            int fontSize,
+            Color color)
+        {
+            var labelObject = new GameObject(name, typeof(RectTransform));
+            labelObject.transform.SetParent(parent, false);
+            labelObject.transform.localPosition = localPosition;
+            labelObject.transform.localRotation = localRotation;
+            labelObject.transform.localScale = GetBookCoverCanvasScale();
+
+            var rect = labelObject.GetComponent<RectTransform>();
+            rect.sizeDelta = BookCoverCanvasSize;
+            rect.pivot = new Vector2(0.5f, 0.5f);
+
+            var canvas = labelObject.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = 20;
+
+            var textObject = new GameObject("Label", typeof(RectTransform));
+            textObject.transform.SetParent(labelObject.transform, false);
+            var textRect = textObject.GetComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.pivot = new Vector2(0.5f, 0.5f);
+            textRect.offsetMin = new Vector2(BookCoverCanvasPadding, BookCoverCanvasPadding);
+            textRect.offsetMax = new Vector2(-BookCoverCanvasPadding, -BookCoverCanvasPadding);
+            textRect.anchoredPosition = Vector2.zero;
+            textRect.localScale = Vector3.one;
+
+            var label = textObject.AddComponent<Text>();
+            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (font != null)
+            {
+                label.font = font;
+            }
+
+            label.text = text;
+            label.fontSize = fontSize;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.horizontalOverflow = HorizontalWrapMode.Wrap;
+            label.verticalOverflow = VerticalWrapMode.Truncate;
+            label.resizeTextForBestFit = true;
+            label.resizeTextMinSize = Mathf.Max(8, fontSize - 6);
+            label.resizeTextMaxSize = fontSize;
+            label.lineSpacing = 0.9f;
+            label.color = color;
+            label.supportRichText = false;
+            label.raycastTarget = false;
+        }
+
+        private static Vector3 GetBookCoverCanvasScale()
+        {
+            return new Vector3(
+                BookCoverCanvasWidthCoverage / BookCoverCanvasSize.x,
+                BookCoverCanvasHeightCoverage / BookCoverCanvasSize.y,
+                1f);
+        }
+
+        private Material CreateBookCoverMaterial(Color coverColor)
+        {
+            if (materialFactory != null)
+            {
+                return materialFactory.CreateBookMaterial(coverColor);
+            }
+
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null)
+            {
+                shader = Shader.Find("Standard");
+            }
+
+            var material = new Material(shader) { name = "BookDynamicFallback" };
+            material.color = coverColor;
+            if (material.HasProperty("_BaseColor"))
+            {
+                material.SetColor("_BaseColor", coverColor);
+            }
+
+            if (material.HasProperty("_Smoothness"))
+            {
+                material.SetFloat("_Smoothness", 0.3f);
+            }
+
+            return material;
+        }
+
+        private static Color ResolveBookCoverColor(BookEntity book)
+        {
+            var seed = !string.IsNullOrWhiteSpace(book.bookId)
+                ? book.bookId
+                : !string.IsNullOrWhiteSpace(book.title)
+                    ? book.title
+                    : book.gameObject.name;
+            return ResolveBookCoverColorFromSeed(seed);
+        }
+
+        private static int GetStableHash(string value)
+        {
+            unchecked
+            {
+                var hash = 23;
+                if (!string.IsNullOrEmpty(value))
+                {
+                    for (var i = 0; i < value.Length; i++)
+                    {
+                        hash = hash * 31 + value[i];
+                    }
+                }
+
+                return Mathf.Abs(hash == int.MinValue ? int.MaxValue : hash);
+            }
+        }
+
+        private static Color GetCoverTextColor(Color coverColor)
+        {
+            var luminance = coverColor.r * 0.299f + coverColor.g * 0.587f + coverColor.b * 0.114f;
+            return luminance > 0.57f ? new Color(0.08f, 0.075f, 0.07f) : new Color(0.98f, 0.965f, 0.93f);
+        }
+
+        private static string FormatFrontCoverText(BookEntity book)
+        {
+            var title = string.IsNullOrWhiteSpace(book.title) ? "새 책" : book.title.Trim();
+            var author = string.IsNullOrWhiteSpace(book.author) ? "저자 미상" : book.author.Trim();
+            return $"{WrapCoverText(title, BookCoverFrontTitleLineLength, 3)}\n\n{WrapCoverText(author, BookCoverFrontAuthorLineLength, 1)}";
+        }
+
+        private static string FormatBackCoverText(BookEntity book)
+        {
+            var description = string.IsNullOrWhiteSpace(book.description)
+                ? "책 설명이 없습니다."
+                : book.description.Trim();
+            return WrapCoverText(description, BookCoverBackDescriptionLineLength, 6);
+        }
+
+        private static string WrapCoverText(string text, int maxCharactersPerLine, int maxLines)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return string.Empty;
+            }
+
+            var normalized = text.Trim();
+            var lines = new List<string>();
+            var cursor = 0;
+            while (cursor < normalized.Length && lines.Count < maxLines)
+            {
+                var length = Mathf.Min(maxCharactersPerLine, normalized.Length - cursor);
+                var line = normalized.Substring(cursor, length).Trim();
+                cursor += length;
+
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                if (cursor < normalized.Length && lines.Count == maxLines - 1)
+                {
+                    line = $"{line.TrimEnd()}...";
+                    lines.Add(line);
+                    break;
+                }
+
+                lines.Add(line);
+            }
+
+            return string.Join("\n", lines);
         }
 
         private BookEntity CreateProceduralBook(int variantIndex, int sectionIndex, int bookIndex, Transform targetBooksRoot)
@@ -930,12 +1214,22 @@ namespace BookshelfPorting.Runtime
             bookObject.transform.localScale = new Vector3(thickness, bookHeight, bookDepth);
 
             var renderer = bookObject.GetComponent<MeshRenderer>();
-            renderer.sharedMaterial = GetBookVisualMaterial();
+            var coverColor = ResolveBookCoverColorFromSeed(bookObject.name);
+            renderer.sharedMaterial = CreateBookCoverMaterial(coverColor);
 
             var entity = bookObject.AddComponent<BookEntity>();
             entity.tintRenderers = new[] { renderer };
-            entity.Initialize(bookObject.name, thickness, bookHeight, bookDepth, Color.white);
+            entity.Initialize(bookObject.name, thickness, bookHeight, bookDepth, coverColor);
             return entity;
+        }
+
+        private static Color ResolveBookCoverColorFromSeed(string seed)
+        {
+            var hash = GetStableHash(seed);
+            var hue = (hash % 360) / 360f;
+            var saturation = 0.48f + ((hash / 360) % 27) / 100f;
+            var value = 0.58f + ((hash / 9720) % 24) / 100f;
+            return Color.HSVToRGB(hue, saturation, value);
         }
 
         private Material GetBookVisualMaterial()
@@ -1256,7 +1550,6 @@ namespace BookshelfPorting.Runtime
         private bool BeginBookshelfSwitch(int direction)
         {
             if (direction == 0 ||
-                IsBookshelfSwitching ||
                 booksRoot == null ||
                 bookshelfSections.Count == 0 ||
                 bookshelfCount <= 1)
@@ -1265,6 +1558,13 @@ namespace BookshelfPorting.Runtime
             }
 
             var normalizedDirection = direction > 0 ? 1 : -1;
+            if (IsBookshelfSwitching)
+            {
+                queuedBookshelfSwitchDirection = normalizedDirection;
+                BookshelfSwitchStateChanged?.Invoke();
+                return true;
+            }
+
             SaveActiveBookshelfLayoutSnapshot();
             return StartBookshelfSwitch(normalizedDirection);
         }
@@ -1442,6 +1742,7 @@ namespace BookshelfPorting.Runtime
             book.memoPreview = book.description;
             book.isDecoration = isDecoration;
             book.SetOrientation(orientation);
+            RefreshBookCoverVisuals(book);
 
             var targetSection = FindFirstSectionWithSpace(book);
             if (targetSection == null)
@@ -1875,11 +2176,10 @@ namespace BookshelfPorting.Runtime
 
             var book = CreateProceduralBook(variantIndex, row * columns + column, bookIndex + runtimeBookSerial++, targetBooksRoot);
             book.gameObject.name = placement.BookKey;
-            ApplySnapshotToBook(book, placement);
             return book;
         }
 
-        private static void ApplySnapshotToBook(BookEntity book, BookPlacementSnapshot placement)
+        private void ApplySnapshotToBook(BookEntity book, BookPlacementSnapshot placement)
         {
             if (book == null)
             {
@@ -1900,6 +2200,7 @@ namespace BookshelfPorting.Runtime
             book.isPublic = placement.IsPublic;
             book.isPaidCoverOwned = placement.IsPaidCoverOwned;
             book.isDecoration = placement.IsDecoration;
+            RefreshBookCoverVisuals(book);
         }
 
         private static string GetBookLayoutKey(BookEntity book)
@@ -2121,6 +2422,13 @@ namespace BookshelfPorting.Runtime
             bookshelfSwitchCoroutine = null;
             pendingBookshelfIndex = -1;
             BookshelfSwitchStateChanged?.Invoke();
+
+            var queuedDirection = queuedBookshelfSwitchDirection;
+            queuedBookshelfSwitchDirection = 0;
+            if (queuedDirection != 0)
+            {
+                BeginBookshelfSwitch(queuedDirection);
+            }
         }
 
         private void ClearBookshelfBooks()

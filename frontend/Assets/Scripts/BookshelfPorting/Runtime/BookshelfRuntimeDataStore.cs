@@ -21,6 +21,9 @@ namespace BookshelfPorting.Runtime
         public bool isRead;
         public bool isPublic = true;
         public string memoPreview;
+        public string reportTitle;
+        public string reportBody;
+        public string reportUpdatedLabel;
     }
 
     [Serializable]
@@ -140,7 +143,10 @@ namespace BookshelfPorting.Runtime
                     isDecoration = meta.isDecoration,
                     isRead = meta.isRead,
                     isPublic = meta.isPublic,
-                    memoPreview = meta.memoPreview
+                    memoPreview = meta.memoPreview,
+                    reportTitle = meta.reportTitle,
+                    reportBody = meta.reportBody,
+                    reportUpdatedLabel = meta.reportUpdatedLabel
                 });
             }
 
@@ -228,7 +234,10 @@ namespace BookshelfPorting.Runtime
                 isDecoration = book.isDecoration,
                 isRead = book.isRead,
                 isPublic = book.isPublic,
-                memoPreview = ResolveMemoPreview(book)
+                memoPreview = ResolveMemoPreview(book),
+                reportTitle = string.Empty,
+                reportBody = string.Empty,
+                reportUpdatedLabel = string.Empty
             };
         }
 
@@ -253,6 +262,11 @@ namespace BookshelfPorting.Runtime
             book.isDecoration = meta.isDecoration;
             book.isRead = meta.readingStatus == ReadingStatus.Read;
             book.isPublic = meta.isPublic;
+            if (string.IsNullOrWhiteSpace(meta.memoPreview) && !string.IsNullOrWhiteSpace(meta.reportBody))
+            {
+                meta.memoPreview = meta.reportBody;
+            }
+
             bookMetaById[book.bookId] = meta;
         }
 

@@ -52,6 +52,8 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float viewedBookScaleMultiplier = 3.6f;
         [SerializeField] private float viewedBookZoomForwardOffset = 0.35f;
         [SerializeField] private Vector3 viewedBookInteractionPadding = new Vector3(0.28f, 0.22f, 0.18f);
+        [SerializeField] private float edgeSwitchThresholdX = 0.95f;
+        [SerializeField] private float edgeSwitchDwellSeconds = 1f;
         [SerializeField] private Color bookHoverColor = new Color(1f, 0.68f, 0.28f, 0.20f);
         [SerializeField] private Color sectionHoverColor = new Color(0.40f, 0.78f, 1f, 0.16f);
         [SerializeField] private float bookHoverScaleMultiplier = 1.12f;
@@ -80,9 +82,13 @@ namespace BookshelfPorting.Runtime
         private Canvas runtimeCanvas;
         private Button backButton;
         private BookInteractionHitArea activeViewedHitArea;
+        private Transform dragLayerRoot;
         private bool isManipulatingViewedBook;
         private bool viewedBookPressStartedOnBook;
+        private bool isPanningFrontalCamera;
         private float viewedBookPointerTravel;
+        private int edgeSwitchDirection;
+        private float edgeSwitchElapsed;
         private PointerTarget currentPointerTarget;
         private readonly List<BoxCollider> dropBoundaryColliders = new List<BoxCollider>();
         private readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
@@ -205,6 +211,52 @@ namespace BookshelfPorting.Runtime
             }
         }
 
+        public void ViewBookFromUi(BookEntity book)
+        {
+            if (book == null)
+            {
+                return;
+            }
+
+            if (state != null && state.IsViewingBook && state.ActiveViewedBook != book)
+            {
+                CloseViewedBook(true);
+            }
+
+            if (state != null && state.IsViewingBook && state.ActiveViewedBook == book)
+            {
+                return;
+            }
+
+            ViewBook(book);
+        }
+
+        public void ShowViewedBookFront()
+        {
+            SetViewedBookRotation(BookFootprintUtility.GetVisualRotation(BookOrientation.Front));
+        }
+
+        public void ShowViewedBookBack()
+        {
+            SetViewedBookRotation(Quaternion.Euler(0f, -90f, 0f));
+        }
+
+        private void SetViewedBookRotation(Quaternion localFaceRotation)
+        {
+            if (state == null ||
+                !state.IsViewingBook ||
+                state.ActiveViewedBook == null ||
+                cameraController == null ||
+                cameraController.BookViewAnchor == null)
+            {
+                return;
+            }
+
+            var targetRotation = cameraController.BookViewAnchor.rotation * localFaceRotation;
+            state.ActiveViewedBook.BeginViewRotation(targetRotation);
+            state.ActiveViewedBook.transform.rotation = targetRotation;
+        }
+
         private void HandleKeyboardShortcuts()
         {
             if (Keyboard.current == null)
@@ -235,6 +287,7 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isManipulatingViewedBook = false;
+                isPanningFrontalCamera = false;
                 return;
             }
 
@@ -242,6 +295,7 @@ namespace BookshelfPorting.Runtime
             {
                 pressedBook = null;
                 pressedSection = null;
+                isPanningFrontalCamera = false;
                 return;
             }
 
@@ -252,6 +306,7 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isManipulatingViewedBook = false;
+                isPanningFrontalCamera = false;
                 return;
             }
 
@@ -269,6 +324,7 @@ namespace BookshelfPorting.Runtime
             shelfBookPointerTravel = 0f;
             pressedBook = currentPointerTarget.Book;
             pressedSection = currentPointerTarget.Section;
+            isPanningFrontalCamera = false;
         }
 
         private void OnPointerDrag(Vector2 pointer)
@@ -292,6 +348,14 @@ namespace BookshelfPorting.Runtime
                 if (pressedSection != null && !state.IsViewingBook)
                 {
                     shelfBookPointerTravel += delta.magnitude;
+                }
+
+                if (CanPanFrontalCamera(pointer) &&
+                    (pressedSection == null || !IsBookshelfEditMode() || shelfBookPointerTravel > dragStartThresholdPixels))
+                {
+                    isPanningFrontalCamera = true;
+                    cameraController.PanFrontalCamera(delta);
+                    HideHoverIndicators();
                 }
 
                 return;
@@ -321,6 +385,7 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isManipulatingViewedBook = false;
+                isPanningFrontalCamera = false;
                 return;
             }
 
@@ -349,6 +414,10 @@ namespace BookshelfPorting.Runtime
                 viewedBookPressStartedOnBook = false;
                 viewedBookPointerTravel = 0f;
             }
+            else if (isPanningFrontalCamera)
+            {
+                isPanningFrontalCamera = false;
+            }
             else if (pressedBook != null &&
                      !state.IsViewingBook &&
                      (hoveredBook == pressedBook || currentPointerTarget.Book == pressedBook))
@@ -374,6 +443,19 @@ namespace BookshelfPorting.Runtime
             pressedBook = null;
             pressedSection = null;
             shelfBookPointerTravel = 0f;
+        }
+
+        private bool CanPanFrontalCamera(Vector2 pointer)
+        {
+            return state != null &&
+                   cameraController != null &&
+                   cameraController.CurrentMode == CameraMode.Frontal &&
+                   !cameraController.IsTransitioning &&
+                   generator != null &&
+                   !generator.IsBookshelfSwitching &&
+                   !state.IsViewingBook &&
+                   state.ActiveDraggedBook == null &&
+                   !IsPointerOverUi(pointer);
         }
 
         private bool CanInteractWithShelfBooks()
@@ -423,6 +505,7 @@ namespace BookshelfPorting.Runtime
             originalSectionBeforeDrag = null;
             originalIndexBeforeDrag = -1;
             shelfBookPointerTravel = 0f;
+            ResetEdgeSwitchDwell();
             ResetDragVelocity();
         }
 
@@ -751,6 +834,7 @@ namespace BookshelfPorting.Runtime
             originalSectionBeforeDrag = book.CurrentSection;
             originalIndexBeforeDrag = originalSectionBeforeDrag != null ? originalSectionBeforeDrag.books.IndexOf(book) : -1;
             lastDragWorldPosition = book.transform.position;
+            ResetEdgeSwitchDwell();
             ResetDragVelocity();
 
             if (originalSectionBeforeDrag != null)
@@ -777,6 +861,7 @@ namespace BookshelfPorting.Runtime
                 lastDragWorldPosition = world;
                 draggingBook.transform.position = world;
                 draggingBook.transform.rotation = Quaternion.Euler(DragPreviewPitchDegrees, 0f, 0f);
+                UpdateEdgeSwitchDwell(draggingBook);
 
                 var local = generator.BooksRoot.parent.InverseTransformPoint(world);
                 var dropSection = state.FindAvailableDropSection(local, draggingBook);
@@ -803,6 +888,7 @@ namespace BookshelfPorting.Runtime
             originalSectionBeforeDrag = null;
             originalIndexBeforeDrag = -1;
             shelfBookPointerTravel = 0f;
+            ResetEdgeSwitchDwell();
 
             if (destination != null &&
                 state.TryPlaceBookForDrop(movedBook, destination, insertIndex, out var targetLocalPosition, out var targetLocalRotation, out var targetLocalScale))
@@ -872,6 +958,103 @@ namespace BookshelfPorting.Runtime
             StartCoroutine(AnimateInvalidReturn(book, returnSection, returnIndex));
         }
 
+        private void UpdateEdgeSwitchDwell(BookEntity book)
+        {
+            if (book == null ||
+                generator == null ||
+                generator.BookshelfCount <= 1 ||
+                generator.IsBookshelfSwitching)
+            {
+                ResetEdgeSwitchDwell();
+                return;
+            }
+
+            var localPosition = generator.transform.InverseTransformPoint(book.transform.position);
+            var direction = 0;
+            if (localPosition.x > edgeSwitchThresholdX)
+            {
+                direction = 1;
+            }
+            else if (localPosition.x < -edgeSwitchThresholdX)
+            {
+                direction = -1;
+            }
+
+            if (direction == 0)
+            {
+                ResetEdgeSwitchDwell();
+                return;
+            }
+
+            if (direction != edgeSwitchDirection)
+            {
+                edgeSwitchDirection = direction;
+                edgeSwitchElapsed = 0f;
+                return;
+            }
+
+            edgeSwitchElapsed += Time.deltaTime;
+            if (edgeSwitchElapsed < edgeSwitchDwellSeconds)
+            {
+                return;
+            }
+
+            TriggerEdgeSwitch(direction);
+        }
+
+        private void TriggerEdgeSwitch(int direction)
+        {
+            if (draggingBook == null || generator == null || generator.IsBookshelfSwitching)
+            {
+                ResetEdgeSwitchDwell();
+                return;
+            }
+
+            var dragLayer = EnsureDragLayerRoot();
+            if (dragLayer != null && draggingBook.transform.parent != dragLayer)
+            {
+                draggingBook.transform.SetParent(dragLayer, true);
+            }
+
+            originalSectionBeforeDrag = null;
+            originalIndexBeforeDrag = -1;
+            if (ghostPreview != null)
+            {
+                ghostPreview.SetActive(false);
+            }
+
+            if (direction > 0)
+            {
+                generator.ShowNextBookshelf();
+            }
+            else
+            {
+                generator.ShowPreviousBookshelf();
+            }
+
+            ResetEdgeSwitchDwell();
+        }
+
+        private Transform EnsureDragLayerRoot()
+        {
+            if (dragLayerRoot != null)
+            {
+                return dragLayerRoot;
+            }
+
+            var rootObject = new GameObject("BookDragLayer");
+            var parent = generator != null ? generator.transform : transform;
+            rootObject.transform.SetParent(parent, false);
+            dragLayerRoot = rootObject.transform;
+            return dragLayerRoot;
+        }
+
+        private void ResetEdgeSwitchDwell()
+        {
+            edgeSwitchDirection = 0;
+            edgeSwitchElapsed = 0f;
+        }
+
         private IEnumerator AnimateInvalidReturn(BookEntity book, ShelfSection returnSection, int returnIndex)
         {
             if (book == null)
@@ -881,6 +1064,13 @@ namespace BookshelfPorting.Runtime
             }
 
             DisableDropPhysics(book);
+            if (returnSection == null && generator != null && generator.BooksRoot != null && generator.BooksRoot.parent != null)
+            {
+                var localPosition = generator.BooksRoot.parent.InverseTransformPoint(book.transform.position);
+                returnSection = state.FindNearestAvailableSection(localPosition, book);
+                returnIndex = returnSection != null ? returnSection.books.Count : 0;
+            }
+
             if (returnSection == null ||
                 !state.TryPlaceBookForDrop(book, returnSection, returnIndex, out var targetLocalPosition, out var targetLocalRotation, out var targetLocalScale))
             {
