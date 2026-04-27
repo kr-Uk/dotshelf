@@ -26,11 +26,11 @@ public class SocialTokenVerifierRegistry {
         this.verifiers = Map.copyOf(verifierMap);
     }
 
-    public SocialUserInfo verify(SocialProvider provider, SocialTokenType tokenType, String token) {
+    public SocialUserInfo verify(SocialProvider provider, SocialTokenType tokenType, String token, String nonce) {
         SocialTokenVerifier verifier = verifiers.get(provider);
         if (verifier == null) {
             throw new CustomException(ErrorCode.INVALID_INPUT, "지원하지 않는 소셜 로그인 provider 입니다.");
         }
-        return verifier.verify(token, tokenType);
+        return verifier.verify(token, tokenType, nonce);
     }
 }

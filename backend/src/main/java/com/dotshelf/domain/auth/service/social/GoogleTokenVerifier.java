@@ -46,7 +46,7 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
     }
 
     @Override
-    public SocialUserInfo verify(String token, SocialTokenType tokenType) {
+    public SocialUserInfo verify(String token, SocialTokenType tokenType, String nonce) {
         String idToken = shouldExchangeCode(token, tokenType) ? exchangeCodeForIdToken(token) : token;
         Jwt jwt = decode(idToken);
         return new SocialUserInfo(

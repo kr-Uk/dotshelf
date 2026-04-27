@@ -33,6 +33,9 @@ import com.sun.net.httpserver.HttpServer;
 
 class AppleTokenVerifierTest {
 
+    private static final String TEST_CLIENT_ID = "test.apple.client";
+    private static final String TEST_NONCE = "test-nonce";
+
     private HttpServer jwksServer;
     private RSAKey rsaKey;
     private String jwksUri;
@@ -67,14 +70,15 @@ class AppleTokenVerifierTest {
     @Test
     @DisplayName("APPLE identity_token 검증 시 sub와 email을 사용자 정보로 반환한다")
     void verify_withAppleIdentityToken_returnsUserInfo() throws Exception {
-        AppleTokenVerifier verifier = new AppleTokenVerifier(properties("com.jihocompany.dotshelf"));
+        AppleTokenVerifier verifier = new AppleTokenVerifier(properties(TEST_CLIENT_ID));
         String token = appleIdentityToken(
-                "com.jihocompany.dotshelf",
+                TEST_CLIENT_ID,
                 "apple-user-1",
-                "reader@example.com"
+                "reader@example.com",
+                TEST_NONCE
         );
 
-        SocialUserInfo userInfo = verifier.verify(token, SocialTokenType.ID_TOKEN);
+        SocialUserInfo userInfo = verifier.verify(token, SocialTokenType.ID_TOKEN, TEST_NONCE);
 
         assertThat(userInfo.provider()).isEqualTo(SocialProvider.APPLE);
         assertThat(userInfo.providerUserId()).isEqualTo("apple-user-1");
@@ -86,14 +90,15 @@ class AppleTokenVerifierTest {
     @Test
     @DisplayName("APPLE tokenType 생략 시 identity_token으로 처리한다")
     void verify_withoutTokenType_treatsTokenAsIdentityToken() throws Exception {
-        AppleTokenVerifier verifier = new AppleTokenVerifier(properties("com.jihocompany.dotshelf"));
+        AppleTokenVerifier verifier = new AppleTokenVerifier(properties(TEST_CLIENT_ID));
         String token = appleIdentityToken(
-                "com.jihocompany.dotshelf",
+                TEST_CLIENT_ID,
                 "apple-user-2",
-                null
+                null,
+                TEST_NONCE
         );
 
-        SocialUserInfo userInfo = verifier.verify(token, null);
+        SocialUserInfo userInfo = verifier.verify(token, null, TEST_NONCE);
 
         assertThat(userInfo.provider()).isEqualTo(SocialProvider.APPLE);
         assertThat(userInfo.providerUserId()).isEqualTo("apple-user-2");
@@ -101,11 +106,45 @@ class AppleTokenVerifierTest {
     }
 
     @Test
+    @DisplayName("APPLE 요청 nonce가 없으면 입력 예외를 던진다")
+    void verify_withoutNonce_throwsInvalidInput() throws Exception {
+        AppleTokenVerifier verifier = new AppleTokenVerifier(properties(TEST_CLIENT_ID));
+        String token = appleIdentityToken(
+                TEST_CLIENT_ID,
+                "apple-user-3",
+                null,
+                TEST_NONCE
+        );
+
+        assertThatThrownBy(() -> verifier.verify(token, SocialTokenType.ID_TOKEN, null))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("APPLE identity_token nonce가 요청 nonce와 다르면 토큰 예외를 던진다")
+    void verify_withMismatchedNonce_throwsInvalidToken() throws Exception {
+        AppleTokenVerifier verifier = new AppleTokenVerifier(properties(TEST_CLIENT_ID));
+        String token = appleIdentityToken(
+                TEST_CLIENT_ID,
+                "apple-user-4",
+                null,
+                TEST_NONCE
+        );
+
+        assertThatThrownBy(() -> verifier.verify(token, SocialTokenType.ID_TOKEN, "different-nonce"))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_TOKEN);
+    }
+
+    @Test
     @DisplayName("APPLE은 ACCESS_TOKEN을 받으면 입력 예외를 던진다")
     void verify_withAccessToken_throwsInvalidInput() {
-        AppleTokenVerifier verifier = new AppleTokenVerifier(properties("com.jihocompany.dotshelf"));
+        AppleTokenVerifier verifier = new AppleTokenVerifier(properties(TEST_CLIENT_ID));
 
-        assertThatThrownBy(() -> verifier.verify("apple-access-token", SocialTokenType.ACCESS_TOKEN))
+        assertThatThrownBy(() -> verifier.verify("apple-access-token", SocialTokenType.ACCESS_TOKEN, TEST_NONCE))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
@@ -119,7 +158,7 @@ class AppleTokenVerifierTest {
         );
     }
 
-    private String appleIdentityToken(String audience, String subject, String email) throws JOSEException {
+    private String appleIdentityToken(String audience, String subject, String email, String nonce) throws JOSEException {
         Instant now = Instant.now();
         JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
                 .issuer("https://appleid.apple.com")
@@ -129,6 +168,9 @@ class AppleTokenVerifierTest {
                 .expirationTime(Date.from(now.plusSeconds(300)));
         if (email != null) {
             claims.claim("email", email);
+        }
+        if (nonce != null) {
+            claims.claim("nonce", nonce);
         }
 
         SignedJWT jwt = new SignedJWT(
