@@ -7,7 +7,10 @@ import java.util.List;
 import com.dotshelf.domain.book.entity.Book;
 import com.dotshelf.domain.book.entity.UserBook;
 
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 public final class BookDtos {
 
@@ -39,7 +42,47 @@ public final class BookDtos {
         }
     }
 
-    public record BookListResponse(List<BookResponse> books) {
+    public record BookSearchResponse(
+            Long id,
+            String source,
+            String isbn13,
+            String isbn10,
+            String title,
+            String author,
+            String publisher,
+            LocalDate publishedDate,
+            String description,
+            String coverImageUrl,
+            String sourceUrl
+    ) {
+
+        public static BookSearchResponse from(Book book) {
+            return new BookSearchResponse(
+                    book.getId(),
+                    "LOCAL",
+                    book.getIsbn13(),
+                    book.getIsbn10(),
+                    book.getTitle(),
+                    book.getAuthor(),
+                    book.getPublisher(),
+                    book.getPublishedDate(),
+                    book.getDescription(),
+                    book.getCoverImageUrl(),
+                    null
+            );
+        }
+    }
+
+    public record BookSearchListResponse(
+            List<BookSearchResponse> books,
+            int page,
+            int size,
+            boolean isEnd
+    ) {
+
+        public static BookSearchListResponse empty(int page, int size) {
+            return new BookSearchListResponse(List.of(), page, size, true);
+        }
     }
 
     public record AddBookToShelfRequest(
@@ -51,6 +94,35 @@ public final class BookDtos {
             Integer slotNo,
             String displayStyle
     ) {
+    }
+
+    public record AddKakaoBookToShelfRequest(
+            @Size(max = 13, message = "isbn13은 최대 13자입니다.")
+            String isbn13,
+            @Size(max = 10, message = "isbn10은 최대 10자입니다.")
+            String isbn10,
+            @NotBlank(message = "title은 필수입니다.")
+            String title,
+            String author,
+            String publisher,
+            LocalDate publishedDate,
+            String description,
+            String coverImageUrl,
+            @NotNull(message = "sectionId는 필수입니다.")
+            Long sectionId,
+            @NotNull(message = "slotNo는 필수입니다.")
+            Integer slotNo,
+            String displayStyle
+    ) {
+
+        @AssertTrue(message = "isbn10 또는 isbn13은 필수입니다.")
+        public boolean isIsbnPresent() {
+            return hasText(isbn13) || hasText(isbn10);
+        }
+
+        private boolean hasText(String value) {
+            return value != null && !value.isBlank();
+        }
     }
 
     public record UpdateUserBookRequest(

@@ -289,6 +289,7 @@ CREATE TABLE books (
     isbn13 VARCHAR(13) NULL,
     isbn10 VARCHAR(10) NULL,
     title VARCHAR(255) NOT NULL,
+    title_search VARCHAR(255) NULL,
     author VARCHAR(255) NOT NULL,
     publisher VARCHAR(255) NULL,
     published_date DATE NULL,

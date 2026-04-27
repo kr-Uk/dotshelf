@@ -28,6 +28,7 @@ public enum ErrorCode {
     // Book
     BOOK_NOT_FOUND(HttpStatus.NOT_FOUND, "B001", "도서를 찾을 수 없습니다."),
     USER_BOOK_NOT_FOUND(HttpStatus.NOT_FOUND, "B002", "내 책을 찾을 수 없습니다."),
+    BOOK_SEARCH_UNAVAILABLE(HttpStatus.BAD_GATEWAY, "B003", "도서 검색 서비스를 사용할 수 없습니다."),
 
     // Bookshelf
     BOOKSHELF_NOT_FOUND(HttpStatus.NOT_FOUND, "S001", "책장을 찾을 수 없습니다."),
