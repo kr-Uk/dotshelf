@@ -8,17 +8,29 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("items")]
         public List<BookListItemDto> Items { get; set; }
 
+        [JsonProperty("books")]
+        public List<BookListItemDto> Books { get; set; }
+
         [JsonProperty("nextCursor")]
         public string NextCursor { get; set; }
+
+        [JsonIgnore]
+        public List<BookListItemDto> EffectiveItems => Items ?? Books ?? new List<BookListItemDto>();
     }
 
-    public sealed class BookListItemDto
+    public class BookListItemDto
     {
+        [JsonProperty("id")]
+        public long Id { get; set; }
+
         [JsonProperty("bookId")]
         public string BookId { get; set; }
 
         [JsonProperty("isbn")]
         public string Isbn { get; set; }
+
+        [JsonProperty("isbn13")]
+        public string Isbn13 { get; set; }
 
         [JsonProperty("title")]
         public string Title { get; set; }
@@ -28,6 +40,12 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("publisher")]
         public string Publisher { get; set; }
+
+        [JsonProperty("publishedDate")]
+        public string PublishedDate { get; set; }
+
+        [JsonProperty("description")]
+        public string Description { get; set; }
 
         [JsonProperty("coverImageUrl")]
         public string CoverImageUrl { get; set; }
@@ -49,5 +67,9 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("hasPaidCover")]
         public bool HasPaidCover { get; set; }
+    }
+
+    public sealed class BookResponseDto : BookListItemDto
+    {
     }
 }

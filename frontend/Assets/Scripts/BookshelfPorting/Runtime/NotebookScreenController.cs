@@ -92,7 +92,7 @@ namespace BookshelfPorting.Runtime
         private const float CanvasScale = 0.00044f;
         private const float TransitionDuration = 0.22f;
         private const float HiddenScaleMultiplier = 0.96f;
-        private static readonly Vector2 DefaultCanvasSize = new(600f, 340f);
+        private static readonly Vector2 ScreenSaverCanvasSize = new(850f, 480f);
         private static readonly Vector2 DashboardCanvasSize = new(850f, 480f);
         private static Font cachedUiFont;
         private static Sprite roundedPanelSprite;
@@ -213,10 +213,11 @@ namespace BookshelfPorting.Runtime
             Transform screenTransform,
             Camera eventCamera,
             UnityAction onCloseDashboard,
-            UnityAction onCloseScreenSaver = null)
+            UnityAction onCloseScreenSaver = null,
+            UnityAction onOpenScreenSaver = null)
         {
             ScreenTransform = screenTransform;
-            EnsureCanvases(screenTransform, eventCamera, onCloseDashboard, onCloseScreenSaver);
+            EnsureCanvases(screenTransform, eventCamera, onCloseDashboard, onCloseScreenSaver, onOpenScreenSaver);
             ApplyPresentationMode();
             ApplySelectedAd();
             ShowStateInstant(currentState);
@@ -310,7 +311,8 @@ namespace BookshelfPorting.Runtime
             Transform screenTransform,
             Camera eventCamera,
             UnityAction onCloseDashboard,
-            UnityAction onCloseScreenSaver)
+            UnityAction onCloseScreenSaver,
+            UnityAction onOpenScreenSaver)
         {
             if (screenTransform == null)
             {
@@ -333,7 +335,7 @@ namespace BookshelfPorting.Runtime
             screenSaverCanvas = CreateCanvas(screenTransform, "ScreenSaverCanvas", eventCamera);
             screenSaverCanvasGroup = screenSaverCanvas.gameObject.AddComponent<CanvasGroup>();
             screenSaverCanvasGroup.alpha = 1f;
-            BuildScreenSaver(screenSaverCanvas.transform, onCloseScreenSaver);
+            BuildScreenSaver(screenSaverCanvas.transform, onCloseScreenSaver, onOpenScreenSaver);
 
             dashboardCanvas = CreateCanvas(screenTransform, "DashboardCanvas", eventCamera);
             dashboardCanvasGroup = dashboardCanvas.gameObject.AddComponent<CanvasGroup>();
@@ -513,10 +515,11 @@ namespace BookshelfPorting.Runtime
             }
         }
 
-        private void BuildScreenSaver(Transform parent, UnityAction onCloseScreenSaver)
+        private void BuildScreenSaver(Transform parent, UnityAction onCloseScreenSaver, UnityAction onOpenScreenSaver)
         {
             screenSaverBackground = parent.gameObject.AddComponent<Image>();
             screenSaverBackground.color = new Color(0.07f, 0.09f, 0.12f, 0.98f);
+            screenSaverBackground.raycastTarget = false;
 
             var adImageObject = new GameObject("AdImage");
             adImageObject.transform.SetParent(parent, false);
@@ -524,7 +527,22 @@ namespace BookshelfPorting.Runtime
             screenSaverImageRect = screenSaverImage.rectTransform;
             screenSaverImage.preserveAspect = false;
             screenSaverImage.color = Color.white;
+            screenSaverImage.raycastTarget = true;
             StretchToFill(screenSaverImageRect);
+
+            var openButton = adImageObject.AddComponent<Button>();
+            openButton.transition = Selectable.Transition.None;
+            openButton.targetGraphic = screenSaverImage;
+            openButton.onClick.AddListener(() =>
+            {
+                if (onOpenScreenSaver != null)
+                {
+                    onOpenScreenSaver.Invoke();
+                    return;
+                }
+
+                ActivateDashboard();
+            });
 
             if (onCloseScreenSaver == null)
             {
@@ -598,7 +616,7 @@ namespace BookshelfPorting.Runtime
             canvas.worldCamera = Camera.main;
             canvas.overrideSorting = true;
             canvas.sortingOrder = isDashboard ? 2 : 1;
-            rect.sizeDelta = isDashboard ? DashboardCanvasSize : DefaultCanvasSize;
+            rect.sizeDelta = isDashboard ? DashboardCanvasSize : ScreenSaverCanvasSize;
             ApplyCanvasTransform(canvas.transform);
             ApplyWorldLayout(isDashboard);
         }
@@ -1754,7 +1772,7 @@ namespace BookshelfPorting.Runtime
             canvasObject.AddComponent<GraphicRaycaster>();
 
             var rect = canvas.GetComponent<RectTransform>();
-            rect.sizeDelta = name == "DashboardCanvas" ? DashboardCanvasSize : DefaultCanvasSize;
+            rect.sizeDelta = name == "DashboardCanvas" ? DashboardCanvasSize : ScreenSaverCanvasSize;
             return canvas;
         }
 
@@ -1790,7 +1808,8 @@ namespace BookshelfPorting.Runtime
 
             screenSaverImage.sprite = adImages[selectedIndex];
             screenSaverImage.color = Color.white;
-            screenSaverImage.SetNativeSize();
+            screenSaverImage.preserveAspect = false;
+            screenSaverImage.raycastTarget = true;
             StretchToFill(screenSaverImage.rectTransform);
         }
 

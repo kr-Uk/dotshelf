@@ -87,6 +87,68 @@ namespace App.Infrastructure.Api
             return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
         }
 
+        public Coroutine Post<TResponse>(
+            string path,
+            Action<TResponse> onSuccess,
+            Action<ApiErrorResponseDto> onError = null,
+            Dictionary<string, string> headers = null)
+        {
+            var request = CreateJsonRequest(BuildUrl(path), UnityWebRequest.kHttpVerbPOST, null);
+            ApplyHeaders(request, headers);
+            return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
+        }
+
+        public Coroutine Put<TRequest, TResponse>(
+            string path,
+            TRequest body,
+            Action<TResponse> onSuccess,
+            Action<ApiErrorResponseDto> onError = null,
+            Dictionary<string, string> headers = null)
+        {
+            var json = JsonConvert.SerializeObject(body);
+            var request = CreateJsonRequest(BuildUrl(path), UnityWebRequest.kHttpVerbPUT, json);
+            ApplyHeaders(request, headers);
+            return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
+        }
+
+        public Coroutine Patch<TRequest, TResponse>(
+            string path,
+            TRequest body,
+            Action<TResponse> onSuccess,
+            Action<ApiErrorResponseDto> onError = null,
+            Dictionary<string, string> headers = null)
+        {
+            var json = JsonConvert.SerializeObject(body);
+            var request = CreateJsonRequest(BuildUrl(path), "PATCH", json);
+            ApplyHeaders(request, headers);
+            return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
+        }
+
+        public Coroutine Patch<TResponse>(
+            string path,
+            Action<TResponse> onSuccess,
+            Action<ApiErrorResponseDto> onError = null,
+            Dictionary<string, string> headers = null)
+        {
+            var request = CreateJsonRequest(BuildUrl(path), "PATCH", null);
+            ApplyHeaders(request, headers);
+            return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
+        }
+
+        public Coroutine Delete<TResponse>(
+            string path,
+            Action<TResponse> onSuccess,
+            Action<ApiErrorResponseDto> onError = null,
+            Dictionary<string, string> headers = null)
+        {
+            var request = new UnityWebRequest(BuildUrl(path), UnityWebRequest.kHttpVerbDELETE)
+            {
+                downloadHandler = new DownloadHandlerBuffer()
+            };
+            ApplyHeaders(request, headers);
+            return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
+        }
+
         private IEnumerator Send<TResponse>(
             UnityWebRequest request,
             Action<TResponse> onSuccess,
@@ -157,11 +219,15 @@ namespace App.Infrastructure.Api
         {
             var request = new UnityWebRequest(url, method)
             {
-                uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json)),
                 downloadHandler = new DownloadHandlerBuffer()
             };
 
-            request.SetRequestHeader("Content-Type", "application/json");
+            if (json != null)
+            {
+                request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
+                request.SetRequestHeader("Content-Type", "application/json");
+            }
+
             return request;
         }
 
