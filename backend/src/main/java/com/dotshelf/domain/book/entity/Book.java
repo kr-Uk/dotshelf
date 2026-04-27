@@ -2,6 +2,8 @@ package com.dotshelf.domain.book.entity;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 import com.dotshelf.global.common.BaseEntity;
 
@@ -23,6 +25,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Book extends BaseEntity {
 
+    private static final Pattern TITLE_SEARCH_WHITESPACE = Pattern.compile("\\s+");
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -35,6 +39,9 @@ public class Book extends BaseEntity {
 
     @Column(nullable = false, length = 255)
     private String title;
+
+    @Column(length = 255)
+    private String titleSearch;
 
     @Column(nullable = false, length = 255)
     private String author;
@@ -77,6 +84,7 @@ public class Book extends BaseEntity {
         this.isbn13 = isbn13;
         this.isbn10 = isbn10;
         this.title = title;
+        this.titleSearch = normalizeTitleSearch(title);
         this.author = author;
         this.publisher = publisher;
         this.publishedDate = publishedDate;
@@ -88,5 +96,14 @@ public class Book extends BaseEntity {
 
     public void increaseBookshelfAddCount() {
         this.bookshelfAddCount += 1;
+    }
+
+    public static String normalizeTitleSearch(String title) {
+        if (title == null) {
+            return null;
+        }
+        return TITLE_SEARCH_WHITESPACE.matcher(title)
+                .replaceAll("")
+                .toLowerCase(Locale.ROOT);
     }
 }

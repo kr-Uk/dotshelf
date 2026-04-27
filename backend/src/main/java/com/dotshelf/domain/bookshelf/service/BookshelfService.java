@@ -18,6 +18,7 @@ import com.dotshelf.domain.bookshelf.entity.BookshelfSection;
 import com.dotshelf.domain.bookshelf.repository.BookshelfItemRepository;
 import com.dotshelf.domain.bookshelf.repository.BookshelfRepository;
 import com.dotshelf.domain.bookshelf.repository.BookshelfSectionRepository;
+import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.error.CustomException;
@@ -122,6 +123,26 @@ public class BookshelfService {
     public Bookshelf getBookshelf(Long bookshelfId) {
         return bookshelfRepository.findById(bookshelfId)
                 .orElseThrow(() -> new CustomException(ErrorCode.BOOKSHELF_NOT_FOUND));
+    }
+
+    public Bookshelf getOwnedBookshelf(Long userId, Long bookshelfId) {
+        Bookshelf bookshelf = getBookshelf(bookshelfId);
+        Space space = spaceService.getSpaceEntity(bookshelf.getSpaceId());
+        if (!space.getOwnerUserId().equals(userId)) {
+            throw new CustomException(ErrorCode.FORBIDDEN);
+        }
+        return bookshelf;
+    }
+
+    public void requireSectionInBookshelf(Long bookshelfId, Long sectionId) {
+        if (sectionId == null) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
+        BookshelfSection section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new CustomException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!section.getBookshelfId().equals(bookshelfId)) {
+            throw new CustomException(ErrorCode.FORBIDDEN);
+        }
     }
 
     private void createDefaultSections(Long bookshelfId) {

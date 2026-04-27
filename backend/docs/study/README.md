@@ -21,6 +21,7 @@ push 단위 변경분에 대한 한국어 학습 노트. 무엇을 / 왜 / 어�
 | 2026-04-24 | `feat/be/port` | [`2026-04-24-feat-be-port.md`](./2026-04-24-feat-be-port.md) | 프론트 로컬 테스트용 localhost:3001 CORS 허용 |
 | 2026-04-24 | `fix/be/health-endpoint` | [`2026-04-24-fix-be-health-endpoint.md`](./2026-04-24-fix-be-health-endpoint.md) | 헬스체크 공개 경로를 /health로 통일 |
 | 2026-04-27 | `feat/be/apple` | [`2026-04-27-feat-be-apple.md`](./2026-04-27-feat-be-apple.md) | Apple 로그인 identityToken 검증 설정과 Unity 연동 문서 정리 |
+| 2026-04-27 | `feat/be/search` | [`2026-04-27-feat-be-search.md`](./2026-04-27-feat-be-search.md) | Kakao 도서 검색 API 연동과 ISBN 기반 책장 추가 흐름 구현 |
 
 ## 작성 규칙
 

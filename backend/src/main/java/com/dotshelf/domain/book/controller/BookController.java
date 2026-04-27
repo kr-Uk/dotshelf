@@ -11,8 +11,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dotshelf.domain.book.dto.BookDtos.AddBookToShelfRequest;
-import com.dotshelf.domain.book.dto.BookDtos.BookListResponse;
+import com.dotshelf.domain.book.dto.BookDtos.AddKakaoBookToShelfRequest;
 import com.dotshelf.domain.book.dto.BookDtos.BookResponse;
+import com.dotshelf.domain.book.dto.BookDtos.BookSearchListResponse;
 import com.dotshelf.domain.book.dto.BookDtos.MoveUserBookRequest;
 import com.dotshelf.domain.book.dto.BookDtos.UpdateUserBookRequest;
 import com.dotshelf.domain.book.dto.BookDtos.UserBookListResponse;
@@ -22,6 +23,7 @@ import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
 import com.dotshelf.global.common.ToggleResponse;
 
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,9 +36,14 @@ public class BookController {
 
     private final BookService bookService;
 
+    @Operation(summary = "도서 검색", description = "로컬 도서와 Kakao 도서 검색 결과를 함께 조회합니다.")
     @GetMapping("/books/search")
-    public ApiResponse<BookListResponse> search(@RequestParam(required = false) String keyword) {
-        return ApiResponse.success(bookService.search(keyword));
+    public ApiResponse<BookSearchListResponse> search(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        return ApiResponse.success(bookService.searchBooks(keyword, page, size));
     }
 
     @GetMapping("/books/{bookId}")
@@ -51,6 +58,16 @@ public class BookController {
             @RequestBody @Valid AddBookToShelfRequest request
     ) {
         return ApiResponse.success(bookService.addToShelf(userId, bookshelfId, request));
+    }
+
+    @Operation(summary = "Kakao 도서 책장 추가", description = "Kakao 검색 결과에서 선택한 도서를 저장하거나 재사용한 뒤 내 책장에 추가합니다.")
+    @PostMapping("/bookshelves/{bookshelfId}/books/kakao")
+    public ApiResponse<UserBookResponse> addKakaoBookToShelf(
+            @CurrentUser Long userId,
+            @PathVariable Long bookshelfId,
+            @RequestBody @Valid AddKakaoBookToShelfRequest request
+    ) {
+        return ApiResponse.success(bookService.addKakaoBookToShelf(userId, bookshelfId, request));
     }
 
     @PatchMapping("/user-books/{userBookId}")
