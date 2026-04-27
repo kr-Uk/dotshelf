@@ -42,8 +42,11 @@ public class BookshelfController {
     }
 
     @GetMapping("/v1/bookshelves/{bookshelfId}/items")
-    public ApiResponse<BookshelfRenderResponse> getItems(@PathVariable Long bookshelfId) {
-        return ApiResponse.success(bookshelfService.getItems(bookshelfId));
+    public ApiResponse<BookshelfRenderResponse> getItems(
+            @CurrentUser Long userId,
+            @PathVariable Long bookshelfId
+    ) {
+        return ApiResponse.success(bookshelfService.getItems(userId, bookshelfId));
     }
 
     @PostMapping("/v1/bookshelves")

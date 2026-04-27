@@ -68,8 +68,9 @@ public class BookshelfService {
                 .toList());
     }
 
-    public BookshelfRenderResponse getItems(Long bookshelfId) {
+    public BookshelfRenderResponse getItems(Long userId, Long bookshelfId) {
         Bookshelf bookshelf = getBookshelf(bookshelfId);
+        requireReadable(userId, bookshelf);
         List<BookshelfSection> sections = sectionRepository.findByBookshelfIdOrderByRowNoAscColumnNoAsc(bookshelfId);
         List<BookshelfItem> items = bookshelfItemRepository.findByBookshelfIdAndStatusOrderByBookshelfSectionIdAscSlotNoAsc(bookshelfId, "ACTIVE");
         Map<Long, UserBook> userBooks = userBooksById(items);
@@ -172,6 +173,18 @@ public class BookshelfService {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
         return bookshelf;
+    }
+
+    private void requireReadable(Long userId, Bookshelf bookshelf) {
+        Space space = spaceService.getSpaceEntity(bookshelf.getSpaceId());
+        if (space.getOwnerUserId().equals(userId)) {
+            return;
+        }
+        if ("PUBLIC".equalsIgnoreCase(space.getVisibilityScope())
+                && "PUBLIC".equalsIgnoreCase(bookshelf.getVisibilityScope())) {
+            return;
+        }
+        throw new CustomException(ErrorCode.FORBIDDEN);
     }
 
     public void requireSectionInBookshelf(Long bookshelfId, Long sectionId) {

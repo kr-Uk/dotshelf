@@ -107,16 +107,33 @@ public class BookService {
                         .thenComparing(Book::getId, Comparator.reverseOrder()))
                 .limit(validLimit)
                 .toList();
-        return toBookListResponse(books, userId, false);
+        return toBookListResponse(books, userId, false, 0, null);
     }
 
-    public BookListResponse getRanking(Long userId, String sort, int limit) {
+    public BookListResponse getRanking(
+            Long userId,
+            String genre,
+            String priceType,
+            String cursor,
+            String sort,
+            int limit
+    ) {
         int validLimit = validateListLimit(limit);
-        List<Book> books = bookRepository.findAll().stream()
+        validateGenre(genre);
+        validatePriceType(priceType);
+        List<Book> sortedBooks = bookRepository.findAll().stream()
+                .filter(book -> matchesPriceType(priceType))
                 .sorted(rankingComparator(sort))
+                .toList();
+        int startIndex = cursorStartIndex(sortedBooks, cursor);
+        List<Book> books = sortedBooks.stream()
+                .skip(startIndex)
                 .limit(validLimit)
                 .toList();
-        return toBookListResponse(books, userId, true);
+        String nextCursor = startIndex + books.size() < sortedBooks.size() && !books.isEmpty()
+                ? "book_" + books.getLast().getId()
+                : null;
+        return toBookListResponse(books, userId, true, startIndex, nextCursor);
     }
 
     @Transactional
@@ -300,7 +317,13 @@ public class BookService {
                 .toList();
     }
 
-    private BookListResponse toBookListResponse(List<Book> books, Long userId, boolean includeRank) {
+    private BookListResponse toBookListResponse(
+            List<Book> books,
+            Long userId,
+            boolean includeRank,
+            int rankOffset,
+            String nextCursor
+    ) {
         Map<Long, UserBook> ownedBooks = ownedBooks(userId, books);
         Map<Long, Long> reviewCounts = reviewCounts(books);
         List<BookResponse> items = new ArrayList<>();
@@ -312,10 +335,10 @@ public class BookService {
                     userBook != null,
                     userBook == null ? null : userBook.getId(),
                     reviewCounts.getOrDefault(book.getId(), 0L),
-                    includeRank ? i + 1 : null
+                    includeRank ? rankOffset + i + 1 : null
             ));
         }
-        return new BookListResponse(items, null);
+        return new BookListResponse(items, nextCursor);
     }
 
     private BookResponse toBookResponse(Book book, Long userId, Integer rank) {
@@ -430,6 +453,63 @@ public class BookService {
 
     private boolean matches(String expected, String actual) {
         return expected == null || expected.isBlank() || expected.equalsIgnoreCase(actual);
+    }
+
+    private void validateGenre(String genre) {
+        if (genre != null && !genre.isBlank() && !"ALL".equalsIgnoreCase(genre)) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "genre 필터는 현재 ALL만 지원합니다.");
+        }
+    }
+
+    private boolean matchesPriceType(String priceType) {
+        if (priceType == null || priceType.isBlank() || "ALL".equalsIgnoreCase(priceType)) {
+            return true;
+        }
+        if ("FREE".equalsIgnoreCase(priceType)) {
+            return true;
+        }
+        if ("PAID".equalsIgnoreCase(priceType)) {
+            return false;
+        }
+        return false;
+    }
+
+    private void validatePriceType(String priceType) {
+        if (priceType == null || priceType.isBlank()
+                || "ALL".equalsIgnoreCase(priceType)
+                || "FREE".equalsIgnoreCase(priceType)
+                || "PAID".equalsIgnoreCase(priceType)) {
+            return;
+        }
+        throw new CustomException(ErrorCode.INVALID_INPUT, "priceType은 ALL, FREE, PAID 중 하나여야 합니다.");
+    }
+
+    private int cursorStartIndex(List<Book> books, String cursor) {
+        Long bookId = cursorId(cursor, "book_");
+        if (bookId == null) {
+            return 0;
+        }
+        for (int i = 0; i < books.size(); i++) {
+            if (books.get(i).getId().equals(bookId)) {
+                return i + 1;
+            }
+        }
+        throw new CustomException(ErrorCode.INVALID_INPUT, "유효하지 않은 책 ranking cursor입니다.");
+    }
+
+    private Long cursorId(String cursor, String prefix) {
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
+        String value = cursor.trim();
+        if (!value.startsWith(prefix)) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "cursor 형식이 올바르지 않습니다.");
+        }
+        try {
+            return Long.parseLong(value.substring(prefix.length()));
+        } catch (NumberFormatException e) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "cursor 형식이 올바르지 않습니다.");
+        }
     }
 
     private List<BookSearchResponse> mergeSearchResults(

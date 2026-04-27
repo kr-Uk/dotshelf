@@ -70,7 +70,7 @@ public class BookController {
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") int limit
     ) {
-        return ApiResponse.success(bookService.getRanking(userId, sort, limit));
+        return ApiResponse.success(bookService.getRanking(userId, genre, priceType, cursor, sort, limit));
     }
 
     @GetMapping("/books/{bookId}")
@@ -85,7 +85,7 @@ public class BookController {
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") int limit
     ) {
-        return ApiResponse.success(bookReviewService.getReviews(bookId, sort, limit));
+        return ApiResponse.success(bookReviewService.getReviews(bookId, sort, cursor, limit));
     }
 
     @PostMapping("/books/{bookId}/reviews")

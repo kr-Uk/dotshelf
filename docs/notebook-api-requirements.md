@@ -189,8 +189,8 @@ Authorization: Bearer {accessToken}
 
 | 필드 | 필수 | 타입 | 예시 | 설명 |
 |---|---:|---|---|---|
-| `genre` | 아니오 | string | `ALL`, `NOVEL`, `ESSAY`, `HUMANITIES`, `PSYCHOLOGY`, `BUSINESS`, `SF_FANTASY` | 장르 필터 |
-| `priceType` | 아니오 | string | `ALL`, `FREE`, `PAID` | 전체/무료/유료 |
+| `genre` | 아니오 | string | `ALL` | 현재 BE MVP는 장르 컬럼이 없어 `ALL`만 지원 |
+| `priceType` | 아니오 | string | `ALL`, `FREE`, `PAID` | 전체/무료/유료. 현재 유료 표지 상품 미연동 상태라 `PAID`는 빈 목록 |
 | `sort` | 아니오 | string | `POPULAR`, `RATING`, `REVIEW`, `VIEW`, `RECORD`, `RECENT` | 랭킹 정렬 |
 | `cursor` | 아니오 | string | `book_101` | 다음 페이지 |
 | `limit` | 아니오 | int | `20` | 조회 개수 |
@@ -224,6 +224,8 @@ Authorization: Bearer {accessToken}
   "nextCursor": "book_101"
 }
 ```
+
+`cursor`는 직전 응답의 `nextCursor` 값을 그대로 전달합니다. 예: `nextCursor`가 `book_101`이면 다음 요청에 `cursor=book_101`을 보냅니다.
 
 ## 5. 책 상세
 
@@ -652,6 +654,8 @@ POST   /v1/assets/{assetId}/purchase
 ## 17. 책장 렌더링용 아이템 조회
 
 3D 책장 또는 노트북의 책장 상태를 실제 slot 기준으로 맞추려면 특정 책장 내부 아이템 목록이 필요합니다.
+
+조회 권한은 현재 사용자 소유 책장이거나, 해당 공간과 책장이 모두 `PUBLIC`인 경우에만 허용합니다.
 
 현재 `GET /v1/spaces/{spaceId}/bookshelves`는 책장 목록용이고, 섹션/아이템 목록까지 포함하는 API가 필요합니다.
 

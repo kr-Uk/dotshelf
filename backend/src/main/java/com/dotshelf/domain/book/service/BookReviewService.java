@@ -38,17 +38,19 @@ public class BookReviewService {
     private final UserRepository userRepository;
     private final UserService userService;
 
-    public BookReviewListResponse getReviews(Long bookId, String sort, int limit) {
+    public BookReviewListResponse getReviews(Long bookId, String sort, String cursor, int limit) {
         requireBook(bookId);
         int validLimit = validateLimit(limit);
         List<BookReview> sortedReviews = bookReviewRepository.findByBookIdAndStatus(bookId, ACTIVE).stream()
                 .sorted(reviewComparator(sort))
                 .toList();
+        int startIndex = cursorStartIndex(sortedReviews, cursor);
         List<BookReview> reviews = sortedReviews.stream()
+                .skip(startIndex)
                 .limit(validLimit)
                 .toList();
         Map<Long, User> users = usersById(reviews);
-        String nextCursor = sortedReviews.size() > validLimit && !reviews.isEmpty()
+        String nextCursor = startIndex + reviews.size() < sortedReviews.size() && !reviews.isEmpty()
                 ? "review_" + reviews.getLast().getId()
                 : null;
         return new BookReviewListResponse(reviews.stream()
@@ -111,5 +113,33 @@ public class BookReviewService {
             return DEFAULT_LIMIT;
         }
         return Math.min(limit, MAX_LIMIT);
+    }
+
+    private int cursorStartIndex(List<BookReview> reviews, String cursor) {
+        Long reviewId = cursorId(cursor, "review_");
+        if (reviewId == null) {
+            return 0;
+        }
+        for (int i = 0; i < reviews.size(); i++) {
+            if (reviews.get(i).getId().equals(reviewId)) {
+                return i + 1;
+            }
+        }
+        throw new CustomException(ErrorCode.INVALID_INPUT, "유효하지 않은 리뷰 cursor입니다.");
+    }
+
+    private Long cursorId(String cursor, String prefix) {
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
+        String value = cursor.trim();
+        if (!value.startsWith(prefix)) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "cursor 형식이 올바르지 않습니다.");
+        }
+        try {
+            return Long.parseLong(value.substring(prefix.length()));
+        } catch (NumberFormatException e) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "cursor 형식이 올바르지 않습니다.");
+        }
     }
 }
