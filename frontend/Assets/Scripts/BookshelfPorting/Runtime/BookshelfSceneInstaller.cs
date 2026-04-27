@@ -1,8 +1,10 @@
 using App.Application.Books;
+using App.Bootstrap;
 using App.Config;
 using App.Infrastructure.Api;
 using App.Infrastructure.Mock;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 #if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -28,6 +30,11 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (SceneManager.GetActiveScene().name != SceneKeys.Main)
+            {
+                return;
+            }
+
             InstallScene(forceGenerate: true);
         }
 
@@ -39,12 +46,22 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (SceneManager.GetActiveScene().name != SceneKeys.Main)
+            {
+                return;
+            }
+
             QueueEditorInstall();
         }
 
         private void OnValidate()
         {
             if (Application.isPlaying || !installInEditMode)
+            {
+                return;
+            }
+
+            if (SceneManager.GetActiveScene().name != SceneKeys.Main)
             {
                 return;
             }
@@ -74,6 +91,11 @@ namespace BookshelfPorting.Runtime
             EditorApplication.delayCall -= InstallSceneForEditor;
 
             if (this == null || Application.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode || !installInEditMode)
+            {
+                return;
+            }
+
+            if (SceneManager.GetActiveScene().name != SceneKeys.Main)
             {
                 return;
             }
