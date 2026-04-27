@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 namespace BookshelfPorting.Runtime
@@ -26,7 +27,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float notebookFieldOfView = 24f;
         [SerializeField] private float notebookTransitionDuration = 0.75f;
         [SerializeField] private float frontalDefaultFieldOfView = 60f;
-        [SerializeField] private float frontalDefaultZoomDistance = 2.15f;
+        [SerializeField] private float frontalDefaultZoomDistance = 3.25f;
         [SerializeField] private float frontalMinZoomDistance = 0.8f;
         [SerializeField] private float frontalMaxZoomDistance = 4.5f;
         [SerializeField] private float frontalScrollZoomStep = 0.45f;
@@ -46,6 +47,7 @@ namespace BookshelfPorting.Runtime
         private float frontalZoomTargetDistance;
         private float frontalZoomElapsed;
         private Vector2 frontalPanOffset;
+        private Func<bool> frontalZoomInputPredicate;
         public event Action<CameraMode> ModeChanged;
         public event Action<CameraMode> TransitionCompleted;
 
@@ -113,6 +115,26 @@ namespace BookshelfPorting.Runtime
             moveDuration = Mathf.Max(0.01f, standardMoveDuration);
         }
 
+        public void ConfigureFrontalZoomSettings(
+            float defaultDistance,
+            float minDistance,
+            float maxDistance,
+            float scrollStep,
+            float smoothDuration)
+        {
+            frontalDefaultZoomDistance = Mathf.Max(0.01f, defaultDistance);
+            frontalMinZoomDistance = Mathf.Max(0.01f, minDistance);
+            frontalMaxZoomDistance = Mathf.Max(frontalMinZoomDistance, maxDistance);
+            frontalScrollZoomStep = Mathf.Max(0.01f, scrollStep);
+            frontalZoomSmoothDuration = Mathf.Max(0.01f, smoothDuration);
+            ResetFrontalZoomState();
+        }
+
+        public void ConfigureFrontalZoomInputPredicate(Func<bool> predicate)
+        {
+            frontalZoomInputPredicate = predicate;
+        }
+
         private void Awake()
         {
             if (targetCamera == null)
@@ -125,7 +147,10 @@ namespace BookshelfPorting.Runtime
 
         private void Update()
         {
-            if (!IsTransitioning && CurrentMode == CameraMode.Frontal && Mouse.current != null)
+            if (!IsTransitioning &&
+                CurrentMode == CameraMode.Frontal &&
+                Mouse.current != null &&
+                CanHandleFrontalZoomInput())
             {
                 var scroll = Mouse.current.scroll.ReadValue().y;
                 if (Mathf.Abs(scroll) > 0.001f)
@@ -255,6 +280,16 @@ namespace BookshelfPorting.Runtime
             }
 
             return scroll;
+        }
+
+        private bool CanHandleFrontalZoomInput()
+        {
+            if (frontalZoomInputPredicate != null && !frontalZoomInputPredicate())
+            {
+                return false;
+            }
+
+            return EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject();
         }
 
         private void ResetFrontalZoomState()

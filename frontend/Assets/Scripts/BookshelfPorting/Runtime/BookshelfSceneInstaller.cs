@@ -167,7 +167,13 @@ namespace BookshelfPorting.Runtime
                 "OverviewAnchor",
                 overviewPosition,
                 Quaternion.LookRotation((overviewTarget - overviewPosition).normalized, Vector3.up));
-            var frontalAnchor = FindOrCreateAnchor(camerasRoot, "FrontalAnchor", new Vector3(0f, 0.95f, -0.95f), Quaternion.LookRotation(new Vector3(0f, -0.1f, 2.15f).normalized, Vector3.up));
+            var frontalPosition = new Vector3(0f, 0.95f, -2.05f);
+            var frontalTarget = new Vector3(0f, 0.85f, 1.20f);
+            var frontalAnchor = FindOrCreateAnchor(
+                camerasRoot,
+                "FrontalAnchor",
+                frontalPosition,
+                Quaternion.LookRotation((frontalTarget - frontalPosition).normalized, Vector3.up));
             var whiteboardAnchor = FindOrCreateAnchor(
                 camerasRoot,
                 "WhiteboardAnchor",
@@ -180,7 +186,7 @@ namespace BookshelfPorting.Runtime
                 "NotebookAnchor",
                 notebookPosition,
                 Quaternion.LookRotation((notebookTarget - notebookPosition).normalized, Vector3.up));
-            var bookViewAnchor = FindOrCreateAnchor(camerasRoot, "BookViewAnchor", new Vector3(0f, 0.88f, 0.10f), Quaternion.Euler(0f, 0f, 0f));
+            var bookViewAnchor = FindOrCreateAnchor(camerasRoot, "BookViewAnchor", new Vector3(0f, 0.88f, -0.15f), Quaternion.Euler(0f, 0f, 0f));
 
             var environmentRoot = FindOrCreateRoot("Environment");
             var probeObject = FindOrCreateChild(environmentRoot.transform, "ReflectionProbe");
@@ -189,6 +195,8 @@ namespace BookshelfPorting.Runtime
 
             cameraController.Configure(mainCamera, overviewAnchor, frontalAnchor, whiteboardAnchor, notebookAnchor, bookViewAnchor);
             cameraController.ConfigureViewSettings(55f, 45f, 45f, 24f, 0.7f);
+            cameraController.ConfigureFrontalZoomSettings(3.25f, 0.8f, 4.5f, 0.45f, 0.15f);
+            cameraController.ConfigureFrontalZoomInputPredicate(experienceManager.CanHandleFrontalZoomInput);
             generator.Configure(state, materialFactory, loadBooksUseCase);
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);

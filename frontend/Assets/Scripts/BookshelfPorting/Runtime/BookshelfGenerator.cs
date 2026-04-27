@@ -1547,6 +1547,31 @@ namespace BookshelfPorting.Runtime
             return BeginBookshelfSwitch(1);
         }
 
+        public bool ShowBookshelf(int index)
+        {
+            if (IsBookshelfSwitching ||
+                booksRoot == null ||
+                bookshelfSections.Count == 0 ||
+                index < 0 ||
+                index >= bookshelfCount)
+            {
+                return false;
+            }
+
+            if (index == activeBookshelfIndex)
+            {
+                return true;
+            }
+
+            SaveActiveBookshelfLayoutSnapshot();
+            activeBookshelfIndex = index;
+            pendingBookshelfIndex = -1;
+            queuedBookshelfSwitchDirection = 0;
+            RebuildActiveBookshelfVariant(activeBookshelfIndex);
+            BookshelfSwitchStateChanged?.Invoke();
+            return true;
+        }
+
         private bool BeginBookshelfSwitch(int direction)
         {
             if (direction == 0 ||

@@ -49,7 +49,8 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float dragWallSkin = 0.015f;
         [SerializeField] private float dragHeight = 1.0f;
         [SerializeField] private float viewRotationSpeed = 0.25f;
-        [SerializeField] private float viewedBookScaleMultiplier = 3.6f;
+        [SerializeField] private float viewedBookScaleMultiplier = 4.8f;
+        [SerializeField] private float viewedBookCameraDistance = 1.55f;
         [SerializeField] private float viewedBookZoomForwardOffset = 0.35f;
         [SerializeField] private Vector3 viewedBookInteractionPadding = new Vector3(0.28f, 0.22f, 0.18f);
         [SerializeField] private float edgeSwitchThresholdX = 0.95f;
@@ -799,12 +800,19 @@ namespace BookshelfPorting.Runtime
 
         private Vector3 ResolveBookViewPosition()
         {
-            var position = cameraController.BookViewAnchor.position;
+            var fallbackPosition = cameraController.BookViewAnchor.position;
+            if (sceneCamera == null)
+            {
+                return fallbackPosition;
+            }
+
             var zoomInAmount = cameraController.CurrentMode == CameraMode.Frontal
                 ? cameraController.FrontalZoomInAmount
                 : 0f;
-            position.z += Mathf.Max(0f, viewedBookZoomForwardOffset) * zoomInAmount;
-            return position;
+            var cameraDistance = Mathf.Max(
+                0.7f,
+                viewedBookCameraDistance - Mathf.Max(0f, viewedBookZoomForwardOffset) * zoomInAmount);
+            return sceneCamera.transform.position + sceneCamera.transform.forward * cameraDistance;
         }
 
         private static void SetDynamicHierarchy(Transform root)

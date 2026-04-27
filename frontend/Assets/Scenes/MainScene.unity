@@ -15070,6 +15070,7 @@ MonoBehaviour:
   dragHeight: 1
   viewRotationSpeed: 0.25
   viewedBookScaleMultiplier: 1.9
+  viewedBookCameraDistance: 1.55
   viewedBookZoomForwardOffset: 0.35
   viewedBookInteractionPadding: {x: 0.28, y: 0.22, z: 0.18}
   edgeSwitchThresholdX: 0.95
@@ -15103,7 +15104,7 @@ MonoBehaviour:
   notebookFieldOfView: 24
   notebookTransitionDuration: 0.75
   frontalDefaultFieldOfView: 45
-  frontalDefaultZoomDistance: 2.15
+  frontalDefaultZoomDistance: 3.25
   frontalMinZoomDistance: 0.8
   frontalMaxZoomDistance: 4.5
   frontalScrollZoomStep: 0.45
@@ -29361,8 +29362,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1305750071}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.023236973, y: -0, z: -0, w: 0.99973}
-  m_LocalPosition: {x: 0, y: 0.95, z: -0.95}
+  m_LocalRotation: {x: 0.015379151, y: -0, z: -0, w: 0.99988174}
+  m_LocalPosition: {x: 0, y: 0.95, z: -2.05}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -30391,7 +30392,7 @@ Transform:
   m_GameObject: {fileID: 1361449482}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.88, z: 0.1}
+  m_LocalPosition: {x: 0, y: 0.88, z: -0.15}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
