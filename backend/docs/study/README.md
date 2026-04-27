@@ -20,6 +20,7 @@ push 단위 변경분에 대한 한국어 학습 노트. 무엇을 / 왜 / 어�
 | 2026-04-23 | 5개 MR 통합 | [`2026-04-23-blue-green-rollout-retro.md`](./2026-04-23-blue-green-rollout-retro.md) | 하루 5개 MR (JVM→핫픽스→Blue-Green→실전 수정 2건→측정) 전체 회고 + 실전 실패 2건 배운 것 |
 | 2026-04-24 | `feat/be/port` | [`2026-04-24-feat-be-port.md`](./2026-04-24-feat-be-port.md) | 프론트 로컬 테스트용 localhost:3001 CORS 허용 |
 | 2026-04-24 | `fix/be/health-endpoint` | [`2026-04-24-fix-be-health-endpoint.md`](./2026-04-24-fix-be-health-endpoint.md) | 헬스체크 공개 경로를 /health로 통일 |
+| 2026-04-27 | `feat/be/apple` | [`2026-04-27-feat-be-apple.md`](./2026-04-27-feat-be-apple.md) | Apple 로그인 identityToken 검증 설정과 Unity 연동 문서 정리 |
 
 ## 작성 규칙
 
