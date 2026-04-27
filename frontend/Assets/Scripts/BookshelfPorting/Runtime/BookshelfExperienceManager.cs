@@ -4793,16 +4793,32 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            meta.reportTitle = bookReportTitleInputField != null ? bookReportTitleInputField.text.Trim() : string.Empty;
-            meta.reportBody = bookReportBodyInputField != null ? bookReportBodyInputField.text.Trim() : string.Empty;
-            meta.reportUpdatedLabel = System.DateTime.Now.ToString("yyyy.MM.dd");
+            var nextReportTitle = bookReportTitleInputField != null ? bookReportTitleInputField.text.Trim() : string.Empty;
+            var nextReportBody = bookReportBodyInputField != null ? bookReportBodyInputField.text.Trim() : string.Empty;
             meta.isPublic = stagedBookReportPublic;
-            if (!string.IsNullOrWhiteSpace(meta.reportBody))
+
+            if (string.IsNullOrWhiteSpace(nextReportBody))
             {
-                meta.memoPreview = meta.reportBody.Length > 92 ? $"{meta.reportBody.Substring(0, 92)}..." : meta.reportBody;
-                meta.isRead = true;
-                meta.readingStatus = App.Domain.ReadingStatus.Read;
+                meta.reportTitle = string.Empty;
+                meta.reportBody = string.Empty;
+                meta.reportUpdatedLabel = string.Empty;
+                meta.memoPreview = string.Empty;
+                meta.isRead = false;
+                meta.readingStatus = App.Domain.ReadingStatus.Unread;
+
+                dataStore.ApplyBookMeta(activeReportBook, meta);
+                isBookReportWritePanelOpen = true;
+                isBookReportReadPanelOpen = false;
+                RefreshHud();
+                return;
             }
+
+            meta.reportTitle = nextReportTitle;
+            meta.reportBody = nextReportBody;
+            meta.reportUpdatedLabel = System.DateTime.Now.ToString("yyyy.MM.dd");
+            meta.memoPreview = meta.reportBody.Length > 92 ? $"{meta.reportBody.Substring(0, 92)}..." : meta.reportBody;
+            meta.isRead = true;
+            meta.readingStatus = App.Domain.ReadingStatus.Read;
 
             dataStore.ApplyBookMeta(activeReportBook, meta);
             isBookReportWritePanelOpen = false;

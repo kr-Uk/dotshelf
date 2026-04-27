@@ -90,6 +90,8 @@ namespace BookshelfPorting.Runtime
         private float viewedBookPointerTravel;
         private int edgeSwitchDirection;
         private float edgeSwitchElapsed;
+        private bool pendingDropAfterBookshelfSwitch;
+        private Vector2 pendingDropPointer;
         private PointerTarget currentPointerTarget;
         private readonly List<BoxCollider> dropBoundaryColliders = new List<BoxCollider>();
         private readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
@@ -139,6 +141,28 @@ namespace BookshelfPorting.Runtime
 
             var pointer = mouse.position.ReadValue();
             currentPointerTarget = RaycastPointerTarget(pointer);
+
+            if (draggingBook != null && generator != null && generator.IsBookshelfSwitching)
+            {
+                if (mouse.leftButton.wasReleasedThisFrame)
+                {
+                    pendingDropAfterBookshelfSwitch = true;
+                    pendingDropPointer = pointer;
+                }
+
+                hoveredBook = null;
+                hoveredSection = null;
+                HideHoverIndicators();
+                return;
+            }
+
+            if (pendingDropAfterBookshelfSwitch && draggingBook != null)
+            {
+                EndDrag(pendingDropPointer);
+                pressedBook = null;
+                pressedSection = null;
+                return;
+            }
 
             if (!CanViewShelfBooks())
             {
@@ -394,6 +418,13 @@ namespace BookshelfPorting.Runtime
 
             if (draggingBook != null)
             {
+                if (generator != null && generator.IsBookshelfSwitching)
+                {
+                    pendingDropAfterBookshelfSwitch = true;
+                    pendingDropPointer = pointer;
+                    return;
+                }
+
                 EndDrag(pointer);
             }
             else if (state.IsViewingBook)
@@ -466,7 +497,8 @@ namespace BookshelfPorting.Runtime
                    cameraController != null &&
                    cameraController.CurrentMode == CameraMode.Frontal &&
                    generator != null &&
-                   !generator.IsBookshelfSwitching;
+                   !generator.IsBookshelfSwitching &&
+                   IsBookshelfEditMode();
         }
 
         private bool IsBookshelfEditMode()
@@ -505,6 +537,7 @@ namespace BookshelfPorting.Runtime
             state.ActiveDraggedBook = null;
             originalSectionBeforeDrag = null;
             originalIndexBeforeDrag = -1;
+            pendingDropAfterBookshelfSwitch = false;
             shelfBookPointerTravel = 0f;
             ResetEdgeSwitchDwell();
             ResetDragVelocity();
@@ -841,6 +874,7 @@ namespace BookshelfPorting.Runtime
             state.ActiveDraggedBook = book;
             originalSectionBeforeDrag = book.CurrentSection;
             originalIndexBeforeDrag = originalSectionBeforeDrag != null ? originalSectionBeforeDrag.books.IndexOf(book) : -1;
+            pendingDropAfterBookshelfSwitch = false;
             lastDragWorldPosition = book.transform.position;
             ResetEdgeSwitchDwell();
             ResetDragVelocity();
@@ -895,6 +929,7 @@ namespace BookshelfPorting.Runtime
             draggingBook = null;
             originalSectionBeforeDrag = null;
             originalIndexBeforeDrag = -1;
+            pendingDropAfterBookshelfSwitch = false;
             shelfBookPointerTravel = 0f;
             ResetEdgeSwitchDwell();
 
