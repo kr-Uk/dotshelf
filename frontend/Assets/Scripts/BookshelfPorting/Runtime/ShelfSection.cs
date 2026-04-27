@@ -3,6 +3,13 @@ using UnityEngine;
 
 namespace BookshelfPorting.Runtime
 {
+    public enum ShelfSectionAlignment
+    {
+        Left,
+        Center,
+        Right
+    }
+
     [System.Serializable]
     public class ShelfSection
     {
@@ -15,6 +22,7 @@ namespace BookshelfPorting.Runtime
         public float frontZ;
         public float frontBoundZ;
         public float backBoundZ;
+        public ShelfSectionAlignment alignment = ShelfSectionAlignment.Left;
         public readonly List<BookEntity> books = new List<BookEntity>();
 
         public float Width => rightBound - leftBound;

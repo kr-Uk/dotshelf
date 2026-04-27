@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using App.Domain;
 using UnityEngine;
 
 namespace BookshelfPorting.Runtime
@@ -9,9 +10,20 @@ namespace BookshelfPorting.Runtime
     {
         public string bookId;
         public string title;
+        public string author;
+        public string publisher;
+        public string description;
+        public ReadingStatus readingStatus = ReadingStatus.Unread;
+        public float ownerRating;
+        public bool isLiked;
+        public bool isPaidCoverOwned;
+        public bool isDecoration;
         public bool isRead;
         public bool isPublic = true;
         public string memoPreview;
+        public string reportTitle;
+        public string reportBody;
+        public string reportUpdatedLabel;
     }
 
     [Serializable]
@@ -121,9 +133,20 @@ namespace BookshelfPorting.Runtime
                 {
                     bookId = meta.bookId,
                     title = meta.title,
+                    author = meta.author,
+                    publisher = meta.publisher,
+                    description = meta.description,
+                    readingStatus = meta.readingStatus,
+                    ownerRating = meta.ownerRating,
+                    isLiked = meta.isLiked,
+                    isPaidCoverOwned = meta.isPaidCoverOwned,
+                    isDecoration = meta.isDecoration,
                     isRead = meta.isRead,
                     isPublic = meta.isPublic,
-                    memoPreview = meta.memoPreview
+                    memoPreview = meta.memoPreview,
+                    reportTitle = meta.reportTitle,
+                    reportBody = meta.reportBody,
+                    reportUpdatedLabel = meta.reportUpdatedLabel
                 });
             }
 
@@ -201,10 +224,50 @@ namespace BookshelfPorting.Runtime
             {
                 bookId = book.bookId,
                 title = ResolveBookTitle(book),
+                author = string.IsNullOrWhiteSpace(book.author) ? "저자 미상" : book.author,
+                publisher = string.IsNullOrWhiteSpace(book.publisher) ? "출판사 미상" : book.publisher,
+                description = string.IsNullOrWhiteSpace(book.description) ? "책 설명이 없습니다." : book.description,
+                readingStatus = book.readingStatus,
+                ownerRating = book.ownerRating,
+                isLiked = book.isLiked,
+                isPaidCoverOwned = book.isPaidCoverOwned,
+                isDecoration = book.isDecoration,
                 isRead = book.isRead,
                 isPublic = book.isPublic,
-                memoPreview = ResolveMemoPreview(book)
+                memoPreview = ResolveMemoPreview(book),
+                reportTitle = string.Empty,
+                reportBody = string.Empty,
+                reportUpdatedLabel = string.Empty
             };
+        }
+
+        public void ApplyBookMeta(BookEntity book, BookMetaData meta)
+        {
+            if (book == null || meta == null)
+            {
+                return;
+            }
+
+            book.bookId = string.IsNullOrWhiteSpace(meta.bookId) ? book.bookId : meta.bookId;
+            book.title = meta.title;
+            book.author = meta.author;
+            book.publisher = meta.publisher;
+            book.description = meta.description;
+            book.memoPreview = meta.memoPreview;
+            book.readingStatus = meta.readingStatus;
+            book.ownerRating = Mathf.Clamp(meta.ownerRating, 0f, 5f);
+            book.rating = Mathf.RoundToInt(book.ownerRating);
+            book.isLiked = meta.isLiked;
+            book.isPaidCoverOwned = meta.isPaidCoverOwned;
+            book.isDecoration = meta.isDecoration;
+            book.isRead = meta.readingStatus == ReadingStatus.Read;
+            book.isPublic = meta.isPublic;
+            if (string.IsNullOrWhiteSpace(meta.memoPreview) && !string.IsNullOrWhiteSpace(meta.reportBody))
+            {
+                meta.memoPreview = meta.reportBody;
+            }
+
+            bookMetaById[book.bookId] = meta;
         }
 
         private static string ResolveBookTitle(BookEntity book)
