@@ -124,6 +124,43 @@ namespace App.Infrastructure.Api.Dtos
     }
 
     [Serializable]
+    public sealed class AddKakaoBookToShelfRequestDto
+    {
+        [JsonProperty("isbn13")]
+        public string Isbn13 { get; set; }
+
+        [JsonProperty("isbn10")]
+        public string Isbn10 { get; set; }
+
+        [JsonProperty("title")]
+        public string Title { get; set; }
+
+        [JsonProperty("author")]
+        public string Author { get; set; }
+
+        [JsonProperty("publisher")]
+        public string Publisher { get; set; }
+
+        [JsonProperty("publishedDate")]
+        public string PublishedDate { get; set; }
+
+        [JsonProperty("description")]
+        public string Description { get; set; }
+
+        [JsonProperty("coverImageUrl")]
+        public string CoverImageUrl { get; set; }
+
+        [JsonProperty("sectionId")]
+        public long SectionId { get; set; }
+
+        [JsonProperty("slotNo")]
+        public int SlotNo { get; set; }
+
+        [JsonProperty("displayStyle")]
+        public string DisplayStyle { get; set; }
+    }
+
+    [Serializable]
     public sealed class UpdateUserBookRequestDto
     {
         [JsonProperty("readingStatus")]

@@ -222,10 +222,11 @@ namespace App.Infrastructure.Api
                 downloadHandler = new DownloadHandlerBuffer()
             };
 
+            request.SetRequestHeader("Content-Type", "application/json");
+
             if (json != null)
             {
                 request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
-                request.SetRequestHeader("Content-Type", "application/json");
             }
 
             return request;

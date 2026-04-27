@@ -47,7 +47,18 @@ namespace App.Infrastructure.Api
 
         public Coroutine SearchBooks(string keyword, Action<BookListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
-            return Get<BookListResponseDto>(WithQuery("/v1/books/search", Query("keyword", keyword)), onSuccess, onError);
+            return SearchBooks(keyword, 1, 24, onSuccess, onError);
+        }
+
+        public Coroutine SearchBooks(string keyword, int page, int size, Action<BookListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            var query = new Dictionary<string, string>
+            {
+                ["keyword"] = keyword,
+                ["page"] = Mathf.Max(1, page).ToString(),
+                ["size"] = Mathf.Max(1, size).ToString()
+            };
+            return Get<BookListResponseDto>(WithQuery("/v1/books/search", query), onSuccess, onError);
         }
 
         public Coroutine GetBook(long bookId, Action<BookResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
@@ -58,6 +69,11 @@ namespace App.Infrastructure.Api
         public Coroutine AddBookToShelf(long bookshelfId, AddBookToShelfRequestDto request, Action<UserBookResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Post<AddBookToShelfRequestDto, UserBookResponseDto>($"/v1/bookshelves/{bookshelfId}/books", request, onSuccess, onError);
+        }
+
+        public Coroutine AddKakaoBookToShelf(long bookshelfId, AddKakaoBookToShelfRequestDto request, Action<UserBookResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Post<AddKakaoBookToShelfRequestDto, UserBookResponseDto>($"/v1/bookshelves/{bookshelfId}/books/kakao", request, onSuccess, onError);
         }
 
         public Coroutine UpdateUserBook(long userBookId, UpdateUserBookRequestDto request, Action<UserBookResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
@@ -507,8 +523,7 @@ namespace App.Infrastructure.Api
             {
                 Code = envelope?.Code,
                 Message = envelope?.Message,
-                Error = envelope?.Message,
-                Body = path
+                Error = envelope?.Message
             };
             Debug.LogWarning($"Notebook API returned unsuccessful envelope: {path} {error.Code} {error.Message}");
             onError?.Invoke(error);

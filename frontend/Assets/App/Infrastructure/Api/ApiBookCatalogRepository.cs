@@ -54,7 +54,7 @@ namespace App.Infrastructure.Api
             using (var client = new HttpClient())
             {
                 client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-                var url = $"{baseUrl}/v1/books/search";
+                var url = $"{baseUrl}/v1/books?category=RANKING&limit={Rows * Columns * BooksPerSection}";
                 var json = client.GetStringAsync(url).GetAwaiter().GetResult();
                 var envelope = JsonConvert.DeserializeObject<ApiEnvelopeDto<BookListResponseDto>>(json);
                 if (envelope == null || !envelope.Succeeded || envelope.Result == null)

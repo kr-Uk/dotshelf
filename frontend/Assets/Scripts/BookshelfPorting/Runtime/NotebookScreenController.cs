@@ -525,14 +525,21 @@ namespace BookshelfPorting.Runtime
             adImageObject.transform.SetParent(parent, false);
             screenSaverImage = adImageObject.AddComponent<Image>();
             screenSaverImageRect = screenSaverImage.rectTransform;
-            screenSaverImage.preserveAspect = false;
+            screenSaverImage.preserveAspect = true;
             screenSaverImage.color = Color.white;
             screenSaverImage.raycastTarget = true;
             StretchToFill(screenSaverImageRect);
 
             var openButton = adImageObject.AddComponent<Button>();
-            openButton.transition = Selectable.Transition.None;
+            openButton.transition = Selectable.Transition.ColorTint;
             openButton.targetGraphic = screenSaverImage;
+            var colors = openButton.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(0.92f, 0.97f, 1f, 1f);
+            colors.pressedColor = new Color(0.84f, 0.92f, 1f, 1f);
+            colors.selectedColor = colors.highlightedColor;
+            colors.disabledColor = new Color(1f, 1f, 1f, 0.5f);
+            openButton.colors = colors;
             openButton.onClick.AddListener(() =>
             {
                 if (onOpenScreenSaver != null)
@@ -1808,7 +1815,7 @@ namespace BookshelfPorting.Runtime
 
             screenSaverImage.sprite = adImages[selectedIndex];
             screenSaverImage.color = Color.white;
-            screenSaverImage.preserveAspect = false;
+            screenSaverImage.preserveAspect = true;
             screenSaverImage.raycastTarget = true;
             StretchToFill(screenSaverImage.rectTransform);
         }

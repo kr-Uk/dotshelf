@@ -30,7 +30,14 @@ namespace App.Features.Notebook.Presentation
                 int views,
                 int records,
                 Color coverColor,
-                Color accentColor)
+                Color accentColor,
+                string apiSource = "MOCK",
+                long? serverBookId = null,
+                string isbn13 = null,
+                string isbn10 = null,
+                string sourceUrl = null,
+                string coverImageUrl = null,
+                string publishedDate = null)
             {
                 Id = id;
                 Title = title;
@@ -47,6 +54,13 @@ namespace App.Features.Notebook.Presentation
                 Records = records;
                 CoverColor = coverColor;
                 AccentColor = accentColor;
+                ApiSource = string.IsNullOrWhiteSpace(apiSource) ? "MOCK" : apiSource;
+                ServerBookId = serverBookId;
+                Isbn13 = isbn13;
+                Isbn10 = isbn10;
+                SourceUrl = sourceUrl;
+                CoverImageUrl = coverImageUrl;
+                PublishedDate = publishedDate;
             }
 
             public string Id { get; }
@@ -64,6 +78,13 @@ namespace App.Features.Notebook.Presentation
             public int Records { get; }
             public Color CoverColor { get; }
             public Color AccentColor { get; }
+            public string ApiSource { get; }
+            public long? ServerBookId { get; }
+            public string Isbn13 { get; }
+            public string Isbn10 { get; }
+            public string SourceUrl { get; }
+            public string CoverImageUrl { get; }
+            public string PublishedDate { get; }
         }
 
         private sealed class BookReviewViewModel
@@ -161,6 +182,11 @@ namespace App.Features.Notebook.Presentation
         private const int FallbackSortingOrder = -320;
         private const int DashboardInitializationRetryFrames = 30;
         private const float RecommendWheelScrollScale = 56f;
+        private const int SearchResultPageSize = 48;
+        private const long DefaultBookshelfId = 1L;
+        private const long DefaultSectionId = 1L;
+        private const int DefaultSlotNo = 1;
+        private const string DefaultDisplayStyle = "SPINE";
         private const string PanelSettingsResource = "NotebookPanelSettings";
         private static readonly Color PageBack = Hex(0xF0EEE9);
         private static readonly Color Surface = Hex(0xF7FFF7);
@@ -242,6 +268,7 @@ namespace App.Features.Notebook.Presentation
         private readonly HashSet<string> wishedObjectIds = new();
         private readonly HashSet<string> ownedObjectIds = new();
         private readonly HashSet<string> favoriteBookIds = new();
+        private readonly HashSet<string> pendingShelfBookIds = new();
         private readonly Dictionary<string, List<BookReviewViewModel>> bookReviewMap = new();
         private readonly List<Button> bookRatingStarButtons = new();
 
@@ -3024,10 +3051,11 @@ namespace App.Features.Notebook.Presentation
             }
 
             var added = addedBookIds.Contains(book.Id);
-            bookDetailAddButton.text = added ? "책장에 있음" : book.Price == 0 ? "내 책장에 추가" : "구매하고 추가";
-            bookDetailAddButton.style.backgroundColor = added ? Success : AccentDeep;
+            var pending = pendingShelfBookIds.Contains(book.Id);
+            bookDetailAddButton.text = pending ? "추가 중" : added ? "책장에 있음" : book.Price == 0 ? "내 책장에 추가" : "구매하고 추가";
+            bookDetailAddButton.style.backgroundColor = added ? Success : pending ? SoftInk : AccentDeep;
             bookDetailAddButton.style.color = Color.white;
-            bookDetailAddButton.SetEnabled(!added);
+            bookDetailAddButton.SetEnabled(!added && !pending);
         }
 
         private List<BookReviewViewModel> GetBookReviews(BookViewModel book)
@@ -3288,6 +3316,11 @@ namespace App.Features.Notebook.Presentation
             return SortBooks(books.Where(book => MatchesSearch(book, needle))).ToArray();
         }
 
+        private NotebookApiClient GetNotebookApiClient()
+        {
+            return notebookApiClient ??= new NotebookApiClient(APIManager.Instance);
+        }
+
         private void RequestSearchResults(string keyword)
         {
             searchRequestVersion++;
@@ -3297,12 +3330,12 @@ namespace App.Features.Notebook.Presentation
             searchLoading = true;
             RefreshAll();
 
-            notebookApiClient = new NotebookApiClient(APIManager.Instance);
-
             try
             {
-                notebookApiClient.SearchBooks(
+                GetNotebookApiClient().SearchBooks(
                     keyword,
+                    1,
+                    SearchResultPageSize,
                     response =>
                     {
                         if (requestVersion != searchRequestVersion)
@@ -3316,11 +3349,16 @@ namespace App.Features.Notebook.Presentation
                     },
                     error =>
                     {
+                        UnityEngine.Debug.LogWarning($"Search API failed, falling back to local. keyword={keyword}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                        ShowToast("검색 API 응답을 받지 못해 로컬 결과를 표시합니다.");
                         CompleteSearchWithLocalFallback(requestVersion, keyword);
                     });
             }
-            catch (Exception)
+            catch (Exception exception)
             {
+                UnityEngine.Debug.LogWarning($"Search API failed, falling back to local. keyword={keyword}");
+                UnityEngine.Debug.LogException(exception);
+                ShowToast("검색 API 응답을 받지 못해 로컬 결과를 표시합니다.");
                 CompleteSearchWithLocalFallback(requestVersion, keyword);
             }
         }
@@ -3359,7 +3397,14 @@ namespace App.Features.Notebook.Presentation
                 var publisher = FirstText(dto.Publisher, "출판사 미상");
                 var summary = FirstText(dto.Description, "검색 API에서 전달된 책입니다.");
                 var genre = ResolveSearchGenre(title, summary);
-                var id = FirstText(dto.BookId, dto.Id > 0 ? dto.Id.ToString() : $"api-{i + 1}");
+                var source = FirstText(dto.Source, dto.Id > 0 ? "LOCAL" : "KAKAO").ToUpperInvariant();
+                var serverBookId = ResolveServerBookId(dto);
+                var isbn13 = FirstText(dto.Isbn13, dto.Isbn);
+                var isbn10 = dto.Isbn10;
+                var sourceKey = source == "LOCAL" && serverBookId.HasValue
+                    ? serverBookId.Value.ToString()
+                    : FirstText(isbn13, isbn10, dto.SourceUrl, dto.BookId, $"api-{i + 1}");
+                var id = $"{source.ToLowerInvariant()}-{sourceKey}";
                 var rating = dto.AvgRating > 0 ? Mathf.Clamp((float)dto.AvgRating, 1f, 5f) : 4.2f;
                 var reviews = Mathf.Max(dto.LikeCount, dto.PurchaseCount, dto.RecordCount, 1);
                 var views = Mathf.Max(dto.PlacementCount + dto.RecordCount + dto.LikeCount, reviews * 12);
@@ -3368,7 +3413,7 @@ namespace App.Features.Notebook.Presentation
                 var coverColor = SearchCoverColor(i, id);
 
                 mapped.Add(new BookViewModel(
-                    $"api-{id}",
+                    id,
                     title,
                     author,
                     publisher,
@@ -3382,7 +3427,14 @@ namespace App.Features.Notebook.Presentation
                     views,
                     records,
                     coverColor,
-                    Accent));
+                    Accent,
+                    source,
+                    serverBookId,
+                    isbn13,
+                    isbn10,
+                    dto.SourceUrl,
+                    dto.CoverImageUrl,
+                    dto.PublishedDate));
             }
 
             return SortBooks(mapped.Where(book => MatchesSearch(book, keyword))).ToArray();
@@ -3736,15 +3788,18 @@ namespace App.Features.Notebook.Presentation
             meta.style.whiteSpace = WhiteSpace.Normal;
             card.Add(meta);
 
-            var action = TextButton(addedBookIds.Contains(book.Id)
-                ? "책장에 있음"
-                : book.Price == 0 ? "담기" : "구매", true);
+            var added = addedBookIds.Contains(book.Id);
+            var pending = pendingShelfBookIds.Contains(book.Id);
+            var action = TextButton(pending
+                ? "추가 중"
+                : added ? "책장에 있음" : book.Price == 0 ? "담기" : "구매", true);
             action.style.height = 32;
             action.style.width = Length.Percent(100);
             action.style.marginTop = 6;
-            action.style.backgroundColor = addedBookIds.Contains(book.Id)
+            action.style.backgroundColor = added
                 ? Success
-                : book.Price == 0 ? Night : AccentDeep;
+                : pending ? SoftInk : book.Price == 0 ? Night : AccentDeep;
+            action.SetEnabled(!added && !pending);
             action.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
             action.clicked += () => AddBookToShelf(book);
             card.Add(action);
@@ -3991,9 +4046,10 @@ namespace App.Features.Notebook.Presentation
             if (addButton != null)
             {
                 var alreadyAdded = addedBookIds.Contains(book.Id);
-                addButton.SetEnabled(true);
-                addButton.text = alreadyAdded ? "✓ 내 책장에 있음" : "+ 내 책장에 추가";
-                addButton.style.backgroundColor = alreadyAdded ? Success : Accent;
+                var pending = pendingShelfBookIds.Contains(book.Id);
+                addButton.SetEnabled(!alreadyAdded && !pending);
+                addButton.text = pending ? "추가 중" : alreadyAdded ? "✓ 내 책장에 있음" : "+ 내 책장에 추가";
+                addButton.style.backgroundColor = alreadyAdded ? Success : pending ? SoftInk : Accent;
             }
         }
 
@@ -4140,6 +4196,142 @@ namespace App.Features.Notebook.Presentation
         }
 
         private void AddBookToShelf(BookViewModel book)
+        {
+            if (book == null)
+            {
+                return;
+            }
+
+            var index = Array.IndexOf(books, book);
+            if (index >= 0)
+            {
+                selectedBookIndex = index;
+            }
+
+            if (addedBookIds.Contains(book.Id))
+            {
+                ShowToast($"이미 내 책장에 있어요 · {book.Title}");
+                return;
+            }
+
+            if (pendingShelfBookIds.Contains(book.Id))
+            {
+                ShowToast("책장 추가 요청을 처리 중입니다.");
+                return;
+            }
+
+            if (book.Price > 0 && pages < book.Price)
+            {
+                ShowToast($"{book.Price - pages:N0}P가 더 필요합니다.");
+                return;
+            }
+
+            if (!CanUseShelfApi(book))
+            {
+                AddBookToShelfLocal(book);
+                return;
+            }
+
+            AddBookToShelfThroughApi(book);
+        }
+
+        private bool CanUseShelfApi(BookViewModel book)
+        {
+            if (book == null || APIManager.Instance == null)
+            {
+                return false;
+            }
+
+            if (string.Equals(book.ApiSource, "LOCAL", StringComparison.OrdinalIgnoreCase))
+            {
+                return book.ServerBookId.HasValue;
+            }
+
+            return string.Equals(book.ApiSource, "KAKAO", StringComparison.OrdinalIgnoreCase) &&
+                   (!string.IsNullOrWhiteSpace(book.Isbn13) || !string.IsNullOrWhiteSpace(book.Isbn10));
+        }
+
+        private void AddBookToShelfThroughApi(BookViewModel book)
+        {
+            pendingShelfBookIds.Add(book.Id);
+            RefreshLists();
+            RefreshBookDetailPage(book);
+
+            try
+            {
+                if (string.Equals(book.ApiSource, "KAKAO", StringComparison.OrdinalIgnoreCase))
+                {
+                    GetNotebookApiClient().AddKakaoBookToShelf(
+                        DefaultBookshelfId,
+                        BuildKakaoAddRequest(book),
+                        response => CompleteApiBookAdded(book, response),
+                        error => FailApiBookAdd(book, error));
+                    return;
+                }
+
+                GetNotebookApiClient().AddBookToShelf(
+                    DefaultBookshelfId,
+                    BuildLocalAddRequest(book),
+                    response => CompleteApiBookAdded(book, response),
+                    error => FailApiBookAdd(book, error));
+            }
+            catch (Exception exception)
+            {
+                pendingShelfBookIds.Remove(book.Id);
+                UnityEngine.Debug.LogWarning($"Book shelf API request failed before send. book={book.Id}");
+                UnityEngine.Debug.LogException(exception);
+                RefreshLists();
+                RefreshBookDetailPage(book);
+                ShowToast("책장 추가 요청을 보내지 못했습니다.");
+            }
+        }
+
+        private AddBookToShelfRequestDto BuildLocalAddRequest(BookViewModel book)
+        {
+            return new AddBookToShelfRequestDto
+            {
+                BookId = book.ServerBookId.GetValueOrDefault(),
+                SectionId = DefaultSectionId,
+                SlotNo = DefaultSlotNo,
+                DisplayStyle = DefaultDisplayStyle
+            };
+        }
+
+        private AddKakaoBookToShelfRequestDto BuildKakaoAddRequest(BookViewModel book)
+        {
+            return new AddKakaoBookToShelfRequestDto
+            {
+                Isbn13 = book.Isbn13,
+                Isbn10 = book.Isbn10,
+                Title = book.Title,
+                Author = book.Author,
+                Publisher = book.Publisher,
+                PublishedDate = book.PublishedDate,
+                Description = book.Summary,
+                CoverImageUrl = book.CoverImageUrl,
+                SectionId = DefaultSectionId,
+                SlotNo = DefaultSlotNo,
+                DisplayStyle = DefaultDisplayStyle
+            };
+        }
+
+        private void CompleteApiBookAdded(BookViewModel book, UserBookResponseDto response)
+        {
+            pendingShelfBookIds.Remove(book.Id);
+            AddBookToShelfLocal(book);
+            UnityEngine.Debug.Log($"Book added to shelf through API. book={book.Id}, userBookId={response?.Id}");
+        }
+
+        private void FailApiBookAdd(BookViewModel book, ApiErrorResponseDto error)
+        {
+            pendingShelfBookIds.Remove(book.Id);
+            UnityEngine.Debug.LogWarning($"Book shelf API failed. book={book.Id}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+            RefreshLists();
+            RefreshBookDetailPage(book);
+            ShowToast("서버 책장 추가에 실패했습니다. 잠시 후 다시 시도해주세요.");
+        }
+
+        private void AddBookToShelfLocal(BookViewModel book)
         {
             if (book == null)
             {
@@ -4400,6 +4592,21 @@ namespace App.Features.Notebook.Presentation
             }
 
             return string.Empty;
+        }
+
+        private static long? ResolveServerBookId(BookListItemDto dto)
+        {
+            if (dto == null)
+            {
+                return null;
+            }
+
+            if (dto.Id > 0)
+            {
+                return dto.Id;
+            }
+
+            return long.TryParse(dto.BookId, out var parsed) && parsed > 0 ? parsed : null;
         }
 
         private static string ResolveSearchGenre(string title, string summary)

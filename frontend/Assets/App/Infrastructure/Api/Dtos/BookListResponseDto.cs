@@ -23,6 +23,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("id")]
         public long Id { get; set; }
 
+        [JsonProperty("source")]
+        public string Source { get; set; }
+
         [JsonProperty("bookId")]
         public string BookId { get; set; }
 
@@ -31,6 +34,9 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("isbn13")]
         public string Isbn13 { get; set; }
+
+        [JsonProperty("isbn10")]
+        public string Isbn10 { get; set; }
 
         [JsonProperty("title")]
         public string Title { get; set; }
@@ -49,6 +55,9 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("coverImageUrl")]
         public string CoverImageUrl { get; set; }
+
+        [JsonProperty("sourceUrl")]
+        public string SourceUrl { get; set; }
 
         [JsonProperty("avgRating")]
         public decimal AvgRating { get; set; }
