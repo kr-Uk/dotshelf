@@ -161,6 +161,31 @@ http://localhost:18080/oauth/kakao/callback
 
 ---
 
+## 앱 런타임 env 추가값 (GitLab Variables 아님)
+
+현재 배포 경로는 OAuth 런타임 값을 GitLab CI/CD Variables 에서 app 서버로 렌더링하지 않는다.
+`.gitlab-ci.yml` 은 JAR, Dockerfile, compose, Nginx 설정만 rsync 하고, app 서버의 `docker compose` 는 `/opt/dotshelf/.env` 를 읽어 컨테이너 환경변수로 주입한다.
+
+따라서 Apple Sign in audience 값은 **SSAFY app 서버의 `/opt/dotshelf/.env`** 에 추가해야 한다.
+값은 Apple Developer 와 source-controlled Unity/Xcode 앱 식별자가 일치하는지 확인한 뒤 등록한다.
+
+```
+APPLE_CLIENT_ID={apple-bundle-id-or-services-id}
+APPLE_CLIENT_IDS={apple-bundle-id},{apple-services-id}
+```
+
+적용 절차:
+
+```bash
+ssh dotshelf-app
+cd /opt/dotshelf
+cp -p .env ".env.bak.$(date +%Y%m%d%H%M%S)"
+vi .env
+docker compose config --quiet
+```
+
+> `APPLE_CLIENT_ID`, `APPLE_CLIENT_IDS` 는 secret 은 아니지만, 실제 앱 식별자가 repo 설정과 어긋나면 Apple `identityToken` 의 `aud` 검증에서 `INVALID_TOKEN` 이 발생한다.
+
 ## Blue-Green 도입으로 추가된 변수 3개 (2026-04-23)
 
 Blue-Green 배포는 prod 서버에서도 Nginx 설정을 rsync 하고 `nginx -s reload` 를 수행하므로 CI 가 **prod 서버에도 SSH** 해야 한다. 따라서 prod 접속용 변수 3개와 `EC2_KNOWN_HOSTS` 확장이 필요하다.
@@ -232,6 +257,7 @@ ssh dotshelf "cat >> ~/.ssh/authorized_keys" < ~/.ssh/gitlab-ci-dotshelf-deploy.
 - [ ] 기본 변수 12개와 Blue-Green 추가 변수 3개가 전부 **Protected ✅** 인지 (Variables 목록 상단에서 자물쇠 아이콘 확인)
 - [ ] multiline 변수(`SSH_PRIVATE_KEY`, `EC2_KNOWN_HOSTS`)는 Masked 가 꺼져 있는지
 - [ ] 단일 라인 secret(`GOOGLE_CLIENT_SECRET`, `KAKAO_CLIENT_SECRET`)은 Masked 가 켜져 있는지
+- [ ] Apple Sign in 사용 시 app 서버 `/opt/dotshelf/.env` 에 `APPLE_CLIENT_ID`, `APPLE_CLIENT_IDS` 가 있고 `docker compose config --quiet` 이 통과하는지
 - [ ] `EC2_KNOWN_HOSTS` 의 Type 이 **`Variable`** (File 아님) 이고 호스트 키 **9줄** (app 3 + prod public 3 + docker bridge 3) 모두 포함인지
 - [ ] `PROD_HOST` 가 **`172.17.0.1`** (docker bridge) 로 설정되어 있는지 — prod public IP 쓰면 hairpin NAT 로 SSH 타임아웃
 - [ ] `SSH_PRIVATE_KEY` 대응 공개키가 **app + prod 양쪽 `authorized_keys`** 에 있는지
@@ -253,3 +279,4 @@ ssh dotshelf "cat >> ~/.ssh/authorized_keys" < ~/.ssh/gitlab-ci-dotshelf-deploy.
 - 2026-04-22 · **App 서버를 SSAFY 로 분리** 하면서 `EC2_HOST` 를 `3.36.72.58`, `EC2_KNOWN_HOSTS` 를 SSAFY 서버 호스트키로 교체. 이제 deploy target 은 "다른 호스트" 이므로 hairpin NAT 이슈 해당 없음 → Docker bridge(`172.17.0.1`) 불필요
 - 2026-04-23 · **Blue-Green 배포 도입** 으로 prod 접속용 변수 3개 (`PROD_HOST`, `PROD_USER`, `PROD_DEPLOY_PATH`) 추가. `SSH_PRIVATE_KEY` 대응 공개키를 prod 서버 `authorized_keys` 에도 등록 필요
 - 2026-04-23 (hotfix) · 첫 Blue-Green 배포 시 `PROD_HOST=3.38.240.110` (prod public IP) 에서 **hairpin NAT 타임아웃** 발생. `PROD_HOST` 를 **`172.17.0.1`** (docker bridge) 로 교체하고 `EC2_KNOWN_HOSTS` 에 bridge IP 호스트 키 3줄 추가. 총 9줄 구성
+- 2026-04-27 · Apple Sign in 검증용 `APPLE_CLIENT_ID`, `APPLE_CLIENT_IDS` 는 GitLab Variables 가 아니라 app 서버 `/opt/dotshelf/.env` 에 추가하도록 절차 정리

@@ -27,11 +27,13 @@ public class AppleTokenVerifier extends JwtSocialTokenVerifierSupport {
     }
 
     @Override
-    public SocialUserInfo verify(String token, SocialTokenType tokenType) {
+    public SocialUserInfo verify(String token, SocialTokenType tokenType, String nonce) {
         if (tokenType != null && tokenType != SocialTokenType.ID_TOKEN) {
             throw new CustomException(ErrorCode.INVALID_INPUT, "APPLE은 ID_TOKEN만 지원합니다.");
         }
+        String expectedNonce = requiredNonce(nonce);
         Jwt jwt = decode(token);
+        validateNonce(jwt, expectedNonce);
         return new SocialUserInfo(
                 SocialProvider.APPLE,
                 requiredSubject(jwt),
@@ -39,5 +41,19 @@ public class AppleTokenVerifier extends JwtSocialTokenVerifierSupport {
                 null,
                 null
         );
+    }
+
+    private String requiredNonce(String nonce) {
+        if (nonce == null || nonce.isBlank()) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "APPLE nonce는 필수입니다.");
+        }
+        return nonce.trim();
+    }
+
+    private void validateNonce(Jwt jwt, String expectedNonce) {
+        String actualNonce = jwt.getClaimAsString("nonce");
+        if (actualNonce == null || !actualNonce.equals(expectedNonce)) {
+            throw new CustomException(ErrorCode.INVALID_TOKEN);
+        }
     }
 }
