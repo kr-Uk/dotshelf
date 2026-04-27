@@ -210,6 +210,23 @@ namespace App.Bootstrap
         public void CompleteOnboarding()
         {
             LogDebug("Onboarding completed");
+
+            CancelStep3Transition();
+            SetCanvasVisible(false);
+
+            if (onboardingCanvas != null)
+            {
+                Destroy(onboardingCanvas.gameObject);
+                onboardingCanvas = null;
+            }
+
+            var loginScreenController = GetComponent<LoginScreenController>();
+            if (loginScreenController != null)
+            {
+                Destroy(loginScreenController);
+            }
+
+            Destroy(gameObject);
         }
 
         private static void LogDebug(string message)

@@ -133,8 +133,11 @@ namespace App.Bootstrap
                 return;
             }
 
-            SetMessage(loginMessageLabel, string.Empty);
+            SetMessage(loginMessageLabel, "로그인에 성공했습니다. 메인 화면으로 이동합니다.");
             LogDebug($"[LoginDemo] Login validated for '{userId}'.");
+
+            SetCanvasVisible(false);
+            SceneFlowManager.GoToMain();
         }
 
         public void OnShowSignupButtonClicked()
@@ -203,21 +206,36 @@ namespace App.Bootstrap
         public void OnAppleLoginButtonClicked()
         {
             LogDebug("[LoginDemo] Apple login button clicked.");
+            HandleSocialLoginSuccess("Apple");
         }
 
         public void OnKakaoLoginButtonClicked()
         {
             LogDebug("[LoginDemo] Kakao login button clicked.");
+            HandleSocialLoginSuccess("Kakao");
         }
 
         public void OnGoogleLoginButtonClicked()
         {
             LogDebug("[LoginDemo] Google login button clicked.");
+            HandleSocialLoginSuccess("Google");
         }
 
         public void OnGuestEntryButtonClicked()
         {
             LogDebug("[LoginDemo] Guest entry button clicked.");
+            SetMessage(loginMessageLabel, "게스트로 입장합니다. 메인 화면으로 이동합니다.");
+
+            SetCanvasVisible(false);
+            SceneFlowManager.GoToMain();
+        }
+
+        private void HandleSocialLoginSuccess(string providerName)
+        {
+            SetMessage(loginMessageLabel, $"{providerName} 로그인에 성공했습니다. 메인 화면으로 이동합니다.");
+
+            SetCanvasVisible(false);
+            SceneFlowManager.GoToMain();
         }
 
         public void SetCanvasVisible(bool isVisible)
