@@ -65,12 +65,15 @@ public class BookService {
 
         List<BookSearchResponse> localBooks = validPage == 1 ? searchLocalBooks(query) : List.of();
         KakaoBookSearchClient.SearchResult kakaoResult = kakaoBookSearchClient.search(query, validPage, validSize);
+        List<BookSearchResponse> mergedBooks = mergeSearchResults(localBooks, kakaoResult.books());
 
         return new BookSearchListResponse(
-                mergeSearchResults(localBooks, kakaoResult.books()),
+                mergedBooks.stream()
+                        .limit(validSize)
+                        .toList(),
                 validPage,
                 validSize,
-                kakaoResult.isEnd()
+                kakaoResult.isEnd() && mergedBooks.size() <= validSize
         );
     }
 
@@ -81,14 +84,49 @@ public class BookService {
     @Transactional
     public UserBookResponse addToShelf(Long userId, Long bookshelfId, AddBookToShelfRequest request) {
         Long currentUserId = userService.requireUserId(userId);
-        bookshelfService.getBookshelf(bookshelfId);
+        bookshelfService.getOwnedBookshelf(currentUserId, bookshelfId);
+        bookshelfService.requireSectionInBookshelf(bookshelfId, request.sectionId());
         Book book = getBookEntity(request.bookId());
-        UserBook userBook = userBookRepository.findByUserIdAndBookId(currentUserId, request.bookId())
+        return placeBookOnShelf(
+                currentUserId,
+                bookshelfId,
+                book,
+                request.sectionId(),
+                request.slotNo(),
+                request.displayStyle()
+        );
+    }
+
+    @Transactional
+    public UserBookResponse addKakaoBookToShelf(Long userId, Long bookshelfId, AddKakaoBookToShelfRequest request) {
+        Long currentUserId = userService.requireUserId(userId);
+        bookshelfService.getOwnedBookshelf(currentUserId, bookshelfId);
+        bookshelfService.requireSectionInBookshelf(bookshelfId, request.sectionId());
+        Book book = findOrCreateBook(request);
+        return placeBookOnShelf(
+                currentUserId,
+                bookshelfId,
+                book,
+                request.sectionId(),
+                request.slotNo(),
+                request.displayStyle()
+        );
+    }
+
+    private UserBookResponse placeBookOnShelf(
+            Long currentUserId,
+            Long bookshelfId,
+            Book book,
+            Long sectionId,
+            Integer slotNo,
+            String displayStyle
+    ) {
+        UserBook userBook = userBookRepository.findByUserIdAndBookId(currentUserId, book.getId())
                 .orElseGet(() -> {
                     book.increaseBookshelfAddCount();
                     return userBookRepository.save(UserBook.builder()
                             .userId(currentUserId)
-                            .bookId(request.bookId())
+                            .bookId(book.getId())
                             .build());
                 });
         userBook.placeOnShelf();
@@ -96,24 +134,13 @@ public class BookService {
                 .ifPresent(BookshelfItem::remove);
         bookshelfItemRepository.save(BookshelfItem.builder()
                 .bookshelfId(bookshelfId)
-                .bookshelfSectionId(request.sectionId())
+                .bookshelfSectionId(sectionId)
                 .itemType("BOOK")
                 .userBookId(userBook.getId())
-                .slotNo(request.slotNo())
-                .displayStyle(request.displayStyle())
+                .slotNo(slotNo)
+                .displayStyle(displayStyle)
                 .build());
         return UserBookResponse.from(userBook);
-    }
-
-    @Transactional
-    public UserBookResponse addKakaoBookToShelf(Long userId, Long bookshelfId, AddKakaoBookToShelfRequest request) {
-        Book book = findOrCreateBook(request);
-        return addToShelf(userId, bookshelfId, new AddBookToShelfRequest(
-                book.getId(),
-                request.sectionId(),
-                request.slotNo(),
-                request.displayStyle()
-        ));
     }
 
     @Transactional
@@ -127,6 +154,8 @@ public class BookService {
     @Transactional
     public UserBookResponse move(Long userId, Long userBookId, MoveUserBookRequest request) {
         Long currentUserId = userService.requireUserId(userId);
+        bookshelfService.getOwnedBookshelf(currentUserId, request.bookshelfId());
+        bookshelfService.requireSectionInBookshelf(request.bookshelfId(), request.sectionId());
         UserBook userBook = getOwnedUserBook(currentUserId, userBookId);
         userBook.placeOnShelf();
         BookshelfItem item = bookshelfItemRepository.findByUserBookIdAndStatus(userBookId, "ACTIVE")
