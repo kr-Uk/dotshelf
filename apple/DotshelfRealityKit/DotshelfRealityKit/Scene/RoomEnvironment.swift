@@ -61,6 +61,54 @@ enum RoomEnvironment {
         return room
     }
 
+    // MARK: - 3-stripe 벽 헬퍼 (Unity `wall_bottom / trim / top_check`)
+
+    /// 바닥부터: 하단 이보리 패널 1.0m → 트림 몰딩 4cm → 상단 체크 베이지 (나머지).
+    private static let stripeBottomHeight: Float = 1.0
+    private static let stripeTrimHeight: Float = 0.04
+
+    /// 주어진 너비·높이의 벽을 3 stripe으로 구성해 컨테이너 Entity로 반환.
+    /// 컨테이너 원점이 "벽 중심"을 가리키도록 내부 plane y를 조정.
+    /// 외부 사용자는 기존 단일 plane과 동일하게 `.position = (x, height/2, z)`로 붙이면 됨.
+    private static func makeStripedWallPlane(
+        width: Float,
+        height: Float,
+        named: String
+    ) -> Entity {
+        let root = Entity()
+        root.name = named
+
+        let bottomH: Float = min(stripeBottomHeight, height * 0.5)
+        let trimH: Float = min(stripeTrimHeight, height - bottomH - 0.001)
+        let topH: Float = max(0, height - bottomH - trimH)
+
+        // 각 stripe 중심의 절대 y (바닥 0 기준)
+        let bottomCenter = bottomH / 2
+        let trimCenter = bottomH + trimH / 2
+        let topCenter = bottomH + trimH + topH / 2
+
+        // root는 벽 중심(height/2)에 위치 → 각 child y 오프셋 = stripe_center - height/2
+        func addStripe(h: Float, centerY: Float, mat: PhysicallyBasedMaterial, suffix: String) {
+            guard h > 0.001 else { return }
+            let plane = ModelEntity(
+                mesh: .generatePlane(width: width, height: h),
+                materials: [mat]
+            )
+            plane.name = "\(named)_\(suffix)"
+            plane.position = SIMD3<Float>(0, centerY - height / 2, 0)
+            root.addChild(plane)
+        }
+
+        addStripe(h: bottomH, centerY: bottomCenter,
+                  mat: MaterialFactory.wallBottomMaterial(), suffix: "bottom")
+        addStripe(h: trimH, centerY: trimCenter,
+                  mat: MaterialFactory.wallTrimMaterial(), suffix: "trim")
+        addStripe(h: topH, centerY: topCenter,
+                  mat: MaterialFactory.wallTopMaterial(), suffix: "top")
+
+        return root
+    }
+
     // MARK: - 뒷벽 구멍 (4개 스트립으로 구성)
 
     private static func addBackWallWithHole(
@@ -68,36 +116,42 @@ enum RoomEnvironment {
         wallWidth: Float, wallHeight: Float, wallZ: Float,
         holeWidth: Float, holeHeight: Float
     ) {
-        let material = MaterialFactory.wallMaterial()
         let sideStripWidth = (wallWidth - holeWidth) / 2
         let topStripHeight = wallHeight - holeHeight
 
-        // 좌측 스트립
-        let leftStrip = ModelEntity(
-            mesh: .generateBox(width: sideStripWidth, height: wallHeight, depth: 0.01),
-            materials: [material]
+        // 좌측 스트립 (3-stripe 구성)
+        let leftStripe = makeStripedWallPlane(
+            width: sideStripWidth, height: wallHeight, named: "room_wall_back"
         )
-        leftStrip.name = "room_wall_back"
-        leftStrip.position = SIMD3<Float>(-(holeWidth + sideStripWidth) / 2, wallHeight / 2, wallZ)
-        leftStrip.collision = CollisionComponent(shapes: [.generateBox(width: sideStripWidth, height: wallHeight, depth: 0.01)])
-        leftStrip.components.set(InputTargetComponent())
-        parent.addChild(leftStrip)
+        leftStripe.position = SIMD3<Float>(-(holeWidth + sideStripWidth) / 2, wallHeight / 2, wallZ)
+        // 탭 hit용 collision은 컨테이너에 박스로
+        let leftHit = ModelEntity()
+        leftHit.name = "room_wall_back"
+        leftHit.collision = CollisionComponent(shapes: [
+            .generateBox(width: sideStripWidth, height: wallHeight, depth: 0.01)
+        ])
+        leftHit.components.set(InputTargetComponent())
+        leftStripe.addChild(leftHit)
+        parent.addChild(leftStripe)
 
-        // 우측 스트립
-        let rightStrip = ModelEntity(
-            mesh: .generateBox(width: sideStripWidth, height: wallHeight, depth: 0.01),
-            materials: [material]
+        // 우측 스트립 (3-stripe 구성)
+        let rightStripe = makeStripedWallPlane(
+            width: sideStripWidth, height: wallHeight, named: "room_wall_back"
         )
-        rightStrip.name = "room_wall_back"
-        rightStrip.position = SIMD3<Float>((holeWidth + sideStripWidth) / 2, wallHeight / 2, wallZ)
-        rightStrip.collision = CollisionComponent(shapes: [.generateBox(width: sideStripWidth, height: wallHeight, depth: 0.01)])
-        rightStrip.components.set(InputTargetComponent())
-        parent.addChild(rightStrip)
+        rightStripe.position = SIMD3<Float>((holeWidth + sideStripWidth) / 2, wallHeight / 2, wallZ)
+        let rightHit = ModelEntity()
+        rightHit.name = "room_wall_back"
+        rightHit.collision = CollisionComponent(shapes: [
+            .generateBox(width: sideStripWidth, height: wallHeight, depth: 0.01)
+        ])
+        rightHit.components.set(InputTargetComponent())
+        rightStripe.addChild(rightHit)
+        parent.addChild(rightStripe)
 
-        // 상단 스트립 (구멍 위)
+        // 상단 스트립 (구멍 위) — 전부 체크 베이지 영역
         let topStrip = ModelEntity(
             mesh: .generateBox(width: holeWidth, height: topStripHeight, depth: 0.01),
-            materials: [material]
+            materials: [MaterialFactory.wallTopMaterial()]
         )
         topStrip.name = "room_wall_back"
         topStrip.position = SIMD3<Float>(0, holeHeight + topStripHeight / 2, wallZ)
@@ -252,23 +306,23 @@ enum RoomEnvironment {
         return entity
     }
 
-    private static func makeLeftWall(depth: Float, height: Float, x: Float) -> ModelEntity {
-        let mesh = MeshResource.generatePlane(width: depth, height: height)
-        let material = MaterialFactory.wallMaterial()
-        let entity = ModelEntity(mesh: mesh, materials: [material])
-        entity.name = "room_wall_left"
-        entity.position = SIMD3<Float>(x, height / 2, 0)
-        entity.orientation = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(0, 1, 0))
-        // Collision: entity-local에서 x=길이(평면방향), z=두께(벽 수직) 순서. Ry(π/2) 회전 반영.
-        entity.components.set(CollisionComponent(
+    private static func makeLeftWall(depth: Float, height: Float, x: Float) -> Entity {
+        // 3 stripe 컨테이너 — 내부 plane은 +Z normal (XY plane).
+        // Ry(+90°) 회전으로 벽면이 +x 방향을 향하게 됨 (화이트보드가 붙는 방향).
+        let root = makeStripedWallPlane(width: depth, height: height, named: "room_wall_left")
+        root.position = SIMD3<Float>(x, height / 2, 0)
+        root.orientation = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(0, 1, 0))
+
+        // Collision + Physics는 root에 부착 (자식 plane의 시각과 독립)
+        root.components.set(CollisionComponent(
             shapes: [.generateBox(width: depth, height: height, depth: 0.1)]
         ))
-        entity.components.set(PhysicsBodyComponent(
+        root.components.set(PhysicsBodyComponent(
             massProperties: .default,
             material: .generate(friction: 0.5, restitution: 0.1),
             mode: .static
         ))
-        return entity
+        return root
     }
 
     /// 화이트보드: 프레임(알루미늄) + 흰색 표면. 좌측 벽에 부착.

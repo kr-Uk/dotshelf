@@ -10,15 +10,15 @@ enum MaterialFactory {
     private static let sharedWoodMaterial: PhysicallyBasedMaterial = {
         var material = PhysicallyBasedMaterial()
 
+        // Unity MaterialFactory bookshelfSmoothness = 0.42 → roughness 0.58.
         if let colorTexture = try? TextureResource.load(named: "Wood049_1K-JPG_Color"),
-           let normalTexture = try? TextureResource.load(named: "Wood049_1K-JPG_NormalGL"),
-           let roughnessTexture = try? TextureResource.load(named: "Wood049_1K-JPG_Roughness") {
+           let normalTexture = try? TextureResource.load(named: "Wood049_1K-JPG_NormalGL") {
             material.baseColor = .init(texture: .init(colorTexture))
             material.normal = .init(texture: .init(normalTexture))
-            material.roughness = .init(texture: .init(roughnessTexture))
+            material.roughness = .init(floatLiteral: 0.58)  // Unity 값에 맞춤 (텍스처 roughness map 미사용)
         } else {
             material.baseColor = .init(tint: PlatformColor(red: 0.48, green: 0.35, blue: 0.20, alpha: 1.0))
-            material.roughness = .init(floatLiteral: 0.75)
+            material.roughness = .init(floatLiteral: 0.58)
         }
 
         material.metallic = .init(floatLiteral: 0.0)
@@ -36,82 +36,116 @@ enum MaterialFactory {
         return material
     }
 
-    /// 서재 방 바닥용 어두운 나무 재질 (Wood049 재사용 + UV 타일링)
-    /// floor + thresholdStep 2곳에서 호출 → static 캐시.
+    /// 서재 방 바닥용 자연 원목 재질 — Unity 프로젝트의 `floor_natural` 텍스처 사용.
+    /// Unity MaterialFactory: floorSmoothness = 0.28 → roughness 0.72, tiling 3×3.
     static func floorMaterial() -> PhysicallyBasedMaterial { sharedFloorMaterial }
 
     private static let sharedFloorMaterial: PhysicallyBasedMaterial = {
         var material = PhysicallyBasedMaterial()
 
-        if let color = try? TextureResource.load(named: "Wood049_1K-JPG_Color"),
-           let normal = try? TextureResource.load(named: "Wood049_1K-JPG_NormalGL"),
-           let rough = try? TextureResource.load(named: "Wood049_1K-JPG_Roughness") {
+        if let floor = try? TextureResource.load(named: "floor_natural") {
+            material.baseColor = .init(tint: .white, texture: .init(floor))
+            material.roughness = .init(floatLiteral: 0.72)
+        } else if let color = try? TextureResource.load(named: "Wood049_1K-JPG_Color"),
+                  let normal = try? TextureResource.load(named: "Wood049_1K-JPG_NormalGL") {
+            // Fallback — 기존 Wood049
             material.baseColor = .init(tint: PlatformColor(red: 0.55, green: 0.42, blue: 0.28, alpha: 1.0),
                                        texture: .init(color))
             material.normal = .init(texture: .init(normal))
-            material.roughness = .init(texture: .init(rough))
+            material.roughness = .init(floatLiteral: 0.72)
         } else {
             material.baseColor = .init(tint: PlatformColor(red: 0.38, green: 0.26, blue: 0.16, alpha: 1.0))
-            material.roughness = .init(floatLiteral: 0.8)
+            material.roughness = .init(floatLiteral: 0.72)
         }
 
-        // 큰 바닥에 텍스처가 늘어지지 않도록 4배 타일링
+        // Unity floorBaseMapTiling = (3, 3)
         material.textureCoordinateTransform = .init(
             offset: SIMD2<Float>(0, 0),
-            scale: SIMD2<Float>(4, 4),
+            scale: SIMD2<Float>(3, 3),
             rotation: 0
         )
         material.metallic = .init(floatLiteral: 0.0)
         return material
     }()
 
-    /// 화이트보드 프레임 (짙은 알루미늄)
+    /// 화이트보드 프레임 — Unity: (0.34, 0.26, 0.18) 짙은 갈색, smoothness 0.32 → roughness 0.68, 비금속.
     static func whiteboardFrameMaterial() -> PhysicallyBasedMaterial {
         var material = PhysicallyBasedMaterial()
-        material.baseColor = .init(tint: PlatformColor(red: 0.18, green: 0.18, blue: 0.20, alpha: 1.0))
-        material.roughness = .init(floatLiteral: 0.4)
-        material.metallic = .init(floatLiteral: 0.6)
+        material.baseColor = .init(tint: PlatformColor(red: 0.34, green: 0.26, blue: 0.18, alpha: 1.0))
+        material.roughness = .init(floatLiteral: 0.68)
+        material.metallic = .init(floatLiteral: 0.0)
         return material
     }
 
-    /// 화이트보드 표면 (살짝 광택 있는 흰색)
+    /// 화이트보드 표면 — Unity: (0.96, 0.97, 0.95), smoothness 0.62 → roughness 0.38.
     static func whiteboardSurfaceMaterial() -> PhysicallyBasedMaterial {
         var material = PhysicallyBasedMaterial()
-        material.baseColor = .init(tint: PlatformColor(red: 0.97, green: 0.97, blue: 0.98, alpha: 1.0))
-        material.roughness = .init(floatLiteral: 0.25)
+        material.baseColor = .init(tint: PlatformColor(red: 0.96, green: 0.97, blue: 0.95, alpha: 1.0))
+        material.roughness = .init(floatLiteral: 0.38)
         material.metallic = .init(floatLiteral: 0.0)
         return material
     }
 
-    /// 방 벽용 플라스터 재질 (Plaster001 PBR 텍스처)
-    /// 여러 벽 엔티티에서 동일 material을 반복 호출하므로 static 캐시로 단일 인스턴스 유지.
-    static func wallMaterial() -> PhysicallyBasedMaterial { sharedWallMaterial }
+    // MARK: - 벽지 (Unity 3-stripe 구성: 하단 이보리 패널 / 트림 몰딩 / 상단 체크 베이지)
 
-    private static let sharedWallMaterial: PhysicallyBasedMaterial = {
-        var material = PhysicallyBasedMaterial()
+    /// 하단 이보리 패널 — Unity `wall_bottom_panel_ivory.png` (635×353).
+    /// 벽 너비 방향으로 2회, 높이 방향으로 1회 반복.
+    static func wallBottomMaterial() -> PhysicallyBasedMaterial { sharedWallBottom }
 
-        if let color = try? TextureResource.load(named: "Plaster001_1K-JPG_Color"),
-           let normal = try? TextureResource.load(named: "Plaster001_1K-JPG_NormalGL"),
-           let rough = try? TextureResource.load(named: "Plaster001_1K-JPG_Roughness") {
-            material.baseColor = .init(
-                tint: PlatformColor(red: 0.92, green: 0.88, blue: 0.80, alpha: 1.0),
-                texture: .init(color)
-            )
-            material.normal = .init(texture: .init(normal))
-            material.roughness = .init(texture: .init(rough))
+    private static let sharedWallBottom: PhysicallyBasedMaterial = {
+        var m = PhysicallyBasedMaterial()
+        if let tex = try? TextureResource.load(named: "wall_bottom_panel_ivory") {
+            m.baseColor = .init(tint: PlatformColor(red: 0.93, green: 0.90, blue: 0.84, alpha: 1.0),
+                                texture: .init(tex))
         } else {
-            material.baseColor = .init(tint: PlatformColor(red: 0.88, green: 0.83, blue: 0.74, alpha: 1.0))
-            material.roughness = .init(floatLiteral: 0.95)
+            m.baseColor = .init(tint: PlatformColor(red: 0.93, green: 0.90, blue: 0.84, alpha: 1.0))
         }
-
-        material.textureCoordinateTransform = .init(
-            offset: SIMD2<Float>(0, 0),
-            scale: SIMD2<Float>(2, 2),
-            rotation: 0
-        )
-        material.metallic = .init(floatLiteral: 0.0)
-        return material
+        m.textureCoordinateTransform = .init(offset: .zero, scale: SIMD2<Float>(2, 1), rotation: 0)
+        m.roughness = .init(floatLiteral: 0.92)
+        m.metallic = .init(floatLiteral: 0.0)
+        return m
     }()
+
+    /// 트림 몰딩 — 얇은 수평 띠. Unity `wall_trim_molding_ivory.png` (611×57).
+    /// 벽 너비 방향으로 4회 반복해 몰딩 결이 자연스럽게.
+    static func wallTrimMaterial() -> PhysicallyBasedMaterial { sharedWallTrim }
+
+    private static let sharedWallTrim: PhysicallyBasedMaterial = {
+        var m = PhysicallyBasedMaterial()
+        if let tex = try? TextureResource.load(named: "wall_trim_molding_ivory") {
+            m.baseColor = .init(tint: PlatformColor(red: 0.96, green: 0.93, blue: 0.86, alpha: 1.0),
+                                texture: .init(tex))
+        } else {
+            m.baseColor = .init(tint: PlatformColor(red: 0.96, green: 0.93, blue: 0.86, alpha: 1.0))
+        }
+        m.textureCoordinateTransform = .init(offset: .zero, scale: SIMD2<Float>(4, 1), rotation: 0)
+        m.roughness = .init(floatLiteral: 0.55)
+        m.metallic = .init(floatLiteral: 0.0)
+        return m
+    }()
+
+    /// 상단 체크 베이지 — Unity `wall_top_check_beige.png` (642×394).
+    /// 체크 패턴 스케일 유지 위해 2×2 반복.
+    static func wallTopMaterial() -> PhysicallyBasedMaterial { sharedWallTop }
+
+    private static let sharedWallTop: PhysicallyBasedMaterial = {
+        var m = PhysicallyBasedMaterial()
+        if let tex = try? TextureResource.load(named: "wall_top_check_beige") {
+            m.baseColor = .init(tint: PlatformColor(red: 0.96, green: 0.94, blue: 0.88, alpha: 1.0),
+                                texture: .init(tex))
+        } else {
+            m.baseColor = .init(tint: PlatformColor(red: 0.96, green: 0.94, blue: 0.88, alpha: 1.0))
+        }
+        m.textureCoordinateTransform = .init(offset: .zero, scale: SIMD2<Float>(2, 2), rotation: 0)
+        m.roughness = .init(floatLiteral: 0.92)
+        m.metallic = .init(floatLiteral: 0.0)
+        return m
+    }()
+
+    /// 기본 벽 재질 — alcove 내벽·천장·창문 헤더 등 stripe 구성이 맞지 않는 작은 영역용.
+    /// Unity `wallColor = (0.93, 0.90, 0.84)`, smoothness 0.08 → roughness 0.92, 매트.
+    /// 하단 패널 텍스처를 기본으로 써서 3-stripe 벽과 이음새 티가 덜 나게 함.
+    static func wallMaterial() -> PhysicallyBasedMaterial { sharedWallBottom }
 
     /// 창문 밖 풀밭 (Grass001 PBR 텍스처)
     static func grassMaterial() -> PhysicallyBasedMaterial {
