@@ -6,10 +6,11 @@ namespace App.Config
     public sealed class AppApiConfig : ScriptableObject
     {
         [Header("Environment")]
-        [SerializeField] private bool useMockApi = true;
+        [SerializeField] private bool useMockApi = false;
         [SerializeField] private string mockBaseUrl = "http://localhost:3001";
-        [SerializeField] private string devBaseUrl = "http://localhost:8080";
-        [SerializeField] private string prodBaseUrl = "https://api.example.com";
+        [SerializeField] private string devBaseUrl = "https://api.dotshelf.digital";
+        [SerializeField] private string prodBaseUrl = "https://api.dotshelf.digital";
+        [SerializeField] private string healthCheckPath = "/health";
 
         [Header("Request")]
         [SerializeField] private int requestTimeoutSeconds = 10;
@@ -19,6 +20,7 @@ namespace App.Config
         public string MockBaseUrl => mockBaseUrl;
         public string DevBaseUrl => devBaseUrl;
         public string ProdBaseUrl => prodBaseUrl;
+        public string HealthCheckPath => string.IsNullOrWhiteSpace(healthCheckPath) ? "/health" : healthCheckPath;
         public int RequestTimeoutSeconds => requestTimeoutSeconds;
         public bool EnableVerboseLog => enableVerboseLog;
 

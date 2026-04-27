@@ -20,7 +20,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private bool saveGeneratedContentInEditMode = true;
         [SerializeField] private AppApiConfig apiConfig;
         [SerializeField] private bool useApiRepository = true;
-        [SerializeField] private string defaultApiBaseUrl = "http://localhost:3001";
+        [SerializeField] private string defaultApiBaseUrl = "https://api.dotshelf.digital";
         [SerializeField] private int defaultRequestTimeoutSeconds = 10;
 
         private void Awake()
@@ -90,7 +90,7 @@ namespace BookshelfPorting.Runtime
         {
             EditorApplication.delayCall -= InstallSceneForEditor;
 
-            if (this == null || Application.isPlaying || !installInEditMode)
+            if (this == null || Application.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode || !installInEditMode)
             {
                 return;
             }
@@ -116,7 +116,7 @@ namespace BookshelfPorting.Runtime
 
         public static void InstallIntoActiveScene(bool forceGenerate)
         {
-            InstallIntoActiveScene(forceGenerate, null, true, "http://localhost:3001", 10);
+            InstallIntoActiveScene(forceGenerate, null, true, "https://api.dotshelf.digital", 10);
         }
 
         private static void InstallIntoActiveScene(
@@ -126,6 +126,9 @@ namespace BookshelfPorting.Runtime
             string defaultApiBaseUrl,
             int defaultRequestTimeoutSeconds)
         {
+            ApplyRuntimePerformanceSettings();
+            RemoveLegacyNotebookDashboardCanvases();
+
             var mainCamera = Camera.main;
             if (mainCamera == null)
             {
@@ -136,6 +139,9 @@ namespace BookshelfPorting.Runtime
             }
 
             var systems = FindOrCreateRoot("BookshelfSystems");
+            var apiBaseUrl = ResolveApiBaseUrl(apiConfig, defaultApiBaseUrl);
+            var apiTimeoutSeconds = ResolveApiTimeoutSeconds(apiConfig, defaultRequestTimeoutSeconds);
+            var apiHealthCheckPath = apiConfig != null ? apiConfig.HealthCheckPath : "/health";
             var state = GetOrAddComponent<BookshelfState>(systems);
             var materialFactory = GetOrAddComponent<MaterialFactory>(systems);
             var generator = GetOrAddComponent<BookshelfGenerator>(systems);
@@ -144,7 +150,14 @@ namespace BookshelfPorting.Runtime
             var runtimeDataStore = GetOrAddComponent<BookshelfRuntimeDataStore>(systems);
             var experienceManager = GetOrAddComponent<BookshelfExperienceManager>(systems);
             var environment = GetOrAddComponent<EnvironmentSetup>(systems);
-            var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(apiConfig, useApiRepository, defaultApiBaseUrl, defaultRequestTimeoutSeconds));
+            var apiManager = GetOrAddComponent<APIManager>(systems);
+            var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(useApiRepository, apiBaseUrl, apiTimeoutSeconds));
+
+            apiManager.Configure(apiBaseUrl, timeout: apiTimeoutSeconds);
+            if (Application.isPlaying && useApiRepository)
+            {
+                apiManager.CheckHealth(null, apiHealthCheckPath);
+            }
 
             var camerasRoot = FindOrCreateRoot("Cameras").transform;
             var overviewPosition = new Vector3(1.55f, 1.30f, -1.95f);
@@ -154,7 +167,13 @@ namespace BookshelfPorting.Runtime
                 "OverviewAnchor",
                 overviewPosition,
                 Quaternion.LookRotation((overviewTarget - overviewPosition).normalized, Vector3.up));
-            var frontalAnchor = FindOrCreateAnchor(camerasRoot, "FrontalAnchor", new Vector3(0f, 0.95f, -0.95f), Quaternion.LookRotation(new Vector3(0f, -0.1f, 2.15f).normalized, Vector3.up));
+            var frontalPosition = new Vector3(0f, 0.95f, -2.05f);
+            var frontalTarget = new Vector3(0f, 0.85f, 1.20f);
+            var frontalAnchor = FindOrCreateAnchor(
+                camerasRoot,
+                "FrontalAnchor",
+                frontalPosition,
+                Quaternion.LookRotation((frontalTarget - frontalPosition).normalized, Vector3.up));
             var whiteboardAnchor = FindOrCreateAnchor(
                 camerasRoot,
                 "WhiteboardAnchor",
@@ -175,7 +194,9 @@ namespace BookshelfPorting.Runtime
             var probe = GetOrAddComponent<ReflectionProbe>(probeObject);
 
             cameraController.Configure(mainCamera, overviewAnchor, frontalAnchor, whiteboardAnchor, notebookAnchor, bookViewAnchor);
-            cameraController.ConfigureViewSettings(58f, 55f, 56f, 24f, 0.65f);
+            cameraController.ConfigureViewSettings(55f, 45f, 45f, 24f, 0.7f);
+            cameraController.ConfigureFrontalZoomSettings(3.25f, 0.8f, 4.5f, 0.45f, 0.15f);
+            cameraController.ConfigureFrontalZoomInputPredicate(experienceManager.CanHandleFrontalZoomInput);
             generator.Configure(state, materialFactory, loadBooksUseCase);
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);
@@ -207,11 +228,46 @@ namespace BookshelfPorting.Runtime
             }
         }
 
+        private static void RemoveLegacyNotebookDashboardCanvases()
+        {
+            var canvases = Object.FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (var i = 0; i < canvases.Length; i++)
+            {
+                var canvas = canvases[i];
+                if (canvas == null || canvas.name != "DashboardCanvas")
+                {
+                    continue;
+                }
+
+                if (Application.isPlaying)
+                {
+                    Object.Destroy(canvas.gameObject);
+                }
+                else
+                {
+                    Object.DestroyImmediate(canvas.gameObject);
+                }
+            }
+        }
+
+        private static void ApplyRuntimePerformanceSettings()
+        {
+            if (!Application.isPlaying)
+            {
+                return;
+            }
+
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = Application.isMobilePlatform ? 30 : 45;
+            QualitySettings.pixelLightCount = Mathf.Min(QualitySettings.pixelLightCount, 2);
+            QualitySettings.shadowDistance = Mathf.Min(QualitySettings.shadowDistance, Application.isMobilePlatform ? 18f : 24f);
+            Screen.sleepTimeout = SleepTimeout.SystemSetting;
+        }
+
         private static IBookCatalogRepository CreateBookCatalogRepository(
-            AppApiConfig apiConfig,
             bool useApiRepository,
-            string defaultApiBaseUrl,
-            int defaultRequestTimeoutSeconds)
+            string apiBaseUrl,
+            int requestTimeoutSeconds)
         {
             var mockRepository = new MockBookCatalogRepository();
             if (!useApiRepository)
@@ -219,11 +275,21 @@ namespace BookshelfPorting.Runtime
                 return mockRepository;
             }
 
-            var baseUrl = apiConfig != null ? apiConfig.ResolveBaseUrl() : defaultApiBaseUrl;
-            var timeoutSeconds = apiConfig != null
-                ? apiConfig.RequestTimeoutSeconds
-                : defaultRequestTimeoutSeconds;
-            return new ApiBookCatalogRepository(baseUrl, timeoutSeconds, mockRepository);
+            return new ApiBookCatalogRepository(apiBaseUrl, requestTimeoutSeconds, mockRepository);
+        }
+
+        private static string ResolveApiBaseUrl(AppApiConfig apiConfig, string fallbackBaseUrl)
+        {
+            var baseUrl = apiConfig != null ? apiConfig.ResolveBaseUrl() : fallbackBaseUrl;
+            return string.IsNullOrWhiteSpace(baseUrl)
+                ? "https://api.dotshelf.digital"
+                : baseUrl.Trim().TrimEnd('/');
+        }
+
+        private static int ResolveApiTimeoutSeconds(AppApiConfig apiConfig, int fallbackTimeoutSeconds)
+        {
+            var timeoutSeconds = apiConfig != null ? apiConfig.RequestTimeoutSeconds : fallbackTimeoutSeconds;
+            return Mathf.Max(1, timeoutSeconds);
         }
 
         private static bool HasGeneratedContent(BookshelfGenerator generator)

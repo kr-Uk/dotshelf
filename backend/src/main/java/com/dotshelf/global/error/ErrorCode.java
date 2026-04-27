@@ -18,21 +18,42 @@ public enum ErrorCode {
     // Auth
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "A001", "인증이 필요합니다."),
     FORBIDDEN(HttpStatus.FORBIDDEN, "A002", "접근 권한이 없습니다."),
+    INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "A003", "유효하지 않은 토큰입니다."),
 
     // User
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "U001", "사용자를 찾을 수 없습니다."),
+    USER_ALREADY_EXISTS(HttpStatus.CONFLICT, "U002", "이미 존재하는 사용자입니다."),
+    DUPLICATE_NICKNAME(HttpStatus.CONFLICT, "U003", "이미 사용 중인 닉네임입니다."),
 
     // Book
     BOOK_NOT_FOUND(HttpStatus.NOT_FOUND, "B001", "도서를 찾을 수 없습니다."),
+    USER_BOOK_NOT_FOUND(HttpStatus.NOT_FOUND, "B002", "내 책을 찾을 수 없습니다."),
+    BOOK_SEARCH_UNAVAILABLE(HttpStatus.BAD_GATEWAY, "B003", "도서 검색 서비스를 사용할 수 없습니다."),
 
     // Bookshelf
     BOOKSHELF_NOT_FOUND(HttpStatus.NOT_FOUND, "S001", "책장을 찾을 수 없습니다."),
+    BOOKSHELF_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "S002", "책장 아이템을 찾을 수 없습니다."),
+    SPACE_NOT_FOUND(HttpStatus.NOT_FOUND, "S003", "공간을 찾을 수 없습니다."),
 
     // Review
     REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "R001", "리뷰를 찾을 수 없습니다."),
+    READING_RECORD_NOT_FOUND(HttpStatus.NOT_FOUND, "R002", "독서기록을 찾을 수 없습니다."),
+    COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "R003", "댓글을 찾을 수 없습니다."),
 
     // Follow
-    FOLLOW_NOT_FOUND(HttpStatus.NOT_FOUND, "F001", "팔로우 관계를 찾을 수 없습니다.");
+    FOLLOW_NOT_FOUND(HttpStatus.NOT_FOUND, "F001", "팔로우 관계를 찾을 수 없습니다."),
+
+    // Asset
+    ASSET_NOT_FOUND(HttpStatus.NOT_FOUND, "AS001", "에셋을 찾을 수 없습니다."),
+    ASSET_ALREADY_OWNED(HttpStatus.CONFLICT, "AS002", "이미 보유한 에셋입니다."),
+    INSUFFICIENT_PAGES(HttpStatus.UNPROCESSABLE_ENTITY, "AS003", "페이지 잔액이 부족합니다."),
+
+    // Guestbook
+    GUESTBOOK_NOT_FOUND(HttpStatus.NOT_FOUND, "G001", "방명록을 찾을 수 없습니다."),
+
+    // Notification / Report
+    NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "N001", "알림을 찾을 수 없습니다."),
+    REPORT_ALREADY_EXISTS(HttpStatus.CONFLICT, "RP001", "이미 신고한 대상입니다.");
 
     private final HttpStatus status;
     private final String code;

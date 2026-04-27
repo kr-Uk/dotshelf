@@ -15,6 +15,7 @@ namespace BookshelfPorting.Runtime
 
         private readonly List<ShelfSection> sections = new List<ShelfSection>();
         private readonly List<BookLayoutTarget> layoutTargets = new List<BookLayoutTarget>();
+        private readonly List<BookEntity> previewBooks = new List<BookEntity>();
 
         public IReadOnlyList<ShelfSection> Sections => sections;
         public bool IsViewingBook { get; set; }
@@ -66,9 +67,21 @@ namespace BookshelfPorting.Runtime
             return true;
         }
 
+        public bool TryPlaceBookAt(BookEntity book, ShelfSection target, int insertIndex, MonoBehaviour runner, bool animate)
+        {
+            if (!TryInsertIntoSection(book, target, insertIndex))
+            {
+                return false;
+            }
+
+            LayoutSection(target, runner, animate);
+            return true;
+        }
+
         public bool TryPlaceBookForDrop(
             BookEntity book,
             ShelfSection target,
+            int insertIndex,
             out Vector3 localPosition,
             out Quaternion localRotation,
             out Vector3 localScale)
@@ -77,7 +90,7 @@ namespace BookshelfPorting.Runtime
             localRotation = Quaternion.identity;
             localScale = Vector3.one;
 
-            if (!TryInsertIntoSection(book, target))
+            if (!TryInsertIntoSection(book, target, insertIndex))
             {
                 return false;
             }
@@ -92,12 +105,34 @@ namespace BookshelfPorting.Runtime
             return false;
         }
 
+        public bool TryPlaceBookForDrop(
+            BookEntity book,
+            ShelfSection target,
+            out Vector3 localPosition,
+            out Quaternion localRotation,
+            out Vector3 localScale)
+        {
+            return TryPlaceBookForDrop(book, target, target != null ? target.books.Count : 0, out localPosition, out localRotation, out localScale);
+        }
+
         public void LayoutAll(MonoBehaviour runner, bool animate)
         {
             for (var i = 0; i < sections.Count; i++)
             {
                 LayoutSection(sections[i], runner, animate);
             }
+        }
+
+        public bool SetSectionAlignment(ShelfSection section, ShelfSectionAlignment alignment, MonoBehaviour runner, bool animate)
+        {
+            if (section == null)
+            {
+                return false;
+            }
+
+            section.alignment = alignment;
+            LayoutSection(section, runner, animate);
+            return true;
         }
 
         public void LayoutSection(ShelfSection section, MonoBehaviour runner, bool animate)
@@ -171,6 +206,78 @@ namespace BookshelfPorting.Runtime
             }
 
             return false;
+        }
+
+        public bool TryGetBookPreviewTransform(
+            BookEntity targetBook,
+            ShelfSection section,
+            int insertIndex,
+            out Vector3 localPosition,
+            out Quaternion localRotation,
+            out Vector3 localScale)
+        {
+            localPosition = default;
+            localRotation = Quaternion.identity;
+            localScale = Vector3.one;
+
+            if (targetBook == null || section == null)
+            {
+                return false;
+            }
+
+            BuildSectionLayout(section, layoutTargets, targetBook, insertIndex);
+            for (var i = 0; i < layoutTargets.Count; i++)
+            {
+                var target = layoutTargets[i];
+                if (target.Book == targetBook)
+                {
+                    localPosition = target.LocalPosition;
+                    localRotation = target.LocalRotation;
+                    localScale = target.LocalScale;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public int ComputeDropInsertIndex(Vector3 localPosition, ShelfSection section, BookEntity book)
+        {
+            if (section == null)
+            {
+                return 0;
+            }
+
+            RemoveMissingBooks(section);
+            var sectionScale = GetSectionLayoutScale(section, book);
+            var x = GetSectionLayoutStartX(section, section.books, sectionScale);
+            var insertIndex = 0;
+
+            for (var i = 0; i < section.books.Count; i++)
+            {
+                var existingBook = section.books[i];
+                if (existingBook == null || existingBook == book)
+                {
+                    continue;
+                }
+
+                var footprint = existingBook.GetFootprint() * sectionScale;
+                var centerX = x + footprint * 0.5f;
+                if (localPosition.x <= centerX)
+                {
+                    return insertIndex;
+                }
+
+                x += footprint + bookPadding;
+                insertIndex++;
+            }
+
+            return insertIndex;
+        }
+
+        public float GetDropLayoutScale(ShelfSection section, BookEntity book)
+        {
+            return section != null ? GetSectionLayoutScale(section, book) : 1f;
         }
 
         public bool ChangeBookOrientation(BookEntity book, BookOrientation nextOrientation, MonoBehaviour runner)
@@ -283,6 +390,28 @@ namespace BookshelfPorting.Runtime
             return null;
         }
 
+        public ShelfSection FindSectionAt(Vector3 localPosition, float margin = 0f)
+        {
+            for (var i = 0; i < sections.Count; i++)
+            {
+                var section = sections[i];
+                if (section == null)
+                {
+                    continue;
+                }
+
+                if (localPosition.x >= section.leftBound - margin &&
+                    localPosition.x <= section.rightBound + margin &&
+                    localPosition.y >= section.shelfTopY - margin &&
+                    localPosition.y <= section.shelfTopY + section.sectionHeight + margin)
+                {
+                    return section;
+                }
+            }
+
+            return null;
+        }
+
         public bool TryMoveToNearestAvailableSection(BookEntity book, ShelfSection avoid)
         {
             var destination = FindNearestAvailableSection(book.transform.localPosition, book, avoid);
@@ -298,16 +427,27 @@ namespace BookshelfPorting.Runtime
 
         private bool TryInsertIntoSection(BookEntity book, ShelfSection target)
         {
+            return TryInsertIntoSection(book, target, target != null ? target.books.Count : 0);
+        }
+
+        private bool TryInsertIntoSection(BookEntity book, ShelfSection target, int insertIndex)
+        {
             if (book == null || target == null)
             {
                 return false;
             }
 
-            RemoveMissingBooks(target);
-            if (!target.books.Contains(book))
+            var previousSection = book.CurrentSection;
+            var previousIndex = previousSection != null ? previousSection.books.IndexOf(book) : -1;
+            if (previousSection != null)
             {
-                target.books.Add(book);
+                previousSection.books.Remove(book);
             }
+
+            RemoveMissingBooks(target);
+            target.books.Remove(book);
+            var clampedInsertIndex = Mathf.Clamp(insertIndex, 0, target.books.Count);
+            target.books.Insert(clampedInsertIndex, book);
 
             book.SetSection(target);
 
@@ -317,7 +457,17 @@ namespace BookshelfPorting.Runtime
             }
 
             target.books.Remove(book);
-            book.SetSection(null);
+            if (previousSection != null)
+            {
+                var restoreIndex = Mathf.Clamp(previousIndex, 0, previousSection.books.Count);
+                previousSection.books.Insert(restoreIndex, book);
+                book.SetSection(previousSection);
+            }
+            else
+            {
+                book.SetSection(null);
+            }
+
             return false;
         }
 
@@ -345,6 +495,11 @@ namespace BookshelfPorting.Runtime
 
         private void BuildSectionLayout(ShelfSection section, List<BookLayoutTarget> targets)
         {
+            BuildSectionLayout(section, targets, null, 0);
+        }
+
+        private void BuildSectionLayout(ShelfSection section, List<BookLayoutTarget> targets, BookEntity candidateBook, int insertIndex)
+        {
             targets.Clear();
 
             if (section == null)
@@ -353,11 +508,18 @@ namespace BookshelfPorting.Runtime
             }
 
             RemoveMissingBooks(section);
-            var sectionScale = GetSectionLayoutScale(section);
-            var x = section.leftBound + bookPadding;
-            for (var i = 0; i < section.books.Count; i++)
+            var sectionScale = GetSectionLayoutScale(section, candidateBook);
+            var sourceBooks = section.books;
+            if (candidateBook != null)
             {
-                var book = section.books[i];
+                BuildPreviewBookList(section, candidateBook, insertIndex, previewBooks);
+                sourceBooks = previewBooks;
+            }
+
+            var x = GetSectionLayoutStartX(section, sourceBooks, sectionScale);
+            for (var i = 0; i < sourceBooks.Count; i++)
+            {
+                var book = sourceBooks[i];
                 var footprint = book.GetFootprint() * sectionScale;
                 // X uses scaled footprints while Z aligns the visual front edge inside the section depth.
                 targets.Add(new BookLayoutTarget(
@@ -371,6 +533,88 @@ namespace BookshelfPorting.Runtime
 
                 x += footprint + bookPadding;
             }
+        }
+
+        private float GetSectionLayoutStartX(ShelfSection section, List<BookEntity> sourceBooks, float sectionScale)
+        {
+            if (section == null)
+            {
+                return 0f;
+            }
+
+            var contentWidth = GetSectionContentWidth(sourceBooks, sectionScale);
+            var leftStart = section.leftBound + bookPadding;
+            var rightStart = section.rightBound - bookPadding - contentWidth;
+            if (rightStart < leftStart)
+            {
+                return leftStart;
+            }
+
+            switch (section.alignment)
+            {
+                case ShelfSectionAlignment.Center:
+                    return Mathf.Clamp(section.leftBound + (section.Width - contentWidth) * 0.5f, leftStart, rightStart);
+                case ShelfSectionAlignment.Right:
+                    return rightStart;
+                default:
+                    return leftStart;
+            }
+        }
+
+        private float GetSectionContentWidth(List<BookEntity> sourceBooks, float sectionScale)
+        {
+            if (sourceBooks == null || sourceBooks.Count == 0)
+            {
+                return 0f;
+            }
+
+            var width = 0f;
+            var bookCount = 0;
+            for (var i = 0; i < sourceBooks.Count; i++)
+            {
+                var book = sourceBooks[i];
+                if (book == null)
+                {
+                    continue;
+                }
+
+                width += book.GetFootprint() * sectionScale;
+                bookCount++;
+            }
+
+            if (bookCount > 1)
+            {
+                width += bookPadding * (bookCount - 1);
+            }
+
+            return width;
+        }
+
+        private static void BuildPreviewBookList(ShelfSection section, BookEntity candidateBook, int insertIndex, List<BookEntity> target)
+        {
+            target.Clear();
+
+            if (section == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < section.books.Count; i++)
+            {
+                var book = section.books[i];
+                if (book != null && book != candidateBook)
+                {
+                    target.Add(book);
+                }
+            }
+
+            if (candidateBook == null)
+            {
+                return;
+            }
+
+            var clampedInsertIndex = Mathf.Clamp(insertIndex, 0, target.Count);
+            target.Insert(clampedInsertIndex, candidateBook);
         }
 
         private float GetSectionLayoutScale(ShelfSection section)

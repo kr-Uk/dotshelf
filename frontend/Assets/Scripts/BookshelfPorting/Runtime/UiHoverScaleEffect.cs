@@ -11,6 +11,7 @@ namespace BookshelfPorting.Runtime
         private RectTransform rectTransform;
         private Vector3 baseScale = Vector3.one;
         private Vector3 targetScale = Vector3.one;
+        private bool isAnimating;
 
         private void Awake()
         {
@@ -25,6 +26,7 @@ namespace BookshelfPorting.Runtime
             }
 
             targetScale = baseScale;
+            isAnimating = false;
             if (rectTransform != null)
             {
                 rectTransform.localScale = baseScale;
@@ -46,17 +48,32 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            rectTransform.localScale = Vector3.Lerp(rectTransform.localScale, targetScale, Time.unscaledDeltaTime * animationSpeed);
+            if (!isAnimating)
+            {
+                return;
+            }
+
+            var nextScale = Vector3.Lerp(rectTransform.localScale, targetScale, Time.unscaledDeltaTime * animationSpeed);
+            if ((nextScale - targetScale).sqrMagnitude < 0.0001f)
+            {
+                rectTransform.localScale = targetScale;
+                isAnimating = false;
+                return;
+            }
+
+            rectTransform.localScale = nextScale;
         }
 
         public void OnPointerEnter(PointerEventData eventData)
         {
             targetScale = baseScale * hoverScale;
+            isAnimating = true;
         }
 
         public void OnPointerExit(PointerEventData eventData)
         {
             targetScale = baseScale;
+            isAnimating = true;
         }
 
         public void SetBaseScale(float scale)
@@ -68,6 +85,7 @@ namespace BookshelfPorting.Runtime
         {
             baseScale = scale;
             targetScale = scale;
+            isAnimating = false;
 
             if (rectTransform == null)
             {

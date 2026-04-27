@@ -20,6 +20,6 @@ ENV SPRING_PROFILES_ACTIVE=prod
 EXPOSE 8080
 
 HEALTHCHECK --interval=20s --timeout=5s --start-period=45s --retries=3 \
-  CMD curl -fsS http://localhost:8080/api/health || exit 1
+  CMD curl -fsS http://localhost:8080/health || exit 1
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

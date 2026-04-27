@@ -37,7 +37,7 @@
 - 빌드: `./gradlew build`
 - 테스트: `./gradlew test`
 - 로컬 기동: `docker compose up -d` (PG 17, Redis 7.4) → IDE에서 `local` 프로필로 Spring Boot 실행
-- 헬스체크: `GET /api/health`
+- 헬스체크: `GET /health`
 
 ## 커밋/브랜치 컨벤션
 

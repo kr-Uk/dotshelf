@@ -147,18 +147,19 @@ git diff $RANGE -- '*.java' '*.kt' '*.ts' '*.tsx' '*.py' '*.sql' '*.yml' '*.yaml
 <프로젝트 루트>/docs/study/{YYYY-MM-DD}-{브랜치-슬러그}.md
 ```
 
-예: `backend/docs/study/2026-04-15-feat-be-user-signup.md`
+예: `docs/study/2026-04-15-feat-be-user-signup.md`
 
 - 프로젝트 루트는 `gradlew`, `pom.xml`, `package.json` 있는 곳을 기준으로 추정. 못 찾으면 현재 디렉토리.
 - `docs/study/` 디렉토리가 없으면 생성.
 - 동일 파일명 존재 시 `-2`, `-3` suffix.
+- **저장 직후 `docs/study/README.md` 의 "문서 목록" 표에 새 행을 한 줄 추가**한다 (날짜 / 브랜치 / 파일 링크 / 핵심 내용 요약 1줄). 색인이 안 갱신되면 새 노트가 생긴 사실을 폴더만 봐선 알기 어렵다.
 
 ### 6단계: 사용자 리뷰 (선택)
 
 저장 후 사용자에게 경로와 요약을 제시:
 
 ```
-📝 학습 문서 생성 완료: backend/docs/study/2026-04-15-feat-be-user-signup.md
+📝 학습 문서 생성 완료: docs/study/2026-04-15-feat-be-user-signup.md
 
 섹션: TL;DR / 무엇을(3개) / 왜 / 어떻게(2개 주제) / 배운 것(4개) / 더 공부할 것(3개)
 

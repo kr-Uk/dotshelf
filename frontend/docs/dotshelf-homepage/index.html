@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>dotshelf | 책장으로 만나는 3D 서재</title>
+    <meta
+      name="description"
+      content="dotshelf는 책장에 꽂힌 책으로 취향과 독서 기록을 보여주는 따뜻한 3D 서재 서비스입니다."
+    >
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235f7868'/%3E%3Crect x='16' y='15' width='8' height='34' rx='3' fill='%23fff8ed'/%3E%3Crect x='28' y='15' width='8' height='34' rx='3' fill='%23d39c4f'/%3E%3Crect x='40' y='15' width='8' height='34' rx='3' fill='%23fff8ed'/%3E%3C/svg%3E"
+    >
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">본문으로 이동</a>
+
+    <header class="site-header" data-header>
+      <a class="brand" href="#top" aria-label="dotshelf 홈">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>dotshelf</span>
+      </a>
+      <nav class="site-nav" aria-label="주요 섹션">
+        <a href="#experience">경험</a>
+        <a href="#studio">스펙</a>
+        <a href="#bookshelf">책장</a>
+        <a href="#flow">흐름</a>
+        <a href="#mvp">MVP</a>
+      </nav>
+      <a class="header-cta" href="#showcase">둘러보기</a>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="hero-scene" aria-hidden="true">
+          <div class="room-wall room-wall-left"></div>
+          <div class="room-wall room-wall-right"></div>
+          <div class="room-wall room-wall-back"></div>
+          <div class="scene-window">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div class="room-floor"></div>
+          <div class="scene-desk">
+            <div class="desk-top"></div>
+            <div class="desk-leg desk-leg-left"></div>
+            <div class="desk-leg desk-leg-right"></div>
+            <div class="desk-laptop">
+              <div class="laptop-screen">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <div class="laptop-base"></div>
+            </div>
+          </div>
+          <div class="scene-board">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div class="hero-bookshelf">
+            <div class="bookshelf-top"></div>
+            <div class="bookshelf-body">
+              <div class="shelf-row">
+                <span class="book spine-sage"></span>
+                <span class="book spine-ink tall"></span>
+                <span class="book spine-gold"></span>
+                <span class="book spine-rose"></span>
+                <span class="book spine-blue tall"></span>
+                <span class="book spine-wood"></span>
+              </div>
+              <div class="shelf-row">
+                <span class="book spine-wood tall"></span>
+                <span class="book spine-blue"></span>
+                <span class="book spine-sage"></span>
+                <span class="book spine-gold tall"></span>
+                <span class="book spine-ink"></span>
+              </div>
+              <div class="shelf-row">
+                <span class="book spine-rose"></span>
+                <span class="book spine-gold"></span>
+                <span class="book spine-blue tall"></span>
+                <span class="book spine-sage"></span>
+                <span class="book spine-wood tall"></span>
+                <span class="book spine-ink"></span>
+              </div>
+              <div class="shelf-row">
+                <span class="book spine-blue"></span>
+                <span class="book spine-sage tall"></span>
+                <span class="book spine-wood"></span>
+                <span class="book spine-rose tall"></span>
+                <span class="book spine-gold"></span>
+              </div>
+            </div>
+            <div class="shelf-shadow"></div>
+          </div>
+          <div class="hero-insight insight-editor">
+            <span class="insight-label">편집 모드</span>
+            <strong>1번 책장</strong>
+            <div class="insight-meter">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <p>slot preview active</p>
+          </div>
+          <div class="hero-insight insight-focus">
+            <span class="insight-label">Book Focus</span>
+            <strong>줌 거리 기반 포커싱</strong>
+            <p>0.8m - 4.5m camera range</p>
+          </div>
+          <div class="hero-insight insight-guestbook">
+            <span class="insight-label">Guestbook</span>
+            <strong>30자 방문 흔적</strong>
+          </div>
+        </div>
+
+        <div class="hero-content">
+          <p class="eyebrow">3D book room MVP</p>
+          <h1 id="hero-title">dotshelf</h1>
+          <p class="hero-lede">책장에 꽂힌 책으로 나를 보여주는 3D 서재</p>
+          <p class="hero-copy">
+            읽은 책, 읽는 중인 책, 남기고 싶은 기록을 따뜻한 방 안의 책장으로 정리합니다.
+            dotshelf는 프로필보다 조용하고, 피드보다 오래 남는 독서 기반 소셜 공간입니다.
+          </p>
+          <div class="hero-actions">
+            <a class="primary-action" href="#showcase">핵심 경험 보기</a>
+            <a class="secondary-action" href="#bookshelf">책장 기능 보기</a>
+          </div>
+          <div class="hero-meta" aria-label="프로젝트 핵심 기준">
+            <span>PC / Tablet first</span>
+            <span>Quarter view</span>
+            <span>Slot based drag</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="intro-band" aria-label="서비스 요약">
+        <div class="intro-grid">
+          <article>
+            <span class="metric">01</span>
+            <h2>나만의 서재</h2>
+            <p>방, 책장, 책 배치를 통해 사용자의 독서 취향을 시각적으로 보여줍니다.</p>
+          </article>
+          <article>
+            <span class="metric">02</span>
+            <h2>책 중심 기록</h2>
+            <p>책 상세, 독서 상태, 감상 기록이 같은 흐름 안에서 이어집니다.</p>
+          </article>
+          <article>
+            <span class="metric">03</span>
+            <h2>조용한 소셜</h2>
+            <p>방명록과 피드가 서재 분위기를 해치지 않는 방식으로 연결됩니다.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="studio-section" id="studio" aria-labelledby="studio-title">
+        <div class="studio-copy">
+          <p class="eyebrow">delivery board</p>
+          <h2 id="studio-title">기획, 디자인, 개발 기준이 한 화면에서 읽히게</h2>
+          <p>
+            소개 페이지 안에서도 서비스의 핵심 화면, 상호작용 규칙, MVP 경계를 바로 확인할 수 있게
+            실무 산출물형 보드로 정리했습니다.
+          </p>
+        </div>
+        <div class="studio-board" aria-label="dotshelf 산출물 보드">
+          <article class="studio-card studio-card-wide">
+            <span>Experience Map</span>
+            <strong>쿼터뷰에서 벽면2 정면뷰, 책 포커싱 뷰로 이어지는 핵심 이동</strong>
+            <div class="route-line" aria-hidden="true">
+              <i>방</i>
+              <i>책장</i>
+              <i>책</i>
+              <i>기록</i>
+            </div>
+          </article>
+          <article class="studio-card">
+            <span>Interaction Rules</span>
+            <strong>물리 낙하 대신 슬롯 기반 미리보기</strong>
+            <p>드래그 중 갭 프리뷰를 보여주고 확정 전에는 실제 데이터를 커밋하지 않습니다.</p>
+          </article>
+          <article class="studio-card">
+            <span>Visual Direction</span>
+            <strong>따뜻한 사실감</strong>
+            <div class="swatch-row" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i>
+            </div>
+          </article>
+          <article class="studio-card studio-card-dark">
+            <span>MVP Boundary</span>
+            <strong>책장과 책 정체성 중심</strong>
+            <p>검색, 좋아요, 상세 모니터 흐름과 책장 편집 책임을 명확히 분리합니다.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="experience-section" id="experience">
+        <div class="section-heading">
+          <p class="eyebrow">product direction</p>
+          <h2>사용자는 책장을 보고 사람을 이해합니다</h2>
+          <p>
+            dotshelf의 첫 화면은 콘텐츠 목록이 아니라 방입니다. 사용자는 책장, 노트북,
+            방명록을 오가며 상대의 취향과 기록을 천천히 살펴봅니다.
+          </p>
+        </div>
+
+        <div class="principle-list">
+          <div class="principle-item">
+            <strong>공간 먼저</strong>
+            <span>쿼터뷰 방에서 시작해 책장, 대시보드, 방명록으로 자연스럽게 이동합니다.</span>
+          </div>
+          <div class="principle-item">
+            <strong>슬롯 기반 배치</strong>
+            <span>책 이동은 물리 낙하가 아니라 명확한 슬롯 삽입과 미리보기 상태를 따릅니다.</span>
+          </div>
+          <div class="principle-item">
+            <strong>따뜻한 사실감</strong>
+            <span>현실적인 책장과 부드러운 조명으로 아늑하지만 기능적인 분위기를 만듭니다.</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="showcase-section" id="showcase" aria-labelledby="showcase-title">
+        <div class="showcase-header">
+          <div>
+            <p class="eyebrow">interactive preview</p>
+            <h2 id="showcase-title">MVP 핵심 화면 흐름</h2>
+          </div>
+          <div class="mode-tabs" role="tablist" aria-label="화면 흐름 선택">
+            <button class="mode-tab is-active" type="button" role="tab" aria-selected="true" data-mode="room">
+              방
+            </button>
+            <button class="mode-tab" type="button" role="tab" aria-selected="false" data-mode="shelf">
+              책장
+            </button>
+            <button class="mode-tab" type="button" role="tab" aria-selected="false" data-mode="book">
+              책
+            </button>
+            <button class="mode-tab" type="button" role="tab" aria-selected="false" data-mode="guestbook">
+              방명록
+            </button>
+          </div>
+        </div>
+
+        <div class="showcase-layout">
+          <div class="mini-room" data-preview-mode="room" aria-hidden="true">
+            <div class="mini-wall mini-wall-back"></div>
+            <div class="mini-wall mini-wall-side"></div>
+            <div class="mini-floor"></div>
+            <div class="mini-bookshelf">
+              <div class="mini-shelf-title"></div>
+              <div class="mini-slots">
+                <span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span>
+              </div>
+            </div>
+            <div class="mini-focus-book"></div>
+            <div class="mini-dashboard">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <div class="mini-guestbook">
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+
+          <div class="showcase-copy" aria-live="polite">
+            <p class="mode-kicker" data-mode-kicker>Quarter View</p>
+            <h3 data-mode-title>방 전체에서 내 서재를 한눈에 봅니다</h3>
+            <p data-mode-description>
+              사용자는 따뜻한 3D 방에 들어와 책장, 노트북, 방명록 위치를 먼저 파악합니다.
+              첫 화면부터 dotshelf가 책 기반 공간 서비스라는 점이 드러납니다.
+            </p>
+            <ul class="mode-points" data-mode-points>
+              <li>책장, 대시보드, 방명록을 같은 방 안에 배치</li>
+              <li>PC와 태블릿에서 쿼터뷰 중심 탐색</li>
+              <li>공간 오브젝트 클릭으로 기능 진입</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="bookshelf-section" id="bookshelf">
+        <div class="section-heading">
+          <p class="eyebrow">shelf and book</p>
+          <h2>책장 편집은 명확하고 되돌리기 쉬워야 합니다</h2>
+          <p>
+            책장 담당 영역은 사용자가 가장 오래 만지는 곳입니다. 그래서 이동, 삽입,
+            이름 변경, 디자인 변경이 모두 예측 가능한 상태 전환으로 보여야 합니다.
+          </p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature-card">
+            <span class="feature-chip">drag</span>
+            <h3>중간 삽입 가능한 책 이동</h3>
+            <p>책을 마지막에만 붙이는 흐름이 아니라 원하는 슬롯 사이에 끼워 넣는 배치를 지원합니다.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-chip">edit</span>
+            <h3>편집 모드</h3>
+            <p>이름 변경, 책장 추가와 삭제, 디자인 변경을 일반 탐색과 분리해 실수 가능성을 낮춥니다.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-chip">focus</span>
+            <h3>줌 기준 책 포커싱</h3>
+            <p>책을 선택하면 현재 줌 정도에 맞춰 너무 앞으로 튀어나오지 않는 위치로 포커싱합니다.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-chip">preview</span>
+            <h3>미리보기 상태</h3>
+            <p>드래그 중에는 슬롯 후보만 강조하고, 확정 전에는 실제 도메인 데이터를 바꾸지 않습니다.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="flow-section" id="flow" aria-labelledby="flow-title">
+        <div class="flow-copy">
+          <p class="eyebrow">core loop</p>
+          <h2 id="flow-title">방문에서 기록까지 이어지는 흐름</h2>
+          <p>
+            dotshelf의 핵심 루프는 방을 구경하고, 책을 열어보고, 기록을 남기고,
+            다시 책장으로 돌아오는 짧은 반복입니다.
+          </p>
+        </div>
+        <ol class="flow-steps">
+          <li>
+            <span>1</span>
+            <strong>서재 입장</strong>
+            <p>쿼터뷰 방에서 책장과 소셜 오브젝트를 확인합니다.</p>
+          </li>
+          <li>
+            <span>2</span>
+            <strong>책장 탐색</strong>
+            <p>스크롤 줌과 섹션 이동으로 원하는 책을 찾습니다.</p>
+          </li>
+          <li>
+            <span>3</span>
+            <strong>책 상세</strong>
+            <p>독서 상태, 기록, 리뷰 진입점을 같은 패널에서 확인합니다.</p>
+          </li>
+          <li>
+            <span>4</span>
+            <strong>소셜 연결</strong>
+            <p>방명록과 피드로 상대의 독서 세계에 짧게 반응합니다.</p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="mvp-section" id="mvp">
+        <div class="mvp-panel">
+          <div>
+            <p class="eyebrow">mvp scope</p>
+            <h2>첫 배포에서 보여줄 것</h2>
+            <p>
+              MVP는 모든 독서 기능을 넓히기보다, dotshelf만의 첫인상인 3D 책장과
+              책 기반 정체성을 선명하게 보여주는 데 집중합니다.
+            </p>
+          </div>
+          <dl class="scope-list">
+            <div>
+              <dt>책장</dt>
+              <dd>이름 변경, 추가, 삭제, 디자인 변경, 회전형 전환</dd>
+            </div>
+            <div>
+              <dt>책</dt>
+              <dd>슬롯 배치, 중간 삽입, 포커싱, 상세 패널 진입</dd>
+            </div>
+            <div>
+              <dt>기록</dt>
+              <dd>읽는 상태와 감상 기록을 책 상세 흐름에 연결</dd>
+            </div>
+            <div>
+              <dt>소셜</dt>
+              <dd>방명록과 피드로 조용한 방문 경험 제공</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>dotshelf</span>
+      <p>책장으로 취향을 보여주는 따뜻한 3D 독서 공간</p>
+      <a href="#top">맨 위로</a>
+    </footer>
+  </body>
+</html>

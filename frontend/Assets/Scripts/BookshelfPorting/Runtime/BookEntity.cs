@@ -22,6 +22,11 @@ namespace BookshelfPorting.Runtime
         public string description;
         public string memoPreview;
         public int rating;
+        public float ownerRating;
+        public ReadingStatus readingStatus = ReadingStatus.Unread;
+        public bool isLiked;
+        public bool isPaidCoverOwned;
+        public bool isDecoration;
         public bool isRead;
         public bool isPublic = true;
 
@@ -71,8 +76,11 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            rating = userBook.OwnerRating.HasValue ? Mathf.RoundToInt((float)userBook.OwnerRating.Value) : 0;
-            isRead = userBook.ReadingStatus == ReadingStatus.Read;
+            ownerRating = userBook.OwnerRating.HasValue ? (float)userBook.OwnerRating.Value : 0f;
+            rating = Mathf.RoundToInt(ownerRating);
+            readingStatus = userBook.ReadingStatus;
+            isLiked = userBook.IsLiked;
+            isRead = readingStatus == ReadingStatus.Read;
             isPublic = readingRecord == null || readingRecord.VisibilityScope == VisibilityScope.Public;
             memoPreview = readingRecord != null && !string.IsNullOrWhiteSpace(readingRecord.Content)
                 ? readingRecord.Content

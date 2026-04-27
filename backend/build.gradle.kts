@@ -31,9 +31,27 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+
+    // Micrometer Prometheus registry — /actuator/prometheus 엔드포인트 노출
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
+
+    // OpenAPI / Swagger
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.0")
+
+    // JWT (jjwt)
+    implementation("io.jsonwebtoken:jjwt-api:0.12.6")
+    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
+    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
 
     // PostgreSQL
     runtimeOnly("org.postgresql:postgresql")
+
+    // Flyway (DB 스키마 마이그레이션)
+    // Spring Boot 4 부터 Flyway autoconfig 가 별도 모듈(spring-boot-flyway)로 분리됨 → 반드시 함께 포함
+    implementation("org.springframework.boot:spring-boot-flyway")
+    implementation("org.flywaydb:flyway-core")
+    implementation("org.flywaydb:flyway-database-postgresql")
 
     // Lombok
     compileOnly("org.projectlombok:lombok")

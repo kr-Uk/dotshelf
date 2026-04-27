@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 namespace BookshelfPorting.Runtime
@@ -26,9 +27,17 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float notebookFieldOfView = 24f;
         [SerializeField] private float notebookTransitionDuration = 0.75f;
         [SerializeField] private float frontalDefaultFieldOfView = 60f;
-        [SerializeField] private float frontalZoomSpeed = 4f;
-        [SerializeField] private float frontalMinFov = 25f;
-        [SerializeField] private float frontalMaxFov = 55f;
+        [SerializeField] private float frontalDefaultZoomDistance = 3.25f;
+        [SerializeField] private float frontalMinZoomDistance = 0.8f;
+        [SerializeField] private float frontalMaxZoomDistance = 4.5f;
+        [SerializeField] private float frontalScrollZoomStep = 0.45f;
+        [SerializeField] private float frontalZoomSmoothDuration = 0.15f;
+        [SerializeField] private float wheelScrollReference = 120f;
+        [SerializeField] private float frontalPanSensitivity = 0.002f;
+        [SerializeField] private float frontalMinPanX = -0.9f;
+        [SerializeField] private float frontalMaxPanX = 0.9f;
+        [SerializeField] private float frontalMinCameraY = 0.3f;
+        [SerializeField] private float frontalMaxCameraY = 1.8f;
 
         // MainView: the default main-scene pose. Derived at runtime from frontalAnchor
         // by pulling straight back along its forward axis (same look direction as the
@@ -43,12 +52,24 @@ namespace BookshelfPorting.Runtime
 
         private CameraTransitionSegment activeSegment;
         private bool isTransitioning;
+        private bool isFrontalZooming;
+        private float frontalZoomStartDistance;
+        private float frontalZoomCurrentDistance;
+        private float frontalZoomTargetDistance;
+        private float frontalZoomElapsed;
+        private Vector2 frontalPanOffset;
+        private Func<bool> frontalZoomInputPredicate;
         public event Action<CameraMode> ModeChanged;
         public event Action<CameraMode> TransitionCompleted;
 
         public CameraMode CurrentMode { get; private set; } = CameraMode.Overview;
         public bool IsTransitioning => isTransitioning;
         public Transform BookViewAnchor => bookViewAnchor;
+        public float FrontalZoomDistance => frontalZoomCurrentDistance;
+        public float FrontalZoomInAmount => Mathf.InverseLerp(
+            Mathf.Max(frontalMinZoomDistance, frontalMaxZoomDistance),
+            Mathf.Min(frontalMinZoomDistance, frontalMaxZoomDistance),
+            frontalZoomCurrentDistance);
 
         private struct CameraTransitionSegment
         {
@@ -105,25 +126,48 @@ namespace BookshelfPorting.Runtime
             moveDuration = Mathf.Max(0.01f, standardMoveDuration);
         }
 
+        public void ConfigureFrontalZoomSettings(
+            float defaultDistance,
+            float minDistance,
+            float maxDistance,
+            float scrollStep,
+            float smoothDuration)
+        {
+            frontalDefaultZoomDistance = Mathf.Max(0.01f, defaultDistance);
+            frontalMinZoomDistance = Mathf.Max(0.01f, minDistance);
+            frontalMaxZoomDistance = Mathf.Max(frontalMinZoomDistance, maxDistance);
+            frontalScrollZoomStep = Mathf.Max(0.01f, scrollStep);
+            frontalZoomSmoothDuration = Mathf.Max(0.01f, smoothDuration);
+            ResetFrontalZoomState();
+        }
+
+        public void ConfigureFrontalZoomInputPredicate(Func<bool> predicate)
+        {
+            frontalZoomInputPredicate = predicate;
+        }
+
         private void Awake()
         {
             if (targetCamera == null)
             {
                 targetCamera = Camera.main;
             }
+
+            ResetFrontalZoomState();
         }
 
         private void Update()
         {
-            if (!IsTransitioning && CurrentMode == CameraMode.Frontal && Mouse.current != null)
+            if (!IsTransitioning &&
+                CurrentMode == CameraMode.Frontal &&
+                Mouse.current != null &&
+                CanHandleFrontalZoomInput())
             {
                 var scroll = Mouse.current.scroll.ReadValue().y;
                 if (Mathf.Abs(scroll) > 0.001f)
                 {
-                    targetCamera.fieldOfView = Mathf.Clamp(
-                        targetCamera.fieldOfView - scroll * Time.deltaTime * frontalZoomSpeed,
-                        frontalMinFov,
-                        frontalMaxFov);
+                    var scrollSteps = NormalizeWheelScroll(scroll);
+                    SetFrontalZoomTarget(frontalZoomTargetDistance - scrollSteps * frontalScrollZoomStep);
                 }
             }
         }
@@ -133,6 +177,11 @@ namespace BookshelfPorting.Runtime
             if (isTransitioning)
             {
                 StepTransition(Time.deltaTime);
+            }
+
+            if (!isTransitioning && CurrentMode == CameraMode.Frontal)
+            {
+                StepFrontalZoom(Time.deltaTime);
             }
         }
 
@@ -150,6 +199,12 @@ namespace BookshelfPorting.Runtime
             var targetPosition = anchor.position;
             var targetRotation = anchor.rotation;
             var targetFieldOfView = GetFieldOfView(mode);
+
+            if (mode == CameraMode.Frontal)
+            {
+                ResetFrontalZoomState();
+                ResetFrontalPanState();
+            }
 
             CurrentMode = mode;
             ModeChanged?.Invoke(mode);
@@ -324,7 +379,7 @@ namespace BookshelfPorting.Runtime
                 case CameraMode.Overview:
                     return overviewFieldOfView;
                 case CameraMode.Frontal:
-                    return Mathf.Clamp(frontalDefaultFieldOfView, frontalMinFov, frontalMaxFov);
+                    return frontalDefaultFieldOfView;
                 case CameraMode.Whiteboard:
                     return whiteboardFieldOfView;
                 case CameraMode.Notebook:
@@ -338,6 +393,116 @@ namespace BookshelfPorting.Runtime
         {
             activeSegment = CreateSegmentFromCurrent(targetPosition, targetRotation, targetFov, duration);
             isTransitioning = true;
+        }
+
+        private float NormalizeWheelScroll(float scroll)
+        {
+            if (Mathf.Abs(scroll) > 10f && wheelScrollReference > 0f)
+            {
+                return scroll / wheelScrollReference;
+            }
+
+            return scroll;
+        }
+
+        private bool CanHandleFrontalZoomInput()
+        {
+            if (frontalZoomInputPredicate != null && !frontalZoomInputPredicate())
+            {
+                return false;
+            }
+
+            return EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject();
+        }
+
+        private void ResetFrontalZoomState()
+        {
+            frontalZoomCurrentDistance = ClampFrontalZoomDistance(frontalDefaultZoomDistance);
+            frontalZoomTargetDistance = frontalZoomCurrentDistance;
+            frontalZoomStartDistance = frontalZoomCurrentDistance;
+            frontalZoomElapsed = 0f;
+            isFrontalZooming = false;
+        }
+
+        private void ResetFrontalPanState()
+        {
+            frontalPanOffset = Vector2.zero;
+        }
+
+        public void PanFrontalCamera(Vector2 screenDelta)
+        {
+            if (CurrentMode != CameraMode.Frontal || frontalAnchor == null)
+            {
+                return;
+            }
+
+            frontalPanOffset.x = Mathf.Clamp(
+                frontalPanOffset.x - screenDelta.x * frontalPanSensitivity,
+                frontalMinPanX,
+                frontalMaxPanX);
+
+            var nextCameraY = Mathf.Clamp(
+                frontalAnchor.position.y + frontalPanOffset.y - screenDelta.y * frontalPanSensitivity,
+                frontalMinCameraY,
+                frontalMaxCameraY);
+            frontalPanOffset.y = nextCameraY - frontalAnchor.position.y;
+        }
+
+        private void SetFrontalZoomTarget(float distance)
+        {
+            var nextDistance = ClampFrontalZoomDistance(distance);
+            if (Mathf.Abs(nextDistance - frontalZoomTargetDistance) <= 0.001f)
+            {
+                return;
+            }
+
+            frontalZoomStartDistance = frontalZoomCurrentDistance;
+            frontalZoomTargetDistance = nextDistance;
+            frontalZoomElapsed = 0f;
+            isFrontalZooming = true;
+        }
+
+        private float ClampFrontalZoomDistance(float distance)
+        {
+            var minDistance = Mathf.Min(frontalMinZoomDistance, frontalMaxZoomDistance);
+            var maxDistance = Mathf.Max(frontalMinZoomDistance, frontalMaxZoomDistance);
+            return Mathf.Clamp(distance, minDistance, maxDistance);
+        }
+
+        private void StepFrontalZoom(float deltaTime)
+        {
+            if (targetCamera == null || frontalAnchor == null)
+            {
+                return;
+            }
+
+            if (isFrontalZooming)
+            {
+                frontalZoomElapsed += deltaTime;
+                var normalizedTime = Mathf.Clamp01(frontalZoomElapsed / Mathf.Max(0.01f, frontalZoomSmoothDuration));
+                var t = Mathf.SmoothStep(0f, 1f, normalizedTime);
+                frontalZoomCurrentDistance = Mathf.Lerp(frontalZoomStartDistance, frontalZoomTargetDistance, t);
+
+                if (normalizedTime >= 1f)
+                {
+                    frontalZoomCurrentDistance = frontalZoomTargetDistance;
+                    isFrontalZooming = false;
+                }
+            }
+
+            ApplyFrontalZoomPosition();
+        }
+
+        private void ApplyFrontalZoomPosition()
+        {
+            var anchorPosition = frontalAnchor.position;
+            var focusZ = anchorPosition.z + ClampFrontalZoomDistance(frontalDefaultZoomDistance);
+            targetCamera.transform.position = new Vector3(
+                anchorPosition.x + frontalPanOffset.x,
+                anchorPosition.y + frontalPanOffset.y,
+                focusZ - frontalZoomCurrentDistance);
+            targetCamera.transform.rotation = frontalAnchor.rotation;
+            targetCamera.fieldOfView = frontalDefaultFieldOfView;
         }
 
         private void StartNotebookReturnTransition(Vector3 targetPosition, Quaternion targetRotation, float targetFov)
