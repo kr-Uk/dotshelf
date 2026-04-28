@@ -34,7 +34,3 @@ frontend/SOCIAL_LOGIN_SETUP_PRIVATE.md
 
 # Claude Code per-user permission grants (auto-generated)
 **/.claude/settings.local.json
-
-# DotShelf prompt-logging local config (created by scripts/setup-prompt-logging.{sh,ps1})
-.claude/notion-config.json
-.codex/hooks.json
