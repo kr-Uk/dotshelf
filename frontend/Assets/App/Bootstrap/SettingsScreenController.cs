@@ -76,6 +76,7 @@ namespace App.Bootstrap
         private GameObject settingsButtonRoot;
         private GameObject modeChangeButtonRoot;
         private BookshelfExperienceManager cachedExperienceManager;
+        private RoomEditModeController cachedEditModeController;
         private GameObject panelRoot;
         private GameObject dimBackground;
         private GameObject cardRoot;
@@ -309,11 +310,10 @@ namespace App.Bootstrap
 
         // Floating settings + mode-change buttons only show on the unfocused main view
         // (CurrentFocusArea == QuarterView, i.e. CameraMode.Overview). They stay hidden
-        // while: the settings panel is open, onboarding Step 3 is in progress, or the
-        // camera is in any focus mode (bookshelf / guestbook / notebook). Without the
-        // focus-area gate, the mode-change button stayed visible in focus views but
-        // ToggleMainViewMode() no-ops outside Overview, so clicks did nothing — and
-        // SettingsCanvas's high sorting order could intercept clicks on focus controls.
+        // while: the settings panel is open, onboarding Step 3 is in progress, the
+        // camera is in any focus mode (bookshelf / guestbook / notebook), or the player
+        // is in room edit mode (RoomEditModeController takes over the chrome with its
+        // own return button + bottom toolbar).
         private void UpdateMainSceneChromeVisibility()
         {
             var panelOpen = panelRoot != null && panelRoot.activeSelf;
@@ -321,7 +321,8 @@ namespace App.Bootstrap
             var inMainScene = experienceManager != null &&
                               experienceManager.CurrentFocusArea == ExperienceFocusArea.QuarterView;
             var step3Active = experienceManager != null && experienceManager.IsOnboardingStep3Active;
-            var shouldShow = !panelOpen && inMainScene && !step3Active;
+            var editModeActive = ResolveEditModeController() != null && ResolveEditModeController().IsEditModeActive;
+            var shouldShow = !panelOpen && inMainScene && !step3Active && !editModeActive;
 
             if (settingsButtonRoot != null && settingsButtonRoot.activeSelf != shouldShow)
             {
@@ -343,6 +344,17 @@ namespace App.Bootstrap
 
             cachedExperienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
             return cachedExperienceManager;
+        }
+
+        private RoomEditModeController ResolveEditModeController()
+        {
+            if (cachedEditModeController != null)
+            {
+                return cachedEditModeController;
+            }
+
+            cachedEditModeController = UnityEngine.Object.FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
+            return cachedEditModeController;
         }
 
         private void Update()

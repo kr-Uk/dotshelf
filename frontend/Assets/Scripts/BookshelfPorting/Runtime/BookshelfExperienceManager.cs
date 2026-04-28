@@ -483,6 +483,13 @@ namespace BookshelfPorting.Runtime
         // fully available during Step 3 — this flag only gates main-scene chrome.
         public bool IsOnboardingStep3Active { get; set; }
 
+        // Set by RoomEditModeController while the player is in room-decoration edit
+        // mode. While true, the main scene's input handlers (click-to-focus on
+        // bookshelf / notebook / guestbook, F1–F4 shortcuts, mode toggles) are
+        // short-circuited so the only interaction the player can perform is the
+        // edit-mode select / rotate / delete that the edit overlay itself drives.
+        public bool AreSceneInteractionsSuppressed { get; set; }
+
         public void Configure(
             BookshelfState bookshelfState,
             CameraController controller,
@@ -549,6 +556,13 @@ namespace BookshelfPorting.Runtime
         private void Update()
         {
             ApplyResponsiveFocusOverlayLayout();
+
+            if (AreSceneInteractionsSuppressed)
+            {
+                // Edit mode owns input on the main scene — bail before any focus
+                // shortcut, click-to-focus, or hit test runs.
+                return;
+            }
 
             if (HandleFocusShortcuts())
             {
@@ -687,6 +701,22 @@ namespace BookshelfPorting.Runtime
             // CurrentFocusArea stuck at whatever it was before (e.g. Bookshelf when this
             // is called from the onboarding-completion path). Sync explicitly so the
             // bookshelf HUD/zoom/back-button state clears as the camera leaves focus.
+            SyncFromCameraMode(CameraMode.Overview);
+        }
+
+        // Instant variant of FocusMainView for callers that need the camera to be at
+        // the MainView pose RIGHT NOW (no animated transition) — used by edit-mode
+        // entry so the editor never inherits a QuarterView / Frontal pose.
+        public void SnapToMainView()
+        {
+            if (cameraController == null)
+            {
+                return;
+            }
+
+            PrepareQuarterViewReturn();
+            currentMainViewMode = MainCameraViewMode.MainView;
+            cameraController.ApplyMainView();
             SyncFromCameraMode(CameraMode.Overview);
         }
 

@@ -31,3 +31,6 @@ apple/DotshelfRealityKit/swiftStudy/
 *.opendb
 *.VC.db
 frontend/SOCIAL_LOGIN_SETUP_PRIVATE.md
+
+# Claude Code per-user permission grants (auto-generated)
+**/.claude/settings.local.json
