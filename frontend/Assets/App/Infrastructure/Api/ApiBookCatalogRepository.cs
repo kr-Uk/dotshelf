@@ -33,7 +33,7 @@ namespace App.Infrastructure.Api
             try
             {
                 var response = GetBookList();
-                var items = response?.Items;
+                var items = response?.EffectiveItems;
                 if (items != null && items.Count > 0)
                 {
                     return MapToCatalog(items);
@@ -85,19 +85,20 @@ namespace App.Infrastructure.Api
 
         private static BookCatalogItem CreateCatalogItem(BookListItemDto dto, int index, int row, int column, int slot, DateTimeOffset now)
         {
-            var bookId = FirstNonEmpty(dto.BookId, $"b-api-{index + 1:000}");
+            var bookId = FirstNonEmpty(dto.BookId, dto.Id > 0 ? dto.Id.ToString() : $"b-api-{index + 1:000}");
             var userBookId = $"owned-{bookId}";
             var recordCount = Math.Max(1, dto.RecordCount);
+            var isbn = FirstNonEmpty(dto.Isbn13, dto.Isbn);
 
             var book = new Book(
                 bookId,
                 FirstNonEmpty(dto.Title, "Untitled"),
                 FirstNonEmpty(dto.Author, "Unknown"),
                 publisher: dto.Publisher,
-                description: "API /v1/books ranking item",
+                description: FirstNonEmpty(dto.Description, "API /v1/books/search item"),
                 coverImageUrl: dto.CoverImageUrl,
-                isbn: dto.Isbn,
-                isbn13: dto.Isbn,
+                isbn: isbn,
+                isbn13: isbn,
                 likeCount: dto.LikeCount,
                 bookshelfAddCount: dto.PlacementCount,
                 ratingSum: dto.AvgRating * recordCount,
