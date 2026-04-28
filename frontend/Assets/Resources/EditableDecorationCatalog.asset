@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ce40c28c0d00d4f48a4ce5e2a3dfb4cc, type: 3}
+  m_Name: EditableDecorationCatalog
+  m_EditorClassIdentifier:
+  entries:
+  - DisplayName: Book Stack
+    Prefab: {fileID: -8098169881513260187, guid: c762a71677879be41a5a565fdad2dc71, type: 3}
+    SourceAssetPath: Assets/Arts/Models/Props/book_stack.glb
+  - DisplayName: Clock Hamham
+    Prefab: {fileID: -8098169881513260187, guid: fdf1809f3a17b11449a355503137638d, type: 3}
+    SourceAssetPath: Assets/Arts/Models/Props/clock_hamham.glb
+  - DisplayName: Dashboard Natural
+    Prefab: {fileID: -8098169881513260187, guid: 8d50791400c5e4b45a072e9b6e41807f, type: 3}
+    SourceAssetPath: Assets/Arts/Models/Props/dashboard_natural.glb
+  - DisplayName: Doll Hamham
+    Prefab: {fileID: -8098169881513260187, guid: 4f9ca772872790543895cc1371706137, type: 3}
+    SourceAssetPath: Assets/Arts/Models/Props/doll_hamham.glb
+  - DisplayName: Lamp Floor
+    Prefab: {fileID: -8098169881513260187, guid: 6386ddd70e8d2e7439c1961311c3bb2f, type: 3}
+    SourceAssetPath: Assets/Arts/Models/Furniture/lamp_floor.glb
+  - DisplayName: Rug Natural
+    Prefab: {fileID: -8098169881513260187, guid: a68c359f967d6064685b042697219e3d, type: 3}
+    SourceAssetPath: Assets/Arts/Models/Furniture/rug_natural.glb
+  - DisplayName: Table Natural
+    Prefab: {fileID: -8098169881513260187, guid: 6e5e1cd8910cedc468a37ef0c772b180, type: 3}
+    SourceAssetPath: Assets/Arts/Models/Furniture/table_natural.glb
