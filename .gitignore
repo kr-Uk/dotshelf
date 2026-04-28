@@ -2,6 +2,9 @@
 .build/
 output/
 apple/DotshelfRealityKit/swiftStudy/
+
+# Playwright MCP runtime cache (console logs, page snapshots)
+.playwright-mcp/
 /[Aa]ssets/
 /[Pp]ackages/
 /[Pp]roject[Ss]ettings/
