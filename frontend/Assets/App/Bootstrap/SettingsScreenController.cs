@@ -729,23 +729,6 @@ namespace App.Bootstrap
             closeRect.pivot = new Vector2(1f, 0.5f);
             closeRect.anchoredPosition = new Vector2(-24f, 0f);
             headerCloseButton.onClick.AddListener(CloseSettings);
-
-            var headerModeChangeButton = CreateButton(
-                header.transform,
-                "HeaderModeChangeButton",
-                "모드 변경",
-                PrimaryColor,
-                Color.white,
-                Vector2.zero,
-                new Vector2(140f, 56f),
-                true,
-                BorderColor);
-            var headerModeRect = (RectTransform)headerModeChangeButton.transform;
-            headerModeRect.anchorMin = new Vector2(1f, 0.5f);
-            headerModeRect.anchorMax = new Vector2(1f, 0.5f);
-            headerModeRect.pivot = new Vector2(1f, 0.5f);
-            headerModeRect.anchoredPosition = new Vector2(-160f, 0f);
-            headerModeChangeButton.onClick.AddListener(OnModeChangeClicked);
         }
 
         // ---------------------------------------------------------------------

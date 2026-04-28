@@ -224,7 +224,10 @@ namespace BookshelfPorting.Runtime
 
             if (Application.isPlaying)
             {
-                cameraController.MoveToMode(CameraMode.Overview);
+                // Main scene opens centered on the bookshelf via the MainView pose.
+                // (Previously this transitioned to overviewAnchor / QuarterView, which
+                // sits at an angle and made the bookshelf appear left-shifted.)
+                cameraController.MoveToMainView();
             }
         }
 

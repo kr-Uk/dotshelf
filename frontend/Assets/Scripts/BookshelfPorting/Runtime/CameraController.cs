@@ -44,11 +44,11 @@ namespace BookshelfPorting.Runtime
         // bookshelf focus) and slightly widening the FOV so the surrounding room
         // becomes visible without orbiting the camera. The bookshelf stays centered.
         // QuarterView remains the existing overviewAnchor pose, untouched.
-        [SerializeField] private float mainViewPullBack = 0.5f;
+        [SerializeField] private float mainViewPullBack = 0.4f;
         [SerializeField] private float mainViewVerticalOffset = 0.04f;
         [SerializeField] private float mainViewSideAngleDegrees = 0f;
         [SerializeField] private float mainViewLookTargetDistance = 1.2f;
-        [SerializeField] private float mainViewFieldOfView = 62f;
+        [SerializeField] private float mainViewFieldOfView = 52f;
 
         private CameraTransitionSegment activeSegment;
         private bool isTransitioning;

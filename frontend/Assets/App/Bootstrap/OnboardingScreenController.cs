@@ -685,28 +685,22 @@ namespace App.Bootstrap
                 Vector2.zero);
             StretchToParent(step3OverlayStatusLabel.rectTransform);
 
-            var navigationCard = CreateImage(panel.transform, "NavigationCard", WithAlpha(CardColor, 0.97f));
-            navigationCard.sprite = roundedRectSprite;
-            navigationCard.type = Image.Type.Sliced;
-
-            var navigationRect = navigationCard.rectTransform;
-            navigationRect.anchorMin = new Vector2(0.5f, 0f);
-            navigationRect.anchorMax = new Vector2(0.5f, 0f);
-            navigationRect.pivot = new Vector2(0.5f, 0f);
-            navigationRect.sizeDelta = new Vector2(760f, 120f);
-            navigationRect.anchoredPosition = new Vector2(0f, 36f);
-
-            var navigationShadow = navigationCard.gameObject.AddComponent<Shadow>();
-            navigationShadow.effectColor = WithAlpha(TextColor, 0.12f);
-            navigationShadow.effectDistance = new Vector2(0f, -10f);
-
-            var navigationRow = CreateRow(navigationCard.transform, "NavigationRow", 18f, TextAnchor.MiddleCenter);
-            StretchWithPadding((RectTransform)navigationRow.transform, new Vector2(24f, 18f), new Vector2(-24f, -18f));
-
-            var previousButton = CreateFixedButton(navigationRow, "PreviousStepButton", "이전 단계", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));
+            // Step 3 navigation buttons sit at the bottom-left and bottom-right of the screen
+            // so they do not overlap with the bookshelf-focus controls in the middle/top area.
+            var previousButton = CreateFixedButton(panel.transform, "PreviousStepButton", "이전 단계", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));
+            var previousRect = (RectTransform)previousButton.transform;
+            previousRect.anchorMin = new Vector2(0f, 0f);
+            previousRect.anchorMax = new Vector2(0f, 0f);
+            previousRect.pivot = new Vector2(0f, 0f);
+            previousRect.anchoredPosition = new Vector2(48f, 96f);
             previousButton.onClick.AddListener(ShowStep2);
-            CreateFlexibleSpacer(navigationRow);
-            var completeButton = CreateFixedButton(navigationRow, "CompleteButton", "완료", PrimaryColor, Color.white, false, BorderColor, new Vector2(220f, PrimaryControlHeight));
+
+            var completeButton = CreateFixedButton(panel.transform, "CompleteButton", "완료", PrimaryColor, Color.white, false, BorderColor, new Vector2(220f, PrimaryControlHeight));
+            var completeRect = (RectTransform)completeButton.transform;
+            completeRect.anchorMin = new Vector2(1f, 0f);
+            completeRect.anchorMax = new Vector2(1f, 0f);
+            completeRect.pivot = new Vector2(1f, 0f);
+            completeRect.anchoredPosition = new Vector2(-48f, 96f);
             completeButton.onClick.AddListener(ShowCompletionModal);
 
             SetStep3LoadingPanelVisible(true);
