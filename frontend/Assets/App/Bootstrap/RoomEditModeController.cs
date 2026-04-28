@@ -65,6 +65,11 @@ namespace App.Bootstrap
         private const float GridOriginZ = FloorMinZ;
         private const float GridLineThickness = 0.015f;
         private const float GridSurfaceY = 0.005f;
+        // Tolerance applied to the grid-line generation loop so that the line
+        // sitting exactly on the FloorMax edge isn't dropped due to floating
+        // point accumulation when (FloorMax - FloorMin) is an integer multiple
+        // of GridCellSize. Kept tiny — well below half a cell.
+        private const float GridLoopEpsilon = 0.0001f;
         // Bright neon-green so the grid reads clearly against the room's warm
         // floor tones during drag, while keeping ~60% alpha so it doesn't bury
         // the model itself.
@@ -1242,7 +1247,18 @@ namespace App.Bootstrap
             // source prefab placed its pivot.
             var rendererBounds = ComputeRendererBounds(go);
             var verticalOffset = rendererBounds.HasValue ? -rendererBounds.Value.min.y : 0f;
-            go.transform.position = InventoryPlacementCenter + new Vector3(lateral, verticalOffset, depth);
+            var spawnPosition = InventoryPlacementCenter + new Vector3(lateral, verticalOffset, depth);
+            go.transform.position = spawnPosition;
+
+            // Step 3b — clamp the initial spawn position into the room footprint.
+            // Without this, the depth offset for the 11th+ object pushes z past
+            // BookshelfFrontZ and the model spawns inside / behind the bookshelf;
+            // ClampToRoomBounds normally only fires during drag.
+            if (rendererBounds.HasValue)
+            {
+                var spawnBounds = ComputeRendererBounds(go) ?? rendererBounds.Value;
+                go.transform.position = ClampToRoomBounds(go.transform.position, go.transform.position, spawnBounds);
+            }
 
             // Step 4 — collider for raycast selection. .glb / .fbx imports don't
             // ship with one, so we synthesize a BoxCollider matching the post-
@@ -1590,16 +1606,16 @@ namespace App.Bootstrap
 
             // Lines step from the floor's bottom-left corner so the very first
             // line meets the wall instead of starting halfway across the floor.
-            // The 0.0001f epsilon includes the line at FloorMaxX / FloorMaxZ
-            // when the room dimensions are an exact multiple of the cell size.
-            for (var x = GridOriginX; x <= FloorMaxX + 0.0001f; x += GridCellSize)
+            // GridLoopEpsilon includes the line at FloorMaxX / FloorMaxZ when
+            // the room dimensions are an exact multiple of the cell size.
+            for (var x = GridOriginX; x <= FloorMaxX + GridLoopEpsilon; x += GridCellSize)
             {
                 CreateGridLine(gridDisplayRoot.transform,
                     new Vector3(x, 0f, FloorMinZ),
                     new Vector3(x, 0f, FloorMaxZ),
                     lineMaterial);
             }
-            for (var z = GridOriginZ; z <= FloorMaxZ + 0.0001f; z += GridCellSize)
+            for (var z = GridOriginZ; z <= FloorMaxZ + GridLoopEpsilon; z += GridCellSize)
             {
                 CreateGridLine(gridDisplayRoot.transform,
                     new Vector3(FloorMinX, 0f, z),

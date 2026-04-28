@@ -31,3 +31,9 @@ apple/DotshelfRealityKit/swiftStudy/
 *.opendb
 *.VC.db
 frontend/SOCIAL_LOGIN_SETUP_PRIVATE.md
+
+# Local-only config / token files (Claude Code, Notion, Codex hook configs).
+# These hold personal permissions or auth tokens and must not be committed.
+**/.claude/settings.local.json
+.claude/notion-config.json
+.codex/hooks.json

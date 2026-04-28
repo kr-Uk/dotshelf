@@ -43,6 +43,41 @@ namespace App.EditorTools
             Debug.Log($"[EditableDecorationCatalogBuilder] Refreshed catalog with {entries.Count} entr{(entries.Count == 1 ? "y" : "ies")}.");
         }
 
+        // Whenever a Models/-rooted asset is added, deleted, or moved, refresh
+        // the catalog automatically so the committed Resources asset doesn't
+        // drift from the actual model set. Cheaply scans the changed-asset
+        // arrays first and only re-runs the discovery pass when something
+        // under ModelsRoot actually moved.
+        private sealed class ModelsChangePostprocessor : AssetPostprocessor
+        {
+            private static void OnPostprocessAllAssets(
+                string[] importedAssets,
+                string[] deletedAssets,
+                string[] movedAssets,
+                string[] movedFromAssetPaths)
+            {
+                if (TouchesModels(importedAssets) || TouchesModels(deletedAssets) ||
+                    TouchesModels(movedAssets) || TouchesModels(movedFromAssetPaths))
+                {
+                    RefreshCatalog();
+                }
+            }
+
+            private static bool TouchesModels(string[] paths)
+            {
+                if (paths == null) return false;
+                for (var i = 0; i < paths.Length; i++)
+                {
+                    if (!string.IsNullOrEmpty(paths[i]) &&
+                        paths[i].StartsWith(ModelsRoot, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+
         public static List<EditableDecorationCatalog.Entry> DiscoverEntries()
         {
             var entries = new List<EditableDecorationCatalog.Entry>();
