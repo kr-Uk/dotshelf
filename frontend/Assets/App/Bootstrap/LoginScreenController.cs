@@ -136,6 +136,11 @@ namespace App.Bootstrap
             SetMessage(loginMessageLabel, "로그인에 성공했습니다. 메인 화면으로 이동합니다.");
             LogDebug($"[LoginDemo] Login validated for '{userId}'.");
 
+            // Mask the brief frames between scene unload and BookshelfSceneInstaller
+            // finishing its setup so the player never sees the empty default scene
+            // between login and main view. Cover self-destructs once MainScene is
+            // ready.
+            MainSceneTransitionCover.Show("메인 화면으로 이동 중입니다.");
             SetCanvasVisible(false);
             SceneFlowManager.GoToMain();
         }
@@ -226,6 +231,7 @@ namespace App.Bootstrap
             LogDebug("[LoginDemo] Guest entry button clicked.");
             SetMessage(loginMessageLabel, "게스트로 입장합니다. 메인 화면으로 이동합니다.");
 
+            MainSceneTransitionCover.Show("메인 화면으로 이동 중입니다.");
             SetCanvasVisible(false);
             SceneFlowManager.GoToMain();
         }
@@ -234,6 +240,7 @@ namespace App.Bootstrap
         {
             SetMessage(loginMessageLabel, $"{providerName} 로그인에 성공했습니다. 메인 화면으로 이동합니다.");
 
+            MainSceneTransitionCover.Show("메인 화면으로 이동 중입니다.");
             SetCanvasVisible(false);
             SceneFlowManager.GoToMain();
         }

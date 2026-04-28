@@ -253,7 +253,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000115
   height: 0.20500007
@@ -270,6 +270,11 @@ MonoBehaviour:
   memoPreview: "\uC791\uBCC4\uC778\uC0AC #3\uC5D0 \uB300\uD55C mock \uB3C5\uD6C4\uAC10
     \uB370\uC774\uD130\uC785\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 0
 --- !u!65 &6124691
@@ -638,7 +643,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
@@ -766,7 +771,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000116
   height: 0.21
@@ -782,6 +787,11 @@ MonoBehaviour:
     \uC7A5\uD3B8\uC18C\uC124."
   memoPreview: "\uBC1D\uC740 \uBC24\uC5D0 \uB300\uD55C mock \uB3C5\uD6C4\uAC10 \uB370\uC774\uD130\uC785\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &42200674
@@ -939,7 +949,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24499999
@@ -956,6 +966,11 @@ MonoBehaviour:
   memoPreview: "\uBA54\uB9AC\uACE8\uB4DC \uB9C8\uC74C \uC138\uD0C1\uC18C #3\uB294
     \uCC45\uC7A5\uC5D0 \uC624\uB798 \uB0A8\uACA8\uB450\uACE0 \uC2F6\uC740 \uC774\uC57C\uAE30\uC785\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 0
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &75659044
@@ -1023,7 +1038,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000092
   height: 0.24500006
@@ -1041,6 +1056,11 @@ MonoBehaviour:
   memoPreview: "\uC5B4\uC11C \uC624\uC138\uC694, \uD734\uB0A8\uB3D9 \uC11C\uC810\uC785\uB2C8\uB2E4
     #3\uB294 \uB2E4\uC2DC \uC77D\uC744 \uBB38\uC7A5\uC774 \uB9CE\uC740 \uCC45\uC785\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 1
+  isLiked: 1
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &111105925
@@ -1108,7 +1128,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000067
   height: 0.20500046
@@ -1125,6 +1145,11 @@ MonoBehaviour:
   memoPreview: "\uBAA8\uC21C\uB294 \uB2E4\uC2DC \uC77D\uC744 \uBB38\uC7A5\uC774 \uB9CE\uC740
     \uCC45\uC785\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 1
+  isLiked: 1
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 0
 --- !u!65 &142005729
@@ -1195,7 +1220,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Text
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -1271,7 +1296,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000111
   height: 0.24499992
@@ -1288,6 +1313,11 @@ MonoBehaviour:
   memoPreview: "\uC2A4\uD1A0\uB108 #3\uC5D0 \uB300\uD55C mock \uB3C5\uD6C4\uAC10
     \uB370\uC774\uD130\uC785\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &158722234
@@ -1355,7 +1385,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000112
   height: 0.21000007
@@ -1372,6 +1402,11 @@ MonoBehaviour:
   memoPreview: "\uC2A4\uD1A0\uB108 #2\uC5D0 \uB300\uD55C mock \uB3C5\uD6C4\uAC10
     \uB370\uC774\uD130\uC785\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &159689455
@@ -1619,7 +1654,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000089
   height: 0.24500006
@@ -1636,6 +1671,11 @@ MonoBehaviour:
   memoPreview: "\uB2EC\uB7EC\uAD6C\uD2B8 \uAFC8 \uBC31\uD654\uC810 #3\uB294 \uBD84\uC704\uAE30\uC640
     \uC778\uBB3C\uC758 \uACB0\uC774 \uC120\uBA85\uD569\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &184445892
@@ -1770,7 +1810,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -1892,7 +1932,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -2069,7 +2109,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000122
   height: 0.24499999
@@ -2086,6 +2126,11 @@ MonoBehaviour:
   memoPreview: "\uC885\uC758 \uAE30\uC6D0 #2\uB294 \uBD84\uC704\uAE30\uC640 \uC778\uBB3C\uC758
     \uACB0\uC774 \uC120\uBA85\uD569\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &218636166
@@ -2153,7 +2198,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000152
   height: 0.20500007
@@ -2170,6 +2215,11 @@ MonoBehaviour:
   memoPreview: "\uCC9C \uAC1C\uC758 \uD30C\uB791 #3\uB294 \uB2E4\uC2DC \uC77D\uC744
     \uBB38\uC7A5\uC774 \uB9CE\uC740 \uCC45\uC785\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 1
+  isLiked: 1
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 0
 --- !u!65 &223342677
@@ -2899,7 +2949,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24500006
@@ -2916,6 +2966,11 @@ MonoBehaviour:
   memoPreview: "\uBC1D\uC740 \uBC24 #3\uC5D0 \uB300\uD55C mock \uB3C5\uD6C4\uAC10
     \uB370\uC774\uD130\uC785\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &304676502
@@ -3073,7 +3128,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24499999
@@ -3091,6 +3146,11 @@ MonoBehaviour:
   memoPreview: "\uC5B4\uC11C \uC624\uC138\uC694, \uD734\uB0A8\uB3D9 \uC11C\uC810\uC785\uB2C8\uB2E4
     #2\uB294 \uB2E4\uC2DC \uC77D\uC744 \uBB38\uC7A5\uC774 \uB9CE\uC740 \uCC45\uC785\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 1
+  isLiked: 1
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &315432673
@@ -3338,7 +3398,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000076
   height: 0.20499998
@@ -3355,6 +3415,11 @@ MonoBehaviour:
   memoPreview: "\uC885\uC758 \uAE30\uC6D0 #3\uB294 \uBD84\uC704\uAE30\uC640 \uC778\uBB3C\uC758
     \uACB0\uC774 \uC120\uBA85\uD569\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 0
 --- !u!65 &324911363
@@ -3438,7 +3503,7 @@ Camera:
     height: 1
   near clip plane: 0.3
   far clip plane: 1000
-  field of view: 58
+  field of view: 52
   orthographic: 0
   orthographic size: 5
   m_Depth: -1
@@ -3464,8 +3529,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.08137818, y: -0.33463094, z: 0.029019855, w: 0.9383803}
-  m_LocalPosition: {x: 1.55, y: 1.3, z: -1.95}
+  m_LocalRotation: {x: 0.027873553, y: 0, z: 0, w: 0.9996115}
+  m_LocalPosition: {x: 0, y: 1.002283, z: -2.4485805}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3481,8 +3546,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_RenderShadows: 1
   m_RequiresDepthTextureOption: 2
   m_RequiresOpaqueTextureOption: 2
@@ -3919,7 +3984,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000152
   height: 0.20500007
@@ -3935,6 +4000,11 @@ MonoBehaviour:
     \uB2E8\uB2E8\uD558\uAC8C \uB530\uB77C\uAC00\uB294 \uC7A5\uD3B8."
   memoPreview: "\uC2A4\uD1A0\uB108\uC5D0 \uB300\uD55C mock \uB3C5\uD6C4\uAC10 \uB370\uC774\uD130\uC785\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 0
 --- !u!65 &350470381
@@ -4067,7 +4137,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000085
   height: 0.24500006
@@ -4084,6 +4154,11 @@ MonoBehaviour:
   memoPreview: "\uAD6C\uC758 \uC99D\uBA85 #3\uC5D0 \uB300\uD55C mock \uB3C5\uD6C4\uAC10
     \uB370\uC774\uD130\uC785\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &366347291
@@ -4218,7 +4293,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -4427,8 +4502,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
   m_CustomShadowLayers: 0
@@ -4670,7 +4745,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000112
   height: 0.21000001
@@ -4687,6 +4762,11 @@ MonoBehaviour:
   memoPreview: "\uBD88\uD3B8\uD55C \uD3B8\uC758\uC810 #2\uB294 \uBD84\uC704\uAE30\uC640
     \uC778\uBB3C\uC758 \uACB0\uC774 \uC120\uBA85\uD569\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &437778424
@@ -5903,7 +5983,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 90250d517556fca4c85a641254c266d3, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.EnvironmentSetup
   reflectionProbe: {fileID: 354060625}
   skyboxMaterial: {fileID: 0}
@@ -5918,7 +5998,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fb6b90527219e15499bff1a68ccc7c75, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfExperienceManager
   state: {fileID: 617729539}
   cameraController: {fileID: 617729536}
@@ -5937,7 +6017,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ca2c911e128b9ba4ba9b9262af38a9aa, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfRuntimeDataStore
 --- !u!114 &617729535
 MonoBehaviour:
@@ -5949,7 +6029,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 24c0182a877b73549a048ec408c53732, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookInteractionController
   sceneCamera: {fileID: 330585545}
   state: {fileID: 617729539}
@@ -5960,6 +6040,8 @@ MonoBehaviour:
   viewMoveDuration: 0.25
   dragStartThresholdPixels: 5
   validDropDuration: 0.3
+  invalidReturnDuration: 0.35
+  invalidDropBehavior: 0
   invalidDropMaxDuration: 3
   invalidDropBookMass: 0.18
   invalidDropMinHorizontalSpeed: 0.75
@@ -5980,7 +6062,16 @@ MonoBehaviour:
   dragHeight: 1
   viewRotationSpeed: 0.25
   viewedBookScaleMultiplier: 1.9
+  viewedBookCameraDistance: 1.55
+  viewedBookZoomForwardOffset: 0.35
   viewedBookInteractionPadding: {x: 0.28, y: 0.22, z: 0.18}
+  edgeSwitchThresholdX: 0.95
+  edgeSwitchDwellSeconds: 1
+  bookHoverColor: {r: 1, g: 0.68, b: 0.28, a: 0.2}
+  sectionHoverColor: {r: 0.4, g: 0.78, b: 1, a: 0.16}
+  bookHoverScaleMultiplier: 1.12
+  sectionHoverWidthInset: 0.025
+  sectionHoverHeightInset: 0.025
 --- !u!114 &617729536
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5991,7 +6082,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cbe780630d20ab849b266ef67b71e964, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.CameraController
   targetCamera: {fileID: 330585545}
   overviewAnchor: {fileID: 746833862}
@@ -5999,15 +6090,28 @@ MonoBehaviour:
   whiteboardAnchor: {fileID: 1705261252}
   notebookAnchor: {fileID: 607489532}
   bookViewAnchor: {fileID: 1361449483}
-  moveDuration: 0.65
-  overviewFieldOfView: 58
-  whiteboardFieldOfView: 56
+  moveDuration: 0.7
+  overviewFieldOfView: 55
+  whiteboardFieldOfView: 45
   notebookFieldOfView: 24
   notebookTransitionDuration: 0.75
-  frontalDefaultFieldOfView: 55
-  frontalZoomSpeed: 4
-  frontalMinFov: 25
-  frontalMaxFov: 55
+  frontalDefaultFieldOfView: 45
+  frontalDefaultZoomDistance: 3.25
+  frontalMinZoomDistance: 0.8
+  frontalMaxZoomDistance: 4.5
+  frontalScrollZoomStep: 0.45
+  frontalZoomSmoothDuration: 0.15
+  wheelScrollReference: 120
+  frontalPanSensitivity: 0.002
+  frontalMinPanX: -0.9
+  frontalMaxPanX: 0.9
+  frontalMinCameraY: 0.3
+  frontalMaxCameraY: 1.8
+  mainViewPullBack: 0.4
+  mainViewVerticalOffset: 0.04
+  mainViewSideAngleDegrees: 0
+  mainViewLookTargetDistance: 1.2
+  mainViewFieldOfView: 52
 --- !u!114 &617729537
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6018,7 +6122,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1cf43b1ec7b17ae4290b3ece892eb841, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfGenerator
   state: {fileID: 617729539}
   materialFactory: {fileID: 617729538}
@@ -6061,7 +6165,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 787225fbb1cc40e44b6b1b0b3613d744, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.MaterialFactory
   woodBaseMap: {fileID: 0}
   woodNormalMap: {fileID: 0}
@@ -6084,7 +6188,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: bfcc117b0e352dd49b9694ea55d1ca41, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfState
   bookPadding: 0.01
   shelfFrontInset: 0.01
@@ -6121,10 +6225,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: dbf853c121dce4d47a9552d8cae790c2, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Api.APIManager
   baseUrl: http://localhost:3001
-  accessToken:
+  accessToken: 
   timeoutSeconds: 10
 --- !u!21 &619591969
 Material:
@@ -6147,7 +6251,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -6300,7 +6404,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
   m_Color: {r: 0.07, g: 0.09, b: 0.12, a: 0.98}
@@ -6350,7 +6454,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: dc42784cf147c0c48a680349fa168899, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.GraphicRaycaster
   m_IgnoreReversedGraphics: 1
   m_BlockingObjects: 0
@@ -6545,7 +6649,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000302
   height: 0.21
@@ -6562,6 +6666,11 @@ MonoBehaviour:
   memoPreview: "\uBD88\uD3B8\uD55C \uD3B8\uC758\uC810\uB294 \uBD84\uC704\uAE30\uC640
     \uC778\uBB3C\uC758 \uACB0\uC774 \uC120\uBA85\uD569\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &681160237
@@ -6885,7 +6994,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24500006
@@ -6902,6 +7011,11 @@ MonoBehaviour:
   memoPreview: "\uC544\uBAAC\uB4DC #2\uB294 \uCC45\uC7A5\uC5D0 \uC624\uB798 \uB0A8\uACA8\uB450\uACE0
     \uC2F6\uC740 \uC774\uC57C\uAE30\uC785\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 0
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &717779771
@@ -7212,7 +7326,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000076
   height: 0.20499998
@@ -7229,6 +7343,11 @@ MonoBehaviour:
   memoPreview: "\uD30C\uCE5C\uCF54 #2\uB294 \uB2E4\uC2DC \uC77D\uC744 \uBB38\uC7A5\uC774
     \uB9CE\uC740 \uCC45\uC785\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 1
+  isLiked: 1
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 0
 --- !u!65 &748350106
@@ -7633,7 +7752,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -7778,7 +7897,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000115
   height: 0.20500007
@@ -7795,6 +7914,11 @@ MonoBehaviour:
   memoPreview: "\uC9C0\uAD6C \uB05D\uC758 \uC628\uC2E4\uB294 \uCC45\uC7A5\uC5D0 \uC624\uB798
     \uB0A8\uACA8\uB450\uACE0 \uC2F6\uC740 \uC774\uC57C\uAE30\uC785\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 0
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 0
 --- !u!65 &813544824
@@ -7871,7 +7995,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -7999,8 +8123,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 172515602e62fb746b5d573b38a5fe58, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_IsGlobal: 1
   priority: 0
   blendDistance: 0
@@ -8335,7 +8459,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.02000009
   height: 0.24499999
@@ -8352,6 +8476,11 @@ MonoBehaviour:
   memoPreview: "\uD750\uB974\uB294 \uAC15\uBB3C\uCC98\uB7FC #3\uB294 \uBD84\uC704\uAE30\uC640
     \uC778\uBB3C\uC758 \uACB0\uC774 \uC120\uBA85\uD569\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &865930144
@@ -8419,7 +8548,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000089
   height: 0.24500006
@@ -8436,6 +8565,11 @@ MonoBehaviour:
   memoPreview: "\uC9C0\uAD6C \uB05D\uC758 \uC628\uC2E4 #3\uB294 \uCC45\uC7A5\uC5D0
     \uC624\uB798 \uB0A8\uACA8\uB450\uACE0 \uC2F6\uC740 \uC774\uC57C\uAE30\uC785\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 0
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &866555502
@@ -8573,7 +8707,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -8727,7 +8861,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -8872,7 +9006,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000067
   height: 0.20500046
@@ -8889,6 +9023,11 @@ MonoBehaviour:
   memoPreview: "\uB2EC\uB7EC\uAD6C\uD2B8 \uAFC8 \uBC31\uD654\uC810 #2\uB294 \uBD84\uC704\uAE30\uC640
     \uC778\uBB3C\uC758 \uACB0\uC774 \uC120\uBA85\uD569\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 0
 --- !u!65 &888543311
@@ -8956,7 +9095,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000112
   height: 0.21000007
@@ -8973,6 +9112,11 @@ MonoBehaviour:
   memoPreview: "\uBA54\uB9AC\uACE8\uB4DC \uB9C8\uC74C \uC138\uD0C1\uC18C\uB294 \uCC45\uC7A5\uC5D0
     \uC624\uB798 \uB0A8\uACA8\uB450\uACE0 \uC2F6\uC740 \uC774\uC57C\uAE30\uC785\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 0
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &903560343
@@ -9040,7 +9184,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000302
   height: 0.21
@@ -9057,6 +9201,11 @@ MonoBehaviour:
   memoPreview: "\uC9C0\uAD6C \uB05D\uC758 \uC628\uC2E4 #2\uB294 \uCC45\uC7A5\uC5D0
     \uC624\uB798 \uB0A8\uACA8\uB450\uACE0 \uC2F6\uC740 \uC774\uC57C\uAE30\uC785\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 0
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &911917708
@@ -9124,7 +9273,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000122
   height: 0.24499999
@@ -9141,6 +9290,11 @@ MonoBehaviour:
   memoPreview: "\uAD6C\uC758 \uC99D\uBA85\uC5D0 \uB300\uD55C mock \uB3C5\uD6C4\uAC10
     \uB370\uC774\uD130\uC785\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &916009222
@@ -9432,7 +9586,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 7c0fe34be65f355489210b62a77c5177, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.NotebookScreenController
   screenSaverImage: {fileID: 1862184119}
   adImages:
@@ -9483,7 +9637,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000112
   height: 0.21
@@ -9500,6 +9654,11 @@ MonoBehaviour:
   memoPreview: "\uC544\uBAAC\uB4DC\uB294 \uCC45\uC7A5\uC5D0 \uC624\uB798 \uB0A8\uACA8\uB450\uACE0
     \uC2F6\uC740 \uC774\uC57C\uAE30\uC785\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 0
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &984855480
@@ -9567,7 +9726,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000085
   height: 0.24500006
@@ -9584,6 +9743,11 @@ MonoBehaviour:
   memoPreview: "\uC5EC\uD589\uC758 \uC774\uC720\uB294 \uCC45\uC7A5\uC5D0 \uC624\uB798
     \uB0A8\uACA8\uB450\uACE0 \uC2F6\uC740 \uC774\uC57C\uAE30\uC785\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 0
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &985993326
@@ -9740,7 +9904,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b55157357b724b5b8071df8cbdbf7a02, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfFocusHitArea
 --- !u!65 &1001463874
 BoxCollider:
@@ -9807,7 +9971,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000116
   height: 0.21
@@ -9824,6 +9988,11 @@ MonoBehaviour:
   memoPreview: "\uD30C\uCE5C\uCF54 #3\uB294 \uB2E4\uC2DC \uC77D\uC744 \uBB38\uC7A5\uC774
     \uB9CE\uC740 \uCC45\uC785\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 1
+  isLiked: 1
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &1009922934
@@ -10161,7 +10330,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000092
   height: 0.2450001
@@ -10178,6 +10347,11 @@ MonoBehaviour:
   memoPreview: "\uCC9C \uAC1C\uC758 \uD30C\uB791 #2\uB294 \uB2E4\uC2DC \uC77D\uC744
     \uBB38\uC7A5\uC774 \uB9CE\uC740 \uCC45\uC785\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 1
+  isLiked: 1
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &1076292151
@@ -10605,7 +10779,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24500003
@@ -10622,6 +10796,11 @@ MonoBehaviour:
   memoPreview: "\uD30C\uCE5C\uCF54\uB294 \uB2E4\uC2DC \uC77D\uC744 \uBB38\uC7A5\uC774
     \uB9CE\uC740 \uCC45\uC785\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 1
+  isLiked: 1
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &1167254981
@@ -10779,7 +10958,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000092
   height: 0.2450001
@@ -10796,6 +10975,11 @@ MonoBehaviour:
   memoPreview: "\uBC1D\uC740 \uBC24 #2\uC5D0 \uB300\uD55C mock \uB3C5\uD6C4\uAC10
     \uB370\uC774\uD130\uC785\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &1183729575
@@ -10862,7 +11046,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
@@ -11260,7 +11444,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24500003
@@ -11277,6 +11461,11 @@ MonoBehaviour:
   memoPreview: "\uAD6C\uC758 \uC99D\uBA85 #2\uC5D0 \uB300\uD55C mock \uB3C5\uD6C4\uAC10
     \uB370\uC774\uD130\uC785\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &1250813577
@@ -11344,7 +11533,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.02000009
   height: 0.24500003
@@ -11361,6 +11550,11 @@ MonoBehaviour:
   memoPreview: "\uC791\uBCC4\uC778\uC0AC\uC5D0 \uB300\uD55C mock \uB3C5\uD6C4\uAC10
     \uB370\uC774\uD130\uC785\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &1260450783
@@ -11788,7 +11982,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24499999
@@ -11805,6 +11999,11 @@ MonoBehaviour:
   memoPreview: "\uCC9C \uAC1C\uC758 \uD30C\uB791\uB294 \uB2E4\uC2DC \uC77D\uC744
     \uBB38\uC7A5\uC774 \uB9CE\uC740 \uCC45\uC785\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 1
+  isLiked: 1
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &1280600698
@@ -11871,7 +12070,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
@@ -12179,7 +12378,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000112
   height: 0.21000001
@@ -12196,6 +12395,11 @@ MonoBehaviour:
   memoPreview: "\uBAA8\uC21C #2\uB294 \uB2E4\uC2DC \uC77D\uC744 \uBB38\uC7A5\uC774
     \uB9CE\uC740 \uCC45\uC785\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 1
+  isLiked: 1
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &1304568967
@@ -12243,8 +12447,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1305750071}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.023236973, y: -0, z: -0, w: 0.99973}
-  m_LocalPosition: {x: 0, y: 0.95, z: -0.95}
+  m_LocalRotation: {x: 0.015379151, y: -0, z: -0, w: 0.99988174}
+  m_LocalPosition: {x: 0, y: 0.95, z: -2.05}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -12510,7 +12714,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000147
   height: 0.205
@@ -12527,6 +12731,11 @@ MonoBehaviour:
   memoPreview: "\uC5EC\uD589\uC758 \uC774\uC720 #2\uB294 \uCC45\uC7A5\uC5D0 \uC624\uB798
     \uB0A8\uACA8\uB450\uACE0 \uC2F6\uC740 \uC774\uC57C\uAE30\uC785\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 0
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 0
 --- !u!65 &1337012795
@@ -12872,7 +13081,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -13084,7 +13293,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -13227,8 +13436,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 617581a6433442cfafa468f160ad6428, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   bootstrapOnAwake: 1
   installInEditMode: 1
   saveGeneratedContentInEditMode: 1
@@ -13527,7 +13736,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -13942,7 +14151,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000112
   height: 0.21
@@ -13959,6 +14168,11 @@ MonoBehaviour:
   memoPreview: "\uD750\uB974\uB294 \uAC15\uBB3C\uCC98\uB7FC #2\uB294 \uBD84\uC704\uAE30\uC640
     \uC778\uBB3C\uC758 \uACB0\uC774 \uC120\uBA85\uD569\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &1521271360
@@ -14364,7 +14578,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.02000009
   height: 0.24500003
@@ -14381,6 +14595,11 @@ MonoBehaviour:
   memoPreview: "\uBA54\uB9AC\uACE8\uB4DC \uB9C8\uC74C \uC138\uD0C1\uC18C #2\uB294
     \uCC45\uC7A5\uC5D0 \uC624\uB798 \uB0A8\uACA8\uB450\uACE0 \uC2F6\uC740 \uC774\uC57C\uAE30\uC785\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 0
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &1555371254
@@ -14725,7 +14944,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 594112b2116edaf4fab40c7adfb4506e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: App.Features::App.Features.Notebook.Presentation.NotebookToolkitController
   document: {fileID: 1572911238}
 --- !u!114 &1572911238
@@ -14738,7 +14957,7 @@ MonoBehaviour:
   m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 19102, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: UnityEngine.dll::UnityEngine.UIElements.UIDocument
   m_PanelSettings: {fileID: 11400000, guid: 9c3d5d1a7b8c4a5ea74471ea8b830b11, type: 2}
   m_ParentUI: {fileID: 0}
@@ -14772,7 +14991,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -15104,7 +15323,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
   m_Navigation:
     m_Mode: 3
@@ -15148,7 +15367,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cfabb0440166ab443bba8876756fdfa9, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Shadow
   m_EffectColor: {r: 0, g: 0, b: 0, a: 0.16}
   m_EffectDistance: {x: 0, y: -2}
@@ -15163,7 +15382,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e19747de3f5aca642ab2be37e372fb86, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Outline
   m_EffectColor: {r: 1, g: 1, b: 1, a: 0.12}
   m_EffectDistance: {x: 1, y: -1}
@@ -15178,7 +15397,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
   m_Color: {r: 0.08, g: 0.1, b: 0.1, a: 0.72}
@@ -15339,7 +15558,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
@@ -15467,7 +15686,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000087
   height: 0.24500015
@@ -15484,6 +15703,11 @@ MonoBehaviour:
   memoPreview: "\uC5EC\uD589\uC758 \uC774\uC720 #3\uB294 \uCC45\uC7A5\uC5D0 \uC624\uB798
     \uB0A8\uACA8\uB450\uACE0 \uC2F6\uC740 \uC774\uC57C\uAE30\uC785\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 0
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &1625370674
@@ -16009,7 +16233,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -17074,7 +17298,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000092
   height: 0.24500006
@@ -17091,6 +17315,11 @@ MonoBehaviour:
   memoPreview: "\uC791\uBCC4\uC778\uC0AC #2\uC5D0 \uB300\uD55C mock \uB3C5\uD6C4\uAC10
     \uB370\uC774\uD130\uC785\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &1791343661
@@ -17428,7 +17657,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000147
   height: 0.205
@@ -17445,6 +17674,11 @@ MonoBehaviour:
   memoPreview: "\uD750\uB974\uB294 \uAC15\uBB3C\uCC98\uB7FC\uB294 \uBD84\uC704\uAE30\uC640
     \uC778\uBB3C\uC758 \uACB0\uC774 \uC120\uBA85\uD569\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 0
 --- !u!65 &1822729422
@@ -17496,7 +17730,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
@@ -17564,7 +17798,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -17889,7 +18123,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24499999
@@ -17906,6 +18140,11 @@ MonoBehaviour:
   memoPreview: "\uC885\uC758 \uAE30\uC6D0\uB294 \uBD84\uC704\uAE30\uC640 \uC778\uBB3C\uC758
     \uACB0\uC774 \uC120\uBA85\uD569\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &1879986340
@@ -18063,7 +18302,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24499999
@@ -18080,6 +18319,11 @@ MonoBehaviour:
   memoPreview: "\uBAA8\uC21C #3\uB294 \uB2E4\uC2DC \uC77D\uC744 \uBB38\uC7A5\uC774
     \uB9CE\uC740 \uCC45\uC785\uB2C8\uB2E4."
   rating: 5
+  ownerRating: 5
+  readingStatus: 1
+  isLiked: 1
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &1922215244
@@ -18214,7 +18458,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -18629,7 +18873,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.0400001
   height: 0.24499999
@@ -18646,6 +18890,11 @@ MonoBehaviour:
   memoPreview: "\uC544\uBAAC\uB4DC #3\uB294 \uCC45\uC7A5\uC5D0 \uC624\uB798 \uB0A8\uACA8\uB450\uACE0
     \uC2F6\uC740 \uC774\uC57C\uAE30\uC785\uB2C8\uB2E4."
   rating: 4
+  ownerRating: 4
+  readingStatus: 0
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &1963844497
@@ -18693,7 +18942,7 @@ Material:
     RenderType: Opaque
   disabledShaderPasses:
   - MOTIONVECTORS
-  m_LockedProperties:
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -19197,7 +19446,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3acccc1de9d42954dbf2b9ee4b6eb0a4, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.GuestbookBoardHitArea
 --- !u!65 &1996598222
 BoxCollider:
@@ -19657,7 +19906,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.02000009
   height: 0.24499999
@@ -19674,6 +19923,11 @@ MonoBehaviour:
   memoPreview: "\uC5B4\uC11C \uC624\uC138\uC694, \uD734\uB0A8\uB3D9 \uC11C\uC810\uC785\uB2C8\uB2E4\uB294
     \uB2E4\uC2DC \uC77D\uC744 \uBB38\uC7A5\uC774 \uB9CE\uC740 \uCC45\uC785\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 1
+  isLiked: 1
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 0
   isPublic: 1
 --- !u!65 &2068651357
@@ -19793,7 +20047,7 @@ Sprite:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name:
+  m_Name: 
   m_Rect:
     serializedVersion: 2
     x: 0
@@ -19806,7 +20060,7 @@ Sprite:
   m_Pivot: {x: 0.5, y: 0.5}
   m_Extrude: 0
   m_IsPolygon: 0
-  m_PackingTag:
+  m_PackingTag: 
   m_RenderDataKey:
     00000000000000000000000000000000: 0
   m_AtlasTags: []
@@ -19996,7 +20250,7 @@ Sprite:
   m_PhysicsShape: []
   m_Bones: []
   m_ScriptableObjects: []
-  m_SpriteID:
+  m_SpriteID: 
 --- !u!1 &2089454640
 GameObject:
   m_ObjectHideFlags: 0
@@ -20131,7 +20385,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.0400001
   height: 0.24499999
@@ -20148,6 +20402,11 @@ MonoBehaviour:
   memoPreview: "\uB2EC\uB7EC\uAD6C\uD2B8 \uAFC8 \uBC31\uD654\uC810\uB294 \uBD84\uC704\uAE30\uC640
     \uC778\uBB3C\uC758 \uACB0\uC774 \uC120\uBA85\uD569\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &2091334203
@@ -20350,7 +20609,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: bc9d4387577a5d44782986f4d704af68, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.NotebookHitArea
 --- !u!65 &2131999371
 BoxCollider:
@@ -20417,7 +20676,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24499999
@@ -20434,6 +20693,11 @@ MonoBehaviour:
   memoPreview: "\uBD88\uD3B8\uD55C \uD3B8\uC758\uC810 #3\uB294 \uBD84\uC704\uAE30\uC640
     \uC778\uBB3C\uC758 \uACB0\uC774 \uC120\uBA85\uD569\uB2C8\uB2E4."
   rating: 3
+  ownerRating: 3
+  readingStatus: 2
+  isLiked: 0
+  isPaidCoverOwned: 0
+  isDecoration: 0
   isRead: 1
   isPublic: 1
 --- !u!65 &2136286267
