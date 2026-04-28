@@ -544,24 +544,46 @@ namespace BookshelfPorting.Runtime
 
         private void CancelDrag()
         {
-            if (draggingBook == null)
+            var book = draggingBook;
+            if (book == null)
             {
                 return;
             }
 
             ResetDragLayoutPreview(true);
 
-            if (originalSectionBeforeDrag != null)
+            var restored = false;
+            if (state != null && originalSectionBeforeDrag != null)
             {
-                state.TryPlaceBookAt(draggingBook, originalSectionBeforeDrag, originalIndexBeforeDrag, this, true);
+                restored = state.TryPlaceBookAt(book, originalSectionBeforeDrag, originalIndexBeforeDrag, this, true);
             }
-            else if (generator != null && generator.BooksRoot != null && generator.BooksRoot.parent != null)
+
+            if (!restored)
             {
-                var localPosition = generator.BooksRoot.parent.InverseTransformPoint(draggingBook.transform.position);
-                var fallbackSection = state.FindNearestAvailableSection(localPosition, draggingBook);
-                if (fallbackSection != null)
+                restored = TryPlaceBookInNearestAvailableSection(book, true);
+            }
+
+            if (!restored &&
+                TryForcePlaceBookForInvalidReturn(
+                    book,
+                    originalSectionBeforeDrag,
+                    originalIndexBeforeDrag,
+                    out var targetLocalPosition,
+                    out var targetLocalRotation,
+                    out var targetLocalScale))
+            {
+                if (generator != null && generator.BooksRoot != null && book.transform.parent != generator.BooksRoot)
                 {
-                    state.TryPlaceBookAt(draggingBook, fallbackSection, fallbackSection.books.Count, this, true);
+                    book.transform.SetParent(generator.BooksRoot, true);
+                }
+
+                book.transform.localPosition = targetLocalPosition;
+                book.transform.localRotation = targetLocalRotation;
+                book.transform.localScale = targetLocalScale;
+
+                if (state != null && book.CurrentSection != null)
+                {
+                    state.LayoutSectionExcept(book.CurrentSection, this, true, book);
                 }
             }
 
@@ -578,6 +600,23 @@ namespace BookshelfPorting.Runtime
             shelfBookPointerTravel = 0f;
             ResetEdgeSwitchDwell();
             ResetDragVelocity();
+        }
+
+        private bool TryPlaceBookInNearestAvailableSection(BookEntity book, bool animate)
+        {
+            if (state == null ||
+                book == null ||
+                generator == null ||
+                generator.BooksRoot == null ||
+                generator.BooksRoot.parent == null)
+            {
+                return false;
+            }
+
+            var localPosition = generator.BooksRoot.parent.InverseTransformPoint(book.transform.position);
+            var fallbackSection = state.FindNearestAvailableSection(localPosition, book);
+            return fallbackSection != null &&
+                   state.TryPlaceBookAt(book, fallbackSection, fallbackSection.books.Count, this, animate);
         }
 
         private PointerTarget RaycastPointerTarget(Vector2 pointer)

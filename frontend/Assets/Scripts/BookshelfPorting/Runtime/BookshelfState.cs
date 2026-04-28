@@ -760,40 +760,67 @@ namespace BookshelfPorting.Runtime
 
         private void StopLayoutAnimation(Transform target)
         {
-            if (target == null ||
-                !activeLayoutAnimations.TryGetValue(target, out var handle) ||
-                handle.Runner == null ||
-                handle.Routine == null)
+            if (ReferenceEquals(target, null) ||
+                !activeLayoutAnimations.TryGetValue(target, out var handle))
             {
-                activeLayoutAnimations.Remove(target);
                 return;
             }
 
-            handle.Runner.StopCoroutine(handle.Routine);
+            if (handle.Runner != null && handle.Routine != null)
+            {
+                handle.Runner.StopCoroutine(handle.Routine);
+            }
+
             activeLayoutAnimations.Remove(target);
         }
 
         private IEnumerator AnimateBookTo(Transform target, Vector3 localPosition, Quaternion localRotation, Vector3 localScale)
         {
-            var elapsed = 0f;
-            var startPos = target.localPosition;
-            var startRot = target.localRotation;
-            var startScale = target.localScale;
-
-            while (elapsed < animationDuration)
+            var trackedTarget = target;
+            try
             {
-                elapsed += Time.deltaTime;
-                var t = Mathf.SmoothStep(0f, 1f, elapsed / animationDuration);
-                target.localPosition = Vector3.Lerp(startPos, localPosition, t);
-                target.localRotation = Quaternion.Slerp(startRot, localRotation, t);
-                target.localScale = Vector3.Lerp(startScale, localScale, t);
-                yield return null;
-            }
+                if (target == null)
+                {
+                    yield break;
+                }
 
-            target.localPosition = localPosition;
-            target.localRotation = localRotation;
-            target.localScale = localScale;
-            activeLayoutAnimations.Remove(target);
+                var elapsed = 0f;
+                var duration = Mathf.Max(0.01f, animationDuration);
+                var startPos = target.localPosition;
+                var startRot = target.localRotation;
+                var startScale = target.localScale;
+
+                while (elapsed < duration)
+                {
+                    if (target == null)
+                    {
+                        yield break;
+                    }
+
+                    elapsed += Time.deltaTime;
+                    var t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / duration));
+                    target.localPosition = Vector3.Lerp(startPos, localPosition, t);
+                    target.localRotation = Quaternion.Slerp(startRot, localRotation, t);
+                    target.localScale = Vector3.Lerp(startScale, localScale, t);
+                    yield return null;
+                }
+
+                if (target == null)
+                {
+                    yield break;
+                }
+
+                target.localPosition = localPosition;
+                target.localRotation = localRotation;
+                target.localScale = localScale;
+            }
+            finally
+            {
+                if (!ReferenceEquals(trackedTarget, null))
+                {
+                    activeLayoutAnimations.Remove(trackedTarget);
+                }
+            }
         }
 
         private readonly struct LayoutAnimationHandle

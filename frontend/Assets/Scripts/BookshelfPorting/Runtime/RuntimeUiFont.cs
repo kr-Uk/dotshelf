@@ -5,7 +5,8 @@ namespace BookshelfPorting.Runtime
     internal static class RuntimeUiFont
     {
         private const string ResourcePath = "Fonts/Pretendard-Regular";
-        private const string KoreanGlyphProbe = "가나다라마바사아자차카타파하책장검색추가편집저장취소";
+        private const string RequiredKoreanGlyphs = "한책";
+        private const string KoreanGlyphProbe = RequiredKoreanGlyphs + "가나다라마바사아자차카타파하책장검색추가편집저장취소";
         private static readonly string[] OsFontCandidates =
         {
             "Pretendard",
@@ -77,8 +78,15 @@ namespace BookshelfPorting.Runtime
             }
 
             font.RequestCharactersInTexture(KoreanGlyphProbe, 32, style);
-            return font.GetCharacterInfo('한', out _, 32, style) &&
-                   font.GetCharacterInfo('책', out _, 32, style);
+            for (var i = 0; i < RequiredKoreanGlyphs.Length; i++)
+            {
+                if (!font.GetCharacterInfo(RequiredKoreanGlyphs[i], out _, 32, style))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }
