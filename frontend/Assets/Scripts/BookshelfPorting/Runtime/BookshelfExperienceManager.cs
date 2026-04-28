@@ -16,6 +16,12 @@ namespace BookshelfPorting.Runtime
         Notebook
     }
 
+    public enum MainCameraViewMode
+    {
+        MainView,
+        QuarterView
+    }
+
     public class BookshelfExperienceManager : MonoBehaviour
     {
         private const int GuestbookVisibleRows = 3;
@@ -450,6 +456,19 @@ namespace BookshelfPorting.Runtime
         public bool IsBookshelfEditMode { get; private set; }
         public BookEntity ActiveDetailBook { get; private set; }
 
+        // Tracks which of the two main-scene poses (MainView default, QuarterView via
+        // toggle) is currently active. Independent of bookshelf/guestbook/notebook focus —
+        // those don't change which main pose the camera should return to next.
+        private MainCameraViewMode currentMainViewMode = MainCameraViewMode.MainView;
+        public MainCameraViewMode CurrentMainViewMode => currentMainViewMode;
+
+        // Set by the onboarding flow during Step 3. Used by SettingsScreenController to
+        // hide the floating mode-change / settings buttons only while onboarding Step 3
+        // is in progress; cleared as soon as onboarding completes. Bookshelf focus
+        // features (back button, left/right nav, scroll zoom, interactions) remain
+        // fully available during Step 3 — this flag only gates main-scene chrome.
+        public bool IsOnboardingStep3Active { get; set; }
+
         public void Configure(
             BookshelfState bookshelfState,
             CameraController controller,
@@ -601,7 +620,55 @@ namespace BookshelfPorting.Runtime
             }
 
             PrepareQuarterViewReturn();
+            currentMainViewMode = MainCameraViewMode.QuarterView;
             cameraController.MoveToMode(CameraMode.Overview);
+        }
+
+        public void FocusMainView()
+        {
+            if (!CanStartCameraFocus())
+            {
+                return;
+            }
+
+            PrepareQuarterViewReturn();
+            currentMainViewMode = MainCameraViewMode.MainView;
+            cameraController.MoveToMainView();
+
+            // MoveToMainView intentionally suppresses CameraController.ModeChanged so
+            // the main-view-mode toggle state survives across re-entry. The downside is
+            // that HandleCameraModeChanged → SyncFromCameraMode never runs, which leaves
+            // CurrentFocusArea stuck at whatever it was before (e.g. Bookshelf when this
+            // is called from the onboarding-completion path). Sync explicitly so the
+            // bookshelf HUD/zoom/back-button state clears as the camera leaves focus.
+            SyncFromCameraMode(CameraMode.Overview);
+        }
+
+        // Toggles only the main-scene camera pose (MainView ↔ QuarterView). When the
+        // camera is in a focus mode (Frontal/Whiteboard/Notebook) this is a no-op, so
+        // pressing the button mid-focus never disrupts those flows.
+        public void ToggleMainViewMode()
+        {
+            if (cameraController == null || cameraController.IsTransitioning)
+            {
+                return;
+            }
+
+            if (cameraController.CurrentMode != CameraMode.Overview)
+            {
+                return;
+            }
+
+            if (currentMainViewMode == MainCameraViewMode.MainView)
+            {
+                currentMainViewMode = MainCameraViewMode.QuarterView;
+                cameraController.MoveToQuarterView();
+            }
+            else
+            {
+                currentMainViewMode = MainCameraViewMode.MainView;
+                cameraController.MoveToMainView();
+            }
         }
 
         public void FocusBookshelf()
@@ -2101,12 +2168,12 @@ namespace BookshelfPorting.Runtime
 
             if (hamburgerMenuPanel != null)
             {
-                hamburgerMenuPanel.SetActive(isHamburgerMenuOpen && !isBookshelfFocused);
+                hamburgerMenuPanel.SetActive(false);
             }
 
             if (hamburgerButton != null)
             {
-                hamburgerButton.gameObject.SetActive(CurrentFocusArea != ExperienceFocusArea.Notebook && !isBookshelfFocused);
+                hamburgerButton.gameObject.SetActive(false);
             }
 
             if (focusBackButton != null)

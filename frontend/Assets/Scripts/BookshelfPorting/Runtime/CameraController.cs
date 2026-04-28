@@ -39,6 +39,17 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float frontalMinCameraY = 0.3f;
         [SerializeField] private float frontalMaxCameraY = 1.8f;
 
+        // MainView: the default main-scene pose. Derived at runtime from frontalAnchor
+        // by pulling straight back along its forward axis (same look direction as the
+        // bookshelf focus) and slightly widening the FOV so the surrounding room
+        // becomes visible without orbiting the camera. The bookshelf stays centered.
+        // QuarterView remains the existing overviewAnchor pose, untouched.
+        [SerializeField] private float mainViewPullBack = 0.4f;
+        [SerializeField] private float mainViewVerticalOffset = 0.04f;
+        [SerializeField] private float mainViewSideAngleDegrees = 0f;
+        [SerializeField] private float mainViewLookTargetDistance = 1.2f;
+        [SerializeField] private float mainViewFieldOfView = 52f;
+
         private CameraTransitionSegment activeSegment;
         private bool isTransitioning;
         private bool isFrontalZooming;
@@ -205,6 +216,118 @@ namespace BookshelfPorting.Runtime
             }
 
             StartSingleSegmentTransition(targetPosition, targetRotation, targetFieldOfView, moveDuration);
+        }
+
+        // MainView entry points -------------------------------------------------
+
+        public void ApplyMainView()
+        {
+            if (!EnsureCameraResolved())
+            {
+                return;
+            }
+
+            if (!TryComputeMainViewPose(out var position, out var rotation, out var fieldOfView))
+            {
+                return;
+            }
+
+            targetCamera.transform.position = position;
+            targetCamera.transform.rotation = rotation;
+            targetCamera.fieldOfView = fieldOfView;
+
+            CurrentMode = CameraMode.Overview;
+            isTransitioning = false;
+        }
+
+        public void MoveToMainView()
+        {
+            if (!EnsureCameraResolved())
+            {
+                return;
+            }
+
+            if (!TryComputeMainViewPose(out var position, out var rotation, out var fieldOfView))
+            {
+                return;
+            }
+
+            // The MainView shares CameraMode.Overview semantics (no scroll-zoom, treated
+            // as the main-scene context by the manager) but the destination pose differs
+            // from the overviewAnchor (which is the QuarterView). The ModeChanged event
+            // is intentionally NOT raised so subscribers don't reset main-view-mode state.
+            CurrentMode = CameraMode.Overview;
+            StartSingleSegmentTransition(position, rotation, fieldOfView, moveDuration);
+        }
+
+        // QuarterView entry points (overviewAnchor pose, unchanged from existing scene
+        // setup). Onboarding Step 3 needs an explicit snap to QuarterView before the
+        // bookshelf-focus transition, so a public Apply method is exposed here.
+        public void ApplyQuarterView()
+        {
+            if (!EnsureCameraResolved() || overviewAnchor == null)
+            {
+                return;
+            }
+
+            targetCamera.transform.position = overviewAnchor.position;
+            targetCamera.transform.rotation = overviewAnchor.rotation;
+            targetCamera.fieldOfView = overviewFieldOfView;
+
+            CurrentMode = CameraMode.Overview;
+            isTransitioning = false;
+        }
+
+        public void MoveToQuarterView()
+        {
+            // Existing behavior of MoveToMode(Overview) — preserved exactly so callers
+            // like FocusQuarterView, CloseNotebookFocus, and the F1 shortcut keep landing
+            // on overviewAnchor.
+            MoveToMode(CameraMode.Overview);
+        }
+
+        // Backward-compatible alias retained so existing callers of the previous
+        // experimental name still resolve to the renamed MainView method.
+        public void MoveToWideMainView() => MoveToMainView();
+
+        private bool EnsureCameraResolved()
+        {
+            if (targetCamera != null)
+            {
+                return true;
+            }
+
+            targetCamera = Camera.main;
+            return targetCamera != null;
+        }
+
+        private bool TryComputeMainViewPose(out Vector3 position, out Quaternion rotation, out float fieldOfView)
+        {
+            position = default;
+            rotation = default;
+            fieldOfView = mainViewFieldOfView;
+
+            var anchor = frontalAnchor != null ? frontalAnchor : overviewAnchor;
+            if (anchor == null)
+            {
+                return false;
+            }
+
+            // Anchor a virtual look target in front of the bookshelf focus along its
+            // forward axis. Orbiting the camera around this target keeps the bookshelf
+            // roughly centered while the side angle reveals the laptop and surrounding
+            // room.
+            var lookTarget = anchor.position + anchor.forward * mainViewLookTargetDistance;
+            var up = anchor.up;
+
+            var totalDistance = mainViewLookTargetDistance + mainViewPullBack;
+            var pulledOffset = -anchor.forward * totalDistance;
+            var sideRotation = Quaternion.AngleAxis(mainViewSideAngleDegrees, up);
+            var rotatedOffset = sideRotation * pulledOffset;
+
+            position = lookTarget + rotatedOffset + up * mainViewVerticalOffset;
+            rotation = Quaternion.LookRotation((lookTarget - position).normalized, up);
+            return true;
         }
 
         public void MoveToNotebookScreen(Transform screenTransform)

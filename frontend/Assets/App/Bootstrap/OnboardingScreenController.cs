@@ -75,6 +75,7 @@ namespace App.Bootstrap
         private GameObject step1Panel;
         private GameObject step2Panel;
         private GameObject step3Panel;
+        private GameObject completionModalRoot;
 
         private Image profilePreviewImage;
         private TMP_InputField nicknameInput;
@@ -182,10 +183,12 @@ namespace App.Bootstrap
 
             if (isStep3Overlay)
             {
+                SetExperienceManagerStep3Active(true);
                 EnterBookshelfFocusForOnboarding();
             }
             else
             {
+                SetExperienceManagerStep3Active(false);
                 CancelStep3Transition();
             }
 
@@ -211,6 +214,7 @@ namespace App.Bootstrap
         {
             LogDebug("Onboarding completed");
 
+            SetExperienceManagerStep3Active(false);
             CancelStep3Transition();
             SetCanvasVisible(false);
 
@@ -340,6 +344,107 @@ namespace App.Bootstrap
             step1Panel = BuildStep1Panel(contentRoot.transform);
             step2Panel = BuildStep2Panel(contentRoot.transform);
             step3Panel = BuildStep3Panel(canvasObject.transform);
+            completionModalRoot = BuildCompletionModal(canvasObject.transform);
+        }
+
+        private GameObject BuildCompletionModal(Transform parent)
+        {
+            var modalRoot = CreateRectObject("CompletionModalRoot", parent);
+            StretchToParent((RectTransform)modalRoot.transform);
+
+            var dim = CreateImage(modalRoot.transform, "Dim", new Color(0f, 0f, 0f, 0.55f));
+            StretchToParent(dim.rectTransform);
+            // Block clicks behind the modal so only the 확인 button is interactable.
+            var dimButton = dim.gameObject.AddComponent<Button>();
+            dimButton.transition = Selectable.Transition.None;
+
+            var card = CreateImage(modalRoot.transform, "Card", CardColor);
+            card.sprite = roundedRectSprite;
+            card.type = Image.Type.Sliced;
+            var cardRect = card.rectTransform;
+            cardRect.anchorMin = new Vector2(0.5f, 0.5f);
+            cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+            cardRect.pivot = new Vector2(0.5f, 0.5f);
+            cardRect.sizeDelta = new Vector2(640f, 360f);
+            cardRect.anchoredPosition = Vector2.zero;
+
+            var cardShadow = card.gameObject.AddComponent<Shadow>();
+            cardShadow.effectColor = WithAlpha(TextColor, 0.18f);
+            cardShadow.effectDistance = new Vector2(0f, -10f);
+
+            var title = CreateText(
+                card.transform,
+                "Title",
+                "온보딩이 완료되었습니다",
+                26f,
+                FontStyles.Bold,
+                TextColor,
+                TextAlignmentOptions.Center,
+                new Vector2(0f, -56f),
+                new Vector2(540f, 40f));
+
+            var body = CreateText(
+                card.transform,
+                "Body",
+                "이제 나만의 책장을 자유롭게 꾸며보세요.",
+                18f,
+                FontStyles.Normal,
+                MutedTextColor,
+                TextAlignmentOptions.Center,
+                new Vector2(0f, -148f),
+                new Vector2(540f, 60f));
+
+            var confirmButton = CreateButton(
+                card.transform,
+                "ConfirmButton",
+                "확인",
+                PrimaryColor,
+                Color.white,
+                new Vector2(0f, -284f),
+                new Vector2(280f, PrimaryControlHeight),
+                false,
+                BorderColor);
+            confirmButton.onClick.AddListener(OnCompletionConfirmClicked);
+
+            modalRoot.SetActive(false);
+            return modalRoot;
+        }
+
+        private void ShowCompletionModal()
+        {
+            if (completionModalRoot == null)
+            {
+                return;
+            }
+
+            // Push to the front so it visually overlays the Step 3 navigation card.
+            completionModalRoot.transform.SetAsLastSibling();
+            completionModalRoot.SetActive(true);
+        }
+
+        private void HideCompletionModal()
+        {
+            if (completionModalRoot != null)
+            {
+                completionModalRoot.SetActive(false);
+            }
+        }
+
+        private void OnCompletionConfirmClicked()
+        {
+            HideCompletionModal();
+
+            // Return the main-scene camera to the new MainView default. This must run
+            // before CompleteOnboarding's tear-down because the onboarding GameObject —
+            // and this controller — get destroyed there. Also clear the Step 3 flag so
+            // the main-scene chrome and focus-mode chrome resume their normal visibility.
+            if (TryGetBookshelfExperienceManager(out var experienceManager) && experienceManager != null)
+            {
+                experienceManager.IsOnboardingStep3Active = false;
+                experienceManager.FocusMainView();
+            }
+
+            CompleteOnboarding();
         }
 
         private GameObject BuildStep1Panel(Transform parent)
@@ -585,29 +690,23 @@ namespace App.Bootstrap
                 Vector2.zero);
             StretchToParent(step3OverlayStatusLabel.rectTransform);
 
-            var navigationCard = CreateImage(panel.transform, "NavigationCard", WithAlpha(CardColor, 0.97f));
-            navigationCard.sprite = roundedRectSprite;
-            navigationCard.type = Image.Type.Sliced;
-
-            var navigationRect = navigationCard.rectTransform;
-            navigationRect.anchorMin = new Vector2(0.5f, 0f);
-            navigationRect.anchorMax = new Vector2(0.5f, 0f);
-            navigationRect.pivot = new Vector2(0.5f, 0f);
-            navigationRect.sizeDelta = new Vector2(760f, 120f);
-            navigationRect.anchoredPosition = new Vector2(0f, 36f);
-
-            var navigationShadow = navigationCard.gameObject.AddComponent<Shadow>();
-            navigationShadow.effectColor = WithAlpha(TextColor, 0.12f);
-            navigationShadow.effectDistance = new Vector2(0f, -10f);
-
-            var navigationRow = CreateRow(navigationCard.transform, "NavigationRow", 18f, TextAnchor.MiddleCenter);
-            StretchWithPadding((RectTransform)navigationRow.transform, new Vector2(24f, 18f), new Vector2(-24f, -18f));
-
-            var previousButton = CreateFixedButton(navigationRow, "PreviousStepButton", "이전 단계", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));
+            // Step 3 navigation buttons sit at the bottom-left and bottom-right of the screen
+            // so they do not overlap with the bookshelf-focus controls in the middle/top area.
+            var previousButton = CreateFixedButton(panel.transform, "PreviousStepButton", "이전 단계", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));
+            var previousRect = (RectTransform)previousButton.transform;
+            previousRect.anchorMin = new Vector2(0f, 0f);
+            previousRect.anchorMax = new Vector2(0f, 0f);
+            previousRect.pivot = new Vector2(0f, 0f);
+            previousRect.anchoredPosition = new Vector2(48f, 96f);
             previousButton.onClick.AddListener(ShowStep2);
-            CreateFlexibleSpacer(navigationRow);
-            var completeButton = CreateFixedButton(navigationRow, "CompleteButton", "완료", PrimaryColor, Color.white, false, BorderColor, new Vector2(220f, PrimaryControlHeight));
-            completeButton.onClick.AddListener(CompleteOnboarding);
+
+            var completeButton = CreateFixedButton(panel.transform, "CompleteButton", "완료", PrimaryColor, Color.white, false, BorderColor, new Vector2(220f, PrimaryControlHeight));
+            var completeRect = (RectTransform)completeButton.transform;
+            completeRect.anchorMin = new Vector2(1f, 0f);
+            completeRect.anchorMax = new Vector2(1f, 0f);
+            completeRect.pivot = new Vector2(1f, 0f);
+            completeRect.anchoredPosition = new Vector2(-48f, 96f);
+            completeButton.onClick.AddListener(ShowCompletionModal);
 
             SetStep3LoadingPanelVisible(true);
             SetStep3StatusVisible(false);
@@ -1111,6 +1210,17 @@ namespace App.Bootstrap
             return experienceManager != null;
         }
 
+        // Best-effort: if the bookshelf manager isn't reachable yet (e.g. main scene
+        // hasn't loaded), the flag will be set on the next opportunity through
+        // OnCompletionConfirmClicked / CompleteOnboarding, so silently no-op here.
+        private void SetExperienceManagerStep3Active(bool active)
+        {
+            if (TryGetBookshelfExperienceManager(out var experienceManager) && experienceManager != null)
+            {
+                experienceManager.IsOnboardingStep3Active = active;
+            }
+        }
+
         private IEnumerator EnterMainAndBookshelfFocusFlow()
         {
             EnsureCrossScenePersistence();
@@ -1149,6 +1259,24 @@ namespace App.Bootstrap
             BookshelfExperienceManager experienceManager = null;
             CameraController cameraController = null;
             BookshelfGenerator bookshelfGenerator = null;
+
+            // Step 3 special case: the player must see QuarterView (not the new MainView
+            // default) before the bookshelf-focus transition kicks in. Snap before the
+            // loading cover hides so there is no MainView flash.
+            if (TryGetBookshelfSceneDependencies(out var initialExperienceManager, out var initialCameraController, out _))
+            {
+                if (initialExperienceManager != null)
+                {
+                    // Manager is now reachable — propagate the Step 3 flag in case the
+                    // earlier ShowStep(3) call ran before the main scene finished loading.
+                    initialExperienceManager.IsOnboardingStep3Active = true;
+                }
+                if (initialCameraController != null)
+                {
+                    initialCameraController.ApplyQuarterView();
+                }
+            }
+
             SetStep3LoadingCoverVisible(false);
             yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
             var readyDeadline = Time.unscaledTime + MainViewReadyTimeoutSeconds;

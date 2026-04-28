@@ -76,7 +76,12 @@ namespace BookshelfPorting.Runtime
             light.range = range;
             light.shadows = name == "WarmDirectional" ? LightShadows.Hard : LightShadows.None;
             light.shadowStrength = name == "WarmDirectional" ? 0.42f : 0f;
-            light.shadowResolution = UnityEngine.Rendering.LightShadowResolution.Low;
+            // shadowResolution is Built-in RP only — under URP it logs a console warning
+            // and shadow resolution is driven by the URP asset instead.
+            if (UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline == null)
+            {
+                light.shadowResolution = UnityEngine.Rendering.LightShadowResolution.Low;
+            }
             return light;
         }
     }

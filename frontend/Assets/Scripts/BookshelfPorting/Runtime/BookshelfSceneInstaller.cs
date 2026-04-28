@@ -203,9 +203,9 @@ namespace BookshelfPorting.Runtime
             experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
             environment.Configure(probe, null);
 
-            mainCamera.transform.position = overviewAnchor.position;
-            mainCamera.transform.rotation = overviewAnchor.rotation;
-            mainCamera.fieldOfView = 58f;
+            // Main scene opens in the new MainView pose (derived from the bookshelf focus
+            // anchor). QuarterView remains accessible via the toggle button and onboarding.
+            cameraController.ApplyMainView();
 
             environment.Apply();
 
@@ -224,7 +224,10 @@ namespace BookshelfPorting.Runtime
 
             if (Application.isPlaying)
             {
-                cameraController.MoveToMode(CameraMode.Overview);
+                // Main scene opens centered on the bookshelf via the MainView pose.
+                // (Previously this transitioned to overviewAnchor / QuarterView, which
+                // sits at an angle and made the bookshelf appear left-shifted.)
+                cameraController.MoveToMainView();
             }
         }
 
