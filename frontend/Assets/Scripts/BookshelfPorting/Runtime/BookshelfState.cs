@@ -16,6 +16,7 @@ namespace BookshelfPorting.Runtime
         private readonly List<ShelfSection> sections = new List<ShelfSection>();
         private readonly List<BookLayoutTarget> layoutTargets = new List<BookLayoutTarget>();
         private readonly List<BookEntity> previewBooks = new List<BookEntity>();
+        private readonly Dictionary<Transform, LayoutAnimationHandle> activeLayoutAnimations = new Dictionary<Transform, LayoutAnimationHandle>();
 
         public IReadOnlyList<ShelfSection> Sections => sections;
         public bool IsViewingBook { get; set; }
@@ -145,6 +146,32 @@ namespace BookshelfPorting.Runtime
             LayoutSection(section, runner, animate, excludedBook);
         }
 
+        public void PreviewSectionForDrop(
+            ShelfSection section,
+            MonoBehaviour runner,
+            bool animate,
+            BookEntity candidateBook,
+            int insertIndex)
+        {
+            if (section == null || candidateBook == null)
+            {
+                return;
+            }
+
+            BuildSectionLayout(section, layoutTargets, candidateBook, insertIndex);
+            for (var i = 0; i < layoutTargets.Count; i++)
+            {
+                var target = layoutTargets[i];
+                var book = target.Book;
+                if (book == null || book == candidateBook)
+                {
+                    continue;
+                }
+
+                MoveBookTo(book.transform, target.LocalPosition, target.LocalRotation, target.LocalScale, runner, animate);
+            }
+        }
+
         private void LayoutSection(ShelfSection section, MonoBehaviour runner, bool animate, BookEntity excludedBook)
         {
             if (section == null)
@@ -163,16 +190,7 @@ namespace BookshelfPorting.Runtime
                     continue;
                 }
 
-                if (animate && runner != null && book.gameObject.activeInHierarchy)
-                {
-                    runner.StartCoroutine(AnimateBookTo(book.transform, target.LocalPosition, target.LocalRotation, target.LocalScale));
-                }
-                else
-                {
-                    book.transform.localPosition = target.LocalPosition;
-                    book.transform.localRotation = target.LocalRotation;
-                    book.transform.localScale = target.LocalScale;
-                }
+                MoveBookTo(book.transform, target.LocalPosition, target.LocalRotation, target.LocalScale, runner, animate);
             }
         }
 
@@ -714,26 +732,107 @@ namespace BookshelfPorting.Runtime
             }
         }
 
-        private IEnumerator AnimateBookTo(Transform target, Vector3 localPosition, Quaternion localRotation, Vector3 localScale)
+        private void MoveBookTo(
+            Transform target,
+            Vector3 localPosition,
+            Quaternion localRotation,
+            Vector3 localScale,
+            MonoBehaviour runner,
+            bool animate)
         {
-            var elapsed = 0f;
-            var startPos = target.localPosition;
-            var startRot = target.localRotation;
-            var startScale = target.localScale;
-
-            while (elapsed < animationDuration)
+            if (target == null)
             {
-                elapsed += Time.deltaTime;
-                var t = Mathf.SmoothStep(0f, 1f, elapsed / animationDuration);
-                target.localPosition = Vector3.Lerp(startPos, localPosition, t);
-                target.localRotation = Quaternion.Slerp(startRot, localRotation, t);
-                target.localScale = Vector3.Lerp(startScale, localScale, t);
-                yield return null;
+                return;
+            }
+
+            StopLayoutAnimation(target);
+            if (animate && runner != null && target.gameObject.activeInHierarchy)
+            {
+                var routine = runner.StartCoroutine(AnimateBookTo(target, localPosition, localRotation, localScale));
+                activeLayoutAnimations[target] = new LayoutAnimationHandle(runner, routine);
+                return;
             }
 
             target.localPosition = localPosition;
             target.localRotation = localRotation;
             target.localScale = localScale;
+        }
+
+        private void StopLayoutAnimation(Transform target)
+        {
+            if (ReferenceEquals(target, null) ||
+                !activeLayoutAnimations.TryGetValue(target, out var handle))
+            {
+                return;
+            }
+
+            if (handle.Runner != null && handle.Routine != null)
+            {
+                handle.Runner.StopCoroutine(handle.Routine);
+            }
+
+            activeLayoutAnimations.Remove(target);
+        }
+
+        private IEnumerator AnimateBookTo(Transform target, Vector3 localPosition, Quaternion localRotation, Vector3 localScale)
+        {
+            var trackedTarget = target;
+            try
+            {
+                if (target == null)
+                {
+                    yield break;
+                }
+
+                var elapsed = 0f;
+                var duration = Mathf.Max(0.01f, animationDuration);
+                var startPos = target.localPosition;
+                var startRot = target.localRotation;
+                var startScale = target.localScale;
+
+                while (elapsed < duration)
+                {
+                    if (target == null)
+                    {
+                        yield break;
+                    }
+
+                    elapsed += Time.deltaTime;
+                    var t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / duration));
+                    target.localPosition = Vector3.Lerp(startPos, localPosition, t);
+                    target.localRotation = Quaternion.Slerp(startRot, localRotation, t);
+                    target.localScale = Vector3.Lerp(startScale, localScale, t);
+                    yield return null;
+                }
+
+                if (target == null)
+                {
+                    yield break;
+                }
+
+                target.localPosition = localPosition;
+                target.localRotation = localRotation;
+                target.localScale = localScale;
+            }
+            finally
+            {
+                if (!ReferenceEquals(trackedTarget, null))
+                {
+                    activeLayoutAnimations.Remove(trackedTarget);
+                }
+            }
+        }
+
+        private readonly struct LayoutAnimationHandle
+        {
+            public LayoutAnimationHandle(MonoBehaviour runner, Coroutine routine)
+            {
+                Runner = runner;
+                Routine = routine;
+            }
+
+            public MonoBehaviour Runner { get; }
+            public Coroutine Routine { get; }
         }
 
         private readonly struct BookLayoutTarget
