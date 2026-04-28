@@ -2,6 +2,12 @@
 
 Claude Code 와 Codex 세션이 끝날 때마다(`Stop` 훅) 마지막 사용자 프롬프트와 어시스턴트 응답을 Notion DB 에 자동으로 기록하는 시스템이다. cwd 와 편집된 파일 경로를 보고 워크스페이스(`backend` / `apple` / `front`)별 DB 로 라우팅한다.
 
+## 보안 및 opt-in 원칙
+
+- **fresh clone 상태에서는 Stop 훅이 동작하지 않는다.** repo 에 commit 된 5개 `settings.json` 과 `.codex/hooks.json.example` 는 비활성 상태이고, 본인이 명시적으로 `scripts/setup-prompt-logging.{sh,ps1}` 를 실행해서 동의해야만 hook 이 활성화된 로컬 파일이 생성된다.
+- **Notion integration token, Anthropic API key 는 절대 commit 되지 않는다.** 셋업 스크립트가 입력받아 `.claude/notion-config.json` (gitignored) 에만 쓴다. repo 에는 [.claude/notion-config.example.json](../.claude/notion-config.example.json) 템플릿만 commit 된다.
+- 시크릿 마스킹은 패턴 기반(아래 표) 이라 누락 가능성이 있다. 토큰/패스워드를 프롬프트에 직접 붙여넣는 행위는 처음부터 피한다.
+
 ## 동작 원리
 
 1. 세션이 응답을 마치면 Claude Code/Codex 가 `Stop` 훅을 발사한다.
@@ -19,21 +25,38 @@ Claude Code 와 Codex 세션이 끝날 때마다(`Stop` 훅) 마지막 사용자
 ```
 S14P31F206/
 ├── .claude/
-│   ├── log-to-notion.mjs       # 훅 본체
-│   ├── notion-config.json      # 토큰 + DB ID (평문 commit)
-│   └── settings.json           # 루트 cwd Claude Code Stop 훅
+│   ├── log-to-notion.mjs              # 훅 본체 (committed)
+│   ├── notion-config.example.json     # 템플릿 (committed, 빈 토큰)
+│   ├── notion-config.json             # 실제 토큰 (★ gitignored, setup 이 생성)
+│   ├── settings.json                  # 빈 {} (committed, hook 비활성)
+│   └── settings.local.json            # 실제 hook 정의 (★ gitignored, setup 이 생성)
 ├── .codex/
-│   └── hooks.json              # Codex Stop 훅
-├── apple/.claude/settings.json
-├── backend/.claude/settings.json
-├── frontend/.claude/settings.json
+│   ├── hooks.json.example             # 템플릿 (committed)
+│   └── hooks.json                     # 실제 hook (★ gitignored, setup 이 생성)
+├── apple/.claude/
+│   ├── settings.json                  # {} (committed)
+│   └── settings.local.json            # ★ gitignored
+├── backend/.claude/
+│   ├── settings.json                  # {} (committed)
+│   └── settings.local.json            # ★ gitignored
+├── frontend/.claude/
+│   ├── settings.json                  # {} (committed)
+│   └── settings.local.json            # ★ gitignored
 ├── scripts/
 │   ├── setup-prompt-logging.sh
 │   └── setup-prompt-logging.ps1
-└── docs/prompt-logging.md      # 이 문서
+└── docs/prompt-logging.md             # 이 문서
 ```
 
-5개 `settings.json` + 1개 `hooks.json` 모두 `git rev-parse --show-toplevel` 로 레포 루트를 찾아 동일한 스크립트를 호출한다. 이 패턴 덕분에 Claude Code 가 `$CLAUDE_PROJECT_DIR` 을 settings.json 발견 위치로 푸는 함정을 피할 수 있다.
+`.gitignore` 에 다음 패턴이 등록돼 있다:
+
+```
+**/.claude/settings.local.json
+.claude/notion-config.json
+.codex/hooks.json
+```
+
+`settings.local.json` 은 Claude Code 가 `settings.json` 위에 자동으로 덧씌우는 per-user override 슬롯이다. 5개 `settings.local.json` + 1개 `.codex/hooks.json` 모두 `git rev-parse --show-toplevel` 로 레포 루트를 찾아 동일한 스크립트를 호출한다. 이 패턴 덕분에 Claude Code 가 `$CLAUDE_PROJECT_DIR` 을 settings.json 발견 위치로 푸는 함정을 피할 수 있다.
 
 ## 신규 팀원 셋업
 
@@ -54,12 +77,18 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-prompt-logging.ps1
 스크립트가 하는 일:
 
 1. Node 18+, git, codex CLI 존재 확인.
-2. `~/.codex/config.toml` 에 `[features] codex_hooks = true` 가 없으면 추가 (Codex 훅 기능 토글).
-3. `LOG_USER` 환경변수를 묻고:
+2. **opt-in 확인** — "활성화하시겠습니까?" 에 `y` 입력 안 하면 즉시 종료, 어떤 파일도 안 만든다.
+3. `~/.codex/config.toml` 에 `[features] codex_hooks = true` 가 없으면 추가 (Codex 훅 기능 토글).
+4. **Notion integration token 비공개 입력** (`Read-Host -AsSecureString` / 셸의 `read -rs`) → `.claude/notion-config.json` (gitignored) 에 작성.
+5. **Anthropic API key 비공개 입력** (선택, enter 로 건너뛰기 가능) → 같은 파일의 `llm_token` 필드.
+6. `.claude/settings.local.json`, `apple/.claude/settings.local.json`, `backend/.claude/settings.local.json`, `frontend/.claude/settings.local.json`, `.codex/hooks.json` 5+1 개 로컬 hook 정의 생성 (모두 gitignored).
+7. `LOG_USER` 환경변수를 묻고:
    - Mac/Linux: 셸 rc 파일(`~/.zshrc`, `~/.bashrc`) 에 `export LOG_USER=...` 추가
    - Windows: `setx LOG_USER ...` 로 사용자 레지스트리에 등록
    - 그리고 **모든 OS 공통으로 `~/.dotshelf/log-user` 파일에도 같은 값 기록** (환경변수 stale 폴백)
-4. `notion-config.json` 의 토큰으로 `https://api.notion.com/v1/users/me` 를 호출해 200 확인.
+8. `notion-config.json` 의 토큰으로 `https://api.notion.com/v1/users/me` 를 호출해 200 확인.
+
+**비활성화 방법**: `.claude/settings.local.json`, `apple/.claude/settings.local.json`, `backend/.claude/settings.local.json`, `frontend/.claude/settings.local.json`, `.codex/hooks.json` 5+1 개 파일을 삭제하면 hook 이 즉시 멈춘다 (다음 세션부터 적용). `.claude/notion-config.json` 도 같이 지우면 토큰까지 정리.
 
 `log-to-notion.mjs` 는 `process.env.LOG_USER` 가 비었으면 `~/.dotshelf/log-user` 를 읽어서 폴백한다. 따라서 환경변수가 stale 한 상황(특히 Windows 에서 `setx` 후 explorer 재시작 전)이라도 setup 직후 다음 Stop 훅부터 즉시 `User` 가 박힌다.
 
@@ -167,6 +196,7 @@ LLM 콜이 실패하면 `logLocal("warn", ...)` 으로만 기록하고 두 기�
 
 ## 토큰 회전이 필요할 때
 
-1. Notion → Settings & Members → Integrations → 해당 integration → Secrets 탭에서 새 토큰 발급.
-2. `.claude/notion-config.json` 의 `token` 갱신, commit.
-3. 팀원에게 `git pull` 안내. 셋업 스크립트 재실행은 불필요.
+1. Notion → Settings & Members → Integrations → 해당 integration → Secrets 탭에서 **Revoke** 또는 새 시크릿 발급.
+2. 본인 머신의 `.claude/notion-config.json` 의 `token` 직접 갱신 (gitignored 라 commit 안 됨), 또는 setup 스크립트 재실행해 다시 입력.
+3. 팀원에게 슬랙/텔레그램 등 비공개 채널로 새 토큰 공유. 받은 사람도 setup 스크립트 재실행 또는 본인 `.claude/notion-config.json` 직접 갱신.
+4. **commit 절대 금지.** `.gitignore` 가 막아주지만 의식적으로 확인.
