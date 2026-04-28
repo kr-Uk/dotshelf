@@ -2,6 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using App.Infrastructure.Api;
+using App.Infrastructure.Api.Dtos;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UIElements;
@@ -28,7 +30,14 @@ namespace App.Features.Notebook.Presentation
                 int views,
                 int records,
                 Color coverColor,
-                Color accentColor)
+                Color accentColor,
+                string apiSource = "MOCK",
+                long? serverBookId = null,
+                string isbn13 = null,
+                string isbn10 = null,
+                string sourceUrl = null,
+                string coverImageUrl = null,
+                string publishedDate = null)
             {
                 Id = id;
                 Title = title;
@@ -45,6 +54,13 @@ namespace App.Features.Notebook.Presentation
                 Records = records;
                 CoverColor = coverColor;
                 AccentColor = accentColor;
+                ApiSource = string.IsNullOrWhiteSpace(apiSource) ? "MOCK" : apiSource;
+                ServerBookId = serverBookId;
+                Isbn13 = isbn13;
+                Isbn10 = isbn10;
+                SourceUrl = sourceUrl;
+                CoverImageUrl = coverImageUrl;
+                PublishedDate = publishedDate;
             }
 
             public string Id { get; }
@@ -62,6 +78,27 @@ namespace App.Features.Notebook.Presentation
             public int Records { get; }
             public Color CoverColor { get; }
             public Color AccentColor { get; }
+            public string ApiSource { get; }
+            public long? ServerBookId { get; }
+            public string Isbn13 { get; }
+            public string Isbn10 { get; }
+            public string SourceUrl { get; }
+            public string CoverImageUrl { get; }
+            public string PublishedDate { get; }
+        }
+
+        private sealed class BookReviewViewModel
+        {
+            public BookReviewViewModel(string author, float rating, string content)
+            {
+                Author = author;
+                Rating = rating;
+                Content = content;
+            }
+
+            public string Author { get; }
+            public float Rating { get; }
+            public string Content { get; }
         }
 
         private sealed class SpaceViewModel
@@ -105,44 +142,6 @@ namespace App.Features.Notebook.Presentation
             public Color AccentColor { get; }
         }
 
-        private sealed class FeedRecordViewModel
-        {
-            public FeedRecordViewModel(
-                string id,
-                string authorId,
-                string author,
-                string spaceTitle,
-                string bookId,
-                string title,
-                string excerpt,
-                int likes,
-                int comments,
-                Color accentColor)
-            {
-                Id = id;
-                AuthorId = authorId;
-                Author = author;
-                SpaceTitle = spaceTitle;
-                BookId = bookId;
-                Title = title;
-                Excerpt = excerpt;
-                Likes = likes;
-                Comments = comments;
-                AccentColor = accentColor;
-            }
-
-            public string Id { get; }
-            public string AuthorId { get; }
-            public string Author { get; }
-            public string SpaceTitle { get; }
-            public string BookId { get; }
-            public string Title { get; }
-            public string Excerpt { get; }
-            public int Likes { get; }
-            public int Comments { get; }
-            public Color AccentColor { get; }
-        }
-
         private sealed class DecorObjectViewModel
         {
             public DecorObjectViewModel(
@@ -182,6 +181,12 @@ namespace App.Features.Notebook.Presentation
         private const int DashboardSortingOrder = 320;
         private const int FallbackSortingOrder = -320;
         private const int DashboardInitializationRetryFrames = 30;
+        private const float RecommendWheelScrollScale = 56f;
+        private const int SearchResultPageSize = 48;
+        private const long DefaultBookshelfId = 1L;
+        private const long DefaultSectionId = 1L;
+        private const int DefaultSlotNo = 1;
+        private const string DefaultDisplayStyle = "SPINE";
         private const string PanelSettingsResource = "NotebookPanelSettings";
         private static readonly Color PageBack = Hex(0xF0EEE9);
         private static readonly Color Surface = Hex(0xF7FFF7);
@@ -203,13 +208,14 @@ namespace App.Features.Notebook.Presentation
         private static readonly Color Gold = Hex(0xF4C95D);
         private static Texture2D closeIconTexture;
         private static Texture2D searchIconTexture;
+        private static Texture2D pointerCursorTexture;
         private static readonly string[] SuggestedSearches = { "소설", "에세이", "심리", "베스트셀러", "SF", "자기계발", "인문" };
 
-        private static readonly string[] HeaderTabs = { "책 시장", "다른 공간", "피드", "꾸미기 시장" };
-        private static readonly string[] SubTabs = { "전체 탐색", "무료", "유료", "추천 책", "책 랭킹" };
+        private static readonly string[] HeaderTabs = { "책 시장", "다른 공간", "꾸미기 시장" };
+        private static readonly string[] SubTabs = { "전체 탐색", "무료", "유료" };
         private static readonly string[] Categories = { "전체", "읽는 중", "읽음", "안 읽음", "책장 1", "책장 2" };
         private static readonly string[] Genres = { "전체", "소설", "에세이", "인문", "심리", "경제/경영", "SF/판타지" };
-        private static readonly string[] RankingSorts = { "인기순", "별점순", "리뷰순", "조회순" };
+        private static readonly string[] RankingSorts = { "인기순", "별점순", "리뷰순" };
         private static readonly string[] ObjectSorts = { "인기순", "최신순", "가격순" };
         private static readonly string[] ObjectCategories = { "전체", "필수 배치 오브젝트", "기타 배치 오브젝트", "전체 테마" };
 
@@ -237,13 +243,6 @@ namespace App.Features.Notebook.Presentation
             new("s4", "u-ajine", "김아진", "문장 수집 선반", "인문 · 큐레이션", "좋은 문장을 모아 둔 카드와 책등 색이 중심인 전시형 서재입니다.", "sentence-collector-shelf", 970, 408, 6124, Coral),
         };
 
-        private readonly FeedRecordViewModel[] feedRecords =
-        {
-            new("f1", "u-hansu", "한수정", "밤의 문장 작업실", "r1", "오늘의 문장 기록", "저녁에 읽은 짧은 산문을 책상 왼쪽 노트에 옮겨 적었습니다.", 348, 42, Accent),
-            new("f2", "u-mina", "조민아", "끝없는 방의 서가", "r4", "공간이 기억을 가질 때", "새 오브젝트를 배치하니 SF 서가의 분위기가 훨씬 선명해졌습니다.", 512, 61, Violet),
-            new("f3", "u-jaehoon", "이재훈", "일요일 경제 책상", "r6", "주말 경제 루틴", "한 챕터씩 읽고 대시보드에 요약을 붙이는 방식이 잘 맞았습니다.", 286, 35, Gold),
-        };
-
         private readonly DecorObjectViewModel[] decorObjects =
         {
             new("o1", "월넛 책장", "필수 배치 오브젝트", "책 시장과 연결되는 기본 책장 오브젝트입니다.", 900, 9820, 6, Hex(0x815A3B), Gold),
@@ -266,12 +265,12 @@ namespace App.Features.Notebook.Presentation
         private readonly HashSet<string> addedBookIds = new() { "r3" };
         private readonly HashSet<string> followedUserIds = new();
         private readonly HashSet<string> likedSpaceIds = new();
-        private readonly HashSet<string> likedRecordIds = new();
-        private readonly HashSet<string> commentedRecordIds = new();
-        private readonly HashSet<string> reportedRecordIds = new();
-        private readonly HashSet<string> blockedAuthorIds = new();
         private readonly HashSet<string> wishedObjectIds = new();
         private readonly HashSet<string> ownedObjectIds = new();
+        private readonly HashSet<string> favoriteBookIds = new();
+        private readonly HashSet<string> pendingShelfBookIds = new();
+        private readonly Dictionary<string, List<BookReviewViewModel>> bookReviewMap = new();
+        private readonly List<Button> bookRatingStarButtons = new();
 
         private UnityAction closeRequested;
         private Font uiFont;
@@ -281,23 +280,44 @@ namespace App.Features.Notebook.Presentation
         private VisualElement suggestionsContainer;
         private VisualElement subTabsRow;
         private VisualElement bookMarketContent;
+        private VisualElement searchResultsContent;
+        private VisualElement searchResultsList;
+        private VisualElement bookDetailContent;
+        private VisualElement bookDetailModalPanel;
         private VisualElement otherSpacesContent;
-        private VisualElement feedContent;
         private VisualElement objectMarketContent;
         private VisualElement objectList;
         private VisualElement recommendList;
         private VisualElement rankingGrid;
+        private VisualElement bookDetailCover;
+        private VisualElement bookDetailReviews;
+        private VisualElement bookReviewPanel;
         private VisualElement detailCover;
         private ScrollView recommendScrollView;
         private TextField searchField;
+        private TextField bookReviewInput;
         private Button clearSearchButton;
+        private Button bookFavoriteButton;
+        private Button bookDetailAddButton;
+        private Button bookReviewMoreButton;
+        private Button bookReviewToggleButton;
         private Label headerSubtitleLabel;
         private Label heroEyebrowLabel;
         private Label heroTitleLabel;
         private Label heroCopyLabel;
         private Label pageBalanceLabel;
         private Label resultLabel;
+        private Label searchResultsTitleLabel;
+        private Label searchResultsCountLabel;
+        private Label searchResultsHintLabel;
         private Label objectResultLabel;
+        private Label bookDetailTitle;
+        private Label bookDetailAuthor;
+        private Label bookDetailPublisher;
+        private Label bookDetailSummary;
+        private Label bookDetailMeta;
+        private Label bookDetailPrice;
+        private Label bookDetailReviewCount;
         private Label detailTitle;
         private Label detailAuthor;
         private Label detailPublisher;
@@ -317,10 +337,14 @@ namespace App.Features.Notebook.Presentation
         private Button nextPageButton;
         private Button addButton;
         private Coroutine dashboardInitializationRoutine;
+        private NotebookApiClient notebookApiClient;
+        private BookViewModel[] searchResults = Array.Empty<BookViewModel>();
         private int toastHideVersion;
         private int dashboardShowVersion;
+        private int searchRequestVersion;
 
         private string query = string.Empty;
+        private string appliedSearchQuery = string.Empty;
         private string activeHeaderTab = HeaderTabs[0];
         private string activeSearchSuggestion = string.Empty;
         private string activeCategory = "전체";
@@ -332,8 +356,18 @@ namespace App.Features.Notebook.Presentation
         private int selectedBookIndex;
         private int pageIndex;
         private int pages = 4820;
+        private int pageScrollbarPointerId = -1;
+        private float pageScrollbarStartPointerY;
+        private float pageScrollbarStartOffsetY;
         private bool initialized;
         private bool visible;
+        private bool draggingPageScrollbar;
+        private bool showingAllBookReviews;
+        private bool bookReviewsOpen;
+        private bool searchPageOpen;
+        private bool searchLoading;
+        private BookViewModel selectedBookOverride;
+        private float selectedReviewRating = 5f;
 
         public bool IsReady
         {
@@ -364,6 +398,14 @@ namespace App.Features.Notebook.Presentation
         {
             if (!visible || pageScrollView == null)
             {
+                return;
+            }
+
+            if (Input.GetKeyDown(KeyCode.Escape) &&
+                bookDetailContent != null &&
+                bookDetailContent.style.display.value == DisplayStyle.Flex)
+            {
+                CloseBookDetail();
                 return;
             }
 
@@ -688,6 +730,7 @@ namespace App.Features.Notebook.Presentation
             pageScroll.contentContainer.style.minWidth = 0;
             pageScroll.RegisterCallback<AttachToPanelEvent>(_ => HideNativeScroller(pageScroll));
             pageScroll.RegisterCallback<GeometryChangedEvent>(_ => UpdateScrollThumb());
+            pageScroll.RegisterCallback<WheelEvent>(OnNotebookPageWheel, TrickleDown.TrickleDown);
             pageScroll.verticalScroller.valueChanged += _ => UpdateScrollThumb();
             pageScroll.schedule.Execute(() => HideNativeScroller(pageScroll)).StartingIn(1);
             shell.Add(pageScroll);
@@ -696,8 +739,9 @@ namespace App.Features.Notebook.Presentation
             BuildSubTabs(pageScroll.contentContainer);
             BuildMain(pageScroll.contentContainer);
             BuildFooter(pageScroll.contentContainer);
-            BuildToast(dashboard);
             BuildScrollRail(dashboard);
+            BuildBookDetailModal(dashboard);
+            BuildToast(dashboard);
             UpdateScrollThumb();
             return dashboard;
         }
@@ -713,29 +757,52 @@ namespace App.Features.Notebook.Presentation
             objectSortButtons.Clear();
             objectCategoryButtons.Clear();
             pageButtons.Clear();
+            bookRatingStarButtons.Clear();
+            searchResults = Array.Empty<BookViewModel>();
 
             heroPanel = null;
             searchContainer = null;
             suggestionsContainer = null;
             subTabsRow = null;
             bookMarketContent = null;
+            searchResultsContent = null;
+            searchResultsList = null;
+            bookDetailContent = null;
+            bookDetailModalPanel = null;
             otherSpacesContent = null;
-            feedContent = null;
             objectMarketContent = null;
             objectList = null;
             recommendList = null;
             rankingGrid = null;
+            bookDetailCover = null;
+            bookDetailReviews = null;
+            bookReviewPanel = null;
             detailCover = null;
             recommendScrollView = null;
             searchField = null;
+            bookReviewInput = null;
             clearSearchButton = null;
+            bookFavoriteButton = null;
+            bookDetailAddButton = null;
+            bookReviewMoreButton = null;
+            bookReviewToggleButton = null;
             headerSubtitleLabel = null;
             heroEyebrowLabel = null;
             heroTitleLabel = null;
             heroCopyLabel = null;
             pageBalanceLabel = null;
             resultLabel = null;
+            searchResultsTitleLabel = null;
+            searchResultsCountLabel = null;
+            searchResultsHintLabel = null;
             objectResultLabel = null;
+            bookDetailTitle = null;
+            bookDetailAuthor = null;
+            bookDetailPublisher = null;
+            bookDetailSummary = null;
+            bookDetailMeta = null;
+            bookDetailPrice = null;
+            bookDetailReviewCount = null;
             detailTitle = null;
             detailAuthor = null;
             detailPublisher = null;
@@ -754,6 +821,8 @@ namespace App.Features.Notebook.Presentation
             previousPageButton = null;
             nextPageButton = null;
             addButton = null;
+            draggingPageScrollbar = false;
+            pageScrollbarPointerId = -1;
         }
 
         private void AddBackdrop(VisualElement parent)
@@ -917,9 +986,14 @@ namespace App.Features.Notebook.Presentation
             right.Add(charge);
 
             var close = CloseIconButton("닫기");
-            close.style.width = 38;
-            close.style.height = 38;
+            close.style.width = 30;
+            close.style.height = 30;
             close.style.marginLeft = 8;
+            close.style.backgroundColor = Color.clear;
+            close.style.borderTopWidth = 0;
+            close.style.borderRightWidth = 0;
+            close.style.borderBottomWidth = 0;
+            close.style.borderLeftWidth = 0;
             close.clicked += () => closeRequested?.Invoke();
             right.Add(close);
         }
@@ -1057,9 +1131,7 @@ namespace App.Features.Notebook.Presentation
                 query = evt.newValue ?? string.Empty;
                 var normalizedQuery = query.Trim();
                 activeSearchSuggestion = SuggestedSearches.Contains(normalizedQuery) ? normalizedQuery : string.Empty;
-                pageIndex = 0;
                 RefreshFilters();
-                RefreshLists();
             });
             search.Add(searchField);
 
@@ -1067,28 +1139,25 @@ namespace App.Features.Notebook.Presentation
             clearSearchButton.style.width = 34;
             clearSearchButton.style.height = 34;
             clearSearchButton.style.marginRight = 6;
-            clearSearchButton.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.06f);
+            clearSearchButton.style.backgroundColor = Color.clear;
+            clearSearchButton.style.borderTopWidth = 0;
+            clearSearchButton.style.borderRightWidth = 0;
+            clearSearchButton.style.borderBottomWidth = 0;
+            clearSearchButton.style.borderLeftWidth = 0;
             clearSearchButton.clicked += ClearSearch;
             search.Add(clearSearchButton);
 
             var searchButton = TextButton("검색", true);
             searchButton.tooltip = "검색";
-            searchButton.style.width = 68;
+            searchButton.style.width = 58;
             searchButton.style.flexShrink = 0;
-            searchButton.style.height = 38;
-            searchButton.style.paddingLeft = 12;
-            searchButton.style.paddingRight = 12;
+            searchButton.style.height = 34;
+            searchButton.style.paddingLeft = 10;
+            searchButton.style.paddingRight = 10;
             searchButton.style.backgroundColor = Accent;
             searchButton.style.color = Color.white;
             Border(searchButton, Rgba(0x58, 0xB9, 0xFF, 0.86f));
-            searchButton.clicked += () =>
-            {
-                var normalizedQuery = (query ?? string.Empty).Trim();
-                activeSearchSuggestion = SuggestedSearches.Contains(normalizedQuery) ? normalizedQuery : string.Empty;
-                pageIndex = 0;
-                RefreshFilters();
-                RefreshLists();
-            };
+            searchButton.clicked += SubmitSearch;
             search.Add(searchButton);
 
             var suggestions = Row("search-suggestions");
@@ -1176,29 +1245,27 @@ namespace App.Features.Notebook.Presentation
 
             bookMarketContent = CreateModeContent("book-market-content");
             body.Add(bookMarketContent);
-            BuildSidebar(bookMarketContent);
 
             var center = new VisualElement { name = "center-content" };
             center.style.flexDirection = FlexDirection.Column;
             center.style.width = StyleKeyword.Auto;
             center.style.alignSelf = Align.Stretch;
             center.style.minWidth = 0;
-            center.style.marginTop = 12;
+            center.style.marginTop = 0;
             bookMarketContent.Add(center);
 
-            BuildDetail(center);
             BuildRecommend(center);
             BuildRanking(center);
+
+            searchResultsContent = CreateModeContent("search-results-content");
+            searchResultsContent.style.display = DisplayStyle.None;
+            body.Add(searchResultsContent);
+            BuildSearchResultsPage(searchResultsContent);
 
             otherSpacesContent = CreateModeContent("other-spaces-content");
             otherSpacesContent.style.display = DisplayStyle.None;
             body.Add(otherSpacesContent);
             BuildOtherSpaces(otherSpacesContent);
-
-            feedContent = CreateModeContent("feed-content");
-            feedContent.style.display = DisplayStyle.None;
-            body.Add(feedContent);
-            BuildFeed(feedContent);
 
             objectMarketContent = CreateModeContent("object-market-content");
             objectMarketContent.style.display = DisplayStyle.None;
@@ -1250,6 +1317,440 @@ namespace App.Features.Notebook.Presentation
             copyColumn.Add(copyLabel);
         }
 
+        private void BuildSearchResultsPage(VisualElement parent)
+        {
+            parent.style.paddingTop = 0;
+
+            var panel = new VisualElement { name = "search-results-panel" };
+            panel.style.flexDirection = FlexDirection.Column;
+            panel.style.paddingLeft = 16;
+            panel.style.paddingRight = 16;
+            panel.style.paddingTop = 12;
+            panel.style.paddingBottom = 18;
+            panel.style.backgroundColor = Rgba(0xFA, 0xFE, 0xFB, 0.94f);
+            panel.style.minHeight = 370;
+            Round(panel, 18);
+            Border(panel, Rgba(0x58, 0xB9, 0xFF, 0.16f));
+            parent.Add(panel);
+
+            searchResultsList = Row("search-results-list");
+            searchResultsList.style.flexWrap = Wrap.Wrap;
+            searchResultsList.style.alignItems = Align.Stretch;
+            searchResultsList.style.marginTop = 0;
+            searchResultsList.style.minHeight = 326;
+            searchResultsList.style.paddingLeft = 2;
+            searchResultsList.style.paddingRight = 2;
+            panel.Add(searchResultsList);
+        }
+
+        private void BuildBookDetailModal(VisualElement parent)
+        {
+            bookDetailContent = new VisualElement { name = "book-detail-modal-overlay" };
+            bookDetailContent.style.position = Position.Absolute;
+            bookDetailContent.style.left = 0;
+            bookDetailContent.style.right = 0;
+            bookDetailContent.style.top = 0;
+            bookDetailContent.style.bottom = 0;
+            bookDetailContent.style.display = DisplayStyle.None;
+            bookDetailContent.style.alignItems = Align.Center;
+            bookDetailContent.style.justifyContent = Justify.Center;
+            bookDetailContent.style.backgroundColor = Rgba(0x09, 0x16, 0x26, 0.52f);
+            bookDetailContent.RegisterCallback<ClickEvent>(evt =>
+            {
+                if (evt.target == bookDetailContent)
+                {
+                    CloseBookDetail();
+                }
+            });
+            parent.Add(bookDetailContent);
+
+            var panel = new VisualElement { name = "book-detail-modal" };
+            bookDetailModalPanel = panel;
+            panel.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            panel.style.width = 600;
+            panel.style.height = 650;
+            panel.style.maxWidth = Length.Percent(92);
+            panel.style.maxHeight = Length.Percent(96);
+            panel.style.flexDirection = FlexDirection.Column;
+            panel.style.paddingLeft = 24;
+            panel.style.paddingRight = 24;
+            panel.style.paddingTop = 24;
+            panel.style.paddingBottom = 22;
+            panel.style.backgroundColor = Rgba(0xF2, 0xFA, 0xF5, 0.99f);
+            panel.style.overflow = Overflow.Hidden;
+            Round(panel, 28);
+            Border(panel, Rgba(0x0E, 0x1D, 0x2A, 0.14f));
+            bookDetailContent.Add(panel);
+
+            var close = CloseIconButton("닫기");
+            close.style.position = Position.Absolute;
+            close.style.right = 14;
+            close.style.top = 14;
+            close.style.width = 36;
+            close.style.height = 36;
+            close.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.82f);
+            close.clicked += CloseBookDetail;
+            panel.Add(close);
+
+            var top = Row("book-detail-top");
+            top.style.width = Length.Percent(100);
+            top.style.height = Length.Percent(100);
+            top.style.flexDirection = FlexDirection.Column;
+            top.style.flexGrow = 1f;
+            top.style.paddingLeft = 0;
+            top.style.paddingRight = 0;
+            top.style.paddingTop = 0;
+            top.style.paddingBottom = 0;
+            top.style.flexWrap = Wrap.NoWrap;
+            top.style.alignItems = Align.Stretch;
+            top.style.flexShrink = 1f;
+            panel.Add(top);
+
+            var coverStage = new VisualElement { name = "book-detail-cover-stage" };
+            coverStage.style.width = Length.Percent(100);
+            coverStage.style.height = 232;
+            coverStage.style.flexShrink = 0;
+            coverStage.style.marginBottom = 16;
+            coverStage.style.alignItems = Align.Center;
+            coverStage.style.justifyContent = Justify.Center;
+            coverStage.style.backgroundColor = Rgba(0xEA, 0xF5, 0xFF, 0.74f);
+            coverStage.style.overflow = Overflow.Hidden;
+            Round(coverStage, 22);
+            Border(coverStage, Rgba(0x58, 0xB9, 0xFF, 0.20f));
+            top.Add(coverStage);
+
+            var coverStageWash = new VisualElement { name = "book-detail-cover-stage-wash" };
+            coverStageWash.style.position = Position.Absolute;
+            coverStageWash.style.left = 0;
+            coverStageWash.style.right = 0;
+            coverStageWash.style.bottom = 0;
+            coverStageWash.style.height = 62;
+            coverStageWash.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.06f);
+            coverStage.Add(coverStageWash);
+
+            var coverAccentBar = new VisualElement { name = "book-detail-cover-accent" };
+            coverAccentBar.style.position = Position.Absolute;
+            coverAccentBar.style.left = 22;
+            coverAccentBar.style.top = 22;
+            coverAccentBar.style.width = 5;
+            coverAccentBar.style.height = 56;
+            coverAccentBar.style.backgroundColor = Accent;
+            Round(coverAccentBar, 3);
+            coverStage.Add(coverAccentBar);
+
+            bookDetailCover = new VisualElement { name = "book-detail-cover-slot" };
+            bookDetailCover.style.width = 144;
+            bookDetailCover.style.height = 208;
+            bookDetailCover.style.flexShrink = 0;
+            bookDetailCover.style.alignSelf = Align.Center;
+            bookDetailCover.style.marginRight = 0;
+            bookDetailCover.style.marginBottom = 0;
+            bookDetailCover.style.alignItems = Align.Center;
+            bookDetailCover.style.justifyContent = Justify.Center;
+            coverStage.Add(bookDetailCover);
+
+            var info = new VisualElement { name = "book-detail-info" };
+            info.style.flexGrow = 1f;
+            info.style.minWidth = 0;
+            info.style.width = Length.Percent(100);
+            info.style.flexDirection = FlexDirection.Column;
+            info.style.paddingLeft = 18;
+            info.style.paddingRight = 18;
+            info.style.paddingTop = 16;
+            info.style.paddingBottom = 16;
+            info.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.74f);
+            Round(info, 20);
+            Border(info, Rgba(0x0E, 0x1D, 0x2A, 0.09f));
+            top.Add(info);
+
+            bookDetailMeta = Text(string.Empty, 11, AccentDeep, FontStyle.Bold);
+            bookDetailMeta.style.letterSpacing = 5f;
+            bookDetailMeta.style.marginBottom = 5;
+            bookDetailMeta.style.unityTextAlign = TextAnchor.MiddleLeft;
+            info.Add(bookDetailMeta);
+
+            bookDetailTitle = Text(string.Empty, 25, Ink, FontStyle.Bold);
+            bookDetailTitle.style.whiteSpace = WhiteSpace.Normal;
+            bookDetailTitle.style.minHeight = 32;
+            bookDetailTitle.style.unityTextAlign = TextAnchor.MiddleLeft;
+            info.Add(bookDetailTitle);
+
+            bookDetailAuthor = Text(string.Empty, 14, SoftInk, FontStyle.Normal);
+            bookDetailAuthor.style.marginTop = 5;
+            bookDetailAuthor.style.whiteSpace = WhiteSpace.Normal;
+            bookDetailAuthor.style.unityTextAlign = TextAnchor.MiddleLeft;
+            info.Add(bookDetailAuthor);
+
+            bookDetailPublisher = Text(string.Empty, 13, FaintInk, FontStyle.Normal);
+            bookDetailPublisher.style.marginTop = 4;
+            bookDetailPublisher.style.whiteSpace = WhiteSpace.Normal;
+            bookDetailPublisher.style.unityTextAlign = TextAnchor.MiddleLeft;
+            info.Add(bookDetailPublisher);
+
+            bookDetailSummary = Text(string.Empty, 13, Ink, FontStyle.Italic);
+            bookDetailSummary.style.marginTop = 14;
+            bookDetailSummary.style.paddingLeft = 14;
+            bookDetailSummary.style.paddingRight = 12;
+            bookDetailSummary.style.paddingTop = 10;
+            bookDetailSummary.style.paddingBottom = 10;
+            bookDetailSummary.style.whiteSpace = WhiteSpace.Normal;
+            bookDetailSummary.style.minHeight = 48;
+            bookDetailSummary.style.backgroundColor = Rgba(0xF7, 0xFF, 0xF7, 0.86f);
+            bookDetailSummary.style.borderLeftWidth = 3;
+            bookDetailSummary.style.borderLeftColor = Accent;
+            Round(bookDetailSummary, 12);
+            info.Add(bookDetailSummary);
+
+            var purchasePanel = Row("book-detail-purchase");
+            purchasePanel.style.height = 64;
+            purchasePanel.style.marginTop = 12;
+            purchasePanel.style.paddingLeft = 16;
+            purchasePanel.style.paddingRight = 16;
+            purchasePanel.style.paddingTop = 8;
+            purchasePanel.style.paddingBottom = 8;
+            purchasePanel.style.alignItems = Align.Center;
+            purchasePanel.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.04f);
+            Round(purchasePanel, 16);
+            Border(purchasePanel, Rgba(0x58, 0xB9, 0xFF, 0.18f));
+            info.Add(purchasePanel);
+
+            var priceColumn = new VisualElement { name = "book-detail-price-column" };
+            priceColumn.style.flexGrow = 1f;
+            priceColumn.style.minWidth = 0;
+            purchasePanel.Add(priceColumn);
+
+            var priceLabel = Text("표지 가격", 12, FaintInk, FontStyle.Normal);
+            priceLabel.style.letterSpacing = 2f;
+            priceColumn.Add(priceLabel);
+
+            bookDetailPrice = Text(string.Empty, 21, AccentDeep, FontStyle.Bold);
+            bookDetailPrice.style.marginTop = 4;
+            priceColumn.Add(bookDetailPrice);
+
+            bookDetailAddButton = TextButton("구매하고 책장에 추가", true);
+            bookDetailAddButton.style.width = 162;
+            bookDetailAddButton.style.height = 40;
+            bookDetailAddButton.style.fontSize = 13;
+            bookDetailAddButton.style.backgroundColor = AccentDeep;
+            bookDetailAddButton.clicked += () =>
+            {
+                PulseElement(bookDetailAddButton);
+                AddBookToShelf(GetSelectedBook());
+            };
+            purchasePanel.Add(bookDetailAddButton);
+
+            var actionRow = Row("book-detail-action-row");
+            actionRow.style.marginTop = 12;
+            actionRow.style.height = 36;
+            actionRow.style.alignItems = Align.Center;
+            actionRow.style.justifyContent = Justify.FlexStart;
+            actionRow.style.flexWrap = Wrap.Wrap;
+            info.Add(actionRow);
+
+            bookFavoriteButton = TextButton("즐겨찾기", false);
+            bookFavoriteButton.style.height = 32;
+            bookFavoriteButton.style.marginRight = 10;
+            bookFavoriteButton.clicked += () =>
+            {
+                PulseElement(bookFavoriteButton);
+                ToggleFavoriteBook();
+            };
+            actionRow.Add(bookFavoriteButton);
+
+            bookDetailReviewCount = Text(string.Empty, 12, Ink, FontStyle.Bold);
+            bookDetailReviewCount.style.height = 32;
+            bookDetailReviewCount.style.paddingLeft = 12;
+            bookDetailReviewCount.style.paddingRight = 12;
+            bookDetailReviewCount.style.marginRight = 8;
+            bookDetailReviewCount.style.unityTextAlign = TextAnchor.MiddleCenter;
+            bookDetailReviewCount.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.06f);
+            Round(bookDetailReviewCount, 14);
+            actionRow.Add(bookDetailReviewCount);
+
+            bookReviewToggleButton = TextButton("리뷰 보기", false);
+            bookReviewToggleButton.style.height = 32;
+            bookReviewToggleButton.style.paddingLeft = 13;
+            bookReviewToggleButton.style.paddingRight = 13;
+            bookReviewToggleButton.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.12f);
+            bookReviewToggleButton.style.color = AccentDeep;
+            Border(bookReviewToggleButton, Rgba(0x58, 0xB9, 0xFF, 0.34f));
+            bookReviewToggleButton.clicked += () =>
+            {
+                PulseElement(bookReviewToggleButton);
+                ToggleBookReviews();
+            };
+            actionRow.Add(bookReviewToggleButton);
+
+            var reviewPanel = new VisualElement { name = "book-review-panel" };
+            bookReviewPanel = reviewPanel;
+            reviewPanel.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            reviewPanel.style.display = DisplayStyle.None;
+            reviewPanel.style.position = Position.Absolute;
+            reviewPanel.style.right = 22;
+            reviewPanel.style.top = 30;
+            reviewPanel.style.bottom = 30;
+            reviewPanel.style.width = 360;
+            reviewPanel.style.flexGrow = 0f;
+            reviewPanel.style.flexShrink = 1f;
+            reviewPanel.style.marginTop = 0;
+            reviewPanel.style.paddingLeft = 20;
+            reviewPanel.style.paddingRight = 20;
+            reviewPanel.style.paddingTop = 18;
+            reviewPanel.style.paddingBottom = 16;
+            reviewPanel.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.96f);
+            reviewPanel.style.borderLeftWidth = 0;
+            reviewPanel.style.borderLeftColor = Color.clear;
+            Round(reviewPanel, 18);
+            Border(reviewPanel, Rgba(0x0E, 0x1D, 0x2A, 0.10f));
+            bookDetailContent.Add(reviewPanel);
+
+            var reviewTitle = Row("review-title-row");
+            reviewTitle.style.height = 28;
+            reviewTitle.style.alignItems = Align.Center;
+            reviewTitle.style.marginBottom = 6;
+            reviewPanel.Add(reviewTitle);
+            var reviewHeading = Text("인기 리뷰", 17, Ink, FontStyle.Bold);
+            reviewTitle.Add(reviewHeading);
+            var reviewHint = Text("더보기를 누르면 전체 리뷰로 전환됩니다.", 11, FaintInk, FontStyle.Normal);
+            reviewHint.style.marginLeft = 10;
+            reviewTitle.Add(reviewHint);
+            var reviewTitleSpacer = new VisualElement();
+            reviewTitleSpacer.style.flexGrow = 1f;
+            reviewTitle.Add(reviewTitleSpacer);
+            bookReviewMoreButton = TextButton("전체보기", false);
+            bookReviewMoreButton.style.height = 28;
+            bookReviewMoreButton.style.paddingLeft = 10;
+            bookReviewMoreButton.style.paddingRight = 10;
+            bookReviewMoreButton.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.06f);
+            bookReviewMoreButton.clicked += () =>
+            {
+                PulseElement(bookReviewMoreButton);
+                ToggleReviewMode();
+            };
+            reviewTitle.Add(bookReviewMoreButton);
+
+            var reviewCloseButton = CloseIconButton("리뷰 닫기");
+            reviewCloseButton.style.width = 28;
+            reviewCloseButton.style.height = 28;
+            reviewCloseButton.style.marginLeft = 6;
+            reviewCloseButton.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.04f);
+            reviewCloseButton.clicked += () => SetBookReviewsOpen(false, true);
+            reviewTitle.Add(reviewCloseButton);
+
+            var reviewScroller = new ScrollView(ScrollViewMode.Vertical) { name = "book-detail-review-scroll" };
+            reviewScroller.style.flexGrow = 1f;
+            reviewScroller.style.minHeight = 0;
+            reviewScroller.style.marginBottom = 10;
+            reviewScroller.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            reviewScroller.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+            reviewScroller.RegisterCallback<AttachToPanelEvent>(_ => HideNativeScroller(reviewScroller));
+            reviewPanel.Add(reviewScroller);
+
+            bookDetailReviews = reviewScroller.contentContainer;
+            bookDetailReviews.style.flexDirection = FlexDirection.Column;
+
+            var form = Row("review-form");
+            form.style.marginTop = 8;
+            form.style.flexDirection = FlexDirection.Column;
+            form.style.flexWrap = Wrap.NoWrap;
+            form.style.alignItems = Align.Stretch;
+            reviewPanel.Add(form);
+
+            var ratingColumn = new VisualElement { name = "rating-input-column" };
+            ratingColumn.style.width = Length.Percent(100);
+            ratingColumn.style.marginRight = 0;
+            ratingColumn.style.marginBottom = 8;
+            form.Add(ratingColumn);
+            var ratingLabel = Text("평점", 10, FaintInk, FontStyle.Bold);
+            ratingLabel.style.letterSpacing = 1.2f;
+            ratingLabel.style.marginBottom = 5;
+            ratingColumn.Add(ratingLabel);
+            var ratingFrame = Row("star-rating-row");
+            ratingFrame.style.height = 38;
+            ratingFrame.style.alignItems = Align.Center;
+            ratingFrame.style.paddingLeft = 2;
+            ratingFrame.style.paddingRight = 2;
+            ratingFrame.style.backgroundColor = Color.clear;
+            ratingColumn.Add(ratingFrame);
+            bookRatingStarButtons.Clear();
+            for (var ratingIndex = 1; ratingIndex <= 5; ratingIndex++)
+            {
+                var capturedRating = ratingIndex;
+                var star = TextButton("★", false);
+                star.style.width = 34;
+                star.style.height = 34;
+                star.style.paddingLeft = 0;
+                star.style.paddingRight = 0;
+                star.style.marginRight = 4;
+                star.style.fontSize = 22;
+                star.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.05f);
+                star.clicked += () =>
+                {
+                    SetSelectedReviewRating(capturedRating);
+                    PulseElement(star);
+                };
+                bookRatingStarButtons.Add(star);
+                ratingFrame.Add(star);
+            }
+            RefreshRatingStars();
+
+            var reviewColumn = new VisualElement { name = "review-input-column" };
+            reviewColumn.style.width = Length.Percent(100);
+            reviewColumn.style.minWidth = 0;
+            reviewColumn.style.marginRight = 0;
+            reviewColumn.style.marginBottom = 8;
+            form.Add(reviewColumn);
+            var inputLabel = Text("리뷰 내용", 10, FaintInk, FontStyle.Bold);
+            inputLabel.style.letterSpacing = 1.2f;
+            inputLabel.style.marginBottom = 5;
+            reviewColumn.Add(inputLabel);
+            var reviewFrame = CreateInputFrame(58);
+            reviewColumn.Add(reviewFrame);
+            bookReviewInput = new TextField { multiline = true };
+            bookReviewInput.textEdition.placeholder = "이 책을 읽고 느낀 점을 적어주세요.";
+            bookReviewInput.style.flexGrow = 1f;
+            bookReviewInput.style.height = 50;
+            bookReviewInput.style.fontSize = 13;
+            RegisterFieldStyling(bookReviewInput);
+            reviewFrame.Add(bookReviewInput);
+
+            var submit = TextButton("리뷰 등록", true);
+            submit.style.width = Length.Percent(100);
+            submit.style.height = 38;
+            submit.style.marginBottom = 8;
+            submit.clicked += () =>
+            {
+                PulseElement(submit);
+                SubmitBookReview();
+            };
+            form.Add(submit);
+        }
+
+        private VisualElement CreateInputFrame(float height)
+        {
+            var frame = new VisualElement();
+            frame.style.height = height;
+            frame.style.paddingLeft = 12;
+            frame.style.paddingRight = 12;
+            frame.style.paddingTop = 4;
+            frame.style.paddingBottom = 4;
+            frame.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.88f);
+            Round(frame, 12);
+            Border(frame, Rgba(0x0E, 0x1D, 0x2A, 0.12f));
+            return frame;
+        }
+
+        private void RegisterFieldStyling(TextField field)
+        {
+            if (field == null)
+            {
+                return;
+            }
+
+            field.RegisterCallback<AttachToPanelEvent>(_ => StyleTextField(field));
+            field.schedule.Execute(() => StyleTextField(field)).StartingIn(1);
+        }
+
         private void BuildOtherSpaces(VisualElement parent)
         {
             BuildSectionHeader(
@@ -1285,6 +1786,7 @@ namespace App.Features.Notebook.Presentation
             card.style.overflow = Overflow.Hidden;
             Round(card, 18);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.10f));
+            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => ShowToast($"공간 상세로 이동 · {space.Title}"));
 
             var thumbnail = new VisualElement { name = "space-thumbnail" };
@@ -1422,172 +1924,6 @@ namespace App.Features.Notebook.Presentation
             return card;
         }
 
-        private void BuildFeed(VisualElement parent)
-        {
-            BuildSectionHeader(
-                parent,
-                "SOCIAL FEED · 기록",
-                "피드",
-                "좋아요, 댓글, 신고, 차단, 팔로우, 책 담기, 공간 이동 액션을 mock 상태로 처리합니다.");
-
-            foreach (var record in feedRecords)
-            {
-                parent.Add(CreateFeedCard(record));
-            }
-        }
-
-        private VisualElement CreateFeedCard(FeedRecordViewModel record)
-        {
-            var card = new VisualElement { name = $"feed-{record.Id}" };
-            card.style.minHeight = 178;
-            card.style.marginBottom = 12;
-            card.style.paddingLeft = 16;
-            card.style.paddingRight = 16;
-            card.style.paddingTop = 14;
-            card.style.paddingBottom = 14;
-            card.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.80f);
-            Round(card, 18);
-            Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.10f));
-
-            var top = Row("feed-top");
-            top.style.alignItems = Align.Center;
-            card.Add(top);
-
-            var avatar = Text(record.Author.Substring(0, 1), 15, Surface, FontStyle.Bold);
-            avatar.style.width = 38;
-            avatar.style.height = 38;
-            avatar.style.flexShrink = 0;
-            avatar.style.unityTextAlign = TextAnchor.MiddleCenter;
-            avatar.style.backgroundColor = record.AccentColor;
-            Round(avatar, 19);
-            top.Add(avatar);
-
-            var titleColumn = new VisualElement();
-            titleColumn.style.marginLeft = 12;
-            titleColumn.style.flexGrow = 1f;
-            titleColumn.style.minWidth = 0;
-            top.Add(titleColumn);
-
-            var author = Text($"{record.Author} · {record.SpaceTitle}", 12, SoftInk, FontStyle.Normal);
-            author.style.minHeight = 18;
-            titleColumn.Add(author);
-
-            var title = Text(record.Title, 17, Ink, FontStyle.Bold);
-            title.style.whiteSpace = WhiteSpace.Normal;
-            title.style.minHeight = 28;
-            titleColumn.Add(title);
-
-            var excerpt = Text(record.Excerpt, 12, SoftInk, FontStyle.Normal);
-            excerpt.style.marginTop = 12;
-            excerpt.style.whiteSpace = WhiteSpace.Normal;
-            excerpt.style.minHeight = 40;
-            card.Add(excerpt);
-
-            var linkedBook = FindBookById(record.BookId);
-            if (linkedBook != null)
-            {
-                var bookLine = Text($"연결된 책 · {linkedBook.Title}", 11, AccentDeep, FontStyle.Bold);
-                bookLine.style.marginTop = 8;
-                card.Add(bookLine);
-            }
-
-            var metrics = Row("feed-metrics");
-            metrics.style.marginTop = 10;
-            metrics.style.alignItems = Align.Center;
-            card.Add(metrics);
-            metrics.Add(MetricLabel($"좋아요 {record.Likes:N0}", AccentDeep));
-            metrics.Add(MetricLabel($"댓글 {record.Comments:N0}", Ink));
-
-            var actions = Row("feed-actions");
-            actions.style.marginTop = 12;
-            actions.style.flexWrap = Wrap.Wrap;
-            actions.style.alignItems = Align.Center;
-            card.Add(actions);
-
-            var like = TextButton(string.Empty, false);
-            like.style.height = 32;
-            like.style.marginRight = 7;
-            like.style.marginBottom = 6;
-            like.clicked += () =>
-            {
-                ToggleSet(likedRecordIds, record.Id);
-                RefreshToggleButton(like, likedRecordIds.Contains(record.Id), "좋아요 취소", "좋아요");
-                ShowToast(likedRecordIds.Contains(record.Id) ? "피드 기록을 좋아요했습니다." : "피드 좋아요를 취소했습니다.");
-            };
-            actions.Add(like);
-            RefreshToggleButton(like, likedRecordIds.Contains(record.Id), "좋아요 취소", "좋아요");
-
-            var comment = TextButton(commentedRecordIds.Contains(record.Id) ? "댓글 완료" : "댓글", false);
-            comment.style.height = 32;
-            comment.style.marginRight = 7;
-            comment.style.marginBottom = 6;
-            comment.clicked += () =>
-            {
-                commentedRecordIds.Add(record.Id);
-                comment.text = "댓글 완료";
-                RefreshToggleButton(comment, true, "댓글 완료", "댓글");
-                ShowToast("댓글 입력 mock 처리 완료");
-            };
-            actions.Add(comment);
-            RefreshToggleButton(comment, commentedRecordIds.Contains(record.Id), "댓글 완료", "댓글");
-
-            var addBook = TextButton("책 담기", true);
-            addBook.style.height = 32;
-            addBook.style.marginRight = 7;
-            addBook.style.marginBottom = 6;
-            addBook.clicked += () => AddBookToShelf(FindBookById(record.BookId));
-            actions.Add(addBook);
-
-            var follow = TextButton(string.Empty, false);
-            follow.style.height = 32;
-            follow.style.marginRight = 7;
-            follow.style.marginBottom = 6;
-            follow.clicked += () =>
-            {
-                ToggleSet(followedUserIds, record.AuthorId);
-                RefreshFollowButton(follow, record.AuthorId);
-                ShowToast(followedUserIds.Contains(record.AuthorId) ? $"{record.Author}님을 팔로우했습니다." : $"{record.Author}님 팔로우를 해제했습니다.");
-            };
-            actions.Add(follow);
-            RefreshFollowButton(follow, record.AuthorId);
-
-            var moveSpace = TextButton("공간 이동", false);
-            moveSpace.style.height = 32;
-            moveSpace.style.marginRight = 7;
-            moveSpace.style.marginBottom = 6;
-            moveSpace.clicked += () => ShowToast($"작성자 공간으로 이동 · {record.SpaceTitle}");
-            actions.Add(moveSpace);
-
-            var report = TextButton(reportedRecordIds.Contains(record.Id) ? "신고 완료" : "신고", false);
-            report.style.height = 32;
-            report.style.marginRight = 7;
-            report.style.marginBottom = 6;
-            report.clicked += () =>
-            {
-                reportedRecordIds.Add(record.Id);
-                report.text = "신고 완료";
-                report.SetEnabled(false);
-                ShowToast("피드 기록을 신고했습니다.");
-            };
-            report.SetEnabled(!reportedRecordIds.Contains(record.Id));
-            actions.Add(report);
-
-            var block = TextButton(blockedAuthorIds.Contains(record.AuthorId) ? "차단됨" : "차단", false);
-            block.style.height = 32;
-            block.style.marginBottom = 6;
-            block.clicked += () =>
-            {
-                blockedAuthorIds.Add(record.AuthorId);
-                block.text = "차단됨";
-                block.SetEnabled(false);
-                ShowToast($"{record.Author}님을 차단했습니다.");
-            };
-            block.SetEnabled(!blockedAuthorIds.Contains(record.AuthorId));
-            actions.Add(block);
-
-            return card;
-        }
-
         private void BuildObjectMarket(VisualElement parent)
         {
             BuildSectionHeader(
@@ -1705,6 +2041,7 @@ namespace App.Features.Notebook.Presentation
             card.style.overflow = Overflow.Hidden;
             Round(card, 18);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.10f));
+            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => ShowToast($"오브젝트 상세 화면 · {item.Name}"));
 
             var preview = new VisualElement { name = "object-preview" };
@@ -2177,25 +2514,29 @@ namespace App.Features.Notebook.Presentation
         private void BuildScrollRail(VisualElement parent)
         {
             scrollRail = new VisualElement { name = "notebook-scroll-rail" };
-            scrollRail.pickingMode = PickingMode.Ignore;
+            scrollRail.pickingMode = PickingMode.Position;
             scrollRail.style.position = Position.Absolute;
             scrollRail.style.right = 4;
             scrollRail.style.top = 72;
             scrollRail.style.bottom = 20;
-            scrollRail.style.width = 5;
+            scrollRail.style.width = 12;
             scrollRail.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.18f);
-            Round(scrollRail, 3);
+            Round(scrollRail, 6);
+            scrollRail.RegisterCallback<PointerDownEvent>(OnScrollRailPointerDown);
+            scrollRail.RegisterCallback<PointerMoveEvent>(OnScrollRailPointerMove);
+            scrollRail.RegisterCallback<PointerUpEvent>(OnScrollRailPointerUp);
+            scrollRail.RegisterCallback<PointerCancelEvent>(OnScrollRailPointerCancel);
             parent.Add(scrollRail);
 
             scrollThumb = new VisualElement { name = "notebook-scroll-thumb" };
-            scrollThumb.pickingMode = PickingMode.Ignore;
+            scrollThumb.pickingMode = PickingMode.Position;
             scrollThumb.style.position = Position.Absolute;
-            scrollThumb.style.left = 0;
-            scrollThumb.style.right = 0;
+            scrollThumb.style.left = 2;
+            scrollThumb.style.right = 2;
             scrollThumb.style.top = 4;
             scrollThumb.style.height = 64;
             scrollThumb.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.78f);
-            Round(scrollThumb, 3);
+            Round(scrollThumb, 5);
             scrollRail.Add(scrollThumb);
         }
 
@@ -2214,11 +2555,161 @@ namespace App.Features.Notebook.Presentation
             UpdateScrollThumb();
         }
 
+        private void SetNotebookScrollOffset(float y)
+        {
+            if (pageScrollView == null)
+            {
+                return;
+            }
+
+            var offset = pageScrollView.scrollOffset;
+            offset.y = Mathf.Clamp(y, 0f, GetNotebookMaxScroll());
+            pageScrollView.scrollOffset = offset;
+            UpdateScrollThumb();
+        }
+
+        private void OnScrollRailPointerDown(PointerDownEvent evt)
+        {
+            if (pageScrollView == null || scrollRail == null || scrollThumb == null || evt.button != 0)
+            {
+                return;
+            }
+
+            draggingPageScrollbar = true;
+            pageScrollbarPointerId = evt.pointerId;
+            scrollRail.CapturePointer(evt.pointerId);
+
+            if (evt.target != scrollThumb)
+            {
+                ScrollNotebookToPointer(evt.position.y);
+            }
+
+            pageScrollbarStartPointerY = evt.position.y;
+            pageScrollbarStartOffsetY = pageScrollView.scrollOffset.y;
+            scrollThumb.style.backgroundColor = AccentDeep;
+            evt.StopPropagation();
+        }
+
+        private void OnScrollRailPointerMove(PointerMoveEvent evt)
+        {
+            if (!draggingPageScrollbar || pageScrollbarPointerId != evt.pointerId || scrollRail == null || !scrollRail.HasPointerCapture(evt.pointerId))
+            {
+                return;
+            }
+
+            var max = GetNotebookMaxScroll();
+            GetScrollThumbMetrics(out _, out var thumbTravel);
+            if (max <= 0f || thumbTravel <= 0f)
+            {
+                evt.StopPropagation();
+                return;
+            }
+
+            var pointerDelta = evt.position.y - pageScrollbarStartPointerY;
+            SetNotebookScrollOffset(pageScrollbarStartOffsetY + pointerDelta / thumbTravel * max);
+            evt.StopPropagation();
+        }
+
+        private void OnScrollRailPointerUp(PointerUpEvent evt)
+        {
+            if (pageScrollbarPointerId != evt.pointerId)
+            {
+                return;
+            }
+
+            EndScrollRailDrag(evt.pointerId);
+            evt.StopPropagation();
+        }
+
+        private void OnScrollRailPointerCancel(PointerCancelEvent evt)
+        {
+            if (pageScrollbarPointerId != evt.pointerId)
+            {
+                return;
+            }
+
+            EndScrollRailDrag(evt.pointerId);
+            evt.StopPropagation();
+        }
+
+        private void EndScrollRailDrag(int pointerId)
+        {
+            if (scrollRail != null && scrollRail.HasPointerCapture(pointerId))
+            {
+                scrollRail.ReleasePointer(pointerId);
+            }
+
+            draggingPageScrollbar = false;
+            pageScrollbarPointerId = -1;
+            if (scrollThumb != null)
+            {
+                scrollThumb.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.78f);
+            }
+        }
+
+        private void ScrollNotebookToPointer(float panelY)
+        {
+            if (scrollRail == null)
+            {
+                return;
+            }
+
+            var max = GetNotebookMaxScroll();
+            GetScrollThumbMetrics(out var thumbHeight, out var thumbTravel);
+            if (max <= 0f || thumbTravel <= 0f)
+            {
+                return;
+            }
+
+            var localY = panelY - scrollRail.worldBound.y;
+            var targetThumbTop = Mathf.Clamp(localY - thumbHeight * 0.5f - 4f, 0f, thumbTravel);
+            SetNotebookScrollOffset(targetThumbTop / thumbTravel * max);
+        }
+
+        private void OnNotebookPageWheel(WheelEvent evt)
+        {
+            if (recommendScrollView == null ||
+                recommendScrollView.resolvedStyle.display == DisplayStyle.None ||
+                !recommendScrollView.worldBound.Contains(evt.mousePosition))
+            {
+                return;
+            }
+
+            var dominantDelta = Mathf.Abs(evt.delta.x) > Mathf.Abs(evt.delta.y)
+                ? evt.delta.x
+                : evt.delta.y;
+            if (!Mathf.Approximately(dominantDelta, 0f))
+            {
+                ScrollRecommendBy(dominantDelta * RecommendWheelScrollScale);
+            }
+
+            evt.StopPropagation();
+            evt.StopImmediatePropagation();
+        }
+
         private void ScrollRecommendBy(float delta)
         {
             if (recommendScrollView == null)
             {
                 return;
+            }
+
+            var max = GetRecommendMaxScroll();
+            if (max <= 0f)
+            {
+                return;
+            }
+
+            var offset = recommendScrollView.scrollOffset;
+            offset.x = Mathf.Clamp(offset.x + delta, 0f, max);
+            recommendScrollView.scrollOffset = offset;
+        }
+
+        private float GetRecommendMaxScroll()
+        {
+            if (recommendScrollView == null)
+            {
+                return 0f;
             }
 
             var contentWidth = Mathf.Max(
@@ -2233,10 +2724,7 @@ namespace App.Features.Notebook.Presentation
                 recommendScrollView.resolvedStyle.width,
                 recommendScrollView.layout.width,
                 1f);
-            var max = Mathf.Max(0f, contentWidth - viewWidth);
-            var offset = recommendScrollView.scrollOffset;
-            offset.x = Mathf.Clamp(offset.x + delta, 0f, max);
-            recommendScrollView.scrollOffset = offset;
+            return Mathf.Max(0f, contentWidth - viewWidth);
         }
 
         private float GetNotebookMaxScroll()
@@ -2265,15 +2753,33 @@ namespace App.Features.Notebook.Presentation
             }
 
             var max = GetNotebookMaxScroll();
-            var railHeight = Mathf.Max(scrollRail.resolvedStyle.height, scrollRail.layout.height, 1f);
-            var contentHeight = Mathf.Max(pageScrollView.contentContainer.resolvedStyle.height, 1040f);
-            var viewHeight = Mathf.Max(pageScrollView.resolvedStyle.height, 1f);
-            var thumbHeight = Mathf.Clamp(railHeight * viewHeight / contentHeight, 44f, 112f);
-            var maxThumbTop = Mathf.Max(0f, railHeight - thumbHeight - 8f);
+            GetScrollThumbMetrics(out var thumbHeight, out var thumbTravel);
             var ratio = max <= 0f ? 0f : Mathf.Clamp01(pageScrollView.scrollOffset.y / max);
 
             scrollThumb.style.height = thumbHeight;
-            scrollThumb.style.top = 4f + (maxThumbTop * ratio);
+            scrollThumb.style.top = 4f + (thumbTravel * ratio);
+        }
+
+        private void GetScrollThumbMetrics(out float thumbHeight, out float thumbTravel)
+        {
+            if (pageScrollView == null || scrollRail == null)
+            {
+                thumbHeight = 64f;
+                thumbTravel = 0f;
+                return;
+            }
+
+            var railHeight = Mathf.Max(scrollRail.resolvedStyle.height, scrollRail.layout.height, 1f);
+            var contentHeight = Mathf.Max(
+                pageScrollView.contentContainer.resolvedStyle.height,
+                pageScrollView.contentContainer.layout.height,
+                1040f);
+            var viewHeight = Mathf.Max(
+                pageScrollView.resolvedStyle.height,
+                pageScrollView.layout.height,
+                1f);
+            thumbHeight = Mathf.Clamp(railHeight * viewHeight / contentHeight, 44f, 112f);
+            thumbTravel = Mathf.Max(0f, railHeight - thumbHeight - 8f);
         }
 
         private void RefreshAll()
@@ -2284,6 +2790,7 @@ namespace App.Features.Notebook.Presentation
             RefreshModeVisibility();
             RefreshLists();
             RefreshObjectMarket();
+            RefreshBookDetailPage(GetSelectedBook());
         }
 
         private void RefreshWallet()
@@ -2352,27 +2859,20 @@ namespace App.Features.Notebook.Presentation
                 otherSpacesContent.Clear();
                 BuildOtherSpaces(otherSpacesContent);
             }
-
-            if (feedContent != null)
-            {
-                feedContent.Clear();
-                BuildFeed(feedContent);
-            }
         }
 
         private void RefreshModeVisibility()
         {
             var bookMarket = activeHeaderTab == HeaderTabs[0];
             var otherSpaces = activeHeaderTab == HeaderTabs[1];
-            var feed = activeHeaderTab == HeaderTabs[2];
-            var objectMarket = activeHeaderTab == HeaderTabs[3];
+            var objectMarket = activeHeaderTab == HeaderTabs[2];
+            var searchPage = bookMarket && searchPageOpen;
 
             if (headerSubtitleLabel != null)
             {
                 headerSubtitleLabel.text = activeHeaderTab switch
                 {
                     "다른 공간" => "LAPTOP · OTHER SPACES",
-                    "피드" => "LAPTOP · SOCIAL FEED",
                     "꾸미기 시장" => "LAPTOP · OBJECT MARKET",
                     _ => "LAPTOP · BOOK MARKET",
                 };
@@ -2380,15 +2880,16 @@ namespace App.Features.Notebook.Presentation
 
             if (heroPanel != null)
             {
-                heroPanel.style.height = bookMarket ? 198 : 132;
+                heroPanel.style.height = bookMarket ? searchPage ? 178 : 198 : 132;
             }
 
             if (heroEyebrowLabel != null)
             {
-                heroEyebrowLabel.text = activeHeaderTab switch
+                heroEyebrowLabel.text = searchPage
+                    ? "DOTSHELF SEARCH RESULT"
+                    : activeHeaderTab switch
                 {
                     "다른 공간" => "DOTSHELF COMMUNITY SPACES",
-                    "피드" => "DOTSHELF SOCIAL RECORDS",
                     "꾸미기 시장" => "DOTSHELF OBJECT MARKET",
                     _ => "DOTSHELF CURATED MARKET",
                 };
@@ -2396,15 +2897,16 @@ namespace App.Features.Notebook.Presentation
 
             if (heroTitleLabel != null)
             {
-                heroTitleLabel.text = activeHeaderTab;
+                heroTitleLabel.text = searchPage ? "검색 결과" : activeHeaderTab;
             }
 
             if (heroCopyLabel != null)
             {
-                heroCopyLabel.text = activeHeaderTab switch
+                heroCopyLabel.text = searchPage
+                    ? $"'{appliedSearchQuery}' 검색 API 결과를 확인하세요."
+                    : activeHeaderTab switch
                 {
                     "다른 공간" => "다른 사용자의 서재를 방문하고 팔로우해보세요.",
-                    "피드" => "기록과 공간 활동을 빠르게 확인하고 반응할 수 있습니다.",
                     "꾸미기 시장" => "내 공간에 배치할 오브젝트와 테마를 둘러보세요.",
                     _ => "오늘 당신의 한 권을 찾아보세요.",
                 };
@@ -2422,22 +2924,22 @@ namespace App.Features.Notebook.Presentation
 
             if (subTabsRow != null)
             {
-                subTabsRow.style.display = bookMarket ? DisplayStyle.Flex : DisplayStyle.None;
+                subTabsRow.style.display = bookMarket && !searchPage ? DisplayStyle.Flex : DisplayStyle.None;
             }
 
             if (bookMarketContent != null)
             {
-                bookMarketContent.style.display = bookMarket ? DisplayStyle.Flex : DisplayStyle.None;
+                bookMarketContent.style.display = bookMarket && !searchPage ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+
+            if (searchResultsContent != null)
+            {
+                searchResultsContent.style.display = searchPage ? DisplayStyle.Flex : DisplayStyle.None;
             }
 
             if (otherSpacesContent != null)
             {
                 otherSpacesContent.style.display = otherSpaces ? DisplayStyle.Flex : DisplayStyle.None;
-            }
-
-            if (feedContent != null)
-            {
-                feedContent.style.display = feed ? DisplayStyle.Flex : DisplayStyle.None;
             }
 
             if (objectMarketContent != null)
@@ -2447,7 +2949,7 @@ namespace App.Features.Notebook.Presentation
 
             if (pageScrollView != null)
             {
-                pageScrollView.contentContainer.style.minHeight = bookMarket ? 1600 : 980;
+                pageScrollView.contentContainer.style.minHeight = searchPage ? 1120 : bookMarket ? 1320 : 980;
             }
         }
 
@@ -2455,23 +2957,487 @@ namespace App.Features.Notebook.Presentation
         {
             var recommendFiltered = FilterBooks(false).ToArray();
             var rankingFiltered = FilterBooks(true).ToArray();
-            var detailBook = ResolveDetailBook(rankingFiltered, recommendFiltered);
 
             RefreshRecommend(recommendFiltered);
             RefreshRanking(rankingFiltered);
-            RefreshDetail(detailBook);
+            RefreshSearchResults(searchResults);
+        }
+
+        private void RefreshBookDetailPage(BookViewModel book)
+        {
+            if (book == null)
+            {
+                if (bookDetailTitle != null)
+                {
+                    bookDetailTitle.text = "책을 찾을 수 없습니다";
+                }
+
+                if (bookDetailReviews != null)
+                {
+                    bookDetailReviews.Clear();
+                }
+
+                return;
+            }
+
+            if (bookDetailCover != null)
+            {
+                bookDetailCover.Clear();
+                bookDetailCover.Add(CreateBookCover(book, 136, 198, true));
+                SlideFadeInElement(bookDetailCover, 8, 0, 0.16f);
+            }
+
+            if (bookDetailMeta != null)
+            {
+                bookDetailMeta.text = "DOTSHELF · BOOK DETAIL";
+            }
+
+            if (bookDetailTitle != null)
+            {
+                bookDetailTitle.text = book.Title;
+            }
+
+            if (bookDetailAuthor != null)
+            {
+                bookDetailAuthor.text = $"{book.Author} · {book.Publisher}";
+            }
+
+            if (bookDetailPublisher != null)
+            {
+                bookDetailPublisher.text = $"{book.Genre} · {book.Status} · {book.Shelf}";
+            }
+
+            if (bookDetailSummary != null)
+            {
+                bookDetailSummary.text = $"\"{book.Summary}\"";
+            }
+
+            if (bookDetailPrice != null)
+            {
+                bookDetailPrice.text = book.Price == 0 ? "FREE" : $"{book.Price:N0} P";
+            }
+
+            if (bookDetailReviewCount != null)
+            {
+                bookDetailReviewCount.text = $"★ {book.Rating:0.0} · 리뷰 {GetBookReviews(book).Count:N0}개 · 조회 {book.Views:N0}";
+            }
+
+            RefreshFavoriteBookButton(book);
+            RefreshBookDetailAddButton(book);
+            RefreshBookReviews(book);
+            RefreshBookReviewToggle();
+            RefreshRatingStars();
+        }
+
+        private void RefreshFavoriteBookButton(BookViewModel book)
+        {
+            if (bookFavoriteButton == null || book == null)
+            {
+                return;
+            }
+
+            var selected = favoriteBookIds.Contains(book.Id);
+            bookFavoriteButton.text = selected ? "즐겨찾기 해제" : "즐겨찾기";
+            bookFavoriteButton.style.backgroundColor = selected ? Gold : Rgba(0x0E, 0x1D, 0x2A, 0.06f);
+            bookFavoriteButton.style.color = selected ? Ink : SoftInk;
+            Border(bookFavoriteButton, selected ? Rgba(0xF4, 0xC9, 0x5D, 0.72f) : Line);
+        }
+
+        private void RefreshBookDetailAddButton(BookViewModel book)
+        {
+            if (bookDetailAddButton == null || book == null)
+            {
+                return;
+            }
+
+            var added = addedBookIds.Contains(book.Id);
+            var pending = pendingShelfBookIds.Contains(book.Id);
+            bookDetailAddButton.text = pending ? "추가 중" : added ? "책장에 있음" : book.Price == 0 ? "내 책장에 추가" : "구매하고 추가";
+            bookDetailAddButton.style.backgroundColor = added ? Success : pending ? SoftInk : AccentDeep;
+            bookDetailAddButton.style.color = Color.white;
+            bookDetailAddButton.SetEnabled(!added && !pending);
+        }
+
+        private List<BookReviewViewModel> GetBookReviews(BookViewModel book)
+        {
+            if (book == null)
+            {
+                return new List<BookReviewViewModel>();
+            }
+
+            if (!bookReviewMap.TryGetValue(book.Id, out var reviews))
+            {
+                reviews = new List<BookReviewViewModel>
+                {
+                    new("서재 이웃", Mathf.Clamp(book.Rating, 0f, 5f), $"{book.Title}의 분위기와 문장이 오래 남았어요."),
+                    new("Dotshelf 독자", Mathf.Clamp(book.Rating - 0.2f, 0f, 5f), book.Summary),
+                    new("책장 큐레이터", Mathf.Clamp(book.Rating - 0.4f, 0f, 5f), "책장에 배치했을 때 표지 색과 분위기가 잘 살아납니다."),
+                    new("심야 독자", Mathf.Clamp(book.Rating - 0.6f, 0f, 5f), "짧게 읽기에도 좋고, 다시 펼쳐볼 문장이 많았습니다."),
+                };
+                bookReviewMap[book.Id] = reviews;
+            }
+
+            return reviews;
+        }
+
+        private void RefreshBookReviews(BookViewModel book)
+        {
+            if (bookDetailReviews == null)
+            {
+                return;
+            }
+
+            bookDetailReviews.Clear();
+            var reviews = GetPopularBookReviews(book).ToArray();
+            var source = showingAllBookReviews ? reviews : reviews.Take(3);
+            foreach (var review in source)
+            {
+                bookDetailReviews.Add(CreateBookReviewCard(review));
+            }
+
+            if (bookReviewMoreButton != null)
+            {
+                bookReviewMoreButton.style.display = reviews.Length > 3 ? DisplayStyle.Flex : DisplayStyle.None;
+                bookReviewMoreButton.text = showingAllBookReviews ? "인기만" : $"전체 {reviews.Length}";
+            }
+        }
+
+        private IEnumerable<BookReviewViewModel> GetPopularBookReviews(BookViewModel book)
+        {
+            return GetBookReviews(book)
+                .OrderByDescending(review => review.Rating)
+                .ThenBy(review => review.Author);
+        }
+
+        private VisualElement CreateBookReviewCard(BookReviewViewModel review)
+        {
+            var card = new VisualElement { name = "book-review-card" };
+            card.style.marginBottom = 10;
+            card.style.paddingLeft = 0;
+            card.style.paddingRight = 0;
+            card.style.paddingTop = 0;
+            card.style.paddingBottom = 10;
+            card.style.backgroundColor = Color.clear;
+            card.style.borderBottomWidth = 1;
+            card.style.borderBottomColor = Rgba(0x0E, 0x1D, 0x2A, 0.08f);
+
+            var row = Row("book-review-meta");
+            row.style.alignItems = Align.Center;
+            row.style.marginBottom = 4;
+            card.Add(row);
+
+            var author = Text(review.Author, 12, Ink, FontStyle.Bold);
+            author.style.marginRight = 8;
+            row.Add(author);
+
+            var rating = Text($"★ {review.Rating:0.0}", 11, AccentDeep, FontStyle.Bold);
+            row.Add(rating);
+
+            var content = Text(review.Content, 12, SoftInk, FontStyle.Normal);
+            content.style.whiteSpace = WhiteSpace.Normal;
+            content.style.minHeight = 24;
+            card.Add(content);
+            return card;
+        }
+
+        private void CloseBookDetail()
+        {
+            if (bookDetailContent != null)
+            {
+                bookDetailContent.style.display = DisplayStyle.None;
+            }
+            SetBookReviewsOpen(false, false);
+            showingAllBookReviews = false;
+        }
+
+        private void OpenBookDetailModal(BookViewModel book)
+        {
+            showingAllBookReviews = false;
+            selectedReviewRating = 5f;
+            SetBookReviewsOpen(false, false);
+            RefreshBookDetailPage(book);
+            if (bookDetailContent != null)
+            {
+                bookDetailContent.style.display = DisplayStyle.Flex;
+                FadeInElement(bookDetailContent, 0.14f);
+            }
+
+            if (bookDetailModalPanel != null)
+            {
+                bookDetailModalPanel.style.height = 650;
+                bookDetailModalPanel.style.marginRight = 0;
+                SlideFadeInElement(bookDetailModalPanel, 12, 0, 0.18f);
+            }
+        }
+
+        private void ToggleReviewMode()
+        {
+            showingAllBookReviews = !showingAllBookReviews;
+            RefreshBookReviews(GetSelectedBook());
+            if (bookReviewPanel != null && bookReviewsOpen)
+            {
+                SlideFadeInFromRight(bookReviewPanel, -10, 22, 0.14f);
+            }
+        }
+
+        private void ToggleBookReviews()
+        {
+            SetBookReviewsOpen(!bookReviewsOpen, true);
+        }
+
+        private void SetBookReviewsOpen(bool open, bool animate)
+        {
+            bookReviewsOpen = open;
+            RefreshBookReviewToggle();
+
+            if (bookReviewPanel != null)
+            {
+                if (open)
+                {
+                    bookReviewPanel.style.display = DisplayStyle.Flex;
+                    if (animate)
+                    {
+                        SlideFadeInFromRight(bookReviewPanel, -30, 22, 0.22f);
+                    }
+                    else
+                    {
+                        bookReviewPanel.style.right = 22;
+                        bookReviewPanel.style.opacity = 1f;
+                    }
+                }
+                else
+                {
+                    bookReviewPanel.style.display = DisplayStyle.None;
+                }
+            }
+
+            if (bookDetailModalPanel != null)
+            {
+                bookDetailModalPanel.style.height = 650;
+                bookDetailModalPanel.style.marginRight = open ? 392 : 0;
+            }
+        }
+
+        private void RefreshBookReviewToggle()
+        {
+            if (bookReviewToggleButton == null)
+            {
+                return;
+            }
+
+            bookReviewToggleButton.text = bookReviewsOpen ? "리뷰 닫기" : "리뷰 보기";
+            bookReviewToggleButton.style.backgroundColor = bookReviewsOpen ? AccentDeep : Rgba(0x58, 0xB9, 0xFF, 0.12f);
+            bookReviewToggleButton.style.color = bookReviewsOpen ? Color.white : AccentDeep;
+            Border(bookReviewToggleButton, bookReviewsOpen ? AccentDeep : Rgba(0x58, 0xB9, 0xFF, 0.34f));
+        }
+
+        private void SetSelectedReviewRating(float rating)
+        {
+            selectedReviewRating = Mathf.Clamp(rating, 1f, 5f);
+            RefreshRatingStars();
+        }
+
+        private void RefreshRatingStars()
+        {
+            if (bookRatingStarButtons.Count == 0)
+            {
+                return;
+            }
+
+            for (var i = 0; i < bookRatingStarButtons.Count; i++)
+            {
+                var active = i < Mathf.RoundToInt(selectedReviewRating);
+                var star = bookRatingStarButtons[i];
+                star.text = active ? "★" : "☆";
+                star.style.color = active ? AccentDeep : FaintInk;
+                star.style.backgroundColor = active ? Rgba(0x58, 0xB9, 0xFF, 0.16f) : Rgba(0x0E, 0x1D, 0x2A, 0.05f);
+                Border(star, active ? Rgba(0x58, 0xB9, 0xFF, 0.34f) : Rgba(0x0E, 0x1D, 0x2A, 0.08f));
+            }
+        }
+
+        private void ToggleFavoriteBook()
+        {
+            var book = GetSelectedBook();
+            if (book == null)
+            {
+                return;
+            }
+
+            ToggleSet(favoriteBookIds, book.Id);
+            RefreshFavoriteBookButton(book);
+            ShowToast(favoriteBookIds.Contains(book.Id) ? $"즐겨찾기에 추가 · {book.Title}" : $"즐겨찾기 해제 · {book.Title}");
+        }
+
+        private void SubmitBookReview()
+        {
+            var book = GetSelectedBook();
+            if (book == null)
+            {
+                return;
+            }
+
+            var content = bookReviewInput?.value?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                ShowToast("리뷰 내용을 입력해주세요.");
+                return;
+            }
+
+            var rating = selectedReviewRating;
+            GetBookReviews(book).Insert(0, new BookReviewViewModel("나", rating, content));
+            if (bookReviewInput != null)
+            {
+                bookReviewInput.value = string.Empty;
+            }
+
+            showingAllBookReviews = true;
+            RefreshBookDetailPage(book);
+            SetBookReviewsOpen(true, true);
+            ShowToast("리뷰가 등록되었습니다.");
         }
 
         private IEnumerable<BookViewModel> FilterBooks(bool includeGenre)
         {
-            var needle = query?.Trim() ?? string.Empty;
             var filtered = books
-                .Where(book => MatchesSearch(book, needle))
-                .Where(MatchesCategory)
                 .Where(MatchesSubTab)
                 .Where(book => !includeGenre || MatchesGenre(book));
 
             return SortBooks(filtered);
+        }
+
+        private BookViewModel[] GetLocalSearchResults(string keyword)
+        {
+            var needle = keyword?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(needle))
+            {
+                return Array.Empty<BookViewModel>();
+            }
+
+            return SortBooks(books.Where(book => MatchesSearch(book, needle))).ToArray();
+        }
+
+        private NotebookApiClient GetNotebookApiClient()
+        {
+            return notebookApiClient ??= new NotebookApiClient(APIManager.Instance);
+        }
+
+        private void RequestSearchResults(string keyword)
+        {
+            searchRequestVersion++;
+            var requestVersion = searchRequestVersion;
+            appliedSearchQuery = keyword;
+            searchResults = Array.Empty<BookViewModel>();
+            searchLoading = true;
+            RefreshAll();
+
+            try
+            {
+                GetNotebookApiClient().SearchBooks(
+                    keyword,
+                    1,
+                    SearchResultPageSize,
+                    response =>
+                    {
+                        if (requestVersion != searchRequestVersion)
+                        {
+                            return;
+                        }
+
+                        searchLoading = false;
+                        searchResults = MapApiSearchResults(response, keyword);
+                        RefreshAll();
+                    },
+                    error =>
+                    {
+                        UnityEngine.Debug.LogWarning($"Search API failed, falling back to local. keyword={keyword}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                        ShowToast("검색 API 응답을 받지 못해 로컬 결과를 표시합니다.");
+                        CompleteSearchWithLocalFallback(requestVersion, keyword);
+                    });
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning($"Search API failed, falling back to local. keyword={keyword}");
+                UnityEngine.Debug.LogException(exception);
+                ShowToast("검색 API 응답을 받지 못해 로컬 결과를 표시합니다.");
+                CompleteSearchWithLocalFallback(requestVersion, keyword);
+            }
+        }
+
+        private void CompleteSearchWithLocalFallback(int requestVersion, string keyword)
+        {
+            if (requestVersion != searchRequestVersion)
+            {
+                return;
+            }
+
+            searchLoading = false;
+            searchResults = GetLocalSearchResults(keyword);
+            RefreshAll();
+        }
+
+        private BookViewModel[] MapApiSearchResults(BookListResponseDto response, string keyword)
+        {
+            var items = response?.EffectiveItems;
+            if (items == null || items.Count == 0)
+            {
+                return Array.Empty<BookViewModel>();
+            }
+
+            var mapped = new List<BookViewModel>(items.Count);
+            for (var i = 0; i < items.Count; i++)
+            {
+                var dto = items[i];
+                if (dto == null)
+                {
+                    continue;
+                }
+
+                var title = FirstText(dto.Title, "제목 없음");
+                var author = FirstText(dto.Author, "작가 미상");
+                var publisher = FirstText(dto.Publisher, "출판사 미상");
+                var summary = FirstText(dto.Description, "검색 API에서 전달된 책입니다.");
+                var genre = ResolveSearchGenre(title, summary);
+                var source = FirstText(dto.Source, dto.Id > 0 ? "LOCAL" : "KAKAO").ToUpperInvariant();
+                var serverBookId = ResolveServerBookId(dto);
+                var isbn13 = FirstText(dto.Isbn13, dto.Isbn);
+                var isbn10 = dto.Isbn10;
+                var sourceKey = source == "LOCAL" && serverBookId.HasValue
+                    ? serverBookId.Value.ToString()
+                    : FirstText(isbn13, isbn10, dto.SourceUrl, dto.BookId, $"api-{i + 1}");
+                var id = $"{source.ToLowerInvariant()}-{sourceKey}";
+                var rating = dto.AvgRating > 0 ? Mathf.Clamp((float)dto.AvgRating, 1f, 5f) : 4.2f;
+                var reviews = Mathf.Max(dto.LikeCount, dto.PurchaseCount, dto.RecordCount, 1);
+                var views = Mathf.Max(dto.PlacementCount + dto.RecordCount + dto.LikeCount, reviews * 12);
+                var records = Mathf.Max(dto.RecordCount, dto.PlacementCount);
+                var price = dto.HasPaidCover ? 1200 : 0;
+                var coverColor = SearchCoverColor(i, id);
+
+                mapped.Add(new BookViewModel(
+                    id,
+                    title,
+                    author,
+                    publisher,
+                    summary,
+                    genre,
+                    "안 읽음",
+                    "검색 결과",
+                    price,
+                    rating,
+                    reviews,
+                    views,
+                    records,
+                    coverColor,
+                    Accent,
+                    source,
+                    serverBookId,
+                    isbn13,
+                    isbn10,
+                    dto.SourceUrl,
+                    dto.CoverImageUrl,
+                    dto.PublishedDate));
+            }
+
+            return SortBooks(mapped.Where(book => MatchesSearch(book, keyword))).ToArray();
         }
 
         private IEnumerable<BookViewModel> SortBooks(IEnumerable<BookViewModel> source)
@@ -2485,10 +3451,6 @@ namespace App.Features.Notebook.Presentation
                 "리뷰순" => source
                     .OrderByDescending(book => book.Reviews)
                     .ThenByDescending(book => book.Rating)
-                    .ThenBy(book => book.Title),
-                "조회순" => source
-                    .OrderByDescending(book => book.Views)
-                    .ThenByDescending(book => book.Records)
                     .ThenBy(book => book.Title),
                 _ => source
                     .OrderByDescending(book => book.Rating)
@@ -2520,6 +3482,11 @@ namespace App.Features.Notebook.Presentation
 
         private BookViewModel GetSelectedBook()
         {
+            if (selectedBookOverride != null)
+            {
+                return selectedBookOverride;
+            }
+
             return selectedBookIndex >= 0 && selectedBookIndex < books.Length
                 ? books[selectedBookIndex]
                 : null;
@@ -2530,7 +3497,9 @@ namespace App.Features.Notebook.Presentation
             return string.IsNullOrWhiteSpace(needle) ||
                    Contains(book.Title, needle) ||
                    Contains(book.Author, needle) ||
-                   Contains(book.Publisher, needle);
+                   Contains(book.Publisher, needle) ||
+                   Contains(book.Genre, needle) ||
+                   Contains(book.Summary, needle);
         }
 
         private bool MatchesCategory(BookViewModel book)
@@ -2549,7 +3518,6 @@ namespace App.Features.Notebook.Presentation
             {
                 "무료" => book.Price == 0,
                 "유료" => book.Price > 0,
-                "추천 책" => book.Rating >= 4.7f,
                 _ => true,
             };
         }
@@ -2557,6 +3525,142 @@ namespace App.Features.Notebook.Presentation
         private bool MatchesGenre(BookViewModel book)
         {
             return activeGenre == "전체" || book.Genre == activeGenre;
+        }
+
+        private void RefreshSearchResults(BookViewModel[] results)
+        {
+            if (searchResultsList == null)
+            {
+                return;
+            }
+
+            searchResultsList.Clear();
+            var normalizedQuery = (appliedSearchQuery ?? string.Empty).Trim();
+
+            if (searchResultsTitleLabel != null)
+            {
+                searchResultsTitleLabel.text = string.IsNullOrWhiteSpace(normalizedQuery)
+                    ? "검색 결과"
+                    : $"'{normalizedQuery}' 검색 결과";
+            }
+
+            if (searchResultsHintLabel != null)
+            {
+                searchResultsHintLabel.text = searchLoading
+                    ? "검색 API를 호출하고 있습니다."
+                    : results.Length == 0
+                    ? "검색어를 바꾸거나 추천 검색어를 선택해보세요."
+                    : "검색 API 응답에 포함된 책만 그리드로 보여줍니다.";
+            }
+
+            if (searchResultsCountLabel != null)
+            {
+                searchResultsCountLabel.text = searchLoading ? "검색 중" : $"{results.Length:N0}권";
+            }
+
+            if (searchLoading)
+            {
+                var loading = EmptyState("검색 API 호출 중입니다.");
+                loading.style.width = Length.Percent(100);
+                searchResultsList.Add(loading);
+                return;
+            }
+
+            if (results.Length == 0)
+            {
+                var empty = EmptyState("검색 결과가 없습니다.");
+                empty.style.width = Length.Percent(100);
+                searchResultsList.Add(empty);
+                return;
+            }
+
+            for (var i = 0; i < results.Length; i++)
+            {
+                searchResultsList.Add(CreateSearchResultCard(results[i], i));
+            }
+        }
+
+        private VisualElement CreateSearchResultCard(BookViewModel book, int index)
+        {
+            var card = new VisualElement { name = $"search-result-{book.Id}" };
+            card.style.width = 218;
+            card.style.height = 266;
+            card.style.marginRight = 10;
+            card.style.marginBottom = 10;
+            card.style.paddingLeft = 10;
+            card.style.paddingRight = 10;
+            card.style.paddingTop = 10;
+            card.style.paddingBottom = 10;
+            card.style.alignItems = Align.Center;
+            card.style.flexDirection = FlexDirection.Column;
+            card.style.backgroundColor = index % 2 == 0 ? Rgba(0xFF, 0xFF, 0xFF, 0.94f) : Rgba(0xF4, 0xFB, 0xFF, 0.92f);
+            Round(card, 14);
+            Border(card, index == 0 ? Rgba(0x58, 0xB9, 0xFF, 0.36f) : Rgba(0x0E, 0x1D, 0x2A, 0.08f));
+            UsePointerCursor(card);
+            card.RegisterCallback<ClickEvent>(_ => SelectBook(book));
+
+            var coverStage = new VisualElement { name = "search-result-cover-stage" };
+            coverStage.style.width = Length.Percent(100);
+            coverStage.style.height = 122;
+            coverStage.style.alignItems = Align.Center;
+            coverStage.style.justifyContent = Justify.Center;
+            coverStage.style.backgroundColor = Rgba(0xEA, 0xF5, 0xFF, 0.74f);
+            Round(coverStage, 12);
+            card.Add(coverStage);
+
+            coverStage.Add(CreateBookCover(book, 76, 112, true));
+
+            var info = new VisualElement();
+            info.style.marginTop = 8;
+            info.style.flexGrow = 1f;
+            info.style.minWidth = 0;
+            info.style.width = Length.Percent(100);
+            card.Add(info);
+
+            var top = Row("search-result-top");
+            top.style.alignItems = Align.Center;
+            top.style.justifyContent = Justify.Center;
+            top.style.minHeight = 22;
+            info.Add(top);
+
+            var price = Text(book.Price == 0 ? "FREE" : $"{book.Price:N0}P", 9, book.Price == 0 ? Success : AccentDeep, FontStyle.Bold);
+            price.style.height = 18;
+            price.style.paddingLeft = 6;
+            price.style.paddingRight = 6;
+            price.style.unityTextAlign = TextAnchor.MiddleCenter;
+            price.style.backgroundColor = book.Price == 0 ? Rgba(0x3F, 0x9B, 0x68, 0.14f) : Rgba(0x58, 0xB9, 0xFF, 0.18f);
+            Round(price, 4);
+            top.Add(price);
+
+            var genre = Text(book.Genre, 10, FaintInk, FontStyle.Normal);
+            genre.style.marginLeft = 8;
+            top.Add(genre);
+
+            var title = Text(book.Title, 13, Ink, FontStyle.Bold);
+            title.style.marginTop = 4;
+            title.style.whiteSpace = WhiteSpace.Normal;
+            title.style.minHeight = 32;
+            title.style.maxHeight = 34;
+            title.style.unityTextAlign = TextAnchor.UpperCenter;
+            info.Add(title);
+
+            var meta = Text($"{book.Author} · {book.Publisher}", 10, SoftInk, FontStyle.Normal);
+            meta.style.marginTop = 2;
+            meta.style.whiteSpace = WhiteSpace.Normal;
+            meta.style.minHeight = 28;
+            meta.style.maxHeight = 30;
+            meta.style.unityTextAlign = TextAnchor.UpperCenter;
+            info.Add(meta);
+
+            var stats = Text($"★ {book.Rating:0.0} · 리뷰 {book.Reviews:N0} · 조회 {book.Views:N0}", 9, Ink, FontStyle.Normal);
+            stats.style.marginTop = 4;
+            stats.style.minHeight = 16;
+            stats.style.unityTextAlign = TextAnchor.MiddleCenter;
+            stats.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.04f);
+            Round(stats, 999);
+            info.Add(stats);
+
+            return card;
         }
 
         private void RefreshRecommend(IReadOnlyCollection<BookViewModel> filtered)
@@ -2572,9 +3676,7 @@ namespace App.Features.Notebook.Presentation
                 .ThenByDescending(book => book.Reviews)
                 .ThenBy(book => book.Title);
 
-            var source = activeSubTab == "책 랭킹"
-                ? ordered.Take(6)
-                : ordered.Where(book => book.Rating >= 4.6f).Take(8);
+            var source = ordered.Where(book => book.Rating >= 4.6f).Take(8);
 
             foreach (var book in source)
             {
@@ -2648,6 +3750,7 @@ namespace App.Features.Notebook.Presentation
             card.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.72f);
             Round(card, 14);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.08f));
+            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => SelectBook(book));
 
             var cover = CreateBookCover(book, 138, 200, true);
@@ -2685,15 +3788,18 @@ namespace App.Features.Notebook.Presentation
             meta.style.whiteSpace = WhiteSpace.Normal;
             card.Add(meta);
 
-            var action = TextButton(addedBookIds.Contains(book.Id)
-                ? "책장에 있음"
-                : book.Price == 0 ? "담기" : "구매", true);
+            var added = addedBookIds.Contains(book.Id);
+            var pending = pendingShelfBookIds.Contains(book.Id);
+            var action = TextButton(pending
+                ? "추가 중"
+                : added ? "책장에 있음" : book.Price == 0 ? "담기" : "구매", true);
             action.style.height = 32;
             action.style.width = Length.Percent(100);
             action.style.marginTop = 6;
-            action.style.backgroundColor = addedBookIds.Contains(book.Id)
+            action.style.backgroundColor = added
                 ? Success
-                : book.Price == 0 ? Night : AccentDeep;
+                : pending ? SoftInk : book.Price == 0 ? Night : AccentDeep;
+            action.SetEnabled(!added && !pending);
             action.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
             action.clicked += () => AddBookToShelf(book);
             card.Add(action);
@@ -2716,6 +3822,7 @@ namespace App.Features.Notebook.Presentation
             card.style.backgroundColor = rank <= 3 ? Rgba(0xFF, 0xF7, 0xE8, 0.94f) : Rgba(0xFF, 0xFF, 0xFF, 0.84f);
             Round(card, 14);
             Border(card, rank <= 3 ? Rgba(0x58, 0xB9, 0xFF, 0.32f) : Rgba(0x0E, 0x1D, 0x2A, 0.10f));
+            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => SelectBook(book));
 
             var rankLabel = Text(rank.ToString("00"), rank <= 3 ? 22 : 18, rank <= 3 ? AccentDeep : Ink, FontStyle.Bold);
@@ -2939,9 +4046,10 @@ namespace App.Features.Notebook.Presentation
             if (addButton != null)
             {
                 var alreadyAdded = addedBookIds.Contains(book.Id);
-                addButton.SetEnabled(true);
-                addButton.text = alreadyAdded ? "✓ 내 책장에 있음" : "+ 내 책장에 추가";
-                addButton.style.backgroundColor = alreadyAdded ? Success : Accent;
+                var pending = pendingShelfBookIds.Contains(book.Id);
+                addButton.SetEnabled(!alreadyAdded && !pending);
+                addButton.text = pending ? "추가 중" : alreadyAdded ? "✓ 내 책장에 있음" : "+ 내 책장에 추가";
+                addButton.style.backgroundColor = alreadyAdded ? Success : pending ? SoftInk : Accent;
             }
         }
 
@@ -2950,11 +4058,14 @@ namespace App.Features.Notebook.Presentation
             var index = Array.IndexOf(books, book);
             if (index < 0)
             {
+                selectedBookOverride = book;
+                OpenBookDetailModal(book);
                 return;
             }
 
             selectedBookIndex = index;
-            RefreshDetail(book);
+            selectedBookOverride = null;
+            OpenBookDetailModal(book);
         }
 
         private void ChangePage(int delta)
@@ -2966,12 +4077,23 @@ namespace App.Features.Notebook.Presentation
 
         private void ActivateHeaderTab(string tab)
         {
-            if (string.IsNullOrEmpty(tab) || activeHeaderTab == tab)
+            if (string.IsNullOrEmpty(tab))
+            {
+                return;
+            }
+
+            if (activeHeaderTab == tab)
             {
                 return;
             }
 
             activeHeaderTab = tab;
+            CloseBookDetail();
+            if (tab != HeaderTabs[0])
+            {
+                searchPageOpen = false;
+            }
+
             pageIndex = 0;
             if (pageScrollView != null)
             {
@@ -2992,6 +4114,14 @@ namespace App.Features.Notebook.Presentation
             {
                 activeSearchSuggestion = string.Empty;
                 query = string.Empty;
+                searchPageOpen = false;
+                appliedSearchQuery = string.Empty;
+                searchResults = Array.Empty<BookViewModel>();
+                searchLoading = false;
+                searchField?.SetValueWithoutNotify(query);
+                pageIndex = 0;
+                RefreshAll();
+                return;
             }
             else
             {
@@ -3002,17 +4132,62 @@ namespace App.Features.Notebook.Presentation
             searchField?.SetValueWithoutNotify(query);
             pageIndex = 0;
             RefreshFilters();
-            RefreshLists();
         }
 
         private void ClearSearch()
         {
             query = string.Empty;
             activeSearchSuggestion = string.Empty;
+            searchPageOpen = false;
+            appliedSearchQuery = string.Empty;
+            searchResults = Array.Empty<BookViewModel>();
+            searchLoading = false;
             searchField?.SetValueWithoutNotify(query);
             pageIndex = 0;
-            RefreshFilters();
-            RefreshLists();
+            RefreshAll();
+        }
+
+        private void SubmitSearch()
+        {
+            var normalizedQuery = (query ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(normalizedQuery))
+            {
+                searchPageOpen = false;
+                appliedSearchQuery = string.Empty;
+                searchResults = Array.Empty<BookViewModel>();
+                searchLoading = false;
+                ShowToast("검색어를 입력해주세요.");
+                RefreshAll();
+                return;
+            }
+
+            query = normalizedQuery;
+            activeSearchSuggestion = SuggestedSearches.Contains(normalizedQuery)
+                ? normalizedQuery
+                : string.Empty;
+            activeHeaderTab = HeaderTabs[0];
+            searchPageOpen = true;
+            CloseBookDetail();
+            searchField?.SetValueWithoutNotify(query);
+            pageIndex = 0;
+            if (pageScrollView != null)
+            {
+                pageScrollView.scrollOffset = Vector2.zero;
+            }
+
+            RequestSearchResults(normalizedQuery);
+        }
+
+        private void CloseSearchPage()
+        {
+            searchPageOpen = false;
+            pageIndex = 0;
+            if (pageScrollView != null)
+            {
+                pageScrollView.scrollOffset = Vector2.zero;
+            }
+
+            RefreshAll();
         }
 
         private void AddSelectedBook()
@@ -3035,14 +4210,148 @@ namespace App.Features.Notebook.Presentation
 
             if (addedBookIds.Contains(book.Id))
             {
-                RefreshDetail(book);
+                ShowToast($"이미 내 책장에 있어요 · {book.Title}");
+                return;
+            }
+
+            if (pendingShelfBookIds.Contains(book.Id))
+            {
+                ShowToast("책장 추가 요청을 처리 중입니다.");
+                return;
+            }
+
+            if (book.Price > 0 && pages < book.Price)
+            {
+                ShowToast($"{book.Price - pages:N0}P가 더 필요합니다.");
+                return;
+            }
+
+            if (!CanUseShelfApi(book))
+            {
+                AddBookToShelfLocal(book);
+                return;
+            }
+
+            AddBookToShelfThroughApi(book);
+        }
+
+        private bool CanUseShelfApi(BookViewModel book)
+        {
+            if (book == null || APIManager.Instance == null)
+            {
+                return false;
+            }
+
+            if (string.Equals(book.ApiSource, "LOCAL", StringComparison.OrdinalIgnoreCase))
+            {
+                return book.ServerBookId.HasValue;
+            }
+
+            return string.Equals(book.ApiSource, "KAKAO", StringComparison.OrdinalIgnoreCase) &&
+                   (!string.IsNullOrWhiteSpace(book.Isbn13) || !string.IsNullOrWhiteSpace(book.Isbn10));
+        }
+
+        private void AddBookToShelfThroughApi(BookViewModel book)
+        {
+            pendingShelfBookIds.Add(book.Id);
+            RefreshLists();
+            RefreshBookDetailPage(book);
+
+            try
+            {
+                if (string.Equals(book.ApiSource, "KAKAO", StringComparison.OrdinalIgnoreCase))
+                {
+                    GetNotebookApiClient().AddKakaoBookToShelf(
+                        DefaultBookshelfId,
+                        BuildKakaoAddRequest(book),
+                        response => CompleteApiBookAdded(book, response),
+                        error => FailApiBookAdd(book, error));
+                    return;
+                }
+
+                GetNotebookApiClient().AddBookToShelf(
+                    DefaultBookshelfId,
+                    BuildLocalAddRequest(book),
+                    response => CompleteApiBookAdded(book, response),
+                    error => FailApiBookAdd(book, error));
+            }
+            catch (Exception exception)
+            {
+                pendingShelfBookIds.Remove(book.Id);
+                UnityEngine.Debug.LogWarning($"Book shelf API request failed before send. book={book.Id}");
+                UnityEngine.Debug.LogException(exception);
+                RefreshLists();
+                RefreshBookDetailPage(book);
+                ShowToast("책장 추가 요청을 보내지 못했습니다.");
+            }
+        }
+
+        private AddBookToShelfRequestDto BuildLocalAddRequest(BookViewModel book)
+        {
+            return new AddBookToShelfRequestDto
+            {
+                BookId = book.ServerBookId.GetValueOrDefault(),
+                SectionId = DefaultSectionId,
+                SlotNo = DefaultSlotNo,
+                DisplayStyle = DefaultDisplayStyle
+            };
+        }
+
+        private AddKakaoBookToShelfRequestDto BuildKakaoAddRequest(BookViewModel book)
+        {
+            return new AddKakaoBookToShelfRequestDto
+            {
+                Isbn13 = book.Isbn13,
+                Isbn10 = book.Isbn10,
+                Title = book.Title,
+                Author = book.Author,
+                Publisher = book.Publisher,
+                PublishedDate = book.PublishedDate,
+                Description = book.Summary,
+                CoverImageUrl = book.CoverImageUrl,
+                SectionId = DefaultSectionId,
+                SlotNo = DefaultSlotNo,
+                DisplayStyle = DefaultDisplayStyle
+            };
+        }
+
+        private void CompleteApiBookAdded(BookViewModel book, UserBookResponseDto response)
+        {
+            pendingShelfBookIds.Remove(book.Id);
+            AddBookToShelfLocal(book);
+            UnityEngine.Debug.Log($"Book added to shelf through API. book={book.Id}, userBookId={response?.Id}");
+        }
+
+        private void FailApiBookAdd(BookViewModel book, ApiErrorResponseDto error)
+        {
+            pendingShelfBookIds.Remove(book.Id);
+            UnityEngine.Debug.LogWarning($"Book shelf API failed. book={book.Id}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+            RefreshLists();
+            RefreshBookDetailPage(book);
+            ShowToast("서버 책장 추가에 실패했습니다. 잠시 후 다시 시도해주세요.");
+        }
+
+        private void AddBookToShelfLocal(BookViewModel book)
+        {
+            if (book == null)
+            {
+                return;
+            }
+
+            var index = Array.IndexOf(books, book);
+            if (index >= 0)
+            {
+                selectedBookIndex = index;
+            }
+
+            if (addedBookIds.Contains(book.Id))
+            {
                 ShowToast($"이미 내 책장에 있어요 · {book.Title}");
                 return;
             }
 
             if (book.Price > 0 && pages < book.Price)
             {
-                RefreshDetail(book);
                 ShowToast($"{book.Price - pages:N0}P가 더 필요합니다.");
                 return;
             }
@@ -3055,12 +4364,8 @@ namespace App.Features.Notebook.Presentation
 
             addedBookIds.Add(book.Id);
             RefreshLists();
+            RefreshBookDetailPage(book);
             ShowToast(book.Price > 0 ? $"구매 완료 · {book.Title}" : $"내 책장에 추가됨 · {book.Title}");
-        }
-
-        private BookViewModel FindBookById(string id)
-        {
-            return books.FirstOrDefault(book => book.Id == id);
         }
 
         private void PurchaseObject(DecorObjectViewModel item)
@@ -3171,11 +4476,183 @@ namespace App.Features.Notebook.Presentation
             }).StartingIn(1800);
         }
 
+        private static void FadeInElement(VisualElement element, float duration)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            element.style.opacity = 0f;
+            var start = Time.realtimeSinceStartup;
+            element.schedule.Execute(() =>
+            {
+                var t = Mathf.Clamp01((Time.realtimeSinceStartup - start) / Mathf.Max(0.01f, duration));
+                element.style.opacity = Mathf.SmoothStep(0f, 1f, t);
+            }).Every(16).Until(() => Time.realtimeSinceStartup - start >= duration);
+            element.schedule.Execute(() => element.style.opacity = 1f).StartingIn((long)(duration * 1000f) + 18);
+        }
+
+        private static void SlideFadeInElement(VisualElement element, float fromTop, float toTop, float duration)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            element.style.opacity = 0f;
+            element.style.marginTop = fromTop;
+            var start = Time.realtimeSinceStartup;
+            element.schedule.Execute(() =>
+            {
+                var t = Mathf.Clamp01((Time.realtimeSinceStartup - start) / Mathf.Max(0.01f, duration));
+                var eased = Mathf.SmoothStep(0f, 1f, t);
+                element.style.opacity = eased;
+                element.style.marginTop = Mathf.Lerp(fromTop, toTop, eased);
+            }).Every(16).Until(() => Time.realtimeSinceStartup - start >= duration);
+            element.schedule.Execute(() =>
+            {
+                element.style.opacity = 1f;
+                element.style.marginTop = toTop;
+            }).StartingIn((long)(duration * 1000f) + 18);
+        }
+
+        private static void SlideFadeInFromRight(VisualElement element, float fromRight, float toRight, float duration)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            element.style.opacity = 0f;
+            element.style.right = fromRight;
+            var start = Time.realtimeSinceStartup;
+            element.schedule.Execute(() =>
+            {
+                var t = Mathf.Clamp01((Time.realtimeSinceStartup - start) / Mathf.Max(0.01f, duration));
+                var eased = Mathf.SmoothStep(0f, 1f, t);
+                element.style.opacity = eased;
+                element.style.right = Mathf.Lerp(fromRight, toRight, eased);
+            }).Every(16).Until(() => Time.realtimeSinceStartup - start >= duration);
+            element.schedule.Execute(() =>
+            {
+                element.style.opacity = 1f;
+                element.style.right = toRight;
+            }).StartingIn((long)(duration * 1000f) + 18);
+        }
+
+        private void AnimateModalHeight(float fromHeight, float toHeight, float duration)
+        {
+            if (bookDetailModalPanel == null)
+            {
+                return;
+            }
+
+            var start = Time.realtimeSinceStartup;
+            bookDetailModalPanel.schedule.Execute(() =>
+            {
+                var t = Mathf.Clamp01((Time.realtimeSinceStartup - start) / Mathf.Max(0.01f, duration));
+                var eased = Mathf.SmoothStep(0f, 1f, t);
+                bookDetailModalPanel.style.height = Mathf.Lerp(fromHeight, toHeight, eased);
+            }).Every(16).Until(() => Time.realtimeSinceStartup - start >= duration);
+            bookDetailModalPanel.schedule.Execute(() => bookDetailModalPanel.style.height = toHeight).StartingIn((long)(duration * 1000f) + 18);
+        }
+
+        private static void PulseElement(VisualElement element)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            element.style.opacity = 0.62f;
+            element.schedule.Execute(() => element.style.opacity = 1f).StartingIn(90);
+        }
+
         private static bool Contains(string source, string value)
         {
             return source != null &&
                    value != null &&
                    source.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string FirstText(params string[] values)
+        {
+            if (values == null)
+            {
+                return string.Empty;
+            }
+
+            foreach (var value in values)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value.Trim();
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static long? ResolveServerBookId(BookListItemDto dto)
+        {
+            if (dto == null)
+            {
+                return null;
+            }
+
+            if (dto.Id > 0)
+            {
+                return dto.Id;
+            }
+
+            return long.TryParse(dto.BookId, out var parsed) && parsed > 0 ? parsed : null;
+        }
+
+        private static string ResolveSearchGenre(string title, string summary)
+        {
+            var text = $"{title} {summary}";
+            if (Contains(text, "경제") || Contains(text, "경영"))
+            {
+                return "경제/경영";
+            }
+
+            if (Contains(text, "SF") || Contains(text, "판타지"))
+            {
+                return "SF/판타지";
+            }
+
+            if (Contains(text, "심리"))
+            {
+                return "심리";
+            }
+
+            if (Contains(text, "인문"))
+            {
+                return "인문";
+            }
+
+            if (Contains(text, "에세이") || Contains(text, "산문"))
+            {
+                return "에세이";
+            }
+
+            return "소설";
+        }
+
+        private static Color SearchCoverColor(int index, string seed)
+        {
+            var colors = new[]
+            {
+                Hex(0x0A2540),
+                Hex(0x1D5F8C),
+                Hex(0x2D7EC0),
+                Hex(0x12345A),
+                Hex(0x061422),
+                Hex(0x7FC2EF)
+            };
+            var hash = string.IsNullOrEmpty(seed) ? index : Mathf.Abs(seed.GetHashCode());
+            return colors[(hash + index) % colors.Length];
         }
 
         private static string CategoryIcon(int index)
@@ -3221,6 +4698,20 @@ namespace App.Features.Notebook.Presentation
             };
         }
 
+        private static void UsePointerCursor(VisualElement element)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            element.style.cursor = new StyleCursor(new UnityEngine.UIElements.Cursor
+            {
+                texture = GetPointerCursorTexture(),
+                hotspot = new Vector2(9, 1)
+            });
+        }
+
         private Button TextButton(string text, bool primary)
         {
             var button = new Button { text = text };
@@ -3247,6 +4738,7 @@ namespace App.Features.Notebook.Presentation
             button.style.borderBottomWidth = 0;
             button.style.borderLeftWidth = 0;
             Round(button, 10);
+            UsePointerCursor(button);
             return button;
         }
 
@@ -3481,6 +4973,107 @@ namespace App.Features.Notebook.Presentation
             DrawIconLine(searchIconTexture, 20, 20, 27, 27, color);
             searchIconTexture.Apply(false, true);
             return searchIconTexture;
+        }
+
+        private static Texture2D GetPointerCursorTexture()
+        {
+            if (pointerCursorTexture != null)
+            {
+                return pointerCursorTexture;
+            }
+
+            const int size = 24;
+            pointerCursorTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                hideFlags = HideFlags.HideAndDontSave,
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var pixels = new Color32[size * size];
+            var clear = new Color32(0, 0, 0, 0);
+            for (var i = 0; i < pixels.Length; i++)
+            {
+                pixels[i] = clear;
+            }
+
+            pointerCursorTexture.SetPixels32(pixels);
+
+            var fill = new bool[size, size];
+            FillCursorRect(fill, 8, 1, 3, 12);
+            FillCursorRect(fill, 11, 7, 3, 9);
+            FillCursorRect(fill, 14, 8, 3, 8);
+            FillCursorRect(fill, 17, 9, 3, 7);
+            FillCursorRect(fill, 4, 11, 16, 8);
+            FillCursorRect(fill, 5, 18, 13, 2);
+            FillCursorRect(fill, 7, 20, 9, 2);
+
+            var outline = new Color32(14, 29, 42, 255);
+            var white = new Color32(255, 255, 255, 255);
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    if (fill[x, y])
+                    {
+                        PaintCursorPixel(pointerCursorTexture, x, y, white);
+                    }
+                    else if (HasCursorNeighbor(fill, x, y))
+                    {
+                        PaintCursorPixel(pointerCursorTexture, x, y, outline);
+                    }
+                }
+            }
+
+            pointerCursorTexture.Apply(false, true);
+            return pointerCursorTexture;
+        }
+
+        private static void FillCursorRect(bool[,] fill, int left, int top, int width, int height)
+        {
+            var maxX = fill.GetLength(0);
+            var maxY = fill.GetLength(1);
+            for (var y = top; y < top + height; y++)
+            {
+                for (var x = left; x < left + width; x++)
+                {
+                    if (x >= 0 && y >= 0 && x < maxX && y < maxY)
+                    {
+                        fill[x, y] = true;
+                    }
+                }
+            }
+        }
+
+        private static bool HasCursorNeighbor(bool[,] fill, int x, int y)
+        {
+            for (var yy = y - 1; yy <= y + 1; yy++)
+            {
+                for (var xx = x - 1; xx <= x + 1; xx++)
+                {
+                    if (xx == x && yy == y)
+                    {
+                        continue;
+                    }
+
+                    if (xx >= 0 && yy >= 0 && xx < fill.GetLength(0) && yy < fill.GetLength(1) && fill[xx, yy])
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static void PaintCursorPixel(Texture2D texture, int x, int topY, Color32 color)
+        {
+            if (x < 0 || topY < 0 || x >= texture.width || topY >= texture.height)
+            {
+                return;
+            }
+
+            texture.SetPixel(x, texture.height - 1 - topY, color);
         }
 
         private static void PaintIconCircle(Texture2D texture, int centerX, int centerY, int radius, Color32 color)

@@ -7133,7 +7133,8 @@ namespace BookshelfPorting.Runtime
                 screenTransform,
                 Camera.main,
                 () => notebookScreenController.ReturnToScreenSaver(),
-                CloseNotebookFocus);
+                CloseNotebookFocus,
+                FocusNotebook);
         }
 
         private void ShowNotebookScreen()
