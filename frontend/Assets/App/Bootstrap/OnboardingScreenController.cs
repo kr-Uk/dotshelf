@@ -183,10 +183,12 @@ namespace App.Bootstrap
 
             if (isStep3Overlay)
             {
+                SetExperienceManagerStep3Active(true);
                 EnterBookshelfFocusForOnboarding();
             }
             else
             {
+                SetExperienceManagerStep3Active(false);
                 CancelStep3Transition();
             }
 
@@ -212,6 +214,7 @@ namespace App.Bootstrap
         {
             LogDebug("Onboarding completed");
 
+            SetExperienceManagerStep3Active(false);
             CancelStep3Transition();
             SetCanvasVisible(false);
 
@@ -433,9 +436,11 @@ namespace App.Bootstrap
 
             // Return the main-scene camera to the new MainView default. This must run
             // before CompleteOnboarding's tear-down because the onboarding GameObject —
-            // and this controller — get destroyed there.
+            // and this controller — get destroyed there. Also clear the Step 3 flag so
+            // the main-scene chrome and focus-mode chrome resume their normal visibility.
             if (TryGetBookshelfExperienceManager(out var experienceManager) && experienceManager != null)
             {
+                experienceManager.IsOnboardingStep3Active = false;
                 experienceManager.FocusMainView();
             }
 
@@ -1205,6 +1210,17 @@ namespace App.Bootstrap
             return experienceManager != null;
         }
 
+        // Best-effort: if the bookshelf manager isn't reachable yet (e.g. main scene
+        // hasn't loaded), the flag will be set on the next opportunity through
+        // OnCompletionConfirmClicked / CompleteOnboarding, so silently no-op here.
+        private void SetExperienceManagerStep3Active(bool active)
+        {
+            if (TryGetBookshelfExperienceManager(out var experienceManager) && experienceManager != null)
+            {
+                experienceManager.IsOnboardingStep3Active = active;
+            }
+        }
+
         private IEnumerator EnterMainAndBookshelfFocusFlow()
         {
             EnsureCrossScenePersistence();
@@ -1247,10 +1263,18 @@ namespace App.Bootstrap
             // Step 3 special case: the player must see QuarterView (not the new MainView
             // default) before the bookshelf-focus transition kicks in. Snap before the
             // loading cover hides so there is no MainView flash.
-            if (TryGetBookshelfSceneDependencies(out _, out var initialCameraController, out _) &&
-                initialCameraController != null)
+            if (TryGetBookshelfSceneDependencies(out var initialExperienceManager, out var initialCameraController, out _))
             {
-                initialCameraController.ApplyQuarterView();
+                if (initialExperienceManager != null)
+                {
+                    // Manager is now reachable — propagate the Step 3 flag in case the
+                    // earlier ShowStep(3) call ran before the main scene finished loading.
+                    initialExperienceManager.IsOnboardingStep3Active = true;
+                }
+                if (initialCameraController != null)
+                {
+                    initialCameraController.ApplyQuarterView();
+                }
             }
 
             SetStep3LoadingCoverVisible(false);

@@ -75,6 +75,7 @@ namespace App.Bootstrap
 
         private GameObject settingsButtonRoot;
         private GameObject modeChangeButtonRoot;
+        private BookshelfExperienceManager cachedExperienceManager;
         private GameObject panelRoot;
         private GameObject dimBackground;
         private GameObject cardRoot;
@@ -303,15 +304,55 @@ namespace App.Bootstrap
                 panelRoot.SetActive(isVisible);
             }
 
-            if (settingsButtonRoot != null)
+            UpdateMainSceneChromeVisibility();
+        }
+
+        // Floating settings + mode-change buttons only show on the unfocused main view
+        // (CurrentFocusArea == QuarterView, i.e. CameraMode.Overview). They stay hidden
+        // while: the settings panel is open, onboarding Step 3 is in progress, or the
+        // camera is in any focus mode (bookshelf / guestbook / notebook). Without the
+        // focus-area gate, the mode-change button stayed visible in focus views but
+        // ToggleMainViewMode() no-ops outside Overview, so clicks did nothing — and
+        // SettingsCanvas's high sorting order could intercept clicks on focus controls.
+        private void UpdateMainSceneChromeVisibility()
+        {
+            var panelOpen = panelRoot != null && panelRoot.activeSelf;
+            var experienceManager = ResolveExperienceManager();
+            var inMainScene = experienceManager != null &&
+                              experienceManager.CurrentFocusArea == ExperienceFocusArea.QuarterView;
+            var step3Active = experienceManager != null && experienceManager.IsOnboardingStep3Active;
+            var shouldShow = !panelOpen && inMainScene && !step3Active;
+
+            if (settingsButtonRoot != null && settingsButtonRoot.activeSelf != shouldShow)
             {
-                settingsButtonRoot.SetActive(!isVisible);
+                settingsButtonRoot.SetActive(shouldShow);
             }
 
-            if (modeChangeButtonRoot != null)
+            if (modeChangeButtonRoot != null && modeChangeButtonRoot.activeSelf != shouldShow)
             {
-                modeChangeButtonRoot.SetActive(!isVisible);
+                modeChangeButtonRoot.SetActive(shouldShow);
             }
+        }
+
+        private BookshelfExperienceManager ResolveExperienceManager()
+        {
+            if (cachedExperienceManager != null)
+            {
+                return cachedExperienceManager;
+            }
+
+            cachedExperienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+            return cachedExperienceManager;
+        }
+
+        private void Update()
+        {
+            if (!isInitialized)
+            {
+                return;
+            }
+
+            UpdateMainSceneChromeVisibility();
         }
 
         private void HideAllNotices()

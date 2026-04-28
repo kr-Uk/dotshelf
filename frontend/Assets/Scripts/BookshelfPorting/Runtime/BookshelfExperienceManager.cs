@@ -462,6 +462,13 @@ namespace BookshelfPorting.Runtime
         private MainCameraViewMode currentMainViewMode = MainCameraViewMode.MainView;
         public MainCameraViewMode CurrentMainViewMode => currentMainViewMode;
 
+        // Set by the onboarding flow during Step 3. Used by SettingsScreenController to
+        // hide the floating mode-change / settings buttons only while onboarding Step 3
+        // is in progress; cleared as soon as onboarding completes. Bookshelf focus
+        // features (back button, left/right nav, scroll zoom, interactions) remain
+        // fully available during Step 3 — this flag only gates main-scene chrome.
+        public bool IsOnboardingStep3Active { get; set; }
+
         public void Configure(
             BookshelfState bookshelfState,
             CameraController controller,
@@ -627,6 +634,14 @@ namespace BookshelfPorting.Runtime
             PrepareQuarterViewReturn();
             currentMainViewMode = MainCameraViewMode.MainView;
             cameraController.MoveToMainView();
+
+            // MoveToMainView intentionally suppresses CameraController.ModeChanged so
+            // the main-view-mode toggle state survives across re-entry. The downside is
+            // that HandleCameraModeChanged → SyncFromCameraMode never runs, which leaves
+            // CurrentFocusArea stuck at whatever it was before (e.g. Bookshelf when this
+            // is called from the onboarding-completion path). Sync explicitly so the
+            // bookshelf HUD/zoom/back-button state clears as the camera leaves focus.
+            SyncFromCameraMode(CameraMode.Overview);
         }
 
         // Toggles only the main-scene camera pose (MainView ↔ QuarterView). When the

@@ -237,7 +237,10 @@ namespace App.Infrastructure.Api
                 return;
             }
 
-            Debug.LogError($"Dotshelf API health check failed before reaching server: {result.Url} {result.Message}");
+            // Demo runs are expected to launch without a backend (mock catalog repository
+            // takes over in BookshelfSceneInstaller), so this is a normal startup path —
+            // surface as a warning instead of an error to keep the console clean.
+            Debug.LogWarning($"Dotshelf API health check failed before reaching server: {result.Url} {result.Message}");
         }
 
         private static string FirstNonEmpty(params string[] values)
