@@ -1,4 +1,4 @@
--- 사용자 앱 v1.1 — 공간 주인이 받을 수 있는 포스트잇 스타일 화이트리스트.
+-- 사용자 앱 v1.0 갱신 — 공간 주인이 받을 수 있는 포스트잇 스타일 화이트리스트.
 -- expand-only 마이그레이션 (새 테이블 두 개, 기존 컬럼 무관).
 
 CREATE TABLE space_guestbook_postit_whitelists (
