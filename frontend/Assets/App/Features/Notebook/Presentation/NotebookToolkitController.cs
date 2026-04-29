@@ -2,8 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using App.Infrastructure.Api;
-using App.Infrastructure.Api.Dtos;
+using App.Application.Notebook;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UIElements;
@@ -337,7 +336,8 @@ namespace App.Features.Notebook.Presentation
         private Button nextPageButton;
         private Button addButton;
         private Coroutine dashboardInitializationRoutine;
-        private NotebookApiClient notebookApiClient;
+        private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
+        private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
         private BookViewModel[] searchResults = Array.Empty<BookViewModel>();
         private int toastHideVersion;
         private int dashboardShowVersion;
@@ -425,10 +425,22 @@ namespace App.Features.Notebook.Presentation
             }
         }
 
-        public void Configure(UnityAction onCloseRequested)
+        public void Configure(
+            UnityAction onCloseRequested,
+            SearchNotebookBooksUseCase searchUseCase = null,
+            AddNotebookBookToShelfUseCase addUseCase = null)
         {
             closeRequested = onCloseRequested;
+            ConfigureNotebookBookUseCases(searchUseCase, addUseCase);
             ResolveDocument();
+        }
+
+        public void ConfigureNotebookBookUseCases(
+            SearchNotebookBooksUseCase searchUseCase,
+            AddNotebookBookToShelfUseCase addUseCase)
+        {
+            searchNotebookBooksUseCase = searchUseCase;
+            addNotebookBookToShelfUseCase = addUseCase;
         }
 
         public bool ShowDashboard(bool immersiveMode)
@@ -3316,11 +3328,6 @@ namespace App.Features.Notebook.Presentation
             return SortBooks(books.Where(book => MatchesSearch(book, needle))).ToArray();
         }
 
-        private NotebookApiClient GetNotebookApiClient()
-        {
-            return notebookApiClient ??= new NotebookApiClient(APIManager.Instance);
-        }
-
         private void RequestSearchResults(string keyword)
         {
             searchRequestVersion++;
@@ -3330,9 +3337,16 @@ namespace App.Features.Notebook.Presentation
             searchLoading = true;
             RefreshAll();
 
+            if (searchNotebookBooksUseCase == null)
+            {
+                UnityEngine.Debug.LogWarning("SearchNotebookBooksUseCase is not configured; falling back to local search.");
+                CompleteSearchWithLocalFallback(requestVersion, keyword);
+                return;
+            }
+
             try
             {
-                GetNotebookApiClient().SearchBooks(
+                searchNotebookBooksUseCase.Execute(
                     keyword,
                     1,
                     SearchResultPageSize,
@@ -3375,9 +3389,9 @@ namespace App.Features.Notebook.Presentation
             RefreshAll();
         }
 
-        private BookViewModel[] MapApiSearchResults(BookListResponseDto response, string keyword)
+        private BookViewModel[] MapApiSearchResults(NotebookBookSearchResult response, string keyword)
         {
-            var items = response?.EffectiveItems;
+            var items = response?.Items;
             if (items == null || items.Count == 0)
             {
                 return Array.Empty<BookViewModel>();
@@ -4237,7 +4251,7 @@ namespace App.Features.Notebook.Presentation
 
         private bool CanUseShelfApi(BookViewModel book)
         {
-            if (book == null || APIManager.Instance == null)
+            if (book == null || addNotebookBookToShelfUseCase == null)
             {
                 return false;
             }
@@ -4259,19 +4273,9 @@ namespace App.Features.Notebook.Presentation
 
             try
             {
-                if (string.Equals(book.ApiSource, "KAKAO", StringComparison.OrdinalIgnoreCase))
-                {
-                    GetNotebookApiClient().AddKakaoBookToShelf(
-                        DefaultBookshelfId,
-                        BuildKakaoAddRequest(book),
-                        response => CompleteApiBookAdded(book, response),
-                        error => FailApiBookAdd(book, error));
-                    return;
-                }
-
-                GetNotebookApiClient().AddBookToShelf(
+                addNotebookBookToShelfUseCase.Execute(
                     DefaultBookshelfId,
-                    BuildLocalAddRequest(book),
+                    BuildAddRequest(book),
                     response => CompleteApiBookAdded(book, response),
                     error => FailApiBookAdd(book, error));
             }
@@ -4286,21 +4290,12 @@ namespace App.Features.Notebook.Presentation
             }
         }
 
-        private AddBookToShelfRequestDto BuildLocalAddRequest(BookViewModel book)
+        private NotebookBookAddRequest BuildAddRequest(BookViewModel book)
         {
-            return new AddBookToShelfRequestDto
+            return new NotebookBookAddRequest
             {
+                Source = book.ApiSource,
                 BookId = book.ServerBookId.GetValueOrDefault(),
-                SectionId = DefaultSectionId,
-                SlotNo = DefaultSlotNo,
-                DisplayStyle = DefaultDisplayStyle
-            };
-        }
-
-        private AddKakaoBookToShelfRequestDto BuildKakaoAddRequest(BookViewModel book)
-        {
-            return new AddKakaoBookToShelfRequestDto
-            {
                 Isbn13 = book.Isbn13,
                 Isbn10 = book.Isbn10,
                 Title = book.Title,
@@ -4315,14 +4310,14 @@ namespace App.Features.Notebook.Presentation
             };
         }
 
-        private void CompleteApiBookAdded(BookViewModel book, UserBookResponseDto response)
+        private void CompleteApiBookAdded(BookViewModel book, NotebookBookAddResult response)
         {
             pendingShelfBookIds.Remove(book.Id);
             AddBookToShelfLocal(book);
             UnityEngine.Debug.Log($"Book added to shelf through API. book={book.Id}, userBookId={response?.Id}");
         }
 
-        private void FailApiBookAdd(BookViewModel book, ApiErrorResponseDto error)
+        private void FailApiBookAdd(BookViewModel book, NotebookApiError error)
         {
             pendingShelfBookIds.Remove(book.Id);
             UnityEngine.Debug.LogWarning($"Book shelf API failed. book={book.Id}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
@@ -4594,7 +4589,7 @@ namespace App.Features.Notebook.Presentation
             return string.Empty;
         }
 
-        private static long? ResolveServerBookId(BookListItemDto dto)
+        private static long? ResolveServerBookId(NotebookBookSearchItem dto)
         {
             if (dto == null)
             {

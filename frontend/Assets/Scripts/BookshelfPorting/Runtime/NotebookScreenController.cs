@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Linq;
+using App.Application.Notebook;
 using App.Features.Notebook.Presentation;
 using UnityEngine;
 using UnityEngine.Events;
@@ -200,6 +201,8 @@ namespace BookshelfPorting.Runtime
         private NotebookUiState currentState = NotebookUiState.ScreenSaver;
         private bool openDashboardOnShow;
         private NotebookToolkitController toolkitController;
+        private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
+        private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
 
         public Transform ScreenTransform { get; private set; }
 
@@ -214,13 +217,33 @@ namespace BookshelfPorting.Runtime
             Camera eventCamera,
             UnityAction onCloseDashboard,
             UnityAction onCloseScreenSaver = null,
-            UnityAction onOpenScreenSaver = null)
+            UnityAction onOpenScreenSaver = null,
+            SearchNotebookBooksUseCase searchUseCase = null,
+            AddNotebookBookToShelfUseCase addUseCase = null)
         {
+            ConfigureNotebookBookUseCases(searchUseCase, addUseCase);
             ScreenTransform = screenTransform;
             EnsureCanvases(screenTransform, eventCamera, onCloseDashboard, onCloseScreenSaver, onOpenScreenSaver);
             ApplyPresentationMode();
             ApplySelectedAd();
             ShowStateInstant(currentState);
+        }
+
+        public void ConfigureNotebookBookUseCases(
+            SearchNotebookBooksUseCase searchUseCase,
+            AddNotebookBookToShelfUseCase addUseCase)
+        {
+            if (searchUseCase != null)
+            {
+                searchNotebookBooksUseCase = searchUseCase;
+            }
+
+            if (addUseCase != null)
+            {
+                addNotebookBookToShelfUseCase = addUseCase;
+            }
+
+            toolkitController?.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, addNotebookBookToShelfUseCase);
         }
 
         public void SetImmersiveMode(bool immersive)
@@ -481,7 +504,7 @@ namespace BookshelfPorting.Runtime
                 toolkitController = screenTransform.gameObject.AddComponent<NotebookToolkitController>();
             }
 
-            toolkitController?.Configure(onCloseDashboard);
+            toolkitController?.Configure(onCloseDashboard, searchNotebookBooksUseCase, addNotebookBookToShelfUseCase);
         }
 
         private bool HasToolkitDashboard()

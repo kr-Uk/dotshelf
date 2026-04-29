@@ -1,4 +1,5 @@
 using App.Application.Books;
+using App.Application.Notebook;
 using App.Bootstrap;
 using App.Config;
 using App.Infrastructure.Api;
@@ -154,6 +155,13 @@ namespace BookshelfPorting.Runtime
             var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(useApiRepository, apiBaseUrl, apiTimeoutSeconds));
 
             apiManager.Configure(apiBaseUrl, timeout: apiTimeoutSeconds);
+            var notebookBookRepository = CreateNotebookBookRepository(useApiRepository, apiManager);
+            var searchNotebookBooksUseCase = notebookBookRepository != null
+                ? new SearchNotebookBooksUseCase(notebookBookRepository)
+                : null;
+            var addNotebookBookToShelfUseCase = notebookBookRepository != null
+                ? new AddNotebookBookToShelfUseCase(notebookBookRepository)
+                : null;
             if (Application.isPlaying && useApiRepository)
             {
                 apiManager.CheckHealth(null, apiHealthCheckPath);
@@ -201,6 +209,7 @@ namespace BookshelfPorting.Runtime
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);
             experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
+            experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, addNotebookBookToShelfUseCase);
             environment.Configure(probe, null);
 
             // Main scene opens in the new MainView pose (derived from the bookshelf focus
@@ -279,6 +288,13 @@ namespace BookshelfPorting.Runtime
             }
 
             return new ApiBookCatalogRepository(apiBaseUrl, requestTimeoutSeconds, mockRepository);
+        }
+
+        private static INotebookBookRepository CreateNotebookBookRepository(bool useApiRepository, APIManager apiManager)
+        {
+            return useApiRepository && apiManager != null
+                ? new ApiNotebookBookRepository(new NotebookApiClient(apiManager))
+                : null;
         }
 
         private static string ResolveApiBaseUrl(AppApiConfig apiConfig, string fallbackBaseUrl)

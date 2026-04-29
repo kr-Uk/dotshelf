@@ -5,7 +5,6 @@
     "App.Core",
     "App.Domain",
     "App.Application",
-    "App.Infrastructure",
     "UnityEngine.UI"
   ],
   "includePlatforms": [],
