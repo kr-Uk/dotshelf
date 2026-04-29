@@ -35,7 +35,7 @@ admin-web의 현재 클라이언트는 `/api/*`를 호출한다. 프론트 연�
 
 ### 인증/권한
 
-모든 `/v1/admin/**` API는 인증 필요.
+원래 모든 `/v1/admin/**` API는 인증이 필요해야 한다.
 
 ```http
 Authorization: Bearer <access_token>
@@ -43,7 +43,7 @@ Authorization: Bearer <access_token>
 
 1차 구현은 기존 `users.role = 'ADMIN'`만 허용한다. 현재 admin-web 타입에는 `super_admin`, `moderator`, `settlement` 같은 세분화 role이 있지만, 기존 DB에는 세분화된 관리자 권한 테이블이 없다. 세분화 권한은 2차에서 `admin_members` 테이블로 확장한다.
 
-테스트 환경에서만 `ADMIN_AUTH_BYPASS=true`를 설정하면 `/v1/admin/**` 인증/인가를 우회한다. 기본값은 `false`다.
+임시 테스트 브랜치에서는 Unity 연동 테스트를 위해 Spring Security 전역 설정이 `permitAll` 상태다. 테스트가 끝나면 `SecurityConfig`를 다시 인증 필수로 되돌려야 한다.
 
 ### 응답 Envelope
 
