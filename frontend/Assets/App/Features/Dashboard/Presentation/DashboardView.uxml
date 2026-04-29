@@ -39,7 +39,7 @@
                         <ui:Label class="section-title" text="최근 추가한 책" />
                         <ui:Button name="recent-books-view-all-button" class="section-view-all" text="전체보기" />
                     </ui:VisualElement>
-                    <ui:ScrollView name="recent-books-carousel" mode="Horizontal" class="carousel-scroll" />
+                    <ui:ScrollView name="recent-books-carousel" mode="Horizontal" vertical-scroller-visibility="Hidden" class="carousel-scroll" />
                 </ui:VisualElement>
 
                 <ui:VisualElement name="recent-records-section" class="section-card">
@@ -47,7 +47,7 @@
                         <ui:Label class="section-title" text="최근 작성한 독후감" />
                         <ui:Button name="recent-records-view-all-button" class="section-view-all" text="전체보기" />
                     </ui:VisualElement>
-                    <ui:ScrollView name="recent-records-carousel" mode="Horizontal" class="carousel-scroll" />
+                    <ui:ScrollView name="recent-records-carousel" mode="Horizontal" vertical-scroller-visibility="Hidden" class="carousel-scroll" />
                 </ui:VisualElement>
 
             </ui:VisualElement>

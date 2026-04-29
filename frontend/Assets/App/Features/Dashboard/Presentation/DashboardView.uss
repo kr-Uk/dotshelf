@@ -188,13 +188,17 @@
 
 .carousel-cell {
     width: 64px;
+    height: 100px;
     margin-right: 6px;
     flex-shrink: 0;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .book-cover {
     width: 60px;
     height: 80px;
+    flex-shrink: 0;
     background-color: rgb(200, 180, 160);
     border-radius: 4px;
 }
@@ -202,9 +206,13 @@
 .book-cell-title {
     font-size: 10px;
     color: rgb(80, 80, 80);
-    margin-top: 4px;
-    white-space: normal;
+    margin-top: 2px;
+    height: 14px;
+    width: 60px;
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
+    -unity-text-align: upper-left;
 }
 
 .record-cell {
@@ -215,6 +223,8 @@
     border-radius: 6px;
     padding: 6px;
     flex-shrink: 0;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .record-cell-title {
@@ -222,6 +232,10 @@
     -unity-font-style: bold;
     color: rgb(60, 60, 60);
     margin-bottom: 4px;
+    height: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .record-cell-content {
@@ -235,6 +249,8 @@
 .record-cell-meta {
     flex-direction: row;
     margin-top: 4px;
+    height: 14px;
+    flex-shrink: 0;
 }
 
 .record-cell-meta-item {
