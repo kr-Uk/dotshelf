@@ -322,9 +322,29 @@ namespace App.Infrastructure.Api
             return Get<UserListResponseDto>("/v1/users/me/followers", onSuccess, onError);
         }
 
+        public Coroutine GetFollowers(string cursor, int limit, Action<UserListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<UserListResponseDto>(WithQuery("/v1/users/me/followers", BuildCursorQuery(cursor, limit)), onSuccess, onError);
+        }
+
         public Coroutine GetFollowings(Action<UserListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Get<UserListResponseDto>("/v1/users/me/followings", onSuccess, onError);
+        }
+
+        public Coroutine GetFollowings(string cursor, int limit, Action<UserListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<UserListResponseDto>(WithQuery("/v1/users/me/followings", BuildCursorQuery(cursor, limit)), onSuccess, onError);
+        }
+
+        public Coroutine GetUserFollowers(long userId, string cursor, int limit, Action<UserListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<UserListResponseDto>(WithQuery($"/v1/users/{userId}/followers", BuildCursorQuery(cursor, limit)), onSuccess, onError);
+        }
+
+        public Coroutine GetUserFollowings(long userId, string cursor, int limit, Action<UserListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<UserListResponseDto>(WithQuery($"/v1/users/{userId}/followings", BuildCursorQuery(cursor, limit)), onSuccess, onError);
         }
 
         public Coroutine BlockUser(long targetUserId, Action<ToggleResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
@@ -367,6 +387,11 @@ namespace App.Infrastructure.Api
             return Get<GuestbookListResponseDto>($"/v1/spaces/{spaceId}/guestbooks", onSuccess, onError);
         }
 
+        public Coroutine GetGuestbooks(long spaceId, string cursor, int limit, Action<GuestbookListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<GuestbookListResponseDto>(WithQuery($"/v1/spaces/{spaceId}/guestbooks", BuildCursorQuery(cursor, limit)), onSuccess, onError);
+        }
+
         public Coroutine CreateGuestbook(long spaceId, GuestbookRequestDto request, Action<GuestbookResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Post<GuestbookRequestDto, GuestbookResponseDto>($"/v1/spaces/{spaceId}/guestbooks", request, onSuccess, onError);
@@ -380,6 +405,21 @@ namespace App.Infrastructure.Api
         public Coroutine ReplyGuestbook(long guestbookId, GuestbookReplyRequestDto request, Action<GuestbookReplyResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Post<GuestbookReplyRequestDto, GuestbookReplyResponseDto>($"/v1/guestbooks/{guestbookId}/replies", request, onSuccess, onError);
+        }
+
+        public Coroutine DeleteGuestbookReply(long guestbookId, long replyId, Action<VoidResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Delete<VoidResponseDto>($"/v1/guestbooks/{guestbookId}/replies/{replyId}", onSuccess, onError);
+        }
+
+        public Coroutine GetGuestbookPostItWhitelist(Action<GuestbookPostItWhitelistResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<GuestbookPostItWhitelistResponseDto>("/v1/spaces/me/guestbook-postit-whitelist", onSuccess, onError);
+        }
+
+        public Coroutine UpdateGuestbookPostItWhitelist(GuestbookPostItWhitelistRequestDto request, Action<GuestbookPostItWhitelistResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Put<GuestbookPostItWhitelistRequestDto, GuestbookPostItWhitelistResponseDto>("/v1/spaces/me/guestbook-postit-whitelist", request, onSuccess, onError);
         }
 
         public Coroutine GetNotifications(Action<NotificationListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
@@ -582,6 +622,20 @@ namespace App.Infrastructure.Api
         private static Dictionary<string, string> Query(string key, string value)
         {
             return new Dictionary<string, string> { [key] = value };
+        }
+
+        private static Dictionary<string, string> BuildCursorQuery(string cursor, int limit)
+        {
+            var query = new Dictionary<string, string>();
+            if (!string.IsNullOrEmpty(cursor))
+            {
+                query["cursor"] = cursor;
+            }
+            if (limit > 0)
+            {
+                query["limit"] = limit.ToString();
+            }
+            return query;
         }
 
         private static SocialLoginRequestDto NormalizeSocialLoginRequest(SocialLoginRequestDto request)

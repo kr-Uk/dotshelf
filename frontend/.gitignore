@@ -14,6 +14,10 @@ Assets/_Recovery.meta
 .codex/
 .dotnet/
 .nuget/
+
+# .claude/ is gitignored globally; allow it for this project (skill definitions live here)
+!.claude/
+.claude/settings.local.json
 *.csproj
 *.sln
 *.slnx
