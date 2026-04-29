@@ -43,6 +43,10 @@ variables:
         - web/admin-web/**/*
         - .gitlab-ci.yml
         - .ci/**/*
+        # admin 컨테이너 정의(compose) 또는 admin vhost(nginx) 만 변경된 경우에도
+        # admin-web:deploy 가 돌아 컨테이너 재빌드/기동까지 가도록 rule 에 포함.
+        - backend/deploy/app/docker-compose.yml
+        - backend/deploy/prod/nginx/conf.d/**/*
 
 cache:
   key:
