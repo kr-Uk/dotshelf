@@ -58,6 +58,18 @@ namespace App.Bootstrap
         private const float FloorMaxX = 2.0f;
         private const float FloorMinZ = -2.4f;
         private const float FloorMaxZ = 2.4f;
+
+        // Safe upper bound for the back-side movement boundary: the front
+        // (room-facing) face of the back wall in the BookshelfGenerator
+        // build (BackWallZ 1.45m − BackWallThickness 0.08m × 0.5 = 1.41m).
+        // Used as both the initial value for `maxZ` in RefreshPlayableBounds
+        // AND a hard cap on every detected candidate, so a missed scene-
+        // scan (renamed wall, inactive root, asset reload race) can never
+        // raise the boundary past the visible wall plane and let dragged
+        // objects tunnel into the wall / out of the room. The constant
+        // mirrors the value baked into BookshelfGenerator — if that scene
+        // builder changes the wall depth, this needs to follow.
+        private const float BackWallReferenceZ = 1.41f;
         private const float FloorPlaneY = 0f;
         // Minimum clearance kept between a dragged object and any static
         // blocker (bookshelf / notebook / whiteboard / hamster / etc.) so
@@ -1137,6 +1149,7 @@ namespace App.Bootstrap
             // rebuilds it against the freshly recomputed bounds.
             NormalizeExistingDecorationScales();
             EnsureBlockerColliders();
+            EnsureDecorationRootColliders();
             RefreshPlayableBounds();
             if (gridDisplayRoot != null)
             {
@@ -1200,7 +1213,14 @@ namespace App.Bootstrap
             var minX = FloorMinX;
             var maxX = FloorMaxX;
             var minZ = FloorMinZ;
-            var maxZ = FloorMaxZ;
+            // Initialize maxZ to BackWallReferenceZ (the visible wall front
+            // face), NOT FloorMaxZ — the floor mesh extends past the wall by
+            // its thickness, and using it as the fallback would let dragged
+            // objects tunnel into the wall / out of the room whenever the
+            // name-based wall detection below misses (renamed wall, inactive
+            // root, asset reload race). Detection can only LOWER this value
+            // further (when the bookshelf protrudes forward of the wall).
+            var maxZ = BackWallReferenceZ;
 
             var scene = gameObject.scene;
             if (!scene.IsValid())
@@ -1338,9 +1358,43 @@ namespace App.Bootstrap
                 maxX = rightWallInnerX;
             }
 
+            // The bookshelf is partially embedded into the back wall — across
+            // the alcove span the player sees the bookshelf's front face
+            // (where the shelf openings are) as the room-inner boundary,
+            // not the missing back-wall surface behind it. Pick the smallest
+            // (closest-to-room-interior) of the two so whichever is more
+            // forward wins as the boundary at every X.
+            var bookshelfFrontZ = float.PositiveInfinity;
+            for (var i = 0; i < rootObjects.Length; i++)
+            {
+                var rootObject = rootObjects[i];
+                if (rootObject == null || !rootObject.activeInHierarchy)
+                {
+                    continue;
+                }
+                var renderers = rootObject.GetComponentsInChildren<Renderer>(false);
+                for (var r = 0; r < renderers.Length; r++)
+                {
+                    var renderer = renderers[r];
+                    if (renderer == null || !renderer.enabled) continue;
+                    if (!IsUnderBookshelfSubtree(renderer.transform)) continue;
+                    bookshelfFrontZ = Mathf.Min(bookshelfFrontZ, renderer.bounds.min.z);
+                }
+            }
+
+            // Combine every back-side boundary candidate with the safe upper
+            // bound (BackWallReferenceZ, already in `maxZ` from initialization).
+            // Mathf.Min, never replace — a missed candidate must not be able
+            // to push the boundary further back than the visible wall plane.
+            // The remaining candidates pull `maxZ` FORWARD when the bookshelf
+            // (or any other detected blocker face) protrudes into the room.
             if (!float.IsPositiveInfinity(backWallFrontZ))
             {
-                maxZ = backWallFrontZ;
+                maxZ = Mathf.Min(maxZ, backWallFrontZ);
+            }
+            if (!float.IsPositiveInfinity(bookshelfFrontZ))
+            {
+                maxZ = Mathf.Min(maxZ, bookshelfFrontZ);
             }
 
             // Defensive: keep min < max in each axis so downstream Mathf.Clamp
@@ -1880,6 +1934,111 @@ namespace App.Bootstrap
             }
         }
 
+        // Belt-and-braces collider pass for inventory items (children of
+        // PlacedDecorations) and the four scene-built decoration roots
+        // (LampFloor / BookStack / ClockHamham / HamhamDisplay). The
+        // recursive walk in EnsureBlockerCollidersRecursive only fits a
+        // BoxCollider on a GO that has a *direct* Renderer; a parent root
+        // whose mesh sits on a deep .glb child (or on an inactive node)
+        // therefore ends up without a single AABB the OverlapBox query can
+        // reliably hit. This pass synthesizes one combined-bounds
+        // BoxCollider per decoration root using `GetComponentsInChildren<Renderer>(true)`
+        // (includes inactive) so the entire visual footprint is queryable
+        // even when individual sub-meshes are disabled at runtime.
+        // Scene-built decoration / fixture roots that should each carry a
+        // single combined-bounds BoxCollider so OverlapBox queries reliably
+        // see the entire footprint (not just whichever sub-mesh got an
+        // individual fit). Includes:
+        //   - LampFloor / BookStack / ClockHamham / HamhamDisplay — the four
+        //     scene-built decorations from BookshelfGenerator.
+        //   - NotebookStation / Desk / table_natural — the desk + table fixture.
+        //     The table's mesh is a .glb instance whose top + legs are
+        //     separate child renderers; without a combined collider the
+        //     player can drag a small item between the legs and tunnel
+        //     through the desk footprint.
+        //   - GuestbookBoard — the whiteboard / guestbook fixture; same
+        //     reasoning, frame + surface live on different child renderers.
+        // Names match the runtime GameObject.name values produced by
+        // BookshelfGenerator (instantiated .glb roots use the asset's file
+        // name without extension, e.g. "table_natural").
+        private static readonly string[] DecorationRootSceneNames =
+        {
+            "LampFloor",
+            "BookStack",
+            "ClockHamham",
+            "HamhamDisplay",
+            "NotebookStation",
+            "Desk",
+            "table_natural",
+            "GuestbookBoard",
+        };
+
+        private void EnsureDecorationRootColliders()
+        {
+            if (placedItemsRoot != null)
+            {
+                for (var i = 0; i < placedItemsRoot.transform.childCount; i++)
+                {
+                    var child = placedItemsRoot.transform.GetChild(i);
+                    if (child == null) continue;
+                    EnsureRootCombinedCollider(child.gameObject);
+                }
+            }
+
+            for (var i = 0; i < DecorationRootSceneNames.Length; i++)
+            {
+                var go = GameObject.Find(DecorationRootSceneNames[i]);
+                if (go == null) continue;
+                EnsureRootCombinedCollider(go);
+            }
+        }
+
+        // Add (or refit) a single BoxCollider on `root` whose world-space
+        // AABB matches the union of every active+inactive child Renderer's
+        // bounds. Leaves any existing child colliders alone (they continue
+        // to function as raycast targets / extra blocker geometry); the
+        // root-level box is purely an additional reliable hit shape for
+        // OverlapBox queries.
+        private static void EnsureRootCombinedCollider(GameObject root)
+        {
+            if (root == null) return;
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            if (renderers == null || renderers.Length == 0) return;
+
+            var hasBounds = false;
+            var combined = new Bounds();
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null) continue;
+                if (!hasBounds)
+                {
+                    combined = r.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    combined.Encapsulate(r.bounds);
+                }
+            }
+            if (!hasBounds) return;
+
+            var bc = root.GetComponent<BoxCollider>();
+            if (bc == null) bc = root.AddComponent<BoxCollider>();
+
+            // World AABB → local center/size. Dividing by lossyScale converts
+            // world size back into the box collider's local frame so its
+            // post-scale world coverage matches the renderer union exactly.
+            var lossy = root.transform.lossyScale;
+            bc.center = root.transform.InverseTransformPoint(combined.center);
+            bc.size = new Vector3(
+                combined.size.x / Mathf.Max(0.001f, Mathf.Abs(lossy.x)),
+                combined.size.y / Mathf.Max(0.001f, Mathf.Abs(lossy.y)),
+                combined.size.z / Mathf.Max(0.001f, Mathf.Abs(lossy.z)));
+            bc.isTrigger = false;
+            bc.enabled = true;
+        }
+
         // Size a BoxCollider against its renderer so the collider OBB tracks
         // the mesh exactly — including for rotated transforms.
         // `Renderer.localBounds` is the mesh AABB in the renderer's local
@@ -1919,7 +2078,14 @@ namespace App.Bootstrap
 
         private static Bounds? ComputeRendererBounds(GameObject go)
         {
-            var renderers = go.GetComponentsInChildren<Renderer>();
+            // includeInactive = true so a .glb whose visual root is
+            // temporarily disabled still reports a usable AABB. UpdateDrag
+            // gates ClampToFloorBounds + ResolveBlockerCollisions on
+            // bounds.HasValue — without this the dragged object would
+            // skip BOTH the wall clamp and the blocker check whenever its
+            // renderer hierarchy contained an inactive node, so it could
+            // tunnel into walls / fixtures unconstrained.
+            var renderers = go.GetComponentsInChildren<Renderer>(true);
             if (renderers == null || renderers.Length == 0)
             {
                 return null;
@@ -2056,6 +2222,7 @@ namespace App.Bootstrap
             // entered. The grid display rebuild below picks up any change.
             RefreshPlayableBounds();
             EnsureBlockerColliders();
+            EnsureDecorationRootColliders();
             RebuildBlockerRendererCache(target);
             ShowGrid();
         }
