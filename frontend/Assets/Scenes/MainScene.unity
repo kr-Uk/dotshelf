@@ -6062,6 +6062,7 @@ MonoBehaviour:
   bookHoverColor: {r: 1, g: 0.68, b: 0.28, a: 0.2}
   sectionHoverColor: {r: 0.4, g: 0.78, b: 1, a: 0.16}
   bookHoverScaleMultiplier: 1.12
+  bookHoverHintDelaySeconds: 2
   sectionHoverWidthInset: 0.025
   sectionHoverHeightInset: 0.025
 --- !u!114 &617729536

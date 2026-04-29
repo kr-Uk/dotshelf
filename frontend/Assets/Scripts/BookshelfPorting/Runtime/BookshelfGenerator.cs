@@ -33,9 +33,13 @@ namespace BookshelfPorting.Runtime
         private const float BookCoverCanvasWidthCoverage = 0.78f;
         private const float BookCoverCanvasHeightCoverage = 0.78f;
         private const float BookCoverCanvasPadding = 12f;
+        private const float BookSpineCanvasHeightCoverage = 0.94f;
+        private const float BookSpineCanvasPadding = 7f;
         private const int BookCoverFrontTitleLineLength = 7;
         private const int BookCoverFrontAuthorLineLength = 9;
         private const int BookCoverBackDescriptionLineLength = 11;
+        private const int BookSpineTitleCharacterLimit = 10;
+        private const int BookSpineTitleFontSize = 30;
         private const string HamhamAssetPath = "Assets/Meshy_AI_Hamham_0416082404_texture.glb";
         private const string BookStackAssetPath = "Assets/Arts/Models/Props/book_stack.glb";
         private const string RugAssetPath = "Assets/Arts/Models/Furniture/rug_natural.glb";
@@ -52,6 +56,7 @@ namespace BookshelfPorting.Runtime
         private const string QABooksAltNormalTexturePath = "Assets/QA_Books/Textures/Books_n.tga";
         private const string QABooksAltMetallicTexturePath = "Assets/QA_Books/Textures/Books_m_ao_g.tga";
         private static readonly Vector2 BookCoverCanvasSize = new Vector2(144f, 216f);
+        private static readonly Vector2 BookSpineCanvasSize = new Vector2(96f, 360f);
         private static readonly Vector3 MainSceneNotebookStationLocalPosition = new Vector3(0.72f, -1.18f, 0f);
         private static readonly Vector3 FallbackNotebookStationLocalPosition = new Vector3(-1.275f, 0f, 0.12f);
 
@@ -124,6 +129,24 @@ namespace BookshelfPorting.Runtime
         private int runtimeBookSerial;
 
         public Transform BooksRoot => booksRoot;
+
+        public bool TryGetBookshelfNavigationAnchors(out Vector3 previousAnchor, out Vector3 nextAnchor)
+        {
+            previousAnchor = default;
+            nextAnchor = default;
+
+            if (bookshelfRoot == null)
+            {
+                return false;
+            }
+
+            var sideOffset = width * 0.5f + Mathf.Max(0.10f, RotatingWallFrameSideReveal + 0.075f);
+            var anchorY = height * 0.5f;
+            var anchorZ = -depth * 0.5f - Mathf.Max(0.035f, BookshelfFacingPanelClearance);
+            previousAnchor = bookshelfRoot.TransformPoint(new Vector3(-sideOffset, anchorY, anchorZ));
+            nextAnchor = bookshelfRoot.TransformPoint(new Vector3(sideOffset, anchorY, anchorZ));
+            return true;
+        }
         public bool IsBookshelfSwitching => bookshelfSwitchCoroutine != null;
         public int BookshelfCount => bookshelfCount;
         public int ActiveBookshelfIndex => activeBookshelfIndex;
@@ -198,6 +221,7 @@ namespace BookshelfPorting.Runtime
             EnsureBookCatalog();
             if (bookCatalogItems.Count == 0)
             {
+                Debug.LogWarning("Bookshelf catalog is empty; skipping book generation so stale mock/default book data is not shown.");
                 return;
             }
 
@@ -875,12 +899,6 @@ namespace BookshelfPorting.Runtime
         private void SpawnBooks(List<ShelfSection> sections, int variantIndex, Transform targetBooksRoot, bool registerInState)
         {
             EnsureBookCatalog();
-            if (bookCatalogItems.Count == 0)
-            {
-                Debug.LogWarning("Bookshelf catalog is empty; skipping book generation so stale mock/default book data is not shown.");
-                return;
-            }
-
             Random.InitState(randomSeed + variantIndex * 137);
             var prefabs = GetQaBookPrefabs();
 
@@ -919,6 +937,7 @@ namespace BookshelfPorting.Runtime
             bookCatalogItems = loadBooksUseCase != null
                 ? loadBooksUseCase.Execute() ?? System.Array.Empty<BookCatalogItem>()
                 : System.Array.Empty<BookCatalogItem>();
+
             if (Application.isPlaying)
             {
                 Debug.Log($"Bookshelf catalog loaded: {bookCatalogItems.Count} item(s).");
@@ -1055,6 +1074,14 @@ namespace BookshelfPorting.Runtime
                 Quaternion.Euler(0f, 90f, 0f),
                 13,
                 textColor);
+            CreateBookCoverCanvas(
+                labelsRoot.transform,
+                "SpineTitleCanvas",
+                FormatSpineTitleText(book),
+                new Vector3(0f, 0.02f, -BookCoverSurfaceOffset),
+                Quaternion.Euler(0f, 180f, 0f),
+                BookSpineTitleFontSize,
+                textColor);
         }
 
         private static void CreateBookCoverCanvas(
@@ -1066,14 +1093,21 @@ namespace BookshelfPorting.Runtime
             int fontSize,
             Color color)
         {
+            var isSpineTitle = name == "SpineTitleCanvas";
             var labelObject = new GameObject(name, typeof(RectTransform));
             labelObject.transform.SetParent(parent, false);
             labelObject.transform.localPosition = localPosition;
             labelObject.transform.localRotation = localRotation;
-            labelObject.transform.localScale = GetBookCoverCanvasScale();
+            var canvasScale = isSpineTitle ? GetBookSpineCanvasScale(parent) : GetBookCoverCanvasScale();
+            if (isSpineTitle)
+            {
+                canvasScale.x *= -1f;
+            }
+
+            labelObject.transform.localScale = canvasScale;
 
             var rect = labelObject.GetComponent<RectTransform>();
-            rect.sizeDelta = BookCoverCanvasSize;
+            rect.sizeDelta = isSpineTitle ? BookSpineCanvasSize : BookCoverCanvasSize;
             rect.pivot = new Vector2(0.5f, 0.5f);
 
             var canvas = labelObject.AddComponent<Canvas>();
@@ -1087,8 +1121,9 @@ namespace BookshelfPorting.Runtime
             textRect.anchorMin = Vector2.zero;
             textRect.anchorMax = Vector2.one;
             textRect.pivot = new Vector2(0.5f, 0.5f);
-            textRect.offsetMin = new Vector2(BookCoverCanvasPadding, BookCoverCanvasPadding);
-            textRect.offsetMax = new Vector2(-BookCoverCanvasPadding, -BookCoverCanvasPadding);
+            var padding = isSpineTitle ? BookSpineCanvasPadding : BookCoverCanvasPadding;
+            textRect.offsetMin = new Vector2(padding, padding);
+            textRect.offsetMax = new Vector2(-padding, -padding);
             textRect.anchoredPosition = Vector2.zero;
             textRect.localScale = Vector3.one;
 
@@ -1102,12 +1137,13 @@ namespace BookshelfPorting.Runtime
             label.text = text;
             label.fontSize = fontSize;
             label.alignment = TextAnchor.MiddleCenter;
-            label.horizontalOverflow = HorizontalWrapMode.Wrap;
+            label.horizontalOverflow = isSpineTitle ? HorizontalWrapMode.Overflow : HorizontalWrapMode.Wrap;
             label.verticalOverflow = VerticalWrapMode.Truncate;
-            label.resizeTextForBestFit = true;
-            label.resizeTextMinSize = Mathf.Max(8, fontSize - 6);
+            label.resizeTextForBestFit = !isSpineTitle;
+            label.resizeTextMinSize = isSpineTitle ? fontSize : Mathf.Max(8, fontSize - 6);
             label.resizeTextMaxSize = fontSize;
-            label.lineSpacing = 0.9f;
+            label.lineSpacing = isSpineTitle ? 0.76f : 0.9f;
+            label.fontStyle = isSpineTitle ? FontStyle.Bold : FontStyle.Normal;
             label.color = color;
             label.supportRichText = false;
             label.raycastTarget = false;
@@ -1118,6 +1154,21 @@ namespace BookshelfPorting.Runtime
             return new Vector3(
                 BookCoverCanvasWidthCoverage / BookCoverCanvasSize.x,
                 BookCoverCanvasHeightCoverage / BookCoverCanvasSize.y,
+                1f);
+        }
+
+        private static Vector3 GetBookSpineCanvasScale(Transform labelsRoot)
+        {
+            var parentScale = labelsRoot != null ? labelsRoot.lossyScale : Vector3.one;
+            var sourceBook = labelsRoot != null ? labelsRoot.GetComponentInParent<BookEntity>() : null;
+            var worldHeight = Mathf.Max(
+                0.08f,
+                (sourceBook != null ? sourceBook.height : 0.24f) * BookSpineCanvasHeightCoverage);
+            var worldUnitsPerPixel = worldHeight / BookSpineCanvasSize.y;
+
+            return new Vector3(
+                worldUnitsPerPixel / Mathf.Max(Mathf.Abs(parentScale.x), 0.0001f),
+                worldUnitsPerPixel / Mathf.Max(Mathf.Abs(parentScale.y), 0.0001f),
                 1f);
         }
 
@@ -1195,6 +1246,58 @@ namespace BookshelfPorting.Runtime
                 ? "책 설명이 없습니다."
                 : book.description.Trim();
             return WrapCoverText(description, BookCoverBackDescriptionLineLength, 6);
+        }
+
+        private static string FormatSpineTitleText(BookEntity book)
+        {
+            var title = string.IsNullOrWhiteSpace(book.title) ? "새 책" : book.title.Trim();
+            return StackCoverTextVertically(TruncateCoverText(title, BookSpineTitleCharacterLimit));
+        }
+
+        private static string StackCoverTextVertically(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return string.Empty;
+            }
+
+            var hasEllipsis = text.EndsWith("...");
+            var body = hasEllipsis ? text.Substring(0, text.Length - 3) : text;
+            var result = string.Empty;
+            for (var i = 0; i < body.Length; i++)
+            {
+                if (i > 0)
+                {
+                    result += "\n";
+                }
+
+                result += body[i];
+            }
+
+            if (hasEllipsis)
+            {
+                if (!string.IsNullOrEmpty(result))
+                {
+                    result += "\n";
+                }
+
+                result += "...";
+            }
+
+            return result;
+        }
+
+        private static string TruncateCoverText(string text, int maxCharacters)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return string.Empty;
+            }
+
+            var normalized = text.Trim();
+            return normalized.Length <= maxCharacters
+                ? normalized
+                : $"{normalized.Substring(0, maxCharacters)}...";
         }
 
         private static string WrapCoverText(string text, int maxCharactersPerLine, int maxLines)
