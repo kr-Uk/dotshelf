@@ -67,7 +67,7 @@
 
         </ui:VisualElement>
 
-        <ui:VisualElement name="bottom-action-bar" class="bottom-action-bar">
+        <ui:VisualElement name="dashboard-action-overlay" class="dashboard-action-overlay" picking-mode="Ignore">
             <ui:Button name="edit-dashboard-button" class="bottom-action-button edit-button" text="편집" />
             <ui:Button name="write-guestbook-button" class="bottom-action-button write-button" text="방명록 작성" />
         </ui:VisualElement>
