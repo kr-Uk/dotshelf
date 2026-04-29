@@ -24,6 +24,8 @@ public final class BookDtos {
 
     public record BookResponse(
             Long id,
+            String source,
+            String sourceUrl,
             String bookId,
             String isbn,
             String isbn13,
@@ -41,6 +43,8 @@ public final class BookDtos {
             long viewCount,
             long recordCount,
             long placementCount,
+            long purchaseCount,
+            long likeCount,
             boolean hasPaidCover,
             boolean owned,
             Long userBookId,
@@ -54,6 +58,8 @@ public final class BookDtos {
         public static BookResponse from(Book book, boolean owned, Long userBookId, long reviewCount, Integer rank) {
             return new BookResponse(
                     book.getId(),
+                    book.getSource() == null ? "LOCAL" : book.getSource().name(),
+                    book.getSourceUrl(),
                     String.valueOf(book.getId()),
                     primaryIsbn(book),
                     book.getIsbn13(),
@@ -71,6 +77,8 @@ public final class BookDtos {
                     book.getViewCount(),
                     book.getBookshelfAddCount(),
                     book.getBookshelfAddCount(),
+                    0L,
+                    book.getLikeCount(),
                     false,
                     owned,
                     userBookId,
@@ -140,7 +148,7 @@ public final class BookDtos {
         public static BookSearchResponse from(Book book) {
             return new BookSearchResponse(
                     book.getId(),
-                    "LOCAL",
+                    book.getSource() == null ? "LOCAL" : book.getSource().name(),
                     book.getIsbn13(),
                     book.getIsbn10(),
                     book.getTitle(),
@@ -149,7 +157,7 @@ public final class BookDtos {
                     book.getPublishedDate(),
                     book.getDescription(),
                     book.getCoverImageUrl(),
-                    null,
+                    book.getSourceUrl(),
                     String.valueOf(book.getId()),
                     primaryIsbn(book),
                     averageRating(book),
@@ -251,6 +259,8 @@ public final class BookDtos {
             LocalDate publishedDate,
             String description,
             String coverImageUrl,
+            @Size(max = 500, message = "sourceUrl은 최대 500자입니다.")
+            String sourceUrl,
             @NotNull(message = "sectionId는 필수입니다.")
             Long sectionId,
             @NotNull(message = "slotNo는 필수입니다.")

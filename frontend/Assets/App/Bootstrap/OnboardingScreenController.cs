@@ -64,6 +64,12 @@ namespace App.Bootstrap
 
         [SerializeField] private int currentStep = 1;
 
+        // Guest entry skips step 1 (profile) and step 3 (bookshelf focus). Only
+        // the theme-selection step is shown; "다음 단계" becomes "완료" and the
+        // completion modal transitions straight to the main scene without the
+        // bookshelf-focus flow.
+        private bool isGuestFlow;
+
         private Canvas onboardingCanvas;
         private TMP_FontAsset fontAsset;
         private TMP_FontAsset fallbackFontAsset;
@@ -87,6 +93,9 @@ namespace App.Bootstrap
         private Image themePreviewImage;
         private TMP_Text themePreviewTitleLabel;
         private TMP_Text themePreviewCaptionLabel;
+        private Button step2PreviousButton;
+        private Button step2NextButton;
+        private TMP_Text step2NextButtonLabel;
 
         private TMP_Text step3OverlayStatusLabel;
         private GameObject step3LoadingCover;
@@ -141,10 +150,43 @@ namespace App.Bootstrap
         public void StartOnboarding()
         {
             InitializeIfNeeded();
+            isGuestFlow = false;
             ResetFlowState();
             GetComponent<LoginScreenController>()?.SetCanvasVisible(false);
             SetCanvasVisible(true);
+            ApplyStep2NavigationForFlow();
             ShowStep1();
+        }
+
+        // Guest entry skips step 1 (profile) and step 3 (bookshelf focus). The
+        // theme selection on step 2 is the only step shown, and the completion
+        // modal triggers a direct main-scene transition that mirrors the regular
+        // login path instead of running the step 3 bookshelf-focus routine.
+        public void StartOnboardingAsGuest()
+        {
+            InitializeIfNeeded();
+            isGuestFlow = true;
+            ResetFlowState();
+            GetComponent<LoginScreenController>()?.SetCanvasVisible(false);
+            SetCanvasVisible(true);
+            ApplyStep2NavigationForFlow();
+            ShowStep2();
+        }
+
+        // Hide the "이전 단계" button and relabel the primary action to "완료" on
+        // the guest path, since there's no step 1 to return to and step 2 is the
+        // last visible step. Restored when re-entering the regular flow.
+        private void ApplyStep2NavigationForFlow()
+        {
+            if (step2PreviousButton != null)
+            {
+                step2PreviousButton.gameObject.SetActive(!isGuestFlow);
+            }
+
+            if (step2NextButtonLabel != null)
+            {
+                step2NextButtonLabel.text = isGuestFlow ? "완료" : "다음 단계";
+            }
         }
 
         public void ShowStep(int step)
@@ -434,6 +476,20 @@ namespace App.Bootstrap
         {
             HideCompletionModal();
 
+            // Guest entry never went through step 3, so the main scene hasn't
+            // been loaded yet. Mirror the regular login path: show the loading
+            // cover and call SceneFlowManager.GoToMain, then tear down the
+            // onboarding canvas. CompleteOnboarding is invoked in both branches
+            // so the cleanup logic stays shared.
+            if (isGuestFlow)
+            {
+                MainSceneTransitionCover.Show("메인 화면으로 이동 중입니다.");
+                SetCanvasVisible(false);
+                SceneFlowManager.GoToMain();
+                CompleteOnboarding();
+                return;
+            }
+
             // Return the main-scene camera to the new MainView default. This must run
             // before CompleteOnboarding's tear-down because the onboarding GameObject —
             // and this controller — get destroyed there. Also clear the Step 3 flag so
@@ -601,11 +657,12 @@ namespace App.Bootstrap
             CreateFlexibleSpacer(column);
 
             var navigationRow = CreateRow(column, "Step2NavigationRow", 14f, TextAnchor.MiddleCenter);
-            var previousButton = CreateFixedButton(navigationRow, "PreviousStepButton", "이전 단계", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));
-            previousButton.onClick.AddListener(ShowStep1);
+            step2PreviousButton = CreateFixedButton(navigationRow, "PreviousStepButton", "이전 단계", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));
+            step2PreviousButton.onClick.AddListener(ShowStep1);
             CreateFlexibleSpacer(navigationRow);
-            var nextButton = CreateFixedButton(navigationRow, "NextStepButton", "다음 단계", PrimaryColor, Color.white, false, BorderColor, new Vector2(220f, PrimaryControlHeight));
-            nextButton.onClick.AddListener(OnStep2NextButtonClicked);
+            step2NextButton = CreateFixedButton(navigationRow, "NextStepButton", "다음 단계", PrimaryColor, Color.white, false, BorderColor, new Vector2(220f, PrimaryControlHeight));
+            step2NextButton.onClick.AddListener(OnStep2NextButtonClicked);
+            step2NextButtonLabel = step2NextButton.GetComponentInChildren<TMP_Text>(true);
 
             UpdateThemeSelectionVisuals();
             UpdateThemePreview(string.Empty);
@@ -814,6 +871,16 @@ namespace App.Bootstrap
             }
 
             SetMessage(step2MessageLabel, string.Empty, ErrorColor);
+
+            // Guest entry has no step 3 — show the same completion modal that
+            // the regular flow displays after step 3, so the completion logic
+            // (modal → 확인 → 메인 화면 이동 → 정리) is shared between paths.
+            if (isGuestFlow)
+            {
+                ShowCompletionModal();
+                return;
+            }
+
             ShowStep3();
         }
 

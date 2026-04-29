@@ -9,6 +9,8 @@ import com.dotshelf.global.common.BaseEntity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -57,6 +59,13 @@ public class Book extends BaseEntity {
     @Column(length = 500)
     private String coverImageUrl;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private BookSource source = BookSource.LOCAL;
+
+    @Column(length = 500)
+    private String sourceUrl;
+
     private Integer pageCount;
 
     @Column(length = 20)
@@ -80,6 +89,7 @@ public class Book extends BaseEntity {
     @Builder
     private Book(String isbn13, String isbn10, String title, String author, String publisher,
                  LocalDate publishedDate, String description, String coverImageUrl,
+                 BookSource source, String sourceUrl,
                  Integer pageCount, String language) {
         this.isbn13 = isbn13;
         this.isbn10 = isbn10;
@@ -90,6 +100,8 @@ public class Book extends BaseEntity {
         this.publishedDate = publishedDate;
         this.description = description;
         this.coverImageUrl = coverImageUrl;
+        this.source = source == null ? BookSource.LOCAL : source;
+        this.sourceUrl = sourceUrl;
         this.pageCount = pageCount;
         this.language = language;
     }

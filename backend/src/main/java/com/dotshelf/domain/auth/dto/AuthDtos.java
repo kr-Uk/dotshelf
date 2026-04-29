@@ -37,6 +37,8 @@ public final class AuthDtos {
     }
 
     public record GuestMigrationRequest(
+            @Schema(description = "guest-session 응답에서 받은 guestSessionId. 동일 게스트 세션의 데이터를 식별/검증할 때 사용한다.")
+            String guestSessionId,
             @NotBlank(message = "payload는 필수입니다.")
             String payload
     ) {
@@ -46,11 +48,20 @@ public final class AuthDtos {
             Long userId,
             String accessToken,
             String refreshToken,
+            @Schema(description = "토큰 타입. 항상 \"Bearer\".", example = "Bearer")
+            String tokenType,
+            @Schema(description = "access token 유효 시간(초). 클라이언트가 만료 카운트다운에 사용한다.", example = "1800")
+            long expiresIn,
             boolean newUser,
             boolean onboarded
     ) {
     }
 
-    public record GuestSessionResponse(String guestToken, long expiresInSeconds) {
+    public record GuestSessionResponse(
+            String guestToken,
+            long expiresInSeconds,
+            @Schema(description = "게스트 세션 식별자. 이후 guest-migration 요청 시 동일 값을 함께 보낸다.")
+            String guestSessionId
+    ) {
     }
 }

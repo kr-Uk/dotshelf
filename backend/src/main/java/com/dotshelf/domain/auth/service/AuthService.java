@@ -63,13 +63,7 @@ public class AuthService {
         User user = newUser ? createUserAndSocialAccount(socialUser) : userService.getUser(socialAccount.getUserId());
         user.markLogin();
         TokenPair tokenPair = issueTokens(user.getId());
-        return new AuthTokenResponse(
-                user.getId(),
-                tokenPair.accessToken(),
-                tokenPair.refreshToken(),
-                newUser,
-                user.isOnboarded()
-        );
+        return buildAuthTokenResponse(user, tokenPair, newUser);
     }
 
     @Transactional
@@ -89,7 +83,7 @@ public class AuthService {
                 .orElseThrow(() -> new CustomException(ErrorCode.INTERNAL_SERVER_ERROR));
         oldToken.rotateTo(newToken.getId());
         User user = userService.getUser(oldToken.getUserId());
-        return new AuthTokenResponse(user.getId(), tokenPair.accessToken(), tokenPair.refreshToken(), false, user.isOnboarded());
+        return buildAuthTokenResponse(user, tokenPair, false);
     }
 
     @Transactional
@@ -101,7 +95,8 @@ public class AuthService {
     }
 
     public GuestSessionResponse startGuestSession() {
-        return new GuestSessionResponse("guest-" + UUID.randomUUID(), GUEST_EXPIRES_IN_SECONDS);
+        String sessionId = UUID.randomUUID().toString();
+        return new GuestSessionResponse("guest-" + sessionId, GUEST_EXPIRES_IN_SECONDS, sessionId);
     }
 
     @Transactional
@@ -110,8 +105,17 @@ public class AuthService {
         GuestMigrationImport migrationImport = guestMigrationImportRepository.save(GuestMigrationImport.builder()
                 .userId(currentUserId)
                 .payload(request.payload())
+                .guestSessionId(normalizeSessionId(request.guestSessionId()))
                 .build());
         return new IdResponse(migrationImport.getId());
+    }
+
+    private String normalizeSessionId(String sessionId) {
+        if (sessionId == null) {
+            return null;
+        }
+        String trimmed = sessionId.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private User createUserAndSocialAccount(SocialUserInfo socialUser) {
@@ -162,6 +166,18 @@ public class AuthService {
         int maxBaseLength = 50 - suffix.length();
         String base = nickname.length() <= maxBaseLength ? nickname : nickname.substring(0, maxBaseLength);
         return base + suffix;
+    }
+
+    private AuthTokenResponse buildAuthTokenResponse(User user, TokenPair tokenPair, boolean newUser) {
+        return new AuthTokenResponse(
+                user.getId(),
+                tokenPair.accessToken(),
+                tokenPair.refreshToken(),
+                "Bearer",
+                jwtTokenProvider.getAccessTokenValiditySeconds(),
+                newUser,
+                user.isOnboarded()
+        );
     }
 
     private TokenPair issueTokens(Long userId) {
