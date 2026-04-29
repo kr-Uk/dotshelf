@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using App.Application.Notebook;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -211,6 +212,8 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private BookshelfGenerator bookshelfGenerator = null;
         [SerializeField] private BookshelfRuntimeDataStore dataStore = null;
         [SerializeField] private NotebookScreenController notebookScreenController = null;
+        private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
+        private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
 
         private Canvas hudCanvas;
         private Button overlayPreviousFocusButton;
@@ -528,6 +531,15 @@ namespace BookshelfPorting.Runtime
                     bookshelfGenerator.BookshelfSwitchStateChanged += HandleBookshelfSwitchStateChanged;
                 }
             }
+        }
+
+        public void ConfigureNotebookBookUseCases(
+            SearchNotebookBooksUseCase searchUseCase,
+            AddNotebookBookToShelfUseCase addUseCase)
+        {
+            searchNotebookBooksUseCase = searchUseCase;
+            addNotebookBookToShelfUseCase = addUseCase;
+            notebookScreenController?.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, addNotebookBookToShelfUseCase);
         }
 
         private void Awake()
@@ -8917,7 +8929,9 @@ namespace BookshelfPorting.Runtime
                 Camera.main,
                 () => notebookScreenController.ReturnToScreenSaver(),
                 CloseNotebookFocus,
-                FocusNotebook);
+                FocusNotebook,
+                searchNotebookBooksUseCase,
+                addNotebookBookToShelfUseCase);
         }
 
         private void ShowNotebookScreen()

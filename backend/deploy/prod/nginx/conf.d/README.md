@@ -12,11 +12,12 @@ CI 가 매 배포마다 이 디렉토리 트리를 prod 로 rsync 한다.
 | `templates/upstream.blue.conf` | Blue 템플릿 (port 8080) | ❌ (서브디렉토리는 스캔 안 됨) | ✅ |
 | `templates/upstream.green.conf` | Green 템플릿 (port 8081) | ❌ | ✅ |
 
-## 정적 루트 배포
+## 루트 도메인 라우팅
 
-`dotshelf.digital` / `www.dotshelf.digital` 은 `default.conf` 에서 `/usr/share/nginx/html/root` 를 root 로 사용한다.
-GitLab CI 의 `static:deploy` job 이 `frontend/docs/dotshelf-games/` 를 prod 호스트의
-`$PROD_DEPLOY_PATH/nginx/html/root/` 로 rsync 한다. Nginx 는 정적 파일을 직접 읽으므로 콘텐츠만 바뀔 때는 reload 가 필요 없다.
+`dotshelf.digital` / `www.dotshelf.digital` 은 2026-04-29 부터 정적 파일 서빙을 중단하고
+SSAFY app 서버의 `service-web` Next.js 컨테이너로 프록시한다(`upstream dotshelf_service` → `100.74.2.103:3002`).
+배포는 GitLab CI 의 `service-web:deploy` job — 소스 rsync + `docker compose up -d --build service-web` + nginx reload 를 한 파이프라인에서 처리.
+이전 게임 hub(`/usr/share/nginx/html/root/`) 는 더 이상 사용하지 않는다.
 
 ## 왜 templates/ 서브디렉토리인가
 

@@ -924,7 +924,25 @@ namespace App.Bootstrap
                 ShowNoticeToast("로그아웃 동작은 데모로 처리되었습니다.");
             });
 
+            // 앱 종료. 에디터에서는 플레이 모드를 빠져나오고, 빌드에서는
+            // Application.Quit()로 프로세스를 종료한다. 두 경로를 한 곳에
+            // 묶어두면 데모 시연 중 디바이스에서도, 에디터에서도 같은
+            // 버튼으로 정상 종료할 수 있다.
+            var quitButton = CreateButton(view.transform, "QuitButton", "앱 종료", SecondaryColor, ErrorColor, Vector2.zero, Vector2.zero, true, BorderColor);
+            ConfigureLayoutHeight(quitButton.gameObject, SecondaryControlHeight);
+            quitButton.onClick.AddListener(QuitApplication);
+
             return view;
+        }
+
+        private static void QuitApplication()
+        {
+            Debug.Log("Quit application requested");
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
         }
 
         private void SelectPrivacyOption(int index)

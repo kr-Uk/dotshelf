@@ -27,6 +27,7 @@ import com.dotshelf.domain.book.dto.BookDtos.UserBookPlacementListResponse;
 import com.dotshelf.domain.book.dto.BookDtos.UserBookPlacementResponse;
 import com.dotshelf.domain.book.dto.BookDtos.UserBookResponse;
 import com.dotshelf.domain.book.entity.Book;
+import com.dotshelf.domain.book.entity.BookSource;
 import com.dotshelf.domain.book.entity.UserBook;
 import com.dotshelf.domain.book.repository.BookRepository;
 import com.dotshelf.domain.book.repository.BookReviewRepository;
@@ -57,6 +58,7 @@ public class BookService {
     private static final int MAX_PUBLISHER_LENGTH = 255;
     private static final int MAX_DESCRIPTION_LENGTH = 5000;
     private static final int MAX_COVER_IMAGE_URL_LENGTH = 500;
+    private static final int MAX_SOURCE_URL_LENGTH = 500;
     private static final String ACTIVE = "ACTIVE";
 
     private final BookRepository bookRepository;
@@ -553,6 +555,8 @@ public class BookService {
                         .publishedDate(request.publishedDate())
                         .description(trimToLength(trimToNull(request.description()), MAX_DESCRIPTION_LENGTH))
                         .coverImageUrl(trimToLength(trimToNull(request.coverImageUrl()), MAX_COVER_IMAGE_URL_LENGTH))
+                        .source(BookSource.KAKAO)
+                        .sourceUrl(trimToLength(trimToNull(request.sourceUrl()), MAX_SOURCE_URL_LENGTH))
                         .build()));
     }
 
