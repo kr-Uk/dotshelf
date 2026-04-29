@@ -29,6 +29,7 @@ namespace BookshelfPorting.Runtime
         public bool isDecoration;
         public bool isRead;
         public bool isPublic = true;
+        public VisibilityScope reportVisibility = VisibilityScope.Public;
 
         public ShelfSection CurrentSection { get; private set; }
         public ShelfSection OriginalSection { get; private set; }
@@ -81,7 +82,8 @@ namespace BookshelfPorting.Runtime
             readingStatus = userBook.ReadingStatus;
             isLiked = userBook.IsLiked;
             isRead = readingStatus == ReadingStatus.Read;
-            isPublic = readingRecord == null || readingRecord.VisibilityScope == VisibilityScope.Public;
+            reportVisibility = readingRecord != null ? readingRecord.VisibilityScope : VisibilityScope.Public;
+            isPublic = reportVisibility == VisibilityScope.Public;
             memoPreview = readingRecord != null && !string.IsNullOrWhiteSpace(readingRecord.Content)
                 ? readingRecord.Content
                 : description;

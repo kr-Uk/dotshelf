@@ -12,7 +12,7 @@ namespace BookshelfPorting.Runtime
     {
         private const int DragVelocitySampleLimit = 5;
         private const float DragPreviewPitchDegrees = 15f;
-        private const float BookHoverHintDelaySeconds = 0.7f;
+        private const float DefaultBookHoverHintDelaySeconds = 0.7f;
 
         private enum InvalidDropBehavior
         {
@@ -59,7 +59,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private Color bookHoverColor = new Color(1f, 0.68f, 0.28f, 0.20f);
         [SerializeField] private Color sectionHoverColor = new Color(0.40f, 0.78f, 1f, 0.16f);
         [SerializeField] private float bookHoverScaleMultiplier = 1.12f;
-        [SerializeField] private float bookHoverHintDelaySeconds = BookHoverHintDelaySeconds;
+        [SerializeField] private float bookHoverHintDelaySeconds = DefaultBookHoverHintDelaySeconds;
         [SerializeField] private float sectionHoverWidthInset = 0.025f;
         [SerializeField] private float sectionHoverHeightInset = 0.025f;
 
@@ -95,6 +95,7 @@ namespace BookshelfPorting.Runtime
         private Transform dragLayerRoot;
         private bool isManipulatingViewedBook;
         private bool viewedBookPressStartedOnBook;
+        private bool isTrackingViewedBookPointer;
         private bool isPanningFrontalCamera;
         private float viewedBookPointerTravel;
         private int edgeSwitchDirection;
@@ -273,32 +274,6 @@ namespace BookshelfPorting.Runtime
             ViewBook(book);
         }
 
-        public void ShowViewedBookFront()
-        {
-            SetViewedBookRotation(BookFootprintUtility.GetVisualRotation(BookOrientation.Front));
-        }
-
-        public void ShowViewedBookBack()
-        {
-            SetViewedBookRotation(Quaternion.Euler(0f, -90f, 0f));
-        }
-
-        private void SetViewedBookRotation(Quaternion localFaceRotation)
-        {
-            if (state == null ||
-                !state.IsViewingBook ||
-                state.ActiveViewedBook == null ||
-                cameraController == null ||
-                cameraController.BookViewAnchor == null)
-            {
-                return;
-            }
-
-            var targetRotation = cameraController.BookViewAnchor.rotation * localFaceRotation;
-            state.ActiveViewedBook.BeginViewRotation(targetRotation);
-            state.ActiveViewedBook.transform.rotation = targetRotation;
-        }
-
         private void HandleKeyboardShortcuts()
         {
             if (Keyboard.current == null)
@@ -329,6 +304,7 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isManipulatingViewedBook = false;
+                isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
                 return;
             }
@@ -348,6 +324,7 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isManipulatingViewedBook = false;
+                isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
                 return;
             }
@@ -357,6 +334,7 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isManipulatingViewedBook = false;
+                isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
                 return;
             }
@@ -366,6 +344,7 @@ namespace BookshelfPorting.Runtime
                 lastPointer = pointer;
                 pressedBook = state.ActiveViewedBook;
                 viewedBookPressStartedOnBook = IsPointerOverActiveViewedBook(currentPointerTarget);
+                isTrackingViewedBookPointer = true;
                 isManipulatingViewedBook = viewedBookPressStartedOnBook;
                 viewedBookPointerTravel = 0f;
                 return;
@@ -385,6 +364,11 @@ namespace BookshelfPorting.Runtime
 
             if (state.IsViewingBook && state.ActiveViewedBook != null)
             {
+                if (!isTrackingViewedBookPointer)
+                {
+                    return;
+                }
+
                 viewedBookPointerTravel += delta.magnitude;
                 if (isManipulatingViewedBook)
                 {
@@ -436,6 +420,7 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isManipulatingViewedBook = false;
+                isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
                 return;
             }
@@ -459,6 +444,7 @@ namespace BookshelfPorting.Runtime
                 {
                     isManipulatingViewedBook = false;
                     viewedBookPressStartedOnBook = false;
+                    isTrackingViewedBookPointer = false;
                     viewedBookPointerTravel = 0f;
                     return;
                 }
@@ -478,6 +464,7 @@ namespace BookshelfPorting.Runtime
 
                 isManipulatingViewedBook = false;
                 viewedBookPressStartedOnBook = false;
+                isTrackingViewedBookPointer = false;
                 viewedBookPointerTravel = 0f;
             }
             else if (isPanningFrontalCamera)
@@ -805,7 +792,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var hintDelay = Mathf.Min(Mathf.Max(0.1f, bookHoverHintDelaySeconds), BookHoverHintDelaySeconds);
+            var hintDelay = Mathf.Max(0.1f, bookHoverHintDelaySeconds);
             if (Time.unscaledTime - pendingHoverHintStartedAt < hintDelay)
             {
                 return;

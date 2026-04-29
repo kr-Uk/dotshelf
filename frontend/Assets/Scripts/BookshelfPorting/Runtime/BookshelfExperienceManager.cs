@@ -402,12 +402,9 @@ namespace BookshelfPorting.Runtime
         private Button detailPlacementButton;
         private Button closeBookDetailButton;
         private GameObject bookFocusToolbarPanel;
-        private Button bookFocusFrontButton;
-        private Button bookFocusBackCoverButton;
         private Button bookFocusDetailButton;
         private Button bookFocusReportButton;
         private Button bookFocusRatingButton;
-        private Button bookFocusCloseButton;
         private Button bookFocusWriteReportButton;
         private Text bookFocusRatingText;
         private GameObject bookRatingChoicePanel;
@@ -1367,7 +1364,8 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            meta.ownerRating = Mathf.Clamp(rating, 1, 5);
+            var clampedRating = Mathf.Clamp(rating, 1, 5);
+            meta.ownerRating = Mathf.Approximately(meta.ownerRating, clampedRating) ? 0f : clampedRating;
             isBookRatingChoicePanelOpen = false;
             dataStore.ApplyBookMeta(book, meta);
             RefreshBookDetailPanel();
@@ -1387,7 +1385,9 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            meta.reportVisibility = meta.isPublic ? App.Domain.VisibilityScope.Private : App.Domain.VisibilityScope.Public;
+            meta.reportVisibility = meta.reportVisibility == App.Domain.VisibilityScope.Public
+                ? App.Domain.VisibilityScope.Private
+                : App.Domain.VisibilityScope.Public;
             meta.isPublic = meta.reportVisibility == App.Domain.VisibilityScope.Public;
             dataStore.ApplyBookMeta(ActiveDetailBook, meta);
             RefreshBookDetailPanel();
@@ -1665,7 +1665,7 @@ namespace BookshelfPorting.Runtime
             bookshelfDeleteConfirmPanel = CreatePanel(canvasObject.transform, "BookshelfDeleteConfirmPanel", new Vector2(0f, -132f), new Vector2(388f, 146f), new Vector2(0.5f, 1f));
             StyleBookshelfIndexPanel(bookshelfDeleteConfirmPanel.GetComponent<Image>());
             bookshelfDeleteConfirmPanel.SetActive(false);
-            CreateHudImage(bookshelfDeleteConfirmPanel.transform, "BookshelfDeleteAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(184, 72, 66, 180));
+            CreateHudImage(bookshelfDeleteConfirmPanel.transform, "BookshelfDeleteAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(184, 72, 66, 180), false);
             bookshelfDeleteConfirmTitleText = CreateLabel(bookshelfDeleteConfirmPanel.transform, "BookshelfDeleteConfirmTitleText", new Vector2(20f, -32f), new Vector2(348f, 24f), TextAnchor.UpperLeft);
             bookshelfDeleteConfirmTitleText.text = "책장 삭제";
             bookshelfDeleteConfirmTitleText.fontSize = 17;
@@ -1681,7 +1681,7 @@ namespace BookshelfPorting.Runtime
             bookshelfDesignPanel = CreatePanel(canvasObject.transform, "BookshelfDesignPanel", new Vector2(0f, -148f), new Vector2(480f, 210f), new Vector2(0.5f, 1f));
             StyleBookshelfIndexPanel(bookshelfDesignPanel.GetComponent<Image>());
             bookshelfDesignPanel.SetActive(false);
-            CreateHudImage(bookshelfDesignPanel.transform, "BookshelfDesignAccent", new Vector2(24f, -24f), new Vector2(84f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170));
+            CreateHudImage(bookshelfDesignPanel.transform, "BookshelfDesignAccent", new Vector2(24f, -24f), new Vector2(84f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170), false);
             bookshelfDesignTitleText = CreateLabel(bookshelfDesignPanel.transform, "BookshelfDesignTitleText", new Vector2(24f, -36f), new Vector2(432f, 24f), TextAnchor.UpperLeft);
             bookshelfDesignTitleText.text = "책장 디자인 변경";
             bookshelfDesignTitleText.fontSize = 17;
@@ -1699,7 +1699,7 @@ namespace BookshelfPorting.Runtime
             bookAddPanel = CreatePanel(canvasObject.transform, "BookAddPanel", new Vector2(0f, -128f), new Vector2(560f, 458f), new Vector2(0.5f, 1f));
             StyleBookshelfIndexPanel(bookAddPanel.GetComponent<Image>());
             bookAddPanel.SetActive(false);
-            CreateHudImage(bookAddPanel.transform, "BookAddAccent", new Vector2(24f, -24f), new Vector2(84f, 3f), new Vector2(0f, 1f), new Color32(87, 139, 106, 170));
+            CreateHudImage(bookAddPanel.transform, "BookAddAccent", new Vector2(24f, -24f), new Vector2(84f, 3f), new Vector2(0f, 1f), new Color32(87, 139, 106, 170), false);
             bookAddTitleText = CreateLabel(bookAddPanel.transform, "BookAddTitleText", new Vector2(24f, -36f), new Vector2(456f, 24f), TextAnchor.UpperLeft);
             bookAddTitleText.text = "책 추가";
             bookAddTitleText.fontSize = 17;
@@ -1753,7 +1753,7 @@ namespace BookshelfPorting.Runtime
             bookAddConfirmPanel = CreatePanel(canvasObject.transform, "BookAddConfirmPanel", new Vector2(0f, -132f), new Vector2(500f, 408f), new Vector2(0.5f, 1f));
             StyleBookshelfIndexPanel(bookAddConfirmPanel.GetComponent<Image>());
             bookAddConfirmPanel.SetActive(false);
-            CreateHudImage(bookAddConfirmPanel.transform, "BookAddConfirmAccent", new Vector2(24f, -24f), new Vector2(84f, 3f), new Vector2(0f, 1f), new Color32(87, 139, 106, 170));
+            CreateHudImage(bookAddConfirmPanel.transform, "BookAddConfirmAccent", new Vector2(24f, -24f), new Vector2(84f, 3f), new Vector2(0f, 1f), new Color32(87, 139, 106, 170), false);
             bookAddConfirmTitleText = CreateLabel(bookAddConfirmPanel.transform, "BookAddConfirmTitleText", new Vector2(24f, -38f), new Vector2(452f, 40f), TextAnchor.UpperLeft);
             bookAddConfirmTitleText.fontSize = 20;
             bookAddConfirmTitleText.fontStyle = FontStyle.Bold;
@@ -1786,7 +1786,7 @@ namespace BookshelfPorting.Runtime
             bookSearchPanel = CreatePanel(canvasObject.transform, "BookSearchPanel", new Vector2(24f, -96f), new Vector2(360f, 438f), new Vector2(0f, 1f));
             StyleBookDetailPanel(bookSearchPanel.GetComponent<Image>());
             bookSearchPanel.SetActive(false);
-            CreateHudImage(bookSearchPanel.transform, "BookSearchAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(73, 117, 147, 170));
+            CreateHudImage(bookSearchPanel.transform, "BookSearchAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(73, 117, 147, 170), false);
             bookSearchTitleText = CreateLabel(bookSearchPanel.transform, "BookSearchTitleText", new Vector2(20f, -36f), new Vector2(286f, 24f), TextAnchor.UpperLeft);
             bookSearchTitleText.text = "책 찾기";
             bookSearchTitleText.fontSize = 18;
@@ -1835,7 +1835,7 @@ namespace BookshelfPorting.Runtime
             bookshelfManagePanel = CreatePanel(canvasObject.transform, "BookshelfManagePanel", new Vector2(0f, -128f), new Vector2(560f, 456f), new Vector2(0.5f, 1f));
             StyleBookshelfIndexPanel(bookshelfManagePanel.GetComponent<Image>());
             bookshelfManagePanel.SetActive(false);
-            CreateHudImage(bookshelfManagePanel.transform, "BookshelfManageAccent", new Vector2(24f, -24f), new Vector2(84f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170));
+            CreateHudImage(bookshelfManagePanel.transform, "BookshelfManageAccent", new Vector2(24f, -24f), new Vector2(84f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170), false);
             bookshelfManageTitleText = CreateLabel(bookshelfManagePanel.transform, "BookshelfManageTitleText", new Vector2(24f, -38f), new Vector2(512f, 24f), TextAnchor.UpperLeft);
             bookshelfManageTitleText.text = "책장 관리";
             bookshelfManageTitleText.fontSize = 18;
@@ -1898,7 +1898,7 @@ namespace BookshelfPorting.Runtime
             bookshelfUnsavedConfirmPanel = CreatePanel(canvasObject.transform, "BookshelfUnsavedConfirmPanel", new Vector2(0f, -166f), new Vector2(452f, 166f), new Vector2(0.5f, 1f));
             StyleBookshelfIndexPanel(bookshelfUnsavedConfirmPanel.GetComponent<Image>());
             bookshelfUnsavedConfirmPanel.SetActive(false);
-            CreateHudImage(bookshelfUnsavedConfirmPanel.transform, "BookshelfUnsavedConfirmAccent", new Vector2(24f, -24f), new Vector2(84f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170));
+            CreateHudImage(bookshelfUnsavedConfirmPanel.transform, "BookshelfUnsavedConfirmAccent", new Vector2(24f, -24f), new Vector2(84f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170), false);
             bookshelfUnsavedConfirmTitleText = CreateLabel(bookshelfUnsavedConfirmPanel.transform, "BookshelfUnsavedConfirmTitleText", new Vector2(24f, -38f), new Vector2(404f, 24f), TextAnchor.UpperLeft);
             bookshelfUnsavedConfirmTitleText.text = "수정된 사항이 있습니다.";
             bookshelfUnsavedConfirmTitleText.fontSize = 18;
@@ -1928,7 +1928,7 @@ namespace BookshelfPorting.Runtime
             bookDetailPanel = CreatePanel(canvasObject.transform, "BookDetailPanel", new Vector2(-24f, -78f), new Vector2(380f, 436f), new Vector2(1f, 1f));
             StyleBookDetailPanel(bookDetailPanel.GetComponent<Image>());
             bookDetailPanel.SetActive(false);
-            CreateHudImage(bookDetailPanel.transform, "BookPanelAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170));
+            CreateHudImage(bookDetailPanel.transform, "BookPanelAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170), false);
             bookPanelEyebrowText = CreateLabel(bookDetailPanel.transform, "BookPanelEyebrowText", new Vector2(20f, -30f), new Vector2(340f, 18f), TextAnchor.UpperLeft);
             bookPanelEyebrowText.fontSize = 13;
             bookPanelEyebrowText.fontStyle = FontStyle.Bold;
@@ -1960,15 +1960,9 @@ namespace BookshelfPorting.Runtime
             bookFocusToolbarPanel = CreatePanel(canvasObject.transform, "BookFocusToolbarPanel", new Vector2(0f, 24f), new Vector2(470f, 58f), new Vector2(0.5f, 0f));
             StyleBookshelfIndexPanel(bookFocusToolbarPanel.GetComponent<Image>());
             bookFocusToolbarPanel.SetActive(false);
-            bookFocusFrontButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusFrontButton", "앞면", new Vector2(14f, 0f), ShowFocusedBookFront, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
-            bookFocusBackCoverButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusBackCoverButton", "후면", new Vector2(94f, 0f), ShowFocusedBookBack, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
             bookFocusDetailButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusDetailButton", "상태", new Vector2(174f, 0f), ToggleReadState, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
             bookFocusRatingButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusRatingButton", "별점", new Vector2(254f, 0f), CycleOwnerRating, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
             bookFocusReportButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusReportButton", "좋아요", new Vector2(334f, 0f), ToggleLikeState, new Vector2(86f, 36f), new Vector2(0f, 0.5f));
-            bookFocusCloseButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusCloseButton", "닫기", new Vector2(428f, 0f), CloseActiveViewedBook, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
-            bookFocusFrontButton.gameObject.SetActive(false);
-            bookFocusBackCoverButton.gameObject.SetActive(false);
-            bookFocusCloseButton.gameObject.SetActive(false);
             bookFocusWriteReportButton = CreateButton(canvasObject.transform, "BookFocusWriteReportButton", "독후감 작성", new Vector2(0f, 128f), OpenActiveViewedBookReport, new Vector2(160f, 44f), new Vector2(0.5f, 0f));
             bookFocusWriteReportButton.gameObject.SetActive(false);
             bookFocusRatingText = CreateLabel(bookFocusToolbarPanel.transform, "BookFocusRatingText", new Vector2(0f, 22f), new Vector2(360f, 18f), TextAnchor.MiddleCenter);
@@ -1995,7 +1989,7 @@ namespace BookshelfPorting.Runtime
             bookReportWritePanel = CreatePanel(canvasObject.transform, "BookReportWritePanel", new Vector2(-24f, -78f), new Vector2(430f, 474f), new Vector2(1f, 1f));
             StyleBookDetailPanel(bookReportWritePanel.GetComponent<Image>());
             bookReportWritePanel.SetActive(false);
-            CreateHudImage(bookReportWritePanel.transform, "BookReportWriteAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(88, 133, 117, 170));
+            CreateHudImage(bookReportWritePanel.transform, "BookReportWriteAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(88, 133, 117, 170), false);
             bookReportWriteTitleText = CreateLabel(bookReportWritePanel.transform, "BookReportWriteTitleText", new Vector2(20f, -36f), new Vector2(390f, 24f), TextAnchor.UpperLeft);
             bookReportWriteTitleText.text = "독후감 작성";
             bookReportWriteTitleText.fontSize = 18;
@@ -2024,7 +2018,7 @@ namespace BookshelfPorting.Runtime
             bookReportReadPanel = CreatePanel(canvasObject.transform, "BookReportReadPanel", new Vector2(-24f, -78f), new Vector2(430f, 436f), new Vector2(1f, 1f));
             StyleBookDetailPanel(bookReportReadPanel.GetComponent<Image>());
             bookReportReadPanel.SetActive(false);
-            CreateHudImage(bookReportReadPanel.transform, "BookReportReadAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170));
+            CreateHudImage(bookReportReadPanel.transform, "BookReportReadAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170), false);
             bookReportReadTitleText = CreateLabel(bookReportReadPanel.transform, "BookReportReadTitleText", new Vector2(20f, -38f), new Vector2(390f, 44f), TextAnchor.UpperLeft);
             bookReportReadTitleText.fontSize = 20;
             bookReportReadTitleText.fontStyle = FontStyle.Bold;
@@ -2060,7 +2054,7 @@ namespace BookshelfPorting.Runtime
             bookEditPanel = CreatePanel(canvasObject.transform, "BookEditPanel", new Vector2(-24f, -78f), new Vector2(360f, 436f), new Vector2(1f, 1f));
             StyleBookDetailPanel(bookEditPanel.GetComponent<Image>());
             bookEditPanel.SetActive(false);
-            CreateHudImage(bookEditPanel.transform, "BookEditAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170));
+            CreateHudImage(bookEditPanel.transform, "BookEditAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170), false);
             bookEditEyebrowText = CreateLabel(bookEditPanel.transform, "BookEditEyebrowText", new Vector2(20f, -30f), new Vector2(320f, 18f), TextAnchor.UpperLeft);
             bookEditEyebrowText.fontSize = 13;
             bookEditEyebrowText.fontStyle = FontStyle.Bold;
@@ -2086,7 +2080,7 @@ namespace BookshelfPorting.Runtime
             sectionEditPanel = CreatePanel(canvasObject.transform, "SectionEditPanel", new Vector2(-24f, -78f), new Vector2(360f, 436f), new Vector2(1f, 1f));
             StyleBookDetailPanel(sectionEditPanel.GetComponent<Image>());
             sectionEditPanel.SetActive(false);
-            CreateHudImage(sectionEditPanel.transform, "SectionEditAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170));
+            CreateHudImage(sectionEditPanel.transform, "SectionEditAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170), false);
             sectionEditEyebrowText = CreateLabel(sectionEditPanel.transform, "SectionEditEyebrowText", new Vector2(20f, -30f), new Vector2(320f, 18f), TextAnchor.UpperLeft);
             sectionEditEyebrowText.fontSize = 13;
             sectionEditEyebrowText.fontStyle = FontStyle.Bold;
@@ -6488,6 +6482,7 @@ namespace BookshelfPorting.Runtime
                 return 0;
             }
 
+            // totalLikeCount is stored as the aggregate count excluding the current user's local like.
             return Mathf.Max(0, meta.totalLikeCount + (meta.isLiked ? 1 : 0));
         }
 
@@ -6722,21 +6717,6 @@ namespace BookshelfPorting.Runtime
                           !isBookReportWritePanelOpen &&
                           !isBookReportReadPanelOpen;
             bookFocusToolbarPanel.SetActive(canShow);
-            if (bookFocusFrontButton != null)
-            {
-                bookFocusFrontButton.gameObject.SetActive(false);
-            }
-
-            if (bookFocusBackCoverButton != null)
-            {
-                bookFocusBackCoverButton.gameObject.SetActive(false);
-            }
-
-            if (bookFocusCloseButton != null)
-            {
-                bookFocusCloseButton.gameObject.SetActive(false);
-            }
-
             if (bookFocusWriteReportButton != null)
             {
                 bookFocusWriteReportButton.gameObject.SetActive(canShow && guestbookOwnerMode);
@@ -6896,20 +6876,6 @@ namespace BookshelfPorting.Runtime
             }
 
             bookRatingChoicePanel.transform.SetAsLastSibling();
-        }
-
-        private void ShowFocusedBookFront()
-        {
-            isBookRatingChoicePanelOpen = false;
-            interactionController?.ShowViewedBookFront();
-            RefreshBookFocusToolbar();
-        }
-
-        private void ShowFocusedBookBack()
-        {
-            isBookRatingChoicePanelOpen = false;
-            interactionController?.ShowViewedBookBack();
-            RefreshBookFocusToolbar();
         }
 
         private void OpenActiveViewedBookDetail()
@@ -7289,7 +7255,7 @@ namespace BookshelfPorting.Runtime
             {
                 bookEditMetaText.text = $"위치      {(section != null ? $"{section.row + 1}행 {section.column + 1}열" : "책장 밖")}\n" +
                                         $"상태      {GetReadingStatusLabel(meta.readingStatus)}\n" +
-                                        $"공개      {(meta.isPublic ? "공개" : "비공개")}";
+                                        $"공개      {GetVisibilityLabel(meta.reportVisibility)}";
             }
 
             if (bookEditHintText != null)
@@ -9420,7 +9386,7 @@ namespace BookshelfPorting.Runtime
             }
         }
 
-        private static Image CreateHudImage(Transform parent, string name, Vector2 anchoredPosition, Vector2 size, Vector2 anchor, Color color)
+        private static Image CreateHudImage(Transform parent, string name, Vector2 anchoredPosition, Vector2 size, Vector2 anchor, Color color, bool isVisible = true)
         {
             var imageObject = new GameObject(name);
             imageObject.transform.SetParent(parent, false);
@@ -9429,10 +9395,7 @@ namespace BookshelfPorting.Runtime
             ApplyRoundedSprite(image);
             image.color = color;
             image.raycastTarget = false;
-            if (name != null && name.Contains("Accent"))
-            {
-                imageObject.SetActive(false);
-            }
+            imageObject.SetActive(isVisible);
 
             var rect = imageObject.GetComponent<RectTransform>();
             rect.anchorMin = anchor;

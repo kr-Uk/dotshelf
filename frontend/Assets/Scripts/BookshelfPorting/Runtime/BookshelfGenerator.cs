@@ -9,6 +9,13 @@ namespace BookshelfPorting.Runtime
 {
     public class BookshelfGenerator : MonoBehaviour
     {
+        private enum BookLabelKind
+        {
+            Cover,
+            BackCover,
+            Spine
+        }
+
         private const int InitialBookshelfCount = 3;
         private const float BookshelfAnchorZ = 1.285f;
         private const float RoomWidth = 4.2f;
@@ -899,6 +906,12 @@ namespace BookshelfPorting.Runtime
         private void SpawnBooks(List<ShelfSection> sections, int variantIndex, Transform targetBooksRoot, bool registerInState)
         {
             EnsureBookCatalog();
+            if (bookCatalogItems.Count == 0)
+            {
+                Debug.LogWarning("Bookshelf catalog is empty; skipping book generation so stale mock/default book data is not shown.");
+                return;
+            }
+
             Random.InitState(randomSeed + variantIndex * 137);
             var prefabs = GetQaBookPrefabs();
 
@@ -1061,6 +1074,7 @@ namespace BookshelfPorting.Runtime
             CreateBookCoverCanvas(
                 labelsRoot.transform,
                 "FrontCoverCanvas",
+                BookLabelKind.Cover,
                 FormatFrontCoverText(book),
                 new Vector3(BookCoverSurfaceOffset, 0.02f, 0f),
                 Quaternion.Euler(0f, -90f, 0f),
@@ -1069,6 +1083,7 @@ namespace BookshelfPorting.Runtime
             CreateBookCoverCanvas(
                 labelsRoot.transform,
                 "BackCoverCanvas",
+                BookLabelKind.BackCover,
                 FormatBackCoverText(book),
                 new Vector3(-BookCoverSurfaceOffset, 0f, 0f),
                 Quaternion.Euler(0f, 90f, 0f),
@@ -1077,6 +1092,7 @@ namespace BookshelfPorting.Runtime
             CreateBookCoverCanvas(
                 labelsRoot.transform,
                 "SpineTitleCanvas",
+                BookLabelKind.Spine,
                 FormatSpineTitleText(book),
                 new Vector3(0f, 0.02f, -BookCoverSurfaceOffset),
                 Quaternion.Euler(0f, 180f, 0f),
@@ -1087,13 +1103,14 @@ namespace BookshelfPorting.Runtime
         private static void CreateBookCoverCanvas(
             Transform parent,
             string name,
+            BookLabelKind kind,
             string text,
             Vector3 localPosition,
             Quaternion localRotation,
             int fontSize,
             Color color)
         {
-            var isSpineTitle = name == "SpineTitleCanvas";
+            var isSpineTitle = kind == BookLabelKind.Spine;
             var labelObject = new GameObject(name, typeof(RectTransform));
             labelObject.transform.SetParent(parent, false);
             labelObject.transform.localPosition = localPosition;

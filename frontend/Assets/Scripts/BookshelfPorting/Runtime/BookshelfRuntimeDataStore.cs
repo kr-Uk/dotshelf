@@ -241,8 +241,8 @@ namespace BookshelfPorting.Runtime
                 isPaidCoverOwned = book.isPaidCoverOwned,
                 isDecoration = book.isDecoration,
                 isRead = book.isRead,
-                isPublic = book.isPublic,
-                reportVisibility = book.isPublic ? VisibilityScope.Public : VisibilityScope.Private,
+                isPublic = book.reportVisibility == VisibilityScope.Public,
+                reportVisibility = book.reportVisibility,
                 memoPreview = ResolveMemoPreview(book),
                 reportTitle = string.Empty,
                 reportBody = string.Empty,
@@ -271,6 +271,7 @@ namespace BookshelfPorting.Runtime
             book.isDecoration = meta.isDecoration;
             book.isRead = meta.readingStatus == ReadingStatus.Read;
             meta.isPublic = meta.reportVisibility == VisibilityScope.Public;
+            book.reportVisibility = meta.reportVisibility;
             book.isPublic = meta.isPublic;
             if (string.IsNullOrWhiteSpace(meta.memoPreview) && !string.IsNullOrWhiteSpace(meta.reportBody))
             {
@@ -322,8 +323,7 @@ namespace BookshelfPorting.Runtime
                 return Mathf.Clamp(book.ownerRating, 0f, 5f);
             }
 
-            var seed = StableHash(string.IsNullOrWhiteSpace(book.bookId) ? book.title : book.bookId);
-            return Mathf.Clamp(3.4f + seed % 14 * 0.1f, 0f, 5f);
+            return 0f;
         }
 
         private static int ResolveDefaultLikeCount(BookEntity book)
@@ -333,27 +333,7 @@ namespace BookshelfPorting.Runtime
                 return 0;
             }
 
-            var seed = StableHash(string.IsNullOrWhiteSpace(book.bookId) ? book.title : book.bookId);
-            return 8 + seed % 93 + (book.isLiked ? 1 : 0);
-        }
-
-        private static int StableHash(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-            {
-                return 0;
-            }
-
-            unchecked
-            {
-                var hash = 23;
-                for (var i = 0; i < value.Length; i++)
-                {
-                    hash = hash * 31 + value[i];
-                }
-
-                return Mathf.Abs(hash);
-            }
+            return 0;
         }
     }
 }
