@@ -19,16 +19,24 @@ import { cn } from "@/lib/utils";
 import { canRoleSeeNav, type NavKey } from "@/lib/permissions";
 import { useAdminAccount } from "@/lib/use-admin-account";
 
-const NAV_ITEMS: { key: NavKey; href: string; label: string; icon: typeof LayoutDashboard }[] = [
+type NavItem = {
+  key: NavKey;
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  disabled?: boolean;
+};
+
+const NAV_ITEMS: NavItem[] = [
   { key: "dashboard", href: "/dashboard", label: "홈", icon: LayoutDashboard },
-  { key: "reviews", href: "/reviews", label: "심사", icon: ClipboardCheck },
-  { key: "signups", href: "/signups", label: "가입", icon: UserCog },
   { key: "moderation", href: "/moderation", label: "모더레이션", icon: Flag },
   { key: "settlements", href: "/settlements", label: "정산", icon: Coins },
   { key: "users", href: "/users", label: "사용자·공간", icon: UsersRound },
   { key: "stats", href: "/stats", label: "통계", icon: TrendingUp },
   { key: "operations", href: "/operations", label: "운영", icon: Megaphone },
   { key: "audit", href: "/audit", label: "감사 로그", icon: FileSearch },
+  { key: "reviews", href: "/reviews", label: "심사", icon: ClipboardCheck, disabled: true },
+  { key: "signups", href: "/signups", label: "가입", icon: UserCog, disabled: true },
 ];
 
 export function Sidebar() {
@@ -36,6 +44,8 @@ export function Sidebar() {
   const auth = useAdminAccount();
   const role = auth?.account.role;
   const items = NAV_ITEMS.filter((it) => canRoleSeeNav(role, it.key));
+  const enabledItems = items.filter((it) => !it.disabled);
+  const disabledItems = items.filter((it) => it.disabled);
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="px-5 py-5">
@@ -53,7 +63,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 px-3 pb-4">
-        {items.map(({ href, label, icon: Icon }) => {
+        {enabledItems.map(({ href, label, icon: Icon }) => {
           const active =
             pathname === href ||
             (href !== "/dashboard" && pathname.startsWith(href));
@@ -73,6 +83,21 @@ export function Sidebar() {
             </Link>
           );
         })}
+        {disabledItems.length > 0 ? (
+          <div className="mt-auto border-t border-sidebar-border pt-2">
+            {disabledItems.map(({ href, label, icon: Icon }) => (
+              <div
+                key={href}
+                aria-disabled="true"
+                title="현재 사용하지 않음"
+                className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground/45"
+              >
+                <Icon className="size-4" />
+                {label}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </nav>
 
       <div className="border-t border-sidebar-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">

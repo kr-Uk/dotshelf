@@ -46,6 +46,10 @@ jwt:
   refresh-token-validity-seconds: ${JWT_REFRESH_TTL:2592000}
   issuer: dotshelf
 
+admin:
+  # 테스트 환경에서만 true로 설정한다. true이면 /v1/admin/** 인증/인가를 우회한다.
+  auth-bypass: ${ADMIN_AUTH_BYPASS:false}
+
 social:
   google:
     server-client-id: ${GOOGLE_SERVER_CLIENT_ID:${GOOGLE_CLIENT_ID:}}
