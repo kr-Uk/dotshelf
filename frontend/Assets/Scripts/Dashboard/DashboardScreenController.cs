@@ -174,8 +174,15 @@ namespace Dotshelf.Scripts.Dashboard
             }
             if (likeToggleButton != null)
             {
-                // 본인 공간엔 좋아요 버튼 안 띄움 (자기 공간에 좋아요 누르는 건 어색).
-                likeToggleButton.style.display = isMine ? DisplayStyle.None : DisplayStyle.Flex;
+                // 본인 공간엔 클릭 비활성 (정적 표시), 방문자 공간엔 토글 가능.
+                if (isMine)
+                {
+                    likeToggleButton.AddToClassList("read-only");
+                }
+                else
+                {
+                    likeToggleButton.RemoveFromClassList("read-only");
+                }
             }
         }
 
@@ -241,7 +248,7 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void OnLikeButtonClicked()
         {
-            if (likeRequestInFlight || currentSnapshot == null)
+            if (viewMode == ViewMode.Mine || likeRequestInFlight || currentSnapshot == null)
             {
                 return;
             }

@@ -72,20 +72,32 @@
 }
 
 .like-toggle-button {
-    width: 36px;
-    height: 36px;
-    font-size: 18px;
     background-color: transparent;
-    border-width: 1px;
-    border-color: rgb(220, 200, 200);
-    border-radius: 18px;
-    color: rgb(180, 80, 80);
+    border-width: 0;
+    padding: 0;
+    margin: 0 6px 0 0;
+    font-size: 16px;
+    color: rgb(180, 130, 130);
+    min-width: auto;
+    min-height: auto;
 }
 
 .like-toggle-button.liked {
-    background-color: rgb(255, 220, 220);
-    color: rgb(200, 50, 50);
+    color: rgb(220, 60, 60);
     -unity-font-style: bold;
+}
+
+.like-toggle-button.read-only {
+    color: rgb(180, 130, 130);
+}
+
+.like-toggle-button.read-only:hover {
+    color: rgb(180, 130, 130);
+    background-color: transparent;
+}
+
+.like-toggle-button:hover {
+    color: rgb(220, 60, 60);
 }
 
 .introduction-label {

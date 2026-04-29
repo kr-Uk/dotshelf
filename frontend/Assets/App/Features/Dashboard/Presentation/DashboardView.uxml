@@ -14,7 +14,6 @@
                                 <ui:Label name="following-count-label" class="follow-stat" text="팔로잉 0" />
                                 <ui:Label name="followers-count-label" class="follow-stat" text="팔로워 0" />
                             </ui:VisualElement>
-                            <ui:Button name="like-toggle-button" class="like-toggle-button" text="♡" />
                         </ui:VisualElement>
                         <ui:Label name="introduction-label" class="introduction-label" text="" />
                     </ui:VisualElement>
@@ -22,7 +21,7 @@
 
                 <ui:VisualElement name="stats-row" class="stats-row">
                     <ui:VisualElement name="stat-likes" class="stat-cell">
-                        <ui:Label class="stat-icon" text="♥" />
+                        <ui:Button name="like-toggle-button" class="like-toggle-button" text="♥" />
                         <ui:Label name="like-count-label" class="stat-value" text="0" />
                     </ui:VisualElement>
                     <ui:VisualElement name="stat-books" class="stat-cell">
