@@ -215,6 +215,7 @@ namespace BookshelfPorting.Runtime
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
         private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
+        private NotebookRuntimeUseCase notebookRuntimeUseCase;
 
         private Canvas hudCanvas;
         private Button overlayPreviousFocusButton;
@@ -537,12 +538,14 @@ namespace BookshelfPorting.Runtime
         public void ConfigureNotebookBookUseCases(
             SearchNotebookBooksUseCase searchUseCase,
             LoadNotebookMarketBooksUseCase loadMarketUseCase,
-            AddNotebookBookToShelfUseCase addUseCase)
+            AddNotebookBookToShelfUseCase addUseCase,
+            NotebookRuntimeUseCase runtimeUseCase = null)
         {
             searchNotebookBooksUseCase = searchUseCase;
             loadNotebookMarketBooksUseCase = loadMarketUseCase;
             addNotebookBookToShelfUseCase = addUseCase;
-            notebookScreenController?.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase);
+            notebookRuntimeUseCase = runtimeUseCase;
+            notebookScreenController?.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase);
         }
 
         private void Awake()
@@ -8935,7 +8938,8 @@ namespace BookshelfPorting.Runtime
                 FocusNotebook,
                 searchNotebookBooksUseCase,
                 loadNotebookMarketBooksUseCase,
-                addNotebookBookToShelfUseCase);
+                addNotebookBookToShelfUseCase,
+                notebookRuntimeUseCase);
         }
 
         private void ShowNotebookScreen()

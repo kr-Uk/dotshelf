@@ -44,7 +44,11 @@ namespace App.Infrastructure.Api
         public void Configure(string apiBaseUrl, string token = null, int timeout = 10)
         {
             baseUrl = NormalizeBaseUrl(apiBaseUrl, baseUrl);
-            accessToken = token;
+            if (token != null)
+            {
+                accessToken = token;
+            }
+
             timeoutSeconds = Mathf.Max(1, timeout);
         }
 

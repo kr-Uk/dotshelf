@@ -30,7 +30,7 @@ namespace App.Features.Notebook.Presentation
                 int records,
                 Color coverColor,
                 Color accentColor,
-                string apiSource = "MOCK",
+                string apiSource = "API",
                 long? serverBookId = null,
                 string isbn13 = null,
                 string isbn10 = null,
@@ -53,7 +53,7 @@ namespace App.Features.Notebook.Presentation
                 Records = records;
                 CoverColor = coverColor;
                 AccentColor = accentColor;
-                ApiSource = string.IsNullOrWhiteSpace(apiSource) ? "MOCK" : apiSource;
+                ApiSource = string.IsNullOrWhiteSpace(apiSource) ? "API" : apiSource;
                 ServerBookId = serverBookId;
                 Isbn13 = isbn13;
                 Isbn10 = isbn10;
@@ -221,24 +221,6 @@ namespace App.Features.Notebook.Presentation
 
         [SerializeField] private UIDocument document;
 
-        private readonly SpaceViewModel[] spaces =
-        {
-            new("s1", "u-hansu", "한수정", "밤의 문장 작업실", "에세이 · 차분한 서재", "책상 위 노트와 낮은 조명으로 만든 조용한 기록 공간입니다.", "night-writing-room", 1842, 734, 9230, Accent),
-            new("s2", "u-jaehoon", "이재훈", "일요일 경제 책상", "경제/경영 · 실용형", "차트와 메모 보드가 함께 놓인 주말 독서 루틴 공간입니다.", "sunday-economy-desk", 1320, 521, 7088, Gold),
-            new("s3", "u-mina", "조민아", "끝없는 방의 서가", "SF/판타지 · 몰입형", "어두운 벽면과 별빛 오브젝트로 세계관을 강조한 공간입니다.", "endless-sf-shelf", 2164, 1188, 11340, Violet),
-            new("s4", "u-ajine", "김아진", "문장 수집 선반", "인문 · 큐레이션", "좋은 문장을 모아 둔 카드와 책등 색이 중심인 전시형 서재입니다.", "sentence-collector-shelf", 970, 408, 6124, Coral),
-        };
-
-        private readonly DecorObjectViewModel[] decorObjects =
-        {
-            new("o1", "월넛 책장", "필수 배치 오브젝트", "책 시장과 연결되는 기본 책장 오브젝트입니다.", 900, 9820, 6, Hex(0x815A3B), Gold),
-            new("o2", "독서 대시보드", "필수 배치 오브젝트", "독서 진행률과 기록 수를 보여주는 노트북 옆 패널입니다.", 1200, 8640, 5, AccentDeep, Accent),
-            new("o3", "스카이 노트북", "필수 배치 오브젝트", "노트북 포커싱 진입점을 강조하는 밝은 노트북 스킨입니다.", 1600, 9320, 7, Accent, Surface),
-            new("o4", "아치형 창문 벽", "기타 배치 오브젝트", "서재 뒤편에 깊이감을 더하는 벽 장식입니다.", 700, 6030, 3, Hex(0xBEE2FF), AccentDeep),
-            new("o5", "체크 패턴 바닥", "기타 배치 오브젝트", "책상 아래 공간을 정리해 보이게 만드는 바닥 패턴입니다.", 650, 5740, 2, Hex(0xF4C95D), Ink),
-            new("o6", "푸른 편집자 테마", "전체 테마", "책장, 책상, 배경 조명을 한 번에 바꾸는 전체 테마입니다.", 2200, 10240, 8, Night, Accent),
-        };
-
         private readonly Dictionary<string, Button> headerTabButtons = new();
         private readonly Dictionary<string, Button> categoryButtons = new();
         private readonly Dictionary<string, Button> subTabButtons = new();
@@ -248,7 +230,7 @@ namespace App.Features.Notebook.Presentation
         private readonly Dictionary<string, Button> objectSortButtons = new();
         private readonly Dictionary<string, Button> objectCategoryButtons = new();
         private readonly List<Button> pageButtons = new();
-        private readonly HashSet<string> addedBookIds = new() { "r3" };
+        private readonly HashSet<string> addedBookIds = new();
         private readonly HashSet<string> followedUserIds = new();
         private readonly HashSet<string> likedSpaceIds = new();
         private readonly HashSet<string> wishedObjectIds = new();
@@ -256,7 +238,10 @@ namespace App.Features.Notebook.Presentation
         private readonly HashSet<string> favoriteBookIds = new();
         private readonly HashSet<string> pendingShelfBookIds = new();
         private readonly Dictionary<string, List<BookReviewViewModel>> bookReviewMap = new();
+        private readonly HashSet<string> requestedBookReviewIds = new();
         private readonly List<Button> bookRatingStarButtons = new();
+        private SpaceViewModel[] apiSpaces = Array.Empty<SpaceViewModel>();
+        private DecorObjectViewModel[] apiDecorObjects = Array.Empty<DecorObjectViewModel>();
 
         private UnityAction closeRequested;
         private Font uiFont;
@@ -326,12 +311,14 @@ namespace App.Features.Notebook.Presentation
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
         private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
+        private NotebookRuntimeUseCase notebookRuntimeUseCase;
         private BookViewModel[] marketBooks = Array.Empty<BookViewModel>();
         private BookViewModel[] searchResults = Array.Empty<BookViewModel>();
         private int toastHideVersion;
         private int dashboardShowVersion;
         private int searchRequestVersion;
         private int marketBooksRequestVersion;
+        private int runtimeRequestVersion;
 
         private string query = string.Empty;
         private string appliedSearchQuery = string.Empty;
@@ -345,7 +332,7 @@ namespace App.Features.Notebook.Presentation
         private string activeObjectCategory = ObjectCategories[0];
         private int selectedBookIndex;
         private int pageIndex;
-        private int pages = 4820;
+        private int pages;
         private int pageScrollbarPointerId = -1;
         private float pageScrollbarStartPointerY;
         private float pageScrollbarStartOffsetY;
@@ -358,6 +345,8 @@ namespace App.Features.Notebook.Presentation
         private bool searchLoading;
         private bool marketBooksLoading;
         private bool marketBooksRequested;
+        private bool runtimeDataRequested;
+        private bool runtimeDataLoading;
         private BookViewModel selectedBookOverride;
         private float selectedReviewRating = 5f;
 
@@ -421,24 +410,33 @@ namespace App.Features.Notebook.Presentation
             UnityAction onCloseRequested,
             SearchNotebookBooksUseCase searchUseCase = null,
             LoadNotebookMarketBooksUseCase loadMarketUseCase = null,
-            AddNotebookBookToShelfUseCase addUseCase = null)
+            AddNotebookBookToShelfUseCase addUseCase = null,
+            NotebookRuntimeUseCase runtimeUseCase = null)
         {
             closeRequested = onCloseRequested;
-            ConfigureNotebookBookUseCases(searchUseCase, loadMarketUseCase, addUseCase);
+            ConfigureNotebookBookUseCases(searchUseCase, loadMarketUseCase, addUseCase, runtimeUseCase);
             ResolveDocument();
         }
 
         public void ConfigureNotebookBookUseCases(
             SearchNotebookBooksUseCase searchUseCase,
             LoadNotebookMarketBooksUseCase loadMarketUseCase,
-            AddNotebookBookToShelfUseCase addUseCase)
+            AddNotebookBookToShelfUseCase addUseCase,
+            NotebookRuntimeUseCase runtimeUseCase = null)
         {
             searchNotebookBooksUseCase = searchUseCase;
             loadNotebookMarketBooksUseCase = loadMarketUseCase;
             addNotebookBookToShelfUseCase = addUseCase;
+            notebookRuntimeUseCase = runtimeUseCase;
             marketBooksRequested = false;
             marketBooksLoading = false;
+            runtimeDataRequested = false;
+            runtimeDataLoading = false;
             marketBooks = Array.Empty<BookViewModel>();
+            apiSpaces = Array.Empty<SpaceViewModel>();
+            apiDecorObjects = Array.Empty<DecorObjectViewModel>();
+            bookReviewMap.Clear();
+            requestedBookReviewIds.Clear();
             selectedBookOverride = null;
             selectedBookIndex = 0;
 
@@ -996,9 +994,7 @@ namespace App.Features.Notebook.Presentation
             charge.style.marginLeft = 8;
             charge.clicked += () =>
             {
-                pages += 1000;
-                ShowToast("+1,000P 충전 완료");
-                RefreshWallet();
+                ChargePagesThroughApi(1000);
             };
             right.Add(charge);
 
@@ -1603,7 +1599,7 @@ namespace App.Features.Notebook.Presentation
             reviewPanel.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
             reviewPanel.style.display = DisplayStyle.None;
             reviewPanel.style.position = Position.Absolute;
-            reviewPanel.style.right = 22;
+            reviewPanel.style.right = 78;
             reviewPanel.style.top = 30;
             reviewPanel.style.bottom = 30;
             reviewPanel.style.width = 360;
@@ -1626,7 +1622,7 @@ namespace App.Features.Notebook.Presentation
             reviewTitle.style.alignItems = Align.Center;
             reviewTitle.style.marginBottom = 6;
             reviewPanel.Add(reviewTitle);
-            var reviewHeading = Text("인기 리뷰", 17, Ink, FontStyle.Bold);
+            var reviewHeading = Text("리뷰", 17, Ink, FontStyle.Bold);
             reviewTitle.Add(reviewHeading);
             var reviewHint = Text("더보기를 누르면 전체 리뷰로 전환됩니다.", 11, FaintInk, FontStyle.Normal);
             reviewHint.style.marginLeft = 10;
@@ -1781,9 +1777,14 @@ namespace App.Features.Notebook.Presentation
             grid.style.alignItems = Align.Stretch;
             parent.Add(grid);
 
-            foreach (var space in spaces)
+            foreach (var space in apiSpaces)
             {
                 grid.Add(CreateSpaceCard(space));
+            }
+
+            if (apiSpaces.Length == 0)
+            {
+                grid.Add(EmptyState(runtimeDataLoading ? "공간 API를 불러오는 중입니다." : "표시할 공간 API 데이터가 없습니다."));
             }
         }
 
@@ -1919,9 +1920,7 @@ namespace App.Features.Notebook.Presentation
             follow.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
             follow.clicked += () =>
             {
-                ToggleSet(followedUserIds, space.OwnerId);
-                RefreshFollowButton(follow, space.OwnerId);
-                ShowToast(followedUserIds.Contains(space.OwnerId) ? $"{space.Owner}님을 팔로우했습니다." : $"{space.Owner}님 팔로우를 해제했습니다.");
+                ToggleSpaceFollowThroughApi(space, follow);
             };
             actions.Add(follow);
             RefreshFollowButton(follow, space.OwnerId);
@@ -1931,9 +1930,7 @@ namespace App.Features.Notebook.Presentation
             like.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
             like.clicked += () =>
             {
-                ToggleSet(likedSpaceIds, space.Id);
-                RefreshToggleButton(like, likedSpaceIds.Contains(space.Id), "좋아요 취소", "공간 좋아요");
-                ShowToast(likedSpaceIds.Contains(space.Id) ? $"공간을 좋아요했습니다 · {space.Title}" : $"공간 좋아요를 취소했습니다 · {space.Title}");
+                ToggleSpaceLikeThroughApi(space, like);
             };
             actions.Add(like);
             RefreshToggleButton(like, likedSpaceIds.Contains(space.Id), "좋아요 취소", "공간 좋아요");
@@ -1973,7 +1970,7 @@ namespace App.Features.Notebook.Presentation
                 {
                     activeObjectSort = captured;
                     RefreshFilters();
-                    RefreshObjectMarket();
+                    RequestRuntimeAssets();
                 };
                 objectSortButtons[sort] = button;
                 control.Add(button);
@@ -1997,7 +1994,7 @@ namespace App.Features.Notebook.Presentation
                 {
                     activeObjectCategory = captured;
                     RefreshFilters();
-                    RefreshObjectMarket();
+                    RequestRuntimeAssets();
                 };
                 objectCategoryButtons[category] = button;
                 control.Add(button);
@@ -2017,7 +2014,7 @@ namespace App.Features.Notebook.Presentation
             }
 
             objectList.Clear();
-            IEnumerable<DecorObjectViewModel> filtered = decorObjects;
+            IEnumerable<DecorObjectViewModel> filtered = apiDecorObjects;
             if (activeObjectCategory != "전체")
             {
                 filtered = filtered.Where(item => item.Category == activeObjectCategory);
@@ -2034,6 +2031,11 @@ namespace App.Features.Notebook.Presentation
             foreach (var item in items)
             {
                 objectList.Add(CreateObjectCard(item));
+            }
+
+            if (items.Length == 0)
+            {
+                objectList.Add(EmptyState(runtimeDataLoading ? "오브젝트 API를 불러오는 중입니다." : "표시할 오브젝트 API 데이터가 없습니다."));
             }
 
             if (objectResultLabel != null)
@@ -2134,9 +2136,7 @@ namespace App.Features.Notebook.Presentation
             wish.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
             wish.clicked += () =>
             {
-                ToggleSet(wishedObjectIds, item.Id);
-                RefreshToggleButton(wish, wishedObjectIds.Contains(item.Id), "찜 해제", "찜하기");
-                ShowToast(wishedObjectIds.Contains(item.Id) ? $"위시리스트에 추가 · {item.Name}" : $"위시리스트에서 제거 · {item.Name}");
+                ToggleObjectWishThroughApi(item, wish);
             };
             actions.Add(wish);
             RefreshToggleButton(wish, wishedObjectIds.Contains(item.Id), "찜 해제", "찜하기");
@@ -2802,6 +2802,7 @@ namespace App.Features.Notebook.Presentation
         private void RefreshAll()
         {
             EnsureMarketBooksRequested();
+            EnsureRuntimeDataRequested();
             RefreshWallet();
             RefreshFilters();
             RefreshCommunityPanels();
@@ -3085,13 +3086,7 @@ namespace App.Features.Notebook.Presentation
 
             if (!bookReviewMap.TryGetValue(book.Id, out var reviews))
             {
-                reviews = new List<BookReviewViewModel>
-                {
-                    new("서재 이웃", Mathf.Clamp(book.Rating, 0f, 5f), $"{book.Title}의 분위기와 문장이 오래 남았어요."),
-                    new("Dotshelf 독자", Mathf.Clamp(book.Rating - 0.2f, 0f, 5f), book.Summary),
-                    new("책장 큐레이터", Mathf.Clamp(book.Rating - 0.4f, 0f, 5f), "책장에 배치했을 때 표지 색과 분위기가 잘 살아납니다."),
-                    new("심야 독자", Mathf.Clamp(book.Rating - 0.6f, 0f, 5f), "짧게 읽기에도 좋고, 다시 펼쳐볼 문장이 많았습니다."),
-                };
+                reviews = new List<BookReviewViewModel>();
                 bookReviewMap[book.Id] = reviews;
             }
 
@@ -3125,6 +3120,55 @@ namespace App.Features.Notebook.Presentation
             return GetBookReviews(book)
                 .OrderByDescending(review => review.Rating)
                 .ThenBy(review => review.Author);
+        }
+
+        private void RequestBookReviews(BookViewModel book)
+        {
+            if (book == null || requestedBookReviewIds.Contains(book.Id))
+            {
+                return;
+            }
+
+            requestedBookReviewIds.Add(book.Id);
+            bookReviewMap[book.Id] = new List<BookReviewViewModel>();
+
+            if (notebookRuntimeUseCase == null || !TryResolveBookApiId(book, out var bookId))
+            {
+                UnityEngine.Debug.LogWarning($"Book review API skipped. book={book.Id}");
+                return;
+            }
+
+            notebookRuntimeUseCase.LoadBookReviews(
+                bookId,
+                result =>
+                {
+                    var reviews = new List<BookReviewViewModel>();
+                    var items = result?.Reviews;
+                    if (items != null)
+                    {
+                        foreach (var item in items)
+                        {
+                            if (item == null)
+                            {
+                                continue;
+                            }
+
+                            reviews.Add(new BookReviewViewModel(
+                                FirstText(item.Author, "API"),
+                                Mathf.Clamp(item.Rating, 0f, 5f),
+                                FirstText(item.Content, string.Empty)));
+                        }
+                    }
+
+                    bookReviewMap[book.Id] = reviews;
+                    RefreshBookDetailPage(book);
+                },
+                error =>
+                {
+                    UnityEngine.Debug.LogWarning($"Book review list API failed. book={book.Id}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    bookReviewMap[book.Id] = new List<BookReviewViewModel>();
+                    RefreshBookDetailPage(book);
+                });
         }
 
         private VisualElement CreateBookReviewCard(BookReviewViewModel review)
@@ -3173,6 +3217,7 @@ namespace App.Features.Notebook.Presentation
             showingAllBookReviews = false;
             selectedReviewRating = 5f;
             SetBookReviewsOpen(false, false);
+            RequestBookReviews(book);
             RefreshBookDetailPage(book);
             if (bookDetailContent != null)
             {
@@ -3194,7 +3239,7 @@ namespace App.Features.Notebook.Presentation
             RefreshBookReviews(GetSelectedBook());
             if (bookReviewPanel != null && bookReviewsOpen)
             {
-                SlideFadeInFromRight(bookReviewPanel, -10, 22, 0.14f);
+                SlideFadeInFromRight(bookReviewPanel, 40, 78, 0.14f);
             }
         }
 
@@ -3215,11 +3260,11 @@ namespace App.Features.Notebook.Presentation
                     bookReviewPanel.style.display = DisplayStyle.Flex;
                     if (animate)
                     {
-                        SlideFadeInFromRight(bookReviewPanel, -30, 22, 0.22f);
+                        SlideFadeInFromRight(bookReviewPanel, 28, 78, 0.22f);
                     }
                     else
                     {
-                        bookReviewPanel.style.right = 22;
+                        bookReviewPanel.style.right = 78;
                         bookReviewPanel.style.opacity = 1f;
                     }
                 }
@@ -3232,7 +3277,7 @@ namespace App.Features.Notebook.Presentation
             if (bookDetailModalPanel != null)
             {
                 bookDetailModalPanel.style.height = 650;
-                bookDetailModalPanel.style.marginRight = open ? 392 : 0;
+                bookDetailModalPanel.style.marginRight = open ? 300 : 0;
             }
         }
 
@@ -3281,9 +3326,27 @@ namespace App.Features.Notebook.Presentation
                 return;
             }
 
-            ToggleSet(favoriteBookIds, book.Id);
-            RefreshFavoriteBookButton(book);
-            ShowToast(favoriteBookIds.Contains(book.Id) ? $"즐겨찾기에 추가 · {book.Title}" : $"즐겨찾기 해제 · {book.Title}");
+            if (notebookRuntimeUseCase == null || !TryResolveBookApiId(book, out var bookId))
+            {
+                ShowToast("즐겨찾기 API에 필요한 책 식별자가 없습니다.");
+                return;
+            }
+
+            var nextFavorite = !favoriteBookIds.Contains(book.Id);
+            notebookRuntimeUseCase.SetBookFavorite(
+                bookId,
+                nextFavorite,
+                result =>
+                {
+                    SetLocalState(favoriteBookIds, book.Id, result?.Active ?? nextFavorite);
+                    RefreshFavoriteBookButton(book);
+                    ShowToast(favoriteBookIds.Contains(book.Id) ? $"즐겨찾기에 추가 · {book.Title}" : $"즐겨찾기 해제 · {book.Title}");
+                },
+                error =>
+                {
+                    UnityEngine.Debug.LogWarning($"Book favorite API failed. book={book.Id}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    ShowToast("즐겨찾기 API 요청에 실패했습니다.");
+                });
         }
 
         private void SubmitBookReview()
@@ -3301,17 +3364,38 @@ namespace App.Features.Notebook.Presentation
                 return;
             }
 
-            var rating = selectedReviewRating;
-            GetBookReviews(book).Insert(0, new BookReviewViewModel("나", rating, content));
-            if (bookReviewInput != null)
+            if (notebookRuntimeUseCase == null || !TryResolveBookApiId(book, out var bookId))
             {
-                bookReviewInput.value = string.Empty;
+                ShowToast("리뷰 API에 필요한 책 식별자가 없습니다.");
+                return;
             }
 
-            showingAllBookReviews = true;
-            RefreshBookDetailPage(book);
-            SetBookReviewsOpen(true, true);
-            ShowToast("리뷰가 등록되었습니다.");
+            var rating = selectedReviewRating;
+            notebookRuntimeUseCase.CreateBookReview(
+                bookId,
+                rating,
+                content,
+                review =>
+                {
+                    GetBookReviews(book).Insert(0, new BookReviewViewModel(
+                        FirstText(review?.Author, "나"),
+                        review?.Rating > 0 ? review.Rating : rating,
+                        FirstText(review?.Content, content)));
+                    if (bookReviewInput != null)
+                    {
+                        bookReviewInput.value = string.Empty;
+                    }
+
+                    showingAllBookReviews = true;
+                    RefreshBookDetailPage(book);
+                    SetBookReviewsOpen(true, true);
+                    ShowToast("리뷰가 등록되었습니다.");
+                },
+                error =>
+                {
+                    UnityEngine.Debug.LogWarning($"Book review API failed. book={book.Id}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    ShowToast("리뷰 API 요청에 실패했습니다.");
+                });
         }
 
         private IEnumerable<BookViewModel> FilterBooks(bool includeGenre)
@@ -3332,6 +3416,342 @@ namespace App.Features.Notebook.Presentation
 
             marketBooksRequested = true;
             RequestMarketBooks();
+        }
+
+        private void EnsureRuntimeDataRequested()
+        {
+            if (runtimeDataRequested || runtimeDataLoading)
+            {
+                return;
+            }
+
+            runtimeDataRequested = true;
+            RequestRuntimeData();
+        }
+
+        private void RequestRuntimeData()
+        {
+            runtimeRequestVersion++;
+            var requestVersion = runtimeRequestVersion;
+            runtimeDataLoading = true;
+            apiSpaces = Array.Empty<SpaceViewModel>();
+            apiDecorObjects = Array.Empty<DecorObjectViewModel>();
+
+            if (notebookRuntimeUseCase == null)
+            {
+                runtimeDataLoading = false;
+                UnityEngine.Debug.LogWarning("Notebook runtime API use case is not configured; non-book notebook panels will remain empty.");
+                return;
+            }
+
+            RequestWallet(requestVersion);
+            RequestSpaces(requestVersion);
+            RequestAssets(requestVersion);
+        }
+
+        private void CompleteRuntimeRequest(int requestVersion)
+        {
+            if (requestVersion != runtimeRequestVersion)
+            {
+                return;
+            }
+
+            runtimeDataLoading = false;
+            RefreshWallet();
+            RefreshCommunityPanels();
+            RefreshObjectMarket();
+        }
+
+        private void RequestWallet(int requestVersion)
+        {
+            notebookRuntimeUseCase.LoadWallet(
+                wallet =>
+                {
+                    if (requestVersion != runtimeRequestVersion)
+                    {
+                        return;
+                    }
+
+                    pages = Mathf.Max(0, wallet?.BalancePages ?? 0);
+                    RefreshWallet();
+                },
+                error => UnityEngine.Debug.LogWarning($"Notebook wallet API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}"));
+        }
+
+        private void SyncWalletFromApi()
+        {
+            if (notebookRuntimeUseCase == null)
+            {
+                return;
+            }
+
+            notebookRuntimeUseCase.LoadWallet(
+                wallet =>
+                {
+                    pages = Mathf.Max(0, wallet?.BalancePages ?? pages);
+                    RefreshWallet();
+                },
+                error => UnityEngine.Debug.LogWarning($"Notebook wallet sync API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}"));
+        }
+
+        private void RequestSpaces(int requestVersion)
+        {
+            notebookRuntimeUseCase.LoadSpaces(
+                12,
+                result =>
+                {
+                    if (requestVersion != runtimeRequestVersion)
+                    {
+                        return;
+                    }
+
+                    apiSpaces = MapRuntimeSpaces(result).ToArray();
+                    RefreshCommunityPanels();
+                },
+                error =>
+                {
+                    if (requestVersion == runtimeRequestVersion)
+                    {
+                        apiSpaces = Array.Empty<SpaceViewModel>();
+                        RefreshCommunityPanels();
+                    }
+
+                    UnityEngine.Debug.LogWarning($"Notebook spaces API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                });
+        }
+
+        private void RequestAssets(int requestVersion)
+        {
+            notebookRuntimeUseCase.LoadAssets(
+                NormalizeObjectCategoryForApi(activeObjectCategory),
+                NormalizeObjectSortForApi(activeObjectSort),
+                48,
+                result =>
+                {
+                    if (requestVersion != runtimeRequestVersion)
+                    {
+                        return;
+                    }
+
+                    apiDecorObjects = MapRuntimeAssets(result).ToArray();
+                    SyncAssetLocalState(result);
+                    CompleteRuntimeRequest(requestVersion);
+                },
+                error =>
+                {
+                    if (requestVersion == runtimeRequestVersion)
+                    {
+                        apiDecorObjects = Array.Empty<DecorObjectViewModel>();
+                        CompleteRuntimeRequest(requestVersion);
+                    }
+
+                    UnityEngine.Debug.LogWarning($"Notebook assets API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                });
+        }
+
+        private void RequestRuntimeAssets()
+        {
+            runtimeRequestVersion++;
+            var requestVersion = runtimeRequestVersion;
+            apiDecorObjects = Array.Empty<DecorObjectViewModel>();
+            runtimeDataLoading = true;
+            RefreshObjectMarket();
+
+            if (notebookRuntimeUseCase == null)
+            {
+                runtimeDataLoading = false;
+                UnityEngine.Debug.LogWarning("Notebook runtime API use case is not configured; object market will remain empty.");
+                RefreshObjectMarket();
+                return;
+            }
+
+            RequestAssets(requestVersion);
+        }
+
+        private IEnumerable<SpaceViewModel> MapRuntimeSpaces(NotebookSpaceListResult result)
+        {
+            var spacesFromApi = result?.Spaces;
+            if (spacesFromApi == null)
+            {
+                yield break;
+            }
+
+            for (var i = 0; i < spacesFromApi.Count; i++)
+            {
+                var item = spacesFromApi[i];
+                if (item == null)
+                {
+                    continue;
+                }
+
+                var id = item.Id.ToString();
+                var ownerId = item.OwnerUserId.ToString();
+                if (item.Following)
+                {
+                    followedUserIds.Add(ownerId);
+                }
+
+                if (item.Liked)
+                {
+                    likedSpaceIds.Add(id);
+                }
+
+                yield return new SpaceViewModel(
+                    id,
+                    ownerId,
+                    FirstText(item.OwnerName, $"User {item.OwnerUserId}"),
+                    FirstText(item.SpaceName, $"Space {item.Id}"),
+                    "API · COMMUNITY",
+                    FirstText(item.Description, "API에서 불러온 공간입니다."),
+                    "api-space",
+                    ClampToInt(item.FollowerCount),
+                    ClampToInt(item.LikeCount),
+                    ClampToInt(item.VisitCount),
+                    SearchCoverColor(i, id));
+            }
+        }
+
+        private IEnumerable<DecorObjectViewModel> MapRuntimeAssets(NotebookAssetListResult result)
+        {
+            var assets = result?.Assets;
+            if (assets == null)
+            {
+                yield break;
+            }
+
+            for (var i = 0; i < assets.Count; i++)
+            {
+                var item = assets[i];
+                if (item == null)
+                {
+                    continue;
+                }
+
+                var id = item.Id.ToString();
+                var category = ResolveObjectCategory(item);
+                yield return new DecorObjectViewModel(
+                    id,
+                    FirstText(item.Name, item.Code, $"Object {item.Id}"),
+                    category,
+                    FirstText(item.PreviewImageUrl, $"{FirstText(item.Tier, "BASIC")} · {FirstText(item.AssetType, "OBJECT")}"),
+                    Mathf.Max(0, item.PricePages),
+                    Mathf.Max(0, item.Popularity),
+                    assets.Count - i,
+                    SearchCoverColor(i, id),
+                    category == ObjectCategories[0] ? Accent : AccentDeep);
+            }
+        }
+
+        private void SyncAssetLocalState(NotebookAssetListResult result)
+        {
+            var assets = result?.Assets;
+            if (assets == null)
+            {
+                return;
+            }
+
+            foreach (var item in assets)
+            {
+                if (item == null)
+                {
+                    continue;
+                }
+
+                var id = item.Id.ToString();
+                SetLocalState(ownedObjectIds, id, item.Owned);
+                SetLocalState(wishedObjectIds, id, item.Wished);
+            }
+        }
+
+        private static string ResolveObjectCategory(NotebookAssetItem item)
+        {
+            var value = FirstText(item?.Category, item?.AssetType, item?.Tier, string.Empty);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return ObjectCategories[0];
+            }
+
+            if (value.IndexOf("theme", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("THEME", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return ObjectCategories.Length > 3 ? ObjectCategories[3] : ObjectCategories[0];
+            }
+
+            if (value.IndexOf("required", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("book", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("desk", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return ObjectCategories.Length > 1 ? ObjectCategories[1] : ObjectCategories[0];
+            }
+
+            return ObjectCategories.Length > 2 ? ObjectCategories[2] : ObjectCategories[0];
+        }
+
+        private static string NormalizeObjectCategoryForApi(string category)
+        {
+            if (string.IsNullOrWhiteSpace(category) || category == ObjectCategories[0])
+            {
+                return "all";
+            }
+
+            if (ObjectCategories.Length > 3 && category == ObjectCategories[3])
+            {
+                return "theme";
+            }
+
+            if (ObjectCategories.Length > 1 && category == ObjectCategories[1])
+            {
+                return "required";
+            }
+
+            return "decor";
+        }
+
+        private static string NormalizeObjectSortForApi(string sort)
+        {
+            if (string.IsNullOrWhiteSpace(sort))
+            {
+                return "popular";
+            }
+
+            if (ObjectSorts.Length > 1 && sort == ObjectSorts[1])
+            {
+                return "recent";
+            }
+
+            if (ObjectSorts.Length > 2 && sort == ObjectSorts[2])
+            {
+                return "price";
+            }
+
+            return "popular";
+        }
+
+        private static int ClampToInt(long value)
+        {
+            if (value <= 0)
+            {
+                return 0;
+            }
+
+            return value >= int.MaxValue ? int.MaxValue : (int)value;
+        }
+
+        private static void SetLocalState(HashSet<string> set, string key, bool active)
+        {
+            if (set == null || string.IsNullOrWhiteSpace(key))
+            {
+                return;
+            }
+
+            if (active)
+            {
+                set.Add(key);
+            }
+            else
+            {
+                set.Remove(key);
+            }
         }
 
         private void RequestMarketBooks()
@@ -3490,6 +3910,7 @@ namespace App.Features.Notebook.Presentation
                     ? serverBookId.Value.ToString()
                     : FirstText(isbn13, isbn10, dto.SourceUrl, dto.BookId, $"api-{i + 1}");
                 var id = $"{source.ToLowerInvariant()}-{sourceKey}";
+                SetLocalState(addedBookIds, id, dto.Owned);
                 var rating = dto.AvgRating > 0 ? Mathf.Clamp((float)dto.AvgRating, 1f, 5f) : 4.2f;
                 var reviews = Mathf.Max(dto.ReviewCount, dto.LikeCount, dto.PurchaseCount, dto.RecordCount, 1);
                 var views = Mathf.Max(dto.ViewCount, dto.PlacementCount + dto.RecordCount + dto.LikeCount, reviews * 12);
@@ -4308,15 +4729,9 @@ namespace App.Features.Notebook.Presentation
                 return;
             }
 
-            if (book.Price > 0 && pages < book.Price)
-            {
-                ShowToast($"{book.Price - pages:N0}P가 더 필요합니다.");
-                return;
-            }
-
             if (!CanUseShelfApi(book))
             {
-                AddBookToShelfLocal(book);
+                ShowToast("책장 추가 API에 필요한 책 식별자가 없습니다.");
                 return;
             }
 
@@ -4390,7 +4805,8 @@ namespace App.Features.Notebook.Presentation
         private void CompleteApiBookAdded(BookViewModel book, NotebookBookAddResult response)
         {
             pendingShelfBookIds.Remove(book.Id);
-            AddBookToShelfLocal(book);
+            ApplyBookAddedFromApi(book);
+            SyncWalletFromApi();
             UnityEngine.Debug.Log($"Book added to shelf through API. book={book.Id}, userBookId={response?.Id}");
         }
 
@@ -4403,7 +4819,7 @@ namespace App.Features.Notebook.Presentation
             ShowToast("서버 책장 추가에 실패했습니다. 잠시 후 다시 시도해주세요.");
         }
 
-        private void AddBookToShelfLocal(BookViewModel book)
+        private void ApplyBookAddedFromApi(BookViewModel book)
         {
             if (book == null)
             {
@@ -4422,22 +4838,120 @@ namespace App.Features.Notebook.Presentation
                 return;
             }
 
-            if (book.Price > 0 && pages < book.Price)
-            {
-                ShowToast($"{book.Price - pages:N0}P가 더 필요합니다.");
-                return;
-            }
-
-            if (book.Price > 0)
-            {
-                pages -= book.Price;
-                RefreshWallet();
-            }
-
             addedBookIds.Add(book.Id);
             RefreshLists();
             RefreshBookDetailPage(book);
             ShowToast(book.Price > 0 ? $"구매 완료 · {book.Title}" : $"내 책장에 추가됨 · {book.Title}");
+        }
+
+        private void ChargePagesThroughApi(int amount)
+        {
+            if (notebookRuntimeUseCase == null)
+            {
+                ShowToast("페이지 충전 API가 설정되지 않았습니다.");
+                return;
+            }
+
+            notebookRuntimeUseCase.ChargePages(
+                Mathf.Max(1, amount),
+                wallet =>
+                {
+                    pages = Mathf.Max(0, wallet?.BalancePages ?? pages);
+                    RefreshWallet();
+                    ShowToast($"+{amount:N0}P 충전 완료");
+                },
+                error =>
+                {
+                    UnityEngine.Debug.LogWarning($"Page charge API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    ShowToast("페이지 충전 API 요청에 실패했습니다.");
+                });
+        }
+
+        private void ToggleSpaceFollowThroughApi(SpaceViewModel space, Button button)
+        {
+            if (space == null || notebookRuntimeUseCase == null || !TryParseApiId(space.OwnerId, out var userId))
+            {
+                ShowToast("팔로우 API에 필요한 사용자 식별자가 없습니다.");
+                return;
+            }
+
+            var nextFollowing = !followedUserIds.Contains(space.OwnerId);
+            button?.SetEnabled(false);
+            notebookRuntimeUseCase.FollowUser(
+                userId,
+                nextFollowing,
+                result =>
+                {
+                    SetLocalState(followedUserIds, space.OwnerId, result?.Active ?? nextFollowing);
+                    RefreshFollowButton(button, space.OwnerId);
+                    button?.SetEnabled(true);
+                    ShowToast(followedUserIds.Contains(space.OwnerId) ? $"{space.Owner}님을 팔로우했습니다." : $"{space.Owner}님 팔로우를 해제했습니다.");
+                },
+                error =>
+                {
+                    button?.SetEnabled(true);
+                    RefreshFollowButton(button, space.OwnerId);
+                    UnityEngine.Debug.LogWarning($"Space follow API failed. user={space.OwnerId}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    ShowToast("팔로우 API 요청에 실패했습니다.");
+                });
+        }
+
+        private void ToggleSpaceLikeThroughApi(SpaceViewModel space, Button button)
+        {
+            if (space == null || notebookRuntimeUseCase == null || !TryParseApiId(space.Id, out var spaceId))
+            {
+                ShowToast("공간 좋아요 API에 필요한 공간 식별자가 없습니다.");
+                return;
+            }
+
+            var nextLiked = !likedSpaceIds.Contains(space.Id);
+            button?.SetEnabled(false);
+            notebookRuntimeUseCase.LikeSpace(
+                spaceId,
+                nextLiked,
+                result =>
+                {
+                    SetLocalState(likedSpaceIds, space.Id, result?.Active ?? nextLiked);
+                    RefreshToggleButton(button, likedSpaceIds.Contains(space.Id), "좋아요 취소", "공간 좋아요");
+                    button?.SetEnabled(true);
+                    ShowToast(likedSpaceIds.Contains(space.Id) ? $"공간을 좋아요했습니다 · {space.Title}" : $"공간 좋아요를 취소했습니다 · {space.Title}");
+                },
+                error =>
+                {
+                    button?.SetEnabled(true);
+                    RefreshToggleButton(button, likedSpaceIds.Contains(space.Id), "좋아요 취소", "공간 좋아요");
+                    UnityEngine.Debug.LogWarning($"Space like API failed. space={space.Id}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    ShowToast("공간 좋아요 API 요청에 실패했습니다.");
+                });
+        }
+
+        private void ToggleObjectWishThroughApi(DecorObjectViewModel item, Button button)
+        {
+            if (item == null || notebookRuntimeUseCase == null || !TryParseApiId(item.Id, out var assetId))
+            {
+                ShowToast("찜 API에 필요한 오브젝트 식별자가 없습니다.");
+                return;
+            }
+
+            var nextWished = !wishedObjectIds.Contains(item.Id);
+            button?.SetEnabled(false);
+            notebookRuntimeUseCase.WishAsset(
+                assetId,
+                nextWished,
+                result =>
+                {
+                    SetLocalState(wishedObjectIds, item.Id, result?.Active ?? nextWished);
+                    RefreshToggleButton(button, wishedObjectIds.Contains(item.Id), "찜 해제", "찜하기");
+                    button?.SetEnabled(true);
+                    ShowToast(wishedObjectIds.Contains(item.Id) ? $"위시리스트에 추가 · {item.Name}" : $"위시리스트에서 제거 · {item.Name}");
+                },
+                error =>
+                {
+                    button?.SetEnabled(true);
+                    RefreshToggleButton(button, wishedObjectIds.Contains(item.Id), "찜 해제", "찜하기");
+                    UnityEngine.Debug.LogWarning($"Object wish API failed. asset={item.Id}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    ShowToast("찜 API 요청에 실패했습니다.");
+                });
         }
 
         private void PurchaseObject(DecorObjectViewModel item)
@@ -4453,18 +4967,73 @@ namespace App.Features.Notebook.Presentation
                 return;
             }
 
-            if (pages < item.Price)
+            if (!TryParseApiId(item.Id, out var assetId))
             {
-                ShowToast($"{item.Price - pages:N0}P가 더 필요합니다.");
+                ShowToast("API 자산 ID가 없어 구매할 수 없습니다.");
                 return;
             }
 
-            pages -= item.Price;
-            ownedObjectIds.Add(item.Id);
-            wishedObjectIds.Remove(item.Id);
-            RefreshWallet();
-            RefreshObjectMarket();
-            ShowToast($"오브젝트 구매 완료 · {item.Name}");
+            if (notebookRuntimeUseCase == null)
+            {
+                ShowToast("오브젝트 구매 API가 설정되지 않았습니다.");
+                return;
+            }
+
+            notebookRuntimeUseCase.PurchaseAsset(
+                assetId,
+                result =>
+                {
+                    ownedObjectIds.Add(item.Id);
+                    wishedObjectIds.Remove(item.Id);
+                    SyncWalletFromApi();
+                    RefreshObjectMarket();
+                    ShowToast($"오브젝트 구매 완료 · {item.Name}");
+                },
+                error =>
+                {
+                    UnityEngine.Debug.LogWarning($"Object purchase API failed. asset={assetId}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    ShowToast("오브젝트 구매 API 요청에 실패했습니다.");
+                });
+        }
+
+        private static bool TryParseApiId(string value, out long id)
+        {
+            id = 0L;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            var trimmed = value.Trim();
+            if (long.TryParse(trimmed, out id) && id > 0)
+            {
+                return true;
+            }
+
+            var dash = trimmed.LastIndexOf('-');
+            if (dash >= 0 && dash < trimmed.Length - 1)
+            {
+                return long.TryParse(trimmed.Substring(dash + 1), out id) && id > 0;
+            }
+
+            return false;
+        }
+
+        private static bool TryResolveBookApiId(BookViewModel book, out long id)
+        {
+            id = 0L;
+            if (book == null)
+            {
+                return false;
+            }
+
+            if (book.ServerBookId.HasValue && book.ServerBookId.Value > 0)
+            {
+                id = book.ServerBookId.Value;
+                return true;
+            }
+
+            return TryParseApiId(book.Id, out id);
         }
 
         private Label MetricLabel(string text, Color color)
@@ -4478,17 +5047,6 @@ namespace App.Features.Notebook.Presentation
             label.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.05f);
             Round(label, 11);
             return label;
-        }
-
-        private static void ToggleSet(HashSet<string> set, string key)
-        {
-            if (set.Contains(key))
-            {
-                set.Remove(key);
-                return;
-            }
-
-            set.Add(key);
         }
 
         private void RefreshFollowButton(Button button, string userId)

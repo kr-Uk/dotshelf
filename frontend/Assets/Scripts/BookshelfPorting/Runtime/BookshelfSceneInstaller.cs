@@ -166,6 +166,8 @@ namespace BookshelfPorting.Runtime
             var searchNotebookBooksUseCase = new SearchNotebookBooksUseCase(notebookBookRepository);
             var loadNotebookMarketBooksUseCase = new LoadNotebookMarketBooksUseCase(notebookBookRepository);
             var addNotebookBookToShelfUseCase = new AddNotebookBookToShelfUseCase(notebookBookRepository);
+            var notebookRuntimeRepository = CreateNotebookRuntimeRepository(apiMode, apiManager);
+            var notebookRuntimeUseCase = new NotebookRuntimeUseCase(notebookRuntimeRepository);
             if (Application.isPlaying && usesHttpApi)
             {
                 apiManager.CheckHealth(null, apiHealthCheckPath);
@@ -213,7 +215,7 @@ namespace BookshelfPorting.Runtime
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);
             experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
-            experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase);
+            experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase);
             environment.Configure(probe, null);
 
             // Main scene opens in the new MainView pose (derived from the bookshelf focus
@@ -298,6 +300,13 @@ namespace BookshelfPorting.Runtime
             return apiMode != AppApiMode.LocalMock && apiManager != null
                 ? new ApiNotebookBookRepository(new NotebookApiClient(apiManager))
                 : new NoOpNotebookBookRepository();
+        }
+
+        private static INotebookRuntimeRepository CreateNotebookRuntimeRepository(AppApiMode apiMode, APIManager apiManager)
+        {
+            return apiMode != AppApiMode.LocalMock && apiManager != null
+                ? new ApiNotebookRuntimeRepository(new NotebookApiClient(apiManager))
+                : new NoOpNotebookRuntimeRepository();
         }
 
         private static AppApiMode ResolveApiMode(AppApiConfig apiConfig)

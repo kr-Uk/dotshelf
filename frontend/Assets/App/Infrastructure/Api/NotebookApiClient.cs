@@ -237,6 +237,11 @@ namespace App.Infrastructure.Api
             return Post<PageChargeRequestDto, WalletResponseDto>("/v1/payments/page-charge", request, onSuccess, onError);
         }
 
+        public Coroutine GetWallet(Action<WalletResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<WalletResponseDto>("/v1/payments/wallet", onSuccess, onError);
+        }
+
         public Coroutine GetPurchases(Action<PurchaseHistoryListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Get<PurchaseHistoryListResponseDto>("/v1/payments/purchases", onSuccess, onError);
