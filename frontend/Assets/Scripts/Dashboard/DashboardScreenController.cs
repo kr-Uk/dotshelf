@@ -33,9 +33,13 @@ namespace Dotshelf.Scripts.Dashboard
 
         private UIDocument document;
 
+        private const int CarouselItemLimit = 10;
+
         private LoadDashboardUseCase loadDashboardUseCase;
         private ToggleSpaceLikeUseCase toggleLikeUseCase;
         private LoadGuestbookPageUseCase loadGuestbookPageUseCase;
+        private LoadOwnedBooksPageUseCase loadOwnedBooksUseCase;
+        private LoadReadingRecordsPageUseCase loadReadingRecordsUseCase;
 
         private VisualElement root;
         private Label nicknameLabel;
@@ -54,6 +58,8 @@ namespace Dotshelf.Scripts.Dashboard
         private Label guestbookPageLabel;
         private Button editButton;
         private Button writeGuestbookButton;
+        private VisualElement booksCarousel;
+        private VisualElement recordsCarousel;
 
         private DashboardSnapshot currentSnapshot;
         private bool likeRequestInFlight;
@@ -101,10 +107,13 @@ namespace Dotshelf.Scripts.Dashboard
             // P0c는 Mock-only로 가동. Api 토글은 P1+에서 SceneInstaller로 위임 예정.
             IDashboardRepository dashboardRepo = new MockDashboardRepository();
             IGuestbookRepository guestbookRepo = new MockGuestbookRepository();
+            ILibraryViewRepository libraryRepo = new MockLibraryViewRepository();
 
             loadDashboardUseCase = new LoadDashboardUseCase(dashboardRepo);
             toggleLikeUseCase = new ToggleSpaceLikeUseCase(dashboardRepo);
             loadGuestbookPageUseCase = new LoadGuestbookPageUseCase(guestbookRepo);
+            loadOwnedBooksUseCase = new LoadOwnedBooksPageUseCase(libraryRepo);
+            loadReadingRecordsUseCase = new LoadReadingRecordsPageUseCase(libraryRepo);
         }
 
         private void QueryUI()
@@ -125,6 +134,8 @@ namespace Dotshelf.Scripts.Dashboard
             guestbookPageLabel = root.Q<Label>("guestbook-page-label");
             editButton = root.Q<Button>("edit-dashboard-button");
             writeGuestbookButton = root.Q<Button>("write-guestbook-button");
+            booksCarousel = root.Q<VisualElement>("recent-books-carousel");
+            recordsCarousel = root.Q<VisualElement>("recent-records-carousel");
         }
 
         private void WireEvents()
@@ -207,6 +218,108 @@ namespace Dotshelf.Scripts.Dashboard
             currentSnapshot = snapshot;
             RenderHeader(snapshot);
             LoadGuestbookPage(null);
+            LoadRecentBooks();
+            LoadRecentRecords();
+        }
+
+        private void LoadRecentBooks()
+        {
+            long spaceId = currentSnapshot?.Space.Id ?? visitedSpaceId;
+            loadOwnedBooksUseCase.Execute(spaceId, OwnedBookSort.AddedDesc, null,
+                onSuccess: RenderBooksCarousel,
+                onError: OnError);
+        }
+
+        private void LoadRecentRecords()
+        {
+            long ownerId = currentSnapshot?.Space.OwnerUserId ?? 0L;
+            loadReadingRecordsUseCase.Execute(ownerId, ReadingRecordSort.Latest, null,
+                onSuccess: RenderRecordsCarousel,
+                onError: OnError);
+        }
+
+        private void RenderBooksCarousel(OwnedBookListPage page)
+        {
+            if (booksCarousel == null)
+            {
+                return;
+            }
+
+            booksCarousel.Clear();
+            int count = Math.Min(CarouselItemLimit, page.Items.Count);
+            for (int i = 0; i < count; i++)
+            {
+                booksCarousel.Add(BuildBookCell(page.Items[i]));
+            }
+        }
+
+        private static VisualElement BuildBookCell(OwnedBookItem item)
+        {
+            VisualElement cell = new VisualElement();
+            cell.AddToClassList("carousel-cell");
+
+            VisualElement cover = new VisualElement();
+            cover.AddToClassList("book-cover");
+            cell.Add(cover);
+
+            Label title = new Label(item.Title ?? string.Empty);
+            title.AddToClassList("book-cell-title");
+            cell.Add(title);
+
+            return cell;
+        }
+
+        private void RenderRecordsCarousel(ReadingRecordListPage page)
+        {
+            if (recordsCarousel == null)
+            {
+                return;
+            }
+
+            recordsCarousel.Clear();
+            int count = Math.Min(CarouselItemLimit, page.Items.Count);
+            for (int i = 0; i < count; i++)
+            {
+                recordsCarousel.Add(BuildRecordCell(page.Items[i]));
+            }
+        }
+
+        private static VisualElement BuildRecordCell(ReadingRecordItem item)
+        {
+            VisualElement cell = new VisualElement();
+            cell.AddToClassList("record-cell");
+
+            Label title = new Label(item.BookTitle ?? string.Empty);
+            title.AddToClassList("record-cell-title");
+            cell.Add(title);
+
+            Label content = new Label(TruncateContent(item.Content, 50));
+            content.AddToClassList("record-cell-content");
+            cell.Add(content);
+
+            VisualElement metaRow = new VisualElement();
+            metaRow.AddToClassList("record-cell-meta");
+            Label likes = new Label($"♥ {item.LikeCount}");
+            likes.AddToClassList("record-cell-meta-item");
+            metaRow.Add(likes);
+            Label comments = new Label($"💬 {item.CommentCount}");
+            comments.AddToClassList("record-cell-meta-item");
+            metaRow.Add(comments);
+            cell.Add(metaRow);
+
+            return cell;
+        }
+
+        private static string TruncateContent(string content, int maxLength)
+        {
+            if (string.IsNullOrEmpty(content))
+            {
+                return string.Empty;
+            }
+
+            return content.Length <= maxLength
+                ? content
+                : content.Substring(0, maxLength) + "…";
         }
 
         private void RenderHeader(DashboardSnapshot snapshot)

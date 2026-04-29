@@ -168,6 +168,15 @@
     height: 110px;
 }
 
+.carousel-scroll {
+    height: 150px;
+    flex-shrink: 0;
+}
+
+.carousel-scroll .unity-scroll-view__content-container {
+    flex-direction: row;
+}
+
 .carousel-cell {
     width: 84px;
     margin-right: 8px;
