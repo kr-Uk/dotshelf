@@ -33,6 +33,7 @@
     flex-direction: row;
     align-items: center;
     margin-bottom: 16px;
+    flex-shrink: 0;
 }
 
 .profile-image {
@@ -112,6 +113,8 @@
     border-radius: 10px;
     padding: 12px 8px;
     margin-bottom: 16px;
+    flex-shrink: 0;
+    height: 50px;
 }
 
 .stat-cell {
@@ -149,7 +152,7 @@
     align-items: center;
     margin-bottom: 8px;
     flex-shrink: 0;
-    height: 24px;
+    min-height: 24px;
 }
 
 .section-title {
@@ -180,10 +183,6 @@
 
 .carousel-scroll .unity-scroll-view__content-container {
     flex-direction: row;
-}
-
-.left-pane {
-    overflow: hidden;
 }
 
 .carousel-cell {
