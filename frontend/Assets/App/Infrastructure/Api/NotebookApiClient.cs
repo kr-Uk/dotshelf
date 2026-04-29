@@ -76,6 +76,21 @@ namespace App.Infrastructure.Api
             return Get<BookResponseDto>($"/v1/books/{bookId}", onSuccess, onError);
         }
 
+        public Coroutine GetBookReviews(long bookId, string sort, int limit, Action<BookReviewListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            var query = new Dictionary<string, string>
+            {
+                ["sort"] = string.IsNullOrWhiteSpace(sort) ? "POPULAR" : sort,
+                ["limit"] = Mathf.Max(1, limit).ToString()
+            };
+            return Get<BookReviewListResponseDto>(WithQuery($"/v1/books/{bookId}/reviews", query), onSuccess, onError);
+        }
+
+        public Coroutine CreateBookReview(long bookId, BookReviewRequestDto request, Action<BookReviewResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Post<BookReviewRequestDto, BookReviewResponseDto>($"/v1/books/{bookId}/reviews", request, onSuccess, onError);
+        }
+
         public Coroutine AddBookToShelf(long bookshelfId, AddBookToShelfRequestDto request, Action<UserBookResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Post<AddBookToShelfRequestDto, UserBookResponseDto>($"/v1/bookshelves/{bookshelfId}/books", request, onSuccess, onError);
@@ -132,6 +147,11 @@ namespace App.Infrastructure.Api
             return Get<AssetListResponseDto>(WithQuery("/v1/assets", query), onSuccess, onError);
         }
 
+        public Coroutine GetAssetCategories(Action<AssetCategoryListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<AssetCategoryListResponseDto>("/v1/assets/categories", onSuccess, onError);
+        }
+
         public Coroutine GetAsset(long assetId, Action<AssetResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Get<AssetResponseDto>($"/v1/assets/{assetId}", onSuccess, onError);
@@ -160,6 +180,16 @@ namespace App.Infrastructure.Api
         public Coroutine GetMySpace(Action<SpaceResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Get<SpaceResponseDto>("/v1/spaces/me", onSuccess, onError);
+        }
+
+        public Coroutine GetSpaces(string sort, int limit, Action<SpaceListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            var query = new Dictionary<string, string>
+            {
+                ["sort"] = string.IsNullOrWhiteSpace(sort) ? "POPULAR" : sort,
+                ["limit"] = Mathf.Max(1, limit).ToString()
+            };
+            return Get<SpaceListResponseDto>(WithQuery("/v1/spaces", query), onSuccess, onError);
         }
 
         public Coroutine GetSpace(long spaceId, Action<SpaceResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
@@ -440,6 +470,11 @@ namespace App.Infrastructure.Api
         public Coroutine GetBookshelves(long spaceId, Action<BookshelfListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Get<BookshelfListResponseDto>($"/v1/spaces/{spaceId}/bookshelves", onSuccess, onError);
+        }
+
+        public Coroutine GetBookshelfItems(long bookshelfId, Action<BookshelfRenderResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<BookshelfRenderResponseDto>($"/v1/bookshelves/{bookshelfId}/items", onSuccess, onError);
         }
 
         public Coroutine CreateBookshelf(CreateBookshelfRequestDto request, Action<BookshelfResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)

@@ -41,6 +41,11 @@ namespace App.Application.Notebook
             repository.LoadSpaces(limit, onSuccess, onError);
         }
 
+        public void LoadDefaultShelfTarget(Action<NotebookShelfTarget> onSuccess, Action<NotebookApiError> onError)
+        {
+            repository.LoadDefaultShelfTarget(onSuccess, onError);
+        }
+
         public void LikeSpace(long spaceId, bool liked, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
             repository.LikeSpace(spaceId, liked, onSuccess, onError);
@@ -61,9 +66,9 @@ namespace App.Application.Notebook
             repository.CreateBookReview(bookId, rating, content, onSuccess, onError);
         }
 
-        public void SetBookFavorite(long bookId, bool favorite, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
+        public void SetUserBookFavorite(long userBookId, bool favorite, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
-            repository.SetBookFavorite(bookId, favorite, onSuccess, onError);
+            repository.SetUserBookFavorite(userBookId, favorite, onSuccess, onError);
         }
     }
 }

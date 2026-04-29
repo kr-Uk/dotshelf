@@ -36,7 +36,8 @@ namespace App.Features.Notebook.Presentation
                 string isbn10 = null,
                 string sourceUrl = null,
                 string coverImageUrl = null,
-                string publishedDate = null)
+                string publishedDate = null,
+                long? userBookId = null)
             {
                 Id = id;
                 Title = title;
@@ -60,6 +61,7 @@ namespace App.Features.Notebook.Presentation
                 SourceUrl = sourceUrl;
                 CoverImageUrl = coverImageUrl;
                 PublishedDate = publishedDate;
+                UserBookId = userBookId;
             }
 
             public string Id { get; }
@@ -84,6 +86,7 @@ namespace App.Features.Notebook.Presentation
             public string SourceUrl { get; }
             public string CoverImageUrl { get; }
             public string PublishedDate { get; }
+            public long? UserBookId { get; }
         }
 
         private sealed class BookReviewViewModel
@@ -183,9 +186,6 @@ namespace App.Features.Notebook.Presentation
         private const float RecommendWheelScrollScale = 56f;
         private const int SearchResultPageSize = 48;
         private const int MarketBookPageSize = 48;
-        private const long DefaultBookshelfId = 1L;
-        private const long DefaultSectionId = 1L;
-        private const int DefaultSlotNo = 1;
         private const NotebookShelfDisplayStyle DefaultDisplayStyle = NotebookShelfDisplayStyle.Spine;
         private const string PanelSettingsResource = "NotebookPanelSettings";
         private static readonly Color PageBack = Hex(0xF0EEE9);
@@ -236,6 +236,7 @@ namespace App.Features.Notebook.Presentation
         private readonly HashSet<string> wishedObjectIds = new();
         private readonly HashSet<string> ownedObjectIds = new();
         private readonly HashSet<string> favoriteBookIds = new();
+        private readonly Dictionary<string, long> bookUserBookIds = new();
         private readonly HashSet<string> pendingShelfBookIds = new();
         private readonly Dictionary<string, List<BookReviewViewModel>> bookReviewMap = new();
         private readonly HashSet<string> requestedBookReviewIds = new();
@@ -347,6 +348,7 @@ namespace App.Features.Notebook.Presentation
         private bool marketBooksRequested;
         private bool runtimeDataRequested;
         private bool runtimeDataLoading;
+        private bool shelfTargetLoading;
         private BookViewModel selectedBookOverride;
         private float selectedReviewRating = 5f;
 
@@ -437,6 +439,8 @@ namespace App.Features.Notebook.Presentation
             apiDecorObjects = Array.Empty<DecorObjectViewModel>();
             bookReviewMap.Clear();
             requestedBookReviewIds.Clear();
+            bookUserBookIds.Clear();
+            shelfTargetLoading = false;
             selectedBookOverride = null;
             selectedBookIndex = 0;
 
@@ -3326,15 +3330,15 @@ namespace App.Features.Notebook.Presentation
                 return;
             }
 
-            if (notebookRuntimeUseCase == null || !TryResolveBookApiId(book, out var bookId))
+            if (notebookRuntimeUseCase == null || !TryResolveUserBookId(book, out var userBookId))
             {
-                ShowToast("즐겨찾기 API에 필요한 책 식별자가 없습니다.");
+                ShowToast("책장에 추가된 책만 즐겨찾기할 수 있습니다.");
                 return;
             }
 
             var nextFavorite = !favoriteBookIds.Contains(book.Id);
-            notebookRuntimeUseCase.SetBookFavorite(
-                bookId,
+            notebookRuntimeUseCase.SetUserBookFavorite(
+                userBookId,
                 nextFavorite,
                 result =>
                 {
@@ -3665,21 +3669,20 @@ namespace App.Features.Notebook.Presentation
 
         private static string ResolveObjectCategory(NotebookAssetItem item)
         {
-            var value = FirstText(item?.Category, item?.AssetType, item?.Tier, string.Empty);
+            var value = FirstText(item?.CategoryCode, item?.Category, item?.AssetType, item?.Tier, string.Empty);
             if (string.IsNullOrWhiteSpace(value))
             {
                 return ObjectCategories[0];
             }
 
-            if (value.IndexOf("theme", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                value.IndexOf("THEME", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (value.IndexOf("THEME", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 return ObjectCategories.Length > 3 ? ObjectCategories[3] : ObjectCategories[0];
             }
 
-            if (value.IndexOf("required", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                value.IndexOf("book", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                value.IndexOf("desk", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (value.IndexOf("BOOKSHELF", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("required", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("book", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 return ObjectCategories.Length > 1 ? ObjectCategories[1] : ObjectCategories[0];
             }
@@ -3691,20 +3694,20 @@ namespace App.Features.Notebook.Presentation
         {
             if (string.IsNullOrWhiteSpace(category) || category == ObjectCategories[0])
             {
-                return "all";
+                return string.Empty;
             }
 
             if (ObjectCategories.Length > 3 && category == ObjectCategories[3])
             {
-                return "theme";
+                return "THEME";
             }
 
             if (ObjectCategories.Length > 1 && category == ObjectCategories[1])
             {
-                return "required";
+                return "BOOKSHELF";
             }
 
-            return "decor";
+            return "INTERIOR";
         }
 
         private static string NormalizeObjectSortForApi(string sort)
@@ -3716,7 +3719,7 @@ namespace App.Features.Notebook.Presentation
 
             if (ObjectSorts.Length > 1 && sort == ObjectSorts[1])
             {
-                return "recent";
+                return "latest";
             }
 
             if (ObjectSorts.Length > 2 && sort == ObjectSorts[2])
@@ -3911,6 +3914,12 @@ namespace App.Features.Notebook.Presentation
                     : FirstText(isbn13, isbn10, dto.SourceUrl, dto.BookId, $"api-{i + 1}");
                 var id = $"{source.ToLowerInvariant()}-{sourceKey}";
                 SetLocalState(addedBookIds, id, dto.Owned);
+                if (dto.UserBookId.HasValue && dto.UserBookId.Value > 0)
+                {
+                    bookUserBookIds[id] = dto.UserBookId.Value;
+                    SetLocalState(favoriteBookIds, id, false);
+                }
+
                 var rating = dto.AvgRating > 0 ? Mathf.Clamp((float)dto.AvgRating, 1f, 5f) : 4.2f;
                 var reviews = Mathf.Max(dto.ReviewCount, dto.LikeCount, dto.PurchaseCount, dto.RecordCount, 1);
                 var views = Mathf.Max(dto.ViewCount, dto.PlacementCount + dto.RecordCount + dto.LikeCount, reviews * 12);
@@ -3942,7 +3951,8 @@ namespace App.Features.Notebook.Presentation
                     isbn10,
                     dto.SourceUrl,
                     dto.CoverImageUrl,
-                    dto.PublishedDate));
+                    dto.PublishedDate,
+                    dto.UserBookId));
             }
 
             return SortBooks(mapped.Where(book => MatchesSearch(book, keyword))).ToArray();
@@ -4756,16 +4766,48 @@ namespace App.Features.Notebook.Presentation
 
         private void AddBookToShelfThroughApi(BookViewModel book)
         {
+            if (addNotebookBookToShelfUseCase == null || notebookRuntimeUseCase == null)
+            {
+                ShowToast("책장 추가 API가 설정되지 않았습니다.");
+                return;
+            }
+
+            if (shelfTargetLoading || pendingShelfBookIds.Count > 0)
+            {
+                ShowToast("책장 추가 요청을 처리 중입니다.");
+                return;
+            }
+
             pendingShelfBookIds.Add(book.Id);
             RefreshLists();
             RefreshBookDetailPage(book);
 
+            shelfTargetLoading = true;
+            notebookRuntimeUseCase.LoadDefaultShelfTarget(
+                target =>
+                {
+                    shelfTargetLoading = false;
+                    SendBookAddThroughApi(book, target);
+                },
+                error =>
+                {
+                    shelfTargetLoading = false;
+                    pendingShelfBookIds.Remove(book.Id);
+                    UnityEngine.Debug.LogWarning($"Default shelf placement API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    RefreshLists();
+                    RefreshBookDetailPage(book);
+                    ShowToast("기본 책장 정보를 불러오지 못했습니다.");
+                });
+        }
+
+        private void SendBookAddThroughApi(BookViewModel book, NotebookShelfTarget target)
+        {
             try
             {
                 addNotebookBookToShelfUseCase.Execute(
-                    DefaultBookshelfId,
+                    target.BookshelfId,
                     BuildAddCommand(book),
-                    BuildDefaultShelfPlacement(),
+                    BuildShelfPlacement(target),
                     response => CompleteApiBookAdded(book, response),
                     error => FailApiBookAdd(book, error));
             }
@@ -4793,18 +4835,27 @@ namespace App.Features.Notebook.Presentation
                 Publisher = book.Publisher,
                 PublishedDate = book.PublishedDate,
                 Description = book.Summary,
-                CoverImageUrl = book.CoverImageUrl
+                CoverImageUrl = book.CoverImageUrl,
+                SourceUrl = book.SourceUrl
             };
         }
 
-        private static NotebookShelfPlacement BuildDefaultShelfPlacement()
+        private static NotebookShelfPlacement BuildShelfPlacement(NotebookShelfTarget target)
         {
-            return new NotebookShelfPlacement(DefaultSectionId, DefaultSlotNo, DefaultDisplayStyle);
+            return new NotebookShelfPlacement(
+                target.SectionId,
+                Mathf.Max(1, target.SlotNo),
+                DefaultDisplayStyle);
         }
 
         private void CompleteApiBookAdded(BookViewModel book, NotebookBookAddResult response)
         {
             pendingShelfBookIds.Remove(book.Id);
+            if (response != null && response.Id > 0)
+            {
+                bookUserBookIds[book.Id] = response.Id;
+            }
+
             ApplyBookAddedFromApi(book);
             SyncWalletFromApi();
             UnityEngine.Debug.Log($"Book added to shelf through API. book={book.Id}, userBookId={response?.Id}");
@@ -5034,6 +5085,23 @@ namespace App.Features.Notebook.Presentation
             }
 
             return TryParseApiId(book.Id, out id);
+        }
+
+        private bool TryResolveUserBookId(BookViewModel book, out long id)
+        {
+            id = 0L;
+            if (book == null)
+            {
+                return false;
+            }
+
+            if (book.UserBookId.HasValue && book.UserBookId.Value > 0)
+            {
+                id = book.UserBookId.Value;
+                return true;
+            }
+
+            return bookUserBookIds.TryGetValue(book.Id, out id) && id > 0;
         }
 
         private Label MetricLabel(string text, Color color)

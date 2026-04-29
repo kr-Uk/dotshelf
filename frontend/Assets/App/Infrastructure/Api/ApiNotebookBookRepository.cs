@@ -115,6 +115,7 @@ namespace App.Infrastructure.Api
                     PricePages = item.PricePages,
                     Rank = item.Rank,
                     Owned = item.Owned,
+                    UserBookId = item.UserBookId,
                     LikeCount = item.LikeCount,
                     PurchaseCount = item.PurchaseCount,
                     RecordCount = item.RecordCount,
@@ -153,6 +154,7 @@ namespace App.Infrastructure.Api
                 PublishedDate = command.PublishedDate,
                 Description = command.Description,
                 CoverImageUrl = command.CoverImageUrl,
+                SourceUrl = command.SourceUrl,
                 SectionId = placement.SectionId,
                 SlotNo = placement.SlotNo,
                 DisplayStyle = MapDisplayStyle(placement.DisplayStyle)

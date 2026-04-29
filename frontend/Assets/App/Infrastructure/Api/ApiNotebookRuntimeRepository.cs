@@ -9,16 +9,23 @@ namespace App.Infrastructure.Api
 {
     public sealed class ApiNotebookRuntimeRepository : INotebookRuntimeRepository
     {
-        private const string UnsupportedCode = "NOTEBOOK_API_UNSUPPORTED";
+        private const string AuthRequiredCode = "NOTEBOOK_API_AUTH_REQUIRED";
         private readonly NotebookApiClient client;
+        private readonly Func<bool> canUseAuthenticatedApis;
 
-        public ApiNotebookRuntimeRepository(NotebookApiClient client)
+        public ApiNotebookRuntimeRepository(NotebookApiClient client, Func<bool> canUseAuthenticatedApis = null)
         {
             this.client = client ?? throw new ArgumentNullException(nameof(client));
+            this.canUseAuthenticatedApis = canUseAuthenticatedApis ?? (() => true);
         }
 
         public void LoadWallet(Action<NotebookWalletResult> onSuccess, Action<NotebookApiError> onError)
         {
+            if (!RequireAuthenticatedApi(onError, "Wallet API requires an access token."))
+            {
+                return;
+            }
+
             client.GetWallet(
                 response => onSuccess?.Invoke(new NotebookWalletResult { BalancePages = response?.BalancePages ?? 0 }),
                 error => onError?.Invoke(MapError(error)));
@@ -26,6 +33,11 @@ namespace App.Infrastructure.Api
 
         public void ChargePages(int pagesAmount, Action<NotebookWalletResult> onSuccess, Action<NotebookApiError> onError)
         {
+            if (!RequireAuthenticatedApi(onError, "Page charge API requires an access token."))
+            {
+                return;
+            }
+
             client.ChargePages(
                 new PageChargeRequestDto
                 {
@@ -49,6 +61,11 @@ namespace App.Infrastructure.Api
 
         public void WishAsset(long assetId, bool wished, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
+            if (!RequireAuthenticatedApi(onError, "Asset wishlist API requires an access token."))
+            {
+                return;
+            }
+
             var success = new Action<ToggleResponseDto>(response => onSuccess?.Invoke(MapToggle(response)));
             var error = new Action<ApiErrorResponseDto>(apiError => onError?.Invoke(MapError(apiError)));
             if (wished)
@@ -63,6 +80,11 @@ namespace App.Infrastructure.Api
 
         public void PurchaseAsset(long assetId, Action<NotebookAssetPurchaseResult> onSuccess, Action<NotebookApiError> onError)
         {
+            if (!RequireAuthenticatedApi(onError, "Asset purchase API requires an access token."))
+            {
+                return;
+            }
+
             client.PurchaseAsset(
                 assetId,
                 response => onSuccess?.Invoke(new NotebookAssetPurchaseResult
@@ -76,13 +98,61 @@ namespace App.Infrastructure.Api
 
         public void LoadSpaces(int limit, Action<NotebookSpaceListResult> onSuccess, Action<NotebookApiError> onError)
         {
-            client.GetFollowingFeed(
+            client.GetSpaces(
+                "POPULAR",
+                Mathf.Max(1, limit),
                 response => onSuccess?.Invoke(new NotebookSpaceListResult(MapSpaces(response, limit))),
+                error => onError?.Invoke(MapError(error)));
+        }
+
+        public void LoadDefaultShelfTarget(Action<NotebookShelfTarget> onSuccess, Action<NotebookApiError> onError)
+        {
+            if (!RequireAuthenticatedApi(onError, "Default bookshelf placement API requires an access token."))
+            {
+                return;
+            }
+
+            client.GetMySpace(
+                space =>
+                {
+                    if (space == null || space.Id <= 0)
+                    {
+                        onError?.Invoke(new NotebookApiError { Code = "NOTEBOOK_SPACE_NOT_FOUND", Message = "My space was not found." });
+                        return;
+                    }
+
+                    client.GetBookshelves(
+                        space.Id,
+                        shelves =>
+                        {
+                            var bookshelf = shelves?.Bookshelves?
+                                .Where(item => item != null && item.Id > 0)
+                                .OrderBy(item => item.DisplayOrder)
+                                .ThenBy(item => item.Id)
+                                .FirstOrDefault();
+                            if (bookshelf == null)
+                            {
+                                onError?.Invoke(new NotebookApiError { Code = "NOTEBOOK_BOOKSHELF_NOT_FOUND", Message = "Default bookshelf was not found." });
+                                return;
+                            }
+
+                            client.GetBookshelfItems(
+                                bookshelf.Id,
+                                render => ResolveShelfTarget(bookshelf.Id, render, onSuccess, onError),
+                                error => onError?.Invoke(MapError(error)));
+                        },
+                        error => onError?.Invoke(MapError(error)));
+                },
                 error => onError?.Invoke(MapError(error)));
         }
 
         public void LikeSpace(long spaceId, bool liked, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
+            if (!RequireAuthenticatedApi(onError, "Space like API requires an access token."))
+            {
+                return;
+            }
+
             var success = new Action<ToggleResponseDto>(response => onSuccess?.Invoke(MapToggle(response)));
             var error = new Action<ApiErrorResponseDto>(apiError => onError?.Invoke(MapError(apiError)));
             if (liked)
@@ -97,6 +167,11 @@ namespace App.Infrastructure.Api
 
         public void FollowUser(long userId, bool following, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
+            if (!RequireAuthenticatedApi(onError, "User follow API requires an access token."))
+            {
+                return;
+            }
+
             var success = new Action<ToggleResponseDto>(response => onSuccess?.Invoke(MapToggle(response)));
             var error = new Action<ApiErrorResponseDto>(apiError => onError?.Invoke(MapError(apiError)));
             if (following)
@@ -111,25 +186,48 @@ namespace App.Infrastructure.Api
 
         public void LoadBookReviews(long bookId, Action<NotebookReviewListResult> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(Unsupported("Book review list endpoint is not available for notebook books yet."));
+            client.GetBookReviews(
+                bookId,
+                "POPULAR",
+                20,
+                response => onSuccess?.Invoke(new NotebookReviewListResult(MapReviews(response))),
+                error => onError?.Invoke(MapError(error)));
         }
 
         public void CreateBookReview(long bookId, float rating, string content, Action<NotebookReviewItem> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(Unsupported("Book review creation endpoint requires a userBookId/readingRecord contract."));
+            if (!RequireAuthenticatedApi(onError, "Book review creation API requires an access token."))
+            {
+                return;
+            }
+
+            client.CreateBookReview(
+                bookId,
+                new BookReviewRequestDto
+                {
+                    Rating = Convert.ToDecimal(Mathf.Clamp(rating, 0.5f, 5f)),
+                    Content = content
+                },
+                response => onSuccess?.Invoke(MapReview(response)),
+                error => onError?.Invoke(MapError(error)));
         }
 
-        public void SetBookFavorite(long bookId, bool favorite, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
+        public void SetUserBookFavorite(long userBookId, bool favorite, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
+            if (!RequireAuthenticatedApi(onError, "User book favorite API requires an access token."))
+            {
+                return;
+            }
+
             var success = new Action<ToggleResponseDto>(response => onSuccess?.Invoke(MapToggle(response)));
             var error = new Action<ApiErrorResponseDto>(apiError => onError?.Invoke(MapError(apiError)));
             if (favorite)
             {
-                client.LikeUserBook(bookId, success, error);
+                client.LikeUserBook(userBookId, success, error);
             }
             else
             {
-                client.UnlikeUserBook(bookId, success, error);
+                client.UnlikeUserBook(userBookId, success, error);
             }
         }
 
@@ -146,44 +244,114 @@ namespace App.Infrastructure.Api
                 Id = asset.Id,
                 Code = asset.Code,
                 Name = FirstNonEmpty(asset.Name, asset.Code, $"Asset {index + 1}"),
-                Category = FirstNonEmpty(asset.AssetType, asset.Tier, "OBJECT"),
+                Category = ResolveAssetCategoryCode(asset),
+                CategoryCode = ResolveAssetCategoryCode(asset),
                 Tier = asset.Tier,
                 AssetType = asset.AssetType,
                 PreviewImageUrl = asset.PreviewImageUrl,
                 PricePages = asset.PricePages,
-                Popularity = Math.Max(0, 10000 - index * 137),
+                Popularity = 0,
                 Owned = asset.Owned,
                 Wished = asset.Wished
             }).ToArray();
         }
 
-        private static IReadOnlyList<NotebookSpaceItem> MapSpaces(FeedEventListResponseDto response, int limit)
+        private static IReadOnlyList<NotebookSpaceItem> MapSpaces(SpaceListResponseDto response, int limit)
         {
-            var events = response?.Events;
-            if (events == null || events.Count == 0)
+            var spaces = response?.Spaces;
+            if (spaces == null || spaces.Count == 0)
             {
                 return Array.Empty<NotebookSpaceItem>();
             }
 
-            return events
-                .Where(e => e.TargetId > 0 || e.ActorUserId > 0)
+            return spaces
+                .Where(space => space != null && space.SpaceId > 0)
                 .Take(Mathf.Max(1, limit))
-                .Select((e, index) =>
+                .Select(space => new NotebookSpaceItem
                 {
-                    var spaceId = e.TargetId > 0 ? e.TargetId : e.ActorUserId;
-                    return new NotebookSpaceItem
-                    {
-                        Id = spaceId,
-                        OwnerUserId = e.ActorUserId,
-                        OwnerName = $"User {e.ActorUserId}",
-                        SpaceName = $"Space {spaceId}",
-                        Description = $"{FirstNonEmpty(e.EventType, "activity")} / {FirstNonEmpty(e.OccurredAt, "recent")}",
-                        FollowerCount = Math.Max(0, 1200 - index * 83),
-                        LikeCount = Math.Max(0, 600 - index * 41),
-                        VisitCount = Math.Max(0, 3200 - index * 173)
-                    };
+                    Id = space.SpaceId,
+                    OwnerUserId = space.OwnerUserId,
+                    OwnerName = FirstNonEmpty(space.OwnerNickname, $"User {space.OwnerUserId}"),
+                    SpaceName = FirstNonEmpty(space.SpaceName, $"Space {space.SpaceId}"),
+                    Description = FirstNonEmpty(space.Description, space.Mood, space.VisibilityScope),
+                    FollowerCount = Math.Max(0, space.FollowerCount),
+                    LikeCount = Math.Max(0, space.LikeCount),
+                    VisitCount = Math.Max(0, space.VisitCount),
+                    Following = space.Following,
+                    Liked = space.Liked
                 })
                 .ToArray();
+        }
+
+        private static IReadOnlyList<NotebookReviewItem> MapReviews(BookReviewListResponseDto response)
+        {
+            var reviews = response?.Reviews;
+            if (reviews == null || reviews.Count == 0)
+            {
+                return Array.Empty<NotebookReviewItem>();
+            }
+
+            return reviews
+                .Where(review => review != null)
+                .Select(MapReview)
+                .ToArray();
+        }
+
+        private static NotebookReviewItem MapReview(BookReviewResponseDto review)
+        {
+            if (review == null)
+            {
+                return null;
+            }
+
+            return new NotebookReviewItem
+            {
+                Id = review.ReviewId,
+                Author = FirstNonEmpty(review.Nickname, $"User {review.UserId}"),
+                Rating = Mathf.Clamp((float)review.Rating, 0f, 5f),
+                Content = FirstNonEmpty(review.Content, string.Empty)
+            };
+        }
+
+        private static void ResolveShelfTarget(
+            long bookshelfId,
+            BookshelfRenderResponseDto render,
+            Action<NotebookShelfTarget> onSuccess,
+            Action<NotebookApiError> onError)
+        {
+            var section = render?.Sections?
+                .Where(item => item != null && item.Id > 0)
+                .OrderBy(item => item.RowNo)
+                .ThenBy(item => item.ColumnNo)
+                .ThenBy(item => item.Id)
+                .FirstOrDefault();
+            if (section == null)
+            {
+                onError?.Invoke(new NotebookApiError { Code = "NOTEBOOK_SECTION_NOT_FOUND", Message = "Default bookshelf section was not found." });
+                return;
+            }
+
+            var usedSlots = new HashSet<int>((render.Items ?? new List<BookshelfItemResponseDto>())
+                .Where(item => item != null && item.SectionId == section.Id && item.SlotNo > 0)
+                .Select(item => item.SlotNo));
+            var max = Math.Max(1, section.MaxItemCount);
+            for (var slot = 1; slot <= max; slot++)
+            {
+                if (usedSlots.Contains(slot))
+                {
+                    continue;
+                }
+
+                onSuccess?.Invoke(new NotebookShelfTarget
+                {
+                    BookshelfId = bookshelfId,
+                    SectionId = section.Id,
+                    SlotNo = slot
+                });
+                return;
+            }
+
+            onError?.Invoke(new NotebookApiError { Code = "NOTEBOOK_SHELF_FULL", Message = "No empty slot is available in the default bookshelf section." });
         }
 
         private static NotebookToggleResult MapToggle(ToggleResponseDto response)
@@ -205,19 +373,25 @@ namespace App.Infrastructure.Api
             };
         }
 
-        private static NotebookApiError Unsupported(string message)
+        private bool RequireAuthenticatedApi(Action<NotebookApiError> onError, string message)
         {
-            return new NotebookApiError
+            if (canUseAuthenticatedApis())
             {
-                Code = UnsupportedCode,
+                return true;
+            }
+
+            onError?.Invoke(new NotebookApiError
+            {
+                Code = AuthRequiredCode,
                 Message = message,
                 Error = message
-            };
+            });
+            return false;
         }
 
         private static string NormalizeCategory(string category)
         {
-            return string.IsNullOrWhiteSpace(category) ? "all" : category.Trim();
+            return string.IsNullOrWhiteSpace(category) ? string.Empty : category.Trim();
         }
 
         private static string NormalizeSort(string sort)
@@ -228,7 +402,28 @@ namespace App.Infrastructure.Api
             }
 
             var normalized = sort.Trim().ToLowerInvariant();
-            return normalized == "recent" || normalized == "price" ? normalized : "popular";
+            if (normalized == "recent")
+            {
+                return "latest";
+            }
+
+            return normalized == "latest" || normalized == "price" ? normalized : "popular";
+        }
+
+        private static string ResolveAssetCategoryCode(AssetResponseDto asset)
+        {
+            if (!string.IsNullOrWhiteSpace(asset?.CategoryCode))
+            {
+                return asset.CategoryCode;
+            }
+
+            return asset?.CategoryId switch
+            {
+                1001L => "BOOKSHELF",
+                1002L => "INTERIOR",
+                1003L => "THEME",
+                _ => FirstNonEmpty(asset?.AssetType, asset?.Tier, "OBJECT")
+            };
         }
 
         private static string FirstNonEmpty(params string[] values)

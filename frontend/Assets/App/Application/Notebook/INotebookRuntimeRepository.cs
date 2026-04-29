@@ -16,6 +16,8 @@ namespace App.Application.Notebook
 
         void LoadSpaces(int limit, Action<NotebookSpaceListResult> onSuccess, Action<NotebookApiError> onError);
 
+        void LoadDefaultShelfTarget(Action<NotebookShelfTarget> onSuccess, Action<NotebookApiError> onError);
+
         void LikeSpace(long spaceId, bool liked, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError);
 
         void FollowUser(long userId, bool following, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError);
@@ -24,6 +26,6 @@ namespace App.Application.Notebook
 
         void CreateBookReview(long bookId, float rating, string content, Action<NotebookReviewItem> onSuccess, Action<NotebookApiError> onError);
 
-        void SetBookFavorite(long bookId, bool favorite, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError);
+        void SetUserBookFavorite(long userBookId, bool favorite, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError);
     }
 }

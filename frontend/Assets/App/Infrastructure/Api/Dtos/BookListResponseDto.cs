@@ -77,6 +77,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("owned")]
         public bool Owned { get; set; }
 
+        [JsonProperty("userBookId")]
+        public long? UserBookId { get; set; }
+
         [JsonProperty("placementCount")]
         public int PlacementCount { get; set; }
 

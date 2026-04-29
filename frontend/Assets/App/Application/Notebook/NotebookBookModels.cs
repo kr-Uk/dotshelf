@@ -34,6 +34,7 @@ namespace App.Application.Notebook
         public int PricePages { get; set; }
         public int Rank { get; set; }
         public bool Owned { get; set; }
+        public long? UserBookId { get; set; }
         public int LikeCount { get; set; }
         public int PurchaseCount { get; set; }
         public int RecordCount { get; set; }
@@ -72,6 +73,7 @@ namespace App.Application.Notebook
         public string PublishedDate { get; set; }
         public string Description { get; set; }
         public string CoverImageUrl { get; set; }
+        public string SourceUrl { get; set; }
     }
 
     public sealed class NotebookBookAddResult

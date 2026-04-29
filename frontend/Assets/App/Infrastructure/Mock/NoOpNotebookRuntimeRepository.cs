@@ -38,6 +38,11 @@ namespace App.Infrastructure.Mock
             onError?.Invoke(CreateDisabledError());
         }
 
+        public void LoadDefaultShelfTarget(Action<NotebookShelfTarget> onSuccess, Action<NotebookApiError> onError)
+        {
+            onError?.Invoke(CreateDisabledError());
+        }
+
         public void LikeSpace(long spaceId, bool liked, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
             onError?.Invoke(CreateDisabledError());
@@ -58,7 +63,7 @@ namespace App.Infrastructure.Mock
             onError?.Invoke(CreateDisabledError());
         }
 
-        public void SetBookFavorite(long bookId, bool favorite, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
+        public void SetUserBookFavorite(long userBookId, bool favorite, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
             onError?.Invoke(CreateDisabledError());
         }

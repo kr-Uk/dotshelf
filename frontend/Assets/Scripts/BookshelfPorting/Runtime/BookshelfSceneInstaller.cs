@@ -140,6 +140,7 @@ namespace BookshelfPorting.Runtime
             var usesHttpApi = apiMode != AppApiMode.LocalMock;
             var apiBaseUrl = ResolveApiBaseUrl(apiConfig);
             var apiTimeoutSeconds = ResolveApiTimeoutSeconds(apiConfig);
+            var apiAccessToken = ResolveApiAccessToken(apiConfig);
             var apiHealthCheckPath = apiConfig != null ? apiConfig.HealthCheckPath : "/health";
             if (Application.isPlaying)
             {
@@ -161,13 +162,17 @@ namespace BookshelfPorting.Runtime
             var apiManager = GetOrAddComponent<APIManager>(systems);
             var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(apiMode, apiBaseUrl, apiTimeoutSeconds));
 
-            apiManager.Configure(apiBaseUrl, timeout: apiTimeoutSeconds);
+            apiManager.Configure(apiBaseUrl, apiAccessToken, apiTimeoutSeconds);
             var notebookBookRepository = CreateNotebookBookRepository(apiMode, apiManager);
             var searchNotebookBooksUseCase = new SearchNotebookBooksUseCase(notebookBookRepository);
             var loadNotebookMarketBooksUseCase = new LoadNotebookMarketBooksUseCase(notebookBookRepository);
             var addNotebookBookToShelfUseCase = new AddNotebookBookToShelfUseCase(notebookBookRepository);
             var notebookRuntimeRepository = CreateNotebookRuntimeRepository(apiMode, apiManager);
             var notebookRuntimeUseCase = new NotebookRuntimeUseCase(notebookRuntimeRepository);
+            if (Application.isPlaying && usesHttpApi && !apiManager.HasAccessToken)
+            {
+                Debug.LogWarning("Dotshelf RealApi mode has no access token. Public notebook APIs stay enabled, but authenticated actions are blocked until APIManager.SetAccessToken() is called.");
+            }
             if (Application.isPlaying && usesHttpApi)
             {
                 apiManager.CheckHealth(null, apiHealthCheckPath);
@@ -305,7 +310,7 @@ namespace BookshelfPorting.Runtime
         private static INotebookRuntimeRepository CreateNotebookRuntimeRepository(AppApiMode apiMode, APIManager apiManager)
         {
             return apiMode != AppApiMode.LocalMock && apiManager != null
-                ? new ApiNotebookRuntimeRepository(new NotebookApiClient(apiManager))
+                ? new ApiNotebookRuntimeRepository(new NotebookApiClient(apiManager), () => apiManager.HasAccessToken)
                 : new NoOpNotebookRuntimeRepository();
         }
 
@@ -326,6 +331,11 @@ namespace BookshelfPorting.Runtime
         {
             var timeoutSeconds = apiConfig != null ? apiConfig.RequestTimeoutSeconds : DefaultRequestTimeoutSeconds;
             return Mathf.Max(1, timeoutSeconds);
+        }
+
+        private static string ResolveApiAccessToken(AppApiConfig apiConfig)
+        {
+            return apiConfig != null ? apiConfig.ResolveAccessToken() : null;
         }
 
         private static bool HasGeneratedContent(BookshelfGenerator generator)

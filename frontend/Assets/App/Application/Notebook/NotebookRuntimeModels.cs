@@ -30,6 +30,7 @@ namespace App.Application.Notebook
         public string Code { get; set; }
         public string Name { get; set; }
         public string Category { get; set; }
+        public string CategoryCode { get; set; }
         public string Tier { get; set; }
         public string AssetType { get; set; }
         public string PreviewImageUrl { get; set; }
@@ -68,6 +69,13 @@ namespace App.Application.Notebook
         public long VisitCount { get; set; }
         public bool Following { get; set; }
         public bool Liked { get; set; }
+    }
+
+    public sealed class NotebookShelfTarget
+    {
+        public long BookshelfId { get; set; }
+        public long SectionId { get; set; }
+        public int SlotNo { get; set; }
     }
 
     public sealed class NotebookReviewListResult

@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -19,6 +20,8 @@ namespace App.Config
         [SerializeField] private string devBaseUrl = "https://api.dotshelf.digital";
         [SerializeField] private string prodBaseUrl = "https://api.dotshelf.digital";
         [SerializeField] private string healthCheckPath = "/health";
+        [Tooltip("Optional editor/dev access token. Prefer DOTSHELF_ACCESS_TOKEN for local runs.")]
+        [SerializeField] private string accessToken = string.Empty;
 
         [Header("Request")]
         [SerializeField] private int requestTimeoutSeconds = 10;
@@ -39,6 +42,12 @@ namespace App.Config
 #else
             return prodBaseUrl;
 #endif
+        }
+
+        public string ResolveAccessToken()
+        {
+            var environmentToken = Environment.GetEnvironmentVariable("DOTSHELF_ACCESS_TOKEN");
+            return string.IsNullOrWhiteSpace(environmentToken) ? accessToken : environmentToken;
         }
     }
 }

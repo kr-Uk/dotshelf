@@ -28,6 +28,7 @@ namespace App.Infrastructure.Api
         [SerializeField] private int timeoutSeconds = 10;
 
         public static APIManager Instance { get; private set; }
+        public bool HasAccessToken => !string.IsNullOrWhiteSpace(accessToken);
 
         private void Awake()
         {

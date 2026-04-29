@@ -150,6 +150,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("coverImageUrl")]
         public string CoverImageUrl { get; set; }
 
+        [JsonProperty("sourceUrl")]
+        public string SourceUrl { get; set; }
+
         [JsonProperty("sectionId")]
         public long SectionId { get; set; }
 
@@ -230,6 +233,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("categoryId")]
         public long CategoryId { get; set; }
 
+        [JsonProperty("categoryCode")]
+        public string CategoryCode { get; set; }
+
         [JsonProperty("code")]
         public string Code { get; set; }
 
@@ -260,6 +266,29 @@ namespace App.Infrastructure.Api.Dtos
     {
         [JsonProperty("assets")]
         public List<AssetResponseDto> Assets { get; set; }
+    }
+
+    [Serializable]
+    public sealed class AssetCategoryResponseDto
+    {
+        [JsonProperty("categoryId")]
+        public long CategoryId { get; set; }
+
+        [JsonProperty("code")]
+        public string Code { get; set; }
+
+        [JsonProperty("name")]
+        public string Name { get; set; }
+
+        [JsonProperty("displayOrder")]
+        public int DisplayOrder { get; set; }
+    }
+
+    [Serializable]
+    public sealed class AssetCategoryListResponseDto
+    {
+        [JsonProperty("categories")]
+        public List<AssetCategoryResponseDto> Categories { get; set; }
     }
 
     [Serializable]
@@ -314,6 +343,62 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("currentThemeInventoryId")]
         public long? CurrentThemeInventoryId { get; set; }
+    }
+
+    [Serializable]
+    public sealed class SpaceListItemResponseDto
+    {
+        [JsonProperty("spaceId")]
+        public long SpaceId { get; set; }
+
+        [JsonProperty("ownerUserId")]
+        public long OwnerUserId { get; set; }
+
+        [JsonProperty("ownerNickname")]
+        public string OwnerNickname { get; set; }
+
+        [JsonProperty("ownerProfileImageUrl")]
+        public string OwnerProfileImageUrl { get; set; }
+
+        [JsonProperty("spaceName")]
+        public string SpaceName { get; set; }
+
+        [JsonProperty("mood")]
+        public string Mood { get; set; }
+
+        [JsonProperty("description")]
+        public string Description { get; set; }
+
+        [JsonProperty("thumbnailUrl")]
+        public string ThumbnailUrl { get; set; }
+
+        [JsonProperty("visibilityScope")]
+        public string VisibilityScope { get; set; }
+
+        [JsonProperty("visitCount")]
+        public long VisitCount { get; set; }
+
+        [JsonProperty("likeCount")]
+        public long LikeCount { get; set; }
+
+        [JsonProperty("followerCount")]
+        public long FollowerCount { get; set; }
+
+        [JsonProperty("liked")]
+        public bool Liked { get; set; }
+
+        [JsonProperty("following")]
+        public bool Following { get; set; }
+    }
+
+    [Serializable]
+    public sealed class SpaceListResponseDto
+    {
+        [JsonProperty("spaces")]
+        public List<SpaceListItemResponseDto> Spaces { get; set; }
+
+        [JsonProperty("nextCursor")]
+        public string NextCursor { get; set; }
     }
 
     [Serializable]
@@ -460,6 +545,63 @@ namespace App.Infrastructure.Api.Dtos
     {
         [JsonProperty("promotions")]
         public List<BookPromotionResponseDto> Promotions { get; set; }
+    }
+
+    [Serializable]
+    public sealed class BookReviewRequestDto
+    {
+        [JsonProperty("rating")]
+        public decimal Rating { get; set; }
+
+        [JsonProperty("content")]
+        public string Content { get; set; }
+    }
+
+    [Serializable]
+    public sealed class BookReviewResponseDto
+    {
+        [JsonProperty("reviewId")]
+        public long ReviewId { get; set; }
+
+        [JsonProperty("bookId")]
+        public long BookId { get; set; }
+
+        [JsonProperty("userId")]
+        public long UserId { get; set; }
+
+        [JsonProperty("nickname")]
+        public string Nickname { get; set; }
+
+        [JsonProperty("profileImageUrl")]
+        public string ProfileImageUrl { get; set; }
+
+        [JsonProperty("rating")]
+        public decimal Rating { get; set; }
+
+        [JsonProperty("content")]
+        public string Content { get; set; }
+
+        [JsonProperty("likeCount")]
+        public int LikeCount { get; set; }
+
+        [JsonProperty("liked")]
+        public bool Liked { get; set; }
+
+        [JsonProperty("createdAt")]
+        public string CreatedAt { get; set; }
+
+        [JsonProperty("updatedAt")]
+        public string UpdatedAt { get; set; }
+    }
+
+    [Serializable]
+    public sealed class BookReviewListResponseDto
+    {
+        [JsonProperty("reviews")]
+        public List<BookReviewResponseDto> Reviews { get; set; }
+
+        [JsonProperty("nextCursor")]
+        public string NextCursor { get; set; }
     }
 
     [Serializable]
@@ -936,6 +1078,19 @@ namespace App.Infrastructure.Api.Dtos
     {
         [JsonProperty("bookshelves")]
         public List<BookshelfResponseDto> Bookshelves { get; set; }
+    }
+
+    [Serializable]
+    public sealed class BookshelfRenderResponseDto
+    {
+        [JsonProperty("bookshelf")]
+        public BookshelfResponseDto Bookshelf { get; set; }
+
+        [JsonProperty("sections")]
+        public List<SectionResponseDto> Sections { get; set; }
+
+        [JsonProperty("items")]
+        public List<BookshelfItemResponseDto> Items { get; set; }
     }
 
     [Serializable]
