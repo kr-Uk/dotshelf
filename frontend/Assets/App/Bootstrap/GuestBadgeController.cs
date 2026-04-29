@@ -364,23 +364,27 @@ namespace App.Bootstrap
         {
             SetModalVisible(false);
 
-            // TODO: Wire to the guest-to-account migration flow once the server
-            // endpoint and account-link UX exist. The intended behaviour is to
-            // upload the local guest snapshot (room layout + book metadata +
-            // decoration items) under the freshly linked account so the player
-            // keeps their guest progress.
-            Debug.Log("[GuestBadge] 기존 데이터 이어서 시작하기 선택 — 계정 이관 흐름 연결 예정.");
+            // TODO: Once the server-side migration endpoint exists, hook the
+            // upload of the local guest snapshot (room layout + book metadata
+            // + decoration items) into the post-login flow so the freshly
+            // linked account inherits the player's guest progress. The player
+            // first needs an account, so we go straight to the login screen
+            // and let the regular login / signup flow take it from there.
+            SessionState.MarkGuest();
+            SceneFlowManager.GoToLogin();
         }
 
         private void OnStartFreshClicked()
         {
             SetModalVisible(false);
 
-            // TODO: Wire to the "discard guest data + start clean account"
-            // flow once the account-link UX and the server-side guest-snapshot
-            // discard endpoint exist. The local-only guest snapshot should be
-            // wiped and the account should land on a fresh empty room.
-            Debug.Log("[GuestBadge] 새 공간으로 시작하기 선택 — 신규 계정 시작 흐름 연결 예정.");
+            // TODO: Once the account-link UX exists, mark the guest snapshot
+            // as discarded and reset to an empty room on the new account.
+            // For now, the player needs to authenticate first, so redirect
+            // to the login screen and let the regular login / signup flow
+            // proceed; the discard step will hook in there later.
+            SessionState.MarkGuest();
+            SceneFlowManager.GoToLogin();
         }
 
         private void SetModalVisible(bool isVisible)
