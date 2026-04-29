@@ -941,7 +941,7 @@ namespace App.Bootstrap
 #if UNITY_EDITOR
             UnityEditor.EditorApplication.isPlaying = false;
 #else
-            Application.Quit();
+            UnityEngine.Application.Quit();
 #endif
         }
 

@@ -8,9 +8,9 @@ import java.util.List;
 import com.dotshelf.domain.book.entity.Book;
 import com.dotshelf.domain.book.entity.BookReview;
 import com.dotshelf.domain.book.entity.UserBook;
+import com.dotshelf.domain.bookshelf.entity.BookshelfItem;
 import com.dotshelf.domain.user.entity.User;
 
-import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
@@ -243,6 +243,7 @@ public final class BookDtos {
             Long sectionId,
             @NotNull(message = "slotNo는 필수입니다.")
             Integer slotNo,
+            String facingDirection,
             String displayStyle
     ) {
     }
@@ -265,17 +266,9 @@ public final class BookDtos {
             Long sectionId,
             @NotNull(message = "slotNo는 필수입니다.")
             Integer slotNo,
+            String facingDirection,
             String displayStyle
     ) {
-
-        @AssertTrue(message = "isbn10 또는 isbn13은 필수입니다.")
-        public boolean isIsbnPresent() {
-            return hasText(isbn13) || hasText(isbn10);
-        }
-
-        private boolean hasText(String value) {
-            return value != null && !value.isBlank();
-        }
     }
 
     public record UpdateUserBookRequest(
@@ -292,8 +285,35 @@ public final class BookDtos {
             Long sectionId,
             @NotNull(message = "slotNo는 필수입니다.")
             Integer slotNo,
+            String facingDirection,
             String displayStyle
     ) {
+    }
+
+    public record UserBookPlacementSummaryResponse(
+            Long bookshelfItemId,
+            Long bookshelfId,
+            Long sectionId,
+            Integer slotNo,
+            String facingDirection,
+            String displayStyle,
+            BigDecimal rotationDeg
+    ) {
+
+        public static UserBookPlacementSummaryResponse from(BookshelfItem item) {
+            if (item == null) {
+                return null;
+            }
+            return new UserBookPlacementSummaryResponse(
+                    item.getId(),
+                    item.getBookshelfId(),
+                    item.getBookshelfSectionId(),
+                    item.getSlotNo(),
+                    item.getFacingDirection(),
+                    item.getDisplayStyle(),
+                    item.getRotationDeg()
+            );
+        }
     }
 
     public record UserBookResponse(
@@ -303,10 +323,15 @@ public final class BookDtos {
             String readingStatus,
             String storageStatus,
             BigDecimal ownerRating,
-            boolean liked
+            boolean liked,
+            UserBookPlacementSummaryResponse placement
     ) {
 
         public static UserBookResponse from(UserBook userBook) {
+            return from(userBook, null);
+        }
+
+        public static UserBookResponse from(UserBook userBook, BookshelfItem placement) {
             return new UserBookResponse(
                     userBook.getId(),
                     userBook.getUserId(),
@@ -314,7 +339,8 @@ public final class BookDtos {
                     userBook.getReadingStatus(),
                     userBook.getStorageStatus(),
                     userBook.getOwnerRating(),
-                    userBook.isLiked()
+                    userBook.isLiked(),
+                    UserBookPlacementSummaryResponse.from(placement)
             );
         }
     }
@@ -330,9 +356,11 @@ public final class BookDtos {
             String storageStatus,
             BigDecimal ownerRating,
             boolean liked,
+            Long bookshelfItemId,
             Long bookshelfId,
             Long sectionId,
             Integer slotNo,
+            String facingDirection,
             String displayStyle
     ) {
     }

@@ -121,6 +121,11 @@ namespace App.Infrastructure.Api
             return Delete<VoidResponseDto>($"/v1/user-books/{userBookId}", onSuccess, onError);
         }
 
+        public Coroutine RemoveBookshelfItem(long itemId, Action<BookshelfItemResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Delete<BookshelfItemResponseDto>($"/v1/bookshelf-items/{itemId}", onSuccess, onError);
+        }
+
         public Coroutine GetArchivedUserBooks(Action<UserBookListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Get<UserBookListResponseDto>("/v1/user-books/archived", onSuccess, onError);
@@ -410,6 +415,11 @@ namespace App.Infrastructure.Api
         public Coroutine GetReadingRecord(long recordId, Action<ReadingRecordResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Get<ReadingRecordResponseDto>($"/v1/reading-records/{recordId}", onSuccess, onError);
+        }
+
+        public Coroutine GetUserBookReadingRecord(long userBookId, Action<ReadingRecordResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<ReadingRecordResponseDto>($"/v1/user-books/{userBookId}/reading-record", onSuccess, onError);
         }
 
         public Coroutine GetUserReadingRecords(long userId, Action<ReadingRecordListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)

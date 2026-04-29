@@ -125,6 +125,8 @@ namespace BookshelfPorting.Runtime
         private LoadMyBookshelfBooksUseCase loadBooksUseCase;
         private IReadOnlyList<BookCatalogItem> bookCatalogItems = System.Array.Empty<BookCatalogItem>();
         private readonly Dictionary<int, BookshelfLayoutSnapshot> bookshelfLayoutSnapshots = new Dictionary<int, BookshelfLayoutSnapshot>();
+        private readonly Dictionary<int, string> bookshelfServerIds = new Dictionary<int, string>();
+        private readonly Dictionary<int, Dictionary<string, string>> bookshelfSectionServerIds = new Dictionary<int, Dictionary<string, string>>();
         private readonly Dictionary<int, string> bookshelfNames = new Dictionary<int, string>();
         private readonly Dictionary<int, BookshelfThemeStyle> bookshelfDesignStyles = new Dictionary<int, BookshelfThemeStyle>();
         private readonly Dictionary<int, VisibilityScope> bookshelfVisibilityScopes = new Dictionary<int, VisibilityScope>();
@@ -184,6 +186,91 @@ namespace BookshelfPorting.Runtime
             state = bookshelfState;
             materialFactory = factory;
             loadBooksUseCase = booksUseCase;
+        }
+
+        public void ApplyServerBookshelves(IReadOnlyList<BookshelfRuntimeApiSnapshot> shelves)
+        {
+            if (shelves == null || shelves.Count == 0)
+            {
+                return;
+            }
+
+            var orderedShelves = new List<BookshelfRuntimeApiSnapshot>(shelves);
+            orderedShelves.Sort((left, right) => left.DisplayOrder.CompareTo(right.DisplayOrder));
+
+            bookshelfLayoutSnapshots.Clear();
+            bookshelfServerIds.Clear();
+            bookshelfSectionServerIds.Clear();
+            bookshelfNames.Clear();
+            bookshelfDesignStyles.Clear();
+            bookshelfVisibilityScopes.Clear();
+
+            bookshelfCount = Mathf.Max(1, orderedShelves.Count);
+            activeBookshelfIndex = Mathf.Clamp(activeBookshelfIndex, 0, bookshelfCount - 1);
+            pendingBookshelfIndex = -1;
+            queuedBookshelfSwitchDirection = 0;
+
+            for (var i = 0; i < orderedShelves.Count; i++)
+            {
+                var shelf = orderedShelves[i];
+                bookshelfServerIds[i] = shelf.BookshelfId;
+                bookshelfNames[i] = string.IsNullOrWhiteSpace(shelf.Name) ? GetDefaultBookshelfName(i) : shelf.Name;
+                bookshelfVisibilityScopes[i] = shelf.VisibilityScope;
+                bookshelfSectionServerIds[i] = CreateSectionServerIdMap(shelf);
+                bookshelfLayoutSnapshots[i] = CreateServerBookshelfLayoutSnapshot(shelf, i);
+            }
+
+            if (bookshelfSections.Count > 0 && booksRoot != null)
+            {
+                RebuildActiveBookshelfVariant(activeBookshelfIndex);
+                BookshelfSwitchStateChanged?.Invoke();
+            }
+        }
+
+        public string GetBookshelfServerId(int index)
+        {
+            return bookshelfServerIds.TryGetValue(GetWrappedBookshelfIndex(index), out var id) ? id : null;
+        }
+
+        public string GetActiveBookshelfServerId()
+        {
+            return GetBookshelfServerId(activeBookshelfIndex);
+        }
+
+        public IReadOnlyList<string> GetBookshelfServerIdsInDisplayOrder()
+        {
+            var ids = new List<string>();
+            for (var i = 0; i < bookshelfCount; i++)
+            {
+                if (bookshelfServerIds.TryGetValue(i, out var id) && !string.IsNullOrWhiteSpace(id))
+                {
+                    ids.Add(id);
+                }
+            }
+
+            return ids;
+        }
+
+        public string GetSectionServerId(int bookshelfIndex, int row, int column)
+        {
+            if (!bookshelfSectionServerIds.TryGetValue(GetWrappedBookshelfIndex(bookshelfIndex), out var sections))
+            {
+                return null;
+            }
+
+            return sections.TryGetValue(GetSectionMapKey(row, column), out var id) ? id : null;
+        }
+
+        public int GetBookSlotNo(BookEntity book)
+        {
+            var section = book != null ? book.CurrentSection : null;
+            if (section == null)
+            {
+                return 1;
+            }
+
+            var index = Mathf.Max(0, section.books.IndexOf(book));
+            return index + 1;
         }
 
         private void Start()
@@ -337,6 +424,8 @@ namespace BookshelfPorting.Runtime
             generatedGeometry.Clear();
             bookshelfSections.Clear();
             bookshelfLayoutSnapshots.Clear();
+            bookshelfServerIds.Clear();
+            bookshelfSectionServerIds.Clear();
             activeBookshelfIndex = 0;
             pendingBookshelfIndex = -1;
             queuedBookshelfSwitchDirection = 0;
@@ -2516,7 +2605,16 @@ namespace BookshelfPorting.Runtime
                         book.isLiked,
                         book.isPublic,
                         book.isPaidCoverOwned,
-                        book.isDecoration));
+                        book.isDecoration,
+                        book.bookshelfItemId,
+                        book.userBookId,
+                        book.bookshelfId,
+                        book.bookshelfSectionId,
+                        book.readingRecordId,
+                        book.reportVisibility,
+                        book.reportTitle,
+                        book.reportBody,
+                        book.reportUpdatedLabel));
                 }
 
                 snapshot.Sections.Add(sectionSnapshot);
@@ -2556,6 +2654,115 @@ namespace BookshelfPorting.Runtime
             }
 
             return snapshot;
+        }
+
+        private BookshelfLayoutSnapshot CreateServerBookshelfLayoutSnapshot(BookshelfRuntimeApiSnapshot shelf, int variantIndex)
+        {
+            var snapshot = CreateEmptyBookshelfLayoutSnapshot();
+            if (shelf == null)
+            {
+                return snapshot;
+            }
+
+            for (var i = 0; i < shelf.Sections.Count; i++)
+            {
+                var source = shelf.Sections[i];
+                var section = FindSectionSnapshotByGrid(snapshot, source.Row, source.Column);
+                if (section != null)
+                {
+                    section.Alignment = source.Alignment;
+                    section.SectionId = source.SectionId;
+                }
+            }
+
+            var books = new List<BookshelfRuntimeBookSnapshot>(shelf.Books);
+            books.Sort((left, right) =>
+            {
+                var rowCompare = left.Row.CompareTo(right.Row);
+                if (rowCompare != 0)
+                {
+                    return rowCompare;
+                }
+
+                var columnCompare = left.Column.CompareTo(right.Column);
+                return columnCompare != 0 ? columnCompare : left.SlotNo.CompareTo(right.SlotNo);
+            });
+
+            for (var i = 0; i < books.Count; i++)
+            {
+                var source = books[i];
+                var row = Mathf.Clamp(source.Row, 0, rows - 1);
+                var column = Mathf.Clamp(source.Column, 0, columns - 1);
+                var section = FindSectionSnapshotByGrid(snapshot, row, column);
+                if (section == null)
+                {
+                    continue;
+                }
+
+                section.Books.Add(new BookPlacementSnapshot(
+                    CreateServerBookKey(variantIndex, source, section.Books.Count),
+                    source.Orientation,
+                    source.BookId,
+                    source.Title,
+                    source.Author,
+                    source.Publisher,
+                    source.Description,
+                    source.MemoPreview,
+                    source.OwnerRating,
+                    source.ReadingStatus,
+                    source.IsLiked,
+                    source.ReportVisibility == VisibilityScope.Public,
+                    source.IsPaidCoverOwned,
+                    false,
+                    source.BookshelfItemId,
+                    source.UserBookId,
+                    shelf.BookshelfId,
+                    source.SectionId,
+                    source.ReadingRecordId,
+                    source.ReportVisibility,
+                    source.ReportTitle,
+                    source.ReportBody,
+                    source.ReportUpdatedLabel));
+            }
+
+            return snapshot;
+        }
+
+        private static Dictionary<string, string> CreateSectionServerIdMap(BookshelfRuntimeApiSnapshot shelf)
+        {
+            var result = new Dictionary<string, string>();
+            if (shelf == null)
+            {
+                return result;
+            }
+
+            for (var i = 0; i < shelf.Sections.Count; i++)
+            {
+                var section = shelf.Sections[i];
+                if (!string.IsNullOrWhiteSpace(section.SectionId))
+                {
+                    result[GetSectionMapKey(section.Row, section.Column)] = section.SectionId;
+                }
+            }
+
+            return result;
+        }
+
+        private static string GetSectionMapKey(int row, int column)
+        {
+            return $"{row}:{column}";
+        }
+
+        private static string CreateServerBookKey(int variantIndex, BookshelfRuntimeBookSnapshot source, int fallbackSlot)
+        {
+            var stableId = !string.IsNullOrWhiteSpace(source.BookshelfItemId)
+                ? source.BookshelfItemId
+                : !string.IsNullOrWhiteSpace(source.UserBookId)
+                    ? source.UserBookId
+                    : !string.IsNullOrWhiteSpace(source.BookId)
+                        ? source.BookId
+                        : fallbackSlot.ToString();
+            return $"Shelf{variantIndex}_ApiBook_{stableId}";
         }
 
         private BookPlacementSnapshot CreateDefaultBookPlacementSnapshot(
@@ -2962,6 +3169,11 @@ namespace BookshelfPorting.Runtime
             }
 
             book.bookId = string.IsNullOrWhiteSpace(placement.BookId) ? placement.BookKey : placement.BookId;
+            book.bookshelfItemId = placement.BookshelfItemId;
+            book.userBookId = placement.UserBookId;
+            book.bookshelfId = placement.BookshelfId;
+            book.bookshelfSectionId = placement.BookshelfSectionId;
+            book.readingRecordId = placement.ReadingRecordId;
             book.title = string.IsNullOrWhiteSpace(placement.Title) ? book.title : placement.Title;
             book.author = string.IsNullOrWhiteSpace(placement.Author) ? book.author : placement.Author;
             book.publisher = string.IsNullOrWhiteSpace(placement.Publisher) ? book.publisher : placement.Publisher;
@@ -2973,6 +3185,10 @@ namespace BookshelfPorting.Runtime
             book.isRead = placement.ReadingStatus == ReadingStatus.Read;
             book.isLiked = placement.IsLiked;
             book.isPublic = placement.IsPublic;
+            book.reportVisibility = placement.ReportVisibility;
+            book.reportTitle = placement.ReportTitle;
+            book.reportBody = placement.ReportBody;
+            book.reportUpdatedLabel = placement.ReportUpdatedLabel;
             book.isPaidCoverOwned = placement.IsPaidCoverOwned;
             book.isDecoration = placement.IsDecoration;
             RefreshBookCoverVisuals(book);
@@ -3686,7 +3902,8 @@ namespace BookshelfPorting.Runtime
 
             public int Row { get; }
             public int Column { get; }
-            public ShelfSectionAlignment Alignment { get; }
+            public string SectionId { get; set; }
+            public ShelfSectionAlignment Alignment { get; set; }
             public List<BookPlacementSnapshot> Books { get; } = new List<BookPlacementSnapshot>();
         }
 
@@ -3706,7 +3923,16 @@ namespace BookshelfPorting.Runtime
                 bool isLiked = false,
                 bool isPublic = true,
                 bool isPaidCoverOwned = false,
-                bool isDecoration = false)
+                bool isDecoration = false,
+                string bookshelfItemId = null,
+                string userBookId = null,
+                string bookshelfId = null,
+                string bookshelfSectionId = null,
+                string readingRecordId = null,
+                VisibilityScope reportVisibility = VisibilityScope.Public,
+                string reportTitle = null,
+                string reportBody = null,
+                string reportUpdatedLabel = null)
             {
                 BookKey = bookKey;
                 Orientation = orientation;
@@ -3722,6 +3948,15 @@ namespace BookshelfPorting.Runtime
                 IsPublic = isPublic;
                 IsPaidCoverOwned = isPaidCoverOwned;
                 IsDecoration = isDecoration;
+                BookshelfItemId = bookshelfItemId;
+                UserBookId = userBookId;
+                BookshelfId = bookshelfId;
+                BookshelfSectionId = bookshelfSectionId;
+                ReadingRecordId = readingRecordId;
+                ReportVisibility = reportVisibility;
+                ReportTitle = reportTitle;
+                ReportBody = reportBody;
+                ReportUpdatedLabel = reportUpdatedLabel;
             }
 
             public string BookKey { get; }
@@ -3738,6 +3973,15 @@ namespace BookshelfPorting.Runtime
             public bool IsPublic { get; }
             public bool IsPaidCoverOwned { get; }
             public bool IsDecoration { get; }
+            public string BookshelfItemId { get; }
+            public string UserBookId { get; }
+            public string BookshelfId { get; }
+            public string BookshelfSectionId { get; }
+            public string ReadingRecordId { get; }
+            public VisibilityScope ReportVisibility { get; }
+            public string ReportTitle { get; }
+            public string ReportBody { get; }
+            public string ReportUpdatedLabel { get; }
         }
     }
 }

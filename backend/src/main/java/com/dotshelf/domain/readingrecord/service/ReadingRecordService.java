@@ -37,6 +37,17 @@ public class ReadingRecordService {
         return ReadingRecordResponse.from(getRecordEntity(recordId));
     }
 
+    public ReadingRecordResponse getMyRecordByUserBook(Long userId, Long userBookId) {
+        Long currentUserId = userService.requireUserId(userId);
+        UserBook userBook = bookService.getUserBook(userBookId);
+        if (!userBook.getUserId().equals(currentUserId)) {
+            throw new CustomException(ErrorCode.FORBIDDEN);
+        }
+        return ReadingRecordResponse.from(readingRecordRepository.findByUserBookId(userBookId)
+                .filter(record -> "ACTIVE".equals(record.getStatus()))
+                .orElse(null));
+    }
+
     public ReadingRecordListResponse getUserRecords(Long userId) {
         List<Long> userBookIds = userBookRepository.findByUserIdAndStorageStatusNot(userId, "DELETED").stream()
                 .map(UserBook::getId)
@@ -54,6 +65,10 @@ public class ReadingRecordService {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
         ReadingRecord record = readingRecordRepository.findByUserBookId(request.userBookId())
+                .map(existing -> {
+                    existing.update(request.title(), request.content(), request.visibilityScope());
+                    return existing;
+                })
                 .orElseGet(() -> readingRecordRepository.save(ReadingRecord.builder()
                         .userBookId(request.userBookId())
                         .title(request.title())

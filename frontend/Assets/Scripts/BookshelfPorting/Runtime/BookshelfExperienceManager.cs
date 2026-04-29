@@ -213,6 +213,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private BookInteractionController interactionController = null;
         [SerializeField] private BookshelfGenerator bookshelfGenerator = null;
         [SerializeField] private BookshelfRuntimeDataStore dataStore = null;
+        [SerializeField] private BookshelfApiSyncController bookshelfApiSyncController = null;
         [SerializeField] private NotebookScreenController notebookScreenController = null;
 
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
@@ -539,6 +540,17 @@ namespace BookshelfPorting.Runtime
                     bookshelfGenerator.BookshelfSwitchStateChanged += HandleBookshelfSwitchStateChanged;
                 }
             }
+        }
+
+        public void ConfigureBookshelfApiSync(BookshelfApiSyncController syncController)
+        {
+            bookshelfApiSyncController = syncController;
+        }
+
+        public void NotifyBookshelfApiSynced()
+        {
+            RefreshBookshelfIndexIndicator(CurrentFocusArea == ExperienceFocusArea.Bookshelf && (state == null || !state.IsViewingBook));
+            RefreshHud();
         }
 
         private void Awake()
@@ -1169,6 +1181,11 @@ namespace BookshelfPorting.Runtime
 
         private void ConfirmBookPlacementEdit()
         {
+            if (placementEditBook != null)
+            {
+                bookshelfApiSyncController?.SyncBookPlacement(placementEditBook);
+            }
+
             CloseBookPlacementEditor(false);
             RefreshHud();
         }
@@ -1269,6 +1286,7 @@ namespace BookshelfPorting.Runtime
                 bookEditPanel.SetActive(false);
             }
 
+            bookshelfApiSyncController?.RemoveBook(book);
             Destroy(book.gameObject);
             MarkBookshelfEditDirty();
             RefreshHud();
@@ -1297,6 +1315,7 @@ namespace BookshelfPorting.Runtime
             meta.isRead = meta.readingStatus == App.Domain.ReadingStatus.Read;
             isBookRatingChoicePanelOpen = false;
             dataStore.ApplyBookMeta(book, meta);
+            bookshelfApiSyncController?.SyncBookState(book);
             RefreshBookDetailPanel();
             RefreshHud();
         }
@@ -1323,6 +1342,7 @@ namespace BookshelfPorting.Runtime
             meta.isLiked = !meta.isLiked;
             isBookRatingChoicePanelOpen = false;
             dataStore.ApplyBookMeta(book, meta);
+            bookshelfApiSyncController?.SyncBookLike(book);
             RefreshBookDetailPanel();
             RefreshHud();
         }
@@ -1368,6 +1388,7 @@ namespace BookshelfPorting.Runtime
             meta.ownerRating = Mathf.Approximately(meta.ownerRating, clampedRating) ? 0f : clampedRating;
             isBookRatingChoicePanelOpen = false;
             dataStore.ApplyBookMeta(book, meta);
+            bookshelfApiSyncController?.SyncBookState(book);
             RefreshBookDetailPanel();
             RefreshHud();
         }
@@ -1390,6 +1411,7 @@ namespace BookshelfPorting.Runtime
                 : App.Domain.VisibilityScope.Public;
             meta.isPublic = meta.reportVisibility == App.Domain.VisibilityScope.Public;
             dataStore.ApplyBookMeta(ActiveDetailBook, meta);
+            bookshelfApiSyncController?.SaveReadingRecord(ActiveDetailBook);
             RefreshBookDetailPanel();
             RefreshHud();
         }
@@ -4161,6 +4183,7 @@ namespace BookshelfPorting.Runtime
             if (bookshelfNameInputField.text != previousName)
             {
                 MarkBookshelfEditDirty();
+                bookshelfApiSyncController?.UpdateBookshelf(displayIndex);
             }
 
             SetBookshelfOverlayMode(BookshelfOverlayMode.None);
@@ -4674,6 +4697,7 @@ namespace BookshelfPorting.Runtime
 
                 book.readingStatus = pendingBookAddReadingStatus;
                 book.isRead = pendingBookAddReadingStatus == App.Domain.ReadingStatus.Read;
+                bookshelfApiSyncController?.AddBookToActiveShelf(book);
                 bookAddFeedbackMessage = $"{item.Title} 추가 완료 · {GetReadingStatusLabel(pendingBookAddReadingStatus)} · {GetOrientationLabel(orientation)}";
             }
 
@@ -4723,6 +4747,7 @@ namespace BookshelfPorting.Runtime
 
             book.readingStatus = pendingBookAddReadingStatus;
             book.isRead = pendingBookAddReadingStatus == App.Domain.ReadingStatus.Read;
+            bookshelfApiSyncController?.AddBookToActiveShelf(book);
             bookAddFeedbackMessage = $"{item.Title} 추가 완료 · {GetReadingStatusLabel(pendingBookAddReadingStatus)} · {GetOrientationLabel(orientation)}";
             return true;
         }
@@ -5158,6 +5183,7 @@ namespace BookshelfPorting.Runtime
 
             bookshelfGenerator.CycleActiveBookshelfVisibility();
             MarkBookshelfEditDirty();
+            bookshelfApiSyncController?.UpdateBookshelf(bookshelfGenerator.DisplayBookshelfIndex);
             RefreshHud();
         }
 
@@ -5171,6 +5197,7 @@ namespace BookshelfPorting.Runtime
             if (bookshelfGenerator.AddBookshelf())
             {
                 MarkBookshelfEditDirty();
+                bookshelfApiSyncController?.CreateBookshelf(bookshelfGenerator.DisplayBookshelfName);
                 isBookshelfManagePanelOpen = true;
                 RefreshHud();
             }
@@ -5236,6 +5263,7 @@ namespace BookshelfPorting.Runtime
                 bookshelfGenerator.MoveBookshelfOrder(sourceIndex, targetIndex))
             {
                 MarkBookshelfEditDirty();
+                bookshelfApiSyncController?.ReorderBookshelves();
                 isBookshelfManagePanelOpen = true;
                 RefreshHud();
                 return;
@@ -6211,6 +6239,7 @@ namespace BookshelfPorting.Runtime
             if (bookshelfGenerator.AddBookshelf())
             {
                 MarkBookshelfEditDirty();
+                bookshelfApiSyncController?.CreateBookshelf(bookshelfGenerator.DisplayBookshelfName);
                 RefreshHud();
             }
         }
@@ -6267,9 +6296,11 @@ namespace BookshelfPorting.Runtime
                 bookshelfNameModalBackdrop.SetActive(false);
             }
 
+            var deletedBookshelfServerId = bookshelfGenerator.GetBookshelfServerId(displayIndex);
             if (bookshelfGenerator.DeleteActiveBookshelf())
             {
                 MarkBookshelfEditDirty();
+                bookshelfApiSyncController?.DeleteBookshelf(deletedBookshelfServerId);
             }
 
             RefreshHud();
@@ -7153,6 +7184,8 @@ namespace BookshelfPorting.Runtime
             meta.readingStatus = App.Domain.ReadingStatus.Read;
 
             dataStore.ApplyBookMeta(activeReportBook, meta);
+            bookshelfApiSyncController?.SaveReadingRecord(activeReportBook);
+            bookshelfApiSyncController?.SyncBookState(activeReportBook);
             isBookReportWritePanelOpen = false;
             isBookReportReadPanelOpen = true;
             RefreshHud();
@@ -7179,6 +7212,7 @@ namespace BookshelfPorting.Runtime
             };
             meta.isPublic = meta.reportVisibility == App.Domain.VisibilityScope.Public;
             dataStore.ApplyBookMeta(activeReportBook, meta);
+            bookshelfApiSyncController?.SaveReadingRecord(activeReportBook);
             RefreshHud();
         }
 

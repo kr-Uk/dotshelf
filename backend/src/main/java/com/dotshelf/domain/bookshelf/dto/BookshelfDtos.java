@@ -1,10 +1,15 @@
 package com.dotshelf.domain.bookshelf.dto;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
+import com.dotshelf.domain.book.entity.Book;
+import com.dotshelf.domain.book.entity.UserBook;
 import com.dotshelf.domain.bookshelf.entity.Bookshelf;
 import com.dotshelf.domain.bookshelf.entity.BookshelfItem;
 import com.dotshelf.domain.bookshelf.entity.BookshelfSection;
+import com.dotshelf.domain.readingrecord.entity.ReadingRecord;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -53,12 +58,18 @@ public final class BookshelfDtos {
             Long bookshelfItemId,
             String itemType,
             Long sectionId,
+            Integer sectionRow,
+            Integer sectionColumn,
             Integer slotNo,
+            String facingDirection,
             String displayStyle,
+            BigDecimal rotationDeg,
             Long userBookId,
+            UserBookSummaryResponse userBook,
             BookSummaryResponse book,
             Long assetInventoryId,
-            AssetSummaryResponse asset
+            AssetSummaryResponse asset,
+            ReadingRecordSummaryResponse readingRecord
     ) {
     }
 
@@ -66,8 +77,86 @@ public final class BookshelfDtos {
             Long bookId,
             String title,
             String author,
+            String publisher,
+            String description,
+            String isbn13,
+            String isbn10,
             String coverImageUrl
     ) {
+
+        public static BookSummaryResponse from(Book book) {
+            if (book == null) {
+                return null;
+            }
+            return new BookSummaryResponse(
+                    book.getId(),
+                    book.getTitle(),
+                    book.getAuthor(),
+                    book.getPublisher(),
+                    book.getDescription(),
+                    book.getIsbn13(),
+                    book.getIsbn10(),
+                    book.getCoverImageUrl()
+            );
+        }
+    }
+
+    public record UserBookSummaryResponse(
+            Long id,
+            Long userId,
+            Long bookId,
+            String readingStatus,
+            String storageStatus,
+            BigDecimal ownerRating,
+            boolean liked,
+            Long selectedCoverProductId
+    ) {
+
+        public static UserBookSummaryResponse from(UserBook userBook) {
+            if (userBook == null) {
+                return null;
+            }
+            return new UserBookSummaryResponse(
+                    userBook.getId(),
+                    userBook.getUserId(),
+                    userBook.getBookId(),
+                    userBook.getReadingStatus(),
+                    userBook.getStorageStatus(),
+                    userBook.getOwnerRating(),
+                    userBook.isLiked(),
+                    userBook.getSelectedCoverProductId()
+            );
+        }
+    }
+
+    public record ReadingRecordSummaryResponse(
+            Long id,
+            Long userBookId,
+            String title,
+            String content,
+            String visibilityScope,
+            int likeCount,
+            int commentCount,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+
+        public static ReadingRecordSummaryResponse from(ReadingRecord record) {
+            if (record == null) {
+                return null;
+            }
+            return new ReadingRecordSummaryResponse(
+                    record.getId(),
+                    record.getUserBookId(),
+                    record.getTitle(),
+                    record.getContent(),
+                    record.getVisibilityScope(),
+                    record.getLikeCount(),
+                    record.getCommentCount(),
+                    record.getCreatedAt(),
+                    record.getUpdatedAt()
+            );
+        }
     }
 
     public record AssetSummaryResponse(
@@ -89,7 +178,6 @@ public final class BookshelfDtos {
     }
 
     public record UpdateBookshelfRequest(
-            @NotBlank(message = "책장 이름은 필수입니다.")
             String name,
             String description,
             String visibilityScope,
@@ -126,6 +214,7 @@ public final class BookshelfDtos {
             Long sectionId,
             @NotNull(message = "slotNo는 필수입니다.")
             Integer slotNo,
+            String facingDirection,
             String displayStyle
     ) {
     }
@@ -137,6 +226,7 @@ public final class BookshelfDtos {
             Long sectionId,
             @NotNull(message = "slotNo는 필수입니다.")
             Integer slotNo,
+            String facingDirection,
             String displayStyle
     ) {
     }
@@ -149,7 +239,9 @@ public final class BookshelfDtos {
             Long userBookId,
             Long assetInventoryId,
             Integer slotNo,
-            String displayStyle
+            String facingDirection,
+            String displayStyle,
+            BigDecimal rotationDeg
     ) {
 
         public static BookshelfItemResponse from(BookshelfItem item) {
@@ -161,7 +253,9 @@ public final class BookshelfDtos {
                     item.getUserBookId(),
                     item.getAssetInventoryId(),
                     item.getSlotNo(),
-                    item.getDisplayStyle()
+                    item.getFacingDirection(),
+                    item.getDisplayStyle(),
+                    item.getRotationDeg()
             );
         }
     }

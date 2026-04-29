@@ -39,6 +39,14 @@ public class ReadingRecordController {
         return ApiResponse.success(readingRecordService.getRecord(recordId));
     }
 
+    @GetMapping("/user-books/{userBookId}/reading-record")
+    public ApiResponse<ReadingRecordResponse> getMyRecordByUserBook(
+            @CurrentUser Long userId,
+            @PathVariable Long userBookId
+    ) {
+        return ApiResponse.success(readingRecordService.getMyRecordByUserBook(userId, userBookId));
+    }
+
     @GetMapping("/users/{userId}/reading-records")
     public ApiResponse<ReadingRecordListResponse> getUserRecords(@PathVariable Long userId) {
         return ApiResponse.success(readingRecordService.getUserRecords(userId));
