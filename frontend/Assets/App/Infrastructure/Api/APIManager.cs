@@ -80,7 +80,11 @@ namespace App.Infrastructure.Api
             Action<ApiErrorResponseDto> onError = null,
             Dictionary<string, string> headers = null)
         {
-            var request = UnityWebRequest.Get(BuildUrl(path));
+            // (디버깅) BuildUrl 결과와 UnityWebRequest 생성 후 request.url 비교
+            var fullUrl = BuildUrl(path);
+            Debug.Log($"[APIManager DEBUG Get] BuildUrl returned: '{fullUrl}'");
+            var request = UnityWebRequest.Get(fullUrl);
+            Debug.Log($"[APIManager DEBUG Get] After UnityWebRequest.Get, request.url='{request.url}'");
             ApplyHeaders(request, headers);
             return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
         }
