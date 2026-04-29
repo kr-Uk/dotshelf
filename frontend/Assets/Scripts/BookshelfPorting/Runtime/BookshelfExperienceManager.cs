@@ -354,8 +354,11 @@ namespace BookshelfPorting.Runtime
         // useExternalDashboardPanel = true 일 때 옛 guestbookPanel/Preview 생성을 skip하고 externalDashboardPanel만 사용.
         // false면 종전과 동일 (옛 방명록 UI). cleanup은 phase 5 별도 PR에서.
         [Header("Dashboard Integration (v1.0)")]
-        [SerializeField] private bool useExternalDashboardPanel = true;
-        [Tooltip("GuestbookBoard 자리에 띄울 새 dashboard prefab 인스턴스. 보통 GuestbookBoardHitArea의 자식으로 배치한 우리 DashboardScreenPanel.")]
+        [Tooltip("GuestbookBoard 자리에 새 UI Toolkit dashboard prefab을 띄우는 모드. " +
+                "MR #61 시점에 UI Toolkit World Space input 라우팅이 BookshelfPorting raycast와 충돌해 " +
+                "click 동작 안 함. 별도 phase에서 fix 후 true로 토글 (default false로 옛 guestbookBoardCanvas 유지).")]
+        [SerializeField] private bool useExternalDashboardPanel = false;
+        [Tooltip("GuestbookBoard 자리에 띄울 새 dashboard prefab 인스턴스. 보통 scene root에 두고 코드가 reparent.")]
         [SerializeField] private GameObject externalDashboardPanel;
 
         [SerializeField] private bool guestbookOwnerMode = true;
@@ -7488,16 +7491,17 @@ namespace BookshelfPorting.Runtime
 
         private void EnsureGuestbookBoardUi()
         {
-            // (v1.0 dashboard 통합) 외부 prefab 모드면 옛 guestbookBoardCanvas 생성을 통째 skip.
-            // 시작 시점에는 prefab을 건드리지 않는다 — Start에서 reparent하면 BookshelfGenerator의
-            // 동적 GuestbookHitArea 초기화 흐름과 같은 frame에서 충돌해 raycast가 깨질 수 있음.
-            // 실제 reparent + active 토글은 SetGuestbookFocusPresentation(true) 시점(focus 진입 시)에 lazy.
+            // (v1.0 dashboard 통합 — MR #61) 외부 prefab이 scene에 인스턴스화되어 있으면 어떤 모드든 시작 시 inactive 보장.
+            // useExternalDashboardPanel=false (default — input 라우팅 fix 전까지 옛 guestbookBoardCanvas 사용)
+            // 일 때도 prefab이 World Space에 떠서 raycast/render 영향 주지 않도록 강제 hide.
+            if (externalDashboardPanel != null && externalDashboardPanel.activeSelf)
+            {
+                externalDashboardPanel.SetActive(false);
+            }
+
             if (useExternalDashboardPanel)
             {
-                if (externalDashboardPanel != null && externalDashboardPanel.activeSelf)
-                {
-                    externalDashboardPanel.SetActive(false);
-                }
+                // 외부 모드 — 옛 guestbookBoardCanvas 생성 skip. reparent + active 토글은 focus 진입 시점에.
                 return;
             }
 
