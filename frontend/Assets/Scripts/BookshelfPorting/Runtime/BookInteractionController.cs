@@ -12,6 +12,7 @@ namespace BookshelfPorting.Runtime
     {
         private const int DragVelocitySampleLimit = 5;
         private const float DragPreviewPitchDegrees = 15f;
+        private const float DefaultBookHoverHintDelaySeconds = 0.7f;
 
         private enum InvalidDropBehavior
         {
@@ -58,6 +59,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private Color bookHoverColor = new Color(1f, 0.68f, 0.28f, 0.20f);
         [SerializeField] private Color sectionHoverColor = new Color(0.40f, 0.78f, 1f, 0.16f);
         [SerializeField] private float bookHoverScaleMultiplier = 1.12f;
+        [SerializeField] private float bookHoverHintDelaySeconds = DefaultBookHoverHintDelaySeconds;
         [SerializeField] private float sectionHoverWidthInset = 0.025f;
         [SerializeField] private float sectionHoverHeightInset = 0.025f;
 
@@ -66,6 +68,11 @@ namespace BookshelfPorting.Runtime
         private BookEntity draggingBook;
         private GameObject ghostPreview;
         private GameObject bookHoverIndicator;
+        private GameObject bookHoverHintObject;
+        private Text bookHoverHintText;
+        private RectTransform bookHoverHintPanelRect;
+        private BookEntity pendingHoverHintBook;
+        private float pendingHoverHintStartedAt;
         private GameObject sectionHoverIndicator;
         private Material bookHoverMaterial;
         private Material sectionHoverMaterial;
@@ -88,6 +95,7 @@ namespace BookshelfPorting.Runtime
         private Transform dragLayerRoot;
         private bool isManipulatingViewedBook;
         private bool viewedBookPressStartedOnBook;
+        private bool isTrackingViewedBookPointer;
         private bool isPanningFrontalCamera;
         private float viewedBookPointerTravel;
         private int edgeSwitchDirection;
@@ -215,6 +223,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            ResetBookHoverHint();
             var book = state.ActiveViewedBook;
             state.IsViewingBook = false;
             state.ActiveViewedBook = null;
@@ -245,6 +254,12 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (!IsBookshelfFocusActive())
+            {
+                experienceManager?.FocusBookshelf();
+                return;
+            }
+
             if (state != null && state.IsViewingBook && state.ActiveViewedBook != book)
             {
                 CloseViewedBook(true);
@@ -252,36 +267,11 @@ namespace BookshelfPorting.Runtime
 
             if (state != null && state.IsViewingBook && state.ActiveViewedBook == book)
             {
+                experienceManager?.ToggleFocusedBookDetail(book);
                 return;
             }
 
             ViewBook(book);
-        }
-
-        public void ShowViewedBookFront()
-        {
-            SetViewedBookRotation(BookFootprintUtility.GetVisualRotation(BookOrientation.Front));
-        }
-
-        public void ShowViewedBookBack()
-        {
-            SetViewedBookRotation(Quaternion.Euler(0f, -90f, 0f));
-        }
-
-        private void SetViewedBookRotation(Quaternion localFaceRotation)
-        {
-            if (state == null ||
-                !state.IsViewingBook ||
-                state.ActiveViewedBook == null ||
-                cameraController == null ||
-                cameraController.BookViewAnchor == null)
-            {
-                return;
-            }
-
-            var targetRotation = cameraController.BookViewAnchor.rotation * localFaceRotation;
-            state.ActiveViewedBook.BeginViewRotation(targetRotation);
-            state.ActiveViewedBook.transform.rotation = targetRotation;
         }
 
         private void HandleKeyboardShortcuts()
@@ -314,6 +304,7 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isManipulatingViewedBook = false;
+                isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
                 return;
             }
@@ -333,6 +324,7 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isManipulatingViewedBook = false;
+                isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
                 return;
             }
@@ -342,6 +334,7 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isManipulatingViewedBook = false;
+                isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
                 return;
             }
@@ -350,8 +343,9 @@ namespace BookshelfPorting.Runtime
             {
                 lastPointer = pointer;
                 pressedBook = state.ActiveViewedBook;
-                isManipulatingViewedBook = true;
                 viewedBookPressStartedOnBook = IsPointerOverActiveViewedBook(currentPointerTarget);
+                isTrackingViewedBookPointer = true;
+                isManipulatingViewedBook = viewedBookPressStartedOnBook;
                 viewedBookPointerTravel = 0f;
                 return;
             }
@@ -370,9 +364,14 @@ namespace BookshelfPorting.Runtime
 
             if (state.IsViewingBook && state.ActiveViewedBook != null)
             {
+                if (!isTrackingViewedBookPointer)
+                {
+                    return;
+                }
+
+                viewedBookPointerTravel += delta.magnitude;
                 if (isManipulatingViewedBook)
                 {
-                    viewedBookPointerTravel += delta.magnitude;
                     state.ActiveViewedBook.AddViewRotation(delta, viewRotationSpeed);
                 }
 
@@ -421,6 +420,7 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isManipulatingViewedBook = false;
+                isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
                 return;
             }
@@ -440,8 +440,17 @@ namespace BookshelfPorting.Runtime
             }
             else if (state.IsViewingBook)
             {
+                if (IsPointerOverUi(pointer))
+                {
+                    isManipulatingViewedBook = false;
+                    viewedBookPressStartedOnBook = false;
+                    isTrackingViewedBookPointer = false;
+                    viewedBookPointerTravel = 0f;
+                    return;
+                }
+
                 var pointerOverActiveBook = IsPointerOverActiveViewedBook(currentPointerTarget);
-                if (isManipulatingViewedBook && viewedBookPointerTravel <= 4f)
+                if (viewedBookPointerTravel <= 4f)
                 {
                     if (viewedBookPressStartedOnBook || pointerOverActiveBook)
                     {
@@ -455,6 +464,7 @@ namespace BookshelfPorting.Runtime
 
                 isManipulatingViewedBook = false;
                 viewedBookPressStartedOnBook = false;
+                isTrackingViewedBookPointer = false;
                 viewedBookPointerTravel = 0f;
             }
             else if (isPanningFrontalCamera)
@@ -471,7 +481,15 @@ namespace BookshelfPorting.Runtime
                 }
                 else
                 {
-                    ViewBook(pressedBook);
+                    if (experienceManager != null &&
+                        experienceManager.CurrentFocusArea != ExperienceFocusArea.Bookshelf)
+                    {
+                        experienceManager.FocusBookshelf();
+                    }
+                    else
+                    {
+                        ViewBook(pressedBook);
+                    }
                 }
             }
             else if (IsBookshelfEditMode() &&
@@ -491,6 +509,7 @@ namespace BookshelfPorting.Runtime
         private bool CanPanFrontalCamera(Vector2 pointer)
         {
             return state != null &&
+                   IsBookshelfFocusActive() &&
                    cameraController != null &&
                    cameraController.CurrentMode == CameraMode.Frontal &&
                    !cameraController.IsTransitioning &&
@@ -506,6 +525,7 @@ namespace BookshelfPorting.Runtime
         private bool CanInteractWithShelfBooks()
         {
             return state != null &&
+                   IsBookshelfFocusActive() &&
                    sceneCamera != null &&
                    cameraController != null &&
                    cameraController.CurrentMode == CameraMode.Frontal &&
@@ -530,9 +550,22 @@ namespace BookshelfPorting.Runtime
             return experienceManager != null && experienceManager.IsBookshelfWorldInputBlocked;
         }
 
+        private bool IsBookshelfFocusActive()
+        {
+            if (experienceManager != null && experienceManager.CurrentFocusArea != ExperienceFocusArea.Bookshelf)
+            {
+                return false;
+            }
+
+            return cameraController != null &&
+                   cameraController.CurrentMode == CameraMode.Frontal &&
+                   !cameraController.IsTransitioning;
+        }
+
         private bool CanViewShelfBooks()
         {
             return state != null &&
+                   IsBookshelfFocusActive() &&
                    sceneCamera != null &&
                    cameraController != null &&
                    cameraController.CurrentMode == CameraMode.Frontal &&
@@ -639,15 +672,24 @@ namespace BookshelfPorting.Runtime
             {
                 var hit = hits[i];
                 var hitArea = hit.collider.GetComponent<BookInteractionHitArea>();
-                if (hitArea != null && hitArea.Owner != null)
+                if (hitArea != null)
                 {
-                    return new PointerTarget(PointerTargetType.ViewedBookInteractionArea, hitArea.Owner, hitArea.Owner.CurrentSection);
+                    continue;
                 }
 
                 var book = hit.collider.GetComponentInParent<BookEntity>();
                 if (book != null)
                 {
                     return new PointerTarget(PointerTargetType.Book, book, book.CurrentSection);
+                }
+            }
+
+            for (var i = 0; i < hits.Length; i++)
+            {
+                var hitArea = hits[i].collider.GetComponent<BookInteractionHitArea>();
+                if (hitArea != null && hitArea.Owner != null)
+                {
+                    return new PointerTarget(PointerTargetType.ViewedBookInteractionArea, hitArea.Owner, hitArea.Owner.CurrentSection);
                 }
             }
 
@@ -731,6 +773,65 @@ namespace BookshelfPorting.Runtime
             bookHoverIndicator.transform.localRotation = Quaternion.identity;
             bookHoverIndicator.transform.localScale = ResolveBookHoverSize(book);
             bookHoverIndicator.SetActive(true);
+            UpdateBookHoverHint(book);
+        }
+
+        private void UpdateBookHoverHint(BookEntity book)
+        {
+            if (book == null || draggingBook != null)
+            {
+                ResetBookHoverHint();
+                return;
+            }
+
+            if (pendingHoverHintBook != book)
+            {
+                pendingHoverHintBook = book;
+                pendingHoverHintStartedAt = Time.unscaledTime;
+                HideBookHoverHint();
+                return;
+            }
+
+            var hintDelay = Mathf.Max(0.1f, bookHoverHintDelaySeconds);
+            if (Time.unscaledTime - pendingHoverHintStartedAt < hintDelay)
+            {
+                return;
+            }
+
+            ShowBookHoverHint(book);
+        }
+
+        private void ShowBookHoverHint(BookEntity book)
+        {
+            if (book == null || sceneCamera == null)
+            {
+                HideBookHoverHint();
+                return;
+            }
+
+            EnsureBookHoverHint();
+            if (bookHoverHintObject == null || bookHoverHintText == null || bookHoverHintPanelRect == null)
+            {
+                return;
+            }
+
+            var title = string.IsNullOrWhiteSpace(book.title) ? book.bookId : book.title;
+            var author = string.IsNullOrWhiteSpace(book.author) ? "저자 미상" : book.author;
+            bookHoverHintText.text = $"{title}\n{author} · {GetReadingStatusLabel(book.readingStatus)}";
+
+            var worldPosition = book.transform.position + Vector3.up * Mathf.Max(0.16f, book.height * 1.08f);
+            var screenPoint = sceneCamera.WorldToScreenPoint(worldPosition);
+            if (screenPoint.z <= 0f)
+            {
+                HideBookHoverHint();
+                return;
+            }
+
+            var size = bookHoverHintPanelRect.sizeDelta;
+            var x = Mathf.Clamp(screenPoint.x, size.x * 0.5f + 16f, Screen.width - size.x * 0.5f - 16f);
+            var y = Mathf.Clamp(screenPoint.y + 28f, size.y * 0.5f + 16f, Screen.height - size.y * 0.5f - 16f);
+            bookHoverHintPanelRect.position = new Vector3(x, y, 0f);
+            bookHoverHintObject.SetActive(true);
         }
 
         private Vector3 ResolveBookHoverCenter(BookEntity book)
@@ -786,6 +887,23 @@ namespace BookshelfPorting.Runtime
             {
                 bookHoverIndicator.SetActive(false);
             }
+
+            ResetBookHoverHint();
+        }
+
+        private void ResetBookHoverHint()
+        {
+            pendingHoverHintBook = null;
+            pendingHoverHintStartedAt = 0f;
+            HideBookHoverHint();
+        }
+
+        private void HideBookHoverHint()
+        {
+            if (bookHoverHintObject != null)
+            {
+                bookHoverHintObject.SetActive(false);
+            }
         }
 
         private void HideSectionHoverIndicator()
@@ -814,6 +932,83 @@ namespace BookshelfPorting.Runtime
             }
 
             sectionHoverIndicator = CreateHoverIndicator("SectionHoverIndicator", GetSectionHoverMaterial());
+        }
+
+        private void EnsureBookHoverHint()
+        {
+            if (bookHoverHintObject != null)
+            {
+                return;
+            }
+
+            bookHoverHintObject = new GameObject("BookHoverHintCanvas");
+            var canvas = bookHoverHintObject.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = 512;
+            var scaler = bookHoverHintObject.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1600f, 1000f);
+            scaler.matchWidthOrHeight = 0.5f;
+
+            var canvasRect = bookHoverHintObject.GetComponent<RectTransform>();
+            canvasRect.anchorMin = Vector2.zero;
+            canvasRect.anchorMax = Vector2.one;
+            canvasRect.offsetMin = Vector2.zero;
+            canvasRect.offsetMax = Vector2.zero;
+
+            var panelObject = new GameObject("HintPanel", typeof(RectTransform));
+            panelObject.transform.SetParent(bookHoverHintObject.transform, false);
+            bookHoverHintPanelRect = panelObject.GetComponent<RectTransform>();
+            bookHoverHintPanelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            bookHoverHintPanelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            bookHoverHintPanelRect.pivot = new Vector2(0.5f, 0.5f);
+            bookHoverHintPanelRect.sizeDelta = new Vector2(300f, 96f);
+            bookHoverHintPanelRect.localScale = Vector3.one;
+
+            var backgroundObject = new GameObject("Background");
+            backgroundObject.transform.SetParent(panelObject.transform, false);
+            var background = backgroundObject.AddComponent<Image>();
+            background.color = new Color32(255, 248, 236, 238);
+            background.raycastTarget = false;
+            var backgroundRect = backgroundObject.GetComponent<RectTransform>();
+            backgroundRect.anchorMin = Vector2.zero;
+            backgroundRect.anchorMax = Vector2.one;
+            backgroundRect.offsetMin = Vector2.zero;
+            backgroundRect.offsetMax = Vector2.zero;
+
+            var textObject = new GameObject("Text");
+            textObject.transform.SetParent(panelObject.transform, false);
+            bookHoverHintText = textObject.AddComponent<Text>();
+            bookHoverHintText.font = RuntimeUiFont.Resolve();
+            bookHoverHintText.fontSize = 22;
+            bookHoverHintText.fontStyle = RuntimeUiFont.ResolveStyle(bookHoverHintText.font, FontStyle.Bold);
+            bookHoverHintText.color = new Color32(49, 42, 36, 255);
+            bookHoverHintText.alignment = TextAnchor.MiddleLeft;
+            bookHoverHintText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            bookHoverHintText.verticalOverflow = VerticalWrapMode.Truncate;
+            bookHoverHintText.raycastTarget = false;
+
+            var textRect = textObject.GetComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(18f, 10f);
+            textRect.offsetMax = new Vector2(-18f, -10f);
+
+            bookHoverHintObject.SetActive(false);
+        }
+
+        private static string GetReadingStatusLabel(App.Domain.ReadingStatus status)
+        {
+            switch (status)
+            {
+                case App.Domain.ReadingStatus.Read:
+                    return "읽음";
+                case App.Domain.ReadingStatus.Reading:
+                    return "읽는 중";
+                default:
+                    return "안 읽음";
+            }
         }
 
         private static GameObject CreateHoverIndicator(string name, Material material)
@@ -891,6 +1086,13 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (!IsBookshelfFocusActive())
+            {
+                experienceManager?.FocusBookshelf();
+                return;
+            }
+
+            ResetBookHoverHint();
             state.IsViewingBook = true;
             state.ActiveViewedBook = book;
             experienceManager?.HandleBookViewed(book);
@@ -940,6 +1142,7 @@ namespace BookshelfPorting.Runtime
 
         private void BeginDrag(BookEntity book)
         {
+            ResetBookHoverHint();
             DisableDropPhysics(book);
             if (generator != null && generator.BooksRoot != null && book.transform.parent != generator.BooksRoot)
             {
@@ -1750,7 +1953,7 @@ namespace BookshelfPorting.Runtime
             return state.IsViewingBook &&
                    state.ActiveViewedBook != null &&
                    target.Book == state.ActiveViewedBook &&
-                   target.Type != PointerTargetType.None;
+                   target.Type == PointerTargetType.Book;
         }
 
         private void EnsureGhostPreview(BookEntity book)
@@ -1852,7 +2055,7 @@ namespace BookshelfPorting.Runtime
             var textObject = new GameObject("Label");
             textObject.transform.SetParent(buttonObject.transform, false);
             var text = textObject.AddComponent<Text>();
-            text.text = "Back";
+            text.text = "X";
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Color.white;
             text.font = RuntimeUiFont.Resolve();
