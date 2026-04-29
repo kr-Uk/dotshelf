@@ -72,6 +72,48 @@
             <ui:Button name="write-guestbook-button" class="bottom-action-button write-button" text="방명록 작성" />
         </ui:VisualElement>
 
+        <ui:VisualElement name="guestbook-detail-modal" class="modal-root hidden">
+            <ui:VisualElement class="modal-backdrop" />
+            <ui:VisualElement class="modal-frame">
+                <ui:VisualElement class="modal-header">
+                    <ui:Label class="modal-title" text="방명록" />
+                    <ui:Button name="guestbook-detail-close-button" class="modal-close-button" text="✕" />
+                </ui:VisualElement>
+
+                <ui:VisualElement class="guestbook-detail-card">
+                    <ui:Label name="guestbook-detail-content-text" class="guestbook-detail-content-text" />
+                    <ui:Label name="guestbook-detail-meta" class="guestbook-detail-meta" />
+                </ui:VisualElement>
+
+                <ui:VisualElement class="form-row guestbook-detail-actions-row">
+                    <ui:Button name="guestbook-detail-report-button" class="modal-action-button secondary small" text="신고" />
+                    <ui:Button name="guestbook-detail-delete-button" class="modal-action-button danger small hidden" text="삭제" />
+                </ui:VisualElement>
+
+                <ui:VisualElement name="guestbook-detail-reply-existing" class="reply-block hidden">
+                    <ui:Label class="form-label" text="답장" />
+                    <ui:VisualElement class="guestbook-detail-card reply-card">
+                        <ui:Label name="guestbook-detail-reply-content" class="guestbook-detail-content-text" />
+                        <ui:Label name="guestbook-detail-reply-meta" class="guestbook-detail-meta" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="form-row guestbook-detail-actions-row">
+                        <ui:Button name="guestbook-detail-reply-delete-button" class="modal-action-button danger small hidden" text="답장 삭제" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:VisualElement name="guestbook-detail-reply-form" class="reply-block hidden">
+                    <ui:Label class="form-label" text="답장 작성 (30자)" />
+                    <ui:TextField name="guestbook-detail-reply-input" class="form-textarea" multiline="true" max-length="30" />
+                    <ui:Label name="guestbook-detail-reply-counter" class="form-counter" text="0 / 30" />
+                    <ui:Label class="form-label" text="포스트잇 스타일" />
+                    <ui:ScrollView name="guestbook-detail-reply-style-list" class="postit-style-scroll" mode="Horizontal" vertical-scroller-visibility="Hidden" horizontal-scroller-visibility="Hidden" />
+                    <ui:VisualElement class="modal-footer">
+                        <ui:Button name="guestbook-detail-reply-submit-button" class="modal-action-button primary" text="답장 작성" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
         <ui:VisualElement name="guestbook-write-modal" class="modal-root hidden">
             <ui:VisualElement class="modal-backdrop" />
             <ui:VisualElement class="modal-frame">

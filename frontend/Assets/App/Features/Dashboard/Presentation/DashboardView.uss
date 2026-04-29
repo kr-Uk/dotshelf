@@ -702,3 +702,50 @@
     -unity-text-align: middle-center;
     margin-top: auto;
 }
+
+/* ===== Guestbook detail ===== */
+
+.guestbook-detail-card {
+    background-color: rgb(255, 245, 200);
+    border-radius: 6px;
+    padding: 12px;
+    rotate: -1deg;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+
+.reply-card {
+    background-color: rgb(255, 240, 220);
+    rotate: 1deg;
+}
+
+.guestbook-detail-content-text {
+    font-size: 14px;
+    color: rgb(40, 40, 40);
+    white-space: normal;
+    margin-bottom: 8px;
+}
+
+.guestbook-detail-meta {
+    font-size: 10px;
+    color: rgb(120, 120, 120);
+    -unity-text-align: middle-right;
+}
+
+.guestbook-detail-actions-row {
+    justify-content: flex-end;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+
+.reply-block {
+    margin-top: 12px;
+    flex-shrink: 0;
+}
+
+.modal-action-button.small {
+    height: 24px;
+    min-width: 56px;
+    font-size: 11px;
+    padding: 0 10px;
+}

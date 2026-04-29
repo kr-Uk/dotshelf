@@ -46,6 +46,10 @@ namespace Dotshelf.Scripts.Dashboard
         private UnfollowUserUseCase unfollowUseCase;
         private BlockUserUseCase blockUseCase;
         private WriteGuestbookUseCase writeGuestbookUseCase;
+        private WriteGuestbookReplyUseCase writeGuestbookReplyUseCase;
+        private DeleteGuestbookUseCase deleteGuestbookUseCase;
+        private DeleteGuestbookReplyUseCase deleteGuestbookReplyUseCase;
+        private ReportGuestbookUseCase reportGuestbookUseCase;
 
         private VisualElement root;
         private Label nicknameLabel;
@@ -86,6 +90,28 @@ namespace Dotshelf.Scripts.Dashboard
         private VisualElement selectedPostItStyleCell;
 
         private static readonly long[] MockPostItStyleIds = { 1L, 2L, 3L, 4L, 5L };
+
+        private VisualElement guestbookDetailModalRoot;
+        private Label guestbookDetailContentText;
+        private Label guestbookDetailMeta;
+        private Button guestbookDetailCloseButton;
+        private Button guestbookDetailReportButton;
+        private Button guestbookDetailDeleteButton;
+        private VisualElement guestbookDetailReplyExisting;
+        private Label guestbookDetailReplyContent;
+        private Label guestbookDetailReplyMeta;
+        private Button guestbookDetailReplyDeleteButton;
+        private VisualElement guestbookDetailReplyForm;
+        private TextField guestbookDetailReplyInput;
+        private Label guestbookDetailReplyCounter;
+        private ScrollView guestbookDetailReplyStyleList;
+        private Button guestbookDetailReplySubmitButton;
+        private long selectedReplyPostItStyleId;
+        private VisualElement selectedReplyPostItStyleCell;
+        private Guestbook currentDetailGuestbook;
+
+        // Mock 환경에서 본인 user id를 1로 가정. Api 합류 시 SessionService에서 받아 주입 예정.
+        private const long MockSelfUserId = 1L;
 
         private enum UserListMode
         {
@@ -155,6 +181,10 @@ namespace Dotshelf.Scripts.Dashboard
             unfollowUseCase = new UnfollowUserUseCase(followRepo);
             blockUseCase = new BlockUserUseCase(followRepo);
             writeGuestbookUseCase = new WriteGuestbookUseCase(guestbookRepo);
+            writeGuestbookReplyUseCase = new WriteGuestbookReplyUseCase(guestbookRepo);
+            deleteGuestbookUseCase = new DeleteGuestbookUseCase(guestbookRepo);
+            deleteGuestbookReplyUseCase = new DeleteGuestbookReplyUseCase(guestbookRepo);
+            reportGuestbookUseCase = new ReportGuestbookUseCase(guestbookRepo);
         }
 
         private void QueryUI()
@@ -193,6 +223,22 @@ namespace Dotshelf.Scripts.Dashboard
             guestbookWriteCloseButton = root.Q<Button>("guestbook-write-close-button");
             guestbookWriteCancelButton = root.Q<Button>("guestbook-write-cancel-button");
             guestbookWriteSubmitButton = root.Q<Button>("guestbook-write-submit-button");
+
+            guestbookDetailModalRoot = root.Q<VisualElement>("guestbook-detail-modal");
+            guestbookDetailContentText = root.Q<Label>("guestbook-detail-content-text");
+            guestbookDetailMeta = root.Q<Label>("guestbook-detail-meta");
+            guestbookDetailCloseButton = root.Q<Button>("guestbook-detail-close-button");
+            guestbookDetailReportButton = root.Q<Button>("guestbook-detail-report-button");
+            guestbookDetailDeleteButton = root.Q<Button>("guestbook-detail-delete-button");
+            guestbookDetailReplyExisting = root.Q<VisualElement>("guestbook-detail-reply-existing");
+            guestbookDetailReplyContent = root.Q<Label>("guestbook-detail-reply-content");
+            guestbookDetailReplyMeta = root.Q<Label>("guestbook-detail-reply-meta");
+            guestbookDetailReplyDeleteButton = root.Q<Button>("guestbook-detail-reply-delete-button");
+            guestbookDetailReplyForm = root.Q<VisualElement>("guestbook-detail-reply-form");
+            guestbookDetailReplyInput = root.Q<TextField>("guestbook-detail-reply-input");
+            guestbookDetailReplyCounter = root.Q<Label>("guestbook-detail-reply-counter");
+            guestbookDetailReplyStyleList = root.Q<ScrollView>("guestbook-detail-reply-style-list");
+            guestbookDetailReplySubmitButton = root.Q<Button>("guestbook-detail-reply-submit-button");
         }
 
         private void WireEvents()
@@ -251,6 +297,20 @@ namespace Dotshelf.Scripts.Dashboard
                 {
                     int len = evt.newValue?.Length ?? 0;
                     if (guestbookWriteCounter != null) guestbookWriteCounter.text = $"{len} / 30";
+                });
+            }
+
+            if (guestbookDetailCloseButton != null) guestbookDetailCloseButton.clicked += CloseGuestbookDetailModal;
+            if (guestbookDetailReportButton != null) guestbookDetailReportButton.clicked += OnReportGuestbook;
+            if (guestbookDetailDeleteButton != null) guestbookDetailDeleteButton.clicked += OnDeleteGuestbook;
+            if (guestbookDetailReplyDeleteButton != null) guestbookDetailReplyDeleteButton.clicked += OnDeleteGuestbookReply;
+            if (guestbookDetailReplySubmitButton != null) guestbookDetailReplySubmitButton.clicked += OnSubmitGuestbookReply;
+            if (guestbookDetailReplyInput != null)
+            {
+                guestbookDetailReplyInput.RegisterValueChangedCallback(evt =>
+                {
+                    int len = evt.newValue?.Length ?? 0;
+                    if (guestbookDetailReplyCounter != null) guestbookDetailReplyCounter.text = $"{len} / 30";
                 });
             }
         }
@@ -569,8 +629,162 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void OnGuestbookCellClicked(Guestbook guestbook)
         {
-            // P2에서 답장/신고/삭제 모달 진입. 여기선 로그만.
-            Debug.Log($"[Dashboard] Guestbook clicked: id={guestbook.Id} content={guestbook.Content}");
+            OpenGuestbookDetailModal(guestbook);
+        }
+
+        // ===== 방명록 상세/답장 모달 =====
+
+        private long GetMyUserId()
+        {
+            // viewMode == Mine이면 본인 = 공간 주인. Visitor면 mock self id.
+            return viewMode == ViewMode.Mine
+                ? (currentSnapshot?.Space.OwnerUserId ?? MockSelfUserId)
+                : MockSelfUserId;
+        }
+
+        private void OpenGuestbookDetailModal(Guestbook guestbook)
+        {
+            currentDetailGuestbook = guestbook;
+            if (guestbookDetailContentText != null) guestbookDetailContentText.text = guestbook.Content;
+            if (guestbookDetailMeta != null)
+            {
+                string nick = guestbook.Anonymous ? "익명" : guestbook.DisplayedNickname;
+                guestbookDetailMeta.text = $"{nick} · {FormatDate(guestbook.CreatedAt)}";
+            }
+
+            long myId = GetMyUserId();
+            long ownerId = currentSnapshot?.Space.OwnerUserId ?? 0L;
+            bool canDelete = myId == ownerId || myId == guestbook.WriterUserId;
+            ToggleVisibility(guestbookDetailDeleteButton, canDelete);
+
+            if (guestbook.HasReply)
+            {
+                ToggleVisibility(guestbookDetailReplyExisting, true);
+                ToggleVisibility(guestbookDetailReplyForm, false);
+                if (guestbookDetailReplyContent != null) guestbookDetailReplyContent.text = guestbook.Reply.Content;
+                if (guestbookDetailReplyMeta != null)
+                {
+                    guestbookDetailReplyMeta.text = $"{guestbook.Reply.WriterNickname} · {FormatDate(guestbook.Reply.CreatedAt)}";
+                }
+                bool canDeleteReply = myId == ownerId || myId == guestbook.Reply.WriterUserId;
+                ToggleVisibility(guestbookDetailReplyDeleteButton, canDeleteReply);
+            }
+            else
+            {
+                ToggleVisibility(guestbookDetailReplyExisting, false);
+                bool canWriteReply = viewMode == ViewMode.Mine; // 답장은 공간 주인만
+                ToggleVisibility(guestbookDetailReplyForm, canWriteReply);
+                if (canWriteReply)
+                {
+                    if (guestbookDetailReplyInput != null) guestbookDetailReplyInput.value = string.Empty;
+                    if (guestbookDetailReplyCounter != null) guestbookDetailReplyCounter.text = "0 / 30";
+                    BuildPostItStylePicker(guestbookDetailReplyStyleList, OnReplyPostItStyleSelected);
+                }
+            }
+
+            if (guestbookDetailModalRoot != null) guestbookDetailModalRoot.RemoveFromClassList("hidden");
+        }
+
+        private void CloseGuestbookDetailModal()
+        {
+            if (guestbookDetailModalRoot != null) guestbookDetailModalRoot.AddToClassList("hidden");
+            currentDetailGuestbook = null;
+            selectedReplyPostItStyleId = 0;
+            selectedReplyPostItStyleCell = null;
+        }
+
+        private void OnReplyPostItStyleSelected(long styleId, VisualElement cell)
+        {
+            if (selectedReplyPostItStyleCell != null) selectedReplyPostItStyleCell.RemoveFromClassList("selected");
+            selectedReplyPostItStyleId = styleId;
+            selectedReplyPostItStyleCell = cell;
+            cell.AddToClassList("selected");
+        }
+
+        private void OnSubmitGuestbookReply()
+        {
+            if (currentDetailGuestbook == null) return;
+
+            string content = guestbookDetailReplyInput?.value ?? string.Empty;
+            WriteGuestbookReplyCommand command = new WriteGuestbookReplyCommand
+            {
+                GuestbookId = currentDetailGuestbook.Id,
+                PostItInventoryId = selectedReplyPostItStyleId,
+                Content = content
+            };
+
+            if (guestbookDetailReplySubmitButton != null) guestbookDetailReplySubmitButton.SetEnabled(false);
+            writeGuestbookReplyUseCase.Execute(command,
+                onSuccess: _ =>
+                {
+                    if (guestbookDetailReplySubmitButton != null) guestbookDetailReplySubmitButton.SetEnabled(true);
+                    CloseGuestbookDetailModal();
+                    LoadGuestbookPage(null);
+                },
+                onError: error =>
+                {
+                    if (guestbookDetailReplySubmitButton != null) guestbookDetailReplySubmitButton.SetEnabled(true);
+                    OnError(error);
+                });
+        }
+
+        private void OnDeleteGuestbook()
+        {
+            if (currentDetailGuestbook == null) return;
+            long id = currentDetailGuestbook.Id;
+            deleteGuestbookUseCase.Execute(id,
+                onSuccess: () =>
+                {
+                    CloseGuestbookDetailModal();
+                    LoadGuestbookPage(null);
+                },
+                onError: OnError);
+        }
+
+        private void OnDeleteGuestbookReply()
+        {
+            if (currentDetailGuestbook == null || !currentDetailGuestbook.HasReply) return;
+            long gid = currentDetailGuestbook.Id;
+            long rid = currentDetailGuestbook.Reply.Id;
+            deleteGuestbookReplyUseCase.Execute(gid, rid,
+                onSuccess: () =>
+                {
+                    CloseGuestbookDetailModal();
+                    LoadGuestbookPage(null);
+                },
+                onError: OnError);
+        }
+
+        private void OnReportGuestbook()
+        {
+            if (currentDetailGuestbook == null) return;
+            ReportGuestbookCommand command = new ReportGuestbookCommand
+            {
+                Target = GuestbookReportTarget.Guestbook,
+                TargetId = currentDetailGuestbook.Id,
+                ReasonType = "INAPPROPRIATE",
+                ReasonDetail = string.Empty
+            };
+            reportGuestbookUseCase.Execute(command,
+                onSuccess: () =>
+                {
+                    Debug.Log("[Dashboard] Reported guestbook " + command.TargetId);
+                    CloseGuestbookDetailModal();
+                },
+                onError: OnError);
+        }
+
+        private static void ToggleVisibility(VisualElement element, bool visible)
+        {
+            if (element == null) return;
+            if (visible) element.RemoveFromClassList("hidden");
+            else element.AddToClassList("hidden");
+        }
+
+        private static string FormatDate(DateTimeOffset dt)
+        {
+            if (dt == DateTimeOffset.MinValue) return string.Empty;
+            return dt.ToLocalTime().ToString("MM/dd HH:mm");
         }
 
         private void UpdateGuestbookCount(GuestbookListPage page)
