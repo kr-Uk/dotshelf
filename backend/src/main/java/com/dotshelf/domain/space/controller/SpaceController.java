@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dotshelf.domain.space.dto.SpaceDtos.DashboardResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListResponse;
@@ -113,5 +115,18 @@ public class SpaceController {
     @GetMapping("/templates")
     public ApiResponse<SpaceTemplateListResponse> getTemplates() {
         return ApiResponse.success(spaceService.getTemplates());
+    }
+
+    @GetMapping("/me/guestbook-postit-whitelist")
+    public ApiResponse<GuestbookPostItWhitelistResponse> getGuestbookPostItWhitelist(@CurrentUser Long userId) {
+        return ApiResponse.success(spaceService.getGuestbookPostItWhitelist(userId));
+    }
+
+    @PutMapping("/me/guestbook-postit-whitelist")
+    public ApiResponse<GuestbookPostItWhitelistResponse> updateGuestbookPostItWhitelist(
+            @CurrentUser Long userId,
+            @RequestBody @Valid GuestbookPostItWhitelistRequest request
+    ) {
+        return ApiResponse.success(spaceService.updateGuestbookPostItWhitelist(userId, request));
     }
 }

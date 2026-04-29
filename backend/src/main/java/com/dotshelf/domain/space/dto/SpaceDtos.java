@@ -6,6 +6,7 @@ import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.entity.SpaceTemplate;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 public final class SpaceDtos {
 
@@ -113,5 +114,18 @@ public final class SpaceDtos {
     }
 
     public record SpaceTemplateListResponse(List<SpaceTemplateResponse> templates) {
+    }
+
+    public record GuestbookPostItWhitelistRequest(
+            @NotNull(message = "allowAll은 필수입니다.")
+            Boolean allowAll,
+            List<Long> allowedAssetIds
+    ) {
+    }
+
+    public record GuestbookPostItWhitelistResponse(
+            boolean allowAll,
+            List<Long> allowedAssetIds
+    ) {
     }
 }

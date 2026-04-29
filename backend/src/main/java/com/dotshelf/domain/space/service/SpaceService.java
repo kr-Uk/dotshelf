@@ -1,9 +1,12 @@
 package com.dotshelf.domain.space.service;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -11,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dotshelf.domain.space.dto.SpaceDtos.DashboardResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListItemResponse;
@@ -21,9 +26,11 @@ import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.VisibilityRequest;
 import com.dotshelf.domain.space.entity.Space;
+import com.dotshelf.domain.space.entity.SpaceGuestbookPostItWhitelist;
 import com.dotshelf.domain.space.entity.SpaceLayoutSnapshot;
 import com.dotshelf.domain.space.entity.SpaceLike;
 import com.dotshelf.domain.space.entity.SpaceVisit;
+import com.dotshelf.domain.space.repository.SpaceGuestbookPostItWhitelistRepository;
 import com.dotshelf.domain.space.repository.SpaceLayoutSnapshotRepository;
 import com.dotshelf.domain.space.repository.SpaceLikeRepository;
 import com.dotshelf.domain.space.repository.SpaceRepository;
@@ -52,6 +59,7 @@ public class SpaceService {
     private final SpaceVisitRepository spaceVisitRepository;
     private final SpaceLikeRepository spaceLikeRepository;
     private final SpaceLayoutSnapshotRepository layoutSnapshotRepository;
+    private final SpaceGuestbookPostItWhitelistRepository whitelistRepository;
     private final FollowRepository followRepository;
     private final UserRepository userRepository;
     private final UserService userService;
@@ -196,6 +204,55 @@ public class SpaceService {
         return new SpaceTemplateListResponse(spaceTemplateRepository.findByIsActiveTrueOrderByDisplayOrderAsc().stream()
                 .map(SpaceTemplateResponse::from)
                 .toList());
+    }
+
+    @Transactional
+    public GuestbookPostItWhitelistResponse getGuestbookPostItWhitelist(Long userId) {
+        Long currentUserId = userService.requireUserId(userId);
+        Space space = findOrCreateMySpace(currentUserId);
+        SpaceGuestbookPostItWhitelist whitelist = whitelistRepository.findById(space.getId()).orElse(null);
+        if (whitelist == null) {
+            return new GuestbookPostItWhitelistResponse(true, List.of());
+        }
+        return new GuestbookPostItWhitelistResponse(
+                whitelist.isAllowAll(),
+                new ArrayList<>(whitelist.getAllowedAssetIds())
+        );
+    }
+
+    @Transactional
+    public GuestbookPostItWhitelistResponse updateGuestbookPostItWhitelist(
+            Long userId,
+            GuestbookPostItWhitelistRequest request
+    ) {
+        Long currentUserId = userService.requireUserId(userId);
+        Space space = findOrCreateMySpace(currentUserId);
+        Set<Long> newAssetIds = request.allowedAssetIds() == null
+                ? Set.of()
+                : new HashSet<>(request.allowedAssetIds());
+        SpaceGuestbookPostItWhitelist whitelist = whitelistRepository.findById(space.getId())
+                .orElseGet(() -> SpaceGuestbookPostItWhitelist.builder()
+                        .spaceId(space.getId())
+                        .allowAll(true)
+                        .build());
+        whitelist.update(Boolean.TRUE.equals(request.allowAll()), newAssetIds);
+        SpaceGuestbookPostItWhitelist saved = whitelistRepository.save(whitelist);
+        return new GuestbookPostItWhitelistResponse(
+                saved.isAllowAll(),
+                new ArrayList<>(saved.getAllowedAssetIds())
+        );
+    }
+
+    /**
+     * 방명록·답장 작성 시 화이트리스트 enforcement에 사용. allowAll=true 또는 명시 허용된 assetId만 통과.
+     * S4 stage에서 GuestbookService가 호출.
+     */
+    public boolean isPostItAllowed(Long spaceId, Long postItInventoryId) {
+        SpaceGuestbookPostItWhitelist whitelist = whitelistRepository.findById(spaceId).orElse(null);
+        if (whitelist == null) {
+            return true;
+        }
+        return whitelist.allows(postItInventoryId);
     }
 
     public Space getSpaceEntity(Long spaceId) {
