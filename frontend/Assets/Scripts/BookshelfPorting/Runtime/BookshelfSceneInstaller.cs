@@ -196,7 +196,7 @@ namespace BookshelfPorting.Runtime
             var whiteboardAnchor = FindOrCreateAnchor(
                 camerasRoot,
                 "WhiteboardAnchor",
-                new Vector3(-0.92f, 1.18f, 0.12f),
+                new Vector3(0f, 1.18f, 0.12f),
                 Quaternion.LookRotation(Vector3.left, Vector3.up));
             var notebookPosition = new Vector3(-0.12f, 0.72f, -1.28f);
             var notebookTarget = new Vector3(-0.80f, 0.56f, -0.94f);
