@@ -1,6 +1,7 @@
 package com.dotshelf.domain.user.repository;
 
 import java.util.Optional;
+import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -13,4 +14,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByEmail(String email);
 
     Optional<User> findByEmail(String email);
+
+    List<User> findByRoleIgnoreCase(String role);
+
+    long countByRoleIgnoreCase(String role);
+
+    long countByStatus(String status);
 }

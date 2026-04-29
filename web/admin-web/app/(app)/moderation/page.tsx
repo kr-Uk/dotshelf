@@ -31,7 +31,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { TableSkeletonRows } from "@/components/common/table-skeleton";
 import { api } from "@/lib/api";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
-import { reportSlaDueAt } from "@/lib/mock-data";
+import { reportSlaDueAt } from "@/lib/sla";
 import {
   REPORT_SEVERITY_LABEL,
   REPORT_STATUS_LABEL,

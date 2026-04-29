@@ -9,4 +9,6 @@ import com.dotshelf.domain.space.entity.SpaceVisit;
 public interface SpaceVisitRepository extends JpaRepository<SpaceVisit, Long> {
 
     boolean existsBySpaceIdAndVisitorUserIdAndVisitedDate(Long spaceId, Long visitorUserId, LocalDate visitedDate);
+
+    long countByVisitedDate(LocalDate visitedDate);
 }

@@ -69,4 +69,34 @@ public class Report extends BaseEntity {
         this.reasonType = reasonType;
         this.reasonDetail = reasonDetail;
     }
+
+    public void startReview(Long reviewerUserId) {
+        this.status = "IN_REVIEW";
+        this.reviewedByUserId = reviewerUserId;
+        this.reviewedAt = LocalDateTime.now();
+    }
+
+    public void resolve(Long reviewerUserId, Boolean blindToReporter, Boolean globallyBlind) {
+        this.status = "RESOLVED";
+        this.reviewedByUserId = reviewerUserId;
+        this.reviewedAt = LocalDateTime.now();
+        if (blindToReporter != null) {
+            this.isBlindedToReporter = blindToReporter;
+        }
+        if (globallyBlind != null) {
+            this.isGloballyBlinded = globallyBlind;
+        }
+    }
+
+    public void reject(Long reviewerUserId) {
+        this.status = "REJECTED";
+        this.reviewedByUserId = reviewerUserId;
+        this.reviewedAt = LocalDateTime.now();
+    }
+
+    public void changeGlobalBlind(Long reviewerUserId, boolean globallyBlind) {
+        this.isGloballyBlinded = globallyBlind;
+        this.reviewedByUserId = reviewerUserId;
+        this.reviewedAt = LocalDateTime.now();
+    }
 }

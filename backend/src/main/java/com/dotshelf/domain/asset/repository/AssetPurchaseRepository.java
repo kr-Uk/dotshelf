@@ -9,4 +9,6 @@ import com.dotshelf.domain.asset.entity.AssetPurchase;
 public interface AssetPurchaseRepository extends JpaRepository<AssetPurchase, Long> {
 
     List<AssetPurchase> findByUserIdOrderByPurchasedAtDesc(Long userId);
+
+    long countByUserId(Long userId);
 }
