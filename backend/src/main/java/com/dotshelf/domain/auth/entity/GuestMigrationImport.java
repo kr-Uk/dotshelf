@@ -36,6 +36,9 @@ public class GuestMigrationImport extends BaseEntity {
     @Column(nullable = false)
     private String payload;
 
+    @Column(length = 64)
+    private String guestSessionId;
+
     private Long importedSpaceId;
 
     @Column(length = 500)
@@ -47,8 +50,9 @@ public class GuestMigrationImport extends BaseEntity {
     private LocalDateTime completedAt;
 
     @Builder
-    private GuestMigrationImport(Long userId, String payload) {
+    private GuestMigrationImport(Long userId, String payload, String guestSessionId) {
         this.userId = userId;
         this.payload = payload;
+        this.guestSessionId = guestSessionId;
     }
 }

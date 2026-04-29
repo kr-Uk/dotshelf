@@ -28,6 +28,8 @@ public class SecurityConfig {
             // 실제 접근은 Tailscale 내부(prod 호스트의 Prometheus)에서만 가능.
             "/actuator/prometheus",
             "/v1/auth/**",
+            // Unity 클라이언트의 책장 초기 카탈로그 로딩(비인증). hasPath 기준이라 /v1/books/* 는 영향 없음.
+            "/v1/books",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
