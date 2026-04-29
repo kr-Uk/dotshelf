@@ -45,6 +45,7 @@ namespace Dotshelf.Scripts.Dashboard
         private FollowUserUseCase followUseCase;
         private UnfollowUserUseCase unfollowUseCase;
         private BlockUserUseCase blockUseCase;
+        private WriteGuestbookUseCase writeGuestbookUseCase;
 
         private VisualElement root;
         private Label nicknameLabel;
@@ -72,6 +73,19 @@ namespace Dotshelf.Scripts.Dashboard
         private Label userListModalTitle;
         private Button userListModalCloseButton;
         private Label userListModalEmpty;
+
+        private VisualElement guestbookWriteModalRoot;
+        private TextField guestbookWriteContent;
+        private Label guestbookWriteCounter;
+        private ScrollView guestbookWriteStyleList;
+        private Toggle guestbookWriteAnonymousToggle;
+        private Button guestbookWriteCloseButton;
+        private Button guestbookWriteCancelButton;
+        private Button guestbookWriteSubmitButton;
+        private long selectedPostItStyleId;
+        private VisualElement selectedPostItStyleCell;
+
+        private static readonly long[] MockPostItStyleIds = { 1L, 2L, 3L, 4L, 5L };
 
         private enum UserListMode
         {
@@ -140,6 +154,7 @@ namespace Dotshelf.Scripts.Dashboard
             followUseCase = new FollowUserUseCase(followRepo);
             unfollowUseCase = new UnfollowUserUseCase(followRepo);
             blockUseCase = new BlockUserUseCase(followRepo);
+            writeGuestbookUseCase = new WriteGuestbookUseCase(guestbookRepo);
         }
 
         private void QueryUI()
@@ -169,6 +184,15 @@ namespace Dotshelf.Scripts.Dashboard
             userListModalTitle = root.Q<Label>("user-list-modal-title");
             userListModalCloseButton = root.Q<Button>("user-list-modal-close-button");
             userListModalEmpty = root.Q<Label>("user-list-modal-empty");
+
+            guestbookWriteModalRoot = root.Q<VisualElement>("guestbook-write-modal");
+            guestbookWriteContent = root.Q<TextField>("guestbook-write-content");
+            guestbookWriteCounter = root.Q<Label>("guestbook-write-counter");
+            guestbookWriteStyleList = root.Q<ScrollView>("guestbook-write-style-list");
+            guestbookWriteAnonymousToggle = root.Q<Toggle>("guestbook-write-anonymous-toggle");
+            guestbookWriteCloseButton = root.Q<Button>("guestbook-write-close-button");
+            guestbookWriteCancelButton = root.Q<Button>("guestbook-write-cancel-button");
+            guestbookWriteSubmitButton = root.Q<Button>("guestbook-write-submit-button");
         }
 
         private void WireEvents()
@@ -216,6 +240,18 @@ namespace Dotshelf.Scripts.Dashboard
             if (userListModalBackdrop != null)
             {
                 userListModalBackdrop.RegisterCallback<ClickEvent>(_ => CloseUserListModal());
+            }
+
+            if (guestbookWriteCloseButton != null) guestbookWriteCloseButton.clicked += CloseGuestbookWriteModal;
+            if (guestbookWriteCancelButton != null) guestbookWriteCancelButton.clicked += CloseGuestbookWriteModal;
+            if (guestbookWriteSubmitButton != null) guestbookWriteSubmitButton.clicked += OnSubmitGuestbookWrite;
+            if (guestbookWriteContent != null)
+            {
+                guestbookWriteContent.RegisterValueChangedCallback(evt =>
+                {
+                    int len = evt.newValue?.Length ?? 0;
+                    if (guestbookWriteCounter != null) guestbookWriteCounter.text = $"{len} / 30";
+                });
             }
         }
 
@@ -608,8 +644,92 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void OnWriteGuestbookClicked()
         {
-            // P2a: 방명록 작성 모달 진입 예정.
-            Debug.Log("[Dashboard] Write guestbook clicked (modal pending P2).");
+            OpenGuestbookWriteModal();
+        }
+
+        // ===== 방명록 작성 모달 =====
+
+        private void OpenGuestbookWriteModal()
+        {
+            if (guestbookWriteModalRoot == null) return;
+
+            if (guestbookWriteContent != null) guestbookWriteContent.value = string.Empty;
+            if (guestbookWriteCounter != null) guestbookWriteCounter.text = "0 / 30";
+            if (guestbookWriteAnonymousToggle != null) guestbookWriteAnonymousToggle.value = false;
+            BuildPostItStylePicker(guestbookWriteStyleList, OnPostItStyleSelected);
+
+            guestbookWriteModalRoot.RemoveFromClassList("hidden");
+        }
+
+        private void CloseGuestbookWriteModal()
+        {
+            if (guestbookWriteModalRoot != null)
+            {
+                guestbookWriteModalRoot.AddToClassList("hidden");
+            }
+            selectedPostItStyleId = 0;
+            selectedPostItStyleCell = null;
+        }
+
+        private void BuildPostItStylePicker(ScrollView container, Action<long, VisualElement> onSelected)
+        {
+            if (container == null) return;
+            container.Clear();
+            for (int i = 0; i < MockPostItStyleIds.Length; i++)
+            {
+                long id = MockPostItStyleIds[i];
+                VisualElement cell = new VisualElement();
+                cell.AddToClassList("postit-style-cell");
+                Label name = new Label($"스타일 {id}");
+                name.AddToClassList("postit-style-cell-name");
+                cell.Add(name);
+                cell.RegisterCallback<ClickEvent>(_ => onSelected(id, cell));
+                container.Add(cell);
+            }
+            selectedPostItStyleId = 0;
+            selectedPostItStyleCell = null;
+        }
+
+        private void OnPostItStyleSelected(long styleId, VisualElement cell)
+        {
+            if (selectedPostItStyleCell != null)
+            {
+                selectedPostItStyleCell.RemoveFromClassList("selected");
+            }
+            selectedPostItStyleId = styleId;
+            selectedPostItStyleCell = cell;
+            cell.AddToClassList("selected");
+        }
+
+        private void OnSubmitGuestbookWrite()
+        {
+            if (currentSnapshot == null) return;
+
+            string content = guestbookWriteContent?.value ?? string.Empty;
+            bool anonymous = guestbookWriteAnonymousToggle?.value ?? false;
+
+            WriteGuestbookCommand command = new WriteGuestbookCommand
+            {
+                SpaceId = currentSnapshot.Space.Id,
+                PostItInventoryId = selectedPostItStyleId,
+                Content = content,
+                Anonymous = anonymous
+            };
+
+            if (guestbookWriteSubmitButton != null) guestbookWriteSubmitButton.SetEnabled(false);
+
+            writeGuestbookUseCase.Execute(command,
+                onSuccess: _ =>
+                {
+                    if (guestbookWriteSubmitButton != null) guestbookWriteSubmitButton.SetEnabled(true);
+                    CloseGuestbookWriteModal();
+                    LoadGuestbookPage(null); // refresh
+                },
+                onError: error =>
+                {
+                    if (guestbookWriteSubmitButton != null) guestbookWriteSubmitButton.SetEnabled(true);
+                    OnError(error);
+                });
         }
 
         private void OnError(DashboardApiError error)
