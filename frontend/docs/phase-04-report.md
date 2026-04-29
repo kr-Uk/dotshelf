@@ -12,7 +12,7 @@
 - Implemented main view bindings: profile header with introduction/follow counts, like toggle (debounced + optimistic), stats row, recent books and reading-records carousels (10 items, ScrollView with hidden scrollbars and pointer-drag scroll), guestbook 3x5 grid with cursor pagination.
 - Implemented modals: followers/followings (mutual badge, follow/unfollow/block actions, owner-only block), guestbook write (30-char counter, post-it picker, anonymous toggle), guestbook detail (delete/report + reply form/display with permission branching), dashboard edit (introduction, visibility radio, post-it whitelist), owned-books grid with 3-way sort + load more, reading-records list with 5-way sort + load more.
 - Added motion tokens (`--motion-fast/base/slow`, `--easing-*`) at `:root` and applied GPU-safe transitions: button `:active` scale on action buttons, like-button pulse on `liked`, card `:hover` translate on book/record/postit/guestbook cells.
-- Backend extension request published to Notion ([API > 사용자 앱 대시보드 확장 요청 v1.1](https://app.notion.com/p/35169b2a131a811f8788df1810764f55)) — DTO gaps, 5 new endpoints, error codes.
+- Backend extension request published to Notion ([API > 사용자 앱 v1.0 — 대시보드 확장 갱신](https://app.notion.com/p/35169b2a131a811f8788df1810764f55)) — DTO gaps, 5 new endpoints, error codes.
 
 ## Current Behavior
 - Attaching `DashboardScreenController` (and optionally `DashboardSceneInstaller`) to a UIDocument in any scene renders the full dashboard from mock data — no backend required. The README at `Assets/Scripts/Dashboard/README.md` is the 5-minute setup guide.
