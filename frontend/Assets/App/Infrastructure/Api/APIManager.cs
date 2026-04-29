@@ -32,8 +32,12 @@ namespace App.Infrastructure.Api
 
         private void Awake()
         {
+            // (디버깅 — APIManager 인스턴스 추적용)
+            Debug.Log($"[APIManager#{GetInstanceID()} on '{gameObject.name}'] Awake. baseUrl='{baseUrl}'. Existing Instance={(Instance == null ? "null" : Instance.GetInstanceID().ToString())}");
+
             if (Instance != null && Instance != this)
             {
+                Debug.Log($"[APIManager#{GetInstanceID()}] Already exists, destroying self.");
                 Destroy(gameObject);
                 return;
             }
@@ -44,6 +48,8 @@ namespace App.Infrastructure.Api
 
         public void Configure(string apiBaseUrl, string token = null, int timeout = 10)
         {
+            // (디버깅) Configure 호출 추적
+            Debug.Log($"[APIManager#{GetInstanceID()} on '{gameObject.name}'] Configure called: apiBaseUrl='{apiBaseUrl}' (was baseUrl='{baseUrl}')");
             baseUrl = NormalizeBaseUrl(apiBaseUrl, baseUrl);
             if (token != null)
             {
@@ -359,6 +365,9 @@ namespace App.Infrastructure.Api
 
         private string BuildUrl(string path)
         {
+            // (디버깅 — baseUrl localhost 미스터리 추적용. 추적 끝나면 제거)
+            Debug.Log($"[APIManager#{GetInstanceID()} on '{gameObject.name}'] BuildUrl baseUrl='{baseUrl}' path='{path}'");
+
             if (string.IsNullOrWhiteSpace(path))
             {
                 return baseUrl;
