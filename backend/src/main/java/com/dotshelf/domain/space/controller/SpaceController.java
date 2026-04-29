@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dotshelf.domain.book.dto.BookDtos.OwnedBookListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.DashboardResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistResponse;
@@ -66,6 +67,17 @@ public class SpaceController {
             @RequestParam(defaultValue = "daily") String period
     ) {
         return ApiResponse.success(spaceService.getDashboard(currentUserId, spaceId, period));
+    }
+
+    @GetMapping("/{spaceId}/books")
+    public ApiResponse<OwnedBookListResponse> getOwnedBooks(
+            @CurrentUser Long currentUserId,
+            @PathVariable Long spaceId,
+            @RequestParam(defaultValue = "ADDED_DESC") String sort,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") int limit
+    ) {
+        return ApiResponse.success(spaceService.getOwnedBooks(currentUserId, spaceId, sort, cursor, limit));
     }
 
     @PostMapping("/{spaceId}/visits")

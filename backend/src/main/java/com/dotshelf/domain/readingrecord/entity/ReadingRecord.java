@@ -44,6 +44,9 @@ public class ReadingRecord extends BaseEntity {
     @Column(nullable = false)
     private int commentCount = 0;
 
+    @Column(nullable = false)
+    private int viewCount = 0;
+
     @Column(nullable = false, length = 20)
     private String status = "ACTIVE";
 

@@ -1,5 +1,6 @@
 package com.dotshelf.domain.readingrecord.service;
 
+import java.util.Comparator;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -8,9 +9,10 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dotshelf.domain.book.entity.UserBook;
 import com.dotshelf.domain.book.repository.UserBookRepository;
 import com.dotshelf.domain.book.service.BookService;
-import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordListResponse;
+import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordPageResponse;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordRequest;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordResponse;
+import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordSummary;
 import com.dotshelf.domain.readingrecord.entity.ReadingRecord;
 import com.dotshelf.domain.readingrecord.entity.ReadingRecordLike;
 import com.dotshelf.domain.readingrecord.repository.ReadingRecordLikeRepository;
@@ -37,13 +39,71 @@ public class ReadingRecordService {
         return ReadingRecordResponse.from(getRecordEntity(recordId));
     }
 
-    public ReadingRecordListResponse getUserRecords(Long userId) {
-        List<Long> userBookIds = userBookRepository.findByUserIdAndStorageStatusNot(userId, "DELETED").stream()
-                .map(UserBook::getId)
-                .toList();
-        return new ReadingRecordListResponse(readingRecordRepository.findByUserBookIdInAndStatus(userBookIds, "ACTIVE").stream()
-                .map(ReadingRecordResponse::from)
-                .toList());
+    private static final int DEFAULT_RECORD_LIMIT = 20;
+    private static final int MAX_RECORD_LIMIT = 50;
+
+    /**
+     * 대시보드 \"독후감 풀 목록\" 모달용. v1.0 갱신 — 정렬·cursor 페이지네이션 합류.
+     * 보유 책 정렬과 동일하게 사용자당 ~수십건 가정으로 메모리 정렬·슬라이싱.
+     */
+    public ReadingRecordPageResponse getUserRecords(Long userId, String sort, String cursor, int limit) {
+        int validLimit = clampLimit(limit);
+        Long cursorId = parseCursorId(cursor);
+
+        List<ReadingRecordSummary> sorted = sortRecords(
+                readingRecordRepository.findUserRecordSummaries(userId), sort);
+
+        int startIdx = 0;
+        if (cursorId != null) {
+            for (int i = 0; i < sorted.size(); i++) {
+                if (cursorId.equals(sorted.get(i).id())) {
+                    startIdx = i + 1;
+                    break;
+                }
+            }
+        }
+        int endIdx = Math.min(startIdx + validLimit, sorted.size());
+        boolean hasMore = endIdx < sorted.size();
+        String nextCursor = hasMore ? String.valueOf(sorted.get(endIdx - 1).id()) : null;
+        return new ReadingRecordPageResponse(sorted.subList(startIdx, endIdx), nextCursor);
+    }
+
+    private static List<ReadingRecordSummary> sortRecords(List<ReadingRecordSummary> items, String sort) {
+        Comparator<ReadingRecordSummary> primary = switch (sort == null ? "LATEST" : sort.toUpperCase()) {
+            case "OLDEST" ->
+                    Comparator.comparing(ReadingRecordSummary::createdAt,
+                            Comparator.nullsLast(Comparator.naturalOrder()));
+            case "MOST_LIKED" ->
+                    Comparator.comparingInt(ReadingRecordSummary::likeCount).reversed();
+            case "MOST_VIEWED" ->
+                    Comparator.comparingInt(ReadingRecordSummary::viewCount).reversed();
+            case "MOST_COMMENTED" ->
+                    Comparator.comparingInt(ReadingRecordSummary::commentCount).reversed();
+            default ->
+                    Comparator.comparing(ReadingRecordSummary::createdAt,
+                            Comparator.nullsLast(Comparator.reverseOrder()));
+        };
+        Comparator<ReadingRecordSummary> tiebreaker = Comparator.comparing(
+                ReadingRecordSummary::id, Comparator.reverseOrder());
+        return items.stream().sorted(primary.thenComparing(tiebreaker)).toList();
+    }
+
+    private static int clampLimit(int limit) {
+        if (limit <= 0) {
+            return DEFAULT_RECORD_LIMIT;
+        }
+        return Math.min(limit, MAX_RECORD_LIMIT);
+    }
+
+    private static Long parseCursorId(String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(cursor);
+        } catch (NumberFormatException e) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "잘못된 cursor 형식입니다.");
+        }
     }
 
     @Transactional
