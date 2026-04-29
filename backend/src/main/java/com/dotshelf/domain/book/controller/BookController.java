@@ -53,6 +53,20 @@ public class BookController {
         return ApiResponse.success(bookService.searchBooks(keyword, page, size));
     }
 
+    @Operation(
+            summary = "도서 카탈로그 (비인증)",
+            description = "Unity 클라이언트의 책장 초기 로딩용 비인증 엔드포인트. category=RANKING 일 때 ranking 결과를 반환한다."
+    )
+    @GetMapping("/books")
+    public ApiResponse<BookListResponse> books(
+            @RequestParam(required = false) String category,
+            @RequestParam(defaultValue = "48") int limit
+    ) {
+        return ApiResponse.success(
+                bookService.getRanking(null, null, null, null, "POPULAR", limit)
+        );
+    }
+
     @GetMapping("/books/recommended")
     public ApiResponse<BookListResponse> recommended(
             @CurrentUser Long userId,
