@@ -72,6 +72,35 @@
             <ui:Button name="write-guestbook-button" class="bottom-action-button write-button" text="방명록 작성" />
         </ui:VisualElement>
 
+        <ui:VisualElement name="dashboard-edit-modal" class="modal-root hidden">
+            <ui:VisualElement class="modal-backdrop" />
+            <ui:VisualElement class="modal-frame">
+                <ui:VisualElement class="modal-header">
+                    <ui:Label class="modal-title" text="대시보드 편집" />
+                    <ui:Button name="dashboard-edit-close-button" class="modal-close-button" text="✕" />
+                </ui:VisualElement>
+
+                <ui:Label class="form-label" text="한 줄 소개 (255자)" />
+                <ui:TextField name="dashboard-edit-introduction" class="form-textarea" multiline="true" max-length="255" />
+
+                <ui:Label class="form-label" text="방명록 공개 범위" />
+                <ui:VisualElement class="visibility-row">
+                    <ui:Button name="visibility-public" class="visibility-button" text="전체 공개" />
+                    <ui:Button name="visibility-followers" class="visibility-button" text="팔로워만" />
+                    <ui:Button name="visibility-private" class="visibility-button" text="비공개" />
+                </ui:VisualElement>
+
+                <ui:Label class="form-label" text="허용할 포스트잇 스타일" />
+                <ui:Toggle name="dashboard-edit-allow-all-toggle" class="form-toggle" label="모든 스타일 허용" />
+                <ui:ScrollView name="dashboard-edit-postit-list" class="postit-style-scroll" mode="Horizontal" vertical-scroller-visibility="Hidden" horizontal-scroller-visibility="Hidden" />
+
+                <ui:VisualElement class="modal-footer">
+                    <ui:Button name="dashboard-edit-cancel-button" class="modal-action-button secondary" text="취소" />
+                    <ui:Button name="dashboard-edit-submit-button" class="modal-action-button primary" text="저장" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
         <ui:VisualElement name="guestbook-detail-modal" class="modal-root hidden">
             <ui:VisualElement class="modal-backdrop" />
             <ui:VisualElement class="modal-frame">

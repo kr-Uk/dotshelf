@@ -50,6 +50,9 @@ namespace Dotshelf.Scripts.Dashboard
         private DeleteGuestbookUseCase deleteGuestbookUseCase;
         private DeleteGuestbookReplyUseCase deleteGuestbookReplyUseCase;
         private ReportGuestbookUseCase reportGuestbookUseCase;
+        private UpdateIntroductionUseCase updateIntroductionUseCase;
+        private UpdateGuestbookVisibilityUseCase updateGuestbookVisibilityUseCase;
+        private UpdateGuestbookPostItWhitelistUseCase updateWhitelistUseCase;
 
         private VisualElement root;
         private Label nicknameLabel;
@@ -112,6 +115,19 @@ namespace Dotshelf.Scripts.Dashboard
 
         // Mock 환경에서 본인 user id를 1로 가정. Api 합류 시 SessionService에서 받아 주입 예정.
         private const long MockSelfUserId = 1L;
+
+        private VisualElement dashboardEditModalRoot;
+        private TextField dashboardEditIntroduction;
+        private Button visibilityPublicButton;
+        private Button visibilityFollowersButton;
+        private Button visibilityPrivateButton;
+        private Toggle dashboardEditAllowAllToggle;
+        private ScrollView dashboardEditPostItList;
+        private Button dashboardEditCloseButton;
+        private Button dashboardEditCancelButton;
+        private Button dashboardEditSubmitButton;
+        private VisibilityScope selectedVisibility;
+        private readonly HashSet<long> selectedAllowedAssetIds = new HashSet<long>();
 
         private enum UserListMode
         {
@@ -185,6 +201,11 @@ namespace Dotshelf.Scripts.Dashboard
             deleteGuestbookUseCase = new DeleteGuestbookUseCase(guestbookRepo);
             deleteGuestbookReplyUseCase = new DeleteGuestbookReplyUseCase(guestbookRepo);
             reportGuestbookUseCase = new ReportGuestbookUseCase(guestbookRepo);
+
+            ISpaceSettingsRepository spaceSettingsRepo = new MockSpaceSettingsRepository();
+            updateIntroductionUseCase = new UpdateIntroductionUseCase(spaceSettingsRepo);
+            updateGuestbookVisibilityUseCase = new UpdateGuestbookVisibilityUseCase(spaceSettingsRepo);
+            updateWhitelistUseCase = new UpdateGuestbookPostItWhitelistUseCase(spaceSettingsRepo);
         }
 
         private void QueryUI()
@@ -239,6 +260,17 @@ namespace Dotshelf.Scripts.Dashboard
             guestbookDetailReplyCounter = root.Q<Label>("guestbook-detail-reply-counter");
             guestbookDetailReplyStyleList = root.Q<ScrollView>("guestbook-detail-reply-style-list");
             guestbookDetailReplySubmitButton = root.Q<Button>("guestbook-detail-reply-submit-button");
+
+            dashboardEditModalRoot = root.Q<VisualElement>("dashboard-edit-modal");
+            dashboardEditIntroduction = root.Q<TextField>("dashboard-edit-introduction");
+            visibilityPublicButton = root.Q<Button>("visibility-public");
+            visibilityFollowersButton = root.Q<Button>("visibility-followers");
+            visibilityPrivateButton = root.Q<Button>("visibility-private");
+            dashboardEditAllowAllToggle = root.Q<Toggle>("dashboard-edit-allow-all-toggle");
+            dashboardEditPostItList = root.Q<ScrollView>("dashboard-edit-postit-list");
+            dashboardEditCloseButton = root.Q<Button>("dashboard-edit-close-button");
+            dashboardEditCancelButton = root.Q<Button>("dashboard-edit-cancel-button");
+            dashboardEditSubmitButton = root.Q<Button>("dashboard-edit-submit-button");
         }
 
         private void WireEvents()
@@ -312,6 +344,17 @@ namespace Dotshelf.Scripts.Dashboard
                     int len = evt.newValue?.Length ?? 0;
                     if (guestbookDetailReplyCounter != null) guestbookDetailReplyCounter.text = $"{len} / 30";
                 });
+            }
+
+            if (dashboardEditCloseButton != null) dashboardEditCloseButton.clicked += CloseDashboardEditModal;
+            if (dashboardEditCancelButton != null) dashboardEditCancelButton.clicked += CloseDashboardEditModal;
+            if (dashboardEditSubmitButton != null) dashboardEditSubmitButton.clicked += OnSubmitDashboardEdit;
+            if (visibilityPublicButton != null) visibilityPublicButton.clicked += () => OnVisibilitySelected(VisibilityScope.Public);
+            if (visibilityFollowersButton != null) visibilityFollowersButton.clicked += () => OnVisibilitySelected(VisibilityScope.FollowersOnly);
+            if (visibilityPrivateButton != null) visibilityPrivateButton.clicked += () => OnVisibilitySelected(VisibilityScope.Private);
+            if (dashboardEditAllowAllToggle != null)
+            {
+                dashboardEditAllowAllToggle.RegisterValueChangedCallback(evt => RefreshWhitelistPickerSelections(evt.newValue));
             }
         }
 
@@ -852,8 +895,161 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void OnEditClicked()
         {
-            // P2c: 대시보드 편집 모달 진입 예정.
-            Debug.Log("[Dashboard] Edit clicked (modal pending P2).");
+            OpenDashboardEditModal();
+        }
+
+        // ===== 대시보드 편집 모달 =====
+
+        private void OpenDashboardEditModal()
+        {
+            if (dashboardEditModalRoot == null || currentSnapshot == null) return;
+
+            if (dashboardEditIntroduction != null)
+            {
+                dashboardEditIntroduction.value = currentSnapshot.OwnerIntroduction ?? string.Empty;
+            }
+
+            selectedVisibility = currentSnapshot.Space.GuestbookVisibility;
+            UpdateVisibilityButtons();
+
+            // 화이트리스트 현재 상태 로드
+            updateWhitelistUseCase.LoadCurrent(
+                onSuccess: whitelist =>
+                {
+                    selectedAllowedAssetIds.Clear();
+                    if (whitelist.AllowedAssetIds != null)
+                    {
+                        for (int i = 0; i < whitelist.AllowedAssetIds.Count; i++)
+                        {
+                            selectedAllowedAssetIds.Add(whitelist.AllowedAssetIds[i]);
+                        }
+                    }
+                    if (dashboardEditAllowAllToggle != null) dashboardEditAllowAllToggle.value = whitelist.AllowAll;
+                    BuildWhitelistPicker();
+                    RefreshWhitelistPickerSelections(whitelist.AllowAll);
+                },
+                onError: OnError);
+
+            dashboardEditModalRoot.RemoveFromClassList("hidden");
+        }
+
+        private void CloseDashboardEditModal()
+        {
+            if (dashboardEditModalRoot != null) dashboardEditModalRoot.AddToClassList("hidden");
+        }
+
+        private void OnVisibilitySelected(VisibilityScope scope)
+        {
+            selectedVisibility = scope;
+            UpdateVisibilityButtons();
+        }
+
+        private void UpdateVisibilityButtons()
+        {
+            SetSelected(visibilityPublicButton, selectedVisibility == VisibilityScope.Public);
+            SetSelected(visibilityFollowersButton, selectedVisibility == VisibilityScope.FollowersOnly);
+            SetSelected(visibilityPrivateButton, selectedVisibility == VisibilityScope.Private);
+        }
+
+        private static void SetSelected(VisualElement element, bool selected)
+        {
+            if (element == null) return;
+            if (selected) element.AddToClassList("selected");
+            else element.RemoveFromClassList("selected");
+        }
+
+        private void BuildWhitelistPicker()
+        {
+            if (dashboardEditPostItList == null) return;
+            dashboardEditPostItList.Clear();
+            for (int i = 0; i < MockPostItStyleIds.Length; i++)
+            {
+                long id = MockPostItStyleIds[i];
+                VisualElement cell = new VisualElement();
+                cell.AddToClassList("postit-style-cell");
+                cell.userData = id;
+                Label name = new Label($"스타일 {id}");
+                name.AddToClassList("postit-style-cell-name");
+                cell.Add(name);
+                cell.RegisterCallback<ClickEvent>(_ => OnWhitelistCellClicked(id, cell));
+                dashboardEditPostItList.Add(cell);
+            }
+        }
+
+        private void OnWhitelistCellClicked(long styleId, VisualElement cell)
+        {
+            if (dashboardEditAllowAllToggle != null && dashboardEditAllowAllToggle.value)
+            {
+                // allowAll 상태에선 개별 토글 무력화
+                return;
+            }
+
+            if (selectedAllowedAssetIds.Contains(styleId))
+            {
+                selectedAllowedAssetIds.Remove(styleId);
+                cell.RemoveFromClassList("selected");
+            }
+            else
+            {
+                selectedAllowedAssetIds.Add(styleId);
+                cell.AddToClassList("selected");
+            }
+        }
+
+        private void RefreshWhitelistPickerSelections(bool allowAll)
+        {
+            if (dashboardEditPostItList == null) return;
+            foreach (VisualElement cell in dashboardEditPostItList.Children())
+            {
+                if (cell.userData is long id)
+                {
+                    bool selected = allowAll || selectedAllowedAssetIds.Contains(id);
+                    if (selected) cell.AddToClassList("selected");
+                    else cell.RemoveFromClassList("selected");
+                }
+            }
+        }
+
+        private void OnSubmitDashboardEdit()
+        {
+            if (currentSnapshot == null || dashboardEditSubmitButton == null) return;
+            dashboardEditSubmitButton.SetEnabled(false);
+
+            string newIntroduction = dashboardEditIntroduction?.value ?? string.Empty;
+            VisibilityScope newVisibility = selectedVisibility;
+            bool allowAll = dashboardEditAllowAllToggle?.value ?? true;
+            List<long> allowedIds = new List<long>(selectedAllowedAssetIds);
+            GuestbookPostItWhitelist whitelist = new GuestbookPostItWhitelist(allowAll, allowedIds);
+
+            int remaining = 3;
+            DashboardApiError firstError = null;
+
+            void Done()
+            {
+                remaining--;
+                if (remaining > 0) return;
+                dashboardEditSubmitButton.SetEnabled(true);
+                if (firstError != null)
+                {
+                    OnError(firstError);
+                    return;
+                }
+                CloseDashboardEditModal();
+                if (viewMode == ViewMode.Mine)
+                {
+                    loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
+                }
+            }
+
+            void Capture(DashboardApiError err)
+            {
+                if (firstError == null) firstError = err;
+                Done();
+            }
+
+            updateIntroductionUseCase.Execute(newIntroduction, Done, Capture);
+            updateGuestbookVisibilityUseCase.Execute(newVisibility, Done, Capture);
+            updateWhitelistUseCase.Execute(whitelist, Done, Capture);
         }
 
         private void OnWriteGuestbookClicked()
