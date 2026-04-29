@@ -45,4 +45,20 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
             @Param("cursorId") Long cursorId,
             Pageable pageable
     );
+
+    /** viewer가 팔로우 중인 targets 중에서 일치하는 것만 (MR #60 #4 batch). */
+    @Query("SELECT f.followingUserId FROM Follow f "
+            + "WHERE f.followerUserId = :viewerId AND f.followingUserId IN :targetIds")
+    List<Long> findFollowingTargetIds(
+            @Param("viewerId") Long viewerId,
+            @Param("targetIds") java.util.Collection<Long> targetIds
+    );
+
+    /** targets 중 viewer를 팔로우 중인 것 (mutual 판정 batch). */
+    @Query("SELECT f.followerUserId FROM Follow f "
+            + "WHERE f.followingUserId = :viewerId AND f.followerUserId IN :targetIds")
+    List<Long> findFollowerTargetIds(
+            @Param("viewerId") Long viewerId,
+            @Param("targetIds") java.util.Collection<Long> targetIds
+    );
 }

@@ -246,6 +246,11 @@ public class SpaceService {
     /**
      * 방명록·답장 작성 시 화이트리스트 enforcement에 사용. allowAll=true 또는 명시 허용된 assetId만 통과.
      * S4 stage에서 GuestbookService가 호출.
+     *
+     * <p>MR #60 #2 — 정책 명시: 화이트리스트 row가 아예 없는 공간은 <b>default-allow</b>로 처리한다.
+     * 마이그레이션 V9 적용 직후 기존 공간들은 row가 없을 수 있으므로,
+     * 신규 공간(row 미생성)도 기존 공간처럼 모든 포스트잇을 허용해야 한다.
+     * 공간 주인이 화이트리스트를 설정/저장한 시점부터만 enforcement가 적용된다.
      */
     public boolean isPostItAllowed(Long spaceId, Long postItInventoryId) {
         SpaceGuestbookPostItWhitelist whitelist = whitelistRepository.findById(spaceId).orElse(null);

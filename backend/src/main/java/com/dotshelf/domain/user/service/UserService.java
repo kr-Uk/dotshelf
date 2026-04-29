@@ -1,6 +1,12 @@
 package com.dotshelf.domain.user.service;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -124,38 +130,33 @@ public class UserService {
     private UserListResponse loadFollowersPage(Long targetUserId, Long viewerUserId, String cursor, int limit) {
         int validLimit = clampLimit(limit);
         Long cursorId = parseCursorId(cursor);
-        List<com.dotshelf.domain.user.entity.Follow> page = followRepository.findFollowersPage(
+        List<Follow> page = followRepository.findFollowersPage(
                 targetUserId, cursorId, PageRequest.of(0, validLimit + 1));
         boolean hasMore = page.size() > validLimit;
-        List<com.dotshelf.domain.user.entity.Follow> trimmed = hasMore ? page.subList(0, validLimit) : page;
+        List<Follow> trimmed = hasMore ? page.subList(0, validLimit) : page;
         String nextCursor = hasMore ? String.valueOf(trimmed.get(trimmed.size() - 1).getId()) : null;
-        List<UserSummaryResponse> users = trimmed.stream()
-                .map(f -> summaryWithRelation(getUser(f.getFollowerUserId()), viewerUserId))
-                .toList();
-        return new UserListResponse(users, nextCursor);
+        List<Long> userIds = trimmed.stream().map(Follow::getFollowerUserId).toList();
+        return new UserListResponse(summariesWithRelation(userIds, viewerUserId), nextCursor);
     }
 
     private UserListResponse loadFollowingsPage(Long targetUserId, Long viewerUserId, String cursor, int limit) {
         int validLimit = clampLimit(limit);
         Long cursorId = parseCursorId(cursor);
-        List<com.dotshelf.domain.user.entity.Follow> page = followRepository.findFollowingsPage(
+        List<Follow> page = followRepository.findFollowingsPage(
                 targetUserId, cursorId, PageRequest.of(0, validLimit + 1));
         boolean hasMore = page.size() > validLimit;
-        List<com.dotshelf.domain.user.entity.Follow> trimmed = hasMore ? page.subList(0, validLimit) : page;
+        List<Follow> trimmed = hasMore ? page.subList(0, validLimit) : page;
         String nextCursor = hasMore ? String.valueOf(trimmed.get(trimmed.size() - 1).getId()) : null;
-        List<UserSummaryResponse> users = trimmed.stream()
-                .map(f -> summaryWithRelation(getUser(f.getFollowingUserId()), viewerUserId))
-                .toList();
-        return new UserListResponse(users, nextCursor);
+        List<Long> userIds = trimmed.stream().map(Follow::getFollowingUserId).toList();
+        return new UserListResponse(summariesWithRelation(userIds, viewerUserId), nextCursor);
     }
 
+    /** MR #60 #5 — 양방향 차단 단일 OR 쿼리. */
     private void ensureNotBlocked(Long viewerUserId, Long targetUserId) {
         if (viewerUserId == null || viewerUserId.equals(targetUserId)) {
             return;
         }
-        boolean blockedByTarget = userBlockRepository.existsByBlockerUserIdAndBlockedUserId(targetUserId, viewerUserId);
-        boolean blockedTarget = userBlockRepository.existsByBlockerUserIdAndBlockedUserId(viewerUserId, targetUserId);
-        if (blockedByTarget || blockedTarget) {
+        if (userBlockRepository.existsBlockBetween(viewerUserId, targetUserId)) {
             throw new CustomException(ErrorCode.BLOCKED_RELATION);
         }
     }
@@ -165,23 +166,49 @@ public class UserService {
         return Math.min(limit, MAX_FOLLOW_LIMIT);
     }
 
+    /** MR #60 #6 — 잘못된 cursor는 silent 폴백 대신 명시적 INVALID_INPUT. */
     private static Long parseCursorId(String cursor) {
         if (cursor == null || cursor.isBlank()) return null;
         try {
             return Long.parseLong(cursor);
         } catch (NumberFormatException e) {
-            return null;
+            throw new CustomException(ErrorCode.INVALID_INPUT, "잘못된 cursor 형식입니다.");
         }
     }
 
-    private UserSummaryResponse summaryWithRelation(User target, Long viewerUserId) {
-        if (viewerUserId == null || viewerUserId.equals(target.getId())) {
-            return UserSummaryResponse.from(target);
+    /** MR #60 #4 — 페이지 1회당 최대 30+ exists → user/follow/block 한 번에 IN 쿼리. */
+    private List<UserSummaryResponse> summariesWithRelation(List<Long> targetUserIds, Long viewerUserId) {
+        if (targetUserIds.isEmpty()) {
+            return List.of();
         }
-        boolean following = followRepository.existsByFollowerUserIdAndFollowingUserId(viewerUserId, target.getId());
-        boolean followedBy = followRepository.existsByFollowerUserIdAndFollowingUserId(target.getId(), viewerUserId);
-        boolean blocked = userBlockRepository.existsByBlockerUserIdAndBlockedUserId(viewerUserId, target.getId());
-        return UserSummaryResponse.from(target, following && followedBy, following, blocked);
+        Map<Long, User> userById = userRepository.findAllById(targetUserIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+
+        if (viewerUserId == null) {
+            return targetUserIds.stream()
+                    .map(userById::get)
+                    .filter(Objects::nonNull)
+                    .map(UserSummaryResponse::from)
+                    .toList();
+        }
+
+        Set<Long> following = new HashSet<>(followRepository.findFollowingTargetIds(viewerUserId, targetUserIds));
+        Set<Long> followedBy = new HashSet<>(followRepository.findFollowerTargetIds(viewerUserId, targetUserIds));
+        Set<Long> blocked = new HashSet<>(userBlockRepository.findBlockedTargetIds(viewerUserId, targetUserIds));
+
+        return targetUserIds.stream()
+                .map(userById::get)
+                .filter(Objects::nonNull)
+                .map(u -> {
+                    if (u.getId().equals(viewerUserId)) {
+                        return UserSummaryResponse.from(u);
+                    }
+                    boolean isFollowing = following.contains(u.getId());
+                    boolean isFollowedBy = followedBy.contains(u.getId());
+                    boolean isBlocked = blocked.contains(u.getId());
+                    return UserSummaryResponse.from(u, isFollowing && isFollowedBy, isFollowing, isBlocked);
+                })
+                .toList();
     }
 
     @Transactional
@@ -209,10 +236,10 @@ public class UserService {
 
     public UserListResponse getBlocks(Long userId) {
         Long currentUserId = requireUserId(userId);
-        List<UserSummaryResponse> users = userBlockRepository.findByBlockerUserId(currentUserId).stream()
-                .map(block -> summaryWithRelation(getUser(block.getBlockedUserId()), currentUserId))
+        List<Long> blockedIds = userBlockRepository.findByBlockerUserId(currentUserId).stream()
+                .map(UserBlock::getBlockedUserId)
                 .toList();
-        return new UserListResponse(users, null);
+        return new UserListResponse(summariesWithRelation(blockedIds, currentUserId), null);
     }
 
     public NotificationSettingResponse getNotificationSetting(Long userId) {
