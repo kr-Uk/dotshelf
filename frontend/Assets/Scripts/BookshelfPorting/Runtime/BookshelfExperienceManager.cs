@@ -7478,25 +7478,14 @@ namespace BookshelfPorting.Runtime
         private void EnsureGuestbookBoardUi()
         {
             // (v1.0 dashboard 통합) 외부 prefab 모드면 옛 guestbookBoardCanvas 생성을 통째 skip.
-            // BookshelfGenerator가 Play 시작 시 GuestbookHitArea를 procedural하게 재생성하므로
-            // 정적으로 prefab을 GuestbookHitArea 자식으로 박아두면 부모 destroy와 함께 사라진다.
-            // 그래서 prefab은 scene root에 두고, 첫 호출 시점에 동적 GuestbookHitArea를 찾아 reparent.
+            // 시작 시점에는 prefab을 건드리지 않는다 — Start에서 reparent하면 BookshelfGenerator의
+            // 동적 GuestbookHitArea 초기화 흐름과 같은 frame에서 충돌해 raycast가 깨질 수 있음.
+            // 실제 reparent + active 토글은 SetGuestbookFocusPresentation(true) 시점(focus 진입 시)에 lazy.
             if (useExternalDashboardPanel)
             {
-                if (externalDashboardPanel != null)
+                if (externalDashboardPanel != null && externalDashboardPanel.activeSelf)
                 {
-                    var dynamicHitArea = FindFirstObjectByType<GuestbookBoardHitArea>();
-                    if (dynamicHitArea != null && externalDashboardPanel.transform.parent != dynamicHitArea.transform)
-                    {
-                        externalDashboardPanel.transform.SetParent(dynamicHitArea.transform, false);
-                        externalDashboardPanel.transform.localPosition = new Vector3(-0.058f, 0f, 0f);
-                        externalDashboardPanel.transform.localRotation = Quaternion.Euler(0f, -90f, 0f);
-                        externalDashboardPanel.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
-                    }
-                    if (externalDashboardPanel.activeSelf)
-                    {
-                        externalDashboardPanel.SetActive(false);
-                    }
+                    externalDashboardPanel.SetActive(false);
                 }
                 return;
             }
@@ -7884,11 +7873,22 @@ namespace BookshelfPorting.Runtime
         private void SetGuestbookFocusPresentation(bool isFocused)
         {
             // (v1.0 dashboard 통합) 외부 prefab 모드면 우리 DashboardScreenPanel만 토글.
-            // 카메라가 Whiteboard 모드일 때(focus) dashboard 활성, 빠져나가면 비활성.
+            // focus 진입 시점에 lazy reparent — BookshelfGenerator 초기화가 안정된 후라 안전.
             if (useExternalDashboardPanel)
             {
                 if (externalDashboardPanel != null)
                 {
+                    if (isFocused)
+                    {
+                        var dynamicHitArea = FindFirstObjectByType<GuestbookBoardHitArea>();
+                        if (dynamicHitArea != null && externalDashboardPanel.transform.parent != dynamicHitArea.transform)
+                        {
+                            externalDashboardPanel.transform.SetParent(dynamicHitArea.transform, false);
+                            externalDashboardPanel.transform.localPosition = new Vector3(-0.058f, 0f, 0f);
+                            externalDashboardPanel.transform.localRotation = Quaternion.Euler(0f, -90f, 0f);
+                            externalDashboardPanel.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
+                        }
+                    }
                     externalDashboardPanel.SetActive(isFocused);
                 }
                 return;
