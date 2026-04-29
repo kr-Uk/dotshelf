@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>길건너친구들</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23fff7de'/%3E%3Cellipse cx='24' cy='20' rx='7' ry='17' fill='%23fff' stroke='%23efc7d0' stroke-width='4'/%3E%3Cellipse cx='40' cy='20' rx='7' ry='17' fill='%23fff' stroke='%23efc7d0' stroke-width='4'/%3E%3Ccircle cx='32' cy='39' r='19' fill='%23fff' stroke='%23efc7d0' stroke-width='4'/%3E%3Ccircle cx='25' cy='37' r='3' fill='%2328323a'/%3E%3Ccircle cx='39' cy='37' r='3' fill='%2328323a'/%3E%3Cellipse cx='32' cy='43' rx='4' ry='3' fill='%23ff8ca5'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="hub-link" href="../">게임 선택</a>
+    <main class="game-page" aria-label="길건너친구들">
+      <header class="topbar">
+        <div class="brand" aria-label="길건너친구들">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>길건너친구들</span>
+        </div>
+
+        <section class="stats" aria-label="게임 기록">
+          <div class="stat">
+            <span>점수</span>
+            <strong id="scoreValue">0</strong>
+          </div>
+          <div class="stat">
+            <span>최고</span>
+            <strong id="bestValue">0</strong>
+          </div>
+          <div class="stat carrot-stat">
+            <span aria-hidden="true">🥕</span>
+            <strong id="carrotValue">0</strong>
+          </div>
+        </section>
+
+        <nav class="actions" aria-label="게임 동작">
+          <button id="soundButton" class="icon-button" type="button" aria-label="소리" title="소리">♪</button>
+          <button id="restartButton" class="icon-button" type="button" aria-label="다시 시작" title="다시 시작">↻</button>
+        </nav>
+      </header>
+
+      <section class="game-stage">
+        <canvas id="gameCanvas" aria-label="게임 화면"></canvas>
+
+        <div id="gameOverlay" class="overlay">
+          <div class="overlay-panel">
+            <div class="overlay-bunny" aria-hidden="true">
+              <span class="ear left"></span>
+              <span class="ear right"></span>
+              <span class="head"></span>
+            </div>
+            <h1 id="overlayTitle">길건너친구들</h1>
+            <p id="overlayScore" class="overlay-score"></p>
+            <button id="startButton" class="primary-button" type="button" aria-label="시작">▶</button>
+          </div>
+        </div>
+
+        <div class="dpad" aria-label="이동">
+          <button type="button" class="dpad-button up" data-move="up" aria-label="앞으로">▲</button>
+          <button type="button" class="dpad-button left" data-move="left" aria-label="왼쪽">◀</button>
+          <button type="button" class="dpad-button down" data-move="down" aria-label="뒤로">▼</button>
+          <button type="button" class="dpad-button right" data-move="right" aria-label="오른쪽">▶</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="game.js"></script>
+  </body>
+</html>

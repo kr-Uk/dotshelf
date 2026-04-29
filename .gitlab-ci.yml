@@ -28,6 +28,13 @@ variables:
         - .gitlab-ci.yml
         - .ci/**/*
 
+.static-rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      changes:
+        - frontend/docs/dotshelf-games/**/*
+        - .gitlab-ci.yml
+
 cache:
   key:
     files:
@@ -93,3 +100,24 @@ backend:deploy:
   environment:
     name: dev
     url: https://api.dotshelf.digital
+
+static:deploy:
+  extends: .static-rules
+  stage: deploy
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache openssh-client rsync
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+    - chmod 600 ~/.ssh/id_ed25519
+    - printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+    - chmod 600 ~/.ssh/known_hosts
+  script:
+    - STATIC_ROOT=frontend/docs/dotshelf-games
+    - STATIC_TARGET=$PROD_DEPLOY_PATH/nginx/html/root
+    - echo "Deploying static site to prod=$PROD_HOST:$STATIC_TARGET"
+    - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $STATIC_TARGET"
+    - rsync -az --delete "$STATIC_ROOT/" "$PROD_USER@$PROD_HOST:$STATIC_TARGET/"
+  environment:
+    name: static
+    url: https://dotshelf.digital

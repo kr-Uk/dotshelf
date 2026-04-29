@@ -12,6 +12,12 @@ CI 가 매 배포마다 이 디렉토리 트리를 prod 로 rsync 한다.
 | `templates/upstream.blue.conf` | Blue 템플릿 (port 8080) | ❌ (서브디렉토리는 스캔 안 됨) | ✅ |
 | `templates/upstream.green.conf` | Green 템플릿 (port 8081) | ❌ | ✅ |
 
+## 정적 루트 배포
+
+`dotshelf.digital` / `www.dotshelf.digital` 은 `default.conf` 에서 `/usr/share/nginx/html/root` 를 root 로 사용한다.
+GitLab CI 의 `static:deploy` job 이 `frontend/docs/dotshelf-games/` 를 prod 호스트의
+`$PROD_DEPLOY_PATH/nginx/html/root/` 로 rsync 한다. Nginx 는 정적 파일을 직접 읽으므로 콘텐츠만 바뀔 때는 reload 가 필요 없다.
+
 ## 왜 templates/ 서브디렉토리인가
 
 `nginx.conf` 의 `include /etc/nginx/conf.d/*.conf` 는 **디렉토리 바로 아래 `.conf` 파일만** 스캔한다. 서브디렉토리는 스캔하지 않는다. 만약 `upstream.blue.conf` 와 `upstream.green.conf` 가 conf.d 루트에 있으면 `upstream.active.conf` 와 함께 **같은 이름의 upstream 을 여러 번 선언** 해서 `duplicate upstream` 에러가 난다. 따라서 템플릿은 반드시 서브디렉토리에 둔다.
