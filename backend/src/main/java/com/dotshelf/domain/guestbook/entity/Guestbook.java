@@ -40,6 +40,9 @@ public class Guestbook extends BaseEntity {
     private String visibilityScope = "PUBLIC";
 
     @Column(nullable = false)
+    private boolean anonymous = false;
+
+    @Column(nullable = false)
     private int replyCount = 0;
 
     @Column(nullable = false, length = 20)
@@ -48,16 +51,24 @@ public class Guestbook extends BaseEntity {
     private LocalDateTime deletedAt;
 
     @Builder
-    private Guestbook(Long spaceId, Long writerUserId, Long postItInventoryId, String content, String visibilityScope) {
+    private Guestbook(Long spaceId, Long writerUserId, Long postItInventoryId,
+                      String content, String visibilityScope, Boolean anonymous) {
         this.spaceId = spaceId;
         this.writerUserId = writerUserId;
         this.postItInventoryId = postItInventoryId;
         this.content = content;
         this.visibilityScope = visibilityScope == null ? "PUBLIC" : visibilityScope;
+        this.anonymous = anonymous != null && anonymous;
     }
 
     public void increaseReplyCount() {
         this.replyCount += 1;
+    }
+
+    public void decreaseReplyCount() {
+        if (this.replyCount > 0) {
+            this.replyCount -= 1;
+        }
     }
 
     public void delete() {
