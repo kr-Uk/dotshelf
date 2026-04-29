@@ -186,6 +186,10 @@
     flex-direction: row;
 }
 
+.carousel-scroll .unity-scroll-view__vertical-scroller {
+    display: none;
+}
+
 .carousel-cell {
     width: 64px;
     height: 100px;
@@ -217,7 +221,7 @@
 
 .record-cell {
     width: 180px;
-    height: 100px;
+    height: 88px;
     margin-right: 6px;
     background-color: rgb(255, 252, 240);
     border-radius: 6px;
