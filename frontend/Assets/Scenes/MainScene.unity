@@ -6154,6 +6154,10 @@ MonoBehaviour:
   thicknessRange: {x: 0.025, y: 0.045}
   heightRange: {x: 0.2, y: 0.27}
   bookDepth: 0.16
+  addedBookInsertionDuration: 0.42
+  addedBookInsertionLocalOffset: {x: 0, y: 0.12, z: -0.46}
+  addBookPlacementGuideColor: {r: 0.3, g: 0.58, b: 0.47, a: 0.78}
+  addBookPlacementGhostColor: {r: 0.3, g: 0.58, b: 0.47, a: 0.24}
   randomSeed: 7
 --- !u!114 &617729538
 MonoBehaviour:
