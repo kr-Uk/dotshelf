@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -38,16 +38,21 @@ const MAX_ATTEMPTS = 5;
 
 export default function MfaPage() {
   const router = useRouter();
-  // sessionStorage 의 pending mfa 챌린지를 외부 store로 구독.
-  const pending = useSyncExternalStore<PendingMfa | null>(
-    () => () => {},
-    () => loadPendingMfa(),
-    () => null,
+  const [pending, setPending] = useState<PendingMfa | null | undefined>(
+    undefined,
   );
   const [attempts, setAttempts] = useState(0);
   const [locked, setLocked] = useState(false);
 
   useEffect(() => {
+    // pending MFA는 페이지 진입 시점의 challenge를 고정해 submit 중 storage 정리와
+    // redirect guard가 경쟁하지 않게 한다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPending(loadPendingMfa());
+  }, []);
+
+  useEffect(() => {
+    if (pending === undefined) return;
     if (!pending) {
       router.replace("/login");
     }
@@ -97,7 +102,7 @@ export default function MfaPage() {
       <div className="space-y-1.5">
         <h2 className="text-2xl font-semibold tracking-tight">2단계 인증</h2>
         <p className="text-sm text-muted-foreground">
-          {pending?.email ?? "—"} 계정에 등록된 OTP 앱의 6자리 코드를 입력하세요.
+          {pending?.email ?? "확인 중"} 계정에 등록된 OTP 앱의 6자리 코드를 입력하세요.
         </p>
       </div>
 

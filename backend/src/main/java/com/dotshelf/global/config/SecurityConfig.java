@@ -20,22 +20,6 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    private static final String[] PUBLIC_ENDPOINTS = {
-            "/health",
-            "/actuator/health",
-            "/actuator/health/**",
-            // Prometheus 스크레이프용. 공개 Nginx 에서 /actuator 는 404 차단되므로
-            // 실제 접근은 Tailscale 내부(prod 호스트의 Prometheus)에서만 가능.
-            "/actuator/prometheus",
-            "/v1/auth/**",
-            // Unity 클라이언트의 책장 초기 카탈로그 로딩(비인증). hasPath 기준이라 /v1/books/* 는 영향 없음.
-            "/v1/books",
-            "/swagger-ui/**",
-            "/swagger-ui.html",
-            "/v3/api-docs/**",
-            "/v3/api-docs.yaml"
-    };
-
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final SecurityEntryPoints securityEntryPoints;
 
@@ -45,9 +29,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> {})
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
-                        .anyRequest().authenticated())
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(securityEntryPoints.authenticationEntryPoint())
                         .accessDeniedHandler(securityEntryPoints.accessDeniedHandler()))
