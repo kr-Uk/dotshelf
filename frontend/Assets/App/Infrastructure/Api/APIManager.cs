@@ -32,12 +32,8 @@ namespace App.Infrastructure.Api
 
         private void Awake()
         {
-            // (디버깅 — APIManager 인스턴스 추적용)
-            Debug.Log($"[APIManager#{GetInstanceID()} on '{gameObject.name}'] Awake. baseUrl='{baseUrl}'. Existing Instance={(Instance == null ? "null" : Instance.GetInstanceID().ToString())}");
-
             if (Instance != null && Instance != this)
             {
-                Debug.Log($"[APIManager#{GetInstanceID()}] Already exists, destroying self.");
                 Destroy(gameObject);
                 return;
             }
@@ -48,8 +44,6 @@ namespace App.Infrastructure.Api
 
         public void Configure(string apiBaseUrl, string token = null, int timeout = 10)
         {
-            // (디버깅) Configure 호출 추적
-            Debug.Log($"[APIManager#{GetInstanceID()} on '{gameObject.name}'] Configure called: apiBaseUrl='{apiBaseUrl}' (was baseUrl='{baseUrl}')");
             baseUrl = NormalizeBaseUrl(apiBaseUrl, baseUrl);
             if (token != null)
             {
@@ -80,11 +74,7 @@ namespace App.Infrastructure.Api
             Action<ApiErrorResponseDto> onError = null,
             Dictionary<string, string> headers = null)
         {
-            // (디버깅) BuildUrl 결과와 UnityWebRequest 생성 후 request.url 비교
-            var fullUrl = BuildUrl(path);
-            Debug.Log($"[APIManager DEBUG Get] BuildUrl returned: '{fullUrl}'");
-            var request = UnityWebRequest.Get(fullUrl);
-            Debug.Log($"[APIManager DEBUG Get] After UnityWebRequest.Get, request.url='{request.url}'");
+            var request = UnityWebRequest.Get(BuildUrl(path));
             ApplyHeaders(request, headers);
             return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
         }
@@ -369,17 +359,22 @@ namespace App.Infrastructure.Api
 
         private string BuildUrl(string path)
         {
-            // (디버깅 — baseUrl localhost 미스터리 추적용. 추적 끝나면 제거)
-            Debug.Log($"[APIManager#{GetInstanceID()} on '{gameObject.name}'] BuildUrl baseUrl='{baseUrl}' path='{path}'");
-
             if (string.IsNullOrWhiteSpace(path))
             {
                 return baseUrl;
             }
 
-            return Uri.TryCreate(path, UriKind.Absolute, out _)
-                ? path
-                : $"{baseUrl}/{path.TrimStart('/')}";
+            // 한글/특수문자 인코딩(%e3%85%87 등)이 포함된 path를 Uri.TryCreate(..., UriKind.Absolute)가
+            // absolute로 잘못 인식해서 baseUrl 없이 path만 반환되는 버그가 있었음.
+            // → UnityWebRequest가 host 없는 URL을 받으면 default 'localhost'로 채워 호출 실패.
+            // 명시적으로 http(s):// 시작만 absolute로 처리.
+            if (path.StartsWith("http://", System.StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("https://", System.StringComparison.OrdinalIgnoreCase))
+            {
+                return path;
+            }
+
+            return $"{baseUrl}/{path.TrimStart('/')}";
         }
 
         private static string NormalizeBaseUrl(string candidate, string fallback)
