@@ -7,6 +7,15 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-cream: #f6f2ec;
+  --color-cream-soft: #fbf7f0;
+  --color-beige: #d6c4ad;
+  --color-beige-soft: #e8dcc8;
+  --color-wood: #a38069;
+  --color-wood-dark: #8a6951;
+  --color-charcoal: #3a2e26;
+  --color-ink: #2a211b;
+  --color-paper-muted: #7a6a5c;
   --font-sans:
     "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont,
     system-ui, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic",
@@ -15,6 +24,14 @@
     "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     monospace;
   --font-heading: var(--font-sans);
+  --font-marketing-serif:
+    var(--font-spectral), ui-serif, Georgia, "Noto Serif KR", serif;
+  --font-marketing-sans:
+    var(--font-dm-sans), "Pretendard Variable", "Pretendard", system-ui,
+    "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --font-marketing-mono:
+    var(--font-jetbrains-mono), "JetBrains Mono", ui-monospace, SFMono-Regular,
+    Menlo, Monaco, Consolas, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -132,4 +149,230 @@
   html {
     @apply font-sans;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Marketing surface (service-web 공개 랜딩 — `app/(marketing)/*`)
+   creator/admin 영역에는 영향이 없도록 `.marketing-surface` 스코프 안에서만 적용.
+   ──────────────────────────────────────────────────────────────────────────── */
+.marketing-surface {
+  background-color: var(--color-cream);
+  color: var(--color-charcoal);
+  font-family: var(--font-marketing-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.marketing-surface h1,
+.marketing-surface h2,
+.marketing-surface h3,
+.marketing-surface h4,
+.marketing-surface .serif {
+  font-family: var(--font-marketing-serif);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.marketing-surface .mono {
+  font-family: var(--font-marketing-mono);
+}
+
+.marketing-surface .paper {
+  background-color: #f6f2ec;
+  background-image:
+    radial-gradient(rgba(58, 46, 38, 0.035) 1px, transparent 1px),
+    radial-gradient(rgba(163, 128, 105, 0.03) 1px, transparent 1px);
+  background-size:
+    3px 3px,
+    7px 7px;
+  background-position:
+    0 0,
+    1px 2px;
+}
+
+.marketing-surface .paper-dark {
+  background-color: #ebe3d5;
+  background-image: radial-gradient(
+    rgba(58, 46, 38, 0.06) 1px,
+    transparent 1px
+  );
+  background-size: 4px 4px;
+}
+
+.marketing-surface .shadow-warm {
+  box-shadow:
+    0 1px 0 rgba(214, 196, 173, 0.6),
+    0 8px 24px -12px rgba(58, 46, 38, 0.18);
+}
+.marketing-surface .shadow-warm-lg {
+  box-shadow:
+    0 2px 0 rgba(214, 196, 173, 0.7),
+    0 28px 60px -28px rgba(58, 46, 38, 0.28);
+}
+.marketing-surface .shadow-warm-sm {
+  box-shadow:
+    0 1px 0 rgba(214, 196, 173, 0.6),
+    0 4px 12px -8px rgba(58, 46, 38, 0.18);
+}
+
+.marketing-surface .ink-link {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 100% 1px;
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+}
+
+.marketing-surface .scene {
+  perspective: 1400px;
+}
+.marketing-surface .shelf-stage {
+  transform-style: preserve-3d;
+  transform: rotateX(8deg) rotateY(-14deg);
+}
+
+.marketing-surface .book-spine {
+  position: absolute;
+  bottom: 0;
+  border-radius: 3px 3px 1px 1px;
+  box-shadow:
+    inset -2px 0 0 rgba(0, 0, 0, 0.18),
+    inset 2px 0 0 rgba(255, 255, 255, 0.1),
+    inset 0 6px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.18);
+}
+.marketing-surface .book-spine::after {
+  content: "";
+  position: absolute;
+  inset: 14% 18%;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.marketing-surface .ph-stripes {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(163, 128, 105, 0.1),
+    rgba(163, 128, 105, 0.1) 8px,
+    rgba(163, 128, 105, 0.18) 8px,
+    rgba(163, 128, 105, 0.18) 16px
+  );
+}
+
+.marketing-surface .wood-grain {
+  background: linear-gradient(180deg, #b58e73 0%, #9c7458 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    0 8px 18px -10px rgba(58, 46, 38, 0.45);
+  position: relative;
+  overflow: hidden;
+}
+.marketing-surface .wood-grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      rgba(58, 30, 15, 0.1) 0 1px,
+      transparent 1px 7px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 235, 210, 0.06) 0 2px,
+      transparent 2px 41px
+    );
+  mix-blend-mode: overlay;
+}
+
+.marketing-surface .btn-primary {
+  background: var(--color-wood);
+  color: var(--color-cream-soft);
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+  box-shadow:
+    0 1px 0 rgba(58, 46, 38, 0.12),
+    0 8px 18px -10px rgba(163, 128, 105, 0.6);
+}
+.marketing-surface .btn-primary:hover {
+  background: var(--color-wood-dark);
+  transform: translateY(-1px);
+}
+
+.marketing-surface .btn-secondary {
+  background: var(--color-cream);
+  color: var(--color-charcoal);
+  border: 1px solid var(--color-beige);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.marketing-surface .btn-secondary:hover {
+  background: #efe6d6;
+  border-color: #c2ad92;
+}
+
+@keyframes drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.marketing-surface .drift {
+  animation: drift 60s linear infinite;
+}
+
+@keyframes pageIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.marketing-surface .page-fade {
+  animation: pageIn 0.35s ease both;
+}
+
+.marketing-surface .field {
+  background: var(--color-cream-soft);
+  border: 1px solid var(--color-beige);
+  border-radius: 0.875rem;
+  padding: 0.75rem 1rem;
+  color: var(--color-charcoal);
+  width: 100%;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.marketing-surface .field:focus {
+  outline: none;
+  border-color: var(--color-wood);
+  box-shadow: 0 0 0 3px rgba(163, 128, 105, 0.18);
+}
+.marketing-surface .field-label {
+  font-size: 0.8125rem;
+  color: #5c4d42;
+  margin-bottom: 0.375rem;
+  display: block;
+  font-weight: 500;
+}
+
+.marketing-surface details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.marketing-surface details > summary::-webkit-details-marker {
+  display: none;
+}
+.marketing-surface details[open] .faq-caret {
+  transform: rotate(45deg);
+}
+.marketing-surface .faq-caret {
+  transition: transform 0.2s ease;
 }
