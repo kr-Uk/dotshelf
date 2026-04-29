@@ -1,7 +1,8 @@
 package com.dotshelf.domain.auth.repository;
 
-import java.util.Optional;
+import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -13,4 +14,6 @@ public interface UserSocialAccountRepository extends JpaRepository<UserSocialAcc
     Optional<UserSocialAccount> findByProviderAndProviderUserId(SocialProvider provider, String providerUserId);
 
     List<UserSocialAccount> findByUserId(Long userId);
+
+    List<UserSocialAccount> findByUserIdIn(Collection<Long> userIds);
 }

@@ -44,6 +44,9 @@ import type {
 const API_BASE = (
   process.env.NEXT_PUBLIC_ADMIN_API_BASE_URL ?? "/api/admin"
 ).replace(/\/$/u, "");
+const TEST_ADMIN_HEADER =
+  process.env.NEXT_PUBLIC_ADMIN_TEST_AUTH_HEADER_NAME ?? "X-Test-Admin-User-Id";
+const TEST_ADMIN_USER_ID = process.env.NEXT_PUBLIC_ADMIN_TEST_USER_ID ?? "1004";
 const PAGE_TO_WON = 10;
 
 export interface ResponseEnvelope<T> {
@@ -818,6 +821,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     touchAuth();
   } else if (auth) {
     touchAuth();
+  }
+  if (!headers.has(TEST_ADMIN_HEADER)) {
+    headers.set(TEST_ADMIN_HEADER, TEST_ADMIN_USER_ID);
   }
 
   const url = adapted.path.startsWith("http")

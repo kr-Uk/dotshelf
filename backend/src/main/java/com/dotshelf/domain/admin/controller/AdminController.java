@@ -53,6 +53,7 @@ import com.dotshelf.global.common.CurrentUser;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -100,18 +101,20 @@ public class AdminController {
     public ApiResponse<ReportListItemResponse> actReport(
             @CurrentUser Long userId,
             @PathVariable Long reportId,
-            @RequestBody @Valid ReportActionRequest request
+            @RequestBody @Valid ReportActionRequest request,
+            HttpServletRequest httpRequest
     ) {
-        return ApiResponse.success(adminService.actReport(userId, reportId, request));
+        return ApiResponse.success(adminService.actReport(userId, reportId, request, clientIp(httpRequest)));
     }
 
     @Operation(summary = "신고 일괄 조치")
     @PostMapping("/reports/bulk-action")
     public ApiResponse<OkResponse> bulkActReports(
             @CurrentUser Long userId,
-            @RequestBody @Valid BulkReportActionRequest request
+            @RequestBody @Valid BulkReportActionRequest request,
+            HttpServletRequest httpRequest
     ) {
-        return ApiResponse.success(adminService.bulkActReports(userId, request));
+        return ApiResponse.success(adminService.bulkActReports(userId, request, clientIp(httpRequest)));
     }
 
     @Operation(summary = "사용자 목록")
@@ -141,9 +144,10 @@ public class AdminController {
     public ApiResponse<AdminUserDetailResponse> actUser(
             @CurrentUser Long userId,
             @PathVariable Long targetUserId,
-            @RequestBody @Valid UserActionRequest request
+            @RequestBody @Valid UserActionRequest request,
+            HttpServletRequest httpRequest
     ) {
-        return ApiResponse.success(adminService.actUser(userId, targetUserId, request));
+        return ApiResponse.success(adminService.actUser(userId, targetUserId, request, clientIp(httpRequest)));
     }
 
     @Operation(summary = "사용자 공간 목록")
@@ -191,9 +195,10 @@ public class AdminController {
     public ApiResponse<AdminUserNoteResponse> createUserNote(
             @CurrentUser Long userId,
             @PathVariable Long targetUserId,
-            @RequestBody @Valid CreateAdminUserNoteRequest request
+            @RequestBody @Valid CreateAdminUserNoteRequest request,
+            HttpServletRequest httpRequest
     ) {
-        return ApiResponse.success(adminService.createUserNote(userId, targetUserId, request));
+        return ApiResponse.success(adminService.createUserNote(userId, targetUserId, request, clientIp(httpRequest)));
     }
 
     @Operation(summary = "사용자 페이지 잔액 조정")
@@ -201,9 +206,10 @@ public class AdminController {
     public ApiResponse<BalanceAdjustResponse> adjustBalance(
             @CurrentUser Long userId,
             @PathVariable Long targetUserId,
-            @RequestBody @Valid BalanceAdjustRequest request
+            @RequestBody @Valid BalanceAdjustRequest request,
+            HttpServletRequest httpRequest
     ) {
-        return ApiResponse.success(adminService.adjustBalance(userId, targetUserId, request));
+        return ApiResponse.success(adminService.adjustBalance(userId, targetUserId, request, clientIp(httpRequest)));
     }
 
     @Operation(summary = "정산 대사 요약")
@@ -285,9 +291,10 @@ public class AdminController {
     public ApiResponse<AdminMemberResponse> updateAdminRole(
             @CurrentUser Long userId,
             @PathVariable Long targetUserId,
-            @RequestBody @Valid AdminRoleRequest request
+            @RequestBody @Valid AdminRoleRequest request,
+            HttpServletRequest httpRequest
     ) {
-        return ApiResponse.success(adminService.updateAdminRole(userId, targetUserId, request));
+        return ApiResponse.success(adminService.updateAdminRole(userId, targetUserId, request, clientIp(httpRequest)));
     }
 
     @Operation(summary = "공지 목록")
@@ -303,9 +310,10 @@ public class AdminController {
     @PostMapping("/operations/announcements")
     public ApiResponse<AnnouncementResponse> createAnnouncement(
             @CurrentUser Long userId,
-            @RequestBody @Valid CreateAnnouncementRequest request
+            @RequestBody @Valid CreateAnnouncementRequest request,
+            HttpServletRequest httpRequest
     ) {
-        return ApiResponse.success(adminService.createAnnouncement(userId, request));
+        return ApiResponse.success(adminService.createAnnouncement(userId, request, clientIp(httpRequest)));
     }
 
     @Operation(summary = "정책 버전 목록")
@@ -321,9 +329,10 @@ public class AdminController {
     @PostMapping("/operations/maintenance")
     public ApiResponse<MaintenanceResponse> updateMaintenance(
             @CurrentUser Long userId,
-            @RequestBody @Valid MaintenanceRequest request
+            @RequestBody @Valid MaintenanceRequest request,
+            HttpServletRequest httpRequest
     ) {
-        return ApiResponse.success(adminService.updateMaintenance(userId, request));
+        return ApiResponse.success(adminService.updateMaintenance(userId, request, clientIp(httpRequest)));
     }
 
     @Operation(summary = "감사 로그 목록")
@@ -359,5 +368,17 @@ public class AdminController {
             @RequestParam(defaultValue = "12") int limit
     ) {
         return ApiResponse.success(adminService.search(userId, q, types, limit));
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            return forwardedFor.split(",")[0].trim();
+        }
+        String realIp = request.getHeader("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp.trim();
+        }
+        return request.getRemoteAddr();
     }
 }
