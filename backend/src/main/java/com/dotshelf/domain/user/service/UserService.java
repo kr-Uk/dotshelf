@@ -2,6 +2,7 @@ package com.dotshelf.domain.user.service;
 
 import java.util.List;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -97,20 +98,80 @@ public class UserService {
         return new ToggleResponse(false, followRepository.countByFollowingUserId(targetUserId));
     }
 
-    public UserListResponse getFollowers(Long userId) {
+    private static final int DEFAULT_FOLLOW_LIMIT = 30;
+    private static final int MAX_FOLLOW_LIMIT = 50;
+
+    public UserListResponse getFollowers(Long userId, String cursor, int limit) {
         Long currentUserId = requireUserId(userId);
-        List<UserSummaryResponse> users = followRepository.findByFollowingUserId(currentUserId).stream()
-                .map(follow -> summaryWithRelation(getUser(follow.getFollowerUserId()), currentUserId))
-                .toList();
-        return new UserListResponse(users, null);
+        return loadFollowersPage(currentUserId, currentUserId, cursor, limit);
     }
 
-    public UserListResponse getFollowings(Long userId) {
+    public UserListResponse getFollowings(Long userId, String cursor, int limit) {
         Long currentUserId = requireUserId(userId);
-        List<UserSummaryResponse> users = followRepository.findByFollowerUserId(currentUserId).stream()
-                .map(follow -> summaryWithRelation(getUser(follow.getFollowingUserId()), currentUserId))
+        return loadFollowingsPage(currentUserId, currentUserId, cursor, limit);
+    }
+
+    public UserListResponse getUserFollowers(Long viewerUserId, Long targetUserId, String cursor, int limit) {
+        ensureNotBlocked(viewerUserId, targetUserId);
+        return loadFollowersPage(targetUserId, viewerUserId, cursor, limit);
+    }
+
+    public UserListResponse getUserFollowings(Long viewerUserId, Long targetUserId, String cursor, int limit) {
+        ensureNotBlocked(viewerUserId, targetUserId);
+        return loadFollowingsPage(targetUserId, viewerUserId, cursor, limit);
+    }
+
+    private UserListResponse loadFollowersPage(Long targetUserId, Long viewerUserId, String cursor, int limit) {
+        int validLimit = clampLimit(limit);
+        Long cursorId = parseCursorId(cursor);
+        List<com.dotshelf.domain.user.entity.Follow> page = followRepository.findFollowersPage(
+                targetUserId, cursorId, PageRequest.of(0, validLimit + 1));
+        boolean hasMore = page.size() > validLimit;
+        List<com.dotshelf.domain.user.entity.Follow> trimmed = hasMore ? page.subList(0, validLimit) : page;
+        String nextCursor = hasMore ? String.valueOf(trimmed.get(trimmed.size() - 1).getId()) : null;
+        List<UserSummaryResponse> users = trimmed.stream()
+                .map(f -> summaryWithRelation(getUser(f.getFollowerUserId()), viewerUserId))
                 .toList();
-        return new UserListResponse(users, null);
+        return new UserListResponse(users, nextCursor);
+    }
+
+    private UserListResponse loadFollowingsPage(Long targetUserId, Long viewerUserId, String cursor, int limit) {
+        int validLimit = clampLimit(limit);
+        Long cursorId = parseCursorId(cursor);
+        List<com.dotshelf.domain.user.entity.Follow> page = followRepository.findFollowingsPage(
+                targetUserId, cursorId, PageRequest.of(0, validLimit + 1));
+        boolean hasMore = page.size() > validLimit;
+        List<com.dotshelf.domain.user.entity.Follow> trimmed = hasMore ? page.subList(0, validLimit) : page;
+        String nextCursor = hasMore ? String.valueOf(trimmed.get(trimmed.size() - 1).getId()) : null;
+        List<UserSummaryResponse> users = trimmed.stream()
+                .map(f -> summaryWithRelation(getUser(f.getFollowingUserId()), viewerUserId))
+                .toList();
+        return new UserListResponse(users, nextCursor);
+    }
+
+    private void ensureNotBlocked(Long viewerUserId, Long targetUserId) {
+        if (viewerUserId == null || viewerUserId.equals(targetUserId)) {
+            return;
+        }
+        boolean blockedByTarget = userBlockRepository.existsByBlockerUserIdAndBlockedUserId(targetUserId, viewerUserId);
+        boolean blockedTarget = userBlockRepository.existsByBlockerUserIdAndBlockedUserId(viewerUserId, targetUserId);
+        if (blockedByTarget || blockedTarget) {
+            throw new CustomException(ErrorCode.BLOCKED_RELATION);
+        }
+    }
+
+    private static int clampLimit(int limit) {
+        if (limit <= 0) return DEFAULT_FOLLOW_LIMIT;
+        return Math.min(limit, MAX_FOLLOW_LIMIT);
+    }
+
+    private static Long parseCursorId(String cursor) {
+        if (cursor == null || cursor.isBlank()) return null;
+        try {
+            return Long.parseLong(cursor);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private UserSummaryResponse summaryWithRelation(User target, Long viewerUserId) {

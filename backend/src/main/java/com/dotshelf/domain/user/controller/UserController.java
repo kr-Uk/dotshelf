@@ -89,14 +89,44 @@ public class UserController {
 
     @Operation(summary = "내 팔로워 목록")
     @GetMapping("/me/followers")
-    public ApiResponse<UserListResponse> getFollowers(@CurrentUser Long userId) {
-        return ApiResponse.success(userService.getFollowers(userId));
+    public ApiResponse<UserListResponse> getFollowers(
+            @CurrentUser Long userId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "30") int limit
+    ) {
+        return ApiResponse.success(userService.getFollowers(userId, cursor, limit));
     }
 
     @Operation(summary = "내 팔로잉 목록")
     @GetMapping("/me/followings")
-    public ApiResponse<UserListResponse> getFollowings(@CurrentUser Long userId) {
-        return ApiResponse.success(userService.getFollowings(userId));
+    public ApiResponse<UserListResponse> getFollowings(
+            @CurrentUser Long userId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "30") int limit
+    ) {
+        return ApiResponse.success(userService.getFollowings(userId, cursor, limit));
+    }
+
+    @Operation(summary = "다른 사용자의 팔로워 목록")
+    @GetMapping("/{userId}/followers")
+    public ApiResponse<UserListResponse> getUserFollowers(
+            @CurrentUser Long currentUserId,
+            @PathVariable Long userId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "30") int limit
+    ) {
+        return ApiResponse.success(userService.getUserFollowers(currentUserId, userId, cursor, limit));
+    }
+
+    @Operation(summary = "다른 사용자의 팔로잉 목록")
+    @GetMapping("/{userId}/followings")
+    public ApiResponse<UserListResponse> getUserFollowings(
+            @CurrentUser Long currentUserId,
+            @PathVariable Long userId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "30") int limit
+    ) {
+        return ApiResponse.success(userService.getUserFollowings(currentUserId, userId, cursor, limit));
     }
 
     @Operation(summary = "차단", description = "멱등")

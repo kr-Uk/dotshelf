@@ -65,6 +65,12 @@ public class Guestbook extends BaseEntity {
         this.replyCount += 1;
     }
 
+    public void decreaseReplyCount() {
+        if (this.replyCount > 0) {
+            this.replyCount -= 1;
+        }
+    }
+
     public void delete() {
         this.status = "DELETED";
         this.deletedAt = LocalDateTime.now();

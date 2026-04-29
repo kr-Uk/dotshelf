@@ -32,9 +32,11 @@ public class GuestbookController {
     @GetMapping("/spaces/{spaceId}/guestbooks")
     public ApiResponse<GuestbookListResponse> getGuestbooks(
             @CurrentUser Long currentUserId,
-            @PathVariable Long spaceId
+            @PathVariable Long spaceId,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String cursor,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "15") int limit
     ) {
-        return ApiResponse.success(guestbookService.getGuestbooks(currentUserId, spaceId));
+        return ApiResponse.success(guestbookService.getGuestbooks(currentUserId, spaceId, cursor, limit));
     }
 
     @PostMapping("/spaces/{spaceId}/guestbooks")
@@ -59,5 +61,15 @@ public class GuestbookController {
             @RequestBody @Valid GuestbookReplyRequest request
     ) {
         return ApiResponse.success(guestbookService.reply(userId, guestbookId, request));
+    }
+
+    @DeleteMapping("/guestbooks/{guestbookId}/replies/{replyId}")
+    public ApiResponse<Void> deleteReply(
+            @CurrentUser Long userId,
+            @PathVariable Long guestbookId,
+            @PathVariable Long replyId
+    ) {
+        guestbookService.deleteReply(userId, guestbookId, replyId);
+        return ApiResponse.success();
     }
 }

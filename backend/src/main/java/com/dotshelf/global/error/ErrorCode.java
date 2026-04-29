@@ -34,6 +34,8 @@ public enum ErrorCode {
     BOOKSHELF_NOT_FOUND(HttpStatus.NOT_FOUND, "S001", "책장을 찾을 수 없습니다."),
     BOOKSHELF_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "S002", "책장 아이템을 찾을 수 없습니다."),
     SPACE_NOT_FOUND(HttpStatus.NOT_FOUND, "S003", "공간을 찾을 수 없습니다."),
+    SPACE_OWNER_CANNOT_POST(HttpStatus.CONFLICT, "S004", "본인 공간에는 방명록을 작성할 수 없습니다."),
+    SPACE_ACCESS_BLOCKED(HttpStatus.FORBIDDEN, "S005", "차단된 사용자의 공간에 접근할 수 없습니다."),
 
     // Review
     REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "R001", "리뷰를 찾을 수 없습니다."),
@@ -42,6 +44,7 @@ public enum ErrorCode {
 
     // Follow
     FOLLOW_NOT_FOUND(HttpStatus.NOT_FOUND, "F001", "팔로우 관계를 찾을 수 없습니다."),
+    BLOCKED_RELATION(HttpStatus.FORBIDDEN, "F002", "차단된 사용자와 관련된 요청은 허용되지 않습니다."),
 
     // Asset
     ASSET_NOT_FOUND(HttpStatus.NOT_FOUND, "AS001", "에셋을 찾을 수 없습니다."),
@@ -50,6 +53,10 @@ public enum ErrorCode {
 
     // Guestbook
     GUESTBOOK_NOT_FOUND(HttpStatus.NOT_FOUND, "G001", "방명록을 찾을 수 없습니다."),
+    GUESTBOOK_REPLY_NOT_FOUND(HttpStatus.NOT_FOUND, "G002", "방명록 답장을 찾을 수 없습니다."),
+    GUESTBOOK_REPLY_FORBIDDEN(HttpStatus.FORBIDDEN, "G003", "답장에 대한 권한이 없습니다."),
+    GUESTBOOK_REPLY_ALREADY_EXISTS(HttpStatus.CONFLICT, "G004", "이미 답장이 작성된 방명록입니다."),
+    GUESTBOOK_POSTIT_NOT_ALLOWED(HttpStatus.CONFLICT, "G005", "공간 주인이 허용하지 않은 포스트잇 스타일입니다."),
 
     // Notification / Report
     NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "N001", "알림을 찾을 수 없습니다."),

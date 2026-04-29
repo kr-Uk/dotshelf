@@ -50,4 +50,8 @@ public class GuestbookReply extends BaseEntity {
         this.content = content;
         this.visibilityScope = visibilityScope == null ? "PUBLIC" : visibilityScope;
     }
+
+    public void delete() {
+        this.deletedAt = LocalDateTime.now();
+    }
 }

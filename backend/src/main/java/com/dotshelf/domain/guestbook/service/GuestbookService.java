@@ -1,7 +1,10 @@
 package com.dotshelf.domain.guestbook.service;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 import com.dotshelf.domain.guestbook.dto.GuestbookDtos.GuestbookListResponse;
 import com.dotshelf.domain.guestbook.dto.GuestbookDtos.GuestbookReplyRequest;
@@ -30,13 +33,35 @@ public class GuestbookService {
     private final SpaceService spaceService;
     private final UserService userService;
 
-    public GuestbookListResponse getGuestbooks(Long currentUserId, Long spaceId) {
-        return new GuestbookListResponse(
-                guestbookRepository.findBySpaceIdAndStatusOrderByIdDesc(spaceId, "ACTIVE").stream()
-                        .map(gb -> buildGuestbookResponse(gb, currentUserId))
-                        .toList(),
-                null
-        );
+    private static final int DEFAULT_GUESTBOOK_LIMIT = 15;
+    private static final int MAX_GUESTBOOK_LIMIT = 50;
+
+    public GuestbookListResponse getGuestbooks(Long currentUserId, Long spaceId, String cursor, int limit) {
+        int validLimit = clampLimit(limit, DEFAULT_GUESTBOOK_LIMIT, MAX_GUESTBOOK_LIMIT);
+        Long cursorId = parseCursorId(cursor);
+        List<Guestbook> page = guestbookRepository.findGuestbookPage(
+                spaceId, "ACTIVE", cursorId, PageRequest.of(0, validLimit + 1));
+        boolean hasMore = page.size() > validLimit;
+        List<Guestbook> trimmed = hasMore ? page.subList(0, validLimit) : page;
+        String nextCursor = hasMore ? String.valueOf(trimmed.get(trimmed.size() - 1).getId()) : null;
+        List<GuestbookResponse> responses = trimmed.stream()
+                .map(gb -> buildGuestbookResponse(gb, currentUserId))
+                .toList();
+        return new GuestbookListResponse(responses, nextCursor);
+    }
+
+    private static int clampLimit(int limit, int defaultLimit, int max) {
+        if (limit <= 0) return defaultLimit;
+        return Math.min(limit, max);
+    }
+
+    private static Long parseCursorId(String cursor) {
+        if (cursor == null || cursor.isBlank()) return null;
+        try {
+            return Long.parseLong(cursor);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     @Transactional
@@ -62,6 +87,24 @@ public class GuestbookService {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
         guestbook.delete();
+    }
+
+    @Transactional
+    public void deleteReply(Long userId, Long guestbookId, Long replyId) {
+        Long currentUserId = userService.requireUserId(userId);
+        GuestbookReply reply = replyRepository.findById(replyId)
+                .orElseThrow(() -> new CustomException(ErrorCode.GUESTBOOK_REPLY_NOT_FOUND));
+        if (!reply.getGuestbookId().equals(guestbookId) || reply.getDeletedAt() != null) {
+            throw new CustomException(ErrorCode.GUESTBOOK_REPLY_NOT_FOUND);
+        }
+        Guestbook guestbook = getGuestbook(guestbookId);
+        boolean isReplyWriter = currentUserId.equals(reply.getWriterUserId());
+        boolean isGuestbookWriter = currentUserId.equals(guestbook.getWriterUserId());
+        if (!isReplyWriter && !isGuestbookWriter) {
+            throw new CustomException(ErrorCode.GUESTBOOK_REPLY_FORBIDDEN);
+        }
+        reply.delete();
+        guestbook.decreaseReplyCount();
     }
 
     @Transactional
