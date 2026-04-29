@@ -13,6 +13,7 @@ import com.dotshelf.domain.guestbook.entity.GuestbookReply;
 import com.dotshelf.domain.guestbook.repository.GuestbookReplyRepository;
 import com.dotshelf.domain.guestbook.repository.GuestbookRepository;
 import com.dotshelf.domain.space.service.SpaceService;
+import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
@@ -29,11 +30,13 @@ public class GuestbookService {
     private final SpaceService spaceService;
     private final UserService userService;
 
-    public GuestbookListResponse getGuestbooks(Long spaceId) {
-        return new GuestbookListResponse(guestbookRepository.findBySpaceIdAndStatusOrderByIdDesc(spaceId, "ACTIVE")
-                .stream()
-                .map(GuestbookResponse::from)
-                .toList());
+    public GuestbookListResponse getGuestbooks(Long currentUserId, Long spaceId) {
+        return new GuestbookListResponse(
+                guestbookRepository.findBySpaceIdAndStatusOrderByIdDesc(spaceId, "ACTIVE").stream()
+                        .map(gb -> buildGuestbookResponse(gb, currentUserId))
+                        .toList(),
+                null
+        );
     }
 
     @Transactional
@@ -46,8 +49,9 @@ public class GuestbookService {
                 .postItInventoryId(request.postItInventoryId())
                 .content(request.content())
                 .visibilityScope(request.visibilityScope())
+                .anonymous(request.anonymous())
                 .build());
-        return GuestbookResponse.from(guestbook);
+        return buildGuestbookResponse(guestbook, currentUserId);
     }
 
     @Transactional
@@ -67,11 +71,21 @@ public class GuestbookService {
         GuestbookReply reply = replyRepository.save(GuestbookReply.builder()
                 .guestbookId(guestbookId)
                 .writerUserId(currentUserId)
+                .postItInventoryId(request.postItInventoryId())
                 .content(request.content())
                 .visibilityScope(request.visibilityScope())
                 .build());
         guestbook.increaseReplyCount();
-        return GuestbookReplyResponse.from(reply);
+        return GuestbookReplyResponse.from(reply, userService.getUser(currentUserId));
+    }
+
+    private GuestbookResponse buildGuestbookResponse(Guestbook guestbook, Long viewerUserId) {
+        User writer = userService.getUser(guestbook.getWriterUserId());
+        GuestbookReply reply = guestbook.getReplyCount() > 0
+                ? replyRepository.findFirstByGuestbookIdAndDeletedAtIsNullOrderByIdAsc(guestbook.getId()).orElse(null)
+                : null;
+        User replyWriter = reply == null ? null : userService.getUser(reply.getWriterUserId());
+        return GuestbookResponse.from(guestbook, writer, reply, replyWriter, viewerUserId);
     }
 
     private Guestbook getGuestbook(Long guestbookId) {

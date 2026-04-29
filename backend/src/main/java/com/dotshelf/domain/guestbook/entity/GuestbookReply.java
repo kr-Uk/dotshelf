@@ -31,6 +31,8 @@ public class GuestbookReply extends BaseEntity {
     @Column(nullable = false)
     private Long writerUserId;
 
+    private Long postItInventoryId;
+
     @Column(nullable = false, length = 1000)
     private String content;
 
@@ -40,9 +42,11 @@ public class GuestbookReply extends BaseEntity {
     private LocalDateTime deletedAt;
 
     @Builder
-    private GuestbookReply(Long guestbookId, Long writerUserId, String content, String visibilityScope) {
+    private GuestbookReply(Long guestbookId, Long writerUserId, Long postItInventoryId,
+                           String content, String visibilityScope) {
         this.guestbookId = guestbookId;
         this.writerUserId = writerUserId;
+        this.postItInventoryId = postItInventoryId;
         this.content = content;
         this.visibilityScope = visibilityScope == null ? "PUBLIC" : visibilityScope;
     }

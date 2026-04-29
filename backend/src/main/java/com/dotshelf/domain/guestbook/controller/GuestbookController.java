@@ -30,8 +30,11 @@ public class GuestbookController {
     private final GuestbookService guestbookService;
 
     @GetMapping("/spaces/{spaceId}/guestbooks")
-    public ApiResponse<GuestbookListResponse> getGuestbooks(@PathVariable Long spaceId) {
-        return ApiResponse.success(guestbookService.getGuestbooks(spaceId));
+    public ApiResponse<GuestbookListResponse> getGuestbooks(
+            @CurrentUser Long currentUserId,
+            @PathVariable Long spaceId
+    ) {
+        return ApiResponse.success(guestbookService.getGuestbooks(currentUserId, spaceId));
     }
 
     @PostMapping("/spaces/{spaceId}/guestbooks")
