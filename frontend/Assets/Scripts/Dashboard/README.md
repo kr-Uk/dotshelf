@@ -6,7 +6,10 @@
 2. 빈 GameObject 생성 → 이름 `DashboardScreen`
 3. `UI Toolkit > UI Document` 컴포넌트 추가
 4. 같은 GameObject에 **`DashboardScreenController`** 스크립트 추가
-5. `DashboardScreenController` Inspector에서 다음 4개 필드 채우기:
+5. (권장) 같은 GameObject에 **`DashboardSceneInstaller`** 스크립트 추가하면 Mock/Api 토글 가능
+   - Inspector의 `Mode` 드롭다운에서 `Mock` 또는 `Api` 선택
+   - SceneInstaller 없으면 controller가 자동으로 Mock fallback
+6. `DashboardScreenController` Inspector에서 다음 4개 필드 채우기:
 
 | 필드 | 드롭할 에셋 | 위치 |
 |---|---|---|

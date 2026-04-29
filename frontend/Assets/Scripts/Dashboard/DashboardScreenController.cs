@@ -35,6 +35,8 @@ namespace Dotshelf.Scripts.Dashboard
 
         private const int CarouselItemLimit = 10;
 
+        private bool configured;
+
         private LoadDashboardUseCase loadDashboardUseCase;
         private ToggleSpaceLikeUseCase toggleLikeUseCase;
         private LoadGuestbookPageUseCase loadGuestbookPageUseCase;
@@ -150,11 +152,28 @@ namespace Dotshelf.Scripts.Dashboard
             {
                 document.visualTreeAsset = viewAsset;
             }
-            BuildUseCases();
+            // Mock 빌드는 OnEnable에서 fallback으로. Configure가 호출됐으면 그걸 우선.
+        }
+
+        public void Configure(
+            IDashboardRepository dashboardRepo,
+            IGuestbookRepository guestbookRepo,
+            ISpaceSettingsRepository spaceSettingsRepo,
+            IFollowRepository followRepo,
+            ILibraryViewRepository libraryRepo)
+        {
+            BuildUseCasesFromRepos(dashboardRepo, guestbookRepo, spaceSettingsRepo, followRepo, libraryRepo);
+            configured = true;
         }
 
         private void OnEnable()
         {
+            if (!configured)
+            {
+                BuildMockUseCases();
+                configured = true;
+            }
+
             root = document.rootVisualElement;
             if (root == null)
             {
@@ -178,14 +197,24 @@ namespace Dotshelf.Scripts.Dashboard
             UnwireEvents();
         }
 
-        private void BuildUseCases()
+        private void BuildMockUseCases()
         {
-            // P0c는 Mock-only로 가동. Api 토글은 P1+에서 SceneInstaller로 위임 예정.
-            IDashboardRepository dashboardRepo = new MockDashboardRepository();
-            IGuestbookRepository guestbookRepo = new MockGuestbookRepository();
-            ILibraryViewRepository libraryRepo = new MockLibraryViewRepository();
-            IFollowRepository followRepo = new MockFollowRepository();
+            // SceneInstaller가 없는 경우의 fallback. Mock으로 단독 동작.
+            BuildUseCasesFromRepos(
+                new MockDashboardRepository(),
+                new MockGuestbookRepository(),
+                new MockSpaceSettingsRepository(),
+                new MockFollowRepository(),
+                new MockLibraryViewRepository());
+        }
 
+        private void BuildUseCasesFromRepos(
+            IDashboardRepository dashboardRepo,
+            IGuestbookRepository guestbookRepo,
+            ISpaceSettingsRepository spaceSettingsRepo,
+            IFollowRepository followRepo,
+            ILibraryViewRepository libraryRepo)
+        {
             loadDashboardUseCase = new LoadDashboardUseCase(dashboardRepo);
             toggleLikeUseCase = new ToggleSpaceLikeUseCase(dashboardRepo);
             loadGuestbookPageUseCase = new LoadGuestbookPageUseCase(guestbookRepo);
@@ -201,8 +230,6 @@ namespace Dotshelf.Scripts.Dashboard
             deleteGuestbookUseCase = new DeleteGuestbookUseCase(guestbookRepo);
             deleteGuestbookReplyUseCase = new DeleteGuestbookReplyUseCase(guestbookRepo);
             reportGuestbookUseCase = new ReportGuestbookUseCase(guestbookRepo);
-
-            ISpaceSettingsRepository spaceSettingsRepo = new MockSpaceSettingsRepository();
             updateIntroductionUseCase = new UpdateIntroductionUseCase(spaceSettingsRepo);
             updateGuestbookVisibilityUseCase = new UpdateGuestbookVisibilityUseCase(spaceSettingsRepo);
             updateWhitelistUseCase = new UpdateGuestbookPostItWhitelistUseCase(spaceSettingsRepo);
