@@ -1,3 +1,15 @@
+/* ===== Motion tokens (unity-uitk-polish) ===== */
+
+:root {
+    --motion-fast: 120ms;
+    --motion-base: 200ms;
+    --motion-slow: 320ms;
+    --easing-standard: ease-in-out-cubic;
+    --easing-decelerate: ease-out-cubic;
+    --easing-accelerate: ease-in-cubic;
+    --easing-emphasized: ease-in-out-back;
+}
+
 .dashboard-root {
     flex-grow: 1;
     background-color: rgb(248, 245, 240);
@@ -94,11 +106,19 @@
     color: rgb(180, 130, 130);
     min-width: auto;
     min-height: auto;
+    transition-property: scale, color;
+    transition-duration: var(--motion-fast);
+    transition-timing-function: var(--easing-standard);
+}
+
+.like-toggle-button:active {
+    scale: 0.85;
 }
 
 .like-toggle-button.liked {
     color: rgb(220, 60, 60);
     -unity-font-style: bold;
+    scale: 1.1;
 }
 
 .like-toggle-button.read-only {
@@ -312,11 +332,18 @@
     border-radius: 6px;
     padding: 8px;
     rotate: -1deg;
+    transition-property: rotate, background-color, scale;
+    transition-duration: var(--motion-base);
+    transition-timing-function: var(--easing-emphasized);
 }
 
 .guestbook-cell:hover {
     rotate: 0;
     background-color: rgb(255, 250, 220);
+}
+
+.guestbook-cell:active {
+    scale: 0.97;
 }
 
 .guestbook-cell-content {
@@ -392,6 +419,13 @@
     -unity-font-style: bold;
     border-radius: 20px;
     margin: 0 6px;
+    transition-property: background-color, scale;
+    transition-duration: var(--motion-fast);
+    transition-timing-function: var(--easing-standard);
+}
+
+.bottom-action-button:active {
+    scale: 0.96;
 }
 
 .edit-button {
@@ -538,6 +572,13 @@
     border-color: rgb(200, 200, 200);
     background-color: rgb(255, 255, 255);
     color: rgb(60, 60, 60);
+    transition-property: background-color, scale, color;
+    transition-duration: var(--motion-fast);
+    transition-timing-function: var(--easing-standard);
+}
+
+.user-row-action-button:active {
+    scale: 0.95;
 }
 
 .user-row-action-button.primary {
@@ -626,6 +667,13 @@
     border-color: rgb(200, 200, 200);
     background-color: rgb(255, 255, 255);
     color: rgb(60, 60, 60);
+    transition-property: background-color, scale;
+    transition-duration: var(--motion-fast);
+    transition-timing-function: var(--easing-standard);
+}
+
+.modal-action-button:active {
+    scale: 0.97;
 }
 
 .modal-action-button.primary {
@@ -685,10 +733,17 @@
     rotate: -2deg;
     border-width: 2px;
     border-color: rgba(0, 0, 0, 0);
+    transition-property: rotate, border-color, scale;
+    transition-duration: var(--motion-base);
+    transition-timing-function: var(--easing-emphasized);
 }
 
 .postit-style-cell:hover {
     rotate: 0;
+}
+
+.postit-style-cell:active {
+    scale: 0.95;
 }
 
 .postit-style-cell.selected {
@@ -845,6 +900,18 @@
     flex-direction: column;
     flex-shrink: 0;
     overflow: hidden;
+    translate: 0 0;
+    transition-property: translate, scale;
+    transition-duration: var(--motion-base);
+    transition-timing-function: var(--easing-standard);
+}
+
+.book-grid-cell:hover {
+    translate: 0 -3px;
+}
+
+.book-grid-cell:active {
+    scale: 0.98;
 }
 
 .book-grid-cover {
@@ -880,6 +947,15 @@
     margin-bottom: 8px;
     flex-direction: column;
     flex-shrink: 0;
+    translate: 0 0;
+    transition-property: translate, background-color;
+    transition-duration: var(--motion-base);
+    transition-timing-function: var(--easing-standard);
+}
+
+.record-list-item:hover {
+    translate: 0 -2px;
+    background-color: rgb(255, 250, 230);
 }
 
 .record-list-item-title {
