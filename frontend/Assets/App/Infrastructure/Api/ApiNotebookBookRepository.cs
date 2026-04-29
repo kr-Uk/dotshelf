@@ -29,6 +29,19 @@ namespace App.Infrastructure.Api
                 error => onError?.Invoke(MapError(error)));
         }
 
+        public void LoadMarketBooks(
+            string category,
+            int limit,
+            Action<NotebookBookSearchResult> onSuccess,
+            Action<NotebookApiError> onError)
+        {
+            client.GetBooks(
+                category,
+                limit,
+                response => onSuccess?.Invoke(MapSearchResult(response)),
+                error => onError?.Invoke(MapError(error)));
+        }
+
         public void AddBookToShelf(
             long bookshelfId,
             AddNotebookBookToShelfCommand command,
@@ -97,6 +110,12 @@ namespace App.Infrastructure.Api
                     CoverImageUrl = item.CoverImageUrl,
                     SourceUrl = item.SourceUrl,
                     AvgRating = item.AvgRating,
+                    ReviewCount = item.ReviewCount,
+                    ViewCount = item.ViewCount,
+                    PricePages = item.PricePages,
+                    Rank = item.Rank,
+                    Owned = item.Owned,
+                    UserBookId = item.UserBookId,
                     LikeCount = item.LikeCount,
                     PurchaseCount = item.PurchaseCount,
                     RecordCount = item.RecordCount,
@@ -135,6 +154,7 @@ namespace App.Infrastructure.Api
                 PublishedDate = command.PublishedDate,
                 Description = command.Description,
                 CoverImageUrl = command.CoverImageUrl,
+                SourceUrl = command.SourceUrl,
                 SectionId = placement.SectionId,
                 SlotNo = placement.SlotNo,
                 DisplayStyle = MapDisplayStyle(placement.DisplayStyle)

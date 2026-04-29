@@ -20,9 +20,8 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private bool installInEditMode = true;
         [SerializeField] private bool saveGeneratedContentInEditMode = true;
         [SerializeField] private AppApiConfig apiConfig;
-        [SerializeField] private bool useApiRepository = true;
-        [SerializeField] private string defaultApiBaseUrl = "https://api.dotshelf.digital";
-        [SerializeField] private int defaultRequestTimeoutSeconds = 10;
+        private const string DefaultApiBaseUrl = "https://api.dotshelf.digital";
+        private const int DefaultRequestTimeoutSeconds = 10;
 
         private void Awake()
         {
@@ -112,20 +111,17 @@ namespace BookshelfPorting.Runtime
 
         public void InstallScene(bool forceGenerate)
         {
-            InstallIntoActiveScene(forceGenerate, apiConfig, useApiRepository, defaultApiBaseUrl, defaultRequestTimeoutSeconds);
+            InstallIntoActiveScene(forceGenerate, apiConfig);
         }
 
         public static void InstallIntoActiveScene(bool forceGenerate)
         {
-            InstallIntoActiveScene(forceGenerate, null, true, "https://api.dotshelf.digital", 10);
+            InstallIntoActiveScene(forceGenerate, null);
         }
 
         private static void InstallIntoActiveScene(
             bool forceGenerate,
-            AppApiConfig apiConfig,
-            bool useApiRepository,
-            string defaultApiBaseUrl,
-            int defaultRequestTimeoutSeconds)
+            AppApiConfig apiConfig)
         {
             ApplyRuntimePerformanceSettings();
             RemoveLegacyNotebookDashboardCanvases();
@@ -140,9 +136,21 @@ namespace BookshelfPorting.Runtime
             }
 
             var systems = FindOrCreateRoot("BookshelfSystems");
-            var apiBaseUrl = ResolveApiBaseUrl(apiConfig, defaultApiBaseUrl);
-            var apiTimeoutSeconds = ResolveApiTimeoutSeconds(apiConfig, defaultRequestTimeoutSeconds);
+            var apiMode = ResolveApiMode(apiConfig);
+            var usesHttpApi = apiMode != AppApiMode.LocalMock;
+            var apiBaseUrl = ResolveApiBaseUrl(apiConfig);
+            var apiTimeoutSeconds = ResolveApiTimeoutSeconds(apiConfig);
+            var apiAccessToken = ResolveApiAccessToken(apiConfig);
             var apiHealthCheckPath = apiConfig != null ? apiConfig.HealthCheckPath : "/health";
+            if (Application.isPlaying)
+            {
+                Debug.Log($"Dotshelf API mode: {apiMode}, baseUrl={apiBaseUrl}, usesHttpApi={usesHttpApi}");
+                if (apiMode == AppApiMode.LocalMock)
+                {
+                    Debug.LogWarning("Dotshelf LocalMock mode is active; no HTTP API requests will be sent.");
+                }
+            }
+
             var state = GetOrAddComponent<BookshelfState>(systems);
             var materialFactory = GetOrAddComponent<MaterialFactory>(systems);
             var generator = GetOrAddComponent<BookshelfGenerator>(systems);
@@ -152,13 +160,20 @@ namespace BookshelfPorting.Runtime
             var experienceManager = GetOrAddComponent<BookshelfExperienceManager>(systems);
             var environment = GetOrAddComponent<EnvironmentSetup>(systems);
             var apiManager = GetOrAddComponent<APIManager>(systems);
-            var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(useApiRepository, apiBaseUrl, apiTimeoutSeconds));
+            var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(apiMode, apiBaseUrl, apiTimeoutSeconds));
 
-            apiManager.Configure(apiBaseUrl, timeout: apiTimeoutSeconds);
-            var notebookBookRepository = CreateNotebookBookRepository(useApiRepository, apiManager);
+            apiManager.Configure(apiBaseUrl, apiAccessToken, apiTimeoutSeconds);
+            var notebookBookRepository = CreateNotebookBookRepository(apiMode, apiManager);
             var searchNotebookBooksUseCase = new SearchNotebookBooksUseCase(notebookBookRepository);
+            var loadNotebookMarketBooksUseCase = new LoadNotebookMarketBooksUseCase(notebookBookRepository);
             var addNotebookBookToShelfUseCase = new AddNotebookBookToShelfUseCase(notebookBookRepository);
-            if (Application.isPlaying && useApiRepository)
+            var notebookRuntimeRepository = CreateNotebookRuntimeRepository(apiMode, apiManager);
+            var notebookRuntimeUseCase = new NotebookRuntimeUseCase(notebookRuntimeRepository);
+            if (Application.isPlaying && usesHttpApi && !apiManager.HasAccessToken)
+            {
+                Debug.LogWarning("Dotshelf RealApi mode has no access token. Public notebook APIs stay enabled, but authenticated actions are blocked until APIManager.SetAccessToken() is called.");
+            }
+            if (Application.isPlaying && usesHttpApi)
             {
                 apiManager.CheckHealth(null, apiHealthCheckPath);
             }
@@ -205,7 +220,7 @@ namespace BookshelfPorting.Runtime
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);
             experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
-            experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, addNotebookBookToShelfUseCase);
+            experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase);
             environment.Configure(probe, null);
 
             // Main scene opens in the new MainView pose (derived from the bookshelf focus
@@ -273,38 +288,54 @@ namespace BookshelfPorting.Runtime
         }
 
         private static IBookCatalogRepository CreateBookCatalogRepository(
-            bool useApiRepository,
+            AppApiMode apiMode,
             string apiBaseUrl,
             int requestTimeoutSeconds)
         {
-            var mockRepository = new MockBookCatalogRepository();
-            if (!useApiRepository)
+            if (apiMode == AppApiMode.LocalMock)
             {
-                return mockRepository;
+                return new MockBookCatalogRepository();
             }
 
-            return new ApiBookCatalogRepository(apiBaseUrl, requestTimeoutSeconds, mockRepository);
+            return new ApiBookCatalogRepository(apiBaseUrl, requestTimeoutSeconds);
         }
 
-        private static INotebookBookRepository CreateNotebookBookRepository(bool useApiRepository, APIManager apiManager)
+        private static INotebookBookRepository CreateNotebookBookRepository(AppApiMode apiMode, APIManager apiManager)
         {
-            return useApiRepository && apiManager != null
+            return apiMode != AppApiMode.LocalMock && apiManager != null
                 ? new ApiNotebookBookRepository(new NotebookApiClient(apiManager))
                 : new NoOpNotebookBookRepository();
         }
 
-        private static string ResolveApiBaseUrl(AppApiConfig apiConfig, string fallbackBaseUrl)
+        private static INotebookRuntimeRepository CreateNotebookRuntimeRepository(AppApiMode apiMode, APIManager apiManager)
         {
-            var baseUrl = apiConfig != null ? apiConfig.ResolveBaseUrl() : fallbackBaseUrl;
+            return apiMode != AppApiMode.LocalMock && apiManager != null
+                ? new ApiNotebookRuntimeRepository(new NotebookApiClient(apiManager), () => apiManager.HasAccessToken)
+                : new NoOpNotebookRuntimeRepository();
+        }
+
+        private static AppApiMode ResolveApiMode(AppApiConfig apiConfig)
+        {
+            return apiConfig != null ? apiConfig.ApiMode : AppApiMode.RealApi;
+        }
+
+        private static string ResolveApiBaseUrl(AppApiConfig apiConfig)
+        {
+            var baseUrl = apiConfig != null ? apiConfig.ResolveBaseUrl() : DefaultApiBaseUrl;
             return string.IsNullOrWhiteSpace(baseUrl)
-                ? "https://api.dotshelf.digital"
+                ? DefaultApiBaseUrl
                 : baseUrl.Trim().TrimEnd('/');
         }
 
-        private static int ResolveApiTimeoutSeconds(AppApiConfig apiConfig, int fallbackTimeoutSeconds)
+        private static int ResolveApiTimeoutSeconds(AppApiConfig apiConfig)
         {
-            var timeoutSeconds = apiConfig != null ? apiConfig.RequestTimeoutSeconds : fallbackTimeoutSeconds;
+            var timeoutSeconds = apiConfig != null ? apiConfig.RequestTimeoutSeconds : DefaultRequestTimeoutSeconds;
             return Mathf.Max(1, timeoutSeconds);
+        }
+
+        private static string ResolveApiAccessToken(AppApiConfig apiConfig)
+        {
+            return apiConfig != null ? apiConfig.ResolveAccessToken() : null;
         }
 
         private static bool HasGeneratedContent(BookshelfGenerator generator)

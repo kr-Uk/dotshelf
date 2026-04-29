@@ -62,6 +62,24 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("avgRating")]
         public decimal AvgRating { get; set; }
 
+        [JsonProperty("reviewCount")]
+        public int ReviewCount { get; set; }
+
+        [JsonProperty("viewCount")]
+        public int ViewCount { get; set; }
+
+        [JsonProperty("pricePages")]
+        public int PricePages { get; set; }
+
+        [JsonProperty("rank")]
+        public int Rank { get; set; }
+
+        [JsonProperty("owned")]
+        public bool Owned { get; set; }
+
+        [JsonProperty("userBookId")]
+        public long? UserBookId { get; set; }
+
         [JsonProperty("placementCount")]
         public int PlacementCount { get; set; }
 

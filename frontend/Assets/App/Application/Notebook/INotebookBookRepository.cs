@@ -11,6 +11,12 @@ namespace App.Application.Notebook
             Action<NotebookBookSearchResult> onSuccess,
             Action<NotebookApiError> onError);
 
+        void LoadMarketBooks(
+            string category,
+            int limit,
+            Action<NotebookBookSearchResult> onSuccess,
+            Action<NotebookApiError> onError);
+
         void AddBookToShelf(
             long bookshelfId,
             AddNotebookBookToShelfCommand command,

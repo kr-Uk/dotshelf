@@ -28,6 +28,7 @@ namespace App.Infrastructure.Api
         [SerializeField] private int timeoutSeconds = 10;
 
         public static APIManager Instance { get; private set; }
+        public bool HasAccessToken => !string.IsNullOrWhiteSpace(accessToken);
 
         private void Awake()
         {
@@ -44,7 +45,11 @@ namespace App.Infrastructure.Api
         public void Configure(string apiBaseUrl, string token = null, int timeout = 10)
         {
             baseUrl = NormalizeBaseUrl(apiBaseUrl, baseUrl);
-            accessToken = token;
+            if (token != null)
+            {
+                accessToken = token;
+            }
+
             timeoutSeconds = Mathf.Max(1, timeout);
         }
 

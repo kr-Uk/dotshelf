@@ -1,23 +1,34 @@
+using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace App.Config
 {
+    public enum AppApiMode
+    {
+        RealApi = 0,
+        LocalMock = 1
+    }
+
     [CreateAssetMenu(fileName = "AppApiConfig", menuName = "App/Config/API Config")]
     public sealed class AppApiConfig : ScriptableObject
     {
         [Header("Environment")]
-        [SerializeField] private bool useMockApi = false;
-        [SerializeField] private string mockBaseUrl = "http://localhost:3001";
+        [FormerlySerializedAs("useMockApi")]
+        [Tooltip("RealApi: production/dev server, LocalMock: local mock/no-op repositories without HTTP")]
+        [SerializeField] private AppApiMode apiMode = AppApiMode.RealApi;
         [SerializeField] private string devBaseUrl = "https://api.dotshelf.digital";
         [SerializeField] private string prodBaseUrl = "https://api.dotshelf.digital";
         [SerializeField] private string healthCheckPath = "/health";
+        [Tooltip("Optional editor/dev access token. Prefer DOTSHELF_ACCESS_TOKEN for local runs.")]
+        [SerializeField] private string accessToken = string.Empty;
 
         [Header("Request")]
         [SerializeField] private int requestTimeoutSeconds = 10;
         [SerializeField] private bool enableVerboseLog = true;
 
-        public bool UseMockApi => useMockApi;
-        public string MockBaseUrl => mockBaseUrl;
+        public AppApiMode ApiMode => apiMode;
+        public bool UsesHttpApi => apiMode != AppApiMode.LocalMock;
         public string DevBaseUrl => devBaseUrl;
         public string ProdBaseUrl => prodBaseUrl;
         public string HealthCheckPath => string.IsNullOrWhiteSpace(healthCheckPath) ? "/health" : healthCheckPath;
@@ -26,16 +37,17 @@ namespace App.Config
 
         public string ResolveBaseUrl()
         {
-            if (useMockApi)
-            {
-                return mockBaseUrl;
-            }
-
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
             return devBaseUrl;
 #else
             return prodBaseUrl;
 #endif
+        }
+
+        public string ResolveAccessToken()
+        {
+            var environmentToken = Environment.GetEnvironmentVariable("DOTSHELF_ACCESS_TOKEN");
+            return string.IsNullOrWhiteSpace(environmentToken) ? accessToken : environmentToken;
         }
     }
 }
