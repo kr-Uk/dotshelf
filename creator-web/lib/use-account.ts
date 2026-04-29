@@ -8,6 +8,20 @@ import {
   type AuthState,
 } from "./auth";
 
+let cachedRaw: string | null | undefined;
+let cachedAuth: AuthState | null = null;
+
+function getAuthSnapshot(): AuthState | null {
+  if (typeof window === "undefined") return null;
+
+  const raw = window.sessionStorage.getItem("dotshelf:auth");
+  if (raw === cachedRaw) return cachedAuth;
+
+  cachedRaw = raw;
+  cachedAuth = loadAuth();
+  return cachedAuth;
+}
+
 /**
  * 현재 로그인 세션을 구독.
  * sessionStorage 기반 인증 상태가 바뀌면 자동 리렌더 (`storage` 이벤트 +
@@ -27,7 +41,7 @@ export function useAccount(): AuthState | null {
         window.removeEventListener(AUTH_CHANGED_EVENT_NAME, notify);
       };
     },
-    () => loadAuth(),
+    getAuthSnapshot,
     () => null,
   );
 }

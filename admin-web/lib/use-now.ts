@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * 현재 시각(ms epoch)을 일정 간격으로 갱신하면서 반환.
@@ -9,12 +9,12 @@ import { useSyncExternalStore } from "react";
  * SLA 카운트다운, 잠금 만료 시각 비교 등 시간 의존 컴포넌트에서 사용.
  */
 export function useNow(intervalMs = 1_000): number {
-  return useSyncExternalStore(
-    (notify) => {
-      const id = setInterval(notify, intervalMs);
-      return () => clearInterval(id);
-    },
-    () => Date.now(),
-    () => 0,
-  );
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+
+  return now;
 }
