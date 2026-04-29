@@ -32,16 +32,17 @@
 .profile-header {
     flex-direction: row;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     flex-shrink: 0;
 }
 
 .profile-image {
-    width: 72px;
-    height: 72px;
-    border-radius: 36px;
+    width: 56px;
+    height: 56px;
+    border-radius: 28px;
     background-color: rgb(220, 220, 220);
-    margin-right: 16px;
+    margin-right: 12px;
+    flex-shrink: 0;
 }
 
 .profile-text-block {
@@ -111,10 +112,10 @@
     flex-direction: row;
     background-color: rgba(255, 255, 255, 0.7);
     border-radius: 10px;
-    padding: 12px 8px;
-    margin-bottom: 16px;
+    padding: 8px;
+    margin-bottom: 12px;
     flex-shrink: 0;
-    height: 50px;
+    height: 40px;
 }
 
 .stat-cell {
@@ -140,8 +141,8 @@
 .section-card {
     background-color: rgba(255, 255, 255, 0.7);
     border-radius: 10px;
-    padding: 12px;
-    margin-bottom: 12px;
+    padding: 10px;
+    margin-bottom: 8px;
     flex-direction: column;
     flex-shrink: 0;
 }
@@ -176,9 +177,9 @@
 }
 
 .carousel-scroll {
-    height: 150px;
-    min-height: 150px;
-    max-height: 150px;
+    height: 110px;
+    min-height: 110px;
+    max-height: 110px;
 }
 
 .carousel-scroll .unity-scroll-view__content-container {
@@ -186,14 +187,14 @@
 }
 
 .carousel-cell {
-    width: 84px;
-    margin-right: 8px;
+    width: 64px;
+    margin-right: 6px;
     flex-shrink: 0;
 }
 
 .book-cover {
-    width: 80px;
-    height: 110px;
+    width: 60px;
+    height: 80px;
     background-color: rgb(200, 180, 160);
     border-radius: 4px;
 }
@@ -207,11 +208,12 @@
 }
 
 .record-cell {
-    width: 200px;
-    margin-right: 8px;
+    width: 180px;
+    height: 100px;
+    margin-right: 6px;
     background-color: rgb(255, 252, 240);
     border-radius: 6px;
-    padding: 8px;
+    padding: 6px;
     flex-shrink: 0;
 }
 
