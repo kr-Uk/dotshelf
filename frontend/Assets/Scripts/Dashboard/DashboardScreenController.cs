@@ -118,6 +118,30 @@ namespace Dotshelf.Scripts.Dashboard
         // Mock 환경에서 본인 user id를 1로 가정. Api 합류 시 SessionService에서 받아 주입 예정.
         private const long MockSelfUserId = 1L;
 
+        private Button ownedBooksViewAllButton;
+        private VisualElement ownedBooksModalRoot;
+        private VisualElement ownedBooksGrid;
+        private Button ownedBooksCloseButton;
+        private Button ownedBooksLoadMoreButton;
+        private Button ownedBooksSortAddedDescButton;
+        private Button ownedBooksSortAddedAscButton;
+        private Button ownedBooksSortTitleButton;
+        private OwnedBookSort currentOwnedBooksSort = OwnedBookSort.AddedDesc;
+        private string ownedBooksNextCursor;
+
+        private Button readingRecordsViewAllButton;
+        private VisualElement readingRecordsModalRoot;
+        private VisualElement readingRecordsList;
+        private Button readingRecordsCloseButton;
+        private Button readingRecordsLoadMoreButton;
+        private Button recordsSortLatestButton;
+        private Button recordsSortOldestButton;
+        private Button recordsSortMostLikedButton;
+        private Button recordsSortMostViewedButton;
+        private Button recordsSortMostCommentedButton;
+        private ReadingRecordSort currentRecordsSort = ReadingRecordSort.Latest;
+        private string readingRecordsNextCursor;
+
         private VisualElement dashboardEditModalRoot;
         private TextField dashboardEditIntroduction;
         private Button visibilityPublicButton;
@@ -288,6 +312,26 @@ namespace Dotshelf.Scripts.Dashboard
             guestbookDetailReplyStyleList = root.Q<ScrollView>("guestbook-detail-reply-style-list");
             guestbookDetailReplySubmitButton = root.Q<Button>("guestbook-detail-reply-submit-button");
 
+            ownedBooksViewAllButton = root.Q<Button>("recent-books-view-all-button");
+            ownedBooksModalRoot = root.Q<VisualElement>("owned-books-modal");
+            ownedBooksGrid = root.Q<VisualElement>("owned-books-grid");
+            ownedBooksCloseButton = root.Q<Button>("owned-books-close-button");
+            ownedBooksLoadMoreButton = root.Q<Button>("owned-books-load-more-button");
+            ownedBooksSortAddedDescButton = root.Q<Button>("owned-books-sort-added-desc");
+            ownedBooksSortAddedAscButton = root.Q<Button>("owned-books-sort-added-asc");
+            ownedBooksSortTitleButton = root.Q<Button>("owned-books-sort-title");
+
+            readingRecordsViewAllButton = root.Q<Button>("recent-records-view-all-button");
+            readingRecordsModalRoot = root.Q<VisualElement>("reading-records-modal");
+            readingRecordsList = root.Q<VisualElement>("reading-records-list");
+            readingRecordsCloseButton = root.Q<Button>("reading-records-close-button");
+            readingRecordsLoadMoreButton = root.Q<Button>("reading-records-load-more-button");
+            recordsSortLatestButton = root.Q<Button>("records-sort-latest");
+            recordsSortOldestButton = root.Q<Button>("records-sort-oldest");
+            recordsSortMostLikedButton = root.Q<Button>("records-sort-most-liked");
+            recordsSortMostViewedButton = root.Q<Button>("records-sort-most-viewed");
+            recordsSortMostCommentedButton = root.Q<Button>("records-sort-most-commented");
+
             dashboardEditModalRoot = root.Q<VisualElement>("dashboard-edit-modal");
             dashboardEditIntroduction = root.Q<TextField>("dashboard-edit-introduction");
             visibilityPublicButton = root.Q<Button>("visibility-public");
@@ -372,6 +416,22 @@ namespace Dotshelf.Scripts.Dashboard
                     if (guestbookDetailReplyCounter != null) guestbookDetailReplyCounter.text = $"{len} / 30";
                 });
             }
+
+            if (ownedBooksViewAllButton != null) ownedBooksViewAllButton.clicked += OpenOwnedBooksModal;
+            if (ownedBooksCloseButton != null) ownedBooksCloseButton.clicked += CloseOwnedBooksModal;
+            if (ownedBooksLoadMoreButton != null) ownedBooksLoadMoreButton.clicked += () => LoadOwnedBooksPage(replace: false);
+            if (ownedBooksSortAddedDescButton != null) ownedBooksSortAddedDescButton.clicked += () => OnOwnedBooksSortChanged(OwnedBookSort.AddedDesc);
+            if (ownedBooksSortAddedAscButton != null) ownedBooksSortAddedAscButton.clicked += () => OnOwnedBooksSortChanged(OwnedBookSort.AddedAsc);
+            if (ownedBooksSortTitleButton != null) ownedBooksSortTitleButton.clicked += () => OnOwnedBooksSortChanged(OwnedBookSort.TitleAsc);
+
+            if (readingRecordsViewAllButton != null) readingRecordsViewAllButton.clicked += OpenReadingRecordsModal;
+            if (readingRecordsCloseButton != null) readingRecordsCloseButton.clicked += CloseReadingRecordsModal;
+            if (readingRecordsLoadMoreButton != null) readingRecordsLoadMoreButton.clicked += () => LoadReadingRecordsPage(replace: false);
+            if (recordsSortLatestButton != null) recordsSortLatestButton.clicked += () => OnRecordsSortChanged(ReadingRecordSort.Latest);
+            if (recordsSortOldestButton != null) recordsSortOldestButton.clicked += () => OnRecordsSortChanged(ReadingRecordSort.Oldest);
+            if (recordsSortMostLikedButton != null) recordsSortMostLikedButton.clicked += () => OnRecordsSortChanged(ReadingRecordSort.MostLiked);
+            if (recordsSortMostViewedButton != null) recordsSortMostViewedButton.clicked += () => OnRecordsSortChanged(ReadingRecordSort.MostViewed);
+            if (recordsSortMostCommentedButton != null) recordsSortMostCommentedButton.clicked += () => OnRecordsSortChanged(ReadingRecordSort.MostCommented);
 
             if (dashboardEditCloseButton != null) dashboardEditCloseButton.clicked += CloseDashboardEditModal;
             if (dashboardEditCancelButton != null) dashboardEditCancelButton.clicked += CloseDashboardEditModal;
@@ -1353,6 +1413,173 @@ namespace Dotshelf.Scripts.Dashboard
             blockUseCase.Execute(user.Id,
                 onSuccess: _ => row.RemoveFromHierarchy(),
                 onError: OnError);
+        }
+
+        // ===== 보유 책 풀 목록 모달 =====
+
+        private void OpenOwnedBooksModal()
+        {
+            if (ownedBooksModalRoot == null) return;
+            currentOwnedBooksSort = OwnedBookSort.AddedDesc;
+            UpdateOwnedBooksSortButtons();
+            ownedBooksNextCursor = null;
+            LoadOwnedBooksPage(replace: true);
+            ownedBooksModalRoot.RemoveFromClassList("hidden");
+        }
+
+        private void CloseOwnedBooksModal()
+        {
+            if (ownedBooksModalRoot != null) ownedBooksModalRoot.AddToClassList("hidden");
+        }
+
+        private void OnOwnedBooksSortChanged(OwnedBookSort sort)
+        {
+            currentOwnedBooksSort = sort;
+            UpdateOwnedBooksSortButtons();
+            ownedBooksNextCursor = null;
+            LoadOwnedBooksPage(replace: true);
+        }
+
+        private void UpdateOwnedBooksSortButtons()
+        {
+            SetSelected(ownedBooksSortAddedDescButton, currentOwnedBooksSort == OwnedBookSort.AddedDesc);
+            SetSelected(ownedBooksSortAddedAscButton, currentOwnedBooksSort == OwnedBookSort.AddedAsc);
+            SetSelected(ownedBooksSortTitleButton, currentOwnedBooksSort == OwnedBookSort.TitleAsc);
+        }
+
+        private void LoadOwnedBooksPage(bool replace)
+        {
+            long spaceId = currentSnapshot?.Space.Id ?? visitedSpaceId;
+            string cursor = replace ? null : ownedBooksNextCursor;
+            loadOwnedBooksUseCase.Execute(spaceId, currentOwnedBooksSort, cursor,
+                onSuccess: page =>
+                {
+                    if (replace && ownedBooksGrid != null) ownedBooksGrid.Clear();
+                    if (ownedBooksGrid != null)
+                    {
+                        for (int i = 0; i < page.Items.Count; i++)
+                        {
+                            ownedBooksGrid.Add(BuildBookGridCell(page.Items[i]));
+                        }
+                    }
+                    ownedBooksNextCursor = page.NextCursor;
+                    UpdateLoadMoreButton(ownedBooksLoadMoreButton, page.HasMore);
+                },
+                onError: OnError);
+        }
+
+        private static VisualElement BuildBookGridCell(OwnedBookItem item)
+        {
+            VisualElement cell = new VisualElement();
+            cell.AddToClassList("book-grid-cell");
+
+            VisualElement cover = new VisualElement();
+            cover.AddToClassList("book-grid-cover");
+            cell.Add(cover);
+
+            Label title = new Label(item.Title ?? string.Empty);
+            title.AddToClassList("book-grid-title");
+            cell.Add(title);
+
+            return cell;
+        }
+
+        // ===== 독후감 풀 목록 모달 =====
+
+        private void OpenReadingRecordsModal()
+        {
+            if (readingRecordsModalRoot == null) return;
+            currentRecordsSort = ReadingRecordSort.Latest;
+            UpdateRecordsSortButtons();
+            readingRecordsNextCursor = null;
+            LoadReadingRecordsPage(replace: true);
+            readingRecordsModalRoot.RemoveFromClassList("hidden");
+        }
+
+        private void CloseReadingRecordsModal()
+        {
+            if (readingRecordsModalRoot != null) readingRecordsModalRoot.AddToClassList("hidden");
+        }
+
+        private void OnRecordsSortChanged(ReadingRecordSort sort)
+        {
+            currentRecordsSort = sort;
+            UpdateRecordsSortButtons();
+            readingRecordsNextCursor = null;
+            LoadReadingRecordsPage(replace: true);
+        }
+
+        private void UpdateRecordsSortButtons()
+        {
+            SetSelected(recordsSortLatestButton, currentRecordsSort == ReadingRecordSort.Latest);
+            SetSelected(recordsSortOldestButton, currentRecordsSort == ReadingRecordSort.Oldest);
+            SetSelected(recordsSortMostLikedButton, currentRecordsSort == ReadingRecordSort.MostLiked);
+            SetSelected(recordsSortMostViewedButton, currentRecordsSort == ReadingRecordSort.MostViewed);
+            SetSelected(recordsSortMostCommentedButton, currentRecordsSort == ReadingRecordSort.MostCommented);
+        }
+
+        private void LoadReadingRecordsPage(bool replace)
+        {
+            long ownerId = currentSnapshot?.Space.OwnerUserId ?? 0L;
+            string cursor = replace ? null : readingRecordsNextCursor;
+            loadReadingRecordsUseCase.Execute(ownerId, currentRecordsSort, cursor,
+                onSuccess: page =>
+                {
+                    if (replace && readingRecordsList != null) readingRecordsList.Clear();
+                    if (readingRecordsList != null)
+                    {
+                        for (int i = 0; i < page.Items.Count; i++)
+                        {
+                            readingRecordsList.Add(BuildRecordListItem(page.Items[i]));
+                        }
+                    }
+                    readingRecordsNextCursor = page.NextCursor;
+                    UpdateLoadMoreButton(readingRecordsLoadMoreButton, page.HasMore);
+                },
+                onError: OnError);
+        }
+
+        private static VisualElement BuildRecordListItem(ReadingRecordItem item)
+        {
+            VisualElement card = new VisualElement();
+            card.AddToClassList("record-list-item");
+
+            Label title = new Label(item.BookTitle ?? string.Empty);
+            title.AddToClassList("record-list-item-title");
+            card.Add(title);
+
+            Label content = new Label(TruncateContent(item.Content, 200));
+            content.AddToClassList("record-list-item-content");
+            card.Add(content);
+
+            VisualElement metaRow = new VisualElement();
+            metaRow.AddToClassList("record-list-item-meta");
+            Label likes = new Label($"♥ {item.LikeCount}");
+            likes.AddToClassList("record-list-item-meta-item");
+            metaRow.Add(likes);
+            Label comments = new Label($"💬 {item.CommentCount}");
+            comments.AddToClassList("record-list-item-meta-item");
+            metaRow.Add(comments);
+            Label views = new Label($"👁 {item.ViewCount}");
+            views.AddToClassList("record-list-item-meta-item");
+            metaRow.Add(views);
+            card.Add(metaRow);
+
+            return card;
+        }
+
+        private static void UpdateLoadMoreButton(Button button, bool hasMore)
+        {
+            if (button == null) return;
+            if (hasMore)
+            {
+                button.RemoveFromClassList("hidden");
+                button.SetEnabled(true);
+            }
+            else
+            {
+                button.AddToClassList("hidden");
+            }
         }
 
         // ===== 캐러셀 드래그 스크롤 =====

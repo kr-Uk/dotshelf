@@ -785,3 +785,125 @@
 .visibility-button.selected:hover {
     background-color: rgb(100, 140, 180);
 }
+
+/* ===== Large modal (list) ===== */
+
+.modal-frame-large {
+    width: 600px;
+    height: 640px;
+    max-width: 90%;
+    max-height: 90%;
+}
+
+.sort-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+
+.sort-button {
+    height: 28px;
+    padding: 0 12px;
+    margin-right: 6px;
+    margin-bottom: 4px;
+    border-radius: 14px;
+    background-color: rgb(255, 255, 255);
+    border-color: rgb(220, 220, 220);
+    border-width: 1px;
+    font-size: 11px;
+    color: rgb(80, 80, 80);
+}
+
+.sort-button.selected {
+    background-color: rgb(120, 160, 200);
+    border-color: rgb(120, 160, 200);
+    color: white;
+    -unity-font-style: bold;
+}
+
+.sort-button:hover {
+    background-color: rgb(245, 245, 240);
+}
+
+.sort-button.selected:hover {
+    background-color: rgb(100, 140, 180);
+}
+
+/* ===== Book grid (owned books modal) ===== */
+
+.book-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.book-grid-cell {
+    width: 90px;
+    height: 150px;
+    margin-right: 8px;
+    margin-bottom: 12px;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.book-grid-cover {
+    width: 90px;
+    height: 120px;
+    background-color: rgb(200, 180, 160);
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.book-grid-title {
+    font-size: 11px;
+    color: rgb(60, 60, 60);
+    margin-top: 4px;
+    height: 26px;
+    width: 90px;
+    flex-shrink: 0;
+    white-space: normal;
+    overflow: hidden;
+    -unity-text-align: upper-left;
+}
+
+/* ===== Record list (reading records modal) ===== */
+
+.record-list {
+    flex-direction: column;
+}
+
+.record-list-item {
+    background-color: rgb(255, 252, 240);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 8px;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.record-list-item-title {
+    font-size: 14px;
+    -unity-font-style: bold;
+    color: rgb(40, 40, 40);
+    margin-bottom: 6px;
+    flex-shrink: 0;
+}
+
+.record-list-item-content {
+    font-size: 12px;
+    color: rgb(80, 80, 80);
+    white-space: normal;
+    margin-bottom: 8px;
+}
+
+.record-list-item-meta {
+    flex-direction: row;
+    flex-shrink: 0;
+}
+
+.record-list-item-meta-item {
+    font-size: 10px;
+    color: rgb(140, 140, 140);
+    margin-right: 12px;
+}

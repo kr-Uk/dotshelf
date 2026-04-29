@@ -72,6 +72,52 @@
             <ui:Button name="write-guestbook-button" class="bottom-action-button write-button" text="방명록 작성" />
         </ui:VisualElement>
 
+        <ui:VisualElement name="owned-books-modal" class="modal-root hidden">
+            <ui:VisualElement class="modal-backdrop" />
+            <ui:VisualElement class="modal-frame modal-frame-large">
+                <ui:VisualElement class="modal-header">
+                    <ui:Label class="modal-title" text="보유한 책" />
+                    <ui:Button name="owned-books-close-button" class="modal-close-button" text="✕" />
+                </ui:VisualElement>
+
+                <ui:VisualElement class="sort-row">
+                    <ui:Button name="owned-books-sort-added-desc" class="sort-button" text="추가 최신" />
+                    <ui:Button name="owned-books-sort-added-asc" class="sort-button" text="추가 과거" />
+                    <ui:Button name="owned-books-sort-title" class="sort-button" text="가나다" />
+                </ui:VisualElement>
+
+                <ui:ScrollView class="modal-scroll" vertical-scroller-visibility="Auto" horizontal-scroller-visibility="Hidden">
+                    <ui:VisualElement name="owned-books-grid" class="book-grid" />
+                </ui:ScrollView>
+
+                <ui:Button name="owned-books-load-more-button" class="modal-action-button secondary" text="더 보기" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="reading-records-modal" class="modal-root hidden">
+            <ui:VisualElement class="modal-backdrop" />
+            <ui:VisualElement class="modal-frame modal-frame-large">
+                <ui:VisualElement class="modal-header">
+                    <ui:Label class="modal-title" text="독후감" />
+                    <ui:Button name="reading-records-close-button" class="modal-close-button" text="✕" />
+                </ui:VisualElement>
+
+                <ui:VisualElement class="sort-row">
+                    <ui:Button name="records-sort-latest" class="sort-button" text="최신" />
+                    <ui:Button name="records-sort-oldest" class="sort-button" text="과거" />
+                    <ui:Button name="records-sort-most-liked" class="sort-button" text="좋아요" />
+                    <ui:Button name="records-sort-most-viewed" class="sort-button" text="조회수" />
+                    <ui:Button name="records-sort-most-commented" class="sort-button" text="댓글" />
+                </ui:VisualElement>
+
+                <ui:ScrollView class="modal-scroll" vertical-scroller-visibility="Auto" horizontal-scroller-visibility="Hidden">
+                    <ui:VisualElement name="reading-records-list" class="record-list" />
+                </ui:ScrollView>
+
+                <ui:Button name="reading-records-load-more-button" class="modal-action-button secondary" text="더 보기" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
         <ui:VisualElement name="dashboard-edit-modal" class="modal-root hidden">
             <ui:VisualElement class="modal-backdrop" />
             <ui:VisualElement class="modal-frame">
