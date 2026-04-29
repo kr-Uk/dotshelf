@@ -202,6 +202,7 @@ namespace BookshelfPorting.Runtime
         private bool openDashboardOnShow;
         private NotebookToolkitController toolkitController;
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
+        private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
 
         public Transform ScreenTransform { get; private set; }
@@ -219,9 +220,10 @@ namespace BookshelfPorting.Runtime
             UnityAction onCloseScreenSaver = null,
             UnityAction onOpenScreenSaver = null,
             SearchNotebookBooksUseCase searchUseCase = null,
+            LoadNotebookMarketBooksUseCase loadMarketUseCase = null,
             AddNotebookBookToShelfUseCase addUseCase = null)
         {
-            ConfigureNotebookBookUseCases(searchUseCase, addUseCase);
+            ConfigureNotebookBookUseCases(searchUseCase, loadMarketUseCase, addUseCase);
             ScreenTransform = screenTransform;
             EnsureCanvases(screenTransform, eventCamera, onCloseDashboard, onCloseScreenSaver, onOpenScreenSaver);
             ApplyPresentationMode();
@@ -231,11 +233,13 @@ namespace BookshelfPorting.Runtime
 
         public void ConfigureNotebookBookUseCases(
             SearchNotebookBooksUseCase searchUseCase,
+            LoadNotebookMarketBooksUseCase loadMarketUseCase,
             AddNotebookBookToShelfUseCase addUseCase)
         {
             searchNotebookBooksUseCase = searchUseCase;
+            loadNotebookMarketBooksUseCase = loadMarketUseCase;
             addNotebookBookToShelfUseCase = addUseCase;
-            toolkitController?.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, addNotebookBookToShelfUseCase);
+            toolkitController?.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase);
         }
 
         public void SetImmersiveMode(bool immersive)
@@ -496,7 +500,7 @@ namespace BookshelfPorting.Runtime
                 toolkitController = screenTransform.gameObject.AddComponent<NotebookToolkitController>();
             }
 
-            toolkitController?.Configure(onCloseDashboard, searchNotebookBooksUseCase, addNotebookBookToShelfUseCase);
+            toolkitController?.Configure(onCloseDashboard, searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase);
         }
 
         private bool HasToolkitDashboard()

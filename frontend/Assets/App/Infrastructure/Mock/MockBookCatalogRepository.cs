@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using App.Application.Books;
 using App.Domain;
+using UnityEngine;
 
 namespace App.Infrastructure.Mock
 {
@@ -103,6 +104,7 @@ namespace App.Infrastructure.Mock
 
         public IReadOnlyList<BookCatalogItem> GetMyBookshelfBooks()
         {
+            Debug.LogWarning("LocalMock book catalog repository is serving mock bookshelf books.");
             var result = new List<BookCatalogItem>(Rows * Columns * BooksPerSection);
             var now = DateTimeOffset.Now;
 

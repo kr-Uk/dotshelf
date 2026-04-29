@@ -36,12 +36,15 @@ namespace App.Infrastructure.Api
                 var items = response?.EffectiveItems;
                 if (items != null && items.Count > 0)
                 {
+                    Debug.Log($"Book catalog API loaded {items.Count} item(s): {baseUrl}");
                     return MapToCatalog(items);
                 }
+
+                Debug.LogWarning($"Book catalog API returned no items: {baseUrl}");
             }
             catch (Exception exception)
             {
-                Debug.LogWarning($"Book catalog API fallback is active: {baseUrl} ({exception.Message})");
+                Debug.LogWarning($"Book catalog API request failed: {baseUrl} ({exception.Message})");
             }
 
             return fallbackRepository != null

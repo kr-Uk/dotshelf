@@ -18,6 +18,15 @@ namespace App.Infrastructure.Mock
             onError?.Invoke(CreateDisabledError());
         }
 
+        public void LoadMarketBooks(
+            string category,
+            int limit,
+            Action<NotebookBookSearchResult> onSuccess,
+            Action<NotebookApiError> onError)
+        {
+            onError?.Invoke(CreateDisabledError());
+        }
+
         public void AddBookToShelf(
             long bookshelfId,
             AddNotebookBookToShelfCommand command,

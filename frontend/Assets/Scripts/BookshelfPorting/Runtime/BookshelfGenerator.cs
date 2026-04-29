@@ -875,6 +875,12 @@ namespace BookshelfPorting.Runtime
         private void SpawnBooks(List<ShelfSection> sections, int variantIndex, Transform targetBooksRoot, bool registerInState)
         {
             EnsureBookCatalog();
+            if (bookCatalogItems.Count == 0)
+            {
+                Debug.LogWarning("Bookshelf catalog is empty; skipping book generation so stale mock/default book data is not shown.");
+                return;
+            }
+
             Random.InitState(randomSeed + variantIndex * 137);
             var prefabs = GetQaBookPrefabs();
 
@@ -913,6 +919,10 @@ namespace BookshelfPorting.Runtime
             bookCatalogItems = loadBooksUseCase != null
                 ? loadBooksUseCase.Execute() ?? System.Array.Empty<BookCatalogItem>()
                 : System.Array.Empty<BookCatalogItem>();
+            if (Application.isPlaying)
+            {
+                Debug.Log($"Bookshelf catalog loaded: {bookCatalogItems.Count} item(s).");
+            }
         }
 
         private void EnsureBookCatalog()

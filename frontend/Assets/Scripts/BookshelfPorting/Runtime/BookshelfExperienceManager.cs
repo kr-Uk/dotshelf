@@ -213,6 +213,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private BookshelfRuntimeDataStore dataStore = null;
         [SerializeField] private NotebookScreenController notebookScreenController = null;
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
+        private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
 
         private Canvas hudCanvas;
@@ -535,11 +536,13 @@ namespace BookshelfPorting.Runtime
 
         public void ConfigureNotebookBookUseCases(
             SearchNotebookBooksUseCase searchUseCase,
+            LoadNotebookMarketBooksUseCase loadMarketUseCase,
             AddNotebookBookToShelfUseCase addUseCase)
         {
             searchNotebookBooksUseCase = searchUseCase;
+            loadNotebookMarketBooksUseCase = loadMarketUseCase;
             addNotebookBookToShelfUseCase = addUseCase;
-            notebookScreenController?.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, addNotebookBookToShelfUseCase);
+            notebookScreenController?.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase);
         }
 
         private void Awake()
@@ -8931,6 +8934,7 @@ namespace BookshelfPorting.Runtime
                 CloseNotebookFocus,
                 FocusNotebook,
                 searchNotebookBooksUseCase,
+                loadNotebookMarketBooksUseCase,
                 addNotebookBookToShelfUseCase);
         }
 

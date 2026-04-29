@@ -61,6 +61,16 @@ namespace App.Infrastructure.Api
             return Get<BookListResponseDto>(WithQuery("/v1/books/search", query), onSuccess, onError);
         }
 
+        public Coroutine GetBooks(string category, int limit, Action<BookListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            var query = new Dictionary<string, string>
+            {
+                ["category"] = string.IsNullOrWhiteSpace(category) ? "RANKING" : category,
+                ["limit"] = Mathf.Max(1, limit).ToString()
+            };
+            return Get<BookListResponseDto>(WithQuery("/v1/books", query), onSuccess, onError);
+        }
+
         public Coroutine GetBook(long bookId, Action<BookResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Get<BookResponseDto>($"/v1/books/{bookId}", onSuccess, onError);

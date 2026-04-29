@@ -182,6 +182,7 @@ namespace App.Features.Notebook.Presentation
         private const int DashboardInitializationRetryFrames = 30;
         private const float RecommendWheelScrollScale = 56f;
         private const int SearchResultPageSize = 48;
+        private const int MarketBookPageSize = 48;
         private const long DefaultBookshelfId = 1L;
         private const long DefaultSectionId = 1L;
         private const int DefaultSlotNo = 1;
@@ -219,20 +220,6 @@ namespace App.Features.Notebook.Presentation
         private static readonly string[] ObjectCategories = { "전체", "필수 배치 오브젝트", "기타 배치 오브젝트", "전체 테마" };
 
         [SerializeField] private UIDocument document;
-
-        private readonly BookViewModel[] books =
-        {
-            new("r1", "저녁의 문장들", "한수정", "밀림출판", "하루의 마지막에 읽기 좋은 짧은 문장과 산문을 모은 에세이입니다.", "에세이", "읽는 중", "책장 1", 0, 4.8f, 612, 13980, 3410, Hex(0x0A2540), Accent),
-            new("r2", "조용한 심장", "Eliot Mara", "Oakrow Press", "내면의 리듬을 되찾는 심리 에세이. 느린 호흡으로 마음을 정리합니다.", "심리", "안 읽음", "책장 2", 1200, 4.7f, 430, 12640, 3020, Hex(0xEAF5FF), AccentDeep),
-            new("r3", "숲으로 간 편지", "박이도", "초록서재", "자연과 편지로 엮은 계간 소설. 작은 계절의 움직임을 따라갑니다.", "소설", "읽음", "책장 1", 0, 4.9f, 884, 18420, 4112, Hex(0x12345A), Hex(0x9ED4FF)),
-            new("r4", "끝없이 이어지는 방", "조민아", "검은잉크", "공간이 기억을 가질 수 있다면 어떤 방이 남을지 묻는 SF 장편입니다.", "SF/판타지", "안 읽음", "책장 2", 1800, 4.6f, 321, 10880, 2490, Hex(0x061422), Surface),
-            new("r5", "햇빛 인사법", "Naomi Vann", "Lantern & Co.", "느린 계절을 기록하는 방법을 담은 산문집. 아침에 읽기 좋습니다.", "에세이", "읽는 중", "책장 1", 0, 4.5f, 278, 12510, 2844, Hex(0xC9E6FF), AccentDeep),
-            new("r6", "일요일의 경제학", "이재훈", "월요서재", "교양으로 시작하는 주말 경제. 어렵지 않은 예시로 시장을 설명합니다.", "경제/경영", "안 읽음", "책장 2", 1500, 4.4f, 198, 11880, 2711, Hex(0x0A2540), Accent),
-            new("r7", "문장 수집가", "김아진", "밤과책", "좋은 문장을 모으는 사람들의 기록. 독서 노트를 시작하고 싶게 합니다.", "인문", "읽음", "책장 1", 0, 4.8f, 740, 15210, 3611, Hex(0x2D7EC0), Ink),
-            new("r8", "완벽하지 않은 여름", "서은재", "백지출판", "완벽하지 않은 계절 속에서 관계가 회복되는 이야기입니다.", "소설", "읽는 중", "책장 1", 1400, 4.9f, 923, 18420, 4112, Hex(0x1D5F8C), Hex(0x9ED4FF)),
-            new("r9", "관계의 지도", "윤지수", "북노트", "관계의 거리와 방향을 다시 그려 보는 인문 에세이입니다.", "인문", "안 읽음", "책장 2", 1200, 4.7f, 710, 14322, 3402, Hex(0x1A3350), Hex(0x9ED4FF)),
-            new("r10", "별이 된 서점", "문경하", "초록서재", "밤하늘에 떠오른 서점을 따라가는 따뜻한 판타지 소설입니다.", "SF/판타지", "읽음", "책장 2", 1800, 4.6f, 640, 13210, 3022, Hex(0x050D1A), Accent),
-        };
 
         private readonly SpaceViewModel[] spaces =
         {
@@ -337,11 +324,14 @@ namespace App.Features.Notebook.Presentation
         private Button addButton;
         private Coroutine dashboardInitializationRoutine;
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
+        private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
+        private BookViewModel[] marketBooks = Array.Empty<BookViewModel>();
         private BookViewModel[] searchResults = Array.Empty<BookViewModel>();
         private int toastHideVersion;
         private int dashboardShowVersion;
         private int searchRequestVersion;
+        private int marketBooksRequestVersion;
 
         private string query = string.Empty;
         private string appliedSearchQuery = string.Empty;
@@ -366,6 +356,8 @@ namespace App.Features.Notebook.Presentation
         private bool bookReviewsOpen;
         private bool searchPageOpen;
         private bool searchLoading;
+        private bool marketBooksLoading;
+        private bool marketBooksRequested;
         private BookViewModel selectedBookOverride;
         private float selectedReviewRating = 5f;
 
@@ -428,19 +420,32 @@ namespace App.Features.Notebook.Presentation
         public void Configure(
             UnityAction onCloseRequested,
             SearchNotebookBooksUseCase searchUseCase = null,
+            LoadNotebookMarketBooksUseCase loadMarketUseCase = null,
             AddNotebookBookToShelfUseCase addUseCase = null)
         {
             closeRequested = onCloseRequested;
-            ConfigureNotebookBookUseCases(searchUseCase, addUseCase);
+            ConfigureNotebookBookUseCases(searchUseCase, loadMarketUseCase, addUseCase);
             ResolveDocument();
         }
 
         public void ConfigureNotebookBookUseCases(
             SearchNotebookBooksUseCase searchUseCase,
+            LoadNotebookMarketBooksUseCase loadMarketUseCase,
             AddNotebookBookToShelfUseCase addUseCase)
         {
             searchNotebookBooksUseCase = searchUseCase;
+            loadNotebookMarketBooksUseCase = loadMarketUseCase;
             addNotebookBookToShelfUseCase = addUseCase;
+            marketBooksRequested = false;
+            marketBooksLoading = false;
+            marketBooks = Array.Empty<BookViewModel>();
+            selectedBookOverride = null;
+            selectedBookIndex = 0;
+
+            if (initialized && visible)
+            {
+                RefreshAll();
+            }
         }
 
         public bool ShowDashboard(bool immersiveMode)
@@ -2796,6 +2801,7 @@ namespace App.Features.Notebook.Presentation
 
         private void RefreshAll()
         {
+            EnsureMarketBooksRequested();
             RefreshWallet();
             RefreshFilters();
             RefreshCommunityPanels();
@@ -3310,22 +3316,77 @@ namespace App.Features.Notebook.Presentation
 
         private IEnumerable<BookViewModel> FilterBooks(bool includeGenre)
         {
-            var filtered = books
+            var filtered = marketBooks
                 .Where(MatchesSubTab)
                 .Where(book => !includeGenre || MatchesGenre(book));
 
             return SortBooks(filtered);
         }
 
-        private BookViewModel[] GetLocalSearchResults(string keyword)
+        private void EnsureMarketBooksRequested()
         {
-            var needle = keyword?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(needle))
+            if (marketBooksRequested || marketBooksLoading)
             {
-                return Array.Empty<BookViewModel>();
+                return;
             }
 
-            return SortBooks(books.Where(book => MatchesSearch(book, needle))).ToArray();
+            marketBooksRequested = true;
+            RequestMarketBooks();
+        }
+
+        private void RequestMarketBooks()
+        {
+            marketBooksRequestVersion++;
+            var requestVersion = marketBooksRequestVersion;
+            marketBooksLoading = true;
+            marketBooks = Array.Empty<BookViewModel>();
+
+            if (loadNotebookMarketBooksUseCase == null)
+            {
+                marketBooksLoading = false;
+                UnityEngine.Debug.LogWarning("Notebook market API use case is not configured; market sections will remain empty.");
+                return;
+            }
+
+            try
+            {
+                loadNotebookMarketBooksUseCase.Execute(
+                    "RANKING",
+                    MarketBookPageSize,
+                    response =>
+                    {
+                        if (requestVersion != marketBooksRequestVersion)
+                        {
+                            return;
+                        }
+
+                        marketBooksLoading = false;
+                        marketBooks = MapApiSearchResults(response, string.Empty);
+                        selectedBookOverride = null;
+                        selectedBookIndex = 0;
+                        UnityEngine.Debug.Log($"Notebook market API loaded {marketBooks.Length} item(s).");
+                        RefreshAll();
+                    },
+                    error =>
+                    {
+                        if (requestVersion != marketBooksRequestVersion)
+                        {
+                            return;
+                        }
+
+                        marketBooksLoading = false;
+                        marketBooks = Array.Empty<BookViewModel>();
+                        UnityEngine.Debug.LogWarning($"Notebook market API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                        RefreshAll();
+                    });
+            }
+            catch (Exception exception)
+            {
+                marketBooksLoading = false;
+                marketBooks = Array.Empty<BookViewModel>();
+                UnityEngine.Debug.LogWarning("Notebook market API failed before send.");
+                UnityEngine.Debug.LogException(exception);
+            }
         }
 
         private void RequestSearchResults(string keyword)
@@ -3339,6 +3400,12 @@ namespace App.Features.Notebook.Presentation
 
             try
             {
+                if (searchNotebookBooksUseCase == null)
+                {
+                    CompleteSearchWithApiError(requestVersion, "Notebook API disabled.");
+                    return;
+                }
+
                 searchNotebookBooksUseCase.Execute(
                     keyword,
                     1,
@@ -3356,21 +3423,26 @@ namespace App.Features.Notebook.Presentation
                     },
                     error =>
                     {
-                        UnityEngine.Debug.LogWarning($"Search API failed, falling back to local. keyword={keyword}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
-                        ShowToast("검색 API 응답을 받지 못해 로컬 결과를 표시합니다.");
-                        CompleteSearchWithLocalFallback(requestVersion, keyword);
+                        if (IsLocalMockApiDisabled(error))
+                        {
+                            UnityEngine.Debug.LogWarning($"Search API disabled by LocalMock. keyword={keyword}");
+                            CompleteSearchWithApiError(requestVersion, "Notebook API disabled.");
+                            return;
+                        }
+
+                        UnityEngine.Debug.LogWarning($"Search API failed. keyword={keyword}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                        CompleteSearchWithApiError(requestVersion, "검색 API 응답을 받지 못했습니다.");
                     });
             }
             catch (Exception exception)
             {
-                UnityEngine.Debug.LogWarning($"Search API failed, falling back to local. keyword={keyword}");
+                UnityEngine.Debug.LogWarning($"Search API failed. keyword={keyword}");
                 UnityEngine.Debug.LogException(exception);
-                ShowToast("검색 API 응답을 받지 못해 로컬 결과를 표시합니다.");
-                CompleteSearchWithLocalFallback(requestVersion, keyword);
+                CompleteSearchWithApiError(requestVersion, "검색 API 응답을 받지 못했습니다.");
             }
         }
 
-        private void CompleteSearchWithLocalFallback(int requestVersion, string keyword)
+        private void CompleteSearchWithApiError(int requestVersion, string message)
         {
             if (requestVersion != searchRequestVersion)
             {
@@ -3378,8 +3450,14 @@ namespace App.Features.Notebook.Presentation
             }
 
             searchLoading = false;
-            searchResults = GetLocalSearchResults(keyword);
+            searchResults = Array.Empty<BookViewModel>();
+            ShowToast(message);
             RefreshAll();
+        }
+
+        private static bool IsLocalMockApiDisabled(NotebookApiError error)
+        {
+            return string.Equals(error?.Code, "NOTEBOOK_API_DISABLED", StringComparison.OrdinalIgnoreCase);
         }
 
         private BookViewModel[] MapApiSearchResults(NotebookBookSearchResult response, string keyword)
@@ -3413,11 +3491,13 @@ namespace App.Features.Notebook.Presentation
                     : FirstText(isbn13, isbn10, dto.SourceUrl, dto.BookId, $"api-{i + 1}");
                 var id = $"{source.ToLowerInvariant()}-{sourceKey}";
                 var rating = dto.AvgRating > 0 ? Mathf.Clamp((float)dto.AvgRating, 1f, 5f) : 4.2f;
-                var reviews = Mathf.Max(dto.LikeCount, dto.PurchaseCount, dto.RecordCount, 1);
-                var views = Mathf.Max(dto.PlacementCount + dto.RecordCount + dto.LikeCount, reviews * 12);
+                var reviews = Mathf.Max(dto.ReviewCount, dto.LikeCount, dto.PurchaseCount, dto.RecordCount, 1);
+                var views = Mathf.Max(dto.ViewCount, dto.PlacementCount + dto.RecordCount + dto.LikeCount, reviews * 12);
                 var records = Mathf.Max(dto.RecordCount, dto.PlacementCount);
-                var price = dto.HasPaidCover ? 1200 : 0;
+                var price = dto.PricePages > 0 ? dto.PricePages : dto.HasPaidCover ? 1200 : 0;
                 var coverColor = SearchCoverColor(i, id);
+                var status = dto.Owned && Categories.Length > 2 ? Categories[2] : Categories.Length > 3 ? Categories[3] : string.Empty;
+                var shelf = Categories.Length > 4 ? Categories[4] : string.Empty;
 
                 mapped.Add(new BookViewModel(
                     id,
@@ -3426,8 +3506,8 @@ namespace App.Features.Notebook.Presentation
                     publisher,
                     summary,
                     genre,
-                    "안 읽음",
-                    "검색 결과",
+                    status,
+                    shelf,
                     price,
                     rating,
                     reviews,
@@ -3483,7 +3563,8 @@ namespace App.Features.Notebook.Presentation
             }
 
             selectedBook = detailSource[0];
-            selectedBookIndex = Mathf.Max(0, Array.IndexOf(books, selectedBook));
+            selectedBookIndex = Mathf.Max(0, Array.IndexOf(marketBooks, selectedBook));
+            selectedBookOverride = null;
             return selectedBook;
         }
 
@@ -3494,8 +3575,8 @@ namespace App.Features.Notebook.Presentation
                 return selectedBookOverride;
             }
 
-            return selectedBookIndex >= 0 && selectedBookIndex < books.Length
-                ? books[selectedBookIndex]
+            return selectedBookIndex >= 0 && selectedBookIndex < marketBooks.Length
+                ? marketBooks[selectedBookIndex]
                 : null;
         }
 
@@ -3692,7 +3773,7 @@ namespace App.Features.Notebook.Presentation
 
             if (recommendList.childCount == 0)
             {
-                recommendList.Add(EmptyState("조건에 맞는 추천 책이 없습니다."));
+                recommendList.Add(EmptyState(marketBooksLoading ? "책 시장 API를 불러오는 중입니다." : "조건에 맞는 추천 책이 없습니다."));
             }
         }
 
@@ -3715,7 +3796,7 @@ namespace App.Features.Notebook.Presentation
 
             if (page.Length == 0)
             {
-                rankingGrid.Add(EmptyState("검색 결과가 없습니다."));
+                rankingGrid.Add(EmptyState(marketBooksLoading ? "책 시장 API를 불러오는 중입니다." : "검색 결과가 없습니다."));
             }
 
             if (resultLabel != null)
@@ -4062,7 +4143,7 @@ namespace App.Features.Notebook.Presentation
 
         private void SelectBook(BookViewModel book)
         {
-            var index = Array.IndexOf(books, book);
+            var index = Array.IndexOf(marketBooks, book);
             if (index < 0)
             {
                 selectedBookOverride = book;
@@ -4209,7 +4290,7 @@ namespace App.Features.Notebook.Presentation
                 return;
             }
 
-            var index = Array.IndexOf(books, book);
+            var index = Array.IndexOf(marketBooks, book);
             if (index >= 0)
             {
                 selectedBookIndex = index;
@@ -4329,7 +4410,7 @@ namespace App.Features.Notebook.Presentation
                 return;
             }
 
-            var index = Array.IndexOf(books, book);
+            var index = Array.IndexOf(marketBooks, book);
             if (index >= 0)
             {
                 selectedBookIndex = index;
@@ -5016,7 +5097,8 @@ namespace App.Features.Notebook.Presentation
                 }
             }
 
-            pointerCursorTexture.Apply(false, true);
+            // Runtime UI Toolkit cursor textures must remain CPU-readable.
+            pointerCursorTexture.Apply(false, false);
             return pointerCursorTexture;
         }
 
