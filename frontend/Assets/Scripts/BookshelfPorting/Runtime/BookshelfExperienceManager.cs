@@ -7478,13 +7478,25 @@ namespace BookshelfPorting.Runtime
         private void EnsureGuestbookBoardUi()
         {
             // (v1.0 dashboard 통합) 외부 prefab 모드면 옛 guestbookBoardCanvas 생성을 통째 skip.
-            // externalDashboardPanel은 인스펙터에서 GuestbookBoardHitArea 자식으로 직접 배치되어 있고,
-            // SetGuestbookFocusPresentation에서 SetActive로만 토글한다. 시작 시 비활성으로 둠.
+            // BookshelfGenerator가 Play 시작 시 GuestbookHitArea를 procedural하게 재생성하므로
+            // 정적으로 prefab을 GuestbookHitArea 자식으로 박아두면 부모 destroy와 함께 사라진다.
+            // 그래서 prefab은 scene root에 두고, 첫 호출 시점에 동적 GuestbookHitArea를 찾아 reparent.
             if (useExternalDashboardPanel)
             {
-                if (externalDashboardPanel != null && externalDashboardPanel.activeSelf)
+                if (externalDashboardPanel != null)
                 {
-                    externalDashboardPanel.SetActive(false);
+                    var dynamicHitArea = FindFirstObjectByType<GuestbookBoardHitArea>();
+                    if (dynamicHitArea != null && externalDashboardPanel.transform.parent != dynamicHitArea.transform)
+                    {
+                        externalDashboardPanel.transform.SetParent(dynamicHitArea.transform, false);
+                        externalDashboardPanel.transform.localPosition = new Vector3(-0.058f, 0f, 0f);
+                        externalDashboardPanel.transform.localRotation = Quaternion.Euler(0f, -90f, 0f);
+                        externalDashboardPanel.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
+                    }
+                    if (externalDashboardPanel.activeSelf)
+                    {
+                        externalDashboardPanel.SetActive(false);
+                    }
                 }
                 return;
             }
