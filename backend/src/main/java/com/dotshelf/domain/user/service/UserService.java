@@ -45,8 +45,15 @@ public class UserService {
         return UserProfileResponse.from(getUser(requireUserId(userId)));
     }
 
-    public UserProfileResponse getProfile(Long userId) {
-        return UserProfileResponse.from(getUser(userId));
+    public UserProfileResponse getProfile(Long currentUserId, Long userId) {
+        User user = getUser(userId);
+        if (currentUserId == null || currentUserId.equals(userId)) {
+            return UserProfileResponse.from(user);
+        }
+        boolean following = followRepository.existsByFollowerUserIdAndFollowingUserId(currentUserId, userId);
+        boolean followedBy = followRepository.existsByFollowerUserIdAndFollowingUserId(userId, currentUserId);
+        boolean blocked = userBlockRepository.existsByBlockerUserIdAndBlockedUserId(currentUserId, userId);
+        return UserProfileResponse.from(user, following && followedBy, following, blocked);
     }
 
     @Transactional
@@ -93,17 +100,27 @@ public class UserService {
     public UserListResponse getFollowers(Long userId) {
         Long currentUserId = requireUserId(userId);
         List<UserSummaryResponse> users = followRepository.findByFollowingUserId(currentUserId).stream()
-                .map(follow -> UserSummaryResponse.from(getUser(follow.getFollowerUserId())))
+                .map(follow -> summaryWithRelation(getUser(follow.getFollowerUserId()), currentUserId))
                 .toList();
-        return new UserListResponse(users);
+        return new UserListResponse(users, null);
     }
 
     public UserListResponse getFollowings(Long userId) {
         Long currentUserId = requireUserId(userId);
         List<UserSummaryResponse> users = followRepository.findByFollowerUserId(currentUserId).stream()
-                .map(follow -> UserSummaryResponse.from(getUser(follow.getFollowingUserId())))
+                .map(follow -> summaryWithRelation(getUser(follow.getFollowingUserId()), currentUserId))
                 .toList();
-        return new UserListResponse(users);
+        return new UserListResponse(users, null);
+    }
+
+    private UserSummaryResponse summaryWithRelation(User target, Long viewerUserId) {
+        if (viewerUserId == null || viewerUserId.equals(target.getId())) {
+            return UserSummaryResponse.from(target);
+        }
+        boolean following = followRepository.existsByFollowerUserIdAndFollowingUserId(viewerUserId, target.getId());
+        boolean followedBy = followRepository.existsByFollowerUserIdAndFollowingUserId(target.getId(), viewerUserId);
+        boolean blocked = userBlockRepository.existsByBlockerUserIdAndBlockedUserId(viewerUserId, target.getId());
+        return UserSummaryResponse.from(target, following && followedBy, following, blocked);
     }
 
     @Transactional
@@ -132,9 +149,9 @@ public class UserService {
     public UserListResponse getBlocks(Long userId) {
         Long currentUserId = requireUserId(userId);
         List<UserSummaryResponse> users = userBlockRepository.findByBlockerUserId(currentUserId).stream()
-                .map(block -> UserSummaryResponse.from(getUser(block.getBlockedUserId())))
+                .map(block -> summaryWithRelation(getUser(block.getBlockedUserId()), currentUserId))
                 .toList();
-        return new UserListResponse(users);
+        return new UserListResponse(users, null);
     }
 
     public NotificationSettingResponse getNotificationSetting(Long userId) {

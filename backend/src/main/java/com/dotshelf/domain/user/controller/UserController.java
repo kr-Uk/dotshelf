@@ -61,8 +61,11 @@ public class UserController {
 
     @Operation(summary = "다른 사용자 프로필 조회")
     @GetMapping("/{userId}")
-    public ApiResponse<UserProfileResponse> getProfile(@PathVariable Long userId) {
-        return ApiResponse.success(userService.getProfile(userId));
+    public ApiResponse<UserProfileResponse> getProfile(
+            @CurrentUser Long currentUserId,
+            @PathVariable Long userId
+    ) {
+        return ApiResponse.success(userService.getProfile(currentUserId, userId));
     }
 
     @Operation(summary = "닉네임 중복 확인")

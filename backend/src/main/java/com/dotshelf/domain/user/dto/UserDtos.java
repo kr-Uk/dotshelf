@@ -20,17 +20,27 @@ public final class UserDtos {
             String nickname,
             String profileImageUrl,
             String introduction,
-            boolean onboarded
+            boolean onboarded,
+            boolean mutual,
+            boolean following,
+            boolean blocked
     ) {
 
         public static UserProfileResponse from(User user) {
+            return from(user, false, false, false);
+        }
+
+        public static UserProfileResponse from(User user, boolean mutual, boolean following, boolean blocked) {
             return new UserProfileResponse(
                     user.getId(),
                     user.getEmail(),
                     user.getNickname(),
                     user.getProfileImageUrl(),
                     user.getIntroduction(),
-                    user.isOnboarded()
+                    user.isOnboarded(),
+                    mutual,
+                    following,
+                    blocked
             );
         }
     }
@@ -49,14 +59,36 @@ public final class UserDtos {
     public record NicknameAvailabilityResponse(boolean available) {
     }
 
-    public record UserSummaryResponse(Long id, String nickname, String profileImageUrl) {
+    public record UserSummaryResponse(
+            Long id,
+            String nickname,
+            String profileImageUrl,
+            boolean mutual,
+            boolean following,
+            boolean blocked
+    ) {
 
         public static UserSummaryResponse from(User user) {
-            return new UserSummaryResponse(user.getId(), user.getNickname(), user.getProfileImageUrl());
+            return from(user, false, false, false);
+        }
+
+        public static UserSummaryResponse from(User user, boolean mutual, boolean following, boolean blocked) {
+            return new UserSummaryResponse(
+                    user.getId(),
+                    user.getNickname(),
+                    user.getProfileImageUrl(),
+                    mutual,
+                    following,
+                    blocked
+            );
         }
     }
 
-    public record UserListResponse(List<UserSummaryResponse> users) {
+    public record UserListResponse(List<UserSummaryResponse> users, String nextCursor) {
+
+        public UserListResponse(List<UserSummaryResponse> users) {
+            this(users, null);
+        }
     }
 
     public record NotificationSettingRequest(

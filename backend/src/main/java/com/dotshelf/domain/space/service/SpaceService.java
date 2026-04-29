@@ -59,11 +59,13 @@ public class SpaceService {
     @Transactional
     public SpaceResponse getMySpace(Long userId) {
         Long currentUserId = userService.requireUserId(userId);
-        return SpaceResponse.from(findOrCreateMySpace(currentUserId));
+        Space space = findOrCreateMySpace(currentUserId);
+        return SpaceResponse.from(space, isLiked(space.getId(), currentUserId));
     }
 
-    public SpaceResponse getSpace(Long spaceId) {
-        return SpaceResponse.from(getSpaceEntity(spaceId));
+    public SpaceResponse getSpace(Long currentUserId, Long spaceId) {
+        Space space = getSpaceEntity(spaceId);
+        return SpaceResponse.from(space, isLiked(spaceId, currentUserId));
     }
 
     public SpaceListResponse getSpaces(Long userId, String keyword, String sort, int limit) {
@@ -84,16 +86,28 @@ public class SpaceService {
                 .toList(), null);
     }
 
-    public DashboardResponse getDashboard(Long spaceId, String period) {
+    public DashboardResponse getDashboard(Long currentUserId, Long spaceId, String period) {
         Space space = getSpaceEntity(spaceId);
+        User owner = userService.getUser(space.getOwnerUserId());
+        long weeklyVisitorCount = spaceVisitRepository
+                .countDistinctVisitorsBySpaceIdSince(spaceId, LocalDate.now().minusDays(7));
         return new DashboardResponse(
-                SpaceResponse.from(space),
+                SpaceResponse.from(space, isLiked(spaceId, currentUserId)),
                 followRepository.countByFollowingUserId(space.getOwnerUserId()),
                 followRepository.countByFollowerUserId(space.getOwnerUserId()),
                 0,
                 0,
-                0
+                0,
+                weeklyVisitorCount,
+                owner.getNickname(),
+                owner.getProfileImageUrl(),
+                owner.getIntroduction()
         );
+    }
+
+    private boolean isLiked(Long spaceId, Long viewerUserId) {
+        return viewerUserId != null
+                && spaceLikeRepository.existsBySpaceIdAndUserId(spaceId, viewerUserId);
     }
 
     @Transactional
@@ -156,23 +170,26 @@ public class SpaceService {
 
     @Transactional
     public SpaceResponse applyTheme(Long userId, ThemeApplyRequest request) {
-        Space space = findOrCreateMySpace(userService.requireUserId(userId));
+        Long currentUserId = userService.requireUserId(userId);
+        Space space = findOrCreateMySpace(currentUserId);
         space.applyTheme(request.inventoryId());
-        return SpaceResponse.from(space);
+        return SpaceResponse.from(space, isLiked(space.getId(), currentUserId));
     }
 
     @Transactional
     public SpaceResponse updateVisibility(Long userId, VisibilityRequest request) {
-        Space space = findOrCreateMySpace(userService.requireUserId(userId));
+        Long currentUserId = userService.requireUserId(userId);
+        Space space = findOrCreateMySpace(currentUserId);
         space.changeVisibility(request.visibilityScope());
-        return SpaceResponse.from(space);
+        return SpaceResponse.from(space, isLiked(space.getId(), currentUserId));
     }
 
     @Transactional
     public SpaceResponse updateGuestbookVisibility(Long userId, VisibilityRequest request) {
-        Space space = findOrCreateMySpace(userService.requireUserId(userId));
+        Long currentUserId = userService.requireUserId(userId);
+        Space space = findOrCreateMySpace(currentUserId);
         space.changeGuestbookVisibility(request.visibilityScope());
-        return SpaceResponse.from(space);
+        return SpaceResponse.from(space, isLiked(space.getId(), currentUserId));
     }
 
     public SpaceTemplateListResponse getTemplates() {

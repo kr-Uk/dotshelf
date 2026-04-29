@@ -53,16 +53,17 @@ public class SpaceController {
     }
 
     @GetMapping("/{spaceId}")
-    public ApiResponse<SpaceResponse> getSpace(@PathVariable Long spaceId) {
-        return ApiResponse.success(spaceService.getSpace(spaceId));
+    public ApiResponse<SpaceResponse> getSpace(@CurrentUser Long currentUserId, @PathVariable Long spaceId) {
+        return ApiResponse.success(spaceService.getSpace(currentUserId, spaceId));
     }
 
     @GetMapping("/{spaceId}/dashboard")
     public ApiResponse<DashboardResponse> getDashboard(
+            @CurrentUser Long currentUserId,
             @PathVariable Long spaceId,
             @RequestParam(defaultValue = "daily") String period
     ) {
-        return ApiResponse.success(spaceService.getDashboard(spaceId, period));
+        return ApiResponse.success(spaceService.getDashboard(currentUserId, spaceId, period));
     }
 
     @PostMapping("/{spaceId}/visits")

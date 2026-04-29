@@ -20,11 +20,16 @@ public final class SpaceDtos {
             String guestbookVisibilityScope,
             long visitCount,
             long likeCount,
+            boolean liked,
             long layoutVersion,
             Long currentThemeInventoryId
     ) {
 
         public static SpaceResponse from(Space space) {
+            return from(space, false);
+        }
+
+        public static SpaceResponse from(Space space, boolean liked) {
             return new SpaceResponse(
                     space.getId(),
                     space.getOwnerUserId(),
@@ -33,6 +38,7 @@ public final class SpaceDtos {
                     space.getGuestbookVisibilityScope(),
                     space.getVisitCount(),
                     space.getLikeCount(),
+                    liked,
                     space.getLayoutVersion(),
                     space.getCurrentThemeInventoryId()
             );
@@ -45,7 +51,11 @@ public final class SpaceDtos {
             long followingCount,
             long bookshelfCount,
             long bookCount,
-            long readingRecordCount
+            long readingRecordCount,
+            long weeklyVisitorCount,
+            String ownerNickname,
+            String ownerProfileImageUrl,
+            String ownerIntroduction
     ) {
     }
 
