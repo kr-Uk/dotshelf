@@ -1088,11 +1088,88 @@ namespace App.Infrastructure.Api.Dtos
         public int CommentCount { get; set; }
     }
 
+    /// <summary>
+    /// 대시보드 \"독후감 풀 목록\" 모달 응답 (v1.0 갱신).
+    /// 정렬·cursor 페이지네이션 지원, content/likeCount/commentCount/viewCount 노출.
+    /// </summary>
     [Serializable]
-    public sealed class ReadingRecordListResponseDto
+    public sealed class ReadingRecordSummaryDto
     {
-        [JsonProperty("records")]
-        public List<ReadingRecordResponseDto> Records { get; set; }
+        [JsonProperty("id")]
+        public long Id { get; set; }
+
+        [JsonProperty("bookId")]
+        public long BookId { get; set; }
+
+        [JsonProperty("bookTitle")]
+        public string BookTitle { get; set; }
+
+        [JsonProperty("content")]
+        public string Content { get; set; }
+
+        [JsonProperty("likeCount")]
+        public int LikeCount { get; set; }
+
+        [JsonProperty("commentCount")]
+        public int CommentCount { get; set; }
+
+        [JsonProperty("viewCount")]
+        public int ViewCount { get; set; }
+
+        [JsonProperty("createdAt")]
+        public string CreatedAt { get; set; }
+    }
+
+    [Serializable]
+    public sealed class ReadingRecordPageResponseDto
+    {
+        [JsonProperty("items")]
+        public List<ReadingRecordSummaryDto> Items { get; set; }
+
+        [JsonProperty("nextCursor")]
+        public string NextCursor { get; set; }
+    }
+
+    /// <summary>
+    /// 대시보드 \"보유 책 풀 목록\" 모달 응답 (v1.0 갱신).
+    /// title/author/publisher/publishedDate/coverImageUrl/addedAt — 카드에 노출되는 필드만.
+    /// </summary>
+    [Serializable]
+    public sealed class OwnedBookSummaryDto
+    {
+        [JsonProperty("userBookId")]
+        public long UserBookId { get; set; }
+
+        [JsonProperty("bookId")]
+        public long BookId { get; set; }
+
+        [JsonProperty("title")]
+        public string Title { get; set; }
+
+        [JsonProperty("author")]
+        public string Author { get; set; }
+
+        [JsonProperty("publisher")]
+        public string Publisher { get; set; }
+
+        [JsonProperty("publishedDate")]
+        public string PublishedDate { get; set; }
+
+        [JsonProperty("coverImageUrl")]
+        public string CoverImageUrl { get; set; }
+
+        [JsonProperty("addedAt")]
+        public string AddedAt { get; set; }
+    }
+
+    [Serializable]
+    public sealed class OwnedBookListResponseDto
+    {
+        [JsonProperty("items")]
+        public List<OwnedBookSummaryDto> Items { get; set; }
+
+        [JsonProperty("nextCursor")]
+        public string NextCursor { get; set; }
     }
 
     [Serializable]
