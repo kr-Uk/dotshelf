@@ -6,6 +6,8 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
+using UIDocument = UnityEngine.UIElements.UIDocument;
+using RuntimePanelUtils = UnityEngine.UIElements.RuntimePanelUtils;
 
 namespace BookshelfPorting.Runtime
 {
@@ -9637,7 +9639,41 @@ namespace BookshelfPorting.Runtime
 
         private static bool IsPointerOverUi()
         {
-            return EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
+            // uGUI Canvas는 EventSystem이 인식
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+            {
+                return true;
+            }
+
+            // (v1.0 dashboard 통합 — MR #61) UI Toolkit World Space panel 위에 있는지도 체크.
+            // 우리 DashboardScreenPanel은 UIDocument 기반이라 EventSystem.IsPointerOverGameObject로 안 잡힘.
+            // 이걸 안 잡으면 BookshelfExperienceManager.Update가 dashboard 안 버튼 클릭을 가로채 자체 raycast 처리.
+            if (Mouse.current == null)
+            {
+                return false;
+            }
+            Vector2 pointerScreen = Mouse.current.position.ReadValue();
+            var documents = Object.FindObjectsByType<UIDocument>(FindObjectsSortMode.None);
+            for (int i = 0; i < documents.Length; i++)
+            {
+                UIDocument document = documents[i];
+                if (document == null || !document.isActiveAndEnabled)
+                {
+                    continue;
+                }
+                var root = document.rootVisualElement;
+                if (root == null || root.panel == null)
+                {
+                    continue;
+                }
+                Vector2 panelPosition = RuntimePanelUtils.ScreenToPanel(root.panel, pointerScreen);
+                var picked = root.panel.Pick(panelPosition);
+                if (picked != null)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static void EnsureEventSystem()
