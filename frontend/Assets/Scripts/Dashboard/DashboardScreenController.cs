@@ -274,7 +274,7 @@ namespace Dotshelf.Scripts.Dashboard
 
         private static DashboardSnapshot RebuildSnapshotWithLike(DashboardSnapshot snapshot, LikeToggleResult result)
         {
-            Space updated = new Space(
+            App.Domain.Dashboard.Space updated = new App.Domain.Dashboard.Space(
                 id: snapshot.Space.Id,
                 ownerUserId: snapshot.Space.OwnerUserId,
                 visibility: snapshot.Space.Visibility,
