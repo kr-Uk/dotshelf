@@ -8,16 +8,17 @@ namespace App.Application.Notebook
 
         public AddNotebookBookToShelfUseCase(INotebookBookRepository repository)
         {
-            this.repository = repository;
+            this.repository = repository ?? throw new ArgumentNullException(nameof(repository));
         }
 
         public void Execute(
             long bookshelfId,
-            NotebookBookAddRequest request,
+            AddNotebookBookToShelfCommand command,
+            NotebookShelfPlacement placement,
             Action<NotebookBookAddResult> onSuccess,
             Action<NotebookApiError> onError)
         {
-            repository.AddBookToShelf(bookshelfId, request, onSuccess, onError);
+            repository.AddBookToShelf(bookshelfId, command, placement, onSuccess, onError);
         }
     }
 }

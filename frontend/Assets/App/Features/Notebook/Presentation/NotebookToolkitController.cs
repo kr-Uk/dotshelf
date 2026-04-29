@@ -185,7 +185,7 @@ namespace App.Features.Notebook.Presentation
         private const long DefaultBookshelfId = 1L;
         private const long DefaultSectionId = 1L;
         private const int DefaultSlotNo = 1;
-        private const string DefaultDisplayStyle = "SPINE";
+        private const NotebookShelfDisplayStyle DefaultDisplayStyle = NotebookShelfDisplayStyle.Spine;
         private const string PanelSettingsResource = "NotebookPanelSettings";
         private static readonly Color PageBack = Hex(0xF0EEE9);
         private static readonly Color Surface = Hex(0xF7FFF7);
@@ -3337,13 +3337,6 @@ namespace App.Features.Notebook.Presentation
             searchLoading = true;
             RefreshAll();
 
-            if (searchNotebookBooksUseCase == null)
-            {
-                UnityEngine.Debug.LogWarning("SearchNotebookBooksUseCase is not configured; falling back to local search.");
-                CompleteSearchWithLocalFallback(requestVersion, keyword);
-                return;
-            }
-
             try
             {
                 searchNotebookBooksUseCase.Execute(
@@ -4251,7 +4244,7 @@ namespace App.Features.Notebook.Presentation
 
         private bool CanUseShelfApi(BookViewModel book)
         {
-            if (book == null || addNotebookBookToShelfUseCase == null)
+            if (book == null)
             {
                 return false;
             }
@@ -4275,7 +4268,8 @@ namespace App.Features.Notebook.Presentation
             {
                 addNotebookBookToShelfUseCase.Execute(
                     DefaultBookshelfId,
-                    BuildAddRequest(book),
+                    BuildAddCommand(book),
+                    BuildDefaultShelfPlacement(),
                     response => CompleteApiBookAdded(book, response),
                     error => FailApiBookAdd(book, error));
             }
@@ -4290,9 +4284,9 @@ namespace App.Features.Notebook.Presentation
             }
         }
 
-        private NotebookBookAddRequest BuildAddRequest(BookViewModel book)
+        private AddNotebookBookToShelfCommand BuildAddCommand(BookViewModel book)
         {
-            return new NotebookBookAddRequest
+            return new AddNotebookBookToShelfCommand
             {
                 Source = book.ApiSource,
                 BookId = book.ServerBookId.GetValueOrDefault(),
@@ -4303,11 +4297,13 @@ namespace App.Features.Notebook.Presentation
                 Publisher = book.Publisher,
                 PublishedDate = book.PublishedDate,
                 Description = book.Summary,
-                CoverImageUrl = book.CoverImageUrl,
-                SectionId = DefaultSectionId,
-                SlotNo = DefaultSlotNo,
-                DisplayStyle = DefaultDisplayStyle
+                CoverImageUrl = book.CoverImageUrl
             };
+        }
+
+        private static NotebookShelfPlacement BuildDefaultShelfPlacement()
+        {
+            return new NotebookShelfPlacement(DefaultSectionId, DefaultSlotNo, DefaultDisplayStyle);
         }
 
         private void CompleteApiBookAdded(BookViewModel book, NotebookBookAddResult response)

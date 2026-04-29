@@ -233,16 +233,8 @@ namespace BookshelfPorting.Runtime
             SearchNotebookBooksUseCase searchUseCase,
             AddNotebookBookToShelfUseCase addUseCase)
         {
-            if (searchUseCase != null)
-            {
-                searchNotebookBooksUseCase = searchUseCase;
-            }
-
-            if (addUseCase != null)
-            {
-                addNotebookBookToShelfUseCase = addUseCase;
-            }
-
+            searchNotebookBooksUseCase = searchUseCase;
+            addNotebookBookToShelfUseCase = addUseCase;
             toolkitController?.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, addNotebookBookToShelfUseCase);
         }
 

@@ -13,7 +13,8 @@ namespace App.Application.Notebook
 
         void AddBookToShelf(
             long bookshelfId,
-            NotebookBookAddRequest request,
+            AddNotebookBookToShelfCommand command,
+            NotebookShelfPlacement placement,
             Action<NotebookBookAddResult> onSuccess,
             Action<NotebookApiError> onError);
     }

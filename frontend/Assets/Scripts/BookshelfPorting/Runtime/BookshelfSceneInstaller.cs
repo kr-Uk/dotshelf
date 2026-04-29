@@ -156,12 +156,8 @@ namespace BookshelfPorting.Runtime
 
             apiManager.Configure(apiBaseUrl, timeout: apiTimeoutSeconds);
             var notebookBookRepository = CreateNotebookBookRepository(useApiRepository, apiManager);
-            var searchNotebookBooksUseCase = notebookBookRepository != null
-                ? new SearchNotebookBooksUseCase(notebookBookRepository)
-                : null;
-            var addNotebookBookToShelfUseCase = notebookBookRepository != null
-                ? new AddNotebookBookToShelfUseCase(notebookBookRepository)
-                : null;
+            var searchNotebookBooksUseCase = new SearchNotebookBooksUseCase(notebookBookRepository);
+            var addNotebookBookToShelfUseCase = new AddNotebookBookToShelfUseCase(notebookBookRepository);
             if (Application.isPlaying && useApiRepository)
             {
                 apiManager.CheckHealth(null, apiHealthCheckPath);
@@ -294,7 +290,7 @@ namespace BookshelfPorting.Runtime
         {
             return useApiRepository && apiManager != null
                 ? new ApiNotebookBookRepository(new NotebookApiClient(apiManager))
-                : null;
+                : new NoOpNotebookBookRepository();
         }
 
         private static string ResolveApiBaseUrl(AppApiConfig apiConfig, string fallbackBaseUrl)

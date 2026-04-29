@@ -36,7 +36,26 @@ namespace App.Application.Notebook
         public bool HasPaidCover { get; set; }
     }
 
-    public sealed class NotebookBookAddRequest
+    public enum NotebookShelfDisplayStyle
+    {
+        Spine
+    }
+
+    public sealed class NotebookShelfPlacement
+    {
+        public NotebookShelfPlacement(long sectionId, int slotNo, NotebookShelfDisplayStyle displayStyle)
+        {
+            SectionId = sectionId;
+            SlotNo = slotNo;
+            DisplayStyle = displayStyle;
+        }
+
+        public long SectionId { get; }
+        public int SlotNo { get; }
+        public NotebookShelfDisplayStyle DisplayStyle { get; }
+    }
+
+    public sealed class AddNotebookBookToShelfCommand
     {
         public string Source { get; set; }
         public long? BookId { get; set; }
@@ -48,9 +67,6 @@ namespace App.Application.Notebook
         public string PublishedDate { get; set; }
         public string Description { get; set; }
         public string CoverImageUrl { get; set; }
-        public long SectionId { get; set; }
-        public int SlotNo { get; set; }
-        public string DisplayStyle { get; set; }
     }
 
     public sealed class NotebookBookAddResult

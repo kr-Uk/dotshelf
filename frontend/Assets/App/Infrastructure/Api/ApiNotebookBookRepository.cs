@@ -31,21 +31,28 @@ namespace App.Infrastructure.Api
 
         public void AddBookToShelf(
             long bookshelfId,
-            NotebookBookAddRequest request,
+            AddNotebookBookToShelfCommand command,
+            NotebookShelfPlacement placement,
             Action<NotebookBookAddResult> onSuccess,
             Action<NotebookApiError> onError)
         {
-            if (request == null)
+            if (command == null)
             {
-                onError?.Invoke(new NotebookApiError { Message = "Book add request is required." });
+                onError?.Invoke(new NotebookApiError { Message = "Book add command is required." });
                 return;
             }
 
-            if (string.Equals(request.Source, "KAKAO", StringComparison.OrdinalIgnoreCase))
+            if (placement == null)
+            {
+                onError?.Invoke(new NotebookApiError { Message = "Book shelf placement is required." });
+                return;
+            }
+
+            if (string.Equals(command.Source, "KAKAO", StringComparison.OrdinalIgnoreCase))
             {
                 client.AddKakaoBookToShelf(
                     bookshelfId,
-                    MapKakaoAddRequest(request),
+                    MapKakaoAddRequest(command, placement),
                     response => onSuccess?.Invoke(MapAddResult(response)),
                     error => onError?.Invoke(MapError(error)));
                 return;
@@ -53,7 +60,7 @@ namespace App.Infrastructure.Api
 
             client.AddBookToShelf(
                 bookshelfId,
-                MapLocalAddRequest(request),
+                MapLocalAddRequest(command, placement),
                 response => onSuccess?.Invoke(MapAddResult(response)),
                 error => onError?.Invoke(MapError(error)));
         }
@@ -101,33 +108,47 @@ namespace App.Infrastructure.Api
             return new NotebookBookSearchResult(items);
         }
 
-        private static AddBookToShelfRequestDto MapLocalAddRequest(NotebookBookAddRequest request)
+        private static AddBookToShelfRequestDto MapLocalAddRequest(
+            AddNotebookBookToShelfCommand command,
+            NotebookShelfPlacement placement)
         {
             return new AddBookToShelfRequestDto
             {
-                BookId = request.BookId.GetValueOrDefault(),
-                SectionId = request.SectionId,
-                SlotNo = request.SlotNo,
-                DisplayStyle = request.DisplayStyle
+                BookId = command.BookId.GetValueOrDefault(),
+                SectionId = placement.SectionId,
+                SlotNo = placement.SlotNo,
+                DisplayStyle = MapDisplayStyle(placement.DisplayStyle)
             };
         }
 
-        private static AddKakaoBookToShelfRequestDto MapKakaoAddRequest(NotebookBookAddRequest request)
+        private static AddKakaoBookToShelfRequestDto MapKakaoAddRequest(
+            AddNotebookBookToShelfCommand command,
+            NotebookShelfPlacement placement)
         {
             return new AddKakaoBookToShelfRequestDto
             {
-                Isbn13 = request.Isbn13,
-                Isbn10 = request.Isbn10,
-                Title = request.Title,
-                Author = request.Author,
-                Publisher = request.Publisher,
-                PublishedDate = request.PublishedDate,
-                Description = request.Description,
-                CoverImageUrl = request.CoverImageUrl,
-                SectionId = request.SectionId,
-                SlotNo = request.SlotNo,
-                DisplayStyle = request.DisplayStyle
+                Isbn13 = command.Isbn13,
+                Isbn10 = command.Isbn10,
+                Title = command.Title,
+                Author = command.Author,
+                Publisher = command.Publisher,
+                PublishedDate = command.PublishedDate,
+                Description = command.Description,
+                CoverImageUrl = command.CoverImageUrl,
+                SectionId = placement.SectionId,
+                SlotNo = placement.SlotNo,
+                DisplayStyle = MapDisplayStyle(placement.DisplayStyle)
             };
+        }
+
+        private static string MapDisplayStyle(NotebookShelfDisplayStyle displayStyle)
+        {
+            switch (displayStyle)
+            {
+                case NotebookShelfDisplayStyle.Spine:
+                default:
+                    return "SPINE";
+            }
         }
 
         private static NotebookBookAddResult MapAddResult(UserBookResponseDto response)

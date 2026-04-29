@@ -8,7 +8,7 @@ namespace App.Application.Notebook
 
         public SearchNotebookBooksUseCase(INotebookBookRepository repository)
         {
-            this.repository = repository;
+            this.repository = repository ?? throw new ArgumentNullException(nameof(repository));
         }
 
         public void Execute(
