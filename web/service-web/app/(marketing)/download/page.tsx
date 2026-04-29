@@ -1,12 +1,444 @@
+"use client";
+
+import { useState } from "react";
+
+import { Icon } from "@/components/marketing/icon";
+
+const RELEASE = {
+  version: "1.4.0",
+  date: "2026년 4월 22일",
+  size: "142 MB",
+  channel: "Stable",
+};
+
+type Build = {
+  label: string;
+  sub: string;
+  size: string;
+  recommended: boolean;
+};
+
+const DOWNLOADS: Record<"mac" | "win", Build[]> = {
+  mac: [
+    {
+      label: "macOS · Apple Silicon",
+      sub: ".dmg · M1 / M2 / M3 / M4",
+      size: "142 MB",
+      recommended: true,
+    },
+    {
+      label: "macOS · Intel",
+      sub: ".dmg · macOS 13 이상",
+      size: "156 MB",
+      recommended: false,
+    },
+  ],
+  win: [
+    {
+      label: "Windows · Installer",
+      sub: ".exe · Windows 10/11",
+      size: "128 MB",
+      recommended: true,
+    },
+    {
+      label: "Windows · MSI",
+      sub: ".msi · 기업 배포용",
+      size: "132 MB",
+      recommended: false,
+    },
+  ],
+};
+
+const REQUIREMENTS = [
+  {
+    os: "macOS",
+    icon: "apple" as const,
+    rows: [
+      ["최소 OS", "macOS 13 Ventura"],
+      ["권장 OS", "macOS 15 Sequoia"],
+      ["프로세서", "Apple Silicon (권장) / Intel"],
+      ["메모리", "8 GB / 16 GB 권장"],
+      ["그래픽", "Metal 3 지원"],
+      ["저장 공간", "500 MB"],
+    ],
+  },
+  {
+    os: "Windows",
+    icon: "windows" as const,
+    rows: [
+      ["최소 OS", "Windows 10 (64-bit)"],
+      ["권장 OS", "Windows 11 23H2"],
+      ["프로세서", "Intel i5 8세대 / Ryzen 5 3000 이상"],
+      ["메모리", "8 GB / 16 GB 권장"],
+      ["그래픽", "DirectX 12 / 외장 GPU 권장"],
+      ["저장 공간", "500 MB"],
+    ],
+  },
+];
+
+const STEPS = [
+  {
+    n: "01",
+    title: "설치 파일 실행",
+    body: "다운로드한 .dmg 또는 .exe 파일을 실행하세요. macOS는 Applications 폴더로 드래그, Windows는 안내에 따라 다음을 누르면 됩니다.",
+    mono: "DotShelf-1.4.0-arm64.dmg",
+  },
+  {
+    n: "02",
+    title: "계정으로 로그인",
+    body: "모바일 앱에서 사용 중인 계정으로 로그인하세요. QR 로그인을 선택하면 화면의 코드를 폰으로 비추기만 하면 됩니다.",
+    mono: "sign in · qr or email",
+  },
+  {
+    n: "03",
+    title: "서재 불러오기",
+    body: "로그인 직후 모바일 서재가 자동으로 동기화돼요. 첫 동기화는 책 수에 따라 30초~2분 정도 걸릴 수 있습니다.",
+    mono: "sync — 412 books · 6 shelves",
+  },
+];
+
 export default function DownloadPage() {
   return (
-    <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center px-6 py-24 text-center">
-      <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-        다운로드
-      </h1>
-      <p className="mt-4 text-sm text-muted-foreground md:text-base">
-        곧 iOS · Android 에서 만나보실 수 있어요. 출시되면 이 자리에 스토어 링크가 올라갑니다.
-      </p>
+    <div className="page-fade pb-12">
+      <DownloadHero />
+      <Requirements />
+      <InstallSteps />
+      <MobileNudge />
+    </div>
+  );
+}
+
+function DownloadHero() {
+  const [os, setOs] = useState<"mac" | "win">("mac");
+  const items = DOWNLOADS[os];
+
+  return (
+    <section className="max-w-6xl mx-auto px-5 sm:px-8 pt-14 pb-12">
+      <div className="grid lg:grid-cols-12 gap-10 items-start">
+        <div className="lg:col-span-5">
+          <div className="mono text-[11px] tracking-widest uppercase text-wood mb-4">
+            ── DotShelf for Desktop
+          </div>
+          <h1 className="serif text-[40px] sm:text-[52px] leading-[1.05] text-charcoal">
+            데스크탑에서
+            <br />
+            책장을 다듬다.
+          </h1>
+          <p className="mt-5 text-[16px] leading-[1.7] text-charcoal/75">
+            큰 화면에서 표지를 끌어다 놓고, 키보드로 빠르게 책을 임포트하세요.
+            모바일과 실시간으로 동기화됩니다.
+          </p>
+          <div className="mt-7 grid grid-cols-2 gap-y-3 gap-x-5 max-w-sm">
+            <Meta label="버전" value={RELEASE.version} />
+            <Meta label="릴리스" value={RELEASE.date} />
+            <Meta label="채널" value={RELEASE.channel} />
+            <Meta label="용량" value={RELEASE.size} />
+          </div>
+          <a
+            href="#changelog"
+            className="mt-6 inline-flex items-center gap-1.5 text-sm text-wood hover:text-wood-dark ink-link"
+          >
+            전체 변경 로그 보기
+            <Icon name="arrow-right" size={14} />
+          </a>
+        </div>
+
+        <div className="lg:col-span-7">
+          <div className="paper-dark rounded-3xl border border-beige p-6 sm:p-8 shadow-warm">
+            <DetectedBanner />
+            <div className="flex gap-2 mb-5 flex-wrap">
+              <OSTabButton
+                active={os === "mac"}
+                onClick={() => setOs("mac")}
+                icon="apple"
+                label="macOS"
+              />
+              <OSTabButton
+                active={os === "win"}
+                onClick={() => setOs("win")}
+                icon="windows"
+                label="Windows"
+              />
+            </div>
+            <div className="space-y-3">
+              {items.map((it) => (
+                <DownloadCard
+                  key={it.label}
+                  item={it}
+                  icon={os === "mac" ? "apple" : "windows"}
+                />
+              ))}
+            </div>
+            <div className="mt-5 pt-5 border-t border-beige/70 text-[12px] text-paper-muted flex items-start gap-2">
+              <Icon
+                name="check"
+                size={14}
+                className="text-wood mt-0.5 flex-shrink-0"
+              />
+              <span>
+                모든 빌드는 코드 사이닝되어 있으며, 자동 업데이트가 활성화됩니다.
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OSTabButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: "apple" | "windows";
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition border ${
+        active
+          ? "bg-charcoal text-cream border-charcoal"
+          : "bg-cream text-charcoal border-beige hover:border-wood/60"
+      }`}
+    >
+      <Icon
+        name={icon}
+        size={15}
+        className={active ? "text-cream" : "text-charcoal"}
+      />
+      {label}
+    </button>
+  );
+}
+
+function DownloadCard({
+  item,
+  icon,
+}: {
+  item: Build;
+  icon: "apple" | "windows";
+}) {
+  return (
+    <div
+      className={`rounded-2xl border p-5 transition relative ${
+        item.recommended
+          ? "border-wood bg-cream shadow-warm"
+          : "border-beige bg-cream/60"
+      }`}
+    >
+      {item.recommended && (
+        <span className="absolute -top-2 left-5 mono text-[10px] uppercase tracking-widest bg-wood text-cream px-2 py-0.5 rounded-full">
+          권장
+        </span>
+      )}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-beige-soft border border-beige flex items-center justify-center text-charcoal flex-shrink-0">
+            <Icon name={icon} size={18} />
+          </div>
+          <div className="min-w-0">
+            <div className="serif text-[18px] text-charcoal leading-tight">
+              {item.label}
+            </div>
+            <div className="mono text-[11px] text-paper-muted mt-1">
+              {item.sub}
+            </div>
+            <div className="mono text-[11px] text-paper-muted mt-0.5">
+              {item.size}
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="btn-primary inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-medium flex-shrink-0"
+        >
+          <Icon name="download" size={14} />
+          받기
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DetectedBanner() {
+  return (
+    <div className="rounded-2xl border border-beige bg-beige-soft/60 p-5 flex items-center gap-4 mb-6">
+      <div className="w-10 h-10 rounded-full bg-cream border border-beige flex items-center justify-center text-wood">
+        <Icon name="sparkle" size={18} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-charcoal">
+          현재 환경에 가장 잘 맞는 버전:{" "}
+          <strong className="serif text-[16px]">macOS · Apple Silicon</strong>
+        </p>
+        <p className="mono text-[11px] text-paper-muted mt-0.5">
+          자동 감지 · 다른 OS는 아래에서 선택할 수 있어요
+        </p>
+      </div>
+      <button
+        type="button"
+        className="btn-primary px-4 py-2 rounded-full text-[13px] font-medium hidden sm:inline-flex items-center gap-1.5"
+      >
+        <Icon name="download" size={14} />
+        바로 받기
+      </button>
+    </div>
+  );
+}
+
+function Meta({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="mono text-[10px] uppercase tracking-widest text-paper-muted">
+        {label}
+      </div>
+      <div className="text-[15px] text-charcoal mt-1">{value}</div>
+    </div>
+  );
+}
+
+function Requirements() {
+  return (
+    <section className="max-w-6xl mx-auto px-5 sm:px-8 py-16">
+      <div className="mono text-[11px] tracking-widest uppercase text-wood mb-3">
+        ── 시스템 요구사항
+      </div>
+      <h2 className="serif text-[30px] sm:text-[38px] text-charcoal mb-10">
+        부드러운 3D 책장을 위한 환경.
+      </h2>
+      <div className="grid md:grid-cols-2 gap-5">
+        {REQUIREMENTS.map((c) => (
+          <div
+            key={c.os}
+            className="rounded-3xl border border-beige bg-cream/70 overflow-hidden"
+          >
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-beige bg-beige-soft/50">
+              <Icon name={c.icon} size={18} className="text-charcoal" />
+              <span className="serif text-[20px] text-charcoal">{c.os}</span>
+            </div>
+            <table className="w-full">
+              <tbody>
+                {c.rows.map(([k, v], i) => (
+                  <tr
+                    key={k}
+                    className={
+                      i < c.rows.length - 1 ? "border-b border-beige/60" : ""
+                    }
+                  >
+                    <td className="py-3.5 px-6 mono text-[11px] uppercase tracking-widest text-paper-muted w-2/5 align-top">
+                      {k}
+                    </td>
+                    <td className="py-3.5 px-6 text-[14px] text-charcoal">
+                      {v}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function InstallSteps() {
+  return (
+    <section className="max-w-6xl mx-auto px-5 sm:px-8 py-16">
+      <div className="mono text-[11px] tracking-widest uppercase text-wood mb-3">
+        ── 설치 가이드
+      </div>
+      <h2 className="serif text-[30px] sm:text-[38px] text-charcoal mb-10">
+        3단계면 충분해요.
+      </h2>
+      <div className="grid md:grid-cols-3 gap-5">
+        {STEPS.map((s) => (
+          <div
+            key={s.n}
+            className="rounded-2xl bg-cream border border-beige p-6 shadow-warm-sm"
+          >
+            <div className="flex items-baseline justify-between mb-5">
+              <span className="serif text-[40px] text-wood leading-none">
+                {s.n}
+              </span>
+              <span className="mono text-[10px] uppercase tracking-widest text-paper-muted">
+                Step
+              </span>
+            </div>
+            <h3 className="serif text-[20px] text-charcoal">{s.title}</h3>
+            <p className="text-[14px] text-charcoal/75 leading-[1.7] mt-3">
+              {s.body}
+            </p>
+            <div className="mt-5 pt-4 border-t border-beige/70">
+              <div className="mono text-[11px] text-paper-muted/90 truncate">
+                $ {s.mono}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MobileNudge() {
+  return (
+    <section className="max-w-6xl mx-auto px-5 sm:px-8 py-16">
+      <div className="rounded-3xl border border-beige paper-dark p-8 sm:p-10 grid md:grid-cols-12 gap-6 items-center">
+        <div className="md:col-span-8">
+          <h3 className="serif text-[26px] sm:text-[32px] text-charcoal leading-tight">
+            모바일에서 시작하면 더 자연스러워요.
+          </h3>
+          <p className="mt-3 text-[14px] text-charcoal/75 leading-[1.7] max-w-xl">
+            DotShelf는 모바일이 메인이에요. 책을 카메라로 스캔해 추가하고,
+            데스크탑에서 정돈하는 흐름을 권장합니다.
+          </p>
+        </div>
+        <div className="md:col-span-4 flex flex-col gap-3">
+          <a
+            href="#"
+            className="btn-secondary flex items-center justify-between gap-3 px-5 py-3.5 rounded-2xl"
+          >
+            <span className="flex items-center gap-3">
+              <Icon name="apple" size={18} className="text-charcoal" />
+              <span>
+                <span className="block mono text-[10px] text-paper-muted uppercase tracking-widest">
+                  Download on the
+                </span>
+                <span className="serif text-[16px] text-charcoal">
+                  App Store
+                </span>
+              </span>
+            </span>
+            <Icon name="arrow-right" size={16} />
+          </a>
+          <a
+            href="#"
+            className="btn-secondary flex items-center justify-between gap-3 px-5 py-3.5 rounded-2xl"
+          >
+            <span className="flex items-center gap-3">
+              <span className="serif italic text-[15px] text-charcoal w-[18px] text-center">
+                G
+              </span>
+              <span>
+                <span className="block mono text-[10px] text-paper-muted uppercase tracking-widest">
+                  Get it on
+                </span>
+                <span className="serif text-[16px] text-charcoal">
+                  Google Play
+                </span>
+              </span>
+            </span>
+            <Icon name="arrow-right" size={16} />
+          </a>
+        </div>
+      </div>
     </section>
   );
 }
