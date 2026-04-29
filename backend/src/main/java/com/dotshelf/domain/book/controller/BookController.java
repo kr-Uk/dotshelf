@@ -28,6 +28,8 @@ import com.dotshelf.domain.book.service.BookService;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
 import com.dotshelf.global.common.ToggleResponse;
+import com.dotshelf.global.error.CustomException;
+import com.dotshelf.global.error.ErrorCode;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -55,13 +57,21 @@ public class BookController {
 
     @Operation(
             summary = "도서 카탈로그 (비인증)",
-            description = "Unity 클라이언트의 책장 초기 로딩용 비인증 엔드포인트. category=RANKING 일 때 ranking 결과를 반환한다."
+            description = "Unity 클라이언트의 책장 초기 로딩용 비인증 엔드포인트. "
+                    + "현재 지원 카테고리는 RANKING 만이며 미지정 시에도 RANKING 으로 동작한다. "
+                    + "그 외 값이 들어오면 400 INVALID_INPUT 으로 응답한다."
     )
     @GetMapping("/books")
     public ApiResponse<BookListResponse> books(
             @RequestParam(required = false) String category,
             @RequestParam(defaultValue = "48") int limit
     ) {
+        if (category != null && !"RANKING".equalsIgnoreCase(category)) {
+            throw new CustomException(
+                    ErrorCode.INVALID_INPUT,
+                    "category 는 RANKING 만 지원합니다. 받은 값: " + category
+            );
+        }
         return ApiResponse.success(
                 bookService.getRanking(null, null, null, null, "POPULAR", limit)
         );

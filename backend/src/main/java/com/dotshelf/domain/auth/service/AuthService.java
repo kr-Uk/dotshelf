@@ -105,8 +105,17 @@ public class AuthService {
         GuestMigrationImport migrationImport = guestMigrationImportRepository.save(GuestMigrationImport.builder()
                 .userId(currentUserId)
                 .payload(request.payload())
+                .guestSessionId(normalizeSessionId(request.guestSessionId()))
                 .build());
         return new IdResponse(migrationImport.getId());
+    }
+
+    private String normalizeSessionId(String sessionId) {
+        if (sessionId == null) {
+            return null;
+        }
+        String trimmed = sessionId.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private User createUserAndSocialAccount(SocialUserInfo socialUser) {
