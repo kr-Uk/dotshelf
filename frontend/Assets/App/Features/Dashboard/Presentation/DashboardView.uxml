@@ -1,0 +1,77 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <ui:VisualElement name="dashboard-root" class="dashboard-root">
+
+        <ui:VisualElement name="dashboard-body" class="dashboard-body">
+
+            <ui:VisualElement name="left-pane" class="dashboard-pane left-pane">
+
+                <ui:VisualElement name="profile-header" class="profile-header">
+                    <ui:VisualElement name="profile-image" class="profile-image" />
+                    <ui:VisualElement name="profile-text-block" class="profile-text-block">
+                        <ui:VisualElement name="profile-top-row" class="profile-top-row">
+                            <ui:Label name="nickname-label" class="nickname-label" text="Loading..." />
+                            <ui:VisualElement name="follow-stats" class="follow-stats">
+                                <ui:Label name="following-count-label" class="follow-stat" text="팔로잉 0" />
+                                <ui:Label name="followers-count-label" class="follow-stat" text="팔로워 0" />
+                            </ui:VisualElement>
+                            <ui:Button name="like-toggle-button" class="like-toggle-button" text="♡" />
+                        </ui:VisualElement>
+                        <ui:Label name="introduction-label" class="introduction-label" text="" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:VisualElement name="stats-row" class="stats-row">
+                    <ui:VisualElement name="stat-likes" class="stat-cell">
+                        <ui:Label class="stat-icon" text="♥" />
+                        <ui:Label name="like-count-label" class="stat-value" text="0" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="stat-books" class="stat-cell">
+                        <ui:Label class="stat-icon" text="📚" />
+                        <ui:Label name="book-count-label" class="stat-value" text="0" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="stat-records" class="stat-cell">
+                        <ui:Label class="stat-icon" text="✎" />
+                        <ui:Label name="record-count-label" class="stat-value" text="0" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:VisualElement name="recent-books-section" class="section-card">
+                    <ui:VisualElement class="section-card-header">
+                        <ui:Label class="section-title" text="최근 추가한 책" />
+                        <ui:Button name="recent-books-view-all-button" class="section-view-all" text="전체보기" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="recent-books-carousel" class="carousel-row" />
+                </ui:VisualElement>
+
+                <ui:VisualElement name="recent-records-section" class="section-card">
+                    <ui:VisualElement class="section-card-header">
+                        <ui:Label class="section-title" text="최근 작성한 독후감" />
+                        <ui:Button name="recent-records-view-all-button" class="section-view-all" text="전체보기" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="recent-records-carousel" class="carousel-row" />
+                </ui:VisualElement>
+
+            </ui:VisualElement>
+
+            <ui:VisualElement name="right-pane" class="dashboard-pane right-pane">
+                <ui:VisualElement name="guestbook-header" class="guestbook-header">
+                    <ui:Label name="guestbook-count-label" class="guestbook-count" text="방명록 0" />
+                    <ui:Label name="weekly-visitor-label" class="weekly-visitor" text="이번주 방문자 0" />
+                </ui:VisualElement>
+                <ui:VisualElement name="guestbook-grid" class="guestbook-grid" />
+                <ui:VisualElement name="guestbook-pagination" class="guestbook-pagination">
+                    <ui:Button name="guestbook-prev-button" class="page-button" text="◀" />
+                    <ui:Label name="guestbook-page-label" class="page-label" text="1" />
+                    <ui:Button name="guestbook-next-button" class="page-button" text="▶" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+        </ui:VisualElement>
+
+        <ui:VisualElement name="bottom-action-bar" class="bottom-action-bar">
+            <ui:Button name="edit-dashboard-button" class="bottom-action-button edit-button" text="편집" />
+            <ui:Button name="write-guestbook-button" class="bottom-action-button write-button" text="방명록 작성" />
+        </ui:VisualElement>
+
+    </ui:VisualElement>
+</ui:UXML>
