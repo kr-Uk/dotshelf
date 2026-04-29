@@ -68,6 +68,15 @@ namespace App.Bootstrap
         // perceptibly shorten travel range.
         private const float BlockerMargin = 0.02f;
 
+        // Layers ignored by the drag-time blocker collision check. UI / camera
+        // raycast layers and similar non-physical helpers shouldn't block
+        // movement even if a stray collider lands on one of them. The mask is
+        // computed once at static init: every layer except those listed here.
+        private static readonly int BlockerLayerMask = ~(
+            (1 << 5)  /* UI */    |
+            (1 << 2)  /* Ignore Raycast */
+        );
+
         // Grid + snap defaults. The grid origin is anchored to the playable
         // area's bottom-left corner — i.e. the wall-floor intersection, set
         // at runtime by RefreshPlayableBounds — so the first grid line is
@@ -230,6 +239,13 @@ namespace App.Bootstrap
         private float playableMaxX = FloorMaxX;
         private float playableMinZ = FloorMinZ;
         private float playableMaxZ = FloorMaxZ;
+
+        // Snapshot of original localScale values for any scene decoration we
+        // canonicalize at edit-mode entry, keyed by Transform reference. On
+        // ExitEditMode we restore these values so a designer's manual scale
+        // tweak in the inspector isn't permanently overwritten by the edit
+        // mode normalization.
+        private readonly Dictionary<Transform, Vector3> savedDecorationScales = new Dictionary<Transform, Vector3>();
 
         // Edit-mode viewport state. We don't capture into a RenderTexture or spawn
         // any auxiliary cameras — instead we shrink the existing main camera's
@@ -1256,15 +1272,17 @@ namespace App.Bootstrap
                 }
             }
 
-            // Pass 2 — position-based fallback for the back wall, ALWAYS
-            // run (not gated on Pass 1 missing it) so that even if the
-            // strip names ever change we still find the closest visible
-            // wall face. Renderers under the bookshelf subtree
+            // Pass 2 — position-based fallback for the back wall. Only runs
+            // if Pass 1's name-based detection found nothing, otherwise the
+            // size-and-position heuristic could match an unrelated thin tall
+            // decoration (frame, poster, lamp shade) sitting in the back
+            // half and overwrite Pass 1's correct backWallFrontZ with a
+            // smaller value. Renderers under the bookshelf subtree
             // (BookshelfTurntableRoot / BookshelfRoot) are excluded so the
             // bookshelf itself can't be mistaken for the back wall — the
             // user explicitly does NOT want bookshelf bounds as the
             // boundary reference.
-            if (floorFound)
+            if (floorFound && float.IsPositiveInfinity(backWallFrontZ))
             {
                 var floorCenterZ = (floorBounds.min.z + floorBounds.max.z) * 0.5f;
                 for (var i = 0; i < rootObjects.Length; i++)
@@ -1394,6 +1412,10 @@ namespace App.Bootstrap
             {
                 editOverlayRoot.SetActive(false);
             }
+
+            // Restore any localScale we overrode when entering edit mode so a
+            // designer's manual inspector tweak survives an edit session.
+            RestoreSavedDecorationScales();
 
             // Re-enable bookshelf / notebook / guestbook focus and shortcut handling
             // for the normal main view.
@@ -1567,6 +1589,25 @@ namespace App.Bootstrap
                 go.transform.position = ClampToFloorBounds(go.transform.position, go.transform.position, spawnBounds);
             }
 
+            // Step 3c — reject spawn positions that overlap an existing
+            // blocker (wall, fixture, previously placed decoration). Without
+            // this the auto-stagger can drop the new item directly inside
+            // the bookshelf or another decoration; later drag-time checks
+            // would then treat that overlap as "already overlapping" and
+            // continue letting the player tunnel through the same blocker.
+            // Search a few minor-grid rings around the staggered position
+            // for a clear cell; if none is available, abort the spawn.
+            if (rendererBounds.HasValue)
+            {
+                var spawnBounds = ComputeRendererBounds(go) ?? rendererBounds.Value;
+                if (!TryFindClearSpawnPosition(go, spawnBounds, go.transform.position, out var clearPosition))
+                {
+                    Destroy(go);
+                    return;
+                }
+                go.transform.position = clearPosition;
+            }
+
             // Step 4 — collider for raycast selection. .glb / .fbx imports don't
             // ship with one, so we synthesize a BoxCollider matching the post-
             // scale renderer bounds. Skipped if the prefab already brings a
@@ -1582,6 +1623,96 @@ namespace App.Bootstrap
             }
 
             go.AddComponent<DecorationItemMarker>();
+        }
+
+        // Search outward from `desiredPosition` in MinorGridStep rings for a
+        // position whose spawn-bounds-shaped OverlapBox doesn't collide with
+        // any existing blocker. Returns true with the first clear position;
+        // false if every ring up to MaxSpawnSearchRings is blocked, in which
+        // case the caller should refuse the spawn entirely. The candidate
+        // position is also re-checked against ClampToFloorBounds and
+        // InventorySpawnMaxZ so we don't relocate the item outside the
+        // playable area or into the bookshelf alcove.
+        private bool TryFindClearSpawnPosition(GameObject self, Bounds spawnBounds, Vector3 desiredPosition, out Vector3 result)
+        {
+            const int MaxSpawnSearchRings = 20;
+
+            if (!IsSpawnPositionBlockedAt(self, spawnBounds, desiredPosition))
+            {
+                result = desiredPosition;
+                return true;
+            }
+
+            for (var ring = 1; ring <= MaxSpawnSearchRings; ring++)
+            {
+                for (var ox = -ring; ox <= ring; ox++)
+                {
+                    for (var oz = -ring; oz <= ring; oz++)
+                    {
+                        // Walk the perimeter of the current ring only.
+                        if (Mathf.Abs(ox) != ring && Mathf.Abs(oz) != ring) continue;
+
+                        var candidate = desiredPosition + new Vector3(ox * MinorGridStep, 0f, oz * MinorGridStep);
+
+                        // Stay inside the playable footprint and the spawn-Z
+                        // cap. ClampToFloorBounds returns the same position
+                        // when the candidate is already inside, otherwise it
+                        // pushes it back in — we treat that "pushed back"
+                        // case as out-of-bounds and skip.
+                        var clamped = ClampToFloorBounds(candidate, candidate, spawnBounds);
+                        if (Mathf.Abs(clamped.x - candidate.x) > 1e-4f || Mathf.Abs(clamped.z - candidate.z) > 1e-4f) continue;
+                        if (clamped.z + spawnBounds.extents.z > InventorySpawnMaxZ) continue;
+
+                        if (!IsSpawnPositionBlockedAt(self, spawnBounds, clamped))
+                        {
+                            result = clamped;
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            result = desiredPosition;
+            return false;
+        }
+
+        // True if a box the size of `spawnBounds` placed at `position` (in
+        // world space) overlaps any non-self, non-shell, non-trigger
+        // collider. Mirrors the half-extent shaping used by the drag-time
+        // collision check so spawn and drag agree on what "blocked" means.
+        private static bool IsSpawnPositionBlockedAt(GameObject self, Bounds spawnBounds, Vector3 position)
+        {
+            var halfExtents = new Vector3(
+                Mathf.Max(0.005f, spawnBounds.extents.x),
+                Mathf.Max(0.005f, spawnBounds.extents.y - BlockerMargin),
+                Mathf.Max(0.005f, spawnBounds.extents.z));
+
+            // spawnBounds.center is at the object's *current* world position.
+            // Translate the center by the candidate-vs-current delta to query
+            // the box at the candidate position.
+            var sampleCenter = spawnBounds.center + (position - self.transform.position);
+            var hits = Physics.OverlapBox(sampleCenter, halfExtents, Quaternion.identity, BlockerLayerMask, QueryTriggerInteraction.Ignore);
+            for (var i = 0; i < hits.Length; i++)
+            {
+                var hit = hits[i];
+                if (hit == null || hit.isTrigger) continue;
+                if (self != null && hit.transform.IsChildOf(self.transform)) continue;
+
+                var isShell = false;
+                for (var t = hit.transform; t != null; t = t.parent)
+                {
+                    if (RoomShellExactNames.Contains(t.name))
+                    {
+                        isShell = true;
+                        break;
+                    }
+                }
+                if (isShell) continue;
+
+                return true;
+            }
+
+            return false;
         }
 
         // Uniform-scale newly spawned decoration so its largest XZ extent matches
@@ -1655,13 +1786,22 @@ namespace App.Bootstrap
             }
         }
 
-        private static void ApplyCanonicalScaleByName(Transform t)
+        // Snapshot the original localScale into savedDecorationScales BEFORE
+        // overwriting, so RestoreSavedDecorationScales (called on ExitEditMode)
+        // can put back whatever the designer had configured. Without this
+        // snapshot a manual inspector tweak would be silently lost on first
+        // edit-mode entry.
+        private void ApplyCanonicalScaleByName(Transform t)
         {
             if (t == null) return;
             if (CanonicalScaleByGameObjectName.TryGetValue(t.gameObject.name, out var scale))
             {
                 if (t.localScale != scale)
                 {
+                    if (!savedDecorationScales.ContainsKey(t))
+                    {
+                        savedDecorationScales[t] = t.localScale;
+                    }
                     t.localScale = scale;
                 }
             }
@@ -1669,6 +1809,25 @@ namespace App.Bootstrap
             {
                 ApplyCanonicalScaleByName(t.GetChild(i));
             }
+        }
+
+        // Reverse of NormalizeExistingDecorationScales. Walks the snapshot
+        // map and writes each saved localScale back, then clears the map so
+        // a fresh edit-mode entry starts from whatever the scene currently
+        // has (which may have been edited externally between sessions).
+        private void RestoreSavedDecorationScales()
+        {
+            if (savedDecorationScales.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var entry in savedDecorationScales)
+            {
+                if (entry.Key == null) continue;
+                entry.Key.localScale = entry.Value;
+            }
+            savedDecorationScales.Clear();
         }
 
         // Walk the active scene and ensure every blocker-eligible GameObject
@@ -1707,7 +1866,10 @@ namespace App.Bootstrap
             if (draggingObject != null && t.IsChildOf(draggingObject.transform)) return;
 
             var renderer = go.GetComponent<Renderer>();
-            if (renderer != null && renderer.enabled && go.GetComponent<Collider>() == null)
+            // Check for any collider in the subtree (not just on this exact
+            // GameObject) so we don't stack a redundant BoxCollider on top of
+            // a nested-mesh prefab that already ships with one.
+            if (renderer != null && renderer.enabled && go.GetComponentInChildren<Collider>() == null)
             {
                 FitBoxColliderToRenderer(go.AddComponent<BoxCollider>(), renderer);
             }
@@ -1718,20 +1880,23 @@ namespace App.Bootstrap
             }
         }
 
-        // Set BoxCollider center / size so its world AABB matches the
-        // renderer's current world bounds. Works for unrotated cubes (size
-        // collapses to (1,1,1)) and for arbitrary imported meshes (size is
-        // the world AABB divided by lossyScale).
+        // Size a BoxCollider against its renderer so the collider OBB tracks
+        // the mesh exactly — including for rotated transforms.
+        // `Renderer.localBounds` is the mesh AABB in the renderer's local
+        // frame, so it's invariant under transform rotation. Scaling the
+        // collider's size from the local AABB (and using the local center
+        // verbatim) gives an OBB that rotates correctly with the transform.
+        // Using `Renderer.bounds` (world-space AABB) instead would inflate
+        // the collider whenever the transform is rotated off-axis.
         private static void FitBoxColliderToRenderer(BoxCollider bc, Renderer renderer)
         {
             if (bc == null || renderer == null) return;
-            var wb = renderer.bounds;
-            var lossy = bc.transform.lossyScale;
-            bc.center = bc.transform.InverseTransformPoint(wb.center);
+            var lb = renderer.localBounds;
+            bc.center = lb.center;
             bc.size = new Vector3(
-                wb.size.x / Mathf.Max(0.001f, Mathf.Abs(lossy.x)),
-                wb.size.y / Mathf.Max(0.001f, Mathf.Abs(lossy.y)),
-                wb.size.z / Mathf.Max(0.001f, Mathf.Abs(lossy.z)));
+                Mathf.Abs(lb.size.x),
+                Mathf.Abs(lb.size.y),
+                Mathf.Abs(lb.size.z));
             bc.isTrigger = false;
         }
 
@@ -2108,7 +2273,7 @@ namespace App.Bootstrap
             {
                 var t = (float)step / sampleCount;
                 var sampleCenter = currentBounds.center + delta * t;
-                var hits = Physics.OverlapBox(sampleCenter, halfExtents, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
+                var hits = Physics.OverlapBox(sampleCenter, halfExtents, Quaternion.identity, BlockerLayerMask, QueryTriggerInteraction.Ignore);
 
                 for (var i = 0; i < hits.Length; i++)
                 {

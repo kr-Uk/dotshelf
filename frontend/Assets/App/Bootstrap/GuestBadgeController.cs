@@ -364,13 +364,15 @@ namespace App.Bootstrap
         {
             SetModalVisible(false);
 
-            // TODO: Once the server-side migration endpoint exists, hook the
-            // upload of the local guest snapshot (room layout + book metadata
-            // + decoration items) into the post-login flow so the freshly
-            // linked account inherits the player's guest progress. The player
-            // first needs an account, so we go straight to the login screen
-            // and let the regular login / signup flow take it from there.
+            // Both modal options route to the login screen because the
+            // player needs an account before the migration / discard flow
+            // can run. The intent is stored separately from IsGuest so the
+            // post-login handler can branch on which choice the player
+            // made — without this, both buttons would be visually distinct
+            // but functionally identical, and any future migration vs.
+            // discard logic would have no way to tell them apart.
             SessionState.MarkGuest();
+            SessionState.SetPendingIntent(GuestPostLoginIntent.MigrateGuestData);
             SceneFlowManager.GoToLogin();
         }
 
@@ -378,12 +380,8 @@ namespace App.Bootstrap
         {
             SetModalVisible(false);
 
-            // TODO: Once the account-link UX exists, mark the guest snapshot
-            // as discarded and reset to an empty room on the new account.
-            // For now, the player needs to authenticate first, so redirect
-            // to the login screen and let the regular login / signup flow
-            // proceed; the discard step will hook in there later.
             SessionState.MarkGuest();
+            SessionState.SetPendingIntent(GuestPostLoginIntent.DiscardAndStartFresh);
             SceneFlowManager.GoToLogin();
         }
 

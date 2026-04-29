@@ -196,10 +196,15 @@ namespace App.Bootstrap
             SetMessage(signupMessageLabel, string.Empty);
             LogDebug($"[LoginDemo] Signup validated for '{email}'.");
 
+            // OnboardingScreenController is paired with this controller on the
+            // LoginScene's prefab (LoginSceneController.Awake guarantees it),
+            // so we never AddComponent at runtime — that would lose any
+            // [SerializeField] values configured in the inspector.
             var onboardingController = GetComponent<OnboardingScreenController>();
             if (onboardingController == null)
             {
-                onboardingController = gameObject.AddComponent<OnboardingScreenController>();
+                Debug.LogError("[LoginDemo] OnboardingScreenController is missing from LoginScene prefab — signup cannot start onboarding.");
+                return;
             }
 
             onboardingController.InitializeIfNeeded();
@@ -239,10 +244,18 @@ namespace App.Bootstrap
             // Guest entry skips onboarding step 1 (profile) and step 3 (bookshelf
             // focus). The user only chooses a theme on step 2; the existing
             // completion modal then handles transition to the main scene.
+            //
+            // The OnboardingScreenController is paired with this controller on
+            // the LoginScene's prefab (LoginSceneController.Awake guarantees
+            // it), so GetComponent always returns a real instance. We don't
+            // AddComponent at runtime — that would lose any [SerializeField]
+            // values the inspector configured and hide the dependency from
+            // anyone reading the prefab.
             var onboardingController = GetComponent<OnboardingScreenController>();
             if (onboardingController == null)
             {
-                onboardingController = gameObject.AddComponent<OnboardingScreenController>();
+                Debug.LogError("[LoginDemo] OnboardingScreenController is missing from LoginScene prefab — guest entry cannot start.");
+                return;
             }
 
             onboardingController.InitializeIfNeeded();
