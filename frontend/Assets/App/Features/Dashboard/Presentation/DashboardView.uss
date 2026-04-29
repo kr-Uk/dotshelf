@@ -176,9 +176,9 @@
 }
 
 .carousel-scroll {
-    height: 150px;
-    min-height: 150px;
-    max-height: 150px;
+    height: 170px;
+    min-height: 170px;
+    max-height: 170px;
 }
 
 .carousel-scroll .unity-scroll-view__content-container {
