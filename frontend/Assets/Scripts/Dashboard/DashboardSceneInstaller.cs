@@ -23,7 +23,10 @@ namespace Dotshelf.Scripts.Dashboard
         [SerializeField] private DashboardScreenController controller;
         [SerializeField] private RepositoryMode mode = RepositoryMode.Mock;
 
-        [Tooltip("Api 모드일 때 사용할 NotebookApiClient. 비워두면 APIManager.Instance를 사용한다.")]
+        [Tooltip("Api 모드일 때 사용할 APIManager. 비워두면 APIManager.Instance(scene 안 다른 곳에 attach된 것)를 사용한다.")]
+        [SerializeField] private APIManager apiManager;
+
+        [Tooltip("Awake 시점에 선택된 Mode를 콘솔에 출력한다.")]
         [SerializeField] private bool logChosenMode = true;
 
         private void Awake()
@@ -59,7 +62,14 @@ namespace Dotshelf.Scripts.Dashboard
             }
             else
             {
-                NotebookApiClient client = new NotebookApiClient(null);
+                APIManager resolvedApiManager = apiManager != null ? apiManager : APIManager.Instance;
+                if (resolvedApiManager == null)
+                {
+                    Debug.LogError("[DashboardSceneInstaller] Api 모드인데 APIManager Instance를 찾을 수 없음. " +
+                            "scene에 APIManager GameObject가 있는지 확인하거나 SerializeField로 명시 주입.");
+                    return;
+                }
+                NotebookApiClient client = new NotebookApiClient(resolvedApiManager);
                 dashboardRepo = new ApiDashboardRepository(client);
                 guestbookRepo = new ApiGuestbookRepository(client);
                 spaceSettingsRepo = new ApiSpaceSettingsRepository(client);

@@ -170,6 +170,48 @@ namespace Dotshelf.Scripts.Dashboard
         private int currentGuestbookPageIndex;
         private string nextGuestbookCursor;
 
+        // ====== Cached event handlers (Awake에서 1회 인스턴스화 → WireEvents/UnwireEvents가 정확한 인스턴스로 register/unregister) ======
+
+        // 람다 핸들러 (인자 캡처 있어 메서드 그룹으로 못 쓰는 것)
+        private Action onOwnedBooksLoadMoreHandler;
+        private Action onOwnedBooksSortAddedDescHandler;
+        private Action onOwnedBooksSortPublishedDescHandler;
+        private Action onOwnedBooksSortPublishedAscHandler;
+        private Action onOwnedBooksSortTitleHandler;
+        private Action onReadingRecordsLoadMoreHandler;
+        private Action onRecordsSortLatestHandler;
+        private Action onRecordsSortOldestHandler;
+        private Action onRecordsSortMostLikedHandler;
+        private Action onRecordsSortMostViewedHandler;
+        private Action onRecordsSortMostCommentedHandler;
+        private Action onVisibilityPublicHandler;
+        private Action onVisibilityFollowersHandler;
+        private Action onVisibilityPrivateHandler;
+
+        // EventCallback 핸들러 (RegisterCallback / RegisterValueChangedCallback 용)
+        private EventCallback<ClickEvent> onUserListModalBackdropHandler;
+        private EventCallback<ChangeEvent<string>> onWriteContentChangedHandler;
+        private EventCallback<ChangeEvent<string>> onReplyContentChangedHandler;
+        private EventCallback<ChangeEvent<bool>> onAllowAllToggleHandler;
+
+        // OnEnable cycle 중복 등록 방지
+        private bool eventsWired;
+
+        // 캐러셀 드래그 스크롤 — 캐러셀별 state + 핸들러 보관
+        private sealed class CarouselDragState
+        {
+            public bool dragging;
+            public Vector2 startMouse;
+            public Vector2 startOffset;
+            public int activePointerId = -1;
+            public EventCallback<PointerDownEvent> onDown;
+            public EventCallback<PointerMoveEvent> onMove;
+            public EventCallback<PointerUpEvent> onUp;
+        }
+
+        private readonly CarouselDragState booksCarouselDrag = new CarouselDragState();
+        private readonly CarouselDragState recordsCarouselDrag = new CarouselDragState();
+
         private void Awake()
         {
             document = GetComponent<UIDocument>();
@@ -177,7 +219,41 @@ namespace Dotshelf.Scripts.Dashboard
             {
                 document.visualTreeAsset = viewAsset;
             }
+            CacheEventHandlers();
             // Mock 빌드는 OnEnable에서 fallback으로. Configure가 호출됐으면 그걸 우선.
+        }
+
+        private void CacheEventHandlers()
+        {
+            onOwnedBooksLoadMoreHandler = () => LoadOwnedBooksPage(replace: false);
+            onOwnedBooksSortAddedDescHandler = () => OnOwnedBooksSortChanged(OwnedBookSort.AddedDesc);
+            onOwnedBooksSortPublishedDescHandler = () => OnOwnedBooksSortChanged(OwnedBookSort.PublishedDesc);
+            onOwnedBooksSortPublishedAscHandler = () => OnOwnedBooksSortChanged(OwnedBookSort.PublishedAsc);
+            onOwnedBooksSortTitleHandler = () => OnOwnedBooksSortChanged(OwnedBookSort.TitleAsc);
+
+            onReadingRecordsLoadMoreHandler = () => LoadReadingRecordsPage(replace: false);
+            onRecordsSortLatestHandler = () => OnRecordsSortChanged(ReadingRecordSort.Latest);
+            onRecordsSortOldestHandler = () => OnRecordsSortChanged(ReadingRecordSort.Oldest);
+            onRecordsSortMostLikedHandler = () => OnRecordsSortChanged(ReadingRecordSort.MostLiked);
+            onRecordsSortMostViewedHandler = () => OnRecordsSortChanged(ReadingRecordSort.MostViewed);
+            onRecordsSortMostCommentedHandler = () => OnRecordsSortChanged(ReadingRecordSort.MostCommented);
+
+            onVisibilityPublicHandler = () => OnVisibilitySelected(VisibilityScope.Public);
+            onVisibilityFollowersHandler = () => OnVisibilitySelected(VisibilityScope.FollowersOnly);
+            onVisibilityPrivateHandler = () => OnVisibilitySelected(VisibilityScope.Private);
+
+            onUserListModalBackdropHandler = _ => CloseUserListModal();
+            onWriteContentChangedHandler = evt =>
+            {
+                int len = evt.newValue?.Length ?? 0;
+                if (guestbookWriteCounter != null) guestbookWriteCounter.text = $"{len} / 30";
+            };
+            onReplyContentChangedHandler = evt =>
+            {
+                int len = evt.newValue?.Length ?? 0;
+                if (guestbookDetailReplyCounter != null) guestbookDetailReplyCounter.text = $"{len} / 30";
+            };
+            onAllowAllToggleHandler = evt => RefreshWhitelistPickerSelections(evt.newValue);
         }
 
         public void Configure(
@@ -212,14 +288,22 @@ namespace Dotshelf.Scripts.Dashboard
             }
 
             QueryUI();
-            WireEvents();
+            if (!eventsWired)
+            {
+                WireEvents();
+                eventsWired = true;
+            }
             ApplyViewMode();
             LoadInitialData();
         }
 
         private void OnDisable()
         {
-            UnwireEvents();
+            if (eventsWired)
+            {
+                UnwireEvents();
+                eventsWired = false;
+            }
         }
 
         private void BuildMockUseCases()
@@ -348,108 +432,62 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void WireEvents()
         {
-            if (likeToggleButton != null)
-            {
-                likeToggleButton.clicked += OnLikeButtonClicked;
-            }
-            if (guestbookPrevButton != null)
-            {
-                guestbookPrevButton.clicked += OnGuestbookPrev;
-            }
-            if (guestbookNextButton != null)
-            {
-                guestbookNextButton.clicked += OnGuestbookNext;
-            }
-            if (editButton != null)
-            {
-                editButton.clicked += OnEditClicked;
-            }
-            if (writeGuestbookButton != null)
-            {
-                writeGuestbookButton.clicked += OnWriteGuestbookClicked;
-            }
-            if (booksCarousel != null)
-            {
-                EnableHorizontalDragScroll(booksCarousel);
-            }
-            if (recordsCarousel != null)
-            {
-                EnableHorizontalDragScroll(recordsCarousel);
-            }
-            if (followersCountButton != null)
-            {
-                followersCountButton.clicked += OnFollowersClicked;
-            }
-            if (followingCountButton != null)
-            {
-                followingCountButton.clicked += OnFollowingsClicked;
-            }
-            if (userListModalCloseButton != null)
-            {
-                userListModalCloseButton.clicked += CloseUserListModal;
-            }
-            if (userListModalBackdrop != null)
-            {
-                userListModalBackdrop.RegisterCallback<ClickEvent>(_ => CloseUserListModal());
-            }
+            // 메서드 그룹 (인자 없는 무인자) — clicked += MethodName 패턴
+            if (likeToggleButton != null) likeToggleButton.clicked += OnLikeButtonClicked;
+            if (guestbookPrevButton != null) guestbookPrevButton.clicked += OnGuestbookPrev;
+            if (guestbookNextButton != null) guestbookNextButton.clicked += OnGuestbookNext;
+            if (editButton != null) editButton.clicked += OnEditClicked;
+            if (writeGuestbookButton != null) writeGuestbookButton.clicked += OnWriteGuestbookClicked;
+            if (followersCountButton != null) followersCountButton.clicked += OnFollowersClicked;
+            if (followingCountButton != null) followingCountButton.clicked += OnFollowingsClicked;
+            if (userListModalCloseButton != null) userListModalCloseButton.clicked += CloseUserListModal;
+            if (userListModalBackdrop != null) userListModalBackdrop.RegisterCallback(onUserListModalBackdropHandler);
 
             if (guestbookWriteCloseButton != null) guestbookWriteCloseButton.clicked += CloseGuestbookWriteModal;
             if (guestbookWriteCancelButton != null) guestbookWriteCancelButton.clicked += CloseGuestbookWriteModal;
             if (guestbookWriteSubmitButton != null) guestbookWriteSubmitButton.clicked += OnSubmitGuestbookWrite;
-            if (guestbookWriteContent != null)
-            {
-                guestbookWriteContent.RegisterValueChangedCallback(evt =>
-                {
-                    int len = evt.newValue?.Length ?? 0;
-                    if (guestbookWriteCounter != null) guestbookWriteCounter.text = $"{len} / 30";
-                });
-            }
+            if (guestbookWriteContent != null) guestbookWriteContent.RegisterValueChangedCallback(onWriteContentChangedHandler);
 
             if (guestbookDetailCloseButton != null) guestbookDetailCloseButton.clicked += CloseGuestbookDetailModal;
             if (guestbookDetailReportButton != null) guestbookDetailReportButton.clicked += OnReportGuestbook;
             if (guestbookDetailDeleteButton != null) guestbookDetailDeleteButton.clicked += OnDeleteGuestbook;
             if (guestbookDetailReplyDeleteButton != null) guestbookDetailReplyDeleteButton.clicked += OnDeleteGuestbookReply;
             if (guestbookDetailReplySubmitButton != null) guestbookDetailReplySubmitButton.clicked += OnSubmitGuestbookReply;
-            if (guestbookDetailReplyInput != null)
-            {
-                guestbookDetailReplyInput.RegisterValueChangedCallback(evt =>
-                {
-                    int len = evt.newValue?.Length ?? 0;
-                    if (guestbookDetailReplyCounter != null) guestbookDetailReplyCounter.text = $"{len} / 30";
-                });
-            }
+            if (guestbookDetailReplyInput != null) guestbookDetailReplyInput.RegisterValueChangedCallback(onReplyContentChangedHandler);
 
             if (ownedBooksViewAllButton != null) ownedBooksViewAllButton.clicked += OpenOwnedBooksModal;
             if (ownedBooksCloseButton != null) ownedBooksCloseButton.clicked += CloseOwnedBooksModal;
-            if (ownedBooksLoadMoreButton != null) ownedBooksLoadMoreButton.clicked += () => LoadOwnedBooksPage(replace: false);
-            if (ownedBooksSortAddedDescButton != null) ownedBooksSortAddedDescButton.clicked += () => OnOwnedBooksSortChanged(OwnedBookSort.AddedDesc);
-            if (ownedBooksSortPublishedDescButton != null) ownedBooksSortPublishedDescButton.clicked += () => OnOwnedBooksSortChanged(OwnedBookSort.PublishedDesc);
-            if (ownedBooksSortPublishedAscButton != null) ownedBooksSortPublishedAscButton.clicked += () => OnOwnedBooksSortChanged(OwnedBookSort.PublishedAsc);
-            if (ownedBooksSortTitleButton != null) ownedBooksSortTitleButton.clicked += () => OnOwnedBooksSortChanged(OwnedBookSort.TitleAsc);
+            if (ownedBooksLoadMoreButton != null) ownedBooksLoadMoreButton.clicked += onOwnedBooksLoadMoreHandler;
+            if (ownedBooksSortAddedDescButton != null) ownedBooksSortAddedDescButton.clicked += onOwnedBooksSortAddedDescHandler;
+            if (ownedBooksSortPublishedDescButton != null) ownedBooksSortPublishedDescButton.clicked += onOwnedBooksSortPublishedDescHandler;
+            if (ownedBooksSortPublishedAscButton != null) ownedBooksSortPublishedAscButton.clicked += onOwnedBooksSortPublishedAscHandler;
+            if (ownedBooksSortTitleButton != null) ownedBooksSortTitleButton.clicked += onOwnedBooksSortTitleHandler;
 
             if (readingRecordsViewAllButton != null) readingRecordsViewAllButton.clicked += OpenReadingRecordsModal;
             if (readingRecordsCloseButton != null) readingRecordsCloseButton.clicked += CloseReadingRecordsModal;
-            if (readingRecordsLoadMoreButton != null) readingRecordsLoadMoreButton.clicked += () => LoadReadingRecordsPage(replace: false);
-            if (recordsSortLatestButton != null) recordsSortLatestButton.clicked += () => OnRecordsSortChanged(ReadingRecordSort.Latest);
-            if (recordsSortOldestButton != null) recordsSortOldestButton.clicked += () => OnRecordsSortChanged(ReadingRecordSort.Oldest);
-            if (recordsSortMostLikedButton != null) recordsSortMostLikedButton.clicked += () => OnRecordsSortChanged(ReadingRecordSort.MostLiked);
-            if (recordsSortMostViewedButton != null) recordsSortMostViewedButton.clicked += () => OnRecordsSortChanged(ReadingRecordSort.MostViewed);
-            if (recordsSortMostCommentedButton != null) recordsSortMostCommentedButton.clicked += () => OnRecordsSortChanged(ReadingRecordSort.MostCommented);
+            if (readingRecordsLoadMoreButton != null) readingRecordsLoadMoreButton.clicked += onReadingRecordsLoadMoreHandler;
+            if (recordsSortLatestButton != null) recordsSortLatestButton.clicked += onRecordsSortLatestHandler;
+            if (recordsSortOldestButton != null) recordsSortOldestButton.clicked += onRecordsSortOldestHandler;
+            if (recordsSortMostLikedButton != null) recordsSortMostLikedButton.clicked += onRecordsSortMostLikedHandler;
+            if (recordsSortMostViewedButton != null) recordsSortMostViewedButton.clicked += onRecordsSortMostViewedHandler;
+            if (recordsSortMostCommentedButton != null) recordsSortMostCommentedButton.clicked += onRecordsSortMostCommentedHandler;
 
             if (dashboardEditCloseButton != null) dashboardEditCloseButton.clicked += CloseDashboardEditModal;
             if (dashboardEditCancelButton != null) dashboardEditCancelButton.clicked += CloseDashboardEditModal;
             if (dashboardEditSubmitButton != null) dashboardEditSubmitButton.clicked += OnSubmitDashboardEdit;
-            if (visibilityPublicButton != null) visibilityPublicButton.clicked += () => OnVisibilitySelected(VisibilityScope.Public);
-            if (visibilityFollowersButton != null) visibilityFollowersButton.clicked += () => OnVisibilitySelected(VisibilityScope.FollowersOnly);
-            if (visibilityPrivateButton != null) visibilityPrivateButton.clicked += () => OnVisibilitySelected(VisibilityScope.Private);
-            if (dashboardEditAllowAllToggle != null)
-            {
-                dashboardEditAllowAllToggle.RegisterValueChangedCallback(evt => RefreshWhitelistPickerSelections(evt.newValue));
-            }
+            if (visibilityPublicButton != null) visibilityPublicButton.clicked += onVisibilityPublicHandler;
+            if (visibilityFollowersButton != null) visibilityFollowersButton.clicked += onVisibilityFollowersHandler;
+            if (visibilityPrivateButton != null) visibilityPrivateButton.clicked += onVisibilityPrivateHandler;
+            if (dashboardEditAllowAllToggle != null) dashboardEditAllowAllToggle.RegisterValueChangedCallback(onAllowAllToggleHandler);
+
+            // 캐러셀 드래그 스크롤
+            if (booksCarousel != null) InstallCarouselDrag(booksCarousel, booksCarouselDrag);
+            if (recordsCarousel != null) InstallCarouselDrag(recordsCarousel, recordsCarouselDrag);
         }
 
         private void UnwireEvents()
         {
+            // WireEvents의 거울. 등록한 핸들러 인스턴스 그대로 사용해서 정확히 unregister.
             if (likeToggleButton != null) likeToggleButton.clicked -= OnLikeButtonClicked;
             if (guestbookPrevButton != null) guestbookPrevButton.clicked -= OnGuestbookPrev;
             if (guestbookNextButton != null) guestbookNextButton.clicked -= OnGuestbookNext;
@@ -458,6 +496,51 @@ namespace Dotshelf.Scripts.Dashboard
             if (followersCountButton != null) followersCountButton.clicked -= OnFollowersClicked;
             if (followingCountButton != null) followingCountButton.clicked -= OnFollowingsClicked;
             if (userListModalCloseButton != null) userListModalCloseButton.clicked -= CloseUserListModal;
+            if (userListModalBackdrop != null && onUserListModalBackdropHandler != null)
+                userListModalBackdrop.UnregisterCallback(onUserListModalBackdropHandler);
+
+            if (guestbookWriteCloseButton != null) guestbookWriteCloseButton.clicked -= CloseGuestbookWriteModal;
+            if (guestbookWriteCancelButton != null) guestbookWriteCancelButton.clicked -= CloseGuestbookWriteModal;
+            if (guestbookWriteSubmitButton != null) guestbookWriteSubmitButton.clicked -= OnSubmitGuestbookWrite;
+            if (guestbookWriteContent != null && onWriteContentChangedHandler != null)
+                guestbookWriteContent.UnregisterValueChangedCallback(onWriteContentChangedHandler);
+
+            if (guestbookDetailCloseButton != null) guestbookDetailCloseButton.clicked -= CloseGuestbookDetailModal;
+            if (guestbookDetailReportButton != null) guestbookDetailReportButton.clicked -= OnReportGuestbook;
+            if (guestbookDetailDeleteButton != null) guestbookDetailDeleteButton.clicked -= OnDeleteGuestbook;
+            if (guestbookDetailReplyDeleteButton != null) guestbookDetailReplyDeleteButton.clicked -= OnDeleteGuestbookReply;
+            if (guestbookDetailReplySubmitButton != null) guestbookDetailReplySubmitButton.clicked -= OnSubmitGuestbookReply;
+            if (guestbookDetailReplyInput != null && onReplyContentChangedHandler != null)
+                guestbookDetailReplyInput.UnregisterValueChangedCallback(onReplyContentChangedHandler);
+
+            if (ownedBooksViewAllButton != null) ownedBooksViewAllButton.clicked -= OpenOwnedBooksModal;
+            if (ownedBooksCloseButton != null) ownedBooksCloseButton.clicked -= CloseOwnedBooksModal;
+            if (ownedBooksLoadMoreButton != null) ownedBooksLoadMoreButton.clicked -= onOwnedBooksLoadMoreHandler;
+            if (ownedBooksSortAddedDescButton != null) ownedBooksSortAddedDescButton.clicked -= onOwnedBooksSortAddedDescHandler;
+            if (ownedBooksSortPublishedDescButton != null) ownedBooksSortPublishedDescButton.clicked -= onOwnedBooksSortPublishedDescHandler;
+            if (ownedBooksSortPublishedAscButton != null) ownedBooksSortPublishedAscButton.clicked -= onOwnedBooksSortPublishedAscHandler;
+            if (ownedBooksSortTitleButton != null) ownedBooksSortTitleButton.clicked -= onOwnedBooksSortTitleHandler;
+
+            if (readingRecordsViewAllButton != null) readingRecordsViewAllButton.clicked -= OpenReadingRecordsModal;
+            if (readingRecordsCloseButton != null) readingRecordsCloseButton.clicked -= CloseReadingRecordsModal;
+            if (readingRecordsLoadMoreButton != null) readingRecordsLoadMoreButton.clicked -= onReadingRecordsLoadMoreHandler;
+            if (recordsSortLatestButton != null) recordsSortLatestButton.clicked -= onRecordsSortLatestHandler;
+            if (recordsSortOldestButton != null) recordsSortOldestButton.clicked -= onRecordsSortOldestHandler;
+            if (recordsSortMostLikedButton != null) recordsSortMostLikedButton.clicked -= onRecordsSortMostLikedHandler;
+            if (recordsSortMostViewedButton != null) recordsSortMostViewedButton.clicked -= onRecordsSortMostViewedHandler;
+            if (recordsSortMostCommentedButton != null) recordsSortMostCommentedButton.clicked -= onRecordsSortMostCommentedHandler;
+
+            if (dashboardEditCloseButton != null) dashboardEditCloseButton.clicked -= CloseDashboardEditModal;
+            if (dashboardEditCancelButton != null) dashboardEditCancelButton.clicked -= CloseDashboardEditModal;
+            if (dashboardEditSubmitButton != null) dashboardEditSubmitButton.clicked -= OnSubmitDashboardEdit;
+            if (visibilityPublicButton != null) visibilityPublicButton.clicked -= onVisibilityPublicHandler;
+            if (visibilityFollowersButton != null) visibilityFollowersButton.clicked -= onVisibilityFollowersHandler;
+            if (visibilityPrivateButton != null) visibilityPrivateButton.clicked -= onVisibilityPrivateHandler;
+            if (dashboardEditAllowAllToggle != null && onAllowAllToggleHandler != null)
+                dashboardEditAllowAllToggle.UnregisterValueChangedCallback(onAllowAllToggleHandler);
+
+            if (booksCarousel != null) UninstallCarouselDrag(booksCarousel, booksCarouselDrag);
+            if (recordsCarousel != null) UninstallCarouselDrag(recordsCarousel, recordsCarouselDrag);
         }
 
         private void ApplyViewMode()
@@ -1103,43 +1186,58 @@ namespace Dotshelf.Scripts.Dashboard
         private void OnSubmitDashboardEdit()
         {
             if (currentSnapshot == null || dashboardEditSubmitButton == null) return;
+            if (dashboardEditAllowAllToggle == null)
+            {
+                // 토글이 query에서 누락된 비정상 상황 — 보수적으로 submit 차단 (security default-deny).
+                Debug.LogError("[Dashboard] allowAllToggle 미연결. 화이트리스트 fallback 안전 차단.");
+                return;
+            }
             dashboardEditSubmitButton.SetEnabled(false);
 
             string newIntroduction = dashboardEditIntroduction?.value ?? string.Empty;
             VisibilityScope newVisibility = selectedVisibility;
-            bool allowAll = dashboardEditAllowAllToggle?.value ?? true;
+            bool allowAll = dashboardEditAllowAllToggle.value;
             List<long> allowedIds = new List<long>(selectedAllowedAssetIds);
             GuestbookPostItWhitelist whitelist = new GuestbookPostItWhitelist(allowAll, allowedIds);
 
-            int remaining = 3;
-            DashboardApiError firstError = null;
-
-            void Done()
-            {
-                remaining--;
-                if (remaining > 0) return;
-                dashboardEditSubmitButton.SetEnabled(true);
-                if (firstError != null)
+            // sequential 실행 — 첫 실패에서 stop, 어디까지 저장됐는지 명시.
+            updateIntroductionUseCase.Execute(newIntroduction,
+                onSuccess: () =>
                 {
-                    OnError(firstError);
-                    return;
-                }
-                CloseDashboardEditModal();
-                if (viewMode == ViewMode.Mine)
-                {
-                    loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
-                }
-            }
+                    updateGuestbookVisibilityUseCase.Execute(newVisibility,
+                        onSuccess: () =>
+                        {
+                            updateWhitelistUseCase.Execute(whitelist,
+                                onSuccess: () => FinishDashboardEdit(null, savedIntroduction: true, savedVisibility: true, savedWhitelist: true),
+                                onError: err => FinishDashboardEdit(err, savedIntroduction: true, savedVisibility: true, savedWhitelist: false));
+                        },
+                        onError: err => FinishDashboardEdit(err, savedIntroduction: true, savedVisibility: false, savedWhitelist: false));
+                },
+                onError: err => FinishDashboardEdit(err, savedIntroduction: false, savedVisibility: false, savedWhitelist: false));
+        }
 
-            void Capture(DashboardApiError err)
+        private void FinishDashboardEdit(DashboardApiError error, bool savedIntroduction, bool savedVisibility, bool savedWhitelist)
+        {
+            if (dashboardEditSubmitButton != null) dashboardEditSubmitButton.SetEnabled(true);
+            if (error != null)
             {
-                if (firstError == null) firstError = err;
-                Done();
+                Debug.LogWarning($"[Dashboard] Edit 부분 실패: intro={savedIntroduction}, visibility={savedVisibility}, whitelist={savedWhitelist}. 에러={error.Code} {error.Message}");
+                OnError(error);
+                if (savedIntroduction || savedVisibility)
+                {
+                    // 부분 성공 시에도 화면은 갱신 (사용자가 어디까지 저장됐는지 다시 열어 확인 가능).
+                    if (viewMode == ViewMode.Mine)
+                    {
+                        loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
+                    }
+                }
+                return;
             }
-
-            updateIntroductionUseCase.Execute(newIntroduction, Done, Capture);
-            updateGuestbookVisibilityUseCase.Execute(newVisibility, Done, Capture);
-            updateWhitelistUseCase.Execute(whitelist, Done, Capture);
+            CloseDashboardEditModal();
+            if (viewMode == ViewMode.Mine)
+            {
+                loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
+            }
         }
 
         private void OnWriteGuestbookClicked()
@@ -1234,7 +1332,47 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void OnError(DashboardApiError error)
         {
-            Debug.LogWarning($"[Dashboard] API error: {error?.Code} {error?.Message}");
+            string userMessage = FormatErrorMessage(error);
+            Debug.LogWarning($"[Dashboard] API error: code={error?.Code} server={error?.Message} → user={userMessage}");
+            // TODO: 실제 사용자 노출은 토스트/배너 컴포넌트 합류 후 — 현재는 콘솔 로그.
+        }
+
+        /// <summary>
+        /// 에러 코드 → 사용자 노출 메시지 중앙 매핑 (MR #59 revbot 의견).
+        /// 새 코드는 backend ErrorCode.java와 UseCase 클라이언트 검증 코드를 모두 포함.
+        /// </summary>
+        private static string FormatErrorMessage(DashboardApiError error)
+        {
+            if (error == null) return "알 수 없는 오류가 발생했습니다.";
+            switch (error.Code)
+            {
+                // ==== Backend ErrorCode (사용자 앱 v1.0 갱신) ====
+                case "G001": return "방명록을 찾을 수 없습니다.";
+                case "G002": return "답장을 찾을 수 없습니다.";
+                case "G003": return "답장에 대한 권한이 없습니다.";
+                case "G004": return "이미 답장이 작성된 방명록입니다.";
+                case "G005": return "공간 주인이 허용하지 않은 포스트잇 스타일입니다.";
+                case "S003": return "공간을 찾을 수 없습니다.";
+                case "S004": return "본인 공간엔 방명록을 작성할 수 없습니다.";
+                case "S005": return "차단된 사용자의 공간엔 접근할 수 없습니다.";
+                case "F001": return "팔로우 관계를 찾을 수 없습니다.";
+                case "F002": return "차단된 사용자와 관련된 요청은 허용되지 않습니다.";
+                case "U001": return "사용자를 찾을 수 없습니다.";
+                case "U003": return "이미 사용 중인 닉네임입니다.";
+                case "A001": return "로그인이 필요합니다.";
+                case "A002": return "권한이 없습니다.";
+                case "A003": return "세션이 만료됐습니다. 다시 로그인하세요.";
+                // ==== Client UseCase 검증 코드 ====
+                case "GUESTBOOK_CONTENT_BLANK": return "방명록 내용을 입력하세요.";
+                case "GUESTBOOK_CONTENT_TOO_LONG": return "방명록은 30자 이하로 작성하세요.";
+                case "GUESTBOOK_POSTIT_REQUIRED": return "포스트잇 스타일을 선택하세요.";
+                case "GUESTBOOK_REPLY_CONTENT_BLANK": return "답장 내용을 입력하세요.";
+                case "GUESTBOOK_REPLY_CONTENT_TOO_LONG": return "답장은 30자 이하로 작성하세요.";
+                case "GUESTBOOK_REPLY_POSTIT_REQUIRED": return "답장 포스트잇 스타일을 선택하세요.";
+                case "INTRODUCTION_TOO_LONG": return "한 줄 소개는 255자 이하로 입력하세요.";
+                case "REPORT_REASON_REQUIRED": return "신고 사유를 선택하세요.";
+                default: return string.IsNullOrEmpty(error.Message) ? "오류가 발생했습니다." : error.Message;
+            }
         }
 
         // ===== 팔로워/팔로잉 모달 =====
@@ -1621,63 +1759,63 @@ namespace Dotshelf.Scripts.Dashboard
         // ===== 캐러셀 드래그 스크롤 =====
 
         /// <summary>
-        /// ScrollView 영역에 마우스 좌클릭+드래그로 가로 스크롤할 수 있게 한다.
-        /// 5px 이상 이동해야 드래그로 인식 → 짧은 클릭은 자식 셀로 전달.
+        /// ScrollView에 마우스 좌클릭+드래그 가로 스크롤 핸들러 설치. 5px 이상 이동해야 드래그.
+        /// state에 핸들러 인스턴스를 보관해서 UninstallCarouselDrag로 정확히 unregister 가능.
         /// </summary>
-        private static void EnableHorizontalDragScroll(ScrollView scrollView)
+        private static void InstallCarouselDrag(ScrollView scrollView, CarouselDragState state)
         {
             const float dragThreshold = 5f;
-            bool dragging = false;
-            Vector2 startMouse = Vector2.zero;
-            Vector2 startOffset = Vector2.zero;
-            int activePointerId = -1;
 
-            scrollView.RegisterCallback<PointerDownEvent>(evt =>
+            // 처음 한 번만 핸들러 인스턴스화 (Awake에선 capture할 ScrollView를 모르므로 여기서)
+            if (state.onDown == null)
             {
-                if (evt.button != 0)
+                state.onDown = evt =>
                 {
-                    return;
-                }
-                dragging = false;
-                startMouse = evt.position;
-                startOffset = scrollView.scrollOffset;
-                activePointerId = evt.pointerId;
-            });
+                    if (evt.button != 0) return;
+                    state.dragging = false;
+                    state.startMouse = evt.position;
+                    state.startOffset = scrollView.scrollOffset;
+                    state.activePointerId = evt.pointerId;
+                };
+                state.onMove = evt =>
+                {
+                    if (state.activePointerId != evt.pointerId) return;
+                    Vector2 current = evt.position;
+                    float dx = current.x - state.startMouse.x;
+                    if (!state.dragging && Mathf.Abs(dx) >= dragThreshold)
+                    {
+                        state.dragging = true;
+                        scrollView.CapturePointer(evt.pointerId);
+                    }
+                    if (state.dragging)
+                    {
+                        scrollView.scrollOffset = new Vector2(state.startOffset.x - dx, state.startOffset.y);
+                        evt.StopPropagation();
+                    }
+                };
+                state.onUp = evt =>
+                {
+                    if (state.activePointerId != evt.pointerId) return;
+                    if (state.dragging && scrollView.HasPointerCapture(evt.pointerId))
+                    {
+                        scrollView.ReleasePointer(evt.pointerId);
+                        evt.StopPropagation();
+                    }
+                    state.activePointerId = -1;
+                    state.dragging = false;
+                };
+            }
 
-            scrollView.RegisterCallback<PointerMoveEvent>(evt =>
-            {
-                if (activePointerId != evt.pointerId)
-                {
-                    return;
-                }
-                Vector2 current = evt.position;
-                float dx = current.x - startMouse.x;
-                if (!dragging && Mathf.Abs(dx) >= dragThreshold)
-                {
-                    dragging = true;
-                    scrollView.CapturePointer(evt.pointerId);
-                }
-                if (dragging)
-                {
-                    scrollView.scrollOffset = new Vector2(startOffset.x - dx, startOffset.y);
-                    evt.StopPropagation();
-                }
-            });
+            scrollView.RegisterCallback(state.onDown);
+            scrollView.RegisterCallback(state.onMove);
+            scrollView.RegisterCallback(state.onUp);
+        }
 
-            scrollView.RegisterCallback<PointerUpEvent>(evt =>
-            {
-                if (activePointerId != evt.pointerId)
-                {
-                    return;
-                }
-                if (dragging && scrollView.HasPointerCapture(evt.pointerId))
-                {
-                    scrollView.ReleasePointer(evt.pointerId);
-                    evt.StopPropagation();
-                }
-                activePointerId = -1;
-                dragging = false;
-            });
+        private static void UninstallCarouselDrag(ScrollView scrollView, CarouselDragState state)
+        {
+            if (state.onDown != null) scrollView.UnregisterCallback(state.onDown);
+            if (state.onMove != null) scrollView.UnregisterCallback(state.onMove);
+            if (state.onUp != null) scrollView.UnregisterCallback(state.onUp);
         }
     }
 }
