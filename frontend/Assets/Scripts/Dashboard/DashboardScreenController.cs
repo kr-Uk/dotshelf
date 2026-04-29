@@ -58,8 +58,8 @@ namespace Dotshelf.Scripts.Dashboard
         private Label guestbookPageLabel;
         private Button editButton;
         private Button writeGuestbookButton;
-        private VisualElement booksCarousel;
-        private VisualElement recordsCarousel;
+        private ScrollView booksCarousel;
+        private ScrollView recordsCarousel;
 
         private DashboardSnapshot currentSnapshot;
         private bool likeRequestInFlight;
@@ -134,8 +134,8 @@ namespace Dotshelf.Scripts.Dashboard
             guestbookPageLabel = root.Q<Label>("guestbook-page-label");
             editButton = root.Q<Button>("edit-dashboard-button");
             writeGuestbookButton = root.Q<Button>("write-guestbook-button");
-            booksCarousel = root.Q<VisualElement>("recent-books-carousel");
-            recordsCarousel = root.Q<VisualElement>("recent-records-carousel");
+            booksCarousel = root.Q<ScrollView>("recent-books-carousel");
+            recordsCarousel = root.Q<ScrollView>("recent-records-carousel");
         }
 
         private void WireEvents()
@@ -159,6 +159,14 @@ namespace Dotshelf.Scripts.Dashboard
             if (writeGuestbookButton != null)
             {
                 writeGuestbookButton.clicked += OnWriteGuestbookClicked;
+            }
+            if (booksCarousel != null)
+            {
+                EnableHorizontalDragScroll(booksCarousel);
+            }
+            if (recordsCarousel != null)
+            {
+                EnableHorizontalDragScroll(recordsCarousel);
             }
         }
 
@@ -555,6 +563,66 @@ namespace Dotshelf.Scripts.Dashboard
         private void OnError(DashboardApiError error)
         {
             Debug.LogWarning($"[Dashboard] API error: {error?.Code} {error?.Message}");
+        }
+
+        /// <summary>
+        /// ScrollView 영역에 마우스 좌클릭+드래그로 가로 스크롤할 수 있게 한다.
+        /// 5px 이상 이동해야 드래그로 인식 → 짧은 클릭은 자식 셀로 전달.
+        /// </summary>
+        private static void EnableHorizontalDragScroll(ScrollView scrollView)
+        {
+            const float dragThreshold = 5f;
+            bool dragging = false;
+            Vector2 startMouse = Vector2.zero;
+            Vector2 startOffset = Vector2.zero;
+            int activePointerId = -1;
+
+            scrollView.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                if (evt.button != 0)
+                {
+                    return;
+                }
+                dragging = false;
+                startMouse = evt.position;
+                startOffset = scrollView.scrollOffset;
+                activePointerId = evt.pointerId;
+            });
+
+            scrollView.RegisterCallback<PointerMoveEvent>(evt =>
+            {
+                if (activePointerId != evt.pointerId)
+                {
+                    return;
+                }
+                Vector2 current = evt.position;
+                float dx = current.x - startMouse.x;
+                if (!dragging && Mathf.Abs(dx) >= dragThreshold)
+                {
+                    dragging = true;
+                    scrollView.CapturePointer(evt.pointerId);
+                }
+                if (dragging)
+                {
+                    scrollView.scrollOffset = new Vector2(startOffset.x - dx, startOffset.y);
+                    evt.StopPropagation();
+                }
+            });
+
+            scrollView.RegisterCallback<PointerUpEvent>(evt =>
+            {
+                if (activePointerId != evt.pointerId)
+                {
+                    return;
+                }
+                if (dragging && scrollView.HasPointerCapture(evt.pointerId))
+                {
+                    scrollView.ReleasePointer(evt.pointerId);
+                    evt.StopPropagation();
+                }
+                activePointerId = -1;
+                dragging = false;
+            });
         }
     }
 }
