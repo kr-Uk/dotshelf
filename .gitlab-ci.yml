@@ -35,6 +35,22 @@ variables:
         - web/service-web/**/*
         - .gitlab-ci.yml
         - .ci/**/*
+        # service 컨테이너 정의(compose) 또는 root vhost(nginx) 만 변경된 경우에도
+        # service-web:deploy 가 돌아 컨테이너 재빌드/기동까지 가도록 rule 에 포함.
+        - backend/deploy/app/docker-compose.yml
+        - backend/deploy/prod/nginx/conf.d/**/*
+
+.admin-web-rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      changes:
+        - web/admin-web/**/*
+        - .gitlab-ci.yml
+        - .ci/**/*
+        # admin 컨테이너 정의(compose) 또는 admin vhost(nginx) 만 변경된 경우에도
+        # admin-web:deploy 가 돌아 컨테이너 재빌드/기동까지 가도록 rule 에 포함.
+        - backend/deploy/app/docker-compose.yml
+        - backend/deploy/prod/nginx/conf.d/**/*
 
 cache:
   key:
@@ -137,3 +153,35 @@ service-web:deploy:
   environment:
     name: service-web
     url: https://dotshelf.digital
+
+admin-web:deploy:
+  extends: .admin-web-rules
+  stage: deploy
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache openssh-client rsync curl bash
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+    - chmod 600 ~/.ssh/id_ed25519
+    - printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+    - chmod 600 ~/.ssh/known_hosts
+  script:
+    - APP_COMPOSE=backend/deploy/app/docker-compose.yml
+    - NGINX_CONFD=backend/deploy/prod/nginx/conf.d
+    - ADMIN_WEB_TARGET=$EC2_DEPLOY_PATH/admin-web
+    - echo "Deploying admin-web to app=$EC2_HOST, nginx config to prod=$PROD_HOST"
+    # --- Stage Next 소스 to SSAFY ---
+    - ssh "$EC2_USER@$EC2_HOST" "mkdir -p $ADMIN_WEB_TARGET"
+    - rsync -az --delete --exclude=node_modules --exclude=.next --exclude=.git "web/admin-web/" "$EC2_USER@$EC2_HOST:$ADMIN_WEB_TARGET/"
+    - rsync -az "$APP_COMPOSE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/docker-compose.yml"
+    # --- Stage Nginx config to prod (admin.dotshelf.digital vhost 반영) ---
+    - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $PROD_DEPLOY_PATH/nginx/conf.d"
+    - rsync -az --delete --exclude='upstream.active.conf' --exclude='README.md' --exclude='*.bak*' "$NGINX_CONFD/" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/"
+    # --- 컨테이너 재빌드 + 기동 ---
+    - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose up -d --build admin-web && docker image prune -f"
+    - ssh "$PROD_USER@$PROD_HOST" "sudo docker exec dotshelf-nginx nginx -t && sudo docker exec dotshelf-nginx nginx -s reload"
+    # --- Health 검증: 컨테이너 직접만(Cloudflare Access 가 공개 URL 을 막아 외부 curl 은 302 로그인 페이지 반환) ---
+    - ssh "$EC2_USER@$EC2_HOST" "curl -fsS http://100.74.2.103:3001/ -o /dev/null"
+  environment:
+    name: admin-web
+    url: https://admin.dotshelf.digital

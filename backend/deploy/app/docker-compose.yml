@@ -108,6 +108,28 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ---------- admin-web (운영자 백오피스, admin.dotshelf.digital) ----------
+  # Next.js 16 standalone 컨테이너. prod Nginx 가 Tailscale 로 :3001 로 프록시.
+  # Cloudflare Access(Zero Trust) 가 도메인 앞단에서 Google OAuth 인증을 강제 — 컨테이너 자체 인증 코드 없음 가정.
+  admin-web:
+    build:
+      context: ./admin-web
+      dockerfile: Dockerfile
+    image: dotshelf/admin-web:latest
+    container_name: dotshelf-admin-web
+    restart: unless-stopped
+    ports:
+      - "100.74.2.103:3001:3000"
+    mem_limit: 512m
+    environment:
+      NODE_ENV: production
+      TZ: Asia/Seoul
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # ---------- Promtail (로그 수집기) ----------
   # dotshelf-api-* 컨테이너의 Docker json-file 로그를 수집해 prod 호스트 Loki(100.86.247.88:3100) 로 push.
   # - api-blue / api-green 과 독립 life-cycle (배포 시 재시작 안 됨)
