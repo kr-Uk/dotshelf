@@ -586,6 +586,15 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            // (v1.0 dashboard 통합 — MR #61) Guestbook focus 중이고 외부 dashboard prefab 모드면
+            // UI Toolkit이 자체 입력 처리. BookshelfExperienceManager의 자체 raycast가
+            // dashboard 안 클릭을 가로채지 않도록 input 처리 skip.
+            // (focus 진입/이탈은 다른 hit area 또는 ESC로 처리됨.)
+            if (useExternalDashboardPanel && CurrentFocusArea == ExperienceFocusArea.Guestbook)
+            {
+                return;
+            }
+
             if (HandleFocusShortcuts())
             {
                 return;
