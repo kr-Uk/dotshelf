@@ -1,7 +1,30 @@
 import type { Metadata } from "next";
+import { DM_Sans, JetBrains_Mono, Spectral } from "next/font/google";
 import "./globals.css";
 
 import { GlobalProviders } from "@/providers/app-providers";
+
+const spectral = Spectral({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-spectral",
+  display: "swap",
+});
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-dm-sans",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-jetbrains-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Dotshelf — 책으로 짓는 작은 책장",
@@ -15,7 +38,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className="h-full antialiased">
+    <html
+      lang="ko"
+      className={`h-full antialiased ${spectral.variable} ${dmSans.variable} ${jetbrainsMono.variable}`}
+    >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <GlobalProviders>{children}</GlobalProviders>
       </body>

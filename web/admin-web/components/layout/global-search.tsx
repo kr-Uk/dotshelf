@@ -25,6 +25,8 @@ const TYPE_TONE: Record<SearchHit["type"], string> = {
   review: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
   report:
     "bg-destructive/10 text-destructive dark:bg-destructive/20 dark:text-red-300",
+  space: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
+  book: "bg-stone-100 text-stone-700 dark:bg-stone-500/15 dark:text-stone-300",
 };
 
 export function GlobalSearch() {

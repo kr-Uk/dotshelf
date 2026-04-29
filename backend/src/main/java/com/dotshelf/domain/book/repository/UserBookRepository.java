@@ -1,5 +1,6 @@
 package com.dotshelf.domain.book.repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,4 +19,6 @@ public interface UserBookRepository extends JpaRepository<UserBook, Long> {
     List<UserBook> findByUserIdAndStorageStatusNotOrderByAddedAtDesc(Long userId, String storageStatus);
 
     long countByUserIdAndStorageStatusNot(Long userId, String storageStatus);
+
+    long countByCreatedAtBetween(Instant start, Instant end);
 }

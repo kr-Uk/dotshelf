@@ -12,8 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: aabe67210a5d4b02b30355a29261af59, type: 3}
   m_Name: AppApiConfig
   m_EditorClassIdentifier:
-  useMockApi: 0
-  mockBaseUrl: http://localhost:3001
+  apiMode: 0
   devBaseUrl: https://api.dotshelf.digital
   prodBaseUrl: https://api.dotshelf.digital
   healthCheckPath: /health

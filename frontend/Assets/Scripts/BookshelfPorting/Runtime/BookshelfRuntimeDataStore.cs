@@ -15,11 +15,14 @@ namespace BookshelfPorting.Runtime
         public string description;
         public ReadingStatus readingStatus = ReadingStatus.Unread;
         public float ownerRating;
+        public float averageRating;
+        public int totalLikeCount;
         public bool isLiked;
         public bool isPaidCoverOwned;
         public bool isDecoration;
         public bool isRead;
         public bool isPublic = true;
+        public VisibilityScope reportVisibility = VisibilityScope.Public;
         public string memoPreview;
         public string reportTitle;
         public string reportBody;
@@ -138,11 +141,14 @@ namespace BookshelfPorting.Runtime
                     description = meta.description,
                     readingStatus = meta.readingStatus,
                     ownerRating = meta.ownerRating,
+                    averageRating = meta.averageRating,
+                    totalLikeCount = meta.totalLikeCount,
                     isLiked = meta.isLiked,
                     isPaidCoverOwned = meta.isPaidCoverOwned,
                     isDecoration = meta.isDecoration,
                     isRead = meta.isRead,
                     isPublic = meta.isPublic,
+                    reportVisibility = meta.reportVisibility,
                     memoPreview = meta.memoPreview,
                     reportTitle = meta.reportTitle,
                     reportBody = meta.reportBody,
@@ -229,11 +235,14 @@ namespace BookshelfPorting.Runtime
                 description = string.IsNullOrWhiteSpace(book.description) ? "책 설명이 없습니다." : book.description,
                 readingStatus = book.readingStatus,
                 ownerRating = book.ownerRating,
+                averageRating = ResolveDefaultAverageRating(book),
+                totalLikeCount = ResolveDefaultLikeCount(book),
                 isLiked = book.isLiked,
                 isPaidCoverOwned = book.isPaidCoverOwned,
                 isDecoration = book.isDecoration,
                 isRead = book.isRead,
-                isPublic = book.isPublic,
+                isPublic = book.reportVisibility == VisibilityScope.Public,
+                reportVisibility = book.reportVisibility,
                 memoPreview = ResolveMemoPreview(book),
                 reportTitle = string.Empty,
                 reportBody = string.Empty,
@@ -256,11 +265,13 @@ namespace BookshelfPorting.Runtime
             book.memoPreview = meta.memoPreview;
             book.readingStatus = meta.readingStatus;
             book.ownerRating = Mathf.Clamp(meta.ownerRating, 0f, 5f);
-            book.rating = Mathf.RoundToInt(book.ownerRating);
+            book.rating = Mathf.RoundToInt(Mathf.Clamp(meta.averageRating > 0f ? meta.averageRating : book.ownerRating, 0f, 5f));
             book.isLiked = meta.isLiked;
             book.isPaidCoverOwned = meta.isPaidCoverOwned;
             book.isDecoration = meta.isDecoration;
             book.isRead = meta.readingStatus == ReadingStatus.Read;
+            meta.isPublic = meta.reportVisibility == VisibilityScope.Public;
+            book.reportVisibility = meta.reportVisibility;
             book.isPublic = meta.isPublic;
             if (string.IsNullOrWhiteSpace(meta.memoPreview) && !string.IsNullOrWhiteSpace(meta.reportBody))
             {
@@ -293,6 +304,36 @@ namespace BookshelfPorting.Runtime
             }
 
             return "No review yet. Add a short note in the next step.";
+        }
+
+        private static float ResolveDefaultAverageRating(BookEntity book)
+        {
+            if (book == null)
+            {
+                return 0f;
+            }
+
+            if (book.rating > 0)
+            {
+                return Mathf.Clamp(book.rating, 0f, 5f);
+            }
+
+            if (book.ownerRating > 0f)
+            {
+                return Mathf.Clamp(book.ownerRating, 0f, 5f);
+            }
+
+            return 0f;
+        }
+
+        private static int ResolveDefaultLikeCount(BookEntity book)
+        {
+            if (book == null)
+            {
+                return 0;
+            }
+
+            return 0;
         }
     }
 }

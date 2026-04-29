@@ -202,7 +202,9 @@ namespace BookshelfPorting.Runtime
         private bool openDashboardOnShow;
         private NotebookToolkitController toolkitController;
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
+        private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
+        private NotebookRuntimeUseCase notebookRuntimeUseCase;
 
         public Transform ScreenTransform { get; private set; }
 
@@ -219,9 +221,11 @@ namespace BookshelfPorting.Runtime
             UnityAction onCloseScreenSaver = null,
             UnityAction onOpenScreenSaver = null,
             SearchNotebookBooksUseCase searchUseCase = null,
-            AddNotebookBookToShelfUseCase addUseCase = null)
+            LoadNotebookMarketBooksUseCase loadMarketUseCase = null,
+            AddNotebookBookToShelfUseCase addUseCase = null,
+            NotebookRuntimeUseCase runtimeUseCase = null)
         {
-            ConfigureNotebookBookUseCases(searchUseCase, addUseCase);
+            ConfigureNotebookBookUseCases(searchUseCase, loadMarketUseCase, addUseCase, runtimeUseCase);
             ScreenTransform = screenTransform;
             EnsureCanvases(screenTransform, eventCamera, onCloseDashboard, onCloseScreenSaver, onOpenScreenSaver);
             ApplyPresentationMode();
@@ -231,11 +235,19 @@ namespace BookshelfPorting.Runtime
 
         public void ConfigureNotebookBookUseCases(
             SearchNotebookBooksUseCase searchUseCase,
-            AddNotebookBookToShelfUseCase addUseCase)
+            LoadNotebookMarketBooksUseCase loadMarketUseCase,
+            AddNotebookBookToShelfUseCase addUseCase,
+            NotebookRuntimeUseCase runtimeUseCase = null)
         {
             searchNotebookBooksUseCase = searchUseCase;
+            loadNotebookMarketBooksUseCase = loadMarketUseCase;
             addNotebookBookToShelfUseCase = addUseCase;
-            toolkitController?.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, addNotebookBookToShelfUseCase);
+            notebookRuntimeUseCase = runtimeUseCase;
+            toolkitController?.ConfigureNotebookBookUseCases(
+                searchNotebookBooksUseCase,
+                loadNotebookMarketBooksUseCase,
+                addNotebookBookToShelfUseCase,
+                notebookRuntimeUseCase);
         }
 
         public void SetImmersiveMode(bool immersive)
@@ -496,7 +508,12 @@ namespace BookshelfPorting.Runtime
                 toolkitController = screenTransform.gameObject.AddComponent<NotebookToolkitController>();
             }
 
-            toolkitController?.Configure(onCloseDashboard, searchNotebookBooksUseCase, addNotebookBookToShelfUseCase);
+            toolkitController?.Configure(
+                onCloseDashboard,
+                searchNotebookBooksUseCase,
+                loadNotebookMarketBooksUseCase,
+                addNotebookBookToShelfUseCase,
+                notebookRuntimeUseCase);
         }
 
         private bool HasToolkitDashboard()
@@ -586,7 +603,7 @@ namespace BookshelfPorting.Runtime
             if (closeLabel != null)
             {
                 closeLabel.fontSize = 17;
-                closeLabel.fontStyle = FontStyle.Bold;
+                closeLabel.fontStyle = RuntimeUiFont.ResolveStyle(closeLabel.font, FontStyle.Bold);
                 closeLabel.color = Color.white;
             }
         }
@@ -937,7 +954,7 @@ namespace BookshelfPorting.Runtime
                     ? new Color(0.22f, 0.45f, 0.38f, 1f)
                     : new Color(0.95f, 0.96f, 0.98f, 0f);
                 var categoryLabel = categoryButtons[i].GetComponentInChildren<Text>();
-                categoryLabel.fontStyle = isSelected ? FontStyle.Bold : FontStyle.Normal;
+                categoryLabel.fontStyle = RuntimeUiFont.ResolveStyle(categoryLabel.font, isSelected ? FontStyle.Bold : FontStyle.Normal);
                 categoryLabel.color = isSelected
                     ? Color.white
                     : new Color(0.84f, 0.86f, 0.82f, 1f);
@@ -1162,7 +1179,8 @@ namespace BookshelfPorting.Runtime
                 pageButtons[i].GetComponentInChildren<Text>().color = isCurrent
                     ? Color.white
                     : new Color(0.23f, 0.25f, 0.23f, 1f);
-                pageButtons[i].GetComponentInChildren<Text>().fontStyle = isCurrent ? FontStyle.Bold : FontStyle.Normal;
+                var pageLabel = pageButtons[i].GetComponentInChildren<Text>();
+                pageLabel.fontStyle = RuntimeUiFont.ResolveStyle(pageLabel.font, isCurrent ? FontStyle.Bold : FontStyle.Normal);
             }
         }
 
@@ -1233,7 +1251,7 @@ namespace BookshelfPorting.Runtime
                     : new Color(0.90f, 0.89f, 0.84f, 1f);
                 var statusLabel = statusButtons[i].GetComponentInChildren<Text>();
                 statusLabel.color = isSelected ? Color.white : new Color(0.45f, 0.43f, 0.38f, 1f);
-                statusLabel.fontStyle = isSelected ? FontStyle.Bold : FontStyle.Normal;
+                statusLabel.fontStyle = RuntimeUiFont.ResolveStyle(statusLabel.font, isSelected ? FontStyle.Bold : FontStyle.Normal);
             }
 
             if (addSelectedBookButton != null)
@@ -2254,7 +2272,7 @@ namespace BookshelfPorting.Runtime
             text.color = color;
             text.alignment = alignment;
             text.fontSize = fontSize;
-            text.fontStyle = fontStyle;
+            text.fontStyle = RuntimeUiFont.ResolveStyle(text.font, fontStyle);
             text.text = textValue;
             text.resizeTextForBestFit = true;
             text.resizeTextMinSize = Mathf.Max(8, fontSize - 4);
@@ -2275,24 +2293,7 @@ namespace BookshelfPorting.Runtime
 
         private static Font ResolveUiFont()
         {
-            if (cachedUiFont != null)
-            {
-                return cachedUiFont;
-            }
-
-            var font = Resources.Load<Font>("Fonts/Pretendard-Regular");
-            if (font == null)
-            {
-                font = Font.CreateDynamicFontFromOSFont("Pretendard", 16);
-            }
-
-            if (font != null)
-            {
-                cachedUiFont = font;
-                return cachedUiFont;
-            }
-
-            cachedUiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            cachedUiFont ??= RuntimeUiFont.Resolve();
             return cachedUiFont;
         }
 
@@ -2311,7 +2312,7 @@ namespace BookshelfPorting.Runtime
             if (label != null)
             {
                 label.color = isSelected ? Color.white : new Color(0.18f, 0.20f, 0.19f, 1f);
-                label.fontStyle = isSelected ? FontStyle.Bold : FontStyle.Normal;
+                label.fontStyle = RuntimeUiFont.ResolveStyle(label.font, isSelected ? FontStyle.Bold : FontStyle.Normal);
             }
         }
     }
