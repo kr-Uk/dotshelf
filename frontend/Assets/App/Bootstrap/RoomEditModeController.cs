@@ -1956,8 +1956,16 @@ namespace App.Bootstrap
         //     separate child renderers; without a combined collider the
         //     player can drag a small item between the legs and tunnel
         //     through the desk footprint.
-        //   - GuestbookBoard — the whiteboard / guestbook fixture; same
-        //     reasoning, frame + surface live on different child renderers.
+        //
+        // GuestbookBoard is intentionally NOT in this list. It owns
+        // NotebookStation as a child (parented in BuildNotebookStation when
+        // the board exists), so a combined-bounds BoxCollider on the board
+        // would balloon out to engulf the desk + every notebook part too,
+        // walling off the empty space between the board and the desk that
+        // the player needs to navigate through. The whiteboard's own
+        // frame / surface still get individual-renderer BoxColliders from
+        // EnsureBlockerCollidersRecursive, which is enough to block a
+        // dragged decoration at the board itself.
         // Names match the runtime GameObject.name values produced by
         // BookshelfGenerator (instantiated .glb roots use the asset's file
         // name without extension, e.g. "table_natural").
@@ -1970,7 +1978,6 @@ namespace App.Bootstrap
             "NotebookStation",
             "Desk",
             "table_natural",
-            "GuestbookBoard",
         };
 
         private void EnsureDecorationRootColliders()
