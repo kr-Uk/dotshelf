@@ -97,6 +97,20 @@
     background-color: transparent;
 }
 
+.return-mine-button {
+    margin-left: 12px;
+    padding: 4px 12px;
+    background-color: rgb(40, 40, 40);
+    color: rgb(255, 255, 255);
+    border-width: 0;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.return-mine-button:hover {
+    background-color: rgb(60, 60, 60);
+}
+
 .like-toggle-button {
     background-color: transparent;
     border-width: 0;
