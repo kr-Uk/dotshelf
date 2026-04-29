@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>에임마스터</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%2318c8b9'/%3E%3Cpath d='M32 10v44M10 32h44' stroke='%23ffffff' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%23ff3f3f'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="hub-link" href="../">게임 선택</a>
+    <main class="app" aria-live="polite">
+      <header class="hud">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <h1>에임마스터</h1>
+            <p>2.0s target window</p>
+          </div>
+        </div>
+
+        <section class="stats" aria-label="게임 상태">
+          <div class="stat">
+            <span class="stat-label">Hit</span>
+            <strong><span id="hitCount">0</span>/<span id="goalCount">30</span></strong>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Time</span>
+            <strong id="timeText">0.00s</strong>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Miss</span>
+            <strong id="missCount">0</strong>
+          </div>
+        </section>
+      </header>
+
+      <section id="arena" class="arena" aria-label="게임 영역">
+        <div class="scanline" aria-hidden="true"></div>
+        <div class="center-reticle" aria-hidden="true">
+          <span></span>
+        </div>
+      </section>
+
+      <section id="setupPanel" class="overlay">
+        <form id="setupForm" class="panel">
+          <span class="panel-kicker">Setup</span>
+          <h2>게임 설정</h2>
+
+          <label class="field" for="targetCount">
+            <span>생성할 점 수</span>
+            <input id="targetCount" name="targetCount" type="number" min="1" max="30" step="1" value="30" />
+          </label>
+
+          <div class="limit-row">
+            <span>제한 시간</span>
+            <strong>2.0초</strong>
+          </div>
+          <p id="capacityText" class="capacity-text"></p>
+
+          <button class="primary-button" type="submit">시작</button>
+        </form>
+      </section>
+
+      <section id="resultPanel" class="overlay hidden">
+        <div class="panel">
+          <span class="panel-kicker">Result</span>
+          <h2 id="resultTitle">완료</h2>
+          <div class="result-time" id="resultTime">0.00s</div>
+
+          <div class="result-grid">
+            <div>
+              <span>목표</span>
+              <strong id="resultGoal">30</strong>
+            </div>
+            <div>
+              <span>생성</span>
+              <strong id="resultGenerated">30</strong>
+            </div>
+            <div>
+              <span>명중률</span>
+              <strong id="resultAccuracy">100%</strong>
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button id="restartButton" class="primary-button" type="button">다시 시작</button>
+            <button id="settingsButton" class="secondary-button" type="button">설정 변경</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
