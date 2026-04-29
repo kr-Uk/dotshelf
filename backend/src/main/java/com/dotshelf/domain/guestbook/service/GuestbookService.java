@@ -15,8 +15,10 @@ import com.dotshelf.domain.guestbook.entity.Guestbook;
 import com.dotshelf.domain.guestbook.entity.GuestbookReply;
 import com.dotshelf.domain.guestbook.repository.GuestbookReplyRepository;
 import com.dotshelf.domain.guestbook.repository.GuestbookRepository;
+import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.user.entity.User;
+import com.dotshelf.domain.user.repository.UserBlockRepository;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
@@ -32,6 +34,7 @@ public class GuestbookService {
     private final GuestbookReplyRepository replyRepository;
     private final SpaceService spaceService;
     private final UserService userService;
+    private final UserBlockRepository userBlockRepository;
 
     private static final int DEFAULT_GUESTBOOK_LIMIT = 15;
     private static final int MAX_GUESTBOOK_LIMIT = 50;
@@ -67,7 +70,16 @@ public class GuestbookService {
     @Transactional
     public GuestbookResponse create(Long userId, Long spaceId, GuestbookRequest request) {
         Long currentUserId = userService.requireUserId(userId);
-        spaceService.getSpaceEntity(spaceId);
+        Space space = spaceService.getSpaceEntity(spaceId);
+        if (space.getOwnerUserId().equals(currentUserId)) {
+            throw new CustomException(ErrorCode.SPACE_OWNER_CANNOT_POST);
+        }
+        if (isBlockedRelation(space.getOwnerUserId(), currentUserId)) {
+            throw new CustomException(ErrorCode.SPACE_ACCESS_BLOCKED);
+        }
+        if (!spaceService.isPostItAllowed(spaceId, request.postItInventoryId())) {
+            throw new CustomException(ErrorCode.GUESTBOOK_POSTIT_NOT_ALLOWED);
+        }
         Guestbook guestbook = guestbookRepository.save(Guestbook.builder()
                 .spaceId(spaceId)
                 .writerUserId(currentUserId)
@@ -111,6 +123,12 @@ public class GuestbookService {
     public GuestbookReplyResponse reply(Long userId, Long guestbookId, GuestbookReplyRequest request) {
         Long currentUserId = userService.requireUserId(userId);
         Guestbook guestbook = getGuestbook(guestbookId);
+        if (replyRepository.findFirstByGuestbookIdAndDeletedAtIsNullOrderByIdAsc(guestbookId).isPresent()) {
+            throw new CustomException(ErrorCode.GUESTBOOK_REPLY_ALREADY_EXISTS);
+        }
+        if (!spaceService.isPostItAllowed(guestbook.getSpaceId(), request.postItInventoryId())) {
+            throw new CustomException(ErrorCode.GUESTBOOK_POSTIT_NOT_ALLOWED);
+        }
         GuestbookReply reply = replyRepository.save(GuestbookReply.builder()
                 .guestbookId(guestbookId)
                 .writerUserId(currentUserId)
@@ -120,6 +138,14 @@ public class GuestbookService {
                 .build());
         guestbook.increaseReplyCount();
         return GuestbookReplyResponse.from(reply, userService.getUser(currentUserId));
+    }
+
+    private boolean isBlockedRelation(Long ownerUserId, Long currentUserId) {
+        if (ownerUserId.equals(currentUserId)) {
+            return false;
+        }
+        return userBlockRepository.existsByBlockerUserIdAndBlockedUserId(ownerUserId, currentUserId)
+                || userBlockRepository.existsByBlockerUserIdAndBlockedUserId(currentUserId, ownerUserId);
     }
 
     private GuestbookResponse buildGuestbookResponse(Guestbook guestbook, Long viewerUserId) {
