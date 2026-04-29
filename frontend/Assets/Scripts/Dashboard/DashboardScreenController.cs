@@ -26,6 +26,11 @@ namespace Dotshelf.Scripts.Dashboard
         [SerializeField] private StyleSheet stylesheet;
         [SerializeField] private PostItStyleCatalogAsset postItCatalog;
 
+        [Tooltip("World Space에 dashboard를 띄울 때 사용할 PanelSettings. " +
+                "비워두면 UIDocument의 기본 PanelSettings(보통 Screen Space Overlay) 사용. " +
+                "(v1.0 dashboard 통합) MainScene에서 GuestbookBoard 화이트보드 표면에 그릴 때 World Space PanelSettings SO를 주입.")]
+        [SerializeField] private UnityEngine.UIElements.PanelSettings overridePanelSettings;
+
         [Header("Mode")]
         [SerializeField] private ViewMode viewMode = ViewMode.Mine;
         [SerializeField] private long visitedSpaceId = 1L;
@@ -220,6 +225,12 @@ namespace Dotshelf.Scripts.Dashboard
             if (viewAsset != null)
             {
                 document.visualTreeAsset = viewAsset;
+            }
+            if (overridePanelSettings != null)
+            {
+                // (v1.0 dashboard 통합) MainScene에서 World Space PanelSettings 주입 시 적용.
+                // 비워두면 testbed 씬의 기본 PanelSettings(Screen Space Overlay) 그대로.
+                document.panelSettings = overridePanelSettings;
             }
             CacheEventHandlers();
             // Mock 빌드는 OnEnable에서 fallback으로. Configure가 호출됐으면 그걸 우선.

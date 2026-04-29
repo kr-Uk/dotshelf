@@ -347,6 +347,15 @@ namespace BookshelfPorting.Runtime
         private GameObject guestbookPanel;
         private GameObject guestbookPreviewPanel;
         private Canvas guestbookBoardCanvas;
+
+        // (v1.0 dashboard 통합 — MR #61) GuestbookBoard 자리에 우리 새 dashboard prefab을 띄우는 모드.
+        // useExternalDashboardPanel = true 일 때 옛 guestbookPanel/Preview 생성을 skip하고 externalDashboardPanel만 사용.
+        // false면 종전과 동일 (옛 방명록 UI). cleanup은 phase 5 별도 PR에서.
+        [Header("Dashboard Integration (v1.0)")]
+        [SerializeField] private bool useExternalDashboardPanel = true;
+        [Tooltip("GuestbookBoard 자리에 띄울 새 dashboard prefab 인스턴스. 보통 GuestbookBoardHitArea의 자식으로 배치한 우리 DashboardScreenPanel.")]
+        [SerializeField] private GameObject externalDashboardPanel;
+
         [SerializeField] private bool guestbookOwnerMode = true;
         private bool isGuestbookPublic = true;
         private int guestbookVisitorCount = 123;
@@ -7468,6 +7477,18 @@ namespace BookshelfPorting.Runtime
 
         private void EnsureGuestbookBoardUi()
         {
+            // (v1.0 dashboard 통합) 외부 prefab 모드면 옛 guestbookBoardCanvas 생성을 통째 skip.
+            // externalDashboardPanel은 인스펙터에서 GuestbookBoardHitArea 자식으로 직접 배치되어 있고,
+            // SetGuestbookFocusPresentation에서 SetActive로만 토글한다. 시작 시 비활성으로 둠.
+            if (useExternalDashboardPanel)
+            {
+                if (externalDashboardPanel != null && externalDashboardPanel.activeSelf)
+                {
+                    externalDashboardPanel.SetActive(false);
+                }
+                return;
+            }
+
             if (guestbookBoardCanvas != null)
             {
                 return;
@@ -7850,6 +7871,17 @@ namespace BookshelfPorting.Runtime
 
         private void SetGuestbookFocusPresentation(bool isFocused)
         {
+            // (v1.0 dashboard 통합) 외부 prefab 모드면 우리 DashboardScreenPanel만 토글.
+            // 카메라가 Whiteboard 모드일 때(focus) dashboard 활성, 빠져나가면 비활성.
+            if (useExternalDashboardPanel)
+            {
+                if (externalDashboardPanel != null)
+                {
+                    externalDashboardPanel.SetActive(isFocused);
+                }
+                return;
+            }
+
             if (guestbookPanel != null)
             {
                 guestbookPanel.SetActive(isFocused);
