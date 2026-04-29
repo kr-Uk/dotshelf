@@ -1,3 +1,4 @@
+using App.Auth;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -136,6 +137,8 @@ namespace App.Bootstrap
             SetMessage(loginMessageLabel, "로그인에 성공했습니다. 메인 화면으로 이동합니다.");
             LogDebug($"[LoginDemo] Login validated for '{userId}'.");
 
+            SessionState.MarkLoggedIn();
+
             // Mask the brief frames between scene unload and BookshelfSceneInstaller
             // finishing its setup so the player never sees the empty default scene
             // between login and main view. Cover self-destructs once MainScene is
@@ -229,16 +232,28 @@ namespace App.Bootstrap
         public void OnGuestEntryButtonClicked()
         {
             LogDebug("[LoginDemo] Guest entry button clicked.");
-            SetMessage(loginMessageLabel, "게스트로 입장합니다. 메인 화면으로 이동합니다.");
+            SetMessage(loginMessageLabel, "게스트로 입장합니다. 테마 설정을 진행해주세요.");
 
-            MainSceneTransitionCover.Show("메인 화면으로 이동 중입니다.");
-            SetCanvasVisible(false);
-            SceneFlowManager.GoToMain();
+            SessionState.MarkGuest();
+
+            // Guest entry skips onboarding step 1 (profile) and step 3 (bookshelf
+            // focus). The user only chooses a theme on step 2; the existing
+            // completion modal then handles transition to the main scene.
+            var onboardingController = GetComponent<OnboardingScreenController>();
+            if (onboardingController == null)
+            {
+                onboardingController = gameObject.AddComponent<OnboardingScreenController>();
+            }
+
+            onboardingController.InitializeIfNeeded();
+            onboardingController.StartOnboardingAsGuest();
         }
 
         private void HandleSocialLoginSuccess(string providerName)
         {
             SetMessage(loginMessageLabel, $"{providerName} 로그인에 성공했습니다. 메인 화면으로 이동합니다.");
+
+            SessionState.MarkLoggedIn();
 
             MainSceneTransitionCover.Show("메인 화면으로 이동 중입니다.");
             SetCanvasVisible(false);

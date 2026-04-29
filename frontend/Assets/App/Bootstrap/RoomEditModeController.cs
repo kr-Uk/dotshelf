@@ -46,34 +46,65 @@ namespace App.Bootstrap
 
         // Room footprint (matches MainScene.unity Floor: localPosition (0,-0.05,0),
         // localScale (4.2, 0.1, 5)). Decoration bounds must stay inside this box.
-        // Bookshelf turntable sits around z >= 0.5, so we additionally cap the
-        // decoration's max-Z so dragged items can't tunnel into the bookshelf.
+        // The bookshelf, notebook, whiteboard, hamster, and other static scene
+        // objects sit *inside* the floor footprint — those are no longer
+        // hard-clamped here; instead UpdateDrag does a real AABB collision
+        // check against their colliders so a dragged decoration can slide all
+        // the way up to (but not into) them. The floor bounds remain the
+        // outermost limit.
         private const float FloorMinX = -2.0f;
         private const float FloorMaxX = 2.0f;
         private const float FloorMinZ = -2.4f;
         private const float FloorMaxZ = 2.4f;
-        private const float BookshelfFrontZ = 0.5f;
         private const float FloorPlaneY = 0f;
+        // Small clearance kept between a dragged object and any static blocker
+        // (bookshelf / notebook / whiteboard / hamster / etc.) so meshes don't
+        // visually z-fight at the contact face. Kept tiny — well under one
+        // minor grid step (0.1m) so it doesn't perceptibly shorten travel.
+        private const float BlockerMargin = 0.02f;
+        // Shrink applied to the dragged object's bounds before OverlapBox so
+        // edge-touching geometry (e.g. a model resting flush against the floor
+        // surface) doesn't register as an immediate blocker. Half the blocker
+        // margin keeps the "no overlap" semantics intact while tolerating
+        // floating-point edge cases.
+        private const float BlockerOverlapShrink = BlockerMargin * 0.5f;
 
         // Grid + snap defaults. The grid origin is anchored to the room's
         // bottom-left floor corner (FloorMinX, FloorMinZ) so the very first
-        // grid line meets the wall instead of starting halfway across the
-        // floor. gridCellSize controls both the visual line spacing and the
-        // snap step — change here to adjust everything together.
-        private const float GridCellSize = 0.5f;
+        // grid line meets the wall (where the floor meets the wall edge)
+        // instead of starting halfway across the floor.
+        //
+        // Two grid layers are drawn while dragging:
+        //   - Major cells (MajorGridStep, 0.5m): heavier line, opaque-ish
+        //     green. Reads clearly against the warm floor.
+        //   - Minor cells (MinorGridStep, 0.1m): thinner, lower-alpha green.
+        //     Implies a 1/5 subdivision inside each major cell so objects
+        //     can be nudged in fine increments.
+        // Snapping uses MinorGridStep so dragged objects move in the same
+        // small steps the player sees on the minor grid lines.
+        private const float MajorGridStep = 0.5f;
+        private const float MinorGridStep = 0.1f;
         private const float GridOriginX = FloorMinX;
         private const float GridOriginZ = FloorMinZ;
         private const float GridLineThickness = 0.015f;
+        private const float GridMinorLineThickness = 0.006f;
         private const float GridSurfaceY = 0.005f;
         // Tolerance applied to the grid-line generation loop so that the line
         // sitting exactly on the FloorMax edge isn't dropped due to floating
         // point accumulation when (FloorMax - FloorMin) is an integer multiple
-        // of GridCellSize. Kept tiny — well below half a cell.
+        // of the step size. Kept tiny — well below half a cell.
         private const float GridLoopEpsilon = 0.0001f;
+        // Half a minor step is the threshold for "this minor position is
+        // actually on a major line"; positions inside that window are skipped
+        // when drawing minor lines so the heavier major line wins visually
+        // instead of compositing with the dim minor line.
+        private const float GridMajorAlignmentEpsilon = MinorGridStep * 0.5f;
         // Bright neon-green so the grid reads clearly against the room's warm
         // floor tones during drag, while keeping ~60% alpha so it doesn't bury
-        // the model itself.
+        // the model itself. Minor lines use the same hue but a much lower
+        // alpha so the major grid stays visually dominant.
         private static readonly Color GridLineColor = new Color(0.36f, 1f, 0.55f, 0.62f);
+        private static readonly Color GridMinorLineColor = new Color(0.36f, 1f, 0.55f, 0.22f);
 
         // Inventory spawn-time size normalization by source-folder heuristic. The
         // spawned model is uniformly scaled so its largest XZ extent matches the
@@ -1251,13 +1282,13 @@ namespace App.Bootstrap
             go.transform.position = spawnPosition;
 
             // Step 3b — clamp the initial spawn position into the room footprint.
-            // Without this, the depth offset for the 11th+ object pushes z past
-            // BookshelfFrontZ and the model spawns inside / behind the bookshelf;
-            // ClampToRoomBounds normally only fires during drag.
+            // Without this, the depth offset for the 11th+ object can push the
+            // spawn past the floor edge; ClampToFloorBounds normally only fires
+            // during drag.
             if (rendererBounds.HasValue)
             {
                 var spawnBounds = ComputeRendererBounds(go) ?? rendererBounds.Value;
-                go.transform.position = ClampToRoomBounds(go.transform.position, go.transform.position, spawnBounds);
+                go.transform.position = ClampToFloorBounds(go.transform.position, go.transform.position, spawnBounds);
             }
 
             // Step 4 — collider for raycast selection. .glb / .fbx imports don't
@@ -1483,20 +1514,28 @@ namespace App.Bootstrap
             var rawZ = floorHit.z + dragGrabOffset.z;
             if (gridSnapEnabled)
             {
-                // Cell-CENTER snap anchored to (GridOriginX, GridOriginZ), which
-                // sits at the room's bottom-left floor corner. The +cellSize/2
-                // offset places objects in the middle of each cell instead of on
-                // grid intersections — at cellSize=0.5 the first cell center is
-                // (FloorMinX + 0.25, FloorMinZ + 0.25).
-                rawX = GridOriginX + Mathf.Floor((rawX - GridOriginX) / GridCellSize) * GridCellSize + GridCellSize * 0.5f;
-                rawZ = GridOriginZ + Mathf.Floor((rawZ - GridOriginZ) / GridCellSize) * GridCellSize + GridCellSize * 0.5f;
+                // Snap to MinorGridStep cells so movement matches the visible
+                // minor grid lines (0.1m at default settings). Cell-CENTER
+                // snap anchored to (GridOriginX, GridOriginZ), which sits at
+                // the room's bottom-left floor corner where the wall meets
+                // the floor. The +step/2 offset places objects in the middle
+                // of each minor cell instead of on the grid intersections.
+                rawX = GridOriginX + Mathf.Floor((rawX - GridOriginX) / MinorGridStep) * MinorGridStep + MinorGridStep * 0.5f;
+                rawZ = GridOriginZ + Mathf.Floor((rawZ - GridOriginZ) / MinorGridStep) * MinorGridStep + MinorGridStep * 0.5f;
             }
 
             var candidate = new Vector3(rawX, draggingObject.transform.position.y, rawZ);
+            var currentPosition = draggingObject.transform.position;
             var bounds = ComputeRendererBounds(draggingObject);
             if (bounds.HasValue)
             {
-                candidate = ClampToRoomBounds(draggingObject.transform.position, candidate, bounds.Value);
+                var clampedToFloor = ClampToFloorBounds(currentPosition, candidate, bounds.Value);
+                if (!Mathf.Approximately(clampedToFloor.x, candidate.x) || !Mathf.Approximately(clampedToFloor.z, candidate.z))
+                {
+                    Debug.Log($"[RoomEdit] '{draggingObject.name}' blocked by room bounds; candidate ({candidate.x:F2}, {candidate.z:F2}) clamped to ({clampedToFloor.x:F2}, {clampedToFloor.z:F2}).");
+                }
+
+                candidate = ResolveBlockerCollisions(currentPosition, clampedToFloor, bounds.Value, draggingObject);
             }
 
             draggingObject.transform.position = candidate;
@@ -1525,11 +1564,12 @@ namespace App.Bootstrap
             return false;
         }
 
-        // Constrain the candidate position so the object's bounds stay entirely
-        // inside the room footprint and never tunnel into the bookshelf zone.
-        // Returns the clamped position — drag is always valid because we
-        // clamp instead of rejecting, mirroring the spec ("clamp 처리").
-        private static Vector3 ClampToRoomBounds(Vector3 currentPosition, Vector3 candidate, Bounds currentBounds)
+        // Clamp the candidate so the object's XZ bounds stay entirely inside
+        // the floor footprint. The visible drag grid covers the same range, so
+        // this clamp matches "what the player sees". No bookshelf-side cap —
+        // collision with the bookshelf and other static scene objects is
+        // handled separately by ResolveBlockerCollisions.
+        private static Vector3 ClampToFloorBounds(Vector3 currentPosition, Vector3 candidate, Bounds currentBounds)
         {
             // current bounds are in world space, anchored to the object's current
             // position. Translate by the candidate-vs-current delta to get the
@@ -1538,15 +1578,10 @@ namespace App.Bootstrap
             var futureCenter = currentBounds.center + delta;
             var extents = currentBounds.extents;
 
-            // Per-axis allowed center range so bounds stay inside floor extents.
-            // For Z we additionally cap at BookshelfFrontZ so a dragged object
-            // can't push past the bookshelf line.
-            var maxAllowedZBeforeBookshelf = Mathf.Min(FloorMaxZ, BookshelfFrontZ);
-
             var minCenterX = FloorMinX + extents.x;
             var maxCenterX = FloorMaxX - extents.x;
             var minCenterZ = FloorMinZ + extents.z;
-            var maxCenterZ = maxAllowedZBeforeBookshelf - extents.z;
+            var maxCenterZ = FloorMaxZ - extents.z;
 
             // Defensive: if the object is wider than the room (shouldn't happen
             // post-NormalizeSpawnedScale, but a tweaked catalog could), keep
@@ -1557,12 +1592,152 @@ namespace App.Bootstrap
             var clampedCenterX = Mathf.Clamp(futureCenter.x, minCenterX, maxCenterX);
             var clampedCenterZ = Mathf.Clamp(futureCenter.z, minCenterZ, maxCenterZ);
 
-            // Convert the clamped center back into a candidate position by
-            // re-applying the bounds-center → object-position offset.
             return new Vector3(
                 candidate.x + (clampedCenterX - futureCenter.x),
                 candidate.y,
                 candidate.z + (clampedCenterZ - futureCenter.z));
+        }
+
+        // Reject candidate positions whose AABB would overlap a static scene
+        // blocker (bookshelf, notebook, whiteboard, hamster, etc.) using
+        // axis-separated rejection so the dragged object can slide along a
+        // blocker face instead of getting stuck at the first contact.
+        //
+        // Walls / floor / ceiling and any DecorationItemMarker (user-placed
+        // items) are intentionally not blockers here — walls are handled by
+        // ClampToFloorBounds, and placed decorations have always been allowed
+        // to overlap each other in this codebase.
+        private Vector3 ResolveBlockerCollisions(Vector3 currentPosition, Vector3 candidate, Bounds currentBounds, GameObject self)
+        {
+            if (Mathf.Approximately(candidate.x, currentPosition.x) && Mathf.Approximately(candidate.z, currentPosition.z))
+            {
+                return candidate;
+            }
+
+            // Combined-axis move first — most drags don't hit anything, so the
+            // common case completes in one OverlapBox call.
+            if (!OverlapsBlocker(candidate, currentBounds, currentPosition, self, out var combinedBlocker))
+            {
+                return candidate;
+            }
+
+            // Blocked on the combined move. Try moving along just one axis at a
+            // time and accept whichever sub-move stays clear, mirroring the
+            // standard 2D platformer "slide along the wall" pattern.
+            var xOnly = new Vector3(candidate.x, candidate.y, currentPosition.z);
+            var zOnly = new Vector3(currentPosition.x, candidate.y, candidate.z);
+
+            var xOnlyClear = !OverlapsBlocker(xOnly, currentBounds, currentPosition, self, out _);
+            var zOnlyClear = !OverlapsBlocker(zOnly, currentBounds, currentPosition, self, out _);
+
+            if (xOnlyClear && zOnlyClear)
+            {
+                // Both single-axis moves are clear but the diagonal isn't —
+                // pick whichever travels farther so the drag stays responsive.
+                var dxSq = (xOnly - currentPosition).sqrMagnitude;
+                var dzSq = (zOnly - currentPosition).sqrMagnitude;
+                Debug.Log($"[RoomEdit] '{self.name}' blocked by furniture collision on diagonal — sliding to nearest free axis (blocker '{combinedBlocker}').");
+                return dxSq >= dzSq ? xOnly : zOnly;
+            }
+
+            if (xOnlyClear)
+            {
+                Debug.Log($"[RoomEdit] '{self.name}' blocked by furniture collision on Z (blocker '{combinedBlocker}'); sliding along X.");
+                return xOnly;
+            }
+
+            if (zOnlyClear)
+            {
+                Debug.Log($"[RoomEdit] '{self.name}' blocked by furniture collision on X (blocker '{combinedBlocker}'); sliding along Z.");
+                return zOnly;
+            }
+
+            Debug.Log($"[RoomEdit] '{self.name}' blocked by furniture collision (blocker '{combinedBlocker}'); holding current position.");
+            return currentPosition;
+        }
+
+        // True if the dragged object's bounds at `candidate` overlap any static
+        // blocker collider in the scene. `blockerName` is filled with the name
+        // of the first blocker found so logs can pinpoint which object is in
+        // the way.
+        private bool OverlapsBlocker(Vector3 candidate, Bounds currentBounds, Vector3 currentPosition, GameObject self, out string blockerName)
+        {
+            blockerName = string.Empty;
+
+            var delta = candidate - currentPosition;
+            var futureCenter = currentBounds.center + delta;
+            // A small uniform shrink keeps edge-touching geometry from
+            // registering as overlapping, plus the BlockerMargin gives the
+            // object a thin clearance so meshes don't z-fight at contact.
+            var halfExtents = currentBounds.extents - Vector3.one * (BlockerOverlapShrink + BlockerMargin);
+            if (halfExtents.x <= 0f || halfExtents.y <= 0f || halfExtents.z <= 0f)
+            {
+                // Object is smaller than the margin — nothing meaningful to
+                // overlap-check, treat as clear.
+                return false;
+            }
+
+            var hits = Physics.OverlapBox(futureCenter, halfExtents, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
+            for (var i = 0; i < hits.Length; i++)
+            {
+                var collider = hits[i];
+                if (!IsStaticBlockerCollider(collider, self))
+                {
+                    continue;
+                }
+
+                blockerName = collider.transform.root != null ? collider.transform.root.name : collider.name;
+                return true;
+            }
+
+            return false;
+        }
+
+        // True if `collider` is something the dragged object should not be
+        // allowed to pass through — i.e. a static scene blocker. Excludes the
+        // dragged object's own colliders, any other DecorationItemMarker
+        // (placed decorations), the floor / wall / ceiling (handled by the
+        // floor-bounds clamp), and the drag grid display.
+        private static bool IsStaticBlockerCollider(Collider collider, GameObject self)
+        {
+            if (collider == null || collider.isTrigger)
+            {
+                return false;
+            }
+
+            if (collider.gameObject == self || collider.transform.IsChildOf(self.transform))
+            {
+                return false;
+            }
+
+            if (collider.GetComponentInParent<DecorationItemMarker>() != null)
+            {
+                return false;
+            }
+
+            // Walk the hierarchy and skip floor / wall / ceiling / grid by
+            // name — name matching is fragile in general, but these are the
+            // well-known scene objects whose colliders sit at the floor edge
+            // (and would otherwise produce false-positive blocks against the
+            // floor-bounds clamp).
+            for (var t = collider.transform; t != null; t = t.parent)
+            {
+                var n = t.name;
+                if (string.IsNullOrEmpty(n))
+                {
+                    continue;
+                }
+
+                if (n.IndexOf("Floor", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    n.IndexOf("Wall", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    n.IndexOf("Ceiling", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    n.IndexOf("DecorationDragGrid", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         // Floor grid -------------------------------------------------------------
@@ -1584,9 +1759,14 @@ namespace App.Bootstrap
             }
         }
 
-        // Build a grid of LineRenderers along the floor every GridCellSize meters
-        // inside the room footprint. Material uses Sprites/Default so the alpha
-        // applies cleanly without any URP-specific shader plumbing.
+        // Build a two-layer grid of LineRenderers along the floor. The major
+        // layer steps every MajorGridStep meters and reads clearly; the minor
+        // layer steps every MinorGridStep meters with much lower alpha to imply
+        // the snap subdivision inside each major cell. Material uses
+        // Sprites/Default so the alpha applies cleanly without URP shader
+        // plumbing. Lines step from the bottom-left floor corner so the very
+        // first line meets the wall (where wall + floor meet) instead of
+        // starting halfway across the floor.
         private void EnsureGridDisplay()
         {
             if (gridDisplayRoot != null)
@@ -1598,43 +1778,89 @@ namespace App.Bootstrap
             SceneManager.MoveGameObjectToScene(gridDisplayRoot, gameObject.scene);
             gridDisplayRoot.transform.position = new Vector3(0f, GridSurfaceY, 0f);
 
-            var lineMaterial = new Material(Shader.Find("Sprites/Default"))
+            var spriteShader = Shader.Find("Sprites/Default");
+            var majorMaterial = new Material(spriteShader)
             {
                 color = GridLineColor,
                 hideFlags = HideFlags.HideAndDontSave,
             };
+            var minorMaterial = new Material(spriteShader)
+            {
+                color = GridMinorLineColor,
+                hideFlags = HideFlags.HideAndDontSave,
+            };
 
-            // Lines step from the floor's bottom-left corner so the very first
-            // line meets the wall instead of starting halfway across the floor.
-            // GridLoopEpsilon includes the line at FloorMaxX / FloorMaxZ when
-            // the room dimensions are an exact multiple of the cell size.
-            for (var x = GridOriginX; x <= FloorMaxX + GridLoopEpsilon; x += GridCellSize)
+            // Minor lines first (drawn underneath in scene order). Skip
+            // positions that coincide with a major-step line so the heavier
+            // major line at that position isn't muddied by a co-located minor
+            // line. GridLoopEpsilon includes the line at FloorMaxX / FloorMaxZ
+            // when the room dimensions are an exact multiple of the step size.
+            for (var x = GridOriginX; x <= FloorMaxX + GridLoopEpsilon; x += MinorGridStep)
+            {
+                if (IsAlignedToMajorStep(x, GridOriginX))
+                {
+                    continue;
+                }
+
+                CreateGridLine(gridDisplayRoot.transform,
+                    new Vector3(x, 0f, FloorMinZ),
+                    new Vector3(x, 0f, FloorMaxZ),
+                    minorMaterial,
+                    GridMinorLineThickness);
+            }
+            for (var z = GridOriginZ; z <= FloorMaxZ + GridLoopEpsilon; z += MinorGridStep)
+            {
+                if (IsAlignedToMajorStep(z, GridOriginZ))
+                {
+                    continue;
+                }
+
+                CreateGridLine(gridDisplayRoot.transform,
+                    new Vector3(FloorMinX, 0f, z),
+                    new Vector3(FloorMaxX, 0f, z),
+                    minorMaterial,
+                    GridMinorLineThickness);
+            }
+
+            // Major lines on top so the major spacing remains the dominant
+            // visual reference even when the minor grid is dense.
+            for (var x = GridOriginX; x <= FloorMaxX + GridLoopEpsilon; x += MajorGridStep)
             {
                 CreateGridLine(gridDisplayRoot.transform,
                     new Vector3(x, 0f, FloorMinZ),
                     new Vector3(x, 0f, FloorMaxZ),
-                    lineMaterial);
+                    majorMaterial);
             }
-            for (var z = GridOriginZ; z <= FloorMaxZ + GridLoopEpsilon; z += GridCellSize)
+            for (var z = GridOriginZ; z <= FloorMaxZ + GridLoopEpsilon; z += MajorGridStep)
             {
                 CreateGridLine(gridDisplayRoot.transform,
                     new Vector3(FloorMinX, 0f, z),
                     new Vector3(FloorMaxX, 0f, z),
-                    lineMaterial);
+                    majorMaterial);
             }
 
             // Outer frame (heavier than the inner grid so the playable area reads
             // clearly even if the snap lines are very thin).
             CreateGridLine(gridDisplayRoot.transform,
-                new Vector3(FloorMinX, 0f, FloorMinZ), new Vector3(FloorMaxX, 0f, FloorMinZ), lineMaterial, GridLineThickness * 2f);
+                new Vector3(FloorMinX, 0f, FloorMinZ), new Vector3(FloorMaxX, 0f, FloorMinZ), majorMaterial, GridLineThickness * 2f);
             CreateGridLine(gridDisplayRoot.transform,
-                new Vector3(FloorMaxX, 0f, FloorMinZ), new Vector3(FloorMaxX, 0f, FloorMaxZ), lineMaterial, GridLineThickness * 2f);
+                new Vector3(FloorMaxX, 0f, FloorMinZ), new Vector3(FloorMaxX, 0f, FloorMaxZ), majorMaterial, GridLineThickness * 2f);
             CreateGridLine(gridDisplayRoot.transform,
-                new Vector3(FloorMinX, 0f, FloorMaxZ), new Vector3(FloorMaxX, 0f, FloorMaxZ), lineMaterial, GridLineThickness * 2f);
+                new Vector3(FloorMinX, 0f, FloorMaxZ), new Vector3(FloorMaxX, 0f, FloorMaxZ), majorMaterial, GridLineThickness * 2f);
             CreateGridLine(gridDisplayRoot.transform,
-                new Vector3(FloorMinX, 0f, FloorMinZ), new Vector3(FloorMinX, 0f, FloorMaxZ), lineMaterial, GridLineThickness * 2f);
+                new Vector3(FloorMinX, 0f, FloorMinZ), new Vector3(FloorMinX, 0f, FloorMaxZ), majorMaterial, GridLineThickness * 2f);
 
             gridDisplayRoot.SetActive(false);
+        }
+
+        // True when `value` is within half a minor step of a multiple of
+        // MajorGridStep measured from `origin`. Used to skip minor-grid lines
+        // that would land on top of a major-grid line.
+        private static bool IsAlignedToMajorStep(float value, float origin)
+        {
+            var offset = value - origin;
+            var nearestMajor = Mathf.Round(offset / MajorGridStep) * MajorGridStep;
+            return Mathf.Abs(offset - nearestMajor) <= GridMajorAlignmentEpsilon;
         }
 
         private static void CreateGridLine(Transform parent, Vector3 start, Vector3 end, Material material, float thicknessOverride = -1f)
