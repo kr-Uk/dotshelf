@@ -103,9 +103,10 @@ namespace App.Application.Dashboard
 
     public enum OwnedBookSort
     {
-        AddedDesc,
-        AddedAsc,
-        TitleAsc
+        AddedDesc,        // 추가한 날짜 순 (최신 추가가 위)
+        PublishedDesc,    // 출판일 최신순
+        PublishedAsc,     // 출판일 과거순
+        TitleAsc          // 가나다순
     }
 
     public enum ReadingRecordSort

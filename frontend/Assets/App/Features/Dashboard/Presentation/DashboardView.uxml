@@ -81,9 +81,10 @@
                 </ui:VisualElement>
 
                 <ui:VisualElement class="sort-row">
-                    <ui:Button name="owned-books-sort-added-desc" class="sort-button" text="추가 최신" />
-                    <ui:Button name="owned-books-sort-added-asc" class="sort-button" text="추가 과거" />
-                    <ui:Button name="owned-books-sort-title" class="sort-button" text="가나다" />
+                    <ui:Button name="owned-books-sort-added-desc" class="sort-button" text="추가한 날짜 순" />
+                    <ui:Button name="owned-books-sort-published-desc" class="sort-button" text="최신순" />
+                    <ui:Button name="owned-books-sort-published-asc" class="sort-button" text="과거순" />
+                    <ui:Button name="owned-books-sort-title" class="sort-button" text="가나다순" />
                 </ui:VisualElement>
 
                 <ui:ScrollView class="modal-scroll" vertical-scroller-visibility="Auto" horizontal-scroller-visibility="Hidden">

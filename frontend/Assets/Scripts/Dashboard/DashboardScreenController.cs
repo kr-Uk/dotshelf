@@ -124,7 +124,8 @@ namespace Dotshelf.Scripts.Dashboard
         private Button ownedBooksCloseButton;
         private Button ownedBooksLoadMoreButton;
         private Button ownedBooksSortAddedDescButton;
-        private Button ownedBooksSortAddedAscButton;
+        private Button ownedBooksSortPublishedDescButton;
+        private Button ownedBooksSortPublishedAscButton;
         private Button ownedBooksSortTitleButton;
         private OwnedBookSort currentOwnedBooksSort = OwnedBookSort.AddedDesc;
         private string ownedBooksNextCursor;
@@ -318,7 +319,8 @@ namespace Dotshelf.Scripts.Dashboard
             ownedBooksCloseButton = root.Q<Button>("owned-books-close-button");
             ownedBooksLoadMoreButton = root.Q<Button>("owned-books-load-more-button");
             ownedBooksSortAddedDescButton = root.Q<Button>("owned-books-sort-added-desc");
-            ownedBooksSortAddedAscButton = root.Q<Button>("owned-books-sort-added-asc");
+            ownedBooksSortPublishedDescButton = root.Q<Button>("owned-books-sort-published-desc");
+            ownedBooksSortPublishedAscButton = root.Q<Button>("owned-books-sort-published-asc");
             ownedBooksSortTitleButton = root.Q<Button>("owned-books-sort-title");
 
             readingRecordsViewAllButton = root.Q<Button>("recent-records-view-all-button");
@@ -421,7 +423,8 @@ namespace Dotshelf.Scripts.Dashboard
             if (ownedBooksCloseButton != null) ownedBooksCloseButton.clicked += CloseOwnedBooksModal;
             if (ownedBooksLoadMoreButton != null) ownedBooksLoadMoreButton.clicked += () => LoadOwnedBooksPage(replace: false);
             if (ownedBooksSortAddedDescButton != null) ownedBooksSortAddedDescButton.clicked += () => OnOwnedBooksSortChanged(OwnedBookSort.AddedDesc);
-            if (ownedBooksSortAddedAscButton != null) ownedBooksSortAddedAscButton.clicked += () => OnOwnedBooksSortChanged(OwnedBookSort.AddedAsc);
+            if (ownedBooksSortPublishedDescButton != null) ownedBooksSortPublishedDescButton.clicked += () => OnOwnedBooksSortChanged(OwnedBookSort.PublishedDesc);
+            if (ownedBooksSortPublishedAscButton != null) ownedBooksSortPublishedAscButton.clicked += () => OnOwnedBooksSortChanged(OwnedBookSort.PublishedAsc);
             if (ownedBooksSortTitleButton != null) ownedBooksSortTitleButton.clicked += () => OnOwnedBooksSortChanged(OwnedBookSort.TitleAsc);
 
             if (readingRecordsViewAllButton != null) readingRecordsViewAllButton.clicked += OpenReadingRecordsModal;
@@ -1336,26 +1339,58 @@ namespace Dotshelf.Scripts.Dashboard
             VisualElement actions = new VisualElement();
             actions.AddToClassList("user-row-actions");
 
-            // 팔로우/언팔로우
-            Button followBtn = new Button();
-            followBtn.AddToClassList("user-row-action-button");
-            UpdateFollowButton(followBtn, user.Following);
-            followBtn.clicked += () => OnToggleFollow(followBtn, user);
-            actions.Add(followBtn);
+            // 방문 — 항상 표시 (와이어 페이지 2)
+            Button visitBtn = new Button { text = "방문" };
+            visitBtn.AddToClassList("user-row-action-button");
+            visitBtn.clicked += () => OnVisitUser(user);
+            actions.Add(visitBtn);
 
-            // 본인 공간일 때 팔로워 모달에 한해서만 차단 노출
-            bool canBlock = viewMode == ViewMode.Mine && currentUserListMode == UserListMode.Followers;
-            if (canBlock)
+            bool isMineSpace = viewMode == ViewMode.Mine;
+            if (isMineSpace && currentUserListMode == UserListMode.Followers)
             {
+                // 내 공간 팔로워 모달 — 차단만 노출 (자기 자신을 팔로우/언팔할 일 없음)
                 Button blockBtn = new Button { text = "차단" };
                 blockBtn.AddToClassList("user-row-action-button");
                 blockBtn.AddToClassList("danger");
                 blockBtn.clicked += () => OnBlockUser(row, user);
                 actions.Add(blockBtn);
             }
+            else if (isMineSpace && currentUserListMode == UserListMode.Followings)
+            {
+                // 내 공간 팔로잉 모달 — 언팔로우만
+                Button followBtn = new Button();
+                followBtn.AddToClassList("user-row-action-button");
+                UpdateFollowButton(followBtn, true);
+                followBtn.clicked += () => OnToggleFollow(followBtn, user);
+                actions.Add(followBtn);
+            }
+            else
+            {
+                // 타인 공간 모달 — 팔로우/언팔로우 토글
+                Button followBtn = new Button();
+                followBtn.AddToClassList("user-row-action-button");
+                UpdateFollowButton(followBtn, user.Following);
+                followBtn.clicked += () => OnToggleFollow(followBtn, user);
+                actions.Add(followBtn);
+            }
 
             row.Add(actions);
             return row;
+        }
+
+        private void OnVisitUser(UserSummary user)
+        {
+            CloseUserListModal();
+            // Mock 가정: user.Id == spaceId. Api 합류 시 user-to-space 매핑 따로 조회.
+            long targetSpaceId = user.Id;
+            if (currentSnapshot != null && user.Id == currentSnapshot.Space.OwnerUserId)
+            {
+                return;
+            }
+            viewMode = ViewMode.Visitor;
+            visitedSpaceId = targetSpaceId;
+            ApplyViewMode();
+            loadDashboardUseCase.Execute(targetSpaceId, OnDashboardLoaded, OnError);
         }
 
         private static void UpdateFollowButton(Button button, bool following)
@@ -1443,7 +1478,8 @@ namespace Dotshelf.Scripts.Dashboard
         private void UpdateOwnedBooksSortButtons()
         {
             SetSelected(ownedBooksSortAddedDescButton, currentOwnedBooksSort == OwnedBookSort.AddedDesc);
-            SetSelected(ownedBooksSortAddedAscButton, currentOwnedBooksSort == OwnedBookSort.AddedAsc);
+            SetSelected(ownedBooksSortPublishedDescButton, currentOwnedBooksSort == OwnedBookSort.PublishedDesc);
+            SetSelected(ownedBooksSortPublishedAscButton, currentOwnedBooksSort == OwnedBookSort.PublishedAsc);
             SetSelected(ownedBooksSortTitleButton, currentOwnedBooksSort == OwnedBookSort.TitleAsc);
         }
 

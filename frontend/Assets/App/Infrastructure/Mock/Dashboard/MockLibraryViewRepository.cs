@@ -82,8 +82,11 @@ namespace App.Infrastructure.Mock.Dashboard
             List<OwnedBookItem> copy = new List<OwnedBookItem>(source);
             switch (sort)
             {
-                case OwnedBookSort.AddedAsc:
-                    copy.Sort((a, b) => a.AddedAt.CompareTo(b.AddedAt));
+                case OwnedBookSort.PublishedDesc:
+                    copy.Sort((a, b) => string.Compare(b.PublishedDate ?? string.Empty, a.PublishedDate ?? string.Empty, StringComparison.Ordinal));
+                    break;
+                case OwnedBookSort.PublishedAsc:
+                    copy.Sort((a, b) => string.Compare(a.PublishedDate ?? string.Empty, b.PublishedDate ?? string.Empty, StringComparison.Ordinal));
                     break;
                 case OwnedBookSort.TitleAsc:
                     copy.Sort((a, b) => string.Compare(a.Title, b.Title, StringComparison.CurrentCulture));
