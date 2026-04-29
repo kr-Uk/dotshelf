@@ -40,12 +40,17 @@ namespace Dotshelf.Scripts.Dashboard
         private LoadGuestbookPageUseCase loadGuestbookPageUseCase;
         private LoadOwnedBooksPageUseCase loadOwnedBooksUseCase;
         private LoadReadingRecordsPageUseCase loadReadingRecordsUseCase;
+        private LoadFollowersPageUseCase loadFollowersUseCase;
+        private LoadFollowingsPageUseCase loadFollowingsUseCase;
+        private FollowUserUseCase followUseCase;
+        private UnfollowUserUseCase unfollowUseCase;
+        private BlockUserUseCase blockUseCase;
 
         private VisualElement root;
         private Label nicknameLabel;
         private Label introductionLabel;
-        private Label followingCountLabel;
-        private Label followersCountLabel;
+        private Button followingCountButton;
+        private Button followersCountButton;
         private Button likeToggleButton;
         private Label likeCountLabel;
         private Label bookCountLabel;
@@ -60,6 +65,21 @@ namespace Dotshelf.Scripts.Dashboard
         private Button writeGuestbookButton;
         private ScrollView booksCarousel;
         private ScrollView recordsCarousel;
+
+        private VisualElement userListModalRoot;
+        private VisualElement userListModalBackdrop;
+        private VisualElement userListModalList;
+        private Label userListModalTitle;
+        private Button userListModalCloseButton;
+        private Label userListModalEmpty;
+
+        private enum UserListMode
+        {
+            Followers,
+            Followings
+        }
+
+        private UserListMode currentUserListMode;
 
         private DashboardSnapshot currentSnapshot;
         private bool likeRequestInFlight;
@@ -108,20 +128,26 @@ namespace Dotshelf.Scripts.Dashboard
             IDashboardRepository dashboardRepo = new MockDashboardRepository();
             IGuestbookRepository guestbookRepo = new MockGuestbookRepository();
             ILibraryViewRepository libraryRepo = new MockLibraryViewRepository();
+            IFollowRepository followRepo = new MockFollowRepository();
 
             loadDashboardUseCase = new LoadDashboardUseCase(dashboardRepo);
             toggleLikeUseCase = new ToggleSpaceLikeUseCase(dashboardRepo);
             loadGuestbookPageUseCase = new LoadGuestbookPageUseCase(guestbookRepo);
             loadOwnedBooksUseCase = new LoadOwnedBooksPageUseCase(libraryRepo);
             loadReadingRecordsUseCase = new LoadReadingRecordsPageUseCase(libraryRepo);
+            loadFollowersUseCase = new LoadFollowersPageUseCase(followRepo);
+            loadFollowingsUseCase = new LoadFollowingsPageUseCase(followRepo);
+            followUseCase = new FollowUserUseCase(followRepo);
+            unfollowUseCase = new UnfollowUserUseCase(followRepo);
+            blockUseCase = new BlockUserUseCase(followRepo);
         }
 
         private void QueryUI()
         {
             nicknameLabel = root.Q<Label>("nickname-label");
             introductionLabel = root.Q<Label>("introduction-label");
-            followingCountLabel = root.Q<Label>("following-count-label");
-            followersCountLabel = root.Q<Label>("followers-count-label");
+            followingCountButton = root.Q<Button>("following-count-label");
+            followersCountButton = root.Q<Button>("followers-count-label");
             likeToggleButton = root.Q<Button>("like-toggle-button");
             likeCountLabel = root.Q<Label>("like-count-label");
             bookCountLabel = root.Q<Label>("book-count-label");
@@ -136,6 +162,13 @@ namespace Dotshelf.Scripts.Dashboard
             writeGuestbookButton = root.Q<Button>("write-guestbook-button");
             booksCarousel = root.Q<ScrollView>("recent-books-carousel");
             recordsCarousel = root.Q<ScrollView>("recent-records-carousel");
+
+            userListModalRoot = root.Q<VisualElement>("user-list-modal");
+            userListModalBackdrop = root.Q<VisualElement>("user-list-modal-backdrop");
+            userListModalList = root.Q<VisualElement>("user-list-modal-list");
+            userListModalTitle = root.Q<Label>("user-list-modal-title");
+            userListModalCloseButton = root.Q<Button>("user-list-modal-close-button");
+            userListModalEmpty = root.Q<Label>("user-list-modal-empty");
         }
 
         private void WireEvents()
@@ -168,6 +201,22 @@ namespace Dotshelf.Scripts.Dashboard
             {
                 EnableHorizontalDragScroll(recordsCarousel);
             }
+            if (followersCountButton != null)
+            {
+                followersCountButton.clicked += OnFollowersClicked;
+            }
+            if (followingCountButton != null)
+            {
+                followingCountButton.clicked += OnFollowingsClicked;
+            }
+            if (userListModalCloseButton != null)
+            {
+                userListModalCloseButton.clicked += CloseUserListModal;
+            }
+            if (userListModalBackdrop != null)
+            {
+                userListModalBackdrop.RegisterCallback<ClickEvent>(_ => CloseUserListModal());
+            }
         }
 
         private void UnwireEvents()
@@ -177,6 +226,9 @@ namespace Dotshelf.Scripts.Dashboard
             if (guestbookNextButton != null) guestbookNextButton.clicked -= OnGuestbookNext;
             if (editButton != null) editButton.clicked -= OnEditClicked;
             if (writeGuestbookButton != null) writeGuestbookButton.clicked -= OnWriteGuestbookClicked;
+            if (followersCountButton != null) followersCountButton.clicked -= OnFollowersClicked;
+            if (followingCountButton != null) followingCountButton.clicked -= OnFollowingsClicked;
+            if (userListModalCloseButton != null) userListModalCloseButton.clicked -= CloseUserListModal;
         }
 
         private void ApplyViewMode()
@@ -339,8 +391,8 @@ namespace Dotshelf.Scripts.Dashboard
 
             if (nicknameLabel != null) nicknameLabel.text = snapshot.OwnerNickname;
             if (introductionLabel != null) introductionLabel.text = snapshot.OwnerIntroduction;
-            if (followingCountLabel != null) followingCountLabel.text = $"팔로잉 {snapshot.FollowingCount}";
-            if (followersCountLabel != null) followersCountLabel.text = $"팔로워 {snapshot.FollowerCount}";
+            if (followingCountButton != null) followingCountButton.text = $"팔로잉 {snapshot.FollowingCount}";
+            if (followersCountButton != null) followersCountButton.text = $"팔로워 {snapshot.FollowerCount}";
             if (likeCountLabel != null) likeCountLabel.text = snapshot.Space.LikeCount.ToString();
             if (bookCountLabel != null) bookCountLabel.text = snapshot.BookCount.ToString();
             if (recordCountLabel != null) recordCountLabel.text = snapshot.ReadingRecordCount.ToString();
@@ -564,6 +616,189 @@ namespace Dotshelf.Scripts.Dashboard
         {
             Debug.LogWarning($"[Dashboard] API error: {error?.Code} {error?.Message}");
         }
+
+        // ===== 팔로워/팔로잉 모달 =====
+
+        private void OnFollowersClicked()
+        {
+            OpenUserListModal(UserListMode.Followers);
+        }
+
+        private void OnFollowingsClicked()
+        {
+            OpenUserListModal(UserListMode.Followings);
+        }
+
+        private void OpenUserListModal(UserListMode mode)
+        {
+            currentUserListMode = mode;
+            if (userListModalTitle != null)
+            {
+                userListModalTitle.text = mode == UserListMode.Followers ? "팔로워" : "팔로잉";
+            }
+            if (userListModalRoot != null)
+            {
+                userListModalRoot.RemoveFromClassList("hidden");
+            }
+            LoadUserListPage();
+        }
+
+        private void CloseUserListModal()
+        {
+            if (userListModalRoot != null)
+            {
+                userListModalRoot.AddToClassList("hidden");
+            }
+            if (userListModalList != null)
+            {
+                userListModalList.Clear();
+            }
+        }
+
+        private void LoadUserListPage()
+        {
+            long userId = currentSnapshot?.Space.OwnerUserId ?? 0L;
+            if (currentUserListMode == UserListMode.Followers)
+            {
+                loadFollowersUseCase.Execute(userId, null,
+                    onSuccess: RenderUserList,
+                    onError: OnError);
+            }
+            else
+            {
+                loadFollowingsUseCase.Execute(userId, null,
+                    onSuccess: RenderUserList,
+                    onError: OnError);
+            }
+        }
+
+        private void RenderUserList(UserListPage page)
+        {
+            if (userListModalList == null)
+            {
+                return;
+            }
+
+            userListModalList.Clear();
+            if (page.Items.Count == 0)
+            {
+                if (userListModalEmpty != null) userListModalEmpty.RemoveFromClassList("hidden");
+                return;
+            }
+
+            if (userListModalEmpty != null) userListModalEmpty.AddToClassList("hidden");
+
+            for (int i = 0; i < page.Items.Count; i++)
+            {
+                userListModalList.Add(BuildUserRow(page.Items[i]));
+            }
+        }
+
+        private VisualElement BuildUserRow(UserSummary user)
+        {
+            VisualElement row = new VisualElement();
+            row.AddToClassList("user-row");
+
+            VisualElement avatar = new VisualElement();
+            avatar.AddToClassList("user-row-image");
+            row.Add(avatar);
+
+            VisualElement textBlock = new VisualElement();
+            textBlock.AddToClassList("user-row-text");
+            Label nickname = new Label(user.Nickname);
+            nickname.AddToClassList("user-row-nickname");
+            textBlock.Add(nickname);
+            if (user.Mutual)
+            {
+                Label tag = new Label("맞팔");
+                tag.AddToClassList("user-row-tag");
+                textBlock.Add(tag);
+            }
+            row.Add(textBlock);
+
+            VisualElement actions = new VisualElement();
+            actions.AddToClassList("user-row-actions");
+
+            // 팔로우/언팔로우
+            Button followBtn = new Button();
+            followBtn.AddToClassList("user-row-action-button");
+            UpdateFollowButton(followBtn, user.Following);
+            followBtn.clicked += () => OnToggleFollow(followBtn, user);
+            actions.Add(followBtn);
+
+            // 본인 공간일 때 팔로워 모달에 한해서만 차단 노출
+            bool canBlock = viewMode == ViewMode.Mine && currentUserListMode == UserListMode.Followers;
+            if (canBlock)
+            {
+                Button blockBtn = new Button { text = "차단" };
+                blockBtn.AddToClassList("user-row-action-button");
+                blockBtn.AddToClassList("danger");
+                blockBtn.clicked += () => OnBlockUser(row, user);
+                actions.Add(blockBtn);
+            }
+
+            row.Add(actions);
+            return row;
+        }
+
+        private static void UpdateFollowButton(Button button, bool following)
+        {
+            button.text = following ? "팔로잉" : "팔로우";
+            if (following)
+            {
+                button.RemoveFromClassList("primary");
+            }
+            else
+            {
+                button.AddToClassList("primary");
+            }
+        }
+
+        private void OnToggleFollow(Button button, UserSummary user)
+        {
+            bool wasFollowing = button.text == "팔로잉";
+            UpdateFollowButton(button, !wasFollowing);
+            button.SetEnabled(false);
+            if (wasFollowing)
+            {
+                unfollowUseCase.Execute(user.Id,
+                    onSuccess: result =>
+                    {
+                        button.SetEnabled(true);
+                        UpdateFollowButton(button, result.Following);
+                    },
+                    onError: error =>
+                    {
+                        button.SetEnabled(true);
+                        UpdateFollowButton(button, wasFollowing);
+                        OnError(error);
+                    });
+            }
+            else
+            {
+                followUseCase.Execute(user.Id,
+                    onSuccess: result =>
+                    {
+                        button.SetEnabled(true);
+                        UpdateFollowButton(button, result.Following);
+                    },
+                    onError: error =>
+                    {
+                        button.SetEnabled(true);
+                        UpdateFollowButton(button, wasFollowing);
+                        OnError(error);
+                    });
+            }
+        }
+
+        private void OnBlockUser(VisualElement row, UserSummary user)
+        {
+            blockUseCase.Execute(user.Id,
+                onSuccess: _ => row.RemoveFromHierarchy(),
+                onError: OnError);
+        }
+
+        // ===== 캐러셀 드래그 스크롤 =====
 
         /// <summary>
         /// ScrollView 영역에 마우스 좌클릭+드래그로 가로 스크롤할 수 있게 한다.

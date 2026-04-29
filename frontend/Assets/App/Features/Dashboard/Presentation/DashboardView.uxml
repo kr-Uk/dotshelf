@@ -11,8 +11,8 @@
                         <ui:VisualElement name="profile-top-row" class="profile-top-row">
                             <ui:Label name="nickname-label" class="nickname-label" text="Loading..." />
                             <ui:VisualElement name="follow-stats" class="follow-stats">
-                                <ui:Label name="following-count-label" class="follow-stat" text="팔로잉 0" />
-                                <ui:Label name="followers-count-label" class="follow-stat" text="팔로워 0" />
+                                <ui:Button name="following-count-label" class="follow-stat follow-stat-button" text="팔로잉 0" />
+                                <ui:Button name="followers-count-label" class="follow-stat follow-stat-button" text="팔로워 0" />
                             </ui:VisualElement>
                         </ui:VisualElement>
                         <ui:Label name="introduction-label" class="introduction-label" text="" />
@@ -70,6 +70,20 @@
         <ui:VisualElement name="dashboard-action-overlay" class="dashboard-action-overlay" picking-mode="Ignore">
             <ui:Button name="edit-dashboard-button" class="bottom-action-button edit-button" text="편집" />
             <ui:Button name="write-guestbook-button" class="bottom-action-button write-button" text="방명록 작성" />
+        </ui:VisualElement>
+
+        <ui:VisualElement name="user-list-modal" class="modal-root hidden">
+            <ui:VisualElement name="user-list-modal-backdrop" class="modal-backdrop" />
+            <ui:VisualElement name="user-list-modal-frame" class="modal-frame">
+                <ui:VisualElement class="modal-header">
+                    <ui:Label name="user-list-modal-title" class="modal-title" text="팔로워" />
+                    <ui:Button name="user-list-modal-close-button" class="modal-close-button" text="✕" />
+                </ui:VisualElement>
+                <ui:ScrollView name="user-list-modal-scroll" class="modal-scroll" vertical-scroller-visibility="Auto" horizontal-scroller-visibility="Hidden">
+                    <ui:VisualElement name="user-list-modal-list" class="user-list" />
+                </ui:ScrollView>
+                <ui:Label name="user-list-modal-empty" class="modal-empty hidden" text="아직 없습니다." />
+            </ui:VisualElement>
         </ui:VisualElement>
 
     </ui:VisualElement>

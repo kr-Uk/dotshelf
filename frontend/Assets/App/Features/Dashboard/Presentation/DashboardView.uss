@@ -72,6 +72,19 @@
     color: rgb(110, 110, 110);
 }
 
+.follow-stat-button {
+    background-color: transparent;
+    border-width: 0;
+    padding: 0;
+    min-width: auto;
+    min-height: auto;
+}
+
+.follow-stat-button:hover {
+    color: rgb(60, 60, 60);
+    background-color: transparent;
+}
+
 .like-toggle-button {
     background-color: transparent;
     border-width: 0;
@@ -393,4 +406,155 @@
 
 .hidden {
     display: none;
+}
+
+/* ===== Modal infrastructure ===== */
+
+.modal-root {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.45);
+}
+
+.modal-frame {
+    width: 480px;
+    height: 560px;
+    max-width: 90%;
+    max-height: 90%;
+    background-color: rgb(252, 250, 245);
+    border-radius: 12px;
+    padding: 16px;
+    flex-direction: column;
+}
+
+.modal-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-shrink: 0;
+    height: 28px;
+}
+
+.modal-title {
+    font-size: 16px;
+    -unity-font-style: bold;
+    color: rgb(40, 40, 40);
+}
+
+.modal-close-button {
+    width: 28px;
+    height: 28px;
+    background-color: transparent;
+    border-width: 0;
+    font-size: 14px;
+    color: rgb(120, 120, 120);
+}
+
+.modal-close-button:hover {
+    color: rgb(40, 40, 40);
+}
+
+.modal-scroll {
+    flex-grow: 1;
+}
+
+.modal-scroll .unity-scroll-view__horizontal-scroller {
+    display: none;
+}
+
+.modal-empty {
+    -unity-text-align: middle-center;
+    color: rgb(150, 150, 150);
+    font-size: 13px;
+    margin-top: 24px;
+}
+
+.user-list {
+    flex-direction: column;
+}
+
+.user-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 8px;
+    margin-bottom: 6px;
+    background-color: rgba(255, 255, 255, 0.7);
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.user-row-image {
+    width: 36px;
+    height: 36px;
+    border-radius: 18px;
+    background-color: rgb(220, 220, 220);
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+.user-row-text {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.user-row-nickname {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: rgb(40, 40, 40);
+}
+
+.user-row-tag {
+    font-size: 10px;
+    color: rgb(140, 100, 100);
+    margin-top: 2px;
+}
+
+.user-row-actions {
+    flex-direction: row;
+}
+
+.user-row-action-button {
+    height: 28px;
+    min-width: 60px;
+    padding: 0 10px;
+    margin-left: 6px;
+    font-size: 11px;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: rgb(200, 200, 200);
+    background-color: rgb(255, 255, 255);
+    color: rgb(60, 60, 60);
+}
+
+.user-row-action-button.primary {
+    background-color: rgb(120, 160, 200);
+    color: white;
+    border-color: rgb(120, 160, 200);
+}
+
+.user-row-action-button.danger {
+    color: rgb(200, 80, 80);
+    border-color: rgb(220, 180, 180);
+}
+
+.user-row-action-button:hover {
+    background-color: rgb(245, 245, 240);
+}
+
+.user-row-action-button.primary:hover {
+    background-color: rgb(100, 140, 180);
 }
