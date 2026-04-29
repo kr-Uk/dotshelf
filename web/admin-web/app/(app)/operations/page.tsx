@@ -73,8 +73,15 @@ export default function OperationsPage() {
 
   const toggleMaintenance = async () => {
     try {
-      await api("/operations/maintenance", { method: "POST" });
+      await api("/operations/maintenance", {
+        method: "POST",
+        body: JSON.stringify({
+          enabled: !(health?.maintenanceMode ?? false),
+          message: "관리자 콘솔에서 점검 모드를 변경했습니다.",
+        }),
+      });
       toast.success("점검 모드 토글 — 사용자 앱에 점검 안내 화면 노출");
+      qc.invalidateQueries({ queryKey: ["system-health"] });
     } catch {
       toast.error("처리에 실패했어요.");
     }

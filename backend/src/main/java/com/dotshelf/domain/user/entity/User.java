@@ -76,4 +76,24 @@ public class User extends BaseEntity {
         this.status = "DELETED";
         this.deletedAt = Instant.now();
     }
+
+    public void changeStatus(String status) {
+        this.status = status;
+        if ("DELETED".equalsIgnoreCase(status)) {
+            this.deletedAt = Instant.now();
+        }
+    }
+
+    public void changeRole(String role) {
+        this.role = role;
+    }
+
+    public void anonymize() {
+        this.email = null;
+        this.nickname = "deleted-user-" + this.id;
+        this.profileImageUrl = null;
+        this.introduction = null;
+        this.status = "DELETED";
+        this.deletedAt = Instant.now();
+    }
 }

@@ -560,13 +560,15 @@ export interface AdminNotification {
 }
 
 // --- Global Search -------------------------------------------------------
-export type SearchHitType = "user" | "signup" | "review" | "report";
+export type SearchHitType = "user" | "signup" | "review" | "report" | "space" | "book";
 
 export const SEARCH_HIT_LABEL: Record<SearchHitType, string> = {
   user: "사용자",
   signup: "가입 신청",
   review: "심사",
   report: "신고",
+  space: "공간",
+  book: "도서",
 };
 
 export interface SearchHit {

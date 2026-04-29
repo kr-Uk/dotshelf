@@ -2,6 +2,14 @@
 
 작성일: 2026-04-29
 
+구현 상태: 2026-04-29 기준 `com.dotshelf.domain.admin` 수직 슬라이스로 1차 구현 완료.
+
+- Controller: `backend/src/main/java/com/dotshelf/domain/admin/controller/AdminController.java`
+- Service: `backend/src/main/java/com/dotshelf/domain/admin/service/AdminService.java`
+- DTO: `backend/src/main/java/com/dotshelf/domain/admin/dto/AdminDtos.java`
+- 신규 admin 테이블 SQL: `backend/src/main/resources/db/migration/V7__create_admin_tables.sql`
+- 신규 테이블은 기존 `V6__create_admin_schema.sql`의 `admin` 스키마 아래 생성한다.
+
 ## 범위
 
 `web/admin-web`의 하드코딩/MSW 데이터를 백엔드 API로 교체하기 위한 1차 명세다.
