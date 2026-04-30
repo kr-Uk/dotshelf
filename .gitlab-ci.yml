@@ -155,7 +155,7 @@ backend:deploy:
     # --- Evidence: 30s post-cutover polling (informational, non-blocking) ---
     - sh .ci/poll-health.sh "https://api.dotshelf.digital/health" 30 || echo "⚠️ 배포 후 30초 폴링에서 실패 감지"
   environment:
-    name: dev
+    name: backend-prod
     url: https://api.dotshelf.digital
 
 service-web:deploy:
@@ -191,7 +191,7 @@ service-web:deploy:
     - curl -fsS https://dotshelf.digital/health -o /dev/null
     - curl -fsS https://dotshelf.digital/ -o /dev/null
   environment:
-    name: service-web
+    name: service-web-prod
     url: https://dotshelf.digital
 
 admin-web:deploy:
@@ -223,7 +223,7 @@ admin-web:deploy:
     # --- Health 검증: 컨테이너 직접만(Cloudflare Access 가 공개 URL 을 막아 외부 curl 은 302 로그인 페이지 반환) ---
     - ssh "$EC2_USER@$EC2_HOST" "curl -fsS http://100.74.2.103:3001/ -o /dev/null"
   environment:
-    name: admin-web
+    name: admin-web-prod
     url: https://admin.dotshelf.digital
 
 # ==============================================================================
