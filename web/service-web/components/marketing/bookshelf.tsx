@@ -13,30 +13,38 @@ const SPINE_COLORS: ReadonlyArray<readonly [string, string]> = [
   ["#3A2E26", "#1B1410"],
 ];
 
-function Books({ count = 14, base = 0 }: { count?: number; base?: number }) {
+function Books({ count = 11, base = 0 }: { count?: number; base?: number }) {
+  let cursor = 0;
+  const books = Array.from({ length: count }).map((_, i) => {
+    const seed = i + base;
+    const c = SPINE_COLORS[seed % SPINE_COLORS.length];
+    const h = 82 + ((seed * 13) % 17);
+    const w = 14 + ((seed * 7) % 11);
+    const leanIdx = (seed * 5) % 13;
+    const tilt = leanIdx === 3 ? -5 : leanIdx === 9 ? 4 : 0;
+    const gapType = (seed * 3) % 11;
+    const extraGap =
+      gapType === 2 ? 7 : gapType === 5 ? 16 : gapType === 8 ? 24 : 0;
+    const left = cursor;
+    cursor += w + 1.5 + extraGap;
+    return { c, h, w, tilt, left };
+  });
   return (
     <>
-      {Array.from({ length: count }).map((_, i) => {
-        const c = SPINE_COLORS[(i + base) % SPINE_COLORS.length];
-        const h = 70 + ((i * 13) % 28);
-        const w = 14 + ((i * 7) % 10);
-        const tilt = i === count - 2 ? -6 : 0;
-        const left = i * (w + 1.5);
-        return (
-          <div
-            key={i}
-            className="book-spine"
-            style={{
-              left: `${left}px`,
-              width: `${w}px`,
-              height: `${h}%`,
-              background: `linear-gradient(180deg, ${c[0]} 0%, ${c[1]} 100%)`,
-              transform: `rotate(${tilt}deg)`,
-              transformOrigin: "bottom left",
-            }}
-          />
-        );
-      })}
+      {books.map((b, i) => (
+        <div
+          key={i}
+          className="book-spine"
+          style={{
+            left: `${b.left}px`,
+            width: `${b.w}px`,
+            height: `${b.h}%`,
+            background: `linear-gradient(180deg, ${b.c[0]} 0%, ${b.c[1]} 100%)`,
+            transform: `rotate(${b.tilt}deg)`,
+            transformOrigin: "bottom left",
+          }}
+        />
+      ))}
     </>
   );
 }
@@ -46,21 +54,30 @@ function Shelf({
   height = 110,
   books = 14,
   base = 0,
+  topPlank = true,
 }: {
   width?: number;
   height?: number;
   books?: number;
   base?: number;
+  topPlank?: boolean;
 }) {
   return (
     <div className="relative" style={{ width, height }}>
-      <div
-        className="wood-grain absolute left-0 right-0"
-        style={{ bottom: 0, height: 14, borderRadius: 2 }}
-      />
+      {topPlank && (
+        <div
+          className="wood-grain absolute left-0 right-0"
+          style={{ top: 0, height: 14, borderRadius: 2 }}
+        />
+      )}
       <div
         className="absolute"
-        style={{ left: 12, right: 12, bottom: 14, top: 4 }}
+        style={{
+          left: 12,
+          right: 12,
+          top: topPlank ? 14 : 0,
+          bottom: 0,
+        }}
       >
         <Books count={books} base={base} />
       </div>
@@ -72,53 +89,25 @@ export function Bookshelf3D() {
   return (
     <div className="scene w-full" style={{ minHeight: 460 }}>
       <div
-        className="shelf-stage relative mx-auto"
-        style={{ width: 460, maxWidth: "100%" }}
+        className="shelf-stage relative mx-auto rounded-md overflow-hidden"
+        style={{
+          width: 460,
+          maxWidth: "100%",
+          background:
+            "linear-gradient(108deg, #F2E7D2 0%, #E5D2B6 55%, #C9B393 100%)",
+          boxShadow:
+            "inset 14px 0 32px -10px rgba(58, 46, 38, 0.3), inset -10px 0 28px -8px rgba(255, 245, 220, 0.28), inset 0 0 60px rgba(58, 46, 38, 0.1)",
+        }}
       >
-        <div
-          className="absolute inset-0 rounded-md"
-          style={{
-            background: "linear-gradient(180deg, #EFE3CF 0%, #DCC8A8 100%)",
-            transform: "translateZ(-40px)",
-            boxShadow: "inset 0 0 60px rgba(58,46,38,0.18)",
-          }}
-        />
-        <div
-          className="wood-grain absolute"
-          style={{
-            left: -10,
-            top: -10,
-            bottom: -10,
-            width: 16,
-            borderRadius: 4,
-          }}
-        />
-        <div
-          className="wood-grain absolute"
-          style={{
-            right: -10,
-            top: -10,
-            bottom: -10,
-            width: 16,
-            borderRadius: 4,
-          }}
-        />
-        <div
-          className="wood-grain absolute"
-          style={{
-            left: -14,
-            right: -14,
-            top: -16,
-            height: 18,
-            borderRadius: 4,
-          }}
-        />
-
-        <div className="flex flex-col gap-6 p-4">
-          <Shelf books={13} base={0} />
-          <Shelf books={15} base={3} />
-          <Shelf books={12} base={6} />
-          <Shelf books={14} base={9} />
+        <div className="flex flex-col p-4">
+          <Shelf books={12} base={0} topPlank={false} />
+          <Shelf books={11} base={4} />
+          <Shelf books={13} base={7} />
+          <Shelf books={10} base={11} />
+          <div
+            className="wood-grain"
+            style={{ height: 14, borderRadius: 2 }}
+          />
         </div>
 
         <div
