@@ -190,7 +190,12 @@ namespace App.Infrastructure.Api
                 bookId,
                 "POPULAR",
                 20,
-                response => onSuccess?.Invoke(new NotebookReviewListResult(MapReviews(response))),
+                response =>
+                {
+                    var reviews = MapReviews(response);
+                    LogVerbose($"Book review API loaded {reviews.Count} item(s). bookId={bookId}");
+                    onSuccess?.Invoke(new NotebookReviewListResult(reviews));
+                },
                 error => onError?.Invoke(MapError(error)));
         }
 
@@ -208,7 +213,11 @@ namespace App.Infrastructure.Api
                     Rating = Convert.ToDecimal(Mathf.Clamp(rating, 0.5f, 5f)),
                     Content = content
                 },
-                response => onSuccess?.Invoke(MapReview(response)),
+                response =>
+                {
+                    LogVerbose($"Book review API created. bookId={bookId}, reviewId={response?.ReviewId ?? 0}");
+                    onSuccess?.Invoke(MapReview(response));
+                },
                 error => onError?.Invoke(MapError(error)));
         }
 
@@ -387,6 +396,14 @@ namespace App.Infrastructure.Api
                 Error = message
             });
             return false;
+        }
+
+        private void LogVerbose(string message)
+        {
+            if (client != null && client.VerboseLogEnabled)
+            {
+                Debug.Log(message);
+            }
         }
 
         private static string NormalizeCategory(string category)

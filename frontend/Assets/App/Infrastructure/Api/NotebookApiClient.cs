@@ -15,6 +15,8 @@ namespace App.Infrastructure.Api
             this.api = api != null ? api : APIManager.Instance;
         }
 
+        public bool VerboseLogEnabled => api != null && api.EnableVerboseLog;
+
         public Coroutine CheckHealth(Action<ApiHealthCheckResult> onComplete, string path = "/health")
         {
             return RequireApi().CheckHealth(onComplete, path);
@@ -63,12 +65,36 @@ namespace App.Infrastructure.Api
 
         public Coroutine GetBooks(string category, int limit, Action<BookListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
+            var normalizedCategory = string.IsNullOrWhiteSpace(category)
+                ? "RANKING"
+                : category.Trim().ToUpperInvariant();
+            var validLimit = Mathf.Max(1, limit);
+
+            switch (normalizedCategory)
+            {
+                case "RECOMMENDED":
+                case "RECOMMEND":
+                    return Get<BookListResponseDto>(
+                        WithQuery("/v1/books/recommended", Query("limit", validLimit.ToString())),
+                        onSuccess,
+                        onError);
+                case "RANKING":
+                case "POPULAR":
+                    return GetRankingBooks(validLimit, onSuccess, onError);
+                default:
+                    Debug.LogWarning($"Unknown notebook book category '{category}'. Falling back to RANKING.");
+                    return GetRankingBooks(validLimit, onSuccess, onError);
+            }
+        }
+
+        private Coroutine GetRankingBooks(int limit, Action<BookListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError)
+        {
             var query = new Dictionary<string, string>
             {
-                ["category"] = string.IsNullOrWhiteSpace(category) ? "RANKING" : category,
-                ["limit"] = Mathf.Max(1, limit).ToString()
+                ["sort"] = "POPULAR",
+                ["limit"] = limit.ToString()
             };
-            return Get<BookListResponseDto>(WithQuery("/v1/books", query), onSuccess, onError);
+            return Get<BookListResponseDto>(WithQuery("/v1/books/ranking", query), onSuccess, onError);
         }
 
         public Coroutine GetBook(long bookId, Action<BookResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)

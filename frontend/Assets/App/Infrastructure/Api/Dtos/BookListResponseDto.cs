@@ -15,7 +15,8 @@ namespace App.Infrastructure.Api.Dtos
         public string NextCursor { get; set; }
 
         [JsonIgnore]
-        public List<BookListItemDto> EffectiveItems => Items ?? Books ?? new List<BookListItemDto>();
+        public List<BookListItemDto> EffectiveItems =>
+            Items != null && Items.Count > 0 ? Items : Books ?? new List<BookListItemDto>();
     }
 
     public class BookListItemDto
