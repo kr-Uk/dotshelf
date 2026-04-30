@@ -14,6 +14,7 @@
                                 <ui:Button name="following-count-label" class="follow-stat follow-stat-button" text="팔로잉 0" />
                                 <ui:Button name="followers-count-label" class="follow-stat follow-stat-button" text="팔로워 0" />
                             </ui:VisualElement>
+                            <ui:Button name="return-mine-button" class="return-mine-button hidden" text="내 공간으로" />
                         </ui:VisualElement>
                         <ui:Label name="introduction-label" class="introduction-label" text="" />
                     </ui:VisualElement>

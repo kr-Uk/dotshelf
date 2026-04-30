@@ -1,5 +1,6 @@
 package com.dotshelf.domain.readingrecord.service;
 
+import java.util.Comparator;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -8,21 +9,25 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dotshelf.domain.book.entity.UserBook;
 import com.dotshelf.domain.book.repository.UserBookRepository;
 import com.dotshelf.domain.book.service.BookService;
-import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordListResponse;
+import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordPageResponse;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordRequest;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordResponse;
+import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordSummary;
 import com.dotshelf.domain.readingrecord.entity.ReadingRecord;
 import com.dotshelf.domain.readingrecord.entity.ReadingRecordLike;
 import com.dotshelf.domain.readingrecord.repository.ReadingRecordLikeRepository;
 import com.dotshelf.domain.readingrecord.repository.ReadingRecordRepository;
 import com.dotshelf.domain.user.service.UserService;
+import com.dotshelf.global.common.CursorParser;
 import com.dotshelf.global.common.ToggleResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ReadingRecordService {
@@ -37,14 +42,68 @@ public class ReadingRecordService {
         return ReadingRecordResponse.from(getRecordEntity(recordId));
     }
 
-    public ReadingRecordListResponse getUserRecords(Long userId) {
-        List<Long> userBookIds = userBookRepository.findByUserIdAndStorageStatusNot(userId, "DELETED").stream()
-                .map(UserBook::getId)
-                .toList();
-        return new ReadingRecordListResponse(readingRecordRepository.findByUserBookIdInAndStatus(userBookIds, "ACTIVE").stream()
-                .map(ReadingRecordResponse::from)
-                .toList());
+    private static final int DEFAULT_RECORD_LIMIT = 20;
+    private static final int MAX_RECORD_LIMIT = 50;
+    private static final int MEMORY_SORT_WARNING_THRESHOLD = 500;
+
+    /**
+     * 대시보드 \"독후감 풀 목록\" 모달용. v1.0 갱신 — 정렬·cursor 페이지네이션 합류.
+     * 보유 책 정렬과 동일하게 사용자당 ~수십건 가정으로 메모리 정렬·슬라이싱.
+     */
+    public ReadingRecordPageResponse getUserRecords(Long userId, String sort, String cursor, int limit) {
+        int validLimit = clampLimit(limit);
+        Long cursorId = CursorParser.parseId(cursor);
+
+        List<ReadingRecordSummary> all = readingRecordRepository.findUserRecordSummaries(userId);
+        // (MR #61 리뷰 #5) 메모리 정렬 fallback 한도. 가정 무너지면 즉시 경고.
+        if (all.size() > MEMORY_SORT_WARNING_THRESHOLD) {
+            log.warn("[ReadingRecords] memory-sort threshold 초과: userId={} count={}. server-side ORDER BY 전환 검토 필요.",
+                    userId, all.size());
+        }
+        List<ReadingRecordSummary> sorted = sortRecords(all, sort);
+
+        int startIdx = 0;
+        if (cursorId != null) {
+            for (int i = 0; i < sorted.size(); i++) {
+                if (cursorId.equals(sorted.get(i).id())) {
+                    startIdx = i + 1;
+                    break;
+                }
+            }
+        }
+        int endIdx = Math.min(startIdx + validLimit, sorted.size());
+        boolean hasMore = endIdx < sorted.size();
+        String nextCursor = hasMore ? String.valueOf(sorted.get(endIdx - 1).id()) : null;
+        return new ReadingRecordPageResponse(sorted.subList(startIdx, endIdx), nextCursor);
     }
+
+    private static List<ReadingRecordSummary> sortRecords(List<ReadingRecordSummary> items, String sort) {
+        Comparator<ReadingRecordSummary> primary = switch (sort == null ? "LATEST" : sort.toUpperCase()) {
+            case "OLDEST" ->
+                    Comparator.comparing(ReadingRecordSummary::createdAt,
+                            Comparator.nullsLast(Comparator.naturalOrder()));
+            case "MOST_LIKED" ->
+                    Comparator.comparingInt(ReadingRecordSummary::likeCount).reversed();
+            case "MOST_VIEWED" ->
+                    Comparator.comparingInt(ReadingRecordSummary::viewCount).reversed();
+            case "MOST_COMMENTED" ->
+                    Comparator.comparingInt(ReadingRecordSummary::commentCount).reversed();
+            default ->
+                    Comparator.comparing(ReadingRecordSummary::createdAt,
+                            Comparator.nullsLast(Comparator.reverseOrder()));
+        };
+        Comparator<ReadingRecordSummary> tiebreaker = Comparator.comparing(
+                ReadingRecordSummary::id, Comparator.reverseOrder());
+        return items.stream().sorted(primary.thenComparing(tiebreaker)).toList();
+    }
+
+    private static int clampLimit(int limit) {
+        if (limit <= 0) {
+            return DEFAULT_RECORD_LIMIT;
+        }
+        return Math.min(limit, MAX_RECORD_LIMIT);
+    }
+
 
     @Transactional
     public ReadingRecordResponse create(Long userId, ReadingRecordRequest request) {

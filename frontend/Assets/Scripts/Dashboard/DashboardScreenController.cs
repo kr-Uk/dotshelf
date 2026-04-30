@@ -26,6 +26,11 @@ namespace Dotshelf.Scripts.Dashboard
         [SerializeField] private StyleSheet stylesheet;
         [SerializeField] private PostItStyleCatalogAsset postItCatalog;
 
+        [Tooltip("World Space에 dashboard를 띄울 때 사용할 PanelSettings. " +
+                "비워두면 UIDocument의 기본 PanelSettings(보통 Screen Space Overlay) 사용. " +
+                "(v1.0 dashboard 통합) MainScene에서 GuestbookBoard 화이트보드 표면에 그릴 때 World Space PanelSettings SO를 주입.")]
+        [SerializeField] private UnityEngine.UIElements.PanelSettings overridePanelSettings;
+
         [Header("Mode")]
         [SerializeField] private ViewMode viewMode = ViewMode.Mine;
         [SerializeField] private long visitedSpaceId = 1L;
@@ -73,6 +78,7 @@ namespace Dotshelf.Scripts.Dashboard
         private Label guestbookPageLabel;
         private Button editButton;
         private Button writeGuestbookButton;
+        private Button returnMineButton;
         private ScrollView booksCarousel;
         private ScrollView recordsCarousel;
 
@@ -94,7 +100,8 @@ namespace Dotshelf.Scripts.Dashboard
         private long selectedPostItStyleId;
         private VisualElement selectedPostItStyleCell;
 
-        private static readonly long[] MockPostItStyleIds = { 1L, 2L, 3L, 4L, 5L };
+        // PostItStyleCatalogAsset → IPostItStyleCatalog 어댑터 (lazy init).
+        private IPostItStyleCatalog postItStyleCatalog;
 
         private VisualElement guestbookDetailModalRoot;
         private Label guestbookDetailContentText;
@@ -218,6 +225,12 @@ namespace Dotshelf.Scripts.Dashboard
             if (viewAsset != null)
             {
                 document.visualTreeAsset = viewAsset;
+            }
+            if (overridePanelSettings != null)
+            {
+                // (v1.0 dashboard 통합) MainScene에서 World Space PanelSettings 주입 시 적용.
+                // 비워두면 testbed 씬의 기본 PanelSettings(Screen Space Overlay) 그대로.
+                document.panelSettings = overridePanelSettings;
             }
             CacheEventHandlers();
             // Mock 빌드는 OnEnable에서 fallback으로. Configure가 호출됐으면 그걸 우선.
@@ -362,6 +375,7 @@ namespace Dotshelf.Scripts.Dashboard
             guestbookPageLabel = root.Q<Label>("guestbook-page-label");
             editButton = root.Q<Button>("edit-dashboard-button");
             writeGuestbookButton = root.Q<Button>("write-guestbook-button");
+            returnMineButton = root.Q<Button>("return-mine-button");
             booksCarousel = root.Q<ScrollView>("recent-books-carousel");
             recordsCarousel = root.Q<ScrollView>("recent-records-carousel");
 
@@ -416,6 +430,14 @@ namespace Dotshelf.Scripts.Dashboard
             recordsSortOldestButton = root.Q<Button>("records-sort-oldest");
             recordsSortMostLikedButton = root.Q<Button>("records-sort-most-liked");
             recordsSortMostViewedButton = root.Q<Button>("records-sort-most-viewed");
+            // (MR #61 리뷰 #8) v1.0 시점에 ReadingRecord.viewCount 증가 로직 미합류 — 모든 record viewCount=0이라
+            // MOST_VIEWED 정렬은 secondary tiebreaker(id DESC)만 작동해 LATEST와 동일하게 보임.
+            // 사용자가 정렬 버그로 오인하는 것 방지 위해 옵션 비활성화. 증가 로직 follow-up 합류 시 SetEnabled(true).
+            if (recordsSortMostViewedButton != null)
+            {
+                recordsSortMostViewedButton.SetEnabled(false);
+                recordsSortMostViewedButton.tooltip = "조회수 집계 준비 중";
+            }
             recordsSortMostCommentedButton = root.Q<Button>("records-sort-most-commented");
 
             dashboardEditModalRoot = root.Q<VisualElement>("dashboard-edit-modal");
@@ -438,6 +460,7 @@ namespace Dotshelf.Scripts.Dashboard
             if (guestbookNextButton != null) guestbookNextButton.clicked += OnGuestbookNext;
             if (editButton != null) editButton.clicked += OnEditClicked;
             if (writeGuestbookButton != null) writeGuestbookButton.clicked += OnWriteGuestbookClicked;
+            if (returnMineButton != null) returnMineButton.clicked += OnReturnMineClicked;
             if (followersCountButton != null) followersCountButton.clicked += OnFollowersClicked;
             if (followingCountButton != null) followingCountButton.clicked += OnFollowingsClicked;
             if (userListModalCloseButton != null) userListModalCloseButton.clicked += CloseUserListModal;
@@ -493,6 +516,7 @@ namespace Dotshelf.Scripts.Dashboard
             if (guestbookNextButton != null) guestbookNextButton.clicked -= OnGuestbookNext;
             if (editButton != null) editButton.clicked -= OnEditClicked;
             if (writeGuestbookButton != null) writeGuestbookButton.clicked -= OnWriteGuestbookClicked;
+            if (returnMineButton != null) returnMineButton.clicked -= OnReturnMineClicked;
             if (followersCountButton != null) followersCountButton.clicked -= OnFollowersClicked;
             if (followingCountButton != null) followingCountButton.clicked -= OnFollowingsClicked;
             if (userListModalCloseButton != null) userListModalCloseButton.clicked -= CloseUserListModal;
@@ -555,6 +579,12 @@ namespace Dotshelf.Scripts.Dashboard
             {
                 writeGuestbookButton.style.display = isMine ? DisplayStyle.None : DisplayStyle.Flex;
             }
+            if (returnMineButton != null)
+            {
+                // \"내 공간으로\" 버튼은 Visitor 모드에서만 노출. (#6 follow-up — 방문 후 복귀 동선)
+                if (isMine) returnMineButton.AddToClassList("hidden");
+                else returnMineButton.RemoveFromClassList("hidden");
+            }
             if (likeToggleButton != null)
             {
                 // 본인 공간엔 클릭 비활성 (정적 표시), 방문자 공간엔 토글 가능.
@@ -567,6 +597,17 @@ namespace Dotshelf.Scripts.Dashboard
                     likeToggleButton.RemoveFromClassList("read-only");
                 }
             }
+        }
+
+        /// <summary>
+        /// Visitor 모드에서 본인 공간으로 복귀. (#6 follow-up)
+        /// </summary>
+        private void OnReturnMineClicked()
+        {
+            if (viewMode == ViewMode.Mine) return;
+            viewMode = ViewMode.Mine;
+            ApplyViewMode();
+            loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
         }
 
         private void LoadInitialData()
@@ -1135,13 +1176,15 @@ namespace Dotshelf.Scripts.Dashboard
         {
             if (dashboardEditPostItList == null) return;
             dashboardEditPostItList.Clear();
-            for (int i = 0; i < MockPostItStyleIds.Length; i++)
+            IReadOnlyList<PostItStyle> styles = AvailablePostItStyles();
+            for (int i = 0; i < styles.Count; i++)
             {
-                long id = MockPostItStyleIds[i];
+                long id = styles[i].AssetId;
+                string displayName = string.IsNullOrEmpty(styles[i].DisplayName) ? $"스타일 {id}" : styles[i].DisplayName;
                 VisualElement cell = new VisualElement();
                 cell.AddToClassList("postit-style-cell");
                 cell.userData = id;
-                Label name = new Label($"스타일 {id}");
+                Label name = new Label(displayName);
                 name.AddToClassList("postit-style-cell-name");
                 cell.Add(name);
                 cell.RegisterCallback<ClickEvent>(_ => OnWhitelistCellClicked(id, cell));
@@ -1273,12 +1316,14 @@ namespace Dotshelf.Scripts.Dashboard
         {
             if (container == null) return;
             container.Clear();
-            for (int i = 0; i < MockPostItStyleIds.Length; i++)
+            IReadOnlyList<PostItStyle> styles = AvailablePostItStyles();
+            for (int i = 0; i < styles.Count; i++)
             {
-                long id = MockPostItStyleIds[i];
+                long id = styles[i].AssetId;
+                string displayName = string.IsNullOrEmpty(styles[i].DisplayName) ? $"스타일 {id}" : styles[i].DisplayName;
                 VisualElement cell = new VisualElement();
                 cell.AddToClassList("postit-style-cell");
-                Label name = new Label($"스타일 {id}");
+                Label name = new Label(displayName);
                 name.AddToClassList("postit-style-cell-name");
                 cell.Add(name);
                 cell.RegisterCallback<ClickEvent>(_ => onSelected(id, cell));
@@ -1286,6 +1331,22 @@ namespace Dotshelf.Scripts.Dashboard
             }
             selectedPostItStyleId = 0;
             selectedPostItStyleCell = null;
+        }
+
+        /// <summary>
+        /// PostItStyleCatalogAsset에서 사용 가능한 스타일 목록을 반환. (#7 follow-up — 하드코딩 제거)
+        /// catalog 미주입 시 LogError + 빈 리스트 (개발자가 SO 주입을 즉시 인지하도록).
+        /// </summary>
+        private IReadOnlyList<PostItStyle> AvailablePostItStyles()
+        {
+            if (postItStyleCatalog != null) return postItStyleCatalog.GetAllStyles();
+            if (postItCatalog == null)
+            {
+                Debug.LogError("[Dashboard] PostItStyleCatalogAsset 미주입. picker가 비어있습니다. Inspector에서 catalog SO를 연결하세요.");
+                return Array.Empty<PostItStyle>();
+            }
+            postItStyleCatalog = new PostItStyleCatalogAdapter(postItCatalog);
+            return postItStyleCatalog.GetAllStyles();
         }
 
         private void OnPostItStyleSelected(long styleId, VisualElement cell)
@@ -1332,47 +1393,9 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void OnError(DashboardApiError error)
         {
-            string userMessage = FormatErrorMessage(error);
+            string userMessage = DashboardErrorMessages.Format(error);
             Debug.LogWarning($"[Dashboard] API error: code={error?.Code} server={error?.Message} → user={userMessage}");
             // TODO: 실제 사용자 노출은 토스트/배너 컴포넌트 합류 후 — 현재는 콘솔 로그.
-        }
-
-        /// <summary>
-        /// 에러 코드 → 사용자 노출 메시지 중앙 매핑 (MR #59 revbot 의견).
-        /// 새 코드는 backend ErrorCode.java와 UseCase 클라이언트 검증 코드를 모두 포함.
-        /// </summary>
-        private static string FormatErrorMessage(DashboardApiError error)
-        {
-            if (error == null) return "알 수 없는 오류가 발생했습니다.";
-            switch (error.Code)
-            {
-                // ==== Backend ErrorCode (사용자 앱 v1.0 갱신) ====
-                case "G001": return "방명록을 찾을 수 없습니다.";
-                case "G002": return "답장을 찾을 수 없습니다.";
-                case "G003": return "답장에 대한 권한이 없습니다.";
-                case "G004": return "이미 답장이 작성된 방명록입니다.";
-                case "G005": return "공간 주인이 허용하지 않은 포스트잇 스타일입니다.";
-                case "S003": return "공간을 찾을 수 없습니다.";
-                case "S004": return "본인 공간엔 방명록을 작성할 수 없습니다.";
-                case "S005": return "차단된 사용자의 공간엔 접근할 수 없습니다.";
-                case "F001": return "팔로우 관계를 찾을 수 없습니다.";
-                case "F002": return "차단된 사용자와 관련된 요청은 허용되지 않습니다.";
-                case "U001": return "사용자를 찾을 수 없습니다.";
-                case "U003": return "이미 사용 중인 닉네임입니다.";
-                case "A001": return "로그인이 필요합니다.";
-                case "A002": return "권한이 없습니다.";
-                case "A003": return "세션이 만료됐습니다. 다시 로그인하세요.";
-                // ==== Client UseCase 검증 코드 ====
-                case "GUESTBOOK_CONTENT_BLANK": return "방명록 내용을 입력하세요.";
-                case "GUESTBOOK_CONTENT_TOO_LONG": return "방명록은 30자 이하로 작성하세요.";
-                case "GUESTBOOK_POSTIT_REQUIRED": return "포스트잇 스타일을 선택하세요.";
-                case "GUESTBOOK_REPLY_CONTENT_BLANK": return "답장 내용을 입력하세요.";
-                case "GUESTBOOK_REPLY_CONTENT_TOO_LONG": return "답장은 30자 이하로 작성하세요.";
-                case "GUESTBOOK_REPLY_POSTIT_REQUIRED": return "답장 포스트잇 스타일을 선택하세요.";
-                case "INTRODUCTION_TOO_LONG": return "한 줄 소개는 255자 이하로 입력하세요.";
-                case "REPORT_REASON_REQUIRED": return "신고 사유를 선택하세요.";
-                default: return string.IsNullOrEmpty(error.Message) ? "오류가 발생했습니다." : error.Message;
-            }
         }
 
         // ===== 팔로워/팔로잉 모달 =====
@@ -1533,7 +1556,9 @@ namespace Dotshelf.Scripts.Dashboard
 
         private static void UpdateFollowButton(Button button, bool following)
         {
+            // (#8 follow-up) — i18n에 안전한 상태 보존: button.text 매칭 대신 userData에 bool 박아둠.
             button.text = following ? "팔로잉" : "팔로우";
+            button.userData = following;
             if (following)
             {
                 button.RemoveFromClassList("primary");
@@ -1546,7 +1571,7 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void OnToggleFollow(Button button, UserSummary user)
         {
-            bool wasFollowing = button.text == "팔로잉";
+            bool wasFollowing = button.userData is bool flag && flag;
             UpdateFollowButton(button, !wasFollowing);
             button.SetEnabled(false);
             if (wasFollowing)

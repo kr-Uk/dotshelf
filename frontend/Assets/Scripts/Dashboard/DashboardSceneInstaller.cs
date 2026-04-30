@@ -21,7 +21,7 @@ namespace Dotshelf.Scripts.Dashboard
         }
 
         [SerializeField] private DashboardScreenController controller;
-        [SerializeField] private RepositoryMode mode = RepositoryMode.Mock;
+        [SerializeField] private RepositoryMode mode = RepositoryMode.Api;
 
         [Tooltip("Api 모드일 때 사용할 APIManager. 비워두면 APIManager.Instance(scene 안 다른 곳에 attach된 것)를 사용한다.")]
         [SerializeField] private APIManager apiManager;
