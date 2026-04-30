@@ -941,6 +941,7 @@ namespace App.Bootstrap
 #if UNITY_EDITOR
             UnityEditor.EditorApplication.isPlaying = false;
 #else
+            // App.Application namespace와 이름 충돌 방지 — fully qualified로 명시.
             UnityEngine.Application.Quit();
 #endif
         }

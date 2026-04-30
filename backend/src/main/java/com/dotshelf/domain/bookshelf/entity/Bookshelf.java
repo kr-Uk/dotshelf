@@ -87,5 +87,10 @@ public class Bookshelf extends BaseEntity {
     public void delete() {
         this.status = "DELETED";
         this.deletedAt = LocalDateTime.now();
+        moveToDeletedOrder();
+    }
+
+    public void moveToDeletedOrder() {
+        this.displayOrder = Integer.MAX_VALUE - Math.toIntExact(id);
     }
 }

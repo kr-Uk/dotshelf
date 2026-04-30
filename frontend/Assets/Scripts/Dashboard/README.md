@@ -1,5 +1,17 @@
 # Dashboard 화면 — Unity 세팅 가이드 (P0c)
 
+## Mock vs Api 모드 전환
+
+`DashboardSceneInstaller.Mode`로 결정. **default = `Api`** (BE 합류 후).
+
+- **`Api` (default)**: BE 호출 (`/v1/spaces/{spaceId}/dashboard` 등). dev 환경에서 BE 띄우지 않으면 401 또는 connect 에러 발생. 이때 임시로 Mock으로 전환:
+  1. Hierarchy에서 `DashboardScreenPanel` (또는 testbed 씬의 dashboard root) 클릭
+  2. Inspector → **`Dashboard Scene Installer`** 컴포넌트 → **Mode** 드롭다운 → **`Mock`** 선택
+  3. Save → Play
+- **`Mock`**: 로컬 mock 데이터로 화면만 검증. UI/UX 작업할 때 권장.
+
+> ⚠️ MR 머지 시 BE 작업(SpaceController/ReadingRecordController dashboard 엔드포인트)이 같이 dev에 머지돼야 합니다. atomicity 주의.
+
 ## 빠르게 켜보기 (5분)
 
 1. **새 Scene 만들기** (또는 기존 MainScene에 임시로 얹기)

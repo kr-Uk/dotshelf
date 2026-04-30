@@ -56,7 +56,23 @@ public final class ReadingRecordDtos {
         }
     }
 
-    public record ReadingRecordListResponse(List<ReadingRecordResponse> records) {
+    /**
+     * 대시보드 \"독후감 풀 목록\" 카드용 경량 DTO. v1.0 갱신 — 정렬·페이지네이션을 위해 추가.
+     * book 정보(title)는 userBook → book join으로 채워서 N+1 차단.
+     */
+    public record ReadingRecordSummary(
+            Long id,
+            Long bookId,
+            String bookTitle,
+            String content,
+            int likeCount,
+            int commentCount,
+            int viewCount,
+            Instant createdAt
+    ) {
+    }
+
+    public record ReadingRecordPageResponse(List<ReadingRecordSummary> items, String nextCursor) {
     }
 
     public record CommentRequest(

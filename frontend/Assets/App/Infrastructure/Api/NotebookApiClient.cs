@@ -462,9 +462,24 @@ namespace App.Infrastructure.Api
             return Get<ReadingRecordResponseDto>($"/v1/user-books/{userBookId}/reading-record", onSuccess, onError);
         }
 
-        public Coroutine GetUserReadingRecords(long userId, Action<ReadingRecordListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        public Coroutine GetUserReadingRecords(long userId, string sort, string cursor, int limit, Action<ReadingRecordPageResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
-            return Get<ReadingRecordListResponseDto>($"/v1/users/{userId}/reading-records", onSuccess, onError);
+            var query = BuildCursorQuery(cursor, limit);
+            if (!string.IsNullOrWhiteSpace(sort))
+            {
+                query["sort"] = sort;
+            }
+            return Get<ReadingRecordPageResponseDto>(WithQuery($"/v1/users/{userId}/reading-records", query), onSuccess, onError);
+        }
+
+        public Coroutine GetSpaceOwnedBooks(long spaceId, string sort, string cursor, int limit, Action<OwnedBookListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            var query = BuildCursorQuery(cursor, limit);
+            if (!string.IsNullOrWhiteSpace(sort))
+            {
+                query["sort"] = sort;
+            }
+            return Get<OwnedBookListResponseDto>(WithQuery($"/v1/spaces/{spaceId}/books", query), onSuccess, onError);
         }
 
         public Coroutine CreateReadingRecord(ReadingRecordRequestDto request, Action<ReadingRecordResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)

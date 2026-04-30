@@ -42,6 +42,7 @@ import com.dotshelf.domain.readingrecord.entity.ReadingRecord;
 import com.dotshelf.domain.readingrecord.repository.ReadingRecordRepository;
 import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.service.SpaceService;
+import com.dotshelf.domain.user.repository.FollowRepository;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
@@ -65,6 +66,7 @@ public class BookshelfService {
     private final AssetRepository assetRepository;
     private final ReadingRecordRepository readingRecordRepository;
     private final SpaceService spaceService;
+    private final FollowRepository followRepository;
     private final UserService userService;
 
     public BookshelfListResponse getBookshelves(Long spaceId) {
@@ -92,7 +94,7 @@ public class BookshelfService {
                         .map(SectionResponse::from)
                         .toList(),
                 items.stream()
-                        .map(item -> toRenderItem(item, sectionsById, userBooks, books, readingRecords, inventories, assets))
+                        .map(item -> toRenderItem(userId, item, sectionsById, userBooks, books, readingRecords, inventories, assets))
                         .toList()
         );
     }
@@ -104,7 +106,7 @@ public class BookshelfService {
         if (!space.getOwnerUserId().equals(currentUserId)) {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
-        int displayOrder = bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(request.spaceId()).stream()
+        int displayOrder = bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(request.spaceId(), "ACTIVE").stream()
                 .mapToInt(Bookshelf::getDisplayOrder)
                 .max()
                 .orElse(-1) + 1;
@@ -153,6 +155,8 @@ public class BookshelfService {
             shelves.add(bookshelf);
         }
 
+        relocateDeletedBookshelves(spaceId);
+
         for (int i = 0; i < shelves.size(); i++) {
             shelves.get(i).changeOrder(-(i + 1));
         }
@@ -179,10 +183,11 @@ public class BookshelfService {
         Long currentUserId = userService.requireUserId(userId);
         getOwnedBookshelf(currentUserId, bookshelfId);
         requireSectionInBookshelf(bookshelfId, request.sectionId());
+        UserAssetInventory inventory = getOwnedInventory(currentUserId, request.assetInventoryId());
         BookshelfItem item = bookshelfItemRepository.save(BookshelfItem.builder()
                 .bookshelfId(bookshelfId)
                 .bookshelfSectionId(request.sectionId())
-                .assetInventoryId(request.assetInventoryId())
+                .assetInventoryId(inventory.getId())
                 .itemType("DECOR")
                 .slotNo(request.slotNo())
                 .facingDirection(request.facingDirection())
@@ -211,6 +216,11 @@ public class BookshelfService {
                 .orElseThrow(() -> new CustomException(ErrorCode.BOOKSHELF_ITEM_NOT_FOUND));
         getOwnedBookshelf(currentUserId, item.getBookshelfId());
         item.remove();
+        if ("BOOK".equalsIgnoreCase(item.getItemType()) && item.getUserBookId() != null) {
+            userBookRepository.findById(item.getUserBookId())
+                    .orElseThrow(() -> new CustomException(ErrorCode.USER_BOOK_NOT_FOUND))
+                    .archive();
+        }
         return BookshelfItemResponse.from(item);
     }
 
@@ -262,6 +272,22 @@ public class BookshelfService {
                         .build());
             }
         }
+    }
+
+    private void relocateDeletedBookshelves(Long spaceId) {
+        bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(spaceId).stream()
+                .filter(bookshelf -> !"ACTIVE".equalsIgnoreCase(bookshelf.getStatus()))
+                .forEach(Bookshelf::moveToDeletedOrder);
+        bookshelfRepository.flush();
+    }
+
+    private UserAssetInventory getOwnedInventory(Long userId, Long assetInventoryId) {
+        UserAssetInventory inventory = inventoryRepository.findById(assetInventoryId)
+                .orElseThrow(() -> new CustomException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!inventory.getUserId().equals(userId)) {
+            throw new CustomException(ErrorCode.FORBIDDEN);
+        }
+        return inventory;
     }
 
     private Map<Long, UserBook> userBooksById(List<BookshelfItem> items) {
@@ -331,6 +357,7 @@ public class BookshelfService {
     }
 
     private BookshelfRenderItemResponse toRenderItem(
+            Long viewerUserId,
             BookshelfItem item,
             Map<Long, BookshelfSection> sectionsById,
             Map<Long, UserBook> userBooks,
@@ -342,7 +369,7 @@ public class BookshelfService {
         UserBook userBook = userBooks.get(item.getUserBookId());
         Book book = userBook == null ? null : books.get(userBook.getBookId());
         BookshelfSection section = sectionsById.get(item.getBookshelfSectionId());
-        ReadingRecord record = userBook == null ? null : readingRecords.get(userBook.getId());
+        ReadingRecord record = userBook == null ? null : visibleReadingRecord(viewerUserId, userBook, readingRecords.get(userBook.getId()));
         UserAssetInventory inventory = inventories.get(item.getAssetInventoryId());
         Asset asset = inventory == null ? null : assets.get(inventory.getAssetId());
         return new BookshelfRenderItemResponse(
@@ -367,5 +394,23 @@ public class BookshelfService {
                 ),
                 ReadingRecordSummaryResponse.from(record)
         );
+    }
+
+    private ReadingRecord visibleReadingRecord(Long viewerUserId, UserBook userBook, ReadingRecord record) {
+        if (record == null || userBook == null) {
+            return null;
+        }
+        if (userBook.getUserId().equals(viewerUserId)) {
+            return record;
+        }
+        if ("PUBLIC".equalsIgnoreCase(record.getVisibilityScope())) {
+            return record;
+        }
+        if ("FOLLOWERS".equalsIgnoreCase(record.getVisibilityScope())
+                && viewerUserId != null
+                && followRepository.existsByFollowerUserIdAndFollowingUserId(viewerUserId, userBook.getUserId())) {
+            return record;
+        }
+        return null;
     }
 }

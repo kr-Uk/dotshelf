@@ -13,6 +13,9 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dotshelf.domain.book.dto.BookDtos.OwnedBookListResponse;
+import com.dotshelf.domain.book.dto.BookDtos.OwnedBookSummary;
+import com.dotshelf.domain.book.repository.UserBookRepository;
 import com.dotshelf.domain.space.dto.SpaceDtos.DashboardResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistResponse;
@@ -38,21 +41,26 @@ import com.dotshelf.domain.space.repository.SpaceTemplateRepository;
 import com.dotshelf.domain.space.repository.SpaceVisitRepository;
 import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.repository.FollowRepository;
+import com.dotshelf.domain.user.repository.UserBlockRepository;
 import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.domain.user.service.UserService;
+import com.dotshelf.global.common.CursorParser;
 import com.dotshelf.global.common.ToggleResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class SpaceService {
 
     private static final int DEFAULT_LIST_LIMIT = 20;
     private static final int MAX_LIST_LIMIT = 50;
+    private static final int MEMORY_SORT_WARNING_THRESHOLD = 500;
 
     private final SpaceRepository spaceRepository;
     private final SpaceTemplateRepository spaceTemplateRepository;
@@ -61,6 +69,8 @@ public class SpaceService {
     private final SpaceLayoutSnapshotRepository layoutSnapshotRepository;
     private final SpaceGuestbookPostItWhitelistRepository whitelistRepository;
     private final FollowRepository followRepository;
+    private final UserBlockRepository userBlockRepository;
+    private final UserBookRepository userBookRepository;
     private final UserRepository userRepository;
     private final UserService userService;
 
@@ -330,4 +340,71 @@ public class SpaceService {
         }
         return Math.min(limit, MAX_LIST_LIMIT);
     }
+
+    /**
+     * 대시보드 \"보유 책 풀 목록\" 모달용. v1.0 갱신 — 공간 주인의 활성 보유 책을 정렬·페이지네이션해서 반환.
+     * <p>구현: 사용자당 보유 책 평균 ~50권 이내 가정으로 메모리 정렬 + 슬라이싱. 1000권 넘으면 server-side ORDER BY로 전환.
+     * <p>권한: dashboard 진입 권한이 있는 viewer만 호출 가능 (controller가 진입 시 visibility 체크). 차단 관계만 추가 검증.
+     */
+    public OwnedBookListResponse getOwnedBooks(Long viewerUserId, Long spaceId, String sort, String cursor, int limit) {
+        Space space = getSpaceEntity(spaceId);
+        ensureNotBlockedAgainstOwner(viewerUserId, space.getOwnerUserId());
+
+        int validLimit = validateListLimit(limit);
+        Long cursorId = CursorParser.parseId(cursor);
+
+        List<OwnedBookSummary> all = userBookRepository.findOwnedBookSummaries(space.getOwnerUserId());
+        // (MR #61 리뷰 #5) 메모리 정렬 fallback 한도. 가정이 무너지면 즉시 알 수 있도록 경고.
+        // 임계점 도달 시 server-side ORDER BY + cursor 기반 페이징으로 전환 필요.
+        if (all.size() > MEMORY_SORT_WARNING_THRESHOLD) {
+            log.warn("[OwnedBooks] memory-sort threshold 초과: userId={} count={}. server-side ORDER BY 전환 검토 필요.",
+                    space.getOwnerUserId(), all.size());
+        }
+        List<OwnedBookSummary> sorted = sortOwnedBooks(all, sort);
+
+        int startIdx = 0;
+        if (cursorId != null) {
+            for (int i = 0; i < sorted.size(); i++) {
+                if (cursorId.equals(sorted.get(i).userBookId())) {
+                    startIdx = i + 1;
+                    break;
+                }
+            }
+        }
+        int endIdx = Math.min(startIdx + validLimit, sorted.size());
+        boolean hasMore = endIdx < sorted.size();
+        String nextCursor = hasMore ? String.valueOf(sorted.get(endIdx - 1).userBookId()) : null;
+
+        return new OwnedBookListResponse(sorted.subList(startIdx, endIdx), nextCursor);
+    }
+
+    private void ensureNotBlockedAgainstOwner(Long viewerUserId, Long ownerUserId) {
+        if (viewerUserId == null || viewerUserId.equals(ownerUserId)) {
+            return;
+        }
+        if (userBlockRepository.existsBlockBetween(viewerUserId, ownerUserId)) {
+            throw new CustomException(ErrorCode.SPACE_ACCESS_BLOCKED);
+        }
+    }
+
+    private static List<OwnedBookSummary> sortOwnedBooks(List<OwnedBookSummary> items, String sort) {
+        Comparator<OwnedBookSummary> primary = switch (sort == null ? "ADDED_DESC" : sort.toUpperCase()) {
+            case "PUBLISHED_DESC" ->
+                    Comparator.comparing(OwnedBookSummary::publishedDate,
+                            Comparator.nullsLast(Comparator.reverseOrder()));
+            case "PUBLISHED_ASC" ->
+                    Comparator.comparing(OwnedBookSummary::publishedDate,
+                            Comparator.nullsLast(Comparator.naturalOrder()));
+            case "TITLE_ASC" ->
+                    Comparator.comparing(OwnedBookSummary::title,
+                            Comparator.nullsLast(Comparator.naturalOrder()));
+            default ->
+                    Comparator.comparing(OwnedBookSummary::addedAt,
+                            Comparator.nullsLast(Comparator.reverseOrder()));
+        };
+        Comparator<OwnedBookSummary> tiebreaker = Comparator.comparing(
+                OwnedBookSummary::userBookId, Comparator.reverseOrder());
+        return items.stream().sorted(primary.thenComparing(tiebreaker)).toList();
+    }
+
 }

@@ -201,5 +201,94 @@ namespace App.Infrastructure.Api.Dashboard
 
             return new GuestbookPostItWhitelist(dto.AllowAll, dto.AllowedAssetIds ?? new List<long>());
         }
+
+        public static string FormatOwnedBookSort(OwnedBookSort sort)
+        {
+            switch (sort)
+            {
+                case OwnedBookSort.PublishedDesc: return "PUBLISHED_DESC";
+                case OwnedBookSort.PublishedAsc: return "PUBLISHED_ASC";
+                case OwnedBookSort.TitleAsc: return "TITLE_ASC";
+                default: return "ADDED_DESC";
+            }
+        }
+
+        public static string FormatReadingRecordSort(ReadingRecordSort sort)
+        {
+            switch (sort)
+            {
+                case ReadingRecordSort.Oldest: return "OLDEST";
+                case ReadingRecordSort.MostLiked: return "MOST_LIKED";
+                case ReadingRecordSort.MostViewed: return "MOST_VIEWED";
+                case ReadingRecordSort.MostCommented: return "MOST_COMMENTED";
+                default: return "LATEST";
+            }
+        }
+
+        public static OwnedBookItem MapOwnedBook(OwnedBookSummaryDto dto)
+        {
+            if (dto == null) return null;
+            return new OwnedBookItem
+            {
+                UserBookId = dto.UserBookId,
+                BookId = dto.BookId,
+                Title = dto.Title,
+                Author = dto.Author,
+                Publisher = dto.Publisher,
+                PublishedDate = dto.PublishedDate,
+                CoverImageUrl = dto.CoverImageUrl,
+                AddedAt = ParseTimestamp(dto.AddedAt)
+            };
+        }
+
+        public static OwnedBookListPage MapOwnedBookPage(OwnedBookListResponseDto dto)
+        {
+            List<OwnedBookItem> items = new List<OwnedBookItem>();
+            if (dto?.Items != null)
+            {
+                for (int i = 0; i < dto.Items.Count; i++)
+                {
+                    OwnedBookItem item = MapOwnedBook(dto.Items[i]);
+                    if (item != null)
+                    {
+                        items.Add(item);
+                    }
+                }
+            }
+            return new OwnedBookListPage(items, dto?.NextCursor);
+        }
+
+        public static ReadingRecordItem MapReadingRecord(ReadingRecordSummaryDto dto)
+        {
+            if (dto == null) return null;
+            return new ReadingRecordItem
+            {
+                Id = dto.Id,
+                BookId = dto.BookId,
+                BookTitle = dto.BookTitle,
+                Content = dto.Content,
+                LikeCount = dto.LikeCount,
+                CommentCount = dto.CommentCount,
+                ViewCount = dto.ViewCount,
+                CreatedAt = ParseTimestamp(dto.CreatedAt)
+            };
+        }
+
+        public static ReadingRecordListPage MapReadingRecordPage(ReadingRecordPageResponseDto dto)
+        {
+            List<ReadingRecordItem> items = new List<ReadingRecordItem>();
+            if (dto?.Items != null)
+            {
+                for (int i = 0; i < dto.Items.Count; i++)
+                {
+                    ReadingRecordItem item = MapReadingRecord(dto.Items[i]);
+                    if (item != null)
+                    {
+                        items.Add(item);
+                    }
+                }
+            }
+            return new ReadingRecordListPage(items, dto?.NextCursor);
+        }
     }
 }
