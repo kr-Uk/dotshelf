@@ -22,7 +22,8 @@ public interface ReadingRecordRepository extends JpaRepository<ReadingRecord, Lo
      * UserBook + Book join으로 bookId/title까지 한 번에 projection.
      */
     @Query("SELECT new com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos$ReadingRecordSummary("
-            + "r.id, b.id, b.title, r.content, r.likeCount, r.commentCount, r.viewCount, r.createdAt) "
+            + "r.id, b.id, b.title, r.content, r.visibilityScope, "
+            + "r.likeCount, r.commentCount, r.viewCount, r.createdAt) "
             + "FROM ReadingRecord r "
             + "JOIN com.dotshelf.domain.book.entity.UserBook ub ON r.userBookId = ub.id "
             + "JOIN com.dotshelf.domain.book.entity.Book b ON ub.bookId = b.id "

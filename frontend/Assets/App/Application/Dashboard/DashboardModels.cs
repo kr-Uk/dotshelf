@@ -136,6 +136,7 @@ namespace App.Application.Dashboard
         public long BookId { get; set; }
         public string BookTitle { get; set; }
         public string Content { get; set; }
+        public VisibilityScope Visibility { get; set; } = VisibilityScope.Public;
         public long LikeCount { get; set; }
         public long CommentCount { get; set; }
         public long ViewCount { get; set; }

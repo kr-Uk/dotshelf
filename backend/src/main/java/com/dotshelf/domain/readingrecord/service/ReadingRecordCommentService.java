@@ -28,7 +28,8 @@ public class ReadingRecordCommentService {
     private final ReadingRecordService readingRecordService;
     private final UserService userService;
 
-    public CommentListResponse getComments(Long readingRecordId) {
+    public CommentListResponse getComments(Long viewerUserId, Long readingRecordId) {
+        readingRecordService.getReadableRecord(viewerUserId, readingRecordId);
         return new CommentListResponse(commentRepository.findByReadingRecordIdOrderByIdAsc(readingRecordId).stream()
                 .map(CommentResponse::from)
                 .toList());
@@ -37,10 +38,13 @@ public class ReadingRecordCommentService {
     @Transactional
     public CommentResponse create(Long userId, Long readingRecordId, CommentRequest request) {
         Long currentUserId = userService.requireUserId(userId);
-        ReadingRecord record = readingRecordService.getRecordEntity(readingRecordId);
+        ReadingRecord record = readingRecordService.getReadableRecord(currentUserId, readingRecordId);
         int depth = 0;
         if (request.parentCommentId() != null) {
-            ReadingRecordComment parent = getComment(request.parentCommentId());
+            ReadingRecordComment parent = getActiveComment(request.parentCommentId());
+            if (!parent.getReadingRecordId().equals(readingRecordId)) {
+                throw new CustomException(ErrorCode.INVALID_INPUT, "부모 댓글이 같은 독서기록에 속해야 합니다.");
+            }
             if (parent.getDepth() != 0) {
                 throw new CustomException(ErrorCode.INVALID_INPUT, "대댓글은 depth 1까지만 허용됩니다.");
             }
@@ -70,7 +74,8 @@ public class ReadingRecordCommentService {
     @Transactional
     public ToggleResponse like(Long userId, Long commentId) {
         Long currentUserId = userService.requireUserId(userId);
-        ReadingRecordComment comment = getComment(commentId);
+        ReadingRecordComment comment = getActiveComment(commentId);
+        readingRecordService.getReadableRecord(currentUserId, comment.getReadingRecordId());
         if (!likeRepository.existsByCommentIdAndUserId(commentId, currentUserId)) {
             likeRepository.save(ReadingRecordCommentLike.builder()
                     .commentId(commentId)
@@ -84,7 +89,8 @@ public class ReadingRecordCommentService {
     @Transactional
     public ToggleResponse unlike(Long userId, Long commentId) {
         Long currentUserId = userService.requireUserId(userId);
-        ReadingRecordComment comment = getComment(commentId);
+        ReadingRecordComment comment = getActiveComment(commentId);
+        readingRecordService.getReadableRecord(currentUserId, comment.getReadingRecordId());
         if (likeRepository.existsByCommentIdAndUserId(commentId, currentUserId)) {
             likeRepository.deleteByCommentIdAndUserId(commentId, currentUserId);
             comment.decreaseLikeCount();
@@ -95,5 +101,13 @@ public class ReadingRecordCommentService {
     private ReadingRecordComment getComment(Long commentId) {
         return commentRepository.findById(commentId)
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMENT_NOT_FOUND));
+    }
+
+    private ReadingRecordComment getActiveComment(Long commentId) {
+        ReadingRecordComment comment = getComment(commentId);
+        if (comment.isDeleted()) {
+            throw new CustomException(ErrorCode.COMMENT_NOT_FOUND);
+        }
+        return comment;
     }
 }

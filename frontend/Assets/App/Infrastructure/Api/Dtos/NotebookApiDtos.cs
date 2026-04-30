@@ -1150,6 +1150,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("content")]
         public string Content { get; set; }
 
+        [JsonProperty("visibilityScope")]
+        public string VisibilityScope { get; set; }
+
         [JsonProperty("likeCount")]
         public int LikeCount { get; set; }
 

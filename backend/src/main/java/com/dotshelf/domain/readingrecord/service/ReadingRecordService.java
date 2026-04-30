@@ -43,9 +43,7 @@ public class ReadingRecordService {
     private final FollowRepository followRepository;
 
     public ReadingRecordResponse getRecord(Long userId, Long recordId) {
-        ReadingRecord record = getActiveRecordEntity(recordId);
-        requireReadable(userId, record);
-        return ReadingRecordResponse.from(record);
+        return ReadingRecordResponse.from(getReadableRecord(userId, recordId));
     }
 
     public ReadingRecordResponse getMyRecordByUserBook(Long userId, Long userBookId) {
@@ -63,17 +61,24 @@ public class ReadingRecordService {
      * 대시보드 \"독후감 풀 목록\" 모달용. v1.0 갱신 — 정렬·cursor 페이지네이션 합류.
      * 보유 책 정렬과 동일하게 사용자당 ~수십건 가정으로 메모리 정렬·슬라이싱.
      */
-    public ReadingRecordPageResponse getUserRecords(Long userId, String sort, String cursor, int limit) {
+    public ReadingRecordPageResponse getUserRecords(Long viewerUserId, Long ownerUserId, String sort, String cursor, int limit) {
         int validLimit = clampLimit(limit);
         Long cursorId = CursorParser.parseId(cursor);
 
-        List<ReadingRecordSummary> all = readingRecordRepository.findUserRecordSummaries(userId);
+        List<ReadingRecordSummary> all = readingRecordRepository.findUserRecordSummaries(ownerUserId);
         // (MR #61 리뷰 #5) 메모리 정렬 fallback 한도. 가정 무너지면 즉시 경고.
         if (all.size() > MEMORY_SORT_WARNING_THRESHOLD) {
             log.warn("[ReadingRecords] memory-sort threshold 초과: userId={} count={}. server-side ORDER BY 전환 검토 필요.",
-                    userId, all.size());
+                    ownerUserId, all.size());
         }
-        List<ReadingRecordSummary> sorted = sortRecords(all, sort);
+        boolean owner = ownerUserId.equals(viewerUserId);
+        boolean follower = viewerUserId != null
+                && !owner
+                && followRepository.existsByFollowerUserIdAndFollowingUserId(viewerUserId, ownerUserId);
+        List<ReadingRecordSummary> visible = all.stream()
+                .filter(record -> isReadableVisibility(owner, follower, record.visibilityScope()))
+                .toList();
+        List<ReadingRecordSummary> sorted = sortRecords(visible, sort);
 
         int startIdx = 0;
         if (cursorId != null) {
@@ -156,7 +161,7 @@ public class ReadingRecordService {
     @Transactional
     public ToggleResponse like(Long userId, Long recordId) {
         Long currentUserId = userService.requireUserId(userId);
-        ReadingRecord record = getRecordEntity(recordId);
+        ReadingRecord record = getReadableRecord(currentUserId, recordId);
         if (!likeRepository.existsByReadingRecordIdAndUserId(recordId, currentUserId)) {
             likeRepository.save(ReadingRecordLike.builder()
                     .readingRecordId(recordId)
@@ -170,7 +175,7 @@ public class ReadingRecordService {
     @Transactional
     public ToggleResponse unlike(Long userId, Long recordId) {
         Long currentUserId = userService.requireUserId(userId);
-        ReadingRecord record = getRecordEntity(recordId);
+        ReadingRecord record = getReadableRecord(currentUserId, recordId);
         if (likeRepository.existsByReadingRecordIdAndUserId(recordId, currentUserId)) {
             likeRepository.deleteByReadingRecordIdAndUserId(recordId, currentUserId);
             record.decreaseLikeCount();
@@ -183,6 +188,12 @@ public class ReadingRecordService {
                 .orElseThrow(() -> new CustomException(ErrorCode.READING_RECORD_NOT_FOUND));
     }
 
+    public ReadingRecord getReadableRecord(Long viewerUserId, Long recordId) {
+        ReadingRecord record = getActiveRecordEntity(recordId);
+        requireReadable(viewerUserId, record);
+        return record;
+    }
+
     private ReadingRecord getActiveRecordEntity(Long recordId) {
         ReadingRecord record = getRecordEntity(recordId);
         if (!"ACTIVE".equals(record.getStatus())) {
@@ -193,18 +204,24 @@ public class ReadingRecordService {
 
     private void requireReadable(Long viewerUserId, ReadingRecord record) {
         UserBook userBook = bookService.getUserBook(record.getUserBookId());
-        if (userBook.getUserId().equals(viewerUserId)) {
-            return;
-        }
-        if ("PUBLIC".equalsIgnoreCase(record.getVisibilityScope())) {
-            return;
-        }
-        if ("FOLLOWERS".equalsIgnoreCase(record.getVisibilityScope())
+        boolean owner = userBook.getUserId().equals(viewerUserId);
+        boolean follower = !owner
                 && viewerUserId != null
-                && followRepository.existsByFollowerUserIdAndFollowingUserId(viewerUserId, userBook.getUserId())) {
+                && followRepository.existsByFollowerUserIdAndFollowingUserId(viewerUserId, userBook.getUserId());
+        if (isReadableVisibility(owner, follower, record.getVisibilityScope())) {
             return;
         }
         throw new CustomException(ErrorCode.FORBIDDEN);
+    }
+
+    private static boolean isReadableVisibility(boolean owner, boolean follower, String visibilityScope) {
+        if (owner) {
+            return true;
+        }
+        if ("PUBLIC".equalsIgnoreCase(visibilityScope)) {
+            return true;
+        }
+        return "FOLLOWERS".equalsIgnoreCase(visibilityScope) && follower;
     }
 
     private void validateOwner(Long userId, Long recordId) {

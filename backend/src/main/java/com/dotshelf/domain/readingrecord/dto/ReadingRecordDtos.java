@@ -65,6 +65,7 @@ public final class ReadingRecordDtos {
             Long bookId,
             String bookTitle,
             String content,
+            String visibilityScope,
             int likeCount,
             int commentCount,
             int viewCount,
