@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using App.Bootstrap;
 using App.Config;
+using App.Infrastructure.Api;
 using BookshelfPorting.Runtime;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -20,6 +21,30 @@ namespace Dotshelf.EditorTools
         private const string StartScenePath = "Assets/Scenes/StartScene.unity";
         private const string LibraryRoomBackgroundPrefabPath = "Assets/App/Composition/Prefabs/LibraryRoomBackground.prefab";
         private const string NotebookStationPrefabPath = "Assets/App/Composition/Prefabs/NotebookStation.prefab";
+        private const double RuntimeSmokeTimeoutSeconds = 45d;
+        private const string RuntimeSmokeActiveKey = "Dotshelf.MainSceneSplit.RuntimeSmoke.Active";
+        private const string RuntimeSmokeStartTimeKey = "Dotshelf.MainSceneSplit.RuntimeSmoke.StartedAt";
+        private const string RuntimeSmokeFrameCountKey = "Dotshelf.MainSceneSplit.RuntimeSmoke.FrameCount";
+        private const string RuntimeSmokeExitCodeKey = "Dotshelf.MainSceneSplit.RuntimeSmoke.ExitCode";
+
+        private static double runtimeSmokeStartedAt;
+        private static int runtimeSmokeFrameCount;
+        private static int runtimeSmokeExitCode = -1;
+
+        [InitializeOnLoadMethod]
+        private static void ResumeRuntimeSmokeValidationIfNeeded()
+        {
+            if (!SessionState.GetBool(RuntimeSmokeActiveKey, false))
+            {
+                return;
+            }
+
+            runtimeSmokeStartedAt = SessionState.GetFloat(RuntimeSmokeStartTimeKey, (float)EditorApplication.timeSinceStartup);
+            runtimeSmokeFrameCount = SessionState.GetInt(RuntimeSmokeFrameCountKey, 0);
+            runtimeSmokeExitCode = SessionState.GetInt(RuntimeSmokeExitCodeKey, -1);
+            EditorApplication.update -= TickRuntimeSmokeValidation;
+            EditorApplication.update += TickRuntimeSmokeValidation;
+        }
 
         [MenuItem("Dotshelf/Refactor/Rebuild Bootstrap Scene")]
         public static void RebuildBootstrapScene()
@@ -75,6 +100,31 @@ namespace Dotshelf.EditorTools
             MainScenePrefabExtractionUtility.ValidateMainSceneComposition();
 
             Debug.Log("Scene split validation passed.");
+        }
+
+        [MenuItem("Dotshelf/Refactor/Run Bootstrap Runtime Smoke Validation")]
+        public static void RunBootstrapRuntimeSmokeValidation()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                throw new InvalidOperationException("Cannot start runtime smoke validation while play mode is already active.");
+            }
+
+            RequireFile(BootstrapScenePath);
+            RequireFile(MainRoomScenePath);
+            RequireFile(NotebookUiScenePath);
+
+            EditorSceneManager.OpenScene(BootstrapScenePath, OpenSceneMode.Single);
+            runtimeSmokeStartedAt = EditorApplication.timeSinceStartup;
+            runtimeSmokeFrameCount = 0;
+            runtimeSmokeExitCode = -1;
+            SessionState.SetBool(RuntimeSmokeActiveKey, true);
+            SessionState.SetFloat(RuntimeSmokeStartTimeKey, (float)runtimeSmokeStartedAt);
+            SessionState.SetInt(RuntimeSmokeFrameCountKey, runtimeSmokeFrameCount);
+            SessionState.SetInt(RuntimeSmokeExitCodeKey, runtimeSmokeExitCode);
+            EditorApplication.update -= TickRuntimeSmokeValidation;
+            EditorApplication.update += TickRuntimeSmokeValidation;
+            EditorApplication.EnterPlaymode();
         }
 
         [MenuItem("Dotshelf/Refactor/Extract Notebook UI Scene")]
@@ -226,6 +276,117 @@ namespace Dotshelf.EditorTools
                 new EditorBuildSettingsScene(NotebookUiScenePath, true),
                 new EditorBuildSettingsScene(StartScenePath, true),
             };
+        }
+
+        private static void TickRuntimeSmokeValidation()
+        {
+            if (runtimeSmokeExitCode >= 0)
+            {
+                if (!EditorApplication.isPlayingOrWillChangePlaymode)
+                {
+                    EditorApplication.update -= TickRuntimeSmokeValidation;
+                    SessionState.SetBool(RuntimeSmokeActiveKey, false);
+                    if (Application.isBatchMode)
+                    {
+                        EditorApplication.Exit(runtimeSmokeExitCode);
+                    }
+                }
+
+                return;
+            }
+
+            if (EditorApplication.timeSinceStartup - runtimeSmokeStartedAt > RuntimeSmokeTimeoutSeconds)
+            {
+                FinishRuntimeSmokeValidation(1, $"Runtime smoke validation timed out after {RuntimeSmokeTimeoutSeconds:0}s.");
+                return;
+            }
+
+            if (!EditorApplication.isPlaying)
+            {
+                return;
+            }
+
+            runtimeSmokeFrameCount++;
+            SessionState.SetInt(RuntimeSmokeFrameCountKey, runtimeSmokeFrameCount);
+            if (runtimeSmokeFrameCount < 10)
+            {
+                return;
+            }
+
+            var mainRoomScene = SceneManager.GetSceneByName(SceneKeys.MainRoom);
+            var notebookUiScene = SceneManager.GetSceneByName(SceneKeys.NotebookUi);
+            if (!mainRoomScene.IsValid() || !mainRoomScene.isLoaded ||
+                !notebookUiScene.IsValid() || !notebookUiScene.isLoaded)
+            {
+                return;
+            }
+
+            try
+            {
+                if (SceneManager.GetActiveScene().name != SceneKeys.MainRoom)
+                {
+                    throw new InvalidOperationException($"Active scene mismatch. Expected {SceneKeys.MainRoom}, got {SceneManager.GetActiveScene().name}.");
+                }
+
+                RequireNotebookUiScene(notebookUiScene);
+                RequireNoEmbeddedNotebookStation(mainRoomScene);
+
+                var installer = UnityEngine.Object.FindFirstObjectByType<BookshelfSceneInstaller>(FindObjectsInactive.Include);
+                if (installer == null)
+                {
+                    throw new InvalidOperationException("Runtime smoke validation found no BookshelfSceneInstaller.");
+                }
+
+                var generator = UnityEngine.Object.FindFirstObjectByType<BookshelfGenerator>(FindObjectsInactive.Include);
+                if (generator == null)
+                {
+                    throw new InvalidOperationException("Runtime smoke validation found no BookshelfGenerator.");
+                }
+
+                var catalogCount = generator.BookCatalogItems.Count;
+                if (catalogCount == 0)
+                {
+                    throw new InvalidOperationException("Runtime smoke validation loaded zero book catalog items.");
+                }
+
+                if (UnityEngine.Object.FindFirstObjectByType<NotebookScreenController>(FindObjectsInactive.Include) == null)
+                {
+                    throw new InvalidOperationException("Runtime smoke validation found no NotebookScreenController.");
+                }
+
+                if (UnityEngine.Object.FindFirstObjectByType<APIManager>(FindObjectsInactive.Include) == null)
+                {
+                    throw new InvalidOperationException("Runtime smoke validation found no APIManager.");
+                }
+
+                Debug.Log($"Bootstrap runtime smoke validation passed. scenes={SceneKeys.MainRoom}+{SceneKeys.NotebookUi}, catalog={catalogCount}, frames={runtimeSmokeFrameCount}.");
+                FinishRuntimeSmokeValidation(0, null);
+            }
+            catch (Exception exception)
+            {
+                FinishRuntimeSmokeValidation(1, exception.ToString());
+            }
+        }
+
+        private static void FinishRuntimeSmokeValidation(int exitCode, string failureMessage)
+        {
+            runtimeSmokeExitCode = exitCode;
+            SessionState.SetInt(RuntimeSmokeExitCodeKey, exitCode);
+            if (!string.IsNullOrWhiteSpace(failureMessage))
+            {
+                Debug.LogError(failureMessage);
+            }
+
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                EditorApplication.ExitPlaymode();
+            }
+            else if (Application.isBatchMode)
+            {
+                EditorApplication.update -= TickRuntimeSmokeValidation;
+                SessionState.SetBool(RuntimeSmokeActiveKey, false);
+                EditorApplication.Exit(exitCode);
+            }
         }
 
         private static void RequireBuildScene(string path)
