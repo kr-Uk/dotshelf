@@ -67,7 +67,7 @@ export function MarketingHeader() {
             href="/download"
             className="btn-primary inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium"
           >
-            <Icon name="download" size={15} />앱 다운로드
+            <Icon name="download" size={15} />데스크탑 앱 다운로드
           </Link>
         </div>
         <button
@@ -104,7 +104,7 @@ export function MarketingHeader() {
               onClick={close}
               className="btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium mt-2"
             >
-              <Icon name="download" size={15} />앱 다운로드
+              <Icon name="download" size={15} />데스크탑 앱 다운로드
             </Link>
           </div>
         </div>

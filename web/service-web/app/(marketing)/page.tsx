@@ -18,20 +18,13 @@ const VALUE_PROPS = [
     body: "친구의 서재를 1인칭으로 거닐며, 책등을 살펴보고 짧은 코멘트를 남겨요. SNS의 피드 대신 한 사람이 만든 ‘공간’을 천천히 둘러보는 새로운 방식입니다.",
     chips: ["1인칭 투어", "방명록", "스포트라이트"],
   },
-  {
-    icon: "cloud" as const,
-    eyebrow: "03 / Sync",
-    title: "어디서나\n같은 서재",
-    body: "iOS의 RealityKit, Android의 Unity, 그리고 데스크탑 앱이 같은 서재를 공유해요. 침대 위에서 책을 추가하고, 책상 앞에서 큐레이션을 마무리하세요.",
-    chips: ["iOS · Android · Desktop", "실시간 동기화", "오프라인 보기"],
-  },
 ];
 
 const STATS: ReadonlyArray<readonly [string, string]> = [
   ["12,400+", "큐레이션된 서재"],
   ["180만 권", "등록된 책"],
   ["37개국", "독자가 머무는 곳"],
-  ["4.8 / 5.0", "App Store 평점"],
+  ["4.8 / 5.0", "이용자 만족도"],
 ];
 
 const GALLERY = [
@@ -39,21 +32,21 @@ const GALLERY = [
     span: "col-span-12 md:col-span-7",
     ratio: "16 / 10",
     label: "3D 서재 — 메인 화면",
-    tag: "iOS · RealityKit",
+    tag: "macOS · Windows",
     big: true,
   },
   {
     span: "col-span-6 md:col-span-5",
     ratio: "4 / 5",
     label: "책장 큐레이션",
-    tag: "Android · Unity",
+    tag: "Desktop",
     big: false,
   },
   {
     span: "col-span-6 md:col-span-5",
     ratio: "4 / 5",
     label: "친구 방문하기",
-    tag: "iOS",
+    tag: "Desktop",
     big: false,
   },
   {
@@ -87,17 +80,17 @@ function Hero() {
             <span className="w-6 h-px bg-wood" />
             DotShelf · 1.4 · Spring Update
           </div>
-          <h1 className="serif text-[42px] sm:text-[58px] lg:text-[68px] leading-[1.05] text-charcoal tracking-tight">
+          <h1 className="serif font-light text-[42px] sm:text-[58px] lg:text-[68px] leading-[1.05] text-charcoal tracking-tight">
             좋아하는 책을
             <br />
-            <span className="italic font-normal text-wood">가상의 책장</span>에
+            <span className="font-medium text-wood">가상의 책장</span>에
             <br />
             천천히 모으기.
           </h1>
           <p className="mt-7 text-[17px] sm:text-[18px] leading-[1.7] text-charcoal/80 max-w-lg">
             DotShelf는 당신의 독서 기록을 리스트가 아닌 하나의 서재로 만들어요.
-            모바일에서 만든 책장을 데스크탑에서 정돈하고, 친구의 서재를 마치
-            방문하듯 둘러보세요.
+            데스크탑에서 책장을 천천히 정돈하고, 친구의 서재를 마치 방문하듯
+            둘러보세요.
           </p>
           <div className="mt-9 flex flex-col sm:flex-row gap-3">
             <Link
@@ -118,18 +111,12 @@ function Hero() {
           <div className="mt-9 flex items-center gap-6 text-[13px] text-paper-muted">
             <div className="flex items-center gap-2">
               <Icon name="apple" size={14} className="text-charcoal" />
-              <span>iOS 17+</span>
-            </div>
-            <div className="w-px h-4 bg-beige" />
-            <div className="flex items-center gap-2">
-              <span className="serif italic text-charcoal">Android</span>
-              <span>13+</span>
+              <span>macOS 13+</span>
             </div>
             <div className="w-px h-4 bg-beige" />
             <div className="flex items-center gap-2">
               <Icon name="windows" size={12} className="text-charcoal" />
-              <Icon name="apple" size={14} className="text-charcoal" />
-              <span>Desktop</span>
+              <span>Windows 10+</span>
             </div>
           </div>
         </div>
@@ -137,21 +124,6 @@ function Hero() {
         <div className="lg:col-span-5 relative">
           <div className="relative">
             <Bookshelf3D />
-            <div
-              className="hidden sm:block absolute -bottom-6 -left-6 lg:-left-16 w-48 rounded-[28px] overflow-hidden border-[6px] border-charcoal shadow-warm-lg"
-              style={{ aspectRatio: "9 / 19", background: "#2A211B" }}
-            >
-              <div className="h-7 bg-charcoal flex items-center justify-center">
-                <div className="w-16 h-2 bg-ink rounded-full" />
-              </div>
-              <div className="ph-stripes h-full flex items-center justify-center">
-                <span className="mono text-[10px] text-charcoal/70 px-3 text-center leading-relaxed">
-                  iOS RealityKit
-                  <br />
-                  shelf preview
-                </span>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -210,7 +182,7 @@ function ValuesSection() {
           </p>
         </div>
       </div>
-      <div className="grid md:grid-cols-3 gap-6">
+      <div className="grid md:grid-cols-2 gap-6">
         {VALUE_PROPS.map((v) => (
           <article
             key={v.eyebrow}
@@ -266,7 +238,7 @@ function Gallery() {
             ── 앱 둘러보기
           </div>
           <h2 className="serif text-[34px] sm:text-[42px] text-charcoal leading-[1.1]">
-            모바일과 데스크탑 모두에서.
+            데스크탑에서 만나는 책장.
           </h2>
         </div>
         <Link
@@ -349,22 +321,6 @@ function CallToAction() {
               <Icon name="download" size={17} />
               데스크탑 앱 다운로드
             </Link>
-            <div className="grid grid-cols-2 gap-3">
-              <a
-                href="#"
-                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-full text-sm border border-cream/30 text-cream hover:bg-cream/10 transition"
-              >
-                <Icon name="apple" size={15} className="text-cream" />
-                App Store
-              </a>
-              <a
-                href="#"
-                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-full text-sm border border-cream/30 text-cream hover:bg-cream/10 transition"
-              >
-                <span className="serif italic">Google</span>
-                Play
-              </a>
-            </div>
           </div>
         </div>
       </div>

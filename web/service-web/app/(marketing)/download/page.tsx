@@ -86,14 +86,14 @@ const STEPS = [
   {
     n: "02",
     title: "계정으로 로그인",
-    body: "모바일 앱에서 사용 중인 계정으로 로그인하세요. QR 로그인을 선택하면 화면의 코드를 폰으로 비추기만 하면 됩니다.",
-    mono: "sign in · qr or email",
+    body: "DotShelf 계정으로 로그인하세요. 처음이라면 가입까지 30초면 충분합니다.",
+    mono: "sign in · email",
   },
   {
     n: "03",
-    title: "서재 불러오기",
-    body: "로그인 직후 모바일 서재가 자동으로 동기화돼요. 첫 동기화는 책 수에 따라 30초~2분 정도 걸릴 수 있습니다.",
-    mono: "sync — 412 books · 6 shelves",
+    title: "첫 책장 만들기",
+    body: "표지를 끌어다 놓아 첫 책장을 채워보세요. 책은 제목·ISBN으로 검색하거나 CSV로 한 번에 임포트할 수 있어요.",
+    mono: "import — 412 books · 6 shelves",
   },
 ];
 
@@ -103,7 +103,6 @@ export default function DownloadPage() {
       <DownloadHero />
       <Requirements />
       <InstallSteps />
-      <MobileNudge />
     </div>
   );
 }
@@ -126,7 +125,7 @@ function DownloadHero() {
           </h1>
           <p className="mt-5 text-[16px] leading-[1.7] text-charcoal/75">
             큰 화면에서 표지를 끌어다 놓고, 키보드로 빠르게 책을 임포트하세요.
-            모바일과 실시간으로 동기화됩니다.
+            정돈된 서재가 클라우드에 안전하게 저장됩니다.
           </p>
           <div className="mt-7 grid grid-cols-2 gap-y-3 gap-x-5 max-w-sm">
             <Meta label="버전" value={RELEASE.version} />
@@ -382,62 +381,6 @@ function InstallSteps() {
             </div>
           </div>
         ))}
-      </div>
-    </section>
-  );
-}
-
-function MobileNudge() {
-  return (
-    <section className="max-w-6xl mx-auto px-5 sm:px-8 py-16">
-      <div className="rounded-3xl border border-beige paper-dark p-8 sm:p-10 grid md:grid-cols-12 gap-6 items-center">
-        <div className="md:col-span-8">
-          <h3 className="serif text-[26px] sm:text-[32px] text-charcoal leading-tight">
-            모바일에서 시작하면 더 자연스러워요.
-          </h3>
-          <p className="mt-3 text-[14px] text-charcoal/75 leading-[1.7] max-w-xl">
-            DotShelf는 모바일이 메인이에요. 책을 카메라로 스캔해 추가하고,
-            데스크탑에서 정돈하는 흐름을 권장합니다.
-          </p>
-        </div>
-        <div className="md:col-span-4 flex flex-col gap-3">
-          <a
-            href="#"
-            className="btn-secondary flex items-center justify-between gap-3 px-5 py-3.5 rounded-2xl"
-          >
-            <span className="flex items-center gap-3">
-              <Icon name="apple" size={18} className="text-charcoal" />
-              <span>
-                <span className="block mono text-[10px] text-paper-muted uppercase tracking-widest">
-                  Download on the
-                </span>
-                <span className="serif text-[16px] text-charcoal">
-                  App Store
-                </span>
-              </span>
-            </span>
-            <Icon name="arrow-right" size={16} />
-          </a>
-          <a
-            href="#"
-            className="btn-secondary flex items-center justify-between gap-3 px-5 py-3.5 rounded-2xl"
-          >
-            <span className="flex items-center gap-3">
-              <span className="serif italic text-[15px] text-charcoal w-[18px] text-center">
-                G
-              </span>
-              <span>
-                <span className="block mono text-[10px] text-paper-muted uppercase tracking-widest">
-                  Get it on
-                </span>
-                <span className="serif text-[16px] text-charcoal">
-                  Google Play
-                </span>
-              </span>
-            </span>
-            <Icon name="arrow-right" size={16} />
-          </a>
-        </div>
       </div>
     </section>
   );

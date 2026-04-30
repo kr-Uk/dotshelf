@@ -162,11 +162,7 @@
   -webkit-font-smoothing: antialiased;
 }
 
-.marketing-surface h1,
-.marketing-surface h2,
-.marketing-surface h3,
-.marketing-surface h4,
-.marketing-surface .serif {
+:where(.marketing-surface :is(h1, h2, h3, h4, .serif)) {
   font-family: var(--font-marketing-serif);
   font-weight: 500;
   letter-spacing: -0.01em;
@@ -222,11 +218,19 @@
 }
 
 .marketing-surface .scene {
-  perspective: 1400px;
+  perspective: 1500px;
+  filter: drop-shadow(22px 32px 40px rgba(58, 46, 38, 0.34))
+    drop-shadow(0 8px 14px rgba(58, 46, 38, 0.22));
 }
 .marketing-surface .shelf-stage {
   transform-style: preserve-3d;
-  transform: rotateX(8deg) rotateY(-14deg);
+  transform: rotateX(4deg) rotateY(-18deg);
+}
+@media (max-width: 480px) {
+  .marketing-surface .shelf-stage {
+    transform: rotateX(4deg) rotateY(-14deg) scale(0.82);
+    transform-origin: top center;
+  }
 }
 
 .marketing-surface .book-spine {

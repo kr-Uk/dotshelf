@@ -6,7 +6,7 @@ import { GlobalProviders } from "@/providers/app-providers";
 
 const spectral = Spectral({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["300", "400", "500", "600", "700"],
   style: ["normal", "italic"],
   variable: "--font-spectral",
   display: "swap",
@@ -27,9 +27,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Dotshelf — 책으로 짓는 작은 책장",
+  title: "DotShelf — 데스크탑에서 짓는 가상의 책장",
   description:
-    "Dotshelf는 좋아하는 책을 가상의 책장에 모으고 꾸미는 서비스입니다.",
+    "DotShelf는 macOS와 Windows 데스크탑 앱에서 좋아하는 책을 가상의 3D 책장에 모으고 꾸미는 서비스입니다.",
 };
 
 export default function RootLayout({

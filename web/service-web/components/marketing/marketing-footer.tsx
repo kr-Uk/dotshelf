@@ -21,8 +21,6 @@ export function MarketingFooter() {
           items={[
             { label: "홈", href: "/" },
             { label: "다운로드", href: "/download" },
-            { label: "iOS 앱", href: "#", trailing: "App Store" },
-            { label: "Android 앱", href: "#", trailing: "Play" },
           ]}
         />
         <FooterColumn
