@@ -124,13 +124,20 @@ namespace BookshelfPorting.Runtime
 
         private sealed class BookAddCatalogItem
         {
-            public BookAddCatalogItem(string title, string author, string publisher, string summary, BookOrientation orientation = BookOrientation.Front)
+            public BookAddCatalogItem(
+                string title,
+                string author,
+                string publisher,
+                string summary,
+                BookOrientation orientation = BookOrientation.Front,
+                string bookId = null)
             {
                 Title = title;
                 Author = author;
                 Publisher = publisher;
                 Summary = summary;
                 Orientation = orientation;
+                BookId = bookId;
             }
 
             public string Title { get; }
@@ -138,6 +145,7 @@ namespace BookshelfPorting.Runtime
             public string Publisher { get; }
             public string Summary { get; }
             public BookOrientation Orientation { get; }
+            public string BookId { get; }
         }
 
         private static readonly BookAddCatalogItem[] BookAddCatalog =
@@ -218,6 +226,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private BookshelfApiSyncController bookshelfApiSyncController = null;
         [SerializeField] private NotebookScreenController notebookScreenController = null;
         [SerializeField] private NotebookUiSceneLoader notebookUiSceneLoader = null;
+        private NotebookScreenController subscribedNotebookScreenController;
 
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
         private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
@@ -714,6 +723,8 @@ namespace BookshelfPorting.Runtime
             {
                 bookshelfGenerator.BookshelfSwitchStateChanged -= HandleBookshelfSwitchStateChanged;
             }
+
+            DetachNotebookApiCallbacks();
         }
 
         public void FocusQuarterView()
@@ -4733,6 +4744,7 @@ namespace BookshelfPorting.Runtime
             }
             else
             {
+                PrepareCatalogBookForApiCreation(book, item);
                 if (dataStore != null)
                 {
                     var meta = dataStore.GetOrCreateBookMeta(book);
@@ -4783,6 +4795,7 @@ namespace BookshelfPorting.Runtime
                 return false;
             }
 
+            PrepareCatalogBookForApiCreation(book, item);
             if (dataStore != null)
             {
                 var meta = dataStore.GetOrCreateBookMeta(book);
@@ -6044,7 +6057,36 @@ namespace BookshelfPorting.Runtime
                 string.IsNullOrWhiteSpace(book.Author) ? "저자 미상" : book.Author,
                 string.IsNullOrWhiteSpace(book.Publisher) ? "출판사 미상" : book.Publisher,
                 string.IsNullOrWhiteSpace(book.Description) ? "책 설명이 없습니다." : book.Description,
-                GetBookOrientationFromDisplayStyle(source.Placement?.DisplayStyle));
+                GetBookOrientationFromDisplayStyle(source.Placement?.DisplayStyle),
+                book.BookId);
+        }
+
+        private static void PrepareCatalogBookForApiCreation(BookEntity book, BookAddCatalogItem item)
+        {
+            if (book == null || item == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.BookId))
+            {
+                book.bookId = item.BookId;
+            }
+
+            book.title = string.IsNullOrWhiteSpace(item.Title) ? book.title : item.Title;
+            book.author = string.IsNullOrWhiteSpace(item.Author) ? book.author : item.Author;
+            book.publisher = string.IsNullOrWhiteSpace(item.Publisher) ? book.publisher : item.Publisher;
+            book.description = string.IsNullOrWhiteSpace(item.Summary) ? book.description : item.Summary;
+            book.memoPreview = book.description;
+
+            // This helper is only for the add-book flow. It must create a new
+            // server placement from the catalog bookId, so any catalog snapshot
+            // IDs are cleared before BookshelfApiSyncController chooses the API.
+            book.userBookId = null;
+            book.bookshelfItemId = null;
+            book.bookshelfId = null;
+            book.bookshelfSectionId = null;
+            book.readingRecordId = null;
         }
 
         private static BookOrientation GetBookOrientationFromDisplayStyle(App.Domain.DisplayStyle? displayStyle)
@@ -9651,7 +9693,40 @@ namespace BookshelfPorting.Runtime
                 loadNotebookMarketBooksUseCase,
                 addNotebookBookToShelfUseCase,
                 notebookRuntimeUseCase);
+            AttachNotebookApiCallbacks();
             notebookUiSceneLoader?.MeasureCanvasActivationCost(notebookScreenController);
+        }
+
+        private void AttachNotebookApiCallbacks()
+        {
+            if (subscribedNotebookScreenController != null && subscribedNotebookScreenController == notebookScreenController)
+            {
+                return;
+            }
+
+            DetachNotebookApiCallbacks();
+
+            subscribedNotebookScreenController = notebookScreenController;
+            if (subscribedNotebookScreenController != null)
+            {
+                subscribedNotebookScreenController.BookAddedToShelfThroughApi += HandleNotebookBookAddedToShelfThroughApi;
+            }
+        }
+
+        private void DetachNotebookApiCallbacks()
+        {
+            if (subscribedNotebookScreenController == null)
+            {
+                return;
+            }
+
+            subscribedNotebookScreenController.BookAddedToShelfThroughApi -= HandleNotebookBookAddedToShelfThroughApi;
+            subscribedNotebookScreenController = null;
+        }
+
+        private void HandleNotebookBookAddedToShelfThroughApi()
+        {
+            bookshelfApiSyncController?.RefreshFromServer();
         }
 
         private int BeginNotebookFocusRequest()

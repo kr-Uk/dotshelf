@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Linq;
 using App.Application.Notebook;
@@ -204,12 +205,14 @@ namespace BookshelfPorting.Runtime
         private NotebookUiState currentState = NotebookUiState.ScreenSaver;
         private bool openDashboardOnShow;
         private NotebookToolkitController toolkitController;
+        private NotebookToolkitController subscribedToolkitController;
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
         private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
         private NotebookRuntimeUseCase notebookRuntimeUseCase;
 
         public Transform ScreenTransform { get; private set; }
+        public event Action BookAddedToShelfThroughApi;
 
         private void Awake()
         {
@@ -517,6 +520,40 @@ namespace BookshelfPorting.Runtime
                 loadNotebookMarketBooksUseCase,
                 addNotebookBookToShelfUseCase,
                 notebookRuntimeUseCase);
+            AttachToolkitCallbacks();
+        }
+
+        private void AttachToolkitCallbacks()
+        {
+            if (subscribedToolkitController != null && subscribedToolkitController == toolkitController)
+            {
+                return;
+            }
+
+            if (subscribedToolkitController != null)
+            {
+                subscribedToolkitController.BookAddedToShelfThroughApi -= HandleToolkitBookAddedToShelfThroughApi;
+            }
+
+            subscribedToolkitController = toolkitController;
+            if (subscribedToolkitController != null)
+            {
+                subscribedToolkitController.BookAddedToShelfThroughApi += HandleToolkitBookAddedToShelfThroughApi;
+            }
+        }
+
+        private void HandleToolkitBookAddedToShelfThroughApi()
+        {
+            BookAddedToShelfThroughApi?.Invoke();
+        }
+
+        private void OnDestroy()
+        {
+            if (subscribedToolkitController != null)
+            {
+                subscribedToolkitController.BookAddedToShelfThroughApi -= HandleToolkitBookAddedToShelfThroughApi;
+                subscribedToolkitController = null;
+            }
         }
 
         private bool HasToolkitDashboard()
@@ -1849,7 +1886,7 @@ namespace BookshelfPorting.Runtime
             }
 
             var selectedIndex = useRandomAd && adImages.Length > 1
-                ? Random.Range(0, adImages.Length)
+                ? UnityEngine.Random.Range(0, adImages.Length)
                 : 0;
 
             screenSaverImage.sprite = adImages[selectedIndex];
