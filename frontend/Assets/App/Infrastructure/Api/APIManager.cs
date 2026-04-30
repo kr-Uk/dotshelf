@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
+using App.Domain.Auth;
 using App.Infrastructure.Api.Dtos;
 using Newtonsoft.Json;
 using UnityEngine;
@@ -45,10 +46,6 @@ namespace App.Infrastructure.Api
             HydrateAccessTokenFromAuthSession();
         }
 
-        // AuthSession (in Assembly-CSharp under App.Auth) cannot be referenced
-        // from this assembly directly, but its persisted access token must be
-        // available to APIManager once MainScene loads. We read the same
-        // PlayerPrefs key here. Keep this key in sync with AuthSession.cs.
         private void HydrateAccessTokenFromAuthSession()
         {
             if (!string.IsNullOrWhiteSpace(accessToken))
@@ -56,7 +53,7 @@ namespace App.Infrastructure.Api
                 return;
             }
 
-            var stored = PlayerPrefs.GetString("Dotshelf.Auth.AccessToken", string.Empty);
+            var stored = PlayerPrefs.GetString(AuthStorageKeys.AccessToken, string.Empty);
             if (!string.IsNullOrWhiteSpace(stored))
             {
                 accessToken = stored;
@@ -66,6 +63,11 @@ namespace App.Infrastructure.Api
         public void Configure(string apiBaseUrl, string token = null, int timeout = 10, bool verboseLog = false)
         {
             baseUrl = NormalizeBaseUrl(apiBaseUrl, baseUrl);
+            if (string.IsNullOrWhiteSpace(accessToken))
+            {
+                HydrateAccessTokenFromAuthSession();
+            }
+
             // Only override the access token when a non-empty value is supplied.
             // AppApiConfig.ResolveAccessToken() returns string.Empty when no env var
             // and no serialized token are set, which would otherwise erase a token
@@ -370,7 +372,6 @@ namespace App.Infrastructure.Api
 
             if (!string.IsNullOrWhiteSpace(accessToken))
             {
-                request.SetRequestHeader("access", accessToken);
                 request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
             }
 

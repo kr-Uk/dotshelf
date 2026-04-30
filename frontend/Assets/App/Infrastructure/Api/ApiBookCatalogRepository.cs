@@ -9,6 +9,10 @@ using UnityEngine;
 
 namespace App.Infrastructure.Api
 {
+    /// <summary>
+    /// Loads the public book catalog used by the room add-book/search UI.
+    /// Authenticated bookshelf placement is handled separately by BookshelfApiSyncController.
+    /// </summary>
     public sealed class ApiBookCatalogRepository : IBookCatalogRepository
     {
         private const int Rows = 4;
@@ -19,13 +23,11 @@ namespace App.Infrastructure.Api
 
         private readonly string baseUrl;
         private readonly int timeoutSeconds;
-        private readonly IBookCatalogRepository fallbackRepository;
 
-        public ApiBookCatalogRepository(string baseUrl, int timeoutSeconds, IBookCatalogRepository fallbackRepository = null)
+        public ApiBookCatalogRepository(string baseUrl, int timeoutSeconds)
         {
             this.baseUrl = NormalizeBaseUrl(baseUrl);
             this.timeoutSeconds = Math.Max(1, timeoutSeconds);
-            this.fallbackRepository = fallbackRepository;
         }
 
         public IReadOnlyList<BookCatalogItem> GetMyBookshelfBooks()
@@ -47,16 +49,13 @@ namespace App.Infrastructure.Api
                 Debug.LogWarning($"Book catalog API request failed: {baseUrl} ({exception.Message})");
             }
 
-            return fallbackRepository != null
-                ? fallbackRepository.GetMyBookshelfBooks()
-                : Array.Empty<BookCatalogItem>();
+            return Array.Empty<BookCatalogItem>();
         }
 
         private BookListResponseDto GetBookList()
         {
-            using (var client = new HttpClient())
+            using (var client = CreateClient())
             {
-                client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
                 var url = $"{baseUrl}/v1/books?category=RANKING&limit={Rows * Columns * BooksPerSection}";
                 var json = client.GetStringAsync(url).GetAwaiter().GetResult();
                 var envelope = JsonConvert.DeserializeObject<ApiEnvelopeDto<BookListResponseDto>>(json);
@@ -89,16 +88,16 @@ namespace App.Infrastructure.Api
         private static BookCatalogItem CreateCatalogItem(BookListItemDto dto, int index, int row, int column, int slot, DateTimeOffset now)
         {
             var bookId = FirstNonEmpty(dto.BookId, dto.Id > 0 ? dto.Id.ToString() : $"b-api-{index + 1:000}");
-            var userBookId = $"owned-{bookId}";
+            var userBookId = $"catalog-{bookId}";
             var recordCount = Math.Max(1, dto.RecordCount);
             var isbn = FirstNonEmpty(dto.Isbn13, dto.Isbn);
 
             var book = new Book(
                 bookId,
-                FirstNonEmpty(dto.Title, "Untitled"),
-                FirstNonEmpty(dto.Author, "Unknown"),
+                FirstNonEmpty(dto.Title, "제목 없음"),
+                FirstNonEmpty(dto.Author, "저자 미상"),
                 publisher: dto.Publisher,
-                description: FirstNonEmpty(dto.Description, "API /v1/books/search item"),
+                description: FirstNonEmpty(dto.Description, "책 설명이 없습니다."),
                 coverImageUrl: dto.CoverImageUrl,
                 isbn: isbn,
                 isbn13: isbn,
@@ -121,8 +120,8 @@ namespace App.Infrastructure.Api
             {
                 Title = $"{book.Title} 기록",
                 Content = dto.RecordCount > 0
-                    ? $"공개 독후감 {dto.RecordCount}개가 등록된 책입니다."
-                    : "아직 등록된 독후감이 없습니다.",
+                    ? $"공개 리뷰가 {dto.RecordCount}개 등록된 책입니다."
+                    : "아직 등록된 공개 리뷰가 없습니다.",
                 VisibilityScope = VisibilityScope.Public,
                 LikeCount = dto.LikeCount,
                 CommentCount = 0,
@@ -130,7 +129,7 @@ namespace App.Infrastructure.Api
             };
 
             var placement = new BookPlacement(
-                $"item-{bookId}",
+                $"catalog-item-{bookId}",
                 DefaultShelfId,
                 $"{DefaultShelfId}-section-{row}-{column}",
                 userBook.UserBookId,
@@ -148,6 +147,14 @@ namespace App.Infrastructure.Api
             };
 
             return new BookCatalogItem(book, userBook, placement, readingRecord);
+        }
+
+        private HttpClient CreateClient()
+        {
+            return new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(timeoutSeconds)
+            };
         }
 
         private static string FirstNonEmpty(string value, string fallback)

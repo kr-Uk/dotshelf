@@ -313,6 +313,7 @@ namespace App.Features.Notebook.Presentation
         private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
         private NotebookRuntimeUseCase notebookRuntimeUseCase;
+        public event Action BookAddedToShelfThroughApi;
         private BookViewModel[] marketBooks = Array.Empty<BookViewModel>();
         private BookViewModel[] recommendedBooks = Array.Empty<BookViewModel>();
         private BookViewModel[] searchResults = Array.Empty<BookViewModel>();
@@ -4935,6 +4936,28 @@ namespace App.Features.Notebook.Presentation
             ApplyBookAddedFromApi(book);
             SyncWalletFromApi();
             UnityEngine.Debug.Log($"Book added to shelf through API. book={book.Id}, userBookId={response?.Id}");
+            NotifyBookAddedToShelfThroughApi();
+        }
+
+        private void NotifyBookAddedToShelfThroughApi()
+        {
+            var handlers = BookAddedToShelfThroughApi;
+            if (handlers == null)
+            {
+                return;
+            }
+
+            foreach (var handler in handlers.GetInvocationList())
+            {
+                try
+                {
+                    ((Action)handler)();
+                }
+                catch (Exception exception)
+                {
+                    UnityEngine.Debug.LogException(exception);
+                }
+            }
         }
 
         private void FailApiBookAdd(BookViewModel book, NotebookApiError error)

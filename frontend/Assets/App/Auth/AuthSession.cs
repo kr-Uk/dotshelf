@@ -1,4 +1,5 @@
 using System;
+using App.Domain.Auth;
 using UnityEngine;
 
 namespace App.Auth
@@ -8,27 +9,18 @@ namespace App.Auth
     // a Bearer token to APIManager without re-running the social login flow.
     public static class AuthSession
     {
-        private const string AccessTokenKey = "Dotshelf.Auth.AccessToken";
-        private const string RefreshTokenKey = "Dotshelf.Auth.RefreshToken";
-        private const string UserIdKey = "Dotshelf.Auth.UserId";
-        private const string ExpiresInSecondsKey = "Dotshelf.Auth.ExpiresInSeconds";
-        private const string AccessTokenExpiresAtKey = "Dotshelf.Auth.AccessTokenExpiresAt";
-        private const string NewUserKey = "Dotshelf.Auth.NewUser";
-        private const string OnboardedKey = "Dotshelf.Auth.Onboarded";
-        private const string GuestSessionIdKey = "Dotshelf.Auth.GuestSessionId";
-
-        public static string AccessToken => PlayerPrefs.GetString(AccessTokenKey, string.Empty);
-        public static string RefreshToken => PlayerPrefs.GetString(RefreshTokenKey, string.Empty);
-        public static string GuestSessionId => PlayerPrefs.GetString(GuestSessionIdKey, string.Empty);
+        public static string AccessToken => PlayerPrefs.GetString(AuthStorageKeys.AccessToken, string.Empty);
+        public static string RefreshToken => PlayerPrefs.GetString(AuthStorageKeys.RefreshToken, string.Empty);
+        public static string GuestSessionId => PlayerPrefs.GetString(AuthStorageKeys.GuestSessionId, string.Empty);
         public static bool HasAccessToken => !string.IsNullOrWhiteSpace(AccessToken);
-        public static bool NewUser => PlayerPrefs.GetInt(NewUserKey, 0) == 1;
-        public static bool Onboarded => PlayerPrefs.GetInt(OnboardedKey, 0) == 1;
+        public static bool NewUser => PlayerPrefs.GetInt(AuthStorageKeys.NewUser, 0) == 1;
+        public static bool Onboarded => PlayerPrefs.GetInt(AuthStorageKeys.Onboarded, 0) == 1;
 
         public static long UserId
         {
             get
             {
-                var raw = PlayerPrefs.GetString(UserIdKey, string.Empty);
+                var raw = PlayerPrefs.GetString(AuthStorageKeys.UserId, string.Empty);
                 return long.TryParse(raw, out var parsed) ? parsed : 0L;
             }
         }
@@ -37,7 +29,7 @@ namespace App.Auth
         {
             get
             {
-                var raw = PlayerPrefs.GetString(ExpiresInSecondsKey, string.Empty);
+                var raw = PlayerPrefs.GetString(AuthStorageKeys.ExpiresInSeconds, string.Empty);
                 return long.TryParse(raw, out var parsed) ? parsed : 0L;
             }
         }
@@ -46,7 +38,7 @@ namespace App.Auth
         {
             get
             {
-                var raw = PlayerPrefs.GetString(AccessTokenExpiresAtKey, string.Empty);
+                var raw = PlayerPrefs.GetString(AuthStorageKeys.AccessTokenExpiresAt, string.Empty);
                 if (!long.TryParse(raw, out var expiresAtUnix))
                 {
                     return true;
@@ -64,42 +56,42 @@ namespace App.Auth
             bool? newUser = null,
             bool? onboarded = null)
         {
-            PlayerPrefs.SetString(UserIdKey, userId.ToString());
-            PlayerPrefs.SetString(AccessTokenKey, accessToken ?? string.Empty);
-            PlayerPrefs.SetString(RefreshTokenKey, refreshToken ?? string.Empty);
-            PlayerPrefs.SetString(ExpiresInSecondsKey, expiresInSeconds.ToString());
+            PlayerPrefs.SetString(AuthStorageKeys.UserId, userId.ToString());
+            PlayerPrefs.SetString(AuthStorageKeys.AccessToken, accessToken ?? string.Empty);
+            PlayerPrefs.SetString(AuthStorageKeys.RefreshToken, refreshToken ?? string.Empty);
+            PlayerPrefs.SetString(AuthStorageKeys.ExpiresInSeconds, expiresInSeconds.ToString());
             if (newUser.HasValue)
             {
-                PlayerPrefs.SetInt(NewUserKey, newUser.Value ? 1 : 0);
+                PlayerPrefs.SetInt(AuthStorageKeys.NewUser, newUser.Value ? 1 : 0);
             }
 
             if (onboarded.HasValue)
             {
-                PlayerPrefs.SetInt(OnboardedKey, onboarded.Value ? 1 : 0);
+                PlayerPrefs.SetInt(AuthStorageKeys.Onboarded, onboarded.Value ? 1 : 0);
             }
 
             var safety = Math.Min(60L, Math.Max(0L, expiresInSeconds / 10));
             var expiresAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + Math.Max(0L, expiresInSeconds - safety);
-            PlayerPrefs.SetString(AccessTokenExpiresAtKey, expiresAt.ToString());
+            PlayerPrefs.SetString(AuthStorageKeys.AccessTokenExpiresAt, expiresAt.ToString());
             PlayerPrefs.Save();
         }
 
         public static void SaveGuestSessionId(string guestSessionId)
         {
-            PlayerPrefs.SetString(GuestSessionIdKey, guestSessionId ?? string.Empty);
+            PlayerPrefs.SetString(AuthStorageKeys.GuestSessionId, guestSessionId ?? string.Empty);
             PlayerPrefs.Save();
         }
 
         public static void Clear()
         {
-            PlayerPrefs.DeleteKey(AccessTokenKey);
-            PlayerPrefs.DeleteKey(RefreshTokenKey);
-            PlayerPrefs.DeleteKey(UserIdKey);
-            PlayerPrefs.DeleteKey(ExpiresInSecondsKey);
-            PlayerPrefs.DeleteKey(AccessTokenExpiresAtKey);
-            PlayerPrefs.DeleteKey(NewUserKey);
-            PlayerPrefs.DeleteKey(OnboardedKey);
-            PlayerPrefs.DeleteKey(GuestSessionIdKey);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.AccessToken);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.RefreshToken);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.UserId);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.ExpiresInSeconds);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.AccessTokenExpiresAt);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.NewUser);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.Onboarded);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.GuestSessionId);
             PlayerPrefs.Save();
         }
     }

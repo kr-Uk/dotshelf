@@ -162,13 +162,16 @@ namespace BookshelfPorting.Runtime
             var environment = GetOrAddComponent<EnvironmentSetup>(systems);
             var apiManager = GetOrAddComponent<APIManager>(systems);
             var notebookUiSceneLoader = GetOrAddComponent<NotebookUiSceneLoader>(systems);
-            var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(apiMode, apiBaseUrl, apiTimeoutSeconds));
 
             apiManager.Configure(
                 apiBaseUrl,
                 apiAccessToken,
                 apiTimeoutSeconds,
                 apiConfig != null && apiConfig.EnableVerboseLog);
+            var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(
+                apiMode,
+                apiBaseUrl,
+                apiTimeoutSeconds));
             var notebookBookRepository = CreateNotebookBookRepository(apiMode, apiManager);
             var searchNotebookBooksUseCase = new SearchNotebookBooksUseCase(notebookBookRepository);
             var loadNotebookMarketBooksUseCase = new LoadNotebookMarketBooksUseCase(notebookBookRepository);
@@ -223,6 +226,7 @@ namespace BookshelfPorting.Runtime
             cameraController.ConfigureFrontalZoomSettings(3.25f, 0.8f, 4.5f, 0.45f, 0.15f);
             cameraController.ConfigureFrontalZoomInputPredicate(experienceManager.CanHandleFrontalZoomInput);
             generator.Configure(state, materialFactory, loadBooksUseCase);
+            generator.ConfigureServerBookshelfSnapshots(usesHttpApi);
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);
             experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
@@ -310,7 +314,9 @@ namespace BookshelfPorting.Runtime
                 return new MockBookCatalogRepository();
             }
 
-            return new ApiBookCatalogRepository(apiBaseUrl, requestTimeoutSeconds);
+            return new ApiBookCatalogRepository(
+                apiBaseUrl,
+                requestTimeoutSeconds);
         }
 
         private static INotebookBookRepository CreateNotebookBookRepository(AppApiMode apiMode, APIManager apiManager)

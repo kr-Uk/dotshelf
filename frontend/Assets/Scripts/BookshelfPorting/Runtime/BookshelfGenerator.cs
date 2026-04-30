@@ -124,6 +124,9 @@ namespace BookshelfPorting.Runtime
         private int bookshelfCount = InitialBookshelfCount;
         private LoadMyBookshelfBooksUseCase loadBooksUseCase;
         private IReadOnlyList<BookCatalogItem> bookCatalogItems = System.Array.Empty<BookCatalogItem>();
+        private bool bookCatalogLoaded;
+        private bool useServerBookshelfSnapshots;
+        private bool isConfigured;
         private readonly Dictionary<int, BookshelfLayoutSnapshot> bookshelfLayoutSnapshots = new Dictionary<int, BookshelfLayoutSnapshot>();
         private readonly Dictionary<int, string> bookshelfServerIds = new Dictionary<int, string>();
         private readonly Dictionary<int, Dictionary<string, string>> bookshelfSectionServerIds = new Dictionary<int, Dictionary<string, string>>();
@@ -179,6 +182,7 @@ namespace BookshelfPorting.Runtime
         {
             state = bookshelfState;
             materialFactory = factory;
+            isConfigured = state != null && materialFactory != null;
         }
 
         public void Configure(BookshelfState bookshelfState, MaterialFactory factory, LoadMyBookshelfBooksUseCase booksUseCase)
@@ -186,6 +190,12 @@ namespace BookshelfPorting.Runtime
             state = bookshelfState;
             materialFactory = factory;
             loadBooksUseCase = booksUseCase;
+            isConfigured = state != null && materialFactory != null;
+        }
+
+        public void ConfigureServerBookshelfSnapshots(bool enabled)
+        {
+            useServerBookshelfSnapshots = enabled;
         }
 
         public void ApplyServerBookshelves(IReadOnlyList<BookshelfRuntimeApiSnapshot> shelves)
@@ -275,6 +285,11 @@ namespace BookshelfPorting.Runtime
 
         private void Start()
         {
+            if (!isConfigured)
+            {
+                return;
+            }
+
             RefreshExistingBookCoverVisuals();
             if (state != null && state.Sections.Count > 0 && booksRoot != null && booksRoot.childCount > 0)
             {
@@ -288,7 +303,11 @@ namespace BookshelfPorting.Runtime
         public void Generate()
         {
             EnsureRoots();
-            LoadBookCatalog();
+            if (!useServerBookshelfSnapshots)
+            {
+                LoadBookCatalog();
+            }
+
             ClearGenerated();
             BuildRoom();
             BuildBookshelf();
@@ -297,6 +316,16 @@ namespace BookshelfPorting.Runtime
 
         public void ApplyBookCatalogDataToExistingBooks()
         {
+            if (useServerBookshelfSnapshots)
+            {
+                if (Application.isPlaying)
+                {
+                    Debug.Log("Bookshelf catalog metadata is not applied to scene books in API mode; waiting for server bookshelf snapshots.");
+                }
+
+                return;
+            }
+
             if (booksRoot == null)
             {
                 booksRoot = transform.Find("BookshelfTurntableRoot/BookshelfRoot/BooksRoot");
@@ -994,6 +1023,11 @@ namespace BookshelfPorting.Runtime
 
         private void SpawnBooks(List<ShelfSection> sections, int variantIndex, Transform targetBooksRoot, bool registerInState)
         {
+            if (useServerBookshelfSnapshots)
+            {
+                return;
+            }
+
             EnsureBookCatalog();
             if (bookCatalogItems.Count == 0)
             {
@@ -1039,6 +1073,7 @@ namespace BookshelfPorting.Runtime
             bookCatalogItems = loadBooksUseCase != null
                 ? loadBooksUseCase.Execute() ?? System.Array.Empty<BookCatalogItem>()
                 : System.Array.Empty<BookCatalogItem>();
+            bookCatalogLoaded = true;
 
             if (Application.isPlaying)
             {
@@ -1048,7 +1083,7 @@ namespace BookshelfPorting.Runtime
 
         private void EnsureBookCatalog()
         {
-            if (bookCatalogItems.Count > 0)
+            if (bookCatalogLoaded)
             {
                 return;
             }
@@ -2854,13 +2889,19 @@ namespace BookshelfPorting.Runtime
 
         private void EnsureBookshelfDataForCurrentOrder()
         {
-            EnsureBookCatalog();
+            if (!useServerBookshelfSnapshots)
+            {
+                EnsureBookCatalog();
+            }
+
             EnsureBookshelfNamesForCurrentOrder();
             for (var i = 0; i < bookshelfCount; i++)
             {
                 if (!bookshelfLayoutSnapshots.ContainsKey(i))
                 {
-                    bookshelfLayoutSnapshots[i] = CreateDefaultBookshelfLayoutSnapshot(i);
+                    bookshelfLayoutSnapshots[i] = useServerBookshelfSnapshots
+                        ? CreateEmptyBookshelfLayoutSnapshot()
+                        : CreateDefaultBookshelfLayoutSnapshot(i);
                 }
             }
         }
