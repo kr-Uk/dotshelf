@@ -167,6 +167,14 @@ namespace App.Auth
 
             try
             {
+                var envelope = JsonConvert.DeserializeObject<ApiEnvelopeDto<object>>(body);
+                if (envelope != null && (!string.IsNullOrWhiteSpace(envelope.Code) || !string.IsNullOrWhiteSpace(envelope.Message)))
+                {
+                    error.Code = envelope.Code;
+                    error.Message = envelope.Message;
+                    return error;
+                }
+
                 var parsed = JsonConvert.DeserializeObject<ApiErrorResponseDto>(body);
                 if (parsed != null)
                 {

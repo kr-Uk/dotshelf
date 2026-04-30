@@ -664,7 +664,7 @@ namespace App.Infrastructure.Api
             {
                 Provider = request.Provider,
                 TokenType = request.TokenType,
-                Token = FirstNonEmpty(request.Token, request.IdToken, request.AccessToken),
+                Token = FirstNonEmpty(request.Token),
                 Nonce = request.Nonce
             };
         }

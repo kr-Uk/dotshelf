@@ -54,11 +54,22 @@ namespace App.Bootstrap
         private Button kakaoLoginButton;
         private Button googleLoginButton;
         private Button guestEntryButton;
+        private Button signUpButton;
 
         private bool isInitialized;
         private bool listenersRegistered;
         private bool isLoginInFlight;
         private IAuthService authService;
+
+        [Header("Development Social Login")]
+        [SerializeField] private bool useDevelopmentSocialTokens = true;
+        [SerializeField] private string googleDevelopmentToken;
+        [SerializeField] private SocialTokenType googleDevelopmentTokenType = SocialTokenType.IdToken;
+        [SerializeField] private string kakaoDevelopmentToken;
+        [SerializeField] private SocialTokenType kakaoDevelopmentTokenType = SocialTokenType.AccessToken;
+        [SerializeField] private string appleDevelopmentToken;
+        [SerializeField] private SocialTokenType appleDevelopmentTokenType = SocialTokenType.IdToken;
+        [SerializeField] private string appleDevelopmentNonce;
 
         public void InitializeIfNeeded()
         {
@@ -99,17 +110,17 @@ namespace App.Bootstrap
 
         public void OnAppleLoginButtonClicked()
         {
-            BeginNativeSocialLogin(SocialProvider.Apple, "Apple");
+            StartSocialLoginOrPromptSignUp(SocialProvider.Apple);
         }
 
         public void OnKakaoLoginButtonClicked()
         {
-            BeginNativeSocialLogin(SocialProvider.Kakao, "Kakao");
+            StartSocialLoginOrPromptSignUp(SocialProvider.Kakao);
         }
 
         public void OnGoogleLoginButtonClicked()
         {
-            BeginNativeSocialLogin(SocialProvider.Google, "Google");
+            StartSocialLoginOrPromptSignUp(SocialProvider.Google);
         }
 
         // External entry point — once a platform SDK obtains a provider token,
@@ -267,6 +278,94 @@ namespace App.Bootstrap
             if (kakaoLoginButton != null) kakaoLoginButton.interactable = interactable;
             if (googleLoginButton != null) googleLoginButton.interactable = interactable;
             if (guestEntryButton != null) guestEntryButton.interactable = interactable;
+            if (signUpButton != null) signUpButton.interactable = interactable;
+        }
+
+        private static void SetButtonLabel(Button button, string text)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            var label = button.GetComponentInChildren<TMP_Text>(true);
+            if (label != null)
+            {
+                label.text = text;
+            }
+        }
+
+        private void StartSocialLoginFromButton(SocialProvider provider)
+        {
+            if (TryGetDevelopmentSocialLoginPayload(provider, out var token, out var tokenType, out var nonce))
+            {
+                SubmitSocialLogin(provider, token, tokenType, nonce);
+                return;
+            }
+
+            SetMessage(
+                loginMessageLabel,
+                $"{ProviderDisplayName(provider)} 로그인용 토큰이 없습니다. SDK 토큰을 연결하거나 LoginScreenController 개발용 토큰 값을 설정해주세요.");
+        }
+
+        public void OnSignUpButtonClicked()
+        {
+            var onboardingController = GetComponent<OnboardingScreenController>();
+            if (onboardingController == null)
+            {
+                Debug.LogError("[LoginDemo] OnboardingScreenController is missing from LoginScene prefab — sign-up cannot start.");
+                SetMessage(loginMessageLabel, "회원가입 화면을 열 수 없습니다. 잠시 후 다시 시도해주세요.");
+                return;
+            }
+
+            onboardingController.InitializeIfNeeded();
+            onboardingController.StartOnboarding();
+        }
+
+        private void StartSocialLoginOrPromptSignUp(SocialProvider provider)
+        {
+            if (TryGetDevelopmentSocialLoginPayload(provider, out var token, out var tokenType, out var nonce))
+            {
+                SubmitSocialLogin(provider, token, tokenType, nonce);
+                return;
+            }
+
+            SetMessage(loginMessageLabel, "로그인 토큰을 확인할 수 없습니다. 먼저 회원가입을 진행해주세요.");
+        }
+
+        private bool TryGetDevelopmentSocialLoginPayload(
+            SocialProvider provider,
+            out string token,
+            out SocialTokenType tokenType,
+            out string nonce)
+        {
+            token = null;
+            tokenType = SocialTokenType.Default;
+            nonce = null;
+
+            if (!useDevelopmentSocialTokens)
+            {
+                return false;
+            }
+
+            switch (provider)
+            {
+                case SocialProvider.Google:
+                    token = googleDevelopmentToken;
+                    tokenType = googleDevelopmentTokenType;
+                    return !string.IsNullOrWhiteSpace(token);
+                case SocialProvider.Kakao:
+                    token = kakaoDevelopmentToken;
+                    tokenType = kakaoDevelopmentTokenType;
+                    return !string.IsNullOrWhiteSpace(token);
+                case SocialProvider.Apple:
+                    token = appleDevelopmentToken;
+                    tokenType = appleDevelopmentTokenType;
+                    nonce = appleDevelopmentNonce;
+                    return !string.IsNullOrWhiteSpace(token) && !string.IsNullOrWhiteSpace(nonce);
+                default:
+                    return false;
+            }
         }
 
         public void SetCanvasVisible(bool isVisible)
@@ -290,6 +389,7 @@ namespace App.Bootstrap
             AddButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             AddButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
             AddButtonListener(guestEntryButton, OnGuestEntryButtonClicked);
+            AddButtonListener(signUpButton, OnSignUpButtonClicked);
 
             listenersRegistered = true;
         }
@@ -305,6 +405,7 @@ namespace App.Bootstrap
             RemoveButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             RemoveButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
             RemoveButtonListener(guestEntryButton, OnGuestEntryButtonClicked);
+            RemoveButtonListener(signUpButton, OnSignUpButtonClicked);
 
             listenersRegistered = false;
         }
@@ -429,6 +530,23 @@ namespace App.Bootstrap
             kakaoLoginButton = CreateStackButton(pane.transform, "KakaoButton", "Kakao 로그인", KakaoColor, TextColor, false, BorderColor, SocialButtonHeight);
             googleLoginButton = CreateStackButton(pane.transform, "GoogleButton", "Google 로그인", GoogleColor, TextColor, true, BorderColor, SocialButtonHeight);
             guestEntryButton = CreateStackButton(pane.transform, "GuestEntryButton", "게스트로 입장하기", SecondaryColor, TextColor, true, BorderColor, SocialButtonHeight);
+
+            if (false)
+            {
+                SetButtonLabel(appleLoginButton, "Apple 로그인 (준비 중)");
+                SetButtonLabel(kakaoLoginButton, "Kakao 로그인 (준비 중)");
+                SetButtonLabel(googleLoginButton, "Google 로그인 (준비 중)");
+            }
+
+            signUpButton = CreateStackButton(
+                pane.transform,
+                "SignUpButton",
+                "회원가입",
+                CardColor,
+                PrimaryColor,
+                true,
+                BorderColor,
+                44f);
 
             loginMessageLabel = CreateLayoutText(
                 pane.transform,

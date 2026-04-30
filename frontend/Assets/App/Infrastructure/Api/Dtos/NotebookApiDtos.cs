@@ -57,22 +57,16 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("provider")]
         public string Provider { get; set; }
 
-        [JsonProperty("tokenType", NullValueHandling = NullValueHandling.Ignore)]
+        [JsonProperty("tokenType")]
         public string TokenType { get; set; }
 
         [JsonProperty("token")]
         public string Token { get; set; }
 
-        [JsonProperty("idToken", NullValueHandling = NullValueHandling.Ignore)]
-        public string IdToken { get; set; }
-
-        [JsonProperty("accessToken", NullValueHandling = NullValueHandling.Ignore)]
-        public string AccessToken { get; set; }
-
         // Required by BE for provider=APPLE; the value must match the nonce
         // claim baked into the Apple identityToken. See AuthDtos.java in
         // backend/src/main/java/com/dotshelf/domain/auth/dto/.
-        [JsonProperty("nonce", NullValueHandling = NullValueHandling.Ignore)]
+        [JsonProperty("nonce")]
         public string Nonce { get; set; }
     }
 

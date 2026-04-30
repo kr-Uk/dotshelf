@@ -26,15 +26,22 @@ namespace App.Auth
             {
                 return Task.FromResult(LoginResult.Failure(
                     "INVALID_INPUT",
-                    "소셜 로그인 토큰이 비어 있습니다."));
+                    "\uC18C\uC15C \uB85C\uADF8\uC778 \uD1A0\uD070\uC774 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4."));
+            }
+
+            if (provider == SocialProvider.Apple && string.IsNullOrWhiteSpace(nonce))
+            {
+                return Task.FromResult(LoginResult.Failure(
+                    "INVALID_INPUT",
+                    "Apple \uB85C\uADF8\uC778\uC5D0\uB294 nonce\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4."));
             }
 
             var request = new SocialLoginRequestDto
             {
                 Provider = provider.ToBackendString(),
                 Token = providerToken,
-                TokenType = tokenType == SocialTokenType.Default ? null : tokenType.ToBackendString(),
-                Nonce = string.IsNullOrWhiteSpace(nonce) ? null : nonce
+                TokenType = tokenType.ToBackendString(provider),
+                Nonce = nonce
             };
 
             var tcs = new TaskCompletionSource<LoginResult>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -46,7 +53,7 @@ namespace App.Auth
                     {
                         tcs.TrySetResult(LoginResult.Failure(
                             "EMPTY_RESPONSE",
-                            "서버 응답이 올바르지 않습니다. 잠시 후 다시 시도해주세요."));
+                            "\uC11C\uBC84 \uC751\uB2F5\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694."));
                         return;
                     }
 
@@ -57,6 +64,20 @@ namespace App.Auth
                         response.ExpiresIn,
                         response.NewUser,
                         response.Onboarded));
+
+                    AuthSession.SaveTokens(
+                        response.UserId,
+                        response.AccessToken,
+                        response.RefreshToken,
+                        response.ExpiresIn,
+                        response.NewUser,
+                        response.Onboarded);
+
+                    if (!SessionState.IsGuest)
+                    {
+                        AuthSession.SaveGuestSessionId(string.Empty);
+                        SessionState.SetPendingIntent(GuestPostLoginIntent.None);
+                    }
                 },
                 error => tcs.TrySetResult(LoginResult.Failure(
                     error?.Code,
@@ -75,7 +96,7 @@ namespace App.Auth
                     {
                         tcs.TrySetResult(GuestSessionResult.Failure(
                             "EMPTY_RESPONSE",
-                            "게스트 세션을 시작할 수 없습니다. 잠시 후 다시 시도해주세요."));
+                            "\uAC8C\uC2A4\uD2B8 \uC138\uC158\uC744 \uC2DC\uC791\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694."));
                         return;
                     }
 
@@ -105,14 +126,20 @@ namespace App.Auth
             };
         }
 
-        public static string ToBackendString(this SocialTokenType tokenType)
+        public static string ToBackendString(this SocialTokenType tokenType, SocialProvider provider)
         {
             return tokenType switch
             {
                 SocialTokenType.AccessToken => "ACCESS_TOKEN",
                 SocialTokenType.IdToken => "ID_TOKEN",
                 SocialTokenType.AuthorizationCode => "AUTHORIZATION_CODE",
-                _ => null
+                _ => provider switch
+                {
+                    SocialProvider.Kakao => "ACCESS_TOKEN",
+                    SocialProvider.Google => "ID_TOKEN",
+                    SocialProvider.Apple => "ID_TOKEN",
+                    _ => "ID_TOKEN"
+                }
             };
         }
     }
