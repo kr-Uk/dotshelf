@@ -10,13 +10,21 @@
 #   - OAuth 는 더미 ENV — 소셜 로그인 콜백 미테스트
 #   - JWT_SECRET 은 prod 와 다른 값 (토큰 cross-validity 차단)
 #
+# 사전 조건 (서버에서 다음을 미리 준비해야 한다):
+#   $EC2_DEPLOY_PATH/api-test/Dockerfile          ← backend/Dockerfile 과 동일 사본
+#   $EC2_DEPLOY_PATH/api-test/build/libs/*.jar    ← dev 브랜치 bootJar 산출물
+#   $EC2_DEPLOY_PATH/.env.test                    ← .env.test.example 참고
+#
+# 위 staging 은 현재 단계에서는 수동 (scp) — 차후 .gitlab-ci.yml 에 backend:test-deploy 잡이
+# 추가되면 자동화된다 (dev 브랜치 트리거).
+#
 # 사용:
-#   docker compose -f docker-compose.test.yml --env-file .env.test up -d --build
+#   docker compose -f docker-compose.test.yml --env-file .env.test up -d --build api-test
 #   docker compose -f docker-compose.test.yml --env-file .env.test logs -f api-test
 #   docker compose -f docker-compose.test.yml --env-file .env.test down
 #
-# Promtail (prod compose 의 dotshelf-promtail 컨테이너) 가 dotshelf-api-test 컨테이너 로그도
-# 자동 수집한다 (이름 prefix 기반).
+# Promtail (prod compose 의 dotshelf-promtail) 이 dotshelf-api-test 컨테이너 로그도 수집하도록
+# promtail-config.yml 의 docker_sd filters / color relabel 정규식을 같이 갱신한다.
 services:
   api-test:
     build:

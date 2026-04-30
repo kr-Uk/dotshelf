@@ -8,9 +8,9 @@
 # (docker-compose.yml 에서 max-size=10m, max-file=3 설정됨.)
 #
 # 라벨링:
-# - container_name: 컨테이너 이름 (dotshelf-api-blue 등) → color 추출 기반
-# - color: container_name 에서 blue|green 추출
-# - compose_service: compose 서비스명 (api-blue, api-green)
+# - container_name: 컨테이너 이름 (dotshelf-api-blue / -green / -test) → color/env 추출 기반
+# - color: container_name 에서 blue|green|test 추출 (test 는 환경 구분용으로 함께 라벨링)
+# - compose_service: compose 서비스명 (api-blue, api-green, api-test)
 #
 # 이 설정은 dotshelf-api-* 컨테이너만 수집한다. postgres/redis 로그는 무시.
 server:
@@ -35,7 +35,7 @@ scrape_configs:
         refresh_interval: 15s
         filters:
           - name: name
-            values: ['dotshelf-api-blue', 'dotshelf-api-green']
+            values: ['dotshelf-api-blue', 'dotshelf-api-green', 'dotshelf-api-test']
 
     relabel_configs:
       # 컨테이너 이름에서 앞의 '/' 제거
@@ -43,9 +43,9 @@ scrape_configs:
         regex: '/(.*)'
         target_label: 'container_name'
 
-      # container_name 에서 color 추출 (dotshelf-api-blue -> blue)
+      # container_name 에서 color/env 추출 (dotshelf-api-blue -> blue, dotshelf-api-test -> test)
       - source_labels: ['__meta_docker_container_name']
-        regex: '/dotshelf-api-(blue|green)'
+        regex: '/dotshelf-api-(blue|green|test)'
         target_label: 'color'
 
       # compose service 라벨 (promtail docker_sd 자동 제공)
