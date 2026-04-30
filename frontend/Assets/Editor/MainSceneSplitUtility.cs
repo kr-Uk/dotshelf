@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using App.Bootstrap;
 using App.Config;
+using BookshelfPorting.Runtime;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -15,7 +16,10 @@ namespace Dotshelf.EditorTools
         private const string BootstrapScenePath = "Assets/Scenes/BootstrapScene.unity";
         private const string LoginScenePath = "Assets/Scenes/LoginScene.unity";
         private const string MainRoomScenePath = "Assets/Scenes/MainRoomScene.unity";
+        private const string NotebookUiScenePath = "Assets/Scenes/NotebookUIScene.unity";
         private const string StartScenePath = "Assets/Scenes/StartScene.unity";
+        private const string LibraryRoomBackgroundPrefabPath = "Assets/App/Composition/Prefabs/LibraryRoomBackground.prefab";
+        private const string NotebookStationPrefabPath = "Assets/App/Composition/Prefabs/NotebookStation.prefab";
 
         [MenuItem("Dotshelf/Refactor/Rebuild Bootstrap Scene")]
         public static void RebuildBootstrapScene()
@@ -38,10 +42,13 @@ namespace Dotshelf.EditorTools
             AssignSerializedReference(appRoot, "apiConfig", apiConfig);
             AssignSerializedReference(configLoader, "apiConfig", apiConfig);
             AssignSerializedString(sceneEntry, "mainSceneName", SceneKeys.Main);
+            AssignSerializedString(sceneEntry, "notebookUiSceneName", SceneKeys.NotebookUi);
             AssignSerializedBool(sceneEntry, "loadMainSceneOnStart", true);
             AssignSerializedBool(sceneEntry, "loadAdditively", true);
+            AssignSerializedBool(sceneEntry, "loadNotebookUiScene", true);
             AssignSerializedBool(sceneEntry, "setLoadedSceneActive", true);
             AssignSerializedBool(sceneEntry, "runInstallersAfterLoad", true);
+            AssignSerializedBool(sceneEntry, "forceGenerateOnBootstrapLoad", false);
 
             EditorSceneManager.SaveScene(scene, BootstrapScenePath);
             ConfigureBuildSettings();
@@ -56,6 +63,7 @@ namespace Dotshelf.EditorTools
         {
             RequireFile(BootstrapScenePath);
             RequireFile(MainRoomScenePath);
+            RequireFile(NotebookUiScenePath);
             if (File.Exists("Assets/Scenes/MainScene.unity"))
             {
                 throw new InvalidOperationException("Legacy Assets/Scenes/MainScene.unity still exists.");
@@ -63,10 +71,68 @@ namespace Dotshelf.EditorTools
 
             ValidateBuildSettings();
             ValidateBootstrapScene();
-            ValidateAdditiveMainRoomLoad();
+            ValidateAdditiveMainRoomAndNotebookUiLoad();
             MainScenePrefabExtractionUtility.ValidateMainSceneComposition();
 
             Debug.Log("Scene split validation passed.");
+        }
+
+        [MenuItem("Dotshelf/Refactor/Extract Notebook UI Scene")]
+        public static void ExtractNotebookUiScene()
+        {
+            RequireFile(LibraryRoomBackgroundPrefabPath);
+            RequireFile(NotebookStationPrefabPath);
+
+            var roomPrefabRoot = PrefabUtility.LoadPrefabContents(LibraryRoomBackgroundPrefabPath);
+            Vector3 notebookPosition;
+            Quaternion notebookRotation;
+            Vector3 notebookScale;
+            try
+            {
+                var nestedNotebook = FindChildRecursive(roomPrefabRoot.transform, "NotebookStation");
+                if (nestedNotebook == null)
+                {
+                    notebookPosition = new Vector3(-1.275f, 0f, 0.12f);
+                    notebookRotation = Quaternion.identity;
+                    notebookScale = Vector3.one;
+                }
+                else
+                {
+                    notebookPosition = nestedNotebook.position;
+                    notebookRotation = nestedNotebook.rotation;
+                    notebookScale = nestedNotebook.lossyScale;
+                    UnityEngine.Object.DestroyImmediate(nestedNotebook.gameObject);
+                    PrefabUtility.SaveAsPrefabAsset(roomPrefabRoot, LibraryRoomBackgroundPrefabPath);
+                }
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(roomPrefabRoot);
+            }
+
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            var notebookPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(NotebookStationPrefabPath);
+            if (notebookPrefab == null)
+            {
+                throw new InvalidOperationException($"NotebookStation prefab not found: {NotebookStationPrefabPath}");
+            }
+
+            var notebookInstance = (GameObject)PrefabUtility.InstantiatePrefab(notebookPrefab, scene);
+            if (notebookInstance == null)
+            {
+                throw new InvalidOperationException("Failed to instantiate NotebookStation prefab into NotebookUIScene.");
+            }
+
+            notebookInstance.transform.position = notebookPosition;
+            notebookInstance.transform.rotation = notebookRotation;
+            notebookInstance.transform.localScale = notebookScale;
+
+            EditorSceneManager.SaveScene(scene, NotebookUiScenePath);
+            ConfigureBuildSettings();
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            Debug.Log($"NotebookUIScene extracted at {NotebookUiScenePath}.");
         }
 
         private static void ValidateBuildSettings()
@@ -78,6 +144,7 @@ namespace Dotshelf.EditorTools
             }
 
             RequireBuildScene(MainRoomScenePath);
+            RequireBuildScene(NotebookUiScenePath);
             RequireBuildScene(LoginScenePath);
         }
 
@@ -92,10 +159,13 @@ namespace Dotshelf.EditorTools
 
             var serialized = new SerializedObject(entry);
             RequireSerializedString(serialized, "mainSceneName", SceneKeys.Main);
+            RequireSerializedString(serialized, "notebookUiSceneName", SceneKeys.NotebookUi);
             RequireSerializedBool(serialized, "loadMainSceneOnStart", true);
             RequireSerializedBool(serialized, "loadAdditively", true);
+            RequireSerializedBool(serialized, "loadNotebookUiScene", true);
             RequireSerializedBool(serialized, "setLoadedSceneActive", true);
             RequireSerializedBool(serialized, "runInstallersAfterLoad", true);
+            RequireSerializedBool(serialized, "forceGenerateOnBootstrapLoad", false);
 
             if (UnityEngine.Object.FindFirstObjectByType<AppRoot>(FindObjectsInactive.Include) == null)
             {
@@ -108,14 +178,18 @@ namespace Dotshelf.EditorTools
             }
         }
 
-        private static void ValidateAdditiveMainRoomLoad()
+        private static void ValidateAdditiveMainRoomAndNotebookUiLoad()
         {
             EditorSceneManager.OpenScene(BootstrapScenePath, OpenSceneMode.Single);
             var mainRoomScene = EditorSceneManager.OpenScene(MainRoomScenePath, OpenSceneMode.Additive);
+            var notebookUiScene = EditorSceneManager.OpenScene(NotebookUiScenePath, OpenSceneMode.Additive);
             if (!SceneManager.SetActiveScene(mainRoomScene))
             {
                 throw new InvalidOperationException("Failed to set MainRoomScene active during additive smoke validation.");
             }
+
+            RequireNoNestedNotebookStationInRoomPrefab();
+            RequireNotebookUiScene(notebookUiScene);
 
             var installerCount = 0;
             foreach (var root in mainRoomScene.GetRootGameObjects())
@@ -132,7 +206,13 @@ namespace Dotshelf.EditorTools
                 throw new InvalidOperationException("MainRoomScene has no BookshelfSceneInstaller during additive smoke validation.");
             }
 
-            Debug.Log($"Additive MainRoomScene smoke validation passed with {installerCount} installer(s).");
+            RequireNoEmbeddedNotebookStation(mainRoomScene);
+            if (UnityEngine.Object.FindFirstObjectByType<NotebookScreenController>(FindObjectsInactive.Include) == null)
+            {
+                throw new InvalidOperationException("NotebookScreenController is not available after additive load.");
+            }
+
+            Debug.Log($"Additive MainRoomScene + NotebookUIScene smoke validation passed with {installerCount} installer(s).");
         }
 
 
@@ -143,6 +223,7 @@ namespace Dotshelf.EditorTools
                 new EditorBuildSettingsScene(BootstrapScenePath, true),
                 new EditorBuildSettingsScene(LoginScenePath, true),
                 new EditorBuildSettingsScene(MainRoomScenePath, true),
+                new EditorBuildSettingsScene(NotebookUiScenePath, true),
                 new EditorBuildSettingsScene(StartScenePath, true),
             };
         }
@@ -158,6 +239,88 @@ namespace Dotshelf.EditorTools
             }
 
             throw new InvalidOperationException($"Build settings missing enabled scene: {path}");
+        }
+
+        private static void RequireNoNestedNotebookStationInRoomPrefab()
+        {
+            var roomPrefabRoot = PrefabUtility.LoadPrefabContents(LibraryRoomBackgroundPrefabPath);
+            try
+            {
+                if (FindChildRecursive(roomPrefabRoot.transform, "NotebookStation") != null)
+                {
+                    throw new InvalidOperationException("LibraryRoomBackground prefab still contains NotebookStation.");
+                }
+            }
+            finally
+            {
+                PrefabUtility.UnloadPrefabContents(roomPrefabRoot);
+            }
+        }
+
+        private static void RequireNotebookUiScene(Scene notebookUiScene)
+        {
+            var stationCount = 0;
+            var controllerCount = 0;
+            foreach (var root in notebookUiScene.GetRootGameObjects())
+            {
+                var transforms = root.GetComponentsInChildren<Transform>(true);
+                for (var i = 0; i < transforms.Length; i++)
+                {
+                    if (transforms[i].name == "NotebookStation")
+                    {
+                        stationCount++;
+                    }
+                }
+
+                controllerCount += root.GetComponentsInChildren<NotebookScreenController>(true).Length;
+            }
+
+            if (stationCount != 1)
+            {
+                throw new InvalidOperationException($"NotebookUIScene must contain exactly one NotebookStation. Actual: {stationCount}");
+            }
+
+            if (controllerCount == 0)
+            {
+                throw new InvalidOperationException("NotebookUIScene has no NotebookScreenController.");
+            }
+        }
+
+        private static void RequireNoEmbeddedNotebookStation(Scene mainRoomScene)
+        {
+            foreach (var root in mainRoomScene.GetRootGameObjects())
+            {
+                var roomRoot = root.transform.Find("RoomRoot");
+                var embedded = roomRoot != null ? roomRoot.Find("GuestbookBoard/NotebookStation") : null;
+                if (embedded != null)
+                {
+                    throw new InvalidOperationException("MainRoomScene still contains embedded RoomRoot/GuestbookBoard/NotebookStation.");
+                }
+            }
+        }
+
+        private static Transform FindChildRecursive(Transform parent, string name)
+        {
+            if (parent == null)
+            {
+                return null;
+            }
+
+            if (parent.name == name)
+            {
+                return parent;
+            }
+
+            for (var i = 0; i < parent.childCount; i++)
+            {
+                var match = FindChildRecursive(parent.GetChild(i), name);
+                if (match != null)
+                {
+                    return match;
+                }
+            }
+
+            return null;
         }
 
         private static AppApiConfig EnsureApiConfigAsset()

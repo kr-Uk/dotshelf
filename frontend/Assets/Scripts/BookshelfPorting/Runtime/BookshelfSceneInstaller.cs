@@ -381,7 +381,7 @@ namespace BookshelfPorting.Runtime
             var desk = guestbook.Find("NotebookStation/Desk");
             if (desk == null)
             {
-                return false;
+                return HasExternalNotebookUi();
             }
 
             if (desk.Find("Desktop") != null)
@@ -402,6 +402,12 @@ namespace BookshelfPorting.Runtime
             }
 
             return true;
+        }
+
+        private static bool HasExternalNotebookUi()
+        {
+            var controllers = Object.FindObjectsByType<NotebookScreenController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            return controllers != null && controllers.Length > 0;
         }
 
         private static GameObject FindOrCreateRoot(string name)

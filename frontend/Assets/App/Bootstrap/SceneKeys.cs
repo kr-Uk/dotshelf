@@ -6,6 +6,7 @@ namespace App.Bootstrap
         public const string Start = "StartScene";
         public const string Login = "LoginScene";
         public const string MainRoom = "MainRoomScene";
+        public const string NotebookUi = "NotebookUIScene";
         public const string Main = MainRoom;
     }
 }

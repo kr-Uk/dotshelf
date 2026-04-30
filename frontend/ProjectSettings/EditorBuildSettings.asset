@@ -15,6 +15,9 @@ EditorBuildSettings:
     path: Assets/Scenes/MainRoomScene.unity
     guid: b2e2f90df3fc4ef489faafc521ff1023
   - enabled: 1
+    path: Assets/Scenes/NotebookUIScene.unity
+    guid: 14d1ed99e10ceee4a8d5b3dccc55ba42
+  - enabled: 1
     path: Assets/Scenes/StartScene.unity
     guid: dc96b254af536dd4ab6b816cabaf70be
   m_configObjects:

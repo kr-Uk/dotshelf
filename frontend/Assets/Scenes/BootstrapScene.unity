@@ -119,7 +119,7 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &1262925948
+--- !u!1 &118569662
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -127,12 +127,12 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1262925954}
-  - component: {fileID: 1262925953}
-  - component: {fileID: 1262925952}
-  - component: {fileID: 1262925951}
-  - component: {fileID: 1262925950}
-  - component: {fileID: 1262925949}
+  - component: {fileID: 118569668}
+  - component: {fileID: 118569667}
+  - component: {fileID: 118569666}
+  - component: {fileID: 118569665}
+  - component: {fileID: 118569664}
+  - component: {fileID: 118569663}
   m_Layer: 0
   m_Name: AppRoot
   m_TagString: Untagged
@@ -140,30 +140,33 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1262925949
+--- !u!114 &118569663
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1262925948}
+  m_GameObject: {fileID: 118569662}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 6b97d19fefc24356870e96d129307c30, type: 3}
   m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::App.Bootstrap.SceneEntry
   mainSceneName: MainRoomScene
+  notebookUiSceneName: NotebookUIScene
   loadMainSceneOnStart: 1
   loadAdditively: 1
+  loadNotebookUiScene: 1
   setLoadedSceneActive: 1
   runInstallersAfterLoad: 1
---- !u!114 &1262925950
+  forceGenerateOnBootstrapLoad: 0
+--- !u!114 &118569664
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1262925948}
+  m_GameObject: {fileID: 118569662}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 445e648a8d1d461bbac69503d6f9ed79, type: 3}
@@ -171,51 +174,51 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::App.Bootstrap.SessionInitializer
   sessionUserId: user_me
   sessionNickname: bookmori
---- !u!114 &1262925951
+--- !u!114 &118569665
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1262925948}
+  m_GameObject: {fileID: 118569662}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 017d5e4f0de34d6d82e11e517eacb277, type: 3}
   m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::App.Bootstrap.EnvironmentResolver
---- !u!114 &1262925952
+--- !u!114 &118569666
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1262925948}
+  m_GameObject: {fileID: 118569662}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 295b7091e74344ddae0920ef922860de, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Bootstrap.ConfigLoader
   apiConfig: {fileID: 11400000, guid: 2af40e306b4c4e21907fdd409c117be8, type: 2}
---- !u!114 &1262925953
+--- !u!114 &118569667
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1262925948}
+  m_GameObject: {fileID: 118569662}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f665e551dade4d9487b59eb9abfbb6f9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Bootstrap.AppRoot
   apiConfig: {fileID: 11400000, guid: 2af40e306b4c4e21907fdd409c117be8, type: 2}
---- !u!4 &1262925954
+--- !u!4 &118569668
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1262925948}
+  m_GameObject: {fileID: 118569662}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -228,4 +231,4 @@ Transform:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 1262925954}
+  - {fileID: 118569668}

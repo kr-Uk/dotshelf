@@ -8,10 +8,13 @@ namespace App.Bootstrap
     public sealed class SceneEntry : MonoBehaviour
     {
         [SerializeField] private string mainSceneName = SceneKeys.Main;
+        [SerializeField] private string notebookUiSceneName = SceneKeys.NotebookUi;
         [SerializeField] private bool loadMainSceneOnStart = true;
         [SerializeField] private bool loadAdditively = true;
+        [SerializeField] private bool loadNotebookUiScene = true;
         [SerializeField] private bool setLoadedSceneActive = true;
         [SerializeField] private bool runInstallersAfterLoad = true;
+        [SerializeField] private bool forceGenerateOnBootstrapLoad = false;
 
         private bool isLoading;
 
@@ -37,14 +40,12 @@ namespace App.Bootstrap
         {
             isLoading = true;
 
-            var scene = SceneManager.GetSceneByName(mainSceneName);
-            if (!scene.IsValid() || !scene.isLoaded)
+            var mainScene = SceneManager.GetSceneByName(mainSceneName);
+            if (!mainScene.IsValid() || !mainScene.isLoaded)
             {
                 var mode = loadAdditively ? LoadSceneMode.Additive : LoadSceneMode.Single;
-                var operation = SceneManager.LoadSceneAsync(mainSceneName, mode);
-                if (operation == null)
+                if (!StartSceneLoad(mainSceneName, mode, out var operation))
                 {
-                    Debug.LogError($"Failed to load scene: {mainSceneName}");
                     isLoading = false;
                     yield break;
                 }
@@ -54,33 +55,63 @@ namespace App.Bootstrap
                     yield return null;
                 }
 
-                scene = SceneManager.GetSceneByName(mainSceneName);
+                mainScene = SceneManager.GetSceneByName(mainSceneName);
             }
 
-            if (scene.IsValid() && setLoadedSceneActive && scene.isLoaded)
+            if (mainScene.IsValid() && setLoadedSceneActive && mainScene.isLoaded)
             {
-                if (!SceneManager.SetActiveScene(scene))
+                if (!SceneManager.SetActiveScene(mainScene))
                 {
                     Debug.LogWarning($"Failed to set active scene: {mainSceneName}");
                 }
             }
 
-            if (scene.IsValid() && runInstallersAfterLoad)
+            if (loadAdditively && loadNotebookUiScene)
             {
-                RunSceneInstallers(scene);
+                var notebookScene = SceneManager.GetSceneByName(notebookUiSceneName);
+                if (!notebookScene.IsValid() || !notebookScene.isLoaded)
+                {
+                    if (!StartSceneLoad(notebookUiSceneName, LoadSceneMode.Additive, out var operation))
+                    {
+                        isLoading = false;
+                        yield break;
+                    }
+
+                    while (!operation.isDone)
+                    {
+                        yield return null;
+                    }
+                }
             }
 
-            Debug.Log($"Dotshelf bootstrap loaded {mainSceneName} (additive={loadAdditively}).");
+            if (mainScene.IsValid() && runInstallersAfterLoad)
+            {
+                RunSceneInstallers(mainScene, forceGenerateOnBootstrapLoad);
+            }
+
+            Debug.Log($"Dotshelf bootstrap loaded {mainSceneName} (additive={loadAdditively}, notebookUi={loadNotebookUiScene}).");
             isLoading = false;
         }
 
-        private static void RunSceneInstallers(Scene scene)
+        private static bool StartSceneLoad(string sceneName, LoadSceneMode mode, out AsyncOperation operation)
+        {
+            operation = SceneManager.LoadSceneAsync(sceneName, mode);
+            if (operation != null)
+            {
+                return true;
+            }
+
+            Debug.LogError($"Failed to load scene: {sceneName}");
+            return false;
+        }
+
+        private static void RunSceneInstallers(Scene scene, bool forceGenerate)
         {
             foreach (var root in scene.GetRootGameObjects())
             {
                 foreach (var installer in root.GetComponentsInChildren<BookshelfSceneInstaller>(true))
                 {
-                    installer.InstallScene(forceGenerate: true);
+                    installer.InstallScene(forceGenerate);
                 }
             }
         }
