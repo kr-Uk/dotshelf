@@ -108,7 +108,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
@@ -235,7 +235,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
@@ -452,7 +452,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
@@ -529,7 +529,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: bfcc117b0e352dd49b9694ea55d1ca41, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfState
   bookPadding: 0.01
   shelfFrontInset: 0.01
@@ -544,7 +544,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 787225fbb1cc40e44b6b1b0b3613d744, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.MaterialFactory
   woodBaseMap: {fileID: 0}
   woodNormalMap: {fileID: 0}
@@ -567,7 +567,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1cf43b1ec7b17ae4290b3ece892eb841, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfGenerator
   state: {fileID: 5138704272313850402}
   materialFactory: {fileID: 1756564791657781441}
@@ -614,7 +614,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cbe780630d20ab849b266ef67b71e964, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.CameraController
   targetCamera: {fileID: 0}
   overviewAnchor: {fileID: 0}
@@ -654,7 +654,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 24c0182a877b73549a048ec408c53732, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookInteractionController
   sceneCamera: {fileID: 0}
   state: {fileID: 5138704272313850402}
@@ -708,7 +708,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ca2c911e128b9ba4ba9b9262af38a9aa, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfRuntimeDataStore
 --- !u!114 &6258595487013663177
 MonoBehaviour:
@@ -720,7 +720,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fb6b90527219e15499bff1a68ccc7c75, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfExperienceManager
   state: {fileID: 5138704272313850402}
   cameraController: {fileID: 8646103123008295061}
@@ -728,7 +728,7 @@ MonoBehaviour:
   bookshelfGenerator: {fileID: 5399793249669064108}
   dataStore: {fileID: 7485675297398986964}
   bookshelfApiSyncController: {fileID: 1210491958176595673}
-  notebookScreenController: {fileID: 8132568647970897661}
+  notebookScreenController: {fileID: 0}
   useExternalDashboardPanel: 1
   externalDashboardPanel: {fileID: 0}
   guestbookOwnerMode: 1
@@ -742,7 +742,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 90250d517556fca4c85a641254c266d3, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.EnvironmentSetup
   reflectionProbe: {fileID: 0}
   skyboxMaterial: {fileID: 0}
@@ -757,10 +757,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: dbf853c121dce4d47a9552d8cae790c2, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Api.APIManager
   baseUrl: https://api.dotshelf.digital
-  accessToken: 
+  accessToken:
   timeoutSeconds: 10
   enableVerboseLog: 0
 --- !u!114 &1210491958176595673
@@ -773,7 +773,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 92608ee860344354b21bdc78e9f41fd9, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfApiSyncController
 --- !u!1 &7937912645884972081
 GameObject:
@@ -915,7 +915,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
@@ -1068,14 +1068,3 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 3539307778985089037, guid: c222bfa9cc601ef44902dfa239329964, type: 3}
   m_PrefabInstance: {fileID: 8437732067178877416}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &8132568647970897661 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 415571985860800277, guid: c222bfa9cc601ef44902dfa239329964, type: 3}
-  m_PrefabInstance: {fileID: 8437732067178877416}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7c0fe34be65f355489210b62a77c5177, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.NotebookScreenController

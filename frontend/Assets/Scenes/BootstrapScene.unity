@@ -196,7 +196,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 295b7091e74344ddae0920ef922860de, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::App.Bootstrap.ConfigLoader
   apiConfig: {fileID: 11400000, guid: 2af40e306b4c4e21907fdd409c117be8, type: 2}
 --- !u!114 &118569667
@@ -209,7 +209,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f665e551dade4d9487b59eb9abfbb6f9, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::App.Bootstrap.AppRoot
   apiConfig: {fileID: 11400000, guid: 2af40e306b4c4e21907fdd409c117be8, type: 2}
 --- !u!4 &118569668

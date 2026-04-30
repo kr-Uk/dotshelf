@@ -193,11 +193,12 @@ namespace Dotshelf.EditorTools
         private static void ValidateBuildSettings()
         {
             var scenes = EditorBuildSettings.scenes;
-            if (scenes.Length == 0 || scenes[0].path != BootstrapScenePath || !scenes[0].enabled)
+            if (scenes.Length == 0 || scenes[0].path != StartScenePath || !scenes[0].enabled)
             {
-                throw new InvalidOperationException("BootstrapScene must be the first enabled build scene.");
+                throw new InvalidOperationException("StartScene must be the first enabled build scene so the login/start flow is preserved.");
             }
 
+            RequireBuildScene(BootstrapScenePath);
             RequireBuildScene(MainRoomScenePath);
             RequireBuildScene(NotebookUiScenePath);
             RequireBuildScene(LoginScenePath);
@@ -262,7 +263,9 @@ namespace Dotshelf.EditorTools
             }
 
             RequireNoEmbeddedNotebookStation(mainRoomScene);
-            if (UnityEngine.Object.FindFirstObjectByType<NotebookScreenController>(FindObjectsInactive.Include) == null)
+            RequireNotebookControllerCount(mainRoomScene, 0, "MainRoomScene must not own NotebookScreenController after scene split.");
+            RequireNotebookControllerCount(notebookUiScene, 1, "NotebookUIScene must own exactly one NotebookScreenController after additive load.");
+            if (FindNotebookControllerInScene(notebookUiScene) == null)
             {
                 throw new InvalidOperationException("NotebookScreenController is not available after additive load.");
             }
@@ -275,11 +278,11 @@ namespace Dotshelf.EditorTools
         {
             EditorBuildSettings.scenes = new[]
             {
-                new EditorBuildSettingsScene(BootstrapScenePath, true),
+                new EditorBuildSettingsScene(StartScenePath, true),
                 new EditorBuildSettingsScene(LoginScenePath, true),
+                new EditorBuildSettingsScene(BootstrapScenePath, true),
                 new EditorBuildSettingsScene(MainRoomScenePath, true),
                 new EditorBuildSettingsScene(NotebookUiScenePath, true),
-                new EditorBuildSettingsScene(StartScenePath, true),
             };
         }
 
@@ -334,6 +337,8 @@ namespace Dotshelf.EditorTools
                         throw new InvalidOperationException("NotebookUIScene was preloaded before notebook focus. Lazy-load expectation failed.");
                     }
 
+                    RequireNotebookControllerCount(mainRoomScene, 0, "MainRoomScene owns a NotebookScreenController before notebook focus.");
+
                     var experienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
                     if (experienceManager == null)
                     {
@@ -371,6 +376,8 @@ namespace Dotshelf.EditorTools
 
                 RequireNotebookUiScene(notebookUiScene);
                 RequireNoEmbeddedNotebookStation(mainRoomScene);
+                RequireNotebookControllerCount(mainRoomScene, 0, "MainRoomScene owns a NotebookScreenController after lazy-loading NotebookUIScene.");
+                RequireNotebookControllerCount(notebookUiScene, 1, "NotebookUIScene must own exactly one NotebookScreenController after lazy-load.");
 
                 var installer = UnityEngine.Object.FindFirstObjectByType<BookshelfSceneInstaller>(FindObjectsInactive.Include);
                 if (installer == null)
@@ -390,7 +397,7 @@ namespace Dotshelf.EditorTools
                     throw new InvalidOperationException("Runtime smoke validation loaded zero book catalog items.");
                 }
 
-                if (UnityEngine.Object.FindFirstObjectByType<NotebookScreenController>(FindObjectsInactive.Include) == null)
+                if (FindNotebookControllerInScene(notebookUiScene) == null)
                 {
                     throw new InvalidOperationException("Runtime smoke validation found no NotebookScreenController.");
                 }
@@ -487,6 +494,50 @@ namespace Dotshelf.EditorTools
             {
                 throw new InvalidOperationException("NotebookUIScene has no NotebookScreenController.");
             }
+        }
+
+        private static void RequireNotebookControllerCount(Scene scene, int expectedCount, string message)
+        {
+            var actualCount = CountNotebookControllersInScene(scene);
+            if (actualCount != expectedCount)
+            {
+                throw new InvalidOperationException($"{message} Expected: {expectedCount}, Actual: {actualCount}");
+            }
+        }
+
+        private static int CountNotebookControllersInScene(Scene scene)
+        {
+            if (!scene.IsValid() || !scene.isLoaded)
+            {
+                return 0;
+            }
+
+            var count = 0;
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                count += root.GetComponentsInChildren<NotebookScreenController>(true).Length;
+            }
+
+            return count;
+        }
+
+        private static NotebookScreenController FindNotebookControllerInScene(Scene scene)
+        {
+            if (!scene.IsValid() || !scene.isLoaded)
+            {
+                return null;
+            }
+
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                var controller = root.GetComponentInChildren<NotebookScreenController>(true);
+                if (controller != null)
+                {
+                    return controller;
+                }
+            }
+
+            return null;
         }
 
         private static void RequireNoEmbeddedNotebookStation(Scene mainRoomScene)

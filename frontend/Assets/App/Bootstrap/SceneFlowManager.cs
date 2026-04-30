@@ -19,7 +19,7 @@ namespace App.Bootstrap
                 return;
             }
 
-            LoadIfNotActive(SceneKeys.Main);
+            LoadIfNotActive(SceneKeys.Bootstrap);
         }
 
         public static void GoToStart()

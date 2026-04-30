@@ -65,7 +65,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000152
   height: 0.20500007
@@ -75,9 +75,9 @@ MonoBehaviour:
   - {fileID: 5109187852848176074}
   bookId: 1004
   userBookId: owned-1004
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1004
   title: "\uC791\uBCC4\uC778\uC0AC"
   author: "\uAE40\uC601\uD558"
@@ -432,7 +432,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000092
   height: 0.2450001
@@ -442,9 +442,9 @@ MonoBehaviour:
   - {fileID: 1447696518107302475}
   bookId: 1003
   userBookId: owned-1003
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1003
   title: "\uC544\uBAAC\uB4DC"
   author: "\uC190\uC6D0\uD3C9"
@@ -574,7 +574,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000112
   height: 0.21000001
@@ -584,9 +584,9 @@ MonoBehaviour:
   - {fileID: 8089188374727892868}
   bookId: 1004
   userBookId: owned-1004
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1004
   title: "\uC791\uBCC4\uC778\uC0AC"
   author: "\uAE40\uC601\uD558"
@@ -671,7 +671,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000076
   height: 0.20499998
@@ -681,9 +681,9 @@ MonoBehaviour:
   - {fileID: 8635111723972399022}
   bookId: 1002
   userBookId: owned-1002
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1002
   title: "\uBD88\uD3B8\uD55C \uD3B8\uC758\uC810"
   author: "\uAE40\uD638\uC5F0"
@@ -949,7 +949,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000152
   height: 0.20500007
@@ -959,9 +959,9 @@ MonoBehaviour:
   - {fileID: 741348934163421002}
   bookId: 1003
   userBookId: owned-1003
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1003
   title: "\uC544\uBAAC\uB4DC"
   author: "\uC190\uC6D0\uD3C9"
@@ -1137,7 +1137,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000116
   height: 0.21
@@ -1147,9 +1147,9 @@ MonoBehaviour:
   - {fileID: 2302613814778612662}
   bookId: 1006
   userBookId: owned-1006
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1006
   title: "\uD074\uB9B0 \uCF54\uB4DC"
   author: Robert C. Martin
@@ -1325,7 +1325,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000089
   height: 0.24500006
@@ -1335,9 +1335,9 @@ MonoBehaviour:
   - {fileID: 1939487752538489502}
   bookId: 1005
   userBookId: owned-1005
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1005
   title: "\uB2EC\uB7EC\uAD6C\uD2B8 \uAFC8 \uBC31\uD654\uC810"
   author: "\uC774\uBBF8\uC608"
@@ -1512,7 +1512,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000115
   height: 0.20500007
@@ -1522,9 +1522,9 @@ MonoBehaviour:
   - {fileID: 701146135805692407}
   bookId: 1005
   userBookId: owned-1005
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1005
   title: "\uB2EC\uB7EC\uAD6C\uD2B8 \uAFC8 \uBC31\uD654\uC810"
   author: "\uC774\uBBF8\uC608"
@@ -1609,7 +1609,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24500003
@@ -1619,9 +1619,9 @@ MonoBehaviour:
   - {fileID: 4184382840610917382}
   bookId: 1005
   userBookId: owned-1005
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1005
   title: "\uB2EC\uB7EC\uAD6C\uD2B8 \uAFC8 \uBC31\uD654\uC810"
   author: "\uC774\uBBF8\uC608"
@@ -1886,7 +1886,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000085
   height: 0.24500006
@@ -1896,9 +1896,9 @@ MonoBehaviour:
   - {fileID: 8865871890187760302}
   bookId: 1003
   userBookId: owned-1003
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1003
   title: "\uC544\uBAAC\uB4DC"
   author: "\uC190\uC6D0\uD3C9"
@@ -2164,7 +2164,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000122
   height: 0.24499999
@@ -2174,9 +2174,9 @@ MonoBehaviour:
   - {fileID: 5942941250596894377}
   bookId: 1005
   userBookId: owned-1005
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1005
   title: "\uB2EC\uB7EC\uAD6C\uD2B8 \uAFC8 \uBC31\uD654\uC810"
   author: "\uC774\uBBF8\uC608"
@@ -2351,7 +2351,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000147
   height: 0.205
@@ -2361,9 +2361,9 @@ MonoBehaviour:
   - {fileID: 4494759892700487263}
   bookId: 1006
   userBookId: owned-1006
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1006
   title: "\uD074\uB9B0 \uCF54\uB4DC"
   author: Robert C. Martin
@@ -2449,7 +2449,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.02000009
   height: 0.24500003
@@ -2459,9 +2459,9 @@ MonoBehaviour:
   - {fileID: 8270526960464837541}
   bookId: 1004
   userBookId: owned-1004
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1004
   title: "\uC791\uBCC4\uC778\uC0AC"
   author: "\uAE40\uC601\uD558"
@@ -2546,7 +2546,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000302
   height: 0.21
@@ -2556,9 +2556,9 @@ MonoBehaviour:
   - {fileID: 5182973409469732644}
   bookId: 1002
   userBookId: owned-1002
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1002
   title: "\uBD88\uD3B8\uD55C \uD3B8\uC758\uC810"
   author: "\uAE40\uD638\uC5F0"
@@ -2734,7 +2734,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.02000009
   height: 0.24500003
@@ -2744,9 +2744,9 @@ MonoBehaviour:
   - {fileID: 3373459551670495831}
   bookId: 1003
   userBookId: owned-1003
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1003
   title: "\uC544\uBAAC\uB4DC"
   author: "\uC190\uC6D0\uD3C9"
@@ -2832,7 +2832,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000092
   height: 0.24500006
@@ -2842,9 +2842,9 @@ MonoBehaviour:
   - {fileID: 7884612947963765374}
   bookId: 1002
   userBookId: owned-1002
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1002
   title: "\uBD88\uD3B8\uD55C \uD3B8\uC758\uC810"
   author: "\uAE40\uD638\uC5F0"
@@ -3110,7 +3110,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000076
   height: 0.20499998
@@ -3120,9 +3120,9 @@ MonoBehaviour:
   - {fileID: 351908821172429938}
   bookId: 1003
   userBookId: owned-1003
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1003
   title: "\uC544\uBAAC\uB4DC"
   author: "\uC190\uC6D0\uD3C9"
@@ -3388,7 +3388,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000089
   height: 0.24500006
@@ -3398,9 +3398,9 @@ MonoBehaviour:
   - {fileID: 6255126024469020811}
   bookId: 1006
   userBookId: owned-1006
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1006
   title: "\uD074\uB9B0 \uCF54\uB4DC"
   author: Robert C. Martin
@@ -3486,7 +3486,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000302
   height: 0.21
@@ -3496,9 +3496,9 @@ MonoBehaviour:
   - {fileID: 2251072152318533273}
   bookId: 1001
   userBookId: owned-1001
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1001
   title: "\uBAA8\uC21C"
   author: "\uC591\uADC0\uC790"
@@ -3674,7 +3674,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000092
   height: 0.2450001
@@ -3684,9 +3684,9 @@ MonoBehaviour:
   - {fileID: 6572872082167306331}
   bookId: 1006
   userBookId: owned-1006
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1006
   title: "\uD074\uB9B0 \uCF54\uB4DC"
   author: Robert C. Martin
@@ -3952,7 +3952,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000085
   height: 0.24500006
@@ -3962,9 +3962,9 @@ MonoBehaviour:
   - {fileID: 8506287450689748931}
   bookId: 1002
   userBookId: owned-1002
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1002
   title: "\uBD88\uD3B8\uD55C \uD3B8\uC758\uC810"
   author: "\uAE40\uD638\uC5F0"
@@ -4050,7 +4050,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000092
   height: 0.24500006
@@ -4060,9 +4060,9 @@ MonoBehaviour:
   - {fileID: 7617567923103499028}
   bookId: 1001
   userBookId: owned-1001
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1001
   title: "\uBAA8\uC21C"
   author: "\uC591\uADC0\uC790"
@@ -4147,7 +4147,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b55157357b724b5b8071df8cbdbf7a02, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfFocusHitArea
 --- !u!1 &4240967690783501205
 GameObject:
@@ -4304,7 +4304,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24499999
@@ -4314,9 +4314,9 @@ MonoBehaviour:
   - {fileID: 2217828833774377565}
   bookId: 1002
   userBookId: owned-1002
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1002
   title: "\uBD88\uD3B8\uD55C \uD3B8\uC758\uC810"
   author: "\uAE40\uD638\uC5F0"
@@ -4672,7 +4672,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24499999
@@ -4682,9 +4682,9 @@ MonoBehaviour:
   - {fileID: 8238155436226140597}
   bookId: 1002
   userBookId: owned-1002
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1002
   title: "\uBD88\uD3B8\uD55C \uD3B8\uC758\uC810"
   author: "\uAE40\uD638\uC5F0"
@@ -5040,7 +5040,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000112
   height: 0.21
@@ -5050,9 +5050,9 @@ MonoBehaviour:
   - {fileID: 376584053777401399}
   bookId: 1003
   userBookId: owned-1003
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1003
   title: "\uC544\uBAAC\uB4DC"
   author: "\uC190\uC6D0\uD3C9"
@@ -5228,7 +5228,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.02000009
   height: 0.24499999
@@ -5238,9 +5238,9 @@ MonoBehaviour:
   - {fileID: 3211569340090681420}
   bookId: 1006
   userBookId: owned-1006
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1006
   title: "\uD074\uB9B0 \uCF54\uB4DC"
   author: Robert C. Martin
@@ -5733,7 +5733,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000112
   height: 0.21000007
@@ -5743,9 +5743,9 @@ MonoBehaviour:
   - {fileID: 8765792786241443821}
   bookId: 1001
   userBookId: owned-1001
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1001
   title: "\uBAA8\uC21C"
   author: "\uC591\uADC0\uC790"
@@ -5921,7 +5921,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000112
   height: 0.21000007
@@ -5931,9 +5931,9 @@ MonoBehaviour:
   - {fileID: 5129874464192787457}
   bookId: 1006
   userBookId: owned-1006
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1006
   title: "\uD074\uB9B0 \uCF54\uB4DC"
   author: Robert C. Martin
@@ -6109,7 +6109,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24500006
@@ -6119,9 +6119,9 @@ MonoBehaviour:
   - {fileID: 6198722072333147235}
   bookId: 1001
   userBookId: owned-1001
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1001
   title: "\uBAA8\uC21C"
   author: "\uC591\uADC0\uC790"
@@ -6207,7 +6207,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24500006
@@ -6217,9 +6217,9 @@ MonoBehaviour:
   - {fileID: 5715555473020793681}
   bookId: 1006
   userBookId: owned-1006
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1006
   title: "\uD074\uB9B0 \uCF54\uB4DC"
   author: Robert C. Martin
@@ -6395,7 +6395,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000116
   height: 0.21
@@ -6405,9 +6405,9 @@ MonoBehaviour:
   - {fileID: 1110119878126594851}
   bookId: 1005
   userBookId: owned-1005
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1005
   title: "\uB2EC\uB7EC\uAD6C\uD2B8 \uAFC8 \uBC31\uD654\uC810"
   author: "\uC774\uBBF8\uC608"
@@ -6492,7 +6492,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.040000122
   height: 0.24499999
@@ -6502,9 +6502,9 @@ MonoBehaviour:
   - {fileID: 267084221451431686}
   bookId: 1001
   userBookId: owned-1001
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1001
   title: "\uBAA8\uC21C"
   author: "\uC591\uADC0\uC790"
@@ -6680,7 +6680,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000067
   height: 0.20500046
@@ -6690,9 +6690,9 @@ MonoBehaviour:
   - {fileID: 8229540871250623232}
   bookId: 1001
   userBookId: owned-1001
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1001
   title: "\uBAA8\uC21C"
   author: "\uC591\uADC0\uC790"
@@ -6958,7 +6958,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000112
   height: 0.21000001
@@ -6968,9 +6968,9 @@ MonoBehaviour:
   - {fileID: 7750645367265127049}
   bookId: 1005
   userBookId: owned-1005
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1005
   title: "\uB2EC\uB7EC\uAD6C\uD2B8 \uAFC8 \uBC31\uD654\uC810"
   author: "\uC774\uBBF8\uC608"
@@ -7775,7 +7775,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000087
   height: 0.24500015
@@ -7785,9 +7785,9 @@ MonoBehaviour:
   - {fileID: 6183502544827762369}
   bookId: 1004
   userBookId: owned-1004
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1004
   title: "\uC791\uBCC4\uC778\uC0AC"
   author: "\uAE40\uC601\uD558"
@@ -7872,7 +7872,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24500003
@@ -7882,9 +7882,9 @@ MonoBehaviour:
   - {fileID: 6143252041606828707}
   bookId: 1004
   userBookId: owned-1004
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1004
   title: "\uC791\uBCC4\uC778\uC0AC"
   author: "\uAE40\uC601\uD558"
@@ -7969,7 +7969,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.0400001
   height: 0.24499999
@@ -7979,9 +7979,9 @@ MonoBehaviour:
   - {fileID: 4007189265568941528}
   bookId: 1004
   userBookId: owned-1004
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1004
   title: "\uC791\uBCC4\uC778\uC0AC"
   author: "\uAE40\uC601\uD558"
@@ -8066,7 +8066,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.037000112
   height: 0.21
@@ -8076,9 +8076,9 @@ MonoBehaviour:
   - {fileID: 6246872613612773870}
   bookId: 1002
   userBookId: owned-1002
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1002
   title: "\uBD88\uD3B8\uD55C \uD3B8\uC758\uC810"
   author: "\uAE40\uD638\uC5F0"
@@ -8164,7 +8164,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24499999
@@ -8174,9 +8174,9 @@ MonoBehaviour:
   - {fileID: 5006022566522052930}
   bookId: 1003
   userBookId: owned-1003
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1003
   title: "\uC544\uBAAC\uB4DC"
   author: "\uC190\uC6D0\uD3C9"
@@ -8442,7 +8442,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24499999
@@ -8452,9 +8452,9 @@ MonoBehaviour:
   - {fileID: 4705977087964466066}
   bookId: 1004
   userBookId: owned-1004
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1004
   title: "\uC791\uBCC4\uC778\uC0AC"
   author: "\uAE40\uC601\uD558"
@@ -8809,7 +8809,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24499999
@@ -8819,9 +8819,9 @@ MonoBehaviour:
   - {fileID: 6421518099063621840}
   bookId: 1002
   userBookId: owned-1002
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1002
   title: "\uBD88\uD3B8\uD55C \uD3B8\uC758\uC810"
   author: "\uAE40\uD638\uC5F0"
@@ -8907,7 +8907,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000147
   height: 0.205
@@ -8917,9 +8917,9 @@ MonoBehaviour:
   - {fileID: 4052006304730779746}
   bookId: 1005
   userBookId: owned-1005
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1005
   title: "\uB2EC\uB7EC\uAD6C\uD2B8 \uAFC8 \uBC31\uD654\uC810"
   author: "\uC774\uBBF8\uC608"
@@ -9004,7 +9004,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000067
   height: 0.20500046
@@ -9014,9 +9014,9 @@ MonoBehaviour:
   - {fileID: 8893013689346059154}
   bookId: 1006
   userBookId: owned-1006
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1006
   title: "\uD074\uB9B0 \uCF54\uB4DC"
   author: Robert C. Martin
@@ -9102,7 +9102,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000111
   height: 0.24499992
@@ -9112,9 +9112,9 @@ MonoBehaviour:
   - {fileID: 1856802639256593597}
   bookId: 1005
   userBookId: owned-1005
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1005
   title: "\uB2EC\uB7EC\uAD6C\uD2B8 \uAFC8 \uBC31\uD654\uC810"
   author: "\uC774\uBBF8\uC608"
@@ -9458,7 +9458,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.030000092
   height: 0.24499999
@@ -9468,9 +9468,9 @@ MonoBehaviour:
   - {fileID: 3671093508202452397}
   bookId: 1001
   userBookId: owned-1001
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1001
   title: "\uBAA8\uC21C"
   author: "\uC591\uADC0\uC790"
@@ -9646,7 +9646,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.020000115
   height: 0.20500007
@@ -9656,9 +9656,9 @@ MonoBehaviour:
   - {fileID: 1308091031767628661}
   bookId: 1004
   userBookId: owned-1004
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1004
   title: "\uC791\uBCC4\uC778\uC0AC"
   author: "\uAE40\uC601\uD558"
@@ -9833,7 +9833,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.0400001
   height: 0.24499999
@@ -9843,9 +9843,9 @@ MonoBehaviour:
   - {fileID: 3182178035444175729}
   bookId: 1003
   userBookId: owned-1003
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1003
   title: "\uC544\uBAAC\uB4DC"
   author: "\uC190\uC6D0\uD3C9"
@@ -10111,7 +10111,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6893917c47429f428310ff0ce43396e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookEntity
   thickness: 0.02000009
   height: 0.24499999
@@ -10121,9 +10121,9 @@ MonoBehaviour:
   - {fileID: 1215882587343999603}
   bookId: 1001
   userBookId: owned-1001
-  bookshelfItemId: 
-  bookshelfId: 
-  bookshelfSectionId: 
+  bookshelfItemId:
+  bookshelfId:
+  bookshelfSectionId:
   readingRecordId: record-1001
   title: "\uBAA8\uC21C"
   author: "\uC591\uADC0\uC790"

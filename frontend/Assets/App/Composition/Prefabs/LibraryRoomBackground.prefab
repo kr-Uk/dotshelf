@@ -760,7 +760,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3acccc1de9d42954dbf2b9ee4b6eb0a4, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.GuestbookBoardHitArea
 --- !u!1 &5244082356394071471
 GameObject:

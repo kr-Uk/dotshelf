@@ -39,41 +39,14 @@ namespace App.Bootstrap
         private IEnumerator LoadMainSceneRoutine()
         {
             isLoading = true;
-
-            var mainScene = SceneManager.GetSceneByName(mainSceneName);
-            if (!mainScene.IsValid() || !mainScene.isLoaded)
+            try
             {
-                var mode = loadAdditively ? LoadSceneMode.Additive : LoadSceneMode.Single;
-                if (!StartSceneLoad(mainSceneName, mode, out var operation))
+                var mainScene = SceneManager.GetSceneByName(mainSceneName);
+                if (!mainScene.IsValid() || !mainScene.isLoaded)
                 {
-                    isLoading = false;
-                    yield break;
-                }
-
-                while (!operation.isDone)
-                {
-                    yield return null;
-                }
-
-                mainScene = SceneManager.GetSceneByName(mainSceneName);
-            }
-
-            if (mainScene.IsValid() && setLoadedSceneActive && mainScene.isLoaded)
-            {
-                if (!SceneManager.SetActiveScene(mainScene))
-                {
-                    Debug.LogWarning($"Failed to set active scene: {mainSceneName}");
-                }
-            }
-
-            if (loadAdditively && loadNotebookUiScene)
-            {
-                var notebookScene = SceneManager.GetSceneByName(notebookUiSceneName);
-                if (!notebookScene.IsValid() || !notebookScene.isLoaded)
-                {
-                    if (!StartSceneLoad(notebookUiSceneName, LoadSceneMode.Additive, out var operation))
+                    var mode = loadAdditively ? LoadSceneMode.Additive : LoadSceneMode.Single;
+                    if (!StartSceneLoad(mainSceneName, mode, out var operation))
                     {
-                        isLoading = false;
                         yield break;
                     }
 
@@ -81,16 +54,46 @@ namespace App.Bootstrap
                     {
                         yield return null;
                     }
+
+                    mainScene = SceneManager.GetSceneByName(mainSceneName);
                 }
-            }
 
-            if (mainScene.IsValid() && runInstallersAfterLoad)
+                if (mainScene.IsValid() && setLoadedSceneActive && mainScene.isLoaded)
+                {
+                    if (!SceneManager.SetActiveScene(mainScene))
+                    {
+                        Debug.LogWarning($"Failed to set active scene: {mainSceneName}");
+                    }
+                }
+
+                if (loadAdditively && loadNotebookUiScene)
+                {
+                    var notebookScene = SceneManager.GetSceneByName(notebookUiSceneName);
+                    if (!notebookScene.IsValid() || !notebookScene.isLoaded)
+                    {
+                        if (!StartSceneLoad(notebookUiSceneName, LoadSceneMode.Additive, out var operation))
+                        {
+                            yield break;
+                        }
+
+                        while (!operation.isDone)
+                        {
+                            yield return null;
+                        }
+                    }
+                }
+
+                if (mainScene.IsValid() && runInstallersAfterLoad)
+                {
+                    RunSceneInstallers(mainScene, forceGenerateOnBootstrapLoad);
+                }
+
+                Debug.Log($"Dotshelf bootstrap loaded {mainSceneName} (additive={loadAdditively}, preloadNotebookUi={loadNotebookUiScene}).");
+            }
+            finally
             {
-                RunSceneInstallers(mainScene, forceGenerateOnBootstrapLoad);
+                isLoading = false;
             }
-
-            Debug.Log($"Dotshelf bootstrap loaded {mainSceneName} (additive={loadAdditively}, preloadNotebookUi={loadNotebookUiScene}).");
-            isLoading = false;
         }
 
         private static bool StartSceneLoad(string sceneName, LoadSceneMode mode, out AsyncOperation operation)

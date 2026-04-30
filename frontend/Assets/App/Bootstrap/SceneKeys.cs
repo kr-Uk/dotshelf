@@ -7,6 +7,7 @@ namespace App.Bootstrap
         public const string Login = "LoginScene";
         public const string MainRoom = "MainRoomScene";
         public const string NotebookUi = "NotebookUIScene";
+        // Kept as a migration alias for older bootstrap/editor utility references.
         public const string Main = MainRoom;
     }
 }

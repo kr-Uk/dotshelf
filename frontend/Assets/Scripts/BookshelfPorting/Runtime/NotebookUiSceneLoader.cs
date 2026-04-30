@@ -32,6 +32,8 @@ namespace BookshelfPorting.Runtime
         public bool UnloadOnFocusExit => unloadOnFocusExit;
         public NotebookScreenController Controller { get; private set; }
 
+        // Scene installer configuration is the runtime source of truth; serialized
+        // values only provide editor defaults when this component is used alone.
         public void Configure(string notebookSceneName, bool unloadSceneOnFocusExit, bool enablePerformanceLog)
         {
             if (!string.IsNullOrWhiteSpace(notebookSceneName))
@@ -72,6 +74,12 @@ namespace BookshelfPorting.Runtime
                 pendingCallbacks.Add(onLoaded);
             }
 
+            if (!Application.CanStreamedLevelBeLoaded(sceneName))
+            {
+                FailLoad($"Notebook UI scene is not available in build settings or assets: {sceneName}");
+                return;
+            }
+
             if (!isLoading)
             {
                 StartCoroutine(LoadSceneRoutine());
@@ -104,7 +112,7 @@ namespace BookshelfPorting.Runtime
 
         public void MeasureCanvasActivationCost(NotebookScreenController controller)
         {
-            if (!logPerformance || measuredCanvasActivation || controller == null)
+            if (!logPerformance || measuredCanvasActivation || controller == null || (!Application.isEditor && !UnityEngine.Debug.isDebugBuild))
             {
                 return;
             }
@@ -153,9 +161,7 @@ namespace BookshelfPorting.Runtime
                 var operation = SceneManager.LoadSceneAsync(sceneName, LoadSceneMode.Additive);
                 if (operation == null)
                 {
-                    UnityEngine.Debug.LogError($"Failed to lazy-load notebook UI scene: {sceneName}");
-                    isLoading = false;
-                    FlushCallbacks(null);
+                    FailLoad($"Failed to lazy-load notebook UI scene: {sceneName}");
                     yield break;
                 }
 
@@ -174,7 +180,8 @@ namespace BookshelfPorting.Runtime
 
             if (Controller == null)
             {
-                UnityEngine.Debug.LogError($"Notebook UI scene loaded but no NotebookScreenController was found: {sceneName}");
+                FailLoad($"Notebook UI scene loaded but no NotebookScreenController was found: {sceneName}");
+                yield break;
             }
 
             isLoading = false;
@@ -225,20 +232,25 @@ namespace BookshelfPorting.Runtime
             }
         }
 
+        private void FailLoad(string message)
+        {
+            UnityEngine.Debug.LogError(message);
+            isLoading = false;
+            FlushCallbacks(null);
+        }
+
         private NotebookScreenController FindLoadedController()
         {
-            var controllers = UnityEngine.Object.FindObjectsByType<NotebookScreenController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            if (controllers == null)
+            var scene = SceneManager.GetSceneByName(sceneName);
+            if (!scene.IsValid() || !scene.isLoaded)
             {
                 return null;
             }
 
-            for (var i = 0; i < controllers.Length; i++)
+            foreach (var root in scene.GetRootGameObjects())
             {
-                var controller = controllers[i];
-                if (controller != null &&
-                    controller.gameObject.scene.IsValid() &&
-                    controller.gameObject.scene.name == sceneName)
+                var controller = root.GetComponentInChildren<NotebookScreenController>(true);
+                if (controller != null)
                 {
                     return controller;
                 }
