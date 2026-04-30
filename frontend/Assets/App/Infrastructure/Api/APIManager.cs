@@ -364,17 +364,27 @@ namespace App.Infrastructure.Api
                 return baseUrl;
             }
 
-            // 한글/특수문자 인코딩(%e3%85%87 등)이 포함된 path를 Uri.TryCreate(..., UriKind.Absolute)가
-            // absolute로 잘못 인식해서 baseUrl 없이 path만 반환되는 버그가 있었음.
-            // → UnityWebRequest가 host 없는 URL을 받으면 default 'localhost'로 채워 호출 실패.
-            // 명시적으로 http(s):// 시작만 absolute로 처리.
-            if (path.StartsWith("http://", System.StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("https://", System.StringComparison.OrdinalIgnoreCase))
+            // path가 진짜 절대 URL인지 검증.
+            // (이전 버그) 단순 Uri.TryCreate(path, UriKind.Absolute) 만 쓰면 한글 인코딩 들어간 path도
+            // absolute로 잘못 인식해서 baseUrl 없이 path만 반환 → UnityWebRequest가 default 'localhost'
+            // host로 채워 호출 실패. http/https/ws/wss/file 같은 known scheme이어야 진짜 절대 URL로 인정.
+            if (Uri.TryCreate(path, UriKind.Absolute, out var parsed) && IsKnownAbsoluteScheme(parsed.Scheme))
             {
                 return path;
             }
 
             return $"{baseUrl}/{path.TrimStart('/')}";
+        }
+
+        private static readonly System.Collections.Generic.HashSet<string> KnownAbsoluteSchemes =
+            new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                "http", "https", "ws", "wss", "file"
+            };
+
+        private static bool IsKnownAbsoluteScheme(string scheme)
+        {
+            return !string.IsNullOrEmpty(scheme) && KnownAbsoluteSchemes.Contains(scheme);
         }
 
         private static string NormalizeBaseUrl(string candidate, string fallback)

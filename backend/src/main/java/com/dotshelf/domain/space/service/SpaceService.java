@@ -44,19 +44,23 @@ import com.dotshelf.domain.user.repository.FollowRepository;
 import com.dotshelf.domain.user.repository.UserBlockRepository;
 import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.domain.user.service.UserService;
+import com.dotshelf.global.common.CursorParser;
 import com.dotshelf.global.common.ToggleResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class SpaceService {
 
     private static final int DEFAULT_LIST_LIMIT = 20;
     private static final int MAX_LIST_LIMIT = 50;
+    private static final int MEMORY_SORT_WARNING_THRESHOLD = 500;
 
     private final SpaceRepository spaceRepository;
     private final SpaceTemplateRepository spaceTemplateRepository;
@@ -347,10 +351,16 @@ public class SpaceService {
         ensureNotBlockedAgainstOwner(viewerUserId, space.getOwnerUserId());
 
         int validLimit = validateListLimit(limit);
-        Long cursorId = parseCursorId(cursor);
+        Long cursorId = CursorParser.parseId(cursor);
 
-        List<OwnedBookSummary> sorted = sortOwnedBooks(
-                userBookRepository.findOwnedBookSummaries(space.getOwnerUserId()), sort);
+        List<OwnedBookSummary> all = userBookRepository.findOwnedBookSummaries(space.getOwnerUserId());
+        // (MR #61 리뷰 #5) 메모리 정렬 fallback 한도. 가정이 무너지면 즉시 알 수 있도록 경고.
+        // 임계점 도달 시 server-side ORDER BY + cursor 기반 페이징으로 전환 필요.
+        if (all.size() > MEMORY_SORT_WARNING_THRESHOLD) {
+            log.warn("[OwnedBooks] memory-sort threshold 초과: userId={} count={}. server-side ORDER BY 전환 검토 필요.",
+                    space.getOwnerUserId(), all.size());
+        }
+        List<OwnedBookSummary> sorted = sortOwnedBooks(all, sort);
 
         int startIdx = 0;
         if (cursorId != null) {
@@ -397,15 +407,4 @@ public class SpaceService {
         return items.stream().sorted(primary.thenComparing(tiebreaker)).toList();
     }
 
-    /** MR #60 #6과 동일 정책 — 잘못된 cursor는 silent 폴백 대신 명시적 INVALID_INPUT. */
-    private static Long parseCursorId(String cursor) {
-        if (cursor == null || cursor.isBlank()) {
-            return null;
-        }
-        try {
-            return Long.parseLong(cursor);
-        } catch (NumberFormatException e) {
-            throw new CustomException(ErrorCode.INVALID_INPUT, "잘못된 cursor 형식입니다.");
-        }
-    }
 }

@@ -430,6 +430,14 @@ namespace Dotshelf.Scripts.Dashboard
             recordsSortOldestButton = root.Q<Button>("records-sort-oldest");
             recordsSortMostLikedButton = root.Q<Button>("records-sort-most-liked");
             recordsSortMostViewedButton = root.Q<Button>("records-sort-most-viewed");
+            // (MR #61 리뷰 #8) v1.0 시점에 ReadingRecord.viewCount 증가 로직 미합류 — 모든 record viewCount=0이라
+            // MOST_VIEWED 정렬은 secondary tiebreaker(id DESC)만 작동해 LATEST와 동일하게 보임.
+            // 사용자가 정렬 버그로 오인하는 것 방지 위해 옵션 비활성화. 증가 로직 follow-up 합류 시 SetEnabled(true).
+            if (recordsSortMostViewedButton != null)
+            {
+                recordsSortMostViewedButton.SetEnabled(false);
+                recordsSortMostViewedButton.tooltip = "조회수 집계 준비 중";
+            }
             recordsSortMostCommentedButton = root.Q<Button>("records-sort-most-commented");
 
             dashboardEditModalRoot = root.Q<VisualElement>("dashboard-edit-modal");

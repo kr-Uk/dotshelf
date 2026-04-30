@@ -18,13 +18,16 @@ import com.dotshelf.domain.readingrecord.entity.ReadingRecordLike;
 import com.dotshelf.domain.readingrecord.repository.ReadingRecordLikeRepository;
 import com.dotshelf.domain.readingrecord.repository.ReadingRecordRepository;
 import com.dotshelf.domain.user.service.UserService;
+import com.dotshelf.global.common.CursorParser;
 import com.dotshelf.global.common.ToggleResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ReadingRecordService {
@@ -41,6 +44,7 @@ public class ReadingRecordService {
 
     private static final int DEFAULT_RECORD_LIMIT = 20;
     private static final int MAX_RECORD_LIMIT = 50;
+    private static final int MEMORY_SORT_WARNING_THRESHOLD = 500;
 
     /**
      * 대시보드 \"독후감 풀 목록\" 모달용. v1.0 갱신 — 정렬·cursor 페이지네이션 합류.
@@ -48,10 +52,15 @@ public class ReadingRecordService {
      */
     public ReadingRecordPageResponse getUserRecords(Long userId, String sort, String cursor, int limit) {
         int validLimit = clampLimit(limit);
-        Long cursorId = parseCursorId(cursor);
+        Long cursorId = CursorParser.parseId(cursor);
 
-        List<ReadingRecordSummary> sorted = sortRecords(
-                readingRecordRepository.findUserRecordSummaries(userId), sort);
+        List<ReadingRecordSummary> all = readingRecordRepository.findUserRecordSummaries(userId);
+        // (MR #61 리뷰 #5) 메모리 정렬 fallback 한도. 가정 무너지면 즉시 경고.
+        if (all.size() > MEMORY_SORT_WARNING_THRESHOLD) {
+            log.warn("[ReadingRecords] memory-sort threshold 초과: userId={} count={}. server-side ORDER BY 전환 검토 필요.",
+                    userId, all.size());
+        }
+        List<ReadingRecordSummary> sorted = sortRecords(all, sort);
 
         int startIdx = 0;
         if (cursorId != null) {
@@ -95,16 +104,6 @@ public class ReadingRecordService {
         return Math.min(limit, MAX_RECORD_LIMIT);
     }
 
-    private static Long parseCursorId(String cursor) {
-        if (cursor == null || cursor.isBlank()) {
-            return null;
-        }
-        try {
-            return Long.parseLong(cursor);
-        } catch (NumberFormatException e) {
-            throw new CustomException(ErrorCode.INVALID_INPUT, "잘못된 cursor 형식입니다.");
-        }
-    }
 
     @Transactional
     public ReadingRecordResponse create(Long userId, ReadingRecordRequest request) {
