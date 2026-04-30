@@ -275,9 +275,10 @@ backend:test-deploy:
     - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose --env-file .env.test -f docker-compose.test.yml up -d --build api-test && docker image prune -f"
     # --- prod Nginx reload ---
     - ssh "$PROD_USER@$PROD_HOST" "sudo docker exec dotshelf-nginx nginx -t && sudo docker exec dotshelf-nginx nginx -s reload"
-    # --- Health 검증: 컨테이너 부팅 대기 후 직접 + Cloudflare 경유 ---
-    - sleep 10
-    - ssh "$EC2_USER@$EC2_HOST" "curl -fsS http://100.74.2.103:9080/health -o /dev/null"
+    # --- Health 검증: 컨테이너 부팅 폴링 (Spring Boot 첫 부팅 ~30-50초) ---
+    # sleep 10 + curl 한 번으론 첫 부팅 못 따라잡아 connection refused 가 자주 발생 → poll loop.
+    # timeout 120s 까지 2초 간격 retry. 제한 도달 시 잡 fail (timeout 명령이 exit 124).
+    - ssh "$EC2_USER@$EC2_HOST" "timeout 120 sh -c 'until curl -fsS http://100.74.2.103:9080/health -o /dev/null; do sleep 2; done'"
     - curl -fsS https://dev-api.dotshelf.digital/health -o /dev/null
   environment:
     name: backend-test
@@ -311,9 +312,8 @@ service-web:test-deploy:
     - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose --env-file .env.test -f docker-compose.test.yml up -d --build service-web-test && docker image prune -f"
     # --- prod Nginx reload ---
     - ssh "$PROD_USER@$PROD_HOST" "sudo docker exec dotshelf-nginx nginx -t && sudo docker exec dotshelf-nginx nginx -s reload"
-    # --- Health 검증 ---
-    - sleep 10
-    - ssh "$EC2_USER@$EC2_HOST" "curl -fsS http://100.74.2.103:3102/ -o /dev/null"
+    # --- Health 검증: 컨테이너 부팅 폴링 (Next.js standalone ~10-30초) ---
+    - ssh "$EC2_USER@$EC2_HOST" "timeout 90 sh -c 'until curl -fsS http://100.74.2.103:3102/ -o /dev/null; do sleep 2; done'"
     - curl -fsS https://dev.dotshelf.digital/health -o /dev/null
     - curl -fsS https://dev.dotshelf.digital/ -o /dev/null
   environment:
