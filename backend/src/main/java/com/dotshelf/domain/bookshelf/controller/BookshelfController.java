@@ -81,10 +81,11 @@ public class BookshelfController {
     @PatchMapping("/v1/bookshelves/{bookshelfId}/sections/{sectionId}/alignment")
     public ApiResponse<SectionResponse> updateSectionAlignment(
             @CurrentUser Long userId,
+            @PathVariable Long bookshelfId,
             @PathVariable Long sectionId,
             @RequestBody @Valid SectionAlignmentRequest request
     ) {
-        return ApiResponse.success(bookshelfService.updateSectionAlignment(userId, sectionId, request));
+        return ApiResponse.success(bookshelfService.updateSectionAlignment(userId, bookshelfId, sectionId, request));
     }
 
     @PostMapping("/v1/bookshelves/{bookshelfId}/interior-objects")
@@ -108,7 +109,16 @@ public class BookshelfController {
                 request.bookshelfId(),
                 request.sectionId(),
                 request.slotNo(),
+                request.facingDirection(),
                 request.displayStyle()
         ));
+    }
+
+    @DeleteMapping("/v1/bookshelf-items/{itemId}")
+    public ApiResponse<BookshelfItemResponse> removeItem(
+            @CurrentUser Long userId,
+            @PathVariable Long itemId
+    ) {
+        return ApiResponse.success(bookshelfService.removeItem(userId, itemId));
     }
 }

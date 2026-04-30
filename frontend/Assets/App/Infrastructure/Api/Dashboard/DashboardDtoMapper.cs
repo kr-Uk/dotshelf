@@ -267,6 +267,7 @@ namespace App.Infrastructure.Api.Dashboard
                 BookId = dto.BookId,
                 BookTitle = dto.BookTitle,
                 Content = dto.Content,
+                Visibility = ParseVisibility(dto.VisibilityScope),
                 LikeCount = dto.LikeCount,
                 CommentCount = dto.CommentCount,
                 ViewCount = dto.ViewCount,

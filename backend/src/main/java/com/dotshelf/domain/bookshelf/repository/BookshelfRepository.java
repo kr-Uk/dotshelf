@@ -10,5 +10,7 @@ public interface BookshelfRepository extends JpaRepository<Bookshelf, Long> {
 
     List<Bookshelf> findBySpaceIdAndStatusOrderByDisplayOrderAsc(Long spaceId, String status);
 
+    List<Bookshelf> findBySpaceIdOrderByDisplayOrderAsc(Long spaceId);
+
     long countBySpaceIdAndStatus(Long spaceId, String status);
 }

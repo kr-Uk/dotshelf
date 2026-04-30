@@ -33,10 +33,15 @@ public final class ReadingRecordDtos {
             String content,
             String visibilityScope,
             int likeCount,
-            int commentCount
+            int commentCount,
+            Instant createdAt,
+            Instant updatedAt
     ) {
 
         public static ReadingRecordResponse from(ReadingRecord record) {
+            if (record == null) {
+                return null;
+            }
             return new ReadingRecordResponse(
                     record.getId(),
                     record.getUserBookId(),
@@ -44,7 +49,9 @@ public final class ReadingRecordDtos {
                     record.getContent(),
                     record.getVisibilityScope(),
                     record.getLikeCount(),
-                    record.getCommentCount()
+                    record.getCommentCount(),
+                    record.getCreatedAt(),
+                    record.getUpdatedAt()
             );
         }
     }
@@ -58,6 +65,7 @@ public final class ReadingRecordDtos {
             Long bookId,
             String bookTitle,
             String content,
+            String visibilityScope,
             int likeCount,
             int commentCount,
             int viewCount,

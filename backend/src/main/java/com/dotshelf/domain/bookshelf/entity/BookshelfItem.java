@@ -65,11 +65,16 @@ public class BookshelfItem extends BaseEntity {
         this.displayStyle = displayStyle == null ? "SPINE" : displayStyle;
     }
 
-    public void move(Long bookshelfId, Long bookshelfSectionId, Integer slotNo, String displayStyle) {
+    public void move(Long bookshelfId, Long bookshelfSectionId, Integer slotNo, String facingDirection, String displayStyle) {
         this.bookshelfId = bookshelfId;
         this.bookshelfSectionId = bookshelfSectionId;
         this.slotNo = slotNo;
-        this.displayStyle = displayStyle;
+        if (facingDirection != null) {
+            this.facingDirection = facingDirection;
+        }
+        if (displayStyle != null) {
+            this.displayStyle = displayStyle;
+        }
     }
 
     public void remove() {

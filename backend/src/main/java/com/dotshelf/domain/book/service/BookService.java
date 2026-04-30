@@ -150,6 +150,7 @@ public class BookService {
                 book,
                 request.sectionId(),
                 request.slotNo(),
+                request.facingDirection(),
                 request.displayStyle()
         );
     }
@@ -166,6 +167,7 @@ public class BookService {
                 book,
                 request.sectionId(),
                 request.slotNo(),
+                request.facingDirection(),
                 request.displayStyle()
         );
     }
@@ -176,6 +178,7 @@ public class BookService {
             Book book,
             Long sectionId,
             Integer slotNo,
+            String facingDirection,
             String displayStyle
     ) {
         UserBook userBook = userBookRepository.findByUserIdAndBookId(currentUserId, book.getId())
@@ -189,15 +192,16 @@ public class BookService {
         userBook.placeOnShelf();
         bookshelfItemRepository.findByUserBookIdAndStatus(userBook.getId(), "ACTIVE")
                 .ifPresent(BookshelfItem::remove);
-        bookshelfItemRepository.save(BookshelfItem.builder()
+        BookshelfItem item = bookshelfItemRepository.save(BookshelfItem.builder()
                 .bookshelfId(bookshelfId)
                 .bookshelfSectionId(sectionId)
                 .itemType("BOOK")
                 .userBookId(userBook.getId())
                 .slotNo(slotNo)
+                .facingDirection(facingDirection)
                 .displayStyle(displayStyle)
                 .build());
-        return UserBookResponse.from(userBook);
+        return UserBookResponse.from(userBook, item);
     }
 
     @Transactional
@@ -221,8 +225,8 @@ public class BookService {
                         .itemType("BOOK")
                         .userBookId(userBookId)
                         .build()));
-        item.move(request.bookshelfId(), request.sectionId(), request.slotNo(), request.displayStyle());
-        return UserBookResponse.from(userBook);
+        item.move(request.bookshelfId(), request.sectionId(), request.slotNo(), request.facingDirection(), request.displayStyle());
+        return UserBookResponse.from(userBook, item);
     }
 
     @Transactional
@@ -399,9 +403,11 @@ public class BookService {
                 userBook.getStorageStatus(),
                 userBook.getOwnerRating(),
                 userBook.isLiked(),
+                item == null ? null : item.getId(),
                 item == null ? null : item.getBookshelfId(),
                 item == null ? null : item.getBookshelfSectionId(),
                 item == null ? null : item.getSlotNo(),
+                item == null ? null : item.getFacingDirection(),
                 item == null ? null : item.getDisplayStyle()
         );
     }
@@ -546,6 +552,7 @@ public class BookService {
 
     private Book findOrCreateBook(AddKakaoBookToShelfRequest request) {
         return findBookByIsbn(request.isbn13(), request.isbn10())
+                .or(() -> findBookByTitleAndAuthor(request.title(), request.author()))
                 .orElseGet(() -> bookRepository.save(Book.builder()
                         .isbn13(trimToNull(request.isbn13()))
                         .isbn10(trimToNull(request.isbn10()))
@@ -574,6 +581,16 @@ public class BookService {
             return bookRepository.findFirstByIsbn10(normalizedIsbn10);
         }
         return Optional.empty();
+    }
+
+    private Optional<Book> findBookByTitleAndAuthor(String title, String author) {
+        String normalizedTitle = Book.normalizeTitleSearch(requiredText(title));
+        String normalizedAuthor = normalizeAuthor(authorName(author));
+        return bookRepository.findTop20ByTitleSearchContainingOrAuthorContainingIgnoreCase(normalizedTitle, authorName(author))
+                .stream()
+                .filter(book -> normalizedTitle.equals(Book.normalizeTitleSearch(book.getTitle())))
+                .filter(book -> normalizedAuthor.equals(normalizeAuthor(book.getAuthor())))
+                .findFirst();
     }
 
     private int validateSearchPage(int page) {

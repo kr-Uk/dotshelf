@@ -119,6 +119,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("slotNo")]
         public int SlotNo { get; set; }
 
+        [JsonProperty("facingDirection")]
+        public string FacingDirection { get; set; }
+
         [JsonProperty("displayStyle")]
         public string DisplayStyle { get; set; }
     }
@@ -159,6 +162,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("slotNo")]
         public int SlotNo { get; set; }
 
+        [JsonProperty("facingDirection")]
+        public string FacingDirection { get; set; }
+
         [JsonProperty("displayStyle")]
         public string DisplayStyle { get; set; }
     }
@@ -188,8 +194,36 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("slotNo")]
         public int SlotNo { get; set; }
 
+        [JsonProperty("facingDirection")]
+        public string FacingDirection { get; set; }
+
         [JsonProperty("displayStyle")]
         public string DisplayStyle { get; set; }
+    }
+
+    [Serializable]
+    public sealed class UserBookPlacementSummaryResponseDto
+    {
+        [JsonProperty("bookshelfItemId")]
+        public long? BookshelfItemId { get; set; }
+
+        [JsonProperty("bookshelfId")]
+        public long? BookshelfId { get; set; }
+
+        [JsonProperty("sectionId")]
+        public long? SectionId { get; set; }
+
+        [JsonProperty("slotNo")]
+        public int? SlotNo { get; set; }
+
+        [JsonProperty("facingDirection")]
+        public string FacingDirection { get; set; }
+
+        [JsonProperty("displayStyle")]
+        public string DisplayStyle { get; set; }
+
+        [JsonProperty("rotationDeg")]
+        public decimal RotationDeg { get; set; }
     }
 
     [Serializable]
@@ -215,6 +249,9 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("liked")]
         public bool Liked { get; set; }
+
+        [JsonProperty("placement")]
+        public UserBookPlacementSummaryResponseDto Placement { get; set; }
     }
 
     [Serializable]
@@ -1086,6 +1123,12 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("commentCount")]
         public int CommentCount { get; set; }
+
+        [JsonProperty("createdAt")]
+        public string CreatedAt { get; set; }
+
+        [JsonProperty("updatedAt")]
+        public string UpdatedAt { get; set; }
     }
 
     /// <summary>
@@ -1106,6 +1149,9 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("content")]
         public string Content { get; set; }
+
+        [JsonProperty("visibilityScope")]
+        public string VisibilityScope { get; set; }
 
         [JsonProperty("likeCount")]
         public int LikeCount { get; set; }
@@ -1262,7 +1308,7 @@ namespace App.Infrastructure.Api.Dtos
         public List<SectionResponseDto> Sections { get; set; }
 
         [JsonProperty("items")]
-        public List<BookshelfItemResponseDto> Items { get; set; }
+        public List<BookshelfRenderItemResponseDto> Items { get; set; }
     }
 
     [Serializable]
@@ -1345,6 +1391,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("slotNo")]
         public int SlotNo { get; set; }
 
+        [JsonProperty("facingDirection")]
+        public string FacingDirection { get; set; }
+
         [JsonProperty("displayStyle")]
         public string DisplayStyle { get; set; }
     }
@@ -1361,8 +1410,116 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("slotNo")]
         public int SlotNo { get; set; }
 
+        [JsonProperty("facingDirection")]
+        public string FacingDirection { get; set; }
+
         [JsonProperty("displayStyle")]
         public string DisplayStyle { get; set; }
+    }
+
+    [Serializable]
+    public sealed class BookSummaryResponseDto
+    {
+        [JsonProperty("bookId")]
+        public long BookId { get; set; }
+
+        [JsonProperty("title")]
+        public string Title { get; set; }
+
+        [JsonProperty("author")]
+        public string Author { get; set; }
+
+        [JsonProperty("publisher")]
+        public string Publisher { get; set; }
+
+        [JsonProperty("description")]
+        public string Description { get; set; }
+
+        [JsonProperty("isbn13")]
+        public string Isbn13 { get; set; }
+
+        [JsonProperty("isbn10")]
+        public string Isbn10 { get; set; }
+
+        [JsonProperty("coverImageUrl")]
+        public string CoverImageUrl { get; set; }
+    }
+
+    [Serializable]
+    public sealed class UserBookSummaryResponseDto
+    {
+        [JsonProperty("id")]
+        public long Id { get; set; }
+
+        [JsonProperty("userId")]
+        public long UserId { get; set; }
+
+        [JsonProperty("bookId")]
+        public long BookId { get; set; }
+
+        [JsonProperty("readingStatus")]
+        public string ReadingStatus { get; set; }
+
+        [JsonProperty("storageStatus")]
+        public string StorageStatus { get; set; }
+
+        [JsonProperty("ownerRating")]
+        public decimal? OwnerRating { get; set; }
+
+        [JsonProperty("liked")]
+        public bool Liked { get; set; }
+
+        [JsonProperty("selectedCoverProductId")]
+        public long? SelectedCoverProductId { get; set; }
+    }
+
+    [Serializable]
+    public sealed class BookshelfRenderItemResponseDto
+    {
+        [JsonProperty("bookshelfItemId")]
+        public long BookshelfItemId { get; set; }
+
+        [JsonProperty("itemType")]
+        public string ItemType { get; set; }
+
+        [JsonProperty("sectionId")]
+        public long SectionId { get; set; }
+
+        [JsonProperty("sectionRow")]
+        public int? SectionRow { get; set; }
+
+        [JsonProperty("sectionColumn")]
+        public int? SectionColumn { get; set; }
+
+        [JsonProperty("slotNo")]
+        public int? SlotNo { get; set; }
+
+        [JsonProperty("facingDirection")]
+        public string FacingDirection { get; set; }
+
+        [JsonProperty("displayStyle")]
+        public string DisplayStyle { get; set; }
+
+        [JsonProperty("rotationDeg")]
+        public decimal RotationDeg { get; set; }
+
+        [JsonProperty("userBookId")]
+        public long? UserBookId { get; set; }
+
+        [JsonProperty("userBook")]
+        public UserBookSummaryResponseDto UserBook { get; set; }
+
+        [JsonProperty("book")]
+        public BookSummaryResponseDto Book { get; set; }
+
+        [JsonProperty("assetInventoryId")]
+        public long? AssetInventoryId { get; set; }
+
+        [JsonProperty("asset")]
+        public AssetResponseDto Asset { get; set; }
+
+        [JsonProperty("readingRecord")]
+        public ReadingRecordResponseDto ReadingRecord { get; set; }
     }
 
     [Serializable]
@@ -1380,6 +1537,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("slotNo")]
         public int SlotNo { get; set; }
 
+        [JsonProperty("facingDirection")]
+        public string FacingDirection { get; set; }
+
         [JsonProperty("itemType")]
         public string ItemType { get; set; }
 
@@ -1391,5 +1551,8 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("displayStyle")]
         public string DisplayStyle { get; set; }
+
+        [JsonProperty("rotationDeg")]
+        public decimal RotationDeg { get; set; }
     }
 }

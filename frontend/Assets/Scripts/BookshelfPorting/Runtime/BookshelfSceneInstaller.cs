@@ -158,6 +158,7 @@ namespace BookshelfPorting.Runtime
             var interactionController = GetOrAddComponent<BookInteractionController>(systems);
             var runtimeDataStore = GetOrAddComponent<BookshelfRuntimeDataStore>(systems);
             var experienceManager = GetOrAddComponent<BookshelfExperienceManager>(systems);
+            var bookshelfApiSync = GetOrAddComponent<BookshelfApiSyncController>(systems);
             var environment = GetOrAddComponent<EnvironmentSetup>(systems);
             var apiManager = GetOrAddComponent<APIManager>(systems);
             var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(apiMode, apiBaseUrl, apiTimeoutSeconds));
@@ -221,6 +222,11 @@ namespace BookshelfPorting.Runtime
             runtimeDataStore.Configure(state, materialFactory);
             experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
             experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase);
+            if (usesHttpApi)
+            {
+                bookshelfApiSync.Configure(new NotebookApiClient(apiManager), generator, experienceManager);
+                experienceManager.ConfigureBookshelfApiSync(bookshelfApiSync);
+            }
             environment.Configure(probe, null);
 
             // Main scene opens in the new MainView pose (derived from the bookshelf focus

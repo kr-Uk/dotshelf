@@ -331,9 +331,9 @@ namespace App.Infrastructure.Api
                 return;
             }
 
-            var usedSlots = new HashSet<int>((render.Items ?? new List<BookshelfItemResponseDto>())
-                .Where(item => item != null && item.SectionId == section.Id && item.SlotNo > 0)
-                .Select(item => item.SlotNo));
+            var usedSlots = new HashSet<int>((render.Items ?? new List<BookshelfRenderItemResponseDto>())
+                .Where(item => item != null && item.SectionId == section.Id && item.SlotNo.HasValue && item.SlotNo.Value > 0)
+                .Select(item => item.SlotNo.Value));
             var max = Math.Max(1, section.MaxItemCount);
             for (var slot = 1; slot <= max; slot++)
             {

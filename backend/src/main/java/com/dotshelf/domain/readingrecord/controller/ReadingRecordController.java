@@ -36,18 +36,30 @@ public class ReadingRecordController {
     private final ReadingRecordCommentService commentService;
 
     @GetMapping("/reading-records/{recordId}")
-    public ApiResponse<ReadingRecordResponse> getRecord(@PathVariable Long recordId) {
-        return ApiResponse.success(readingRecordService.getRecord(recordId));
+    public ApiResponse<ReadingRecordResponse> getRecord(
+            @CurrentUser Long userId,
+            @PathVariable Long recordId
+    ) {
+        return ApiResponse.success(readingRecordService.getRecord(userId, recordId));
+    }
+
+    @GetMapping("/user-books/{userBookId}/reading-record")
+    public ApiResponse<ReadingRecordResponse> getMyRecordByUserBook(
+            @CurrentUser Long userId,
+            @PathVariable Long userBookId
+    ) {
+        return ApiResponse.success(readingRecordService.getMyRecordByUserBook(userId, userBookId));
     }
 
     @GetMapping("/users/{userId}/reading-records")
     public ApiResponse<ReadingRecordPageResponse> getUserRecords(
+            @CurrentUser Long currentUserId,
             @PathVariable Long userId,
             @RequestParam(defaultValue = "LATEST") String sort,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") int limit
     ) {
-        return ApiResponse.success(readingRecordService.getUserRecords(userId, sort, cursor, limit));
+        return ApiResponse.success(readingRecordService.getUserRecords(currentUserId, userId, sort, cursor, limit));
     }
 
     @PostMapping("/reading-records")
@@ -84,8 +96,11 @@ public class ReadingRecordController {
     }
 
     @GetMapping("/reading-records/{recordId}/comments")
-    public ApiResponse<CommentListResponse> getComments(@PathVariable Long recordId) {
-        return ApiResponse.success(commentService.getComments(recordId));
+    public ApiResponse<CommentListResponse> getComments(
+            @CurrentUser Long userId,
+            @PathVariable Long recordId
+    ) {
+        return ApiResponse.success(commentService.getComments(userId, recordId));
     }
 
     @PostMapping("/reading-records/{recordId}/comments")

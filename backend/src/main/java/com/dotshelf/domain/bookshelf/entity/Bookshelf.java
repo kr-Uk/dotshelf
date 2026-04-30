@@ -66,10 +66,18 @@ public class Bookshelf extends BaseEntity {
     }
 
     public void update(String name, String description, String visibilityScope, Long skinInventoryId) {
-        this.name = name;
-        this.description = description;
-        this.visibilityScope = visibilityScope;
-        this.skinInventoryId = skinInventoryId;
+        if (name != null && !name.isBlank()) {
+            this.name = name;
+        }
+        if (description != null) {
+            this.description = description;
+        }
+        if (visibilityScope != null && !visibilityScope.isBlank()) {
+            this.visibilityScope = visibilityScope;
+        }
+        if (skinInventoryId != null) {
+            this.skinInventoryId = skinInventoryId;
+        }
     }
 
     public void changeOrder(int displayOrder) {
@@ -79,5 +87,10 @@ public class Bookshelf extends BaseEntity {
     public void delete() {
         this.status = "DELETED";
         this.deletedAt = LocalDateTime.now();
+        moveToDeletedOrder();
+    }
+
+    public void moveToDeletedOrder() {
+        this.displayOrder = Integer.MAX_VALUE - Math.toIntExact(id);
     }
 }

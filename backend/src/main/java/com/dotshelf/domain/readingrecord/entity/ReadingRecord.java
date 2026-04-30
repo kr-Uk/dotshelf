@@ -63,7 +63,9 @@ public class ReadingRecord extends BaseEntity {
     public void update(String title, String content, String visibilityScope) {
         this.title = title;
         this.content = content;
-        this.visibilityScope = visibilityScope;
+        this.visibilityScope = visibilityScope == null ? "PUBLIC" : visibilityScope;
+        this.status = "ACTIVE";
+        this.deletedAt = null;
     }
 
     public void delete() {

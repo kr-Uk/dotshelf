@@ -1,4 +1,5 @@
 using App.Domain;
+using System;
 using UnityEngine;
 
 namespace BookshelfPorting.Runtime
@@ -15,6 +16,11 @@ namespace BookshelfPorting.Runtime
         [Header("Visuals")]
         public MeshRenderer[] tintRenderers;
         public string bookId;
+        public string userBookId;
+        public string bookshelfItemId;
+        public string bookshelfId;
+        public string bookshelfSectionId;
+        public string readingRecordId;
         public string title;
         public string author;
         public string publisher;
@@ -30,6 +36,9 @@ namespace BookshelfPorting.Runtime
         public bool isRead;
         public bool isPublic = true;
         public VisibilityScope reportVisibility = VisibilityScope.Public;
+        public string reportTitle;
+        public string reportBody;
+        public string reportUpdatedLabel;
 
         public ShelfSection CurrentSection { get; private set; }
         public ShelfSection OriginalSection { get; private set; }
@@ -77,13 +86,20 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            userBookId = userBook.UserBookId;
             ownerRating = userBook.OwnerRating.HasValue ? (float)userBook.OwnerRating.Value : 0f;
             rating = Mathf.RoundToInt(ownerRating);
             readingStatus = userBook.ReadingStatus;
             isLiked = userBook.IsLiked;
             isRead = readingStatus == ReadingStatus.Read;
+            readingRecordId = readingRecord?.Id;
             reportVisibility = readingRecord != null ? readingRecord.VisibilityScope : VisibilityScope.Public;
             isPublic = reportVisibility == VisibilityScope.Public;
+            reportTitle = readingRecord?.Title;
+            reportBody = readingRecord?.Content;
+            reportUpdatedLabel = readingRecord != null && readingRecord.UpdatedAt != DateTimeOffset.MinValue
+                ? readingRecord.UpdatedAt.ToString("yyyy.MM.dd")
+                : string.Empty;
             memoPreview = readingRecord != null && !string.IsNullOrWhiteSpace(readingRecord.Content)
                 ? readingRecord.Content
                 : description;

@@ -1,5 +1,6 @@
 package com.dotshelf.domain.bookshelf.service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -25,18 +26,23 @@ import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.BookshelfListResponse;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.BookshelfResponse;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.CreateBookshelfRequest;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.InteriorObjectRequest;
+import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.ReadingRecordSummaryResponse;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.ReorderBookshelvesRequest;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.SectionAlignmentRequest;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.SectionResponse;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.UpdateBookshelfRequest;
+import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.UserBookSummaryResponse;
 import com.dotshelf.domain.bookshelf.entity.Bookshelf;
 import com.dotshelf.domain.bookshelf.entity.BookshelfItem;
 import com.dotshelf.domain.bookshelf.entity.BookshelfSection;
 import com.dotshelf.domain.bookshelf.repository.BookshelfItemRepository;
 import com.dotshelf.domain.bookshelf.repository.BookshelfRepository;
 import com.dotshelf.domain.bookshelf.repository.BookshelfSectionRepository;
+import com.dotshelf.domain.readingrecord.entity.ReadingRecord;
+import com.dotshelf.domain.readingrecord.repository.ReadingRecordRepository;
 import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.service.SpaceService;
+import com.dotshelf.domain.user.repository.FollowRepository;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
@@ -58,7 +64,9 @@ public class BookshelfService {
     private final BookRepository bookRepository;
     private final UserAssetInventoryRepository inventoryRepository;
     private final AssetRepository assetRepository;
+    private final ReadingRecordRepository readingRecordRepository;
     private final SpaceService spaceService;
+    private final FollowRepository followRepository;
     private final UserService userService;
 
     public BookshelfListResponse getBookshelves(Long spaceId) {
@@ -73,8 +81,11 @@ public class BookshelfService {
         requireReadable(userId, bookshelf);
         List<BookshelfSection> sections = sectionRepository.findByBookshelfIdOrderByRowNoAscColumnNoAsc(bookshelfId);
         List<BookshelfItem> items = bookshelfItemRepository.findByBookshelfIdAndStatusOrderByBookshelfSectionIdAscSlotNoAsc(bookshelfId, "ACTIVE");
+        Map<Long, BookshelfSection> sectionsById = sections.stream()
+                .collect(Collectors.toMap(BookshelfSection::getId, Function.identity()));
         Map<Long, UserBook> userBooks = userBooksById(items);
         Map<Long, Book> books = booksById(userBooks);
+        Map<Long, ReadingRecord> readingRecords = readingRecordsByUserBookId(userBooks);
         Map<Long, UserAssetInventory> inventories = inventoriesById(items);
         Map<Long, Asset> assets = assetsById(inventories);
         return new BookshelfRenderResponse(
@@ -83,16 +94,22 @@ public class BookshelfService {
                         .map(SectionResponse::from)
                         .toList(),
                 items.stream()
-                        .map(item -> toRenderItem(item, userBooks, books, inventories, assets))
+                        .map(item -> toRenderItem(userId, item, sectionsById, userBooks, books, readingRecords, inventories, assets))
                         .toList()
         );
     }
 
     @Transactional
     public BookshelfResponse create(Long userId, CreateBookshelfRequest request) {
-        userService.requireUserId(userId);
-        spaceService.getSpaceEntity(request.spaceId());
-        int displayOrder = (int) bookshelfRepository.countBySpaceIdAndStatus(request.spaceId(), "ACTIVE");
+        Long currentUserId = userService.requireUserId(userId);
+        Space space = spaceService.getSpaceEntity(request.spaceId());
+        if (!space.getOwnerUserId().equals(currentUserId)) {
+            throw new CustomException(ErrorCode.FORBIDDEN);
+        }
+        int displayOrder = bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(request.spaceId(), "ACTIVE").stream()
+                .mapToInt(Bookshelf::getDisplayOrder)
+                .max()
+                .orElse(-1) + 1;
         Bookshelf bookshelf = bookshelfRepository.save(Bookshelf.builder()
                 .spaceId(request.spaceId())
                 .bodyInventoryId(request.bodyInventoryId())
@@ -107,29 +124,54 @@ public class BookshelfService {
 
     @Transactional
     public BookshelfResponse update(Long userId, Long bookshelfId, UpdateBookshelfRequest request) {
-        userService.requireUserId(userId);
-        Bookshelf bookshelf = getBookshelf(bookshelfId);
+        Long currentUserId = userService.requireUserId(userId);
+        Bookshelf bookshelf = getOwnedBookshelf(currentUserId, bookshelfId);
         bookshelf.update(request.name(), request.description(), request.visibilityScope(), request.skinInventoryId());
         return BookshelfResponse.from(bookshelf);
     }
 
     @Transactional
     public void delete(Long userId, Long bookshelfId) {
-        userService.requireUserId(userId);
-        getBookshelf(bookshelfId).delete();
+        Long currentUserId = userService.requireUserId(userId);
+        getOwnedBookshelf(currentUserId, bookshelfId).delete();
     }
 
     @Transactional
     public void reorder(Long userId, ReorderBookshelvesRequest request) {
-        userService.requireUserId(userId);
-        for (int i = 0; i < request.bookshelfIds().size(); i++) {
-            getBookshelf(request.bookshelfIds().get(i)).changeOrder(i);
+        Long currentUserId = userService.requireUserId(userId);
+        if (request.bookshelfIds() == null || request.bookshelfIds().isEmpty()) {
+            return;
+        }
+
+        List<Bookshelf> shelves = new ArrayList<>();
+        Long spaceId = null;
+        for (Long bookshelfId : request.bookshelfIds()) {
+            Bookshelf bookshelf = getOwnedBookshelf(currentUserId, bookshelfId);
+            if (spaceId == null) {
+                spaceId = bookshelf.getSpaceId();
+            } else if (!spaceId.equals(bookshelf.getSpaceId())) {
+                throw new CustomException(ErrorCode.INVALID_INPUT);
+            }
+            shelves.add(bookshelf);
+        }
+
+        relocateDeletedBookshelves(spaceId);
+
+        for (int i = 0; i < shelves.size(); i++) {
+            shelves.get(i).changeOrder(-(i + 1));
+        }
+        bookshelfRepository.flush();
+
+        for (int i = 0; i < shelves.size(); i++) {
+            shelves.get(i).changeOrder(i);
         }
     }
 
     @Transactional
-    public SectionResponse updateSectionAlignment(Long userId, Long sectionId, SectionAlignmentRequest request) {
-        userService.requireUserId(userId);
+    public SectionResponse updateSectionAlignment(Long userId, Long bookshelfId, Long sectionId, SectionAlignmentRequest request) {
+        Long currentUserId = userService.requireUserId(userId);
+        getOwnedBookshelf(currentUserId, bookshelfId);
+        requireSectionInBookshelf(bookshelfId, sectionId);
         BookshelfSection section = sectionRepository.findById(sectionId)
                 .orElseThrow(() -> new CustomException(ErrorCode.RESOURCE_NOT_FOUND));
         section.changeAlignment(request.alignment());
@@ -138,14 +180,17 @@ public class BookshelfService {
 
     @Transactional
     public BookshelfItemResponse addInteriorObject(Long userId, Long bookshelfId, InteriorObjectRequest request) {
-        userService.requireUserId(userId);
-        getBookshelf(bookshelfId);
+        Long currentUserId = userService.requireUserId(userId);
+        getOwnedBookshelf(currentUserId, bookshelfId);
+        requireSectionInBookshelf(bookshelfId, request.sectionId());
+        UserAssetInventory inventory = getOwnedInventory(currentUserId, request.assetInventoryId());
         BookshelfItem item = bookshelfItemRepository.save(BookshelfItem.builder()
                 .bookshelfId(bookshelfId)
                 .bookshelfSectionId(request.sectionId())
-                .assetInventoryId(request.assetInventoryId())
+                .assetInventoryId(inventory.getId())
                 .itemType("DECOR")
                 .slotNo(request.slotNo())
+                .facingDirection(request.facingDirection())
                 .displayStyle(request.displayStyle())
                 .build());
         return BookshelfItemResponse.from(item);
@@ -153,11 +198,29 @@ public class BookshelfService {
 
     @Transactional
     public BookshelfItemResponse moveItem(Long userId, Long itemId, Long bookshelfId, Long sectionId,
-                                          Integer slotNo, String displayStyle) {
-        userService.requireUserId(userId);
+                                          Integer slotNo, String facingDirection, String displayStyle) {
+        Long currentUserId = userService.requireUserId(userId);
         BookshelfItem item = bookshelfItemRepository.findById(itemId)
                 .orElseThrow(() -> new CustomException(ErrorCode.BOOKSHELF_ITEM_NOT_FOUND));
-        item.move(bookshelfId, sectionId, slotNo, displayStyle);
+        getOwnedBookshelf(currentUserId, item.getBookshelfId());
+        getOwnedBookshelf(currentUserId, bookshelfId);
+        requireSectionInBookshelf(bookshelfId, sectionId);
+        item.move(bookshelfId, sectionId, slotNo, facingDirection, displayStyle);
+        return BookshelfItemResponse.from(item);
+    }
+
+    @Transactional
+    public BookshelfItemResponse removeItem(Long userId, Long itemId) {
+        Long currentUserId = userService.requireUserId(userId);
+        BookshelfItem item = bookshelfItemRepository.findById(itemId)
+                .orElseThrow(() -> new CustomException(ErrorCode.BOOKSHELF_ITEM_NOT_FOUND));
+        getOwnedBookshelf(currentUserId, item.getBookshelfId());
+        item.remove();
+        if ("BOOK".equalsIgnoreCase(item.getItemType()) && item.getUserBookId() != null) {
+            userBookRepository.findById(item.getUserBookId())
+                    .orElseThrow(() -> new CustomException(ErrorCode.USER_BOOK_NOT_FOUND))
+                    .archive();
+        }
         return BookshelfItemResponse.from(item);
     }
 
@@ -211,6 +274,22 @@ public class BookshelfService {
         }
     }
 
+    private void relocateDeletedBookshelves(Long spaceId) {
+        bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(spaceId).stream()
+                .filter(bookshelf -> !"ACTIVE".equalsIgnoreCase(bookshelf.getStatus()))
+                .forEach(Bookshelf::moveToDeletedOrder);
+        bookshelfRepository.flush();
+    }
+
+    private UserAssetInventory getOwnedInventory(Long userId, Long assetInventoryId) {
+        UserAssetInventory inventory = inventoryRepository.findById(assetInventoryId)
+                .orElseThrow(() -> new CustomException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (!inventory.getUserId().equals(userId)) {
+            throw new CustomException(ErrorCode.FORBIDDEN);
+        }
+        return inventory;
+    }
+
     private Map<Long, UserBook> userBooksById(List<BookshelfItem> items) {
         List<Long> userBookIds = items.stream()
                 .map(BookshelfItem::getUserBookId)
@@ -234,6 +313,22 @@ public class BookshelfService {
         }
         return bookRepository.findAllById(bookIds).stream()
                 .collect(Collectors.toMap(Book::getId, Function.identity()));
+    }
+
+    private Map<Long, ReadingRecord> readingRecordsByUserBookId(Map<Long, UserBook> userBooks) {
+        List<Long> userBookIds = userBooks.values().stream()
+                .map(UserBook::getId)
+                .distinct()
+                .toList();
+        if (userBookIds.isEmpty()) {
+            return Map.of();
+        }
+        return readingRecordRepository.findByUserBookIdInAndStatus(userBookIds, "ACTIVE").stream()
+                .collect(Collectors.toMap(
+                        ReadingRecord::getUserBookId,
+                        Function.identity(),
+                        (left, right) -> left.getUpdatedAt().isAfter(right.getUpdatedAt()) ? left : right
+                ));
     }
 
     private Map<Long, UserAssetInventory> inventoriesById(List<BookshelfItem> items) {
@@ -262,36 +357,60 @@ public class BookshelfService {
     }
 
     private BookshelfRenderItemResponse toRenderItem(
+            Long viewerUserId,
             BookshelfItem item,
+            Map<Long, BookshelfSection> sectionsById,
             Map<Long, UserBook> userBooks,
             Map<Long, Book> books,
+            Map<Long, ReadingRecord> readingRecords,
             Map<Long, UserAssetInventory> inventories,
             Map<Long, Asset> assets
     ) {
         UserBook userBook = userBooks.get(item.getUserBookId());
         Book book = userBook == null ? null : books.get(userBook.getBookId());
+        BookshelfSection section = sectionsById.get(item.getBookshelfSectionId());
+        ReadingRecord record = userBook == null ? null : visibleReadingRecord(viewerUserId, userBook, readingRecords.get(userBook.getId()));
         UserAssetInventory inventory = inventories.get(item.getAssetInventoryId());
         Asset asset = inventory == null ? null : assets.get(inventory.getAssetId());
         return new BookshelfRenderItemResponse(
                 item.getId(),
                 item.getItemType(),
                 item.getBookshelfSectionId(),
+                section == null ? null : section.getRowNo(),
+                section == null ? null : section.getColumnNo(),
                 item.getSlotNo(),
+                item.getFacingDirection(),
                 item.getDisplayStyle(),
+                item.getRotationDeg(),
                 item.getUserBookId(),
-                book == null ? null : new BookSummaryResponse(
-                        book.getId(),
-                        book.getTitle(),
-                        book.getAuthor(),
-                        book.getCoverImageUrl()
-                ),
+                UserBookSummaryResponse.from(userBook),
+                BookSummaryResponse.from(book),
                 item.getAssetInventoryId(),
                 asset == null ? null : new AssetSummaryResponse(
                         asset.getId(),
                         asset.getCode(),
                         asset.getName(),
                         asset.getPreviewImageUrl()
-                )
+                ),
+                ReadingRecordSummaryResponse.from(record)
         );
+    }
+
+    private ReadingRecord visibleReadingRecord(Long viewerUserId, UserBook userBook, ReadingRecord record) {
+        if (record == null || userBook == null) {
+            return null;
+        }
+        if (userBook.getUserId().equals(viewerUserId)) {
+            return record;
+        }
+        if ("PUBLIC".equalsIgnoreCase(record.getVisibilityScope())) {
+            return record;
+        }
+        if ("FOLLOWERS".equalsIgnoreCase(record.getVisibilityScope())
+                && viewerUserId != null
+                && followRepository.existsByFollowerUserIdAndFollowingUserId(viewerUserId, userBook.getUserId())) {
+            return record;
+        }
+        return null;
     }
 }

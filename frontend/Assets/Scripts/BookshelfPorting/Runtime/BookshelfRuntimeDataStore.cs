@@ -244,9 +244,9 @@ namespace BookshelfPorting.Runtime
                 isPublic = book.reportVisibility == VisibilityScope.Public,
                 reportVisibility = book.reportVisibility,
                 memoPreview = ResolveMemoPreview(book),
-                reportTitle = string.Empty,
-                reportBody = string.Empty,
-                reportUpdatedLabel = string.Empty
+                reportTitle = book.reportTitle ?? string.Empty,
+                reportBody = book.reportBody ?? string.Empty,
+                reportUpdatedLabel = book.reportUpdatedLabel ?? string.Empty
             };
         }
 
@@ -273,6 +273,9 @@ namespace BookshelfPorting.Runtime
             meta.isPublic = meta.reportVisibility == VisibilityScope.Public;
             book.reportVisibility = meta.reportVisibility;
             book.isPublic = meta.isPublic;
+            book.reportTitle = meta.reportTitle;
+            book.reportBody = meta.reportBody;
+            book.reportUpdatedLabel = meta.reportUpdatedLabel;
             if (string.IsNullOrWhiteSpace(meta.memoPreview) && !string.IsNullOrWhiteSpace(meta.reportBody))
             {
                 meta.memoPreview = meta.reportBody;
