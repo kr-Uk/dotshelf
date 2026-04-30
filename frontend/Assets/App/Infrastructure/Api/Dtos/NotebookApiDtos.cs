@@ -344,6 +344,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("likeCount")]
         public long LikeCount { get; set; }
 
+        [JsonProperty("liked")]
+        public bool Liked { get; set; }
+
         [JsonProperty("layoutVersion")]
         public long LayoutVersion { get; set; }
 
@@ -427,6 +430,18 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("readingRecordCount")]
         public long ReadingRecordCount { get; set; }
+
+        [JsonProperty("weeklyVisitorCount")]
+        public long WeeklyVisitorCount { get; set; }
+
+        [JsonProperty("ownerNickname")]
+        public string OwnerNickname { get; set; }
+
+        [JsonProperty("ownerProfileImageUrl")]
+        public string OwnerProfileImageUrl { get; set; }
+
+        [JsonProperty("ownerIntroduction")]
+        public string OwnerIntroduction { get; set; }
     }
 
     [Serializable]
@@ -683,6 +698,15 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("onboarded")]
         public bool Onboarded { get; set; }
+
+        [JsonProperty("mutual")]
+        public bool Mutual { get; set; }
+
+        [JsonProperty("following")]
+        public bool Following { get; set; }
+
+        [JsonProperty("blocked")]
+        public bool Blocked { get; set; }
     }
 
     [Serializable]
@@ -716,6 +740,15 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("profileImageUrl")]
         public string ProfileImageUrl { get; set; }
+
+        [JsonProperty("mutual")]
+        public bool Mutual { get; set; }
+
+        [JsonProperty("following")]
+        public bool Following { get; set; }
+
+        [JsonProperty("blocked")]
+        public bool Blocked { get; set; }
     }
 
     [Serializable]
@@ -723,6 +756,9 @@ namespace App.Infrastructure.Api.Dtos
     {
         [JsonProperty("users")]
         public List<UserSummaryResponseDto> Users { get; set; }
+
+        [JsonProperty("nextCursor")]
+        public string NextCursor { get; set; }
     }
 
     [Serializable]
@@ -812,6 +848,9 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("visibilityScope")]
         public string VisibilityScope { get; set; }
+
+        [JsonProperty("anonymous")]
+        public bool Anonymous { get; set; }
     }
 
     [Serializable]
@@ -826,8 +865,20 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("writerUserId")]
         public long WriterUserId { get; set; }
 
+        [JsonProperty("writerNickname")]
+        public string WriterNickname { get; set; }
+
+        [JsonProperty("writerProfileImageUrl")]
+        public string WriterProfileImageUrl { get; set; }
+
+        [JsonProperty("anonymous")]
+        public bool Anonymous { get; set; }
+
         [JsonProperty("postItInventoryId")]
         public long? PostItInventoryId { get; set; }
+
+        [JsonProperty("postItPreviewImageUrl")]
+        public string PostItPreviewImageUrl { get; set; }
 
         [JsonProperty("content")]
         public string Content { get; set; }
@@ -837,6 +888,12 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("replyCount")]
         public int ReplyCount { get; set; }
+
+        [JsonProperty("reply")]
+        public GuestbookReplyResponseDto Reply { get; set; }
+
+        [JsonProperty("createdAt")]
+        public string CreatedAt { get; set; }
     }
 
     [Serializable]
@@ -844,11 +901,17 @@ namespace App.Infrastructure.Api.Dtos
     {
         [JsonProperty("guestbooks")]
         public List<GuestbookResponseDto> Guestbooks { get; set; }
+
+        [JsonProperty("nextCursor")]
+        public string NextCursor { get; set; }
     }
 
     [Serializable]
     public sealed class GuestbookReplyRequestDto
     {
+        [JsonProperty("postItInventoryId")]
+        public long? PostItInventoryId { get; set; }
+
         [JsonProperty("content")]
         public string Content { get; set; }
 
@@ -868,11 +931,43 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("writerUserId")]
         public long WriterUserId { get; set; }
 
+        [JsonProperty("writerNickname")]
+        public string WriterNickname { get; set; }
+
+        [JsonProperty("postItInventoryId")]
+        public long? PostItInventoryId { get; set; }
+
+        [JsonProperty("postItPreviewImageUrl")]
+        public string PostItPreviewImageUrl { get; set; }
+
         [JsonProperty("content")]
         public string Content { get; set; }
 
         [JsonProperty("visibilityScope")]
         public string VisibilityScope { get; set; }
+
+        [JsonProperty("createdAt")]
+        public string CreatedAt { get; set; }
+    }
+
+    [Serializable]
+    public sealed class GuestbookPostItWhitelistRequestDto
+    {
+        [JsonProperty("allowAll")]
+        public bool AllowAll { get; set; }
+
+        [JsonProperty("allowedAssetIds")]
+        public List<long> AllowedAssetIds { get; set; }
+    }
+
+    [Serializable]
+    public sealed class GuestbookPostItWhitelistResponseDto
+    {
+        [JsonProperty("allowAll")]
+        public bool AllowAll { get; set; }
+
+        [JsonProperty("allowedAssetIds")]
+        public List<long> AllowedAssetIds { get; set; }
     }
 
     [Serializable]
@@ -999,11 +1094,88 @@ namespace App.Infrastructure.Api.Dtos
         public int CommentCount { get; set; }
     }
 
+    /// <summary>
+    /// 대시보드 \"독후감 풀 목록\" 모달 응답 (v1.0 갱신).
+    /// 정렬·cursor 페이지네이션 지원, content/likeCount/commentCount/viewCount 노출.
+    /// </summary>
     [Serializable]
-    public sealed class ReadingRecordListResponseDto
+    public sealed class ReadingRecordSummaryDto
     {
-        [JsonProperty("records")]
-        public List<ReadingRecordResponseDto> Records { get; set; }
+        [JsonProperty("id")]
+        public long Id { get; set; }
+
+        [JsonProperty("bookId")]
+        public long BookId { get; set; }
+
+        [JsonProperty("bookTitle")]
+        public string BookTitle { get; set; }
+
+        [JsonProperty("content")]
+        public string Content { get; set; }
+
+        [JsonProperty("likeCount")]
+        public int LikeCount { get; set; }
+
+        [JsonProperty("commentCount")]
+        public int CommentCount { get; set; }
+
+        [JsonProperty("viewCount")]
+        public int ViewCount { get; set; }
+
+        [JsonProperty("createdAt")]
+        public string CreatedAt { get; set; }
+    }
+
+    [Serializable]
+    public sealed class ReadingRecordPageResponseDto
+    {
+        [JsonProperty("items")]
+        public List<ReadingRecordSummaryDto> Items { get; set; }
+
+        [JsonProperty("nextCursor")]
+        public string NextCursor { get; set; }
+    }
+
+    /// <summary>
+    /// 대시보드 \"보유 책 풀 목록\" 모달 응답 (v1.0 갱신).
+    /// title/author/publisher/publishedDate/coverImageUrl/addedAt — 카드에 노출되는 필드만.
+    /// </summary>
+    [Serializable]
+    public sealed class OwnedBookSummaryDto
+    {
+        [JsonProperty("userBookId")]
+        public long UserBookId { get; set; }
+
+        [JsonProperty("bookId")]
+        public long BookId { get; set; }
+
+        [JsonProperty("title")]
+        public string Title { get; set; }
+
+        [JsonProperty("author")]
+        public string Author { get; set; }
+
+        [JsonProperty("publisher")]
+        public string Publisher { get; set; }
+
+        [JsonProperty("publishedDate")]
+        public string PublishedDate { get; set; }
+
+        [JsonProperty("coverImageUrl")]
+        public string CoverImageUrl { get; set; }
+
+        [JsonProperty("addedAt")]
+        public string AddedAt { get; set; }
+    }
+
+    [Serializable]
+    public sealed class OwnedBookListResponseDto
+    {
+        [JsonProperty("items")]
+        public List<OwnedBookSummaryDto> Items { get; set; }
+
+        [JsonProperty("nextCursor")]
+        public string NextCursor { get; set; }
     }
 
     [Serializable]

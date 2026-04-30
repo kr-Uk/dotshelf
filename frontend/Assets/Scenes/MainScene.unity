@@ -276,6 +276,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &6124691
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -793,6 +794,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &42200674
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -972,6 +974,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &75659044
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -1061,6 +1064,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &111105925
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -1150,6 +1154,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &142005729
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -1317,6 +1322,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &158722234
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -1406,6 +1412,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &159689455
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -1517,6 +1524,91 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 173877948}
   m_Mesh: {fileID: 4300000, guid: 5b8be49950753b1409dc5598760848b2, type: 3}
+--- !u!1001 &174960807
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0.058
+      objectReference: {fileID: 0}
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.7071068
+      objectReference: {fileID: 0}
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0.7071068
+      objectReference: {fileID: 0}
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: -90
+      objectReference: {fileID: 0}
+    - target: {fileID: 6185405035559558772, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8602335142272629924, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_PanelSettings
+      value: 
+      objectReference: {fileID: 11400000, guid: a903632d769244fe7b56e889e093ff70, type: 2}
+    - target: {fileID: 8680900342760567451, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: overridePanelSettings
+      value: 
+      objectReference: {fileID: 11400000, guid: a903632d769244fe7b56e889e093ff70, type: 2}
+    - target: {fileID: 8806696963682412732, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_Name
+      value: DashboardScreenPanel
+      objectReference: {fileID: 0}
+    - target: {fileID: 8806696963682412732, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8806696963682412732, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+      propertyPath: m_StaticEditorFlags
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
 --- !u!1 &182100950
 GameObject:
   m_ObjectHideFlags: 0
@@ -1674,6 +1766,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &184445892
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -2128,6 +2221,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &218636166
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -2216,6 +2310,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &223342677
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -2967,6 +3062,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &304676502
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -3145,6 +3241,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &315432673
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -3414,6 +3511,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &324911363
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -4000,6 +4098,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &350470381
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -4154,6 +4253,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &366347291
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -4761,6 +4861,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &437778424
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -5998,6 +6099,8 @@ MonoBehaviour:
   bookshelfGenerator: {fileID: 617729537}
   dataStore: {fileID: 617729534}
   notebookScreenController: {fileID: 975120519}
+  useExternalDashboardPanel: 1
+  externalDashboardPanel: {fileID: 1023901110}
   guestbookOwnerMode: 1
 --- !u!114 &617729534
 MonoBehaviour:
@@ -6670,6 +6773,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &681160237
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -7015,6 +7119,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &717779771
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -7347,6 +7452,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &748350106
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -7917,6 +8023,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &813544824
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -8479,6 +8586,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &865930144
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -8568,6 +8676,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &866555502
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -9026,6 +9135,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &888543311
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -9115,6 +9225,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &903560343
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -9204,6 +9315,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &911917708
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -9293,6 +9405,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &916009222
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -9314,6 +9427,60 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.040000122, y: 0.24499999, z: 0.17198229}
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!1 &943278451
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 943278453}
+  - component: {fileID: 943278452}
+  m_Layer: 0
+  m_Name: PanelInputConfiguration
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &943278452
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 943278451}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 19106, guid: 0000000000000000e000000000000000, type: 0}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.dll::UnityEngine.UIElements.PanelInputConfiguration
+  m_Settings:
+    m_ProcessWorldSpaceInput: 1
+    m_InteractionLayers:
+      serializedVersion: 2
+      m_Bits: 51
+    m_MaxInteractionDistance: Infinity
+    m_DefaultEventCameraIsMainCamera: 1
+    m_EventCameras: []
+    m_PanelInputRedirection: 2
+    m_AutoCreatePanelComponents: 1
+--- !u!4 &943278453
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 943278451}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &947580000
 GameObject:
   m_ObjectHideFlags: 0
@@ -9657,6 +9824,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &984855480
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -9746,6 +9914,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &985993326
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -9991,6 +10160,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1009922934
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -10192,6 +10362,11 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1019645421}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &1023901110 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 8806696963682412732, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}
+  m_PrefabInstance: {fileID: 174960807}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1060287185
 GameObject:
   m_ObjectHideFlags: 0
@@ -10350,6 +10525,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1076292151
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -10798,6 +10974,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1167254981
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -10977,6 +11154,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1183729575
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -11462,6 +11640,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1250813577
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -11551,6 +11730,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1260450783
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -12000,6 +12180,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1280600698
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -12395,6 +12576,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1304568967
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -12731,6 +12913,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1337012795
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -13434,7 +13617,7 @@ MonoBehaviour:
   bootstrapOnAwake: 1
   installInEditMode: 1
   saveGeneratedContentInEditMode: 1
-  apiConfig: {fileID: 11400000, guid: 2af40e306b4c4e21907fdd409c117be8, type: 2}
+  apiConfig: {fileID: 0}
 --- !u!1 &1420543617
 GameObject:
   m_ObjectHideFlags: 0
@@ -14165,6 +14348,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1521271360
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -14591,6 +14775,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1555371254
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -15698,6 +15883,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1625370674
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -16426,7 +16612,7 @@ Transform:
   m_GameObject: {fileID: 1705261251}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0.7071068, z: -0, w: 0.7071068}
-  m_LocalPosition: {x: -0.92, y: 1.18, z: 0.12}
+  m_LocalPosition: {x: -0.5, y: 1.18, z: 0.12}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -17310,6 +17496,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1791343661
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -17668,6 +17855,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1822729422
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -18134,6 +18322,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1879986340
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -18313,6 +18502,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1922215244
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -18883,6 +19073,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &1963844497
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -19916,6 +20107,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &2068651357
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -20395,6 +20587,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &2091334203
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -20686,6 +20879,7 @@ MonoBehaviour:
   isDecoration: 0
   isRead: 0
   isPublic: 1
+  reportVisibility: 0
 --- !u!65 &2136286267
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -20808,3 +21002,5 @@ SceneRoots:
   - {fileID: 617729540}
   - {fileID: 1332541063}
   - {fileID: 268391223}
+  - {fileID: 174960807}
+  - {fileID: 943278453}

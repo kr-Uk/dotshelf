@@ -3,6 +3,7 @@ package com.dotshelf.domain.book.dto;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import com.dotshelf.domain.book.entity.Book;
@@ -338,6 +339,25 @@ public final class BookDtos {
     }
 
     public record UserBookPlacementListResponse(List<UserBookPlacementResponse> books, String nextCursor) {
+    }
+
+    /**
+     * 대시보드 \"보유 책 풀 목록\" 카드용 경량 DTO. v1.0 갱신 — 정렬·페이지네이션을 위해 추가.
+     * 카드에 노출되는 필드(cover, title, author, publisher, publishedDate, addedAt)만 포함.
+     */
+    public record OwnedBookSummary(
+            Long userBookId,
+            Long bookId,
+            String title,
+            String author,
+            String publisher,
+            LocalDate publishedDate,
+            String coverImageUrl,
+            LocalDateTime addedAt
+    ) {
+    }
+
+    public record OwnedBookListResponse(List<OwnedBookSummary> items, String nextCursor) {
     }
 
     private static BigDecimal averageRating(Book book) {

@@ -7,12 +7,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.CommentListResponse;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.CommentRequest;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.CommentResponse;
-import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordListResponse;
+import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordPageResponse;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordRequest;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordResponse;
 import com.dotshelf.domain.readingrecord.service.ReadingRecordCommentService;
@@ -40,8 +41,13 @@ public class ReadingRecordController {
     }
 
     @GetMapping("/users/{userId}/reading-records")
-    public ApiResponse<ReadingRecordListResponse> getUserRecords(@PathVariable Long userId) {
-        return ApiResponse.success(readingRecordService.getUserRecords(userId));
+    public ApiResponse<ReadingRecordPageResponse> getUserRecords(
+            @PathVariable Long userId,
+            @RequestParam(defaultValue = "LATEST") String sort,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") int limit
+    ) {
+        return ApiResponse.success(readingRecordService.getUserRecords(userId, sort, cursor, limit));
     }
 
     @PostMapping("/reading-records")

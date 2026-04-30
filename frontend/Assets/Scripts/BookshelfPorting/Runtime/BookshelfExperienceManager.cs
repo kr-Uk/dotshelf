@@ -6,6 +6,8 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
+using UIDocument = UnityEngine.UIElements.UIDocument;
+using RuntimePanelUtils = UnityEngine.UIElements.RuntimePanelUtils;
 
 namespace BookshelfPorting.Runtime
 {
@@ -347,6 +349,18 @@ namespace BookshelfPorting.Runtime
         private GameObject guestbookPanel;
         private GameObject guestbookPreviewPanel;
         private Canvas guestbookBoardCanvas;
+
+        // (v1.0 dashboard 통합 — MR #61) GuestbookBoard 자리에 우리 새 dashboard prefab을 띄우는 모드.
+        // useExternalDashboardPanel = true 일 때 옛 guestbookPanel/Preview 생성을 skip하고 externalDashboardPanel만 사용.
+        // false면 종전과 동일 (옛 방명록 UI). cleanup은 phase 5 별도 PR에서.
+        [Header("Dashboard Integration (v1.0)")]
+        [Tooltip("GuestbookBoard 자리에 새 UI Toolkit dashboard prefab을 띄우는 모드. " +
+                "MR #61 시점에 UI Toolkit World Space input 라우팅이 BookshelfPorting raycast와 충돌해 " +
+                "click 동작 안 함. 별도 phase에서 fix 후 true로 토글 (default false로 옛 guestbookBoardCanvas 유지).")]
+        [SerializeField] private bool useExternalDashboardPanel = false;
+        [Tooltip("GuestbookBoard 자리에 띄울 새 dashboard prefab 인스턴스. 보통 scene root에 두고 코드가 reparent.")]
+        [SerializeField] private GameObject externalDashboardPanel;
+
         [SerializeField] private bool guestbookOwnerMode = true;
         private bool isGuestbookPublic = true;
         private int guestbookVisitorCount = 123;
@@ -572,6 +586,15 @@ namespace BookshelfPorting.Runtime
             {
                 // Edit mode owns input on the main scene — bail before any focus
                 // shortcut, click-to-focus, or hit test runs.
+                return;
+            }
+
+            // (v1.0 dashboard 통합 — MR #61) Guestbook focus 중이고 외부 dashboard prefab 모드면
+            // UI Toolkit이 자체 입력 처리. BookshelfExperienceManager의 자체 raycast가
+            // dashboard 안 클릭을 가로채지 않도록 input 처리 skip.
+            // (focus 진입/이탈은 다른 hit area 또는 ESC로 처리됨.)
+            if (useExternalDashboardPanel && CurrentFocusArea == ExperienceFocusArea.Guestbook)
+            {
                 return;
             }
 
@@ -7468,6 +7491,20 @@ namespace BookshelfPorting.Runtime
 
         private void EnsureGuestbookBoardUi()
         {
+            // (v1.0 dashboard 통합 — MR #61) 외부 prefab이 scene에 인스턴스화되어 있으면 어떤 모드든 시작 시 inactive 보장.
+            // useExternalDashboardPanel=false (default — input 라우팅 fix 전까지 옛 guestbookBoardCanvas 사용)
+            // 일 때도 prefab이 World Space에 떠서 raycast/render 영향 주지 않도록 강제 hide.
+            if (externalDashboardPanel != null && externalDashboardPanel.activeSelf)
+            {
+                externalDashboardPanel.SetActive(false);
+            }
+
+            if (useExternalDashboardPanel)
+            {
+                // 외부 모드 — 옛 guestbookBoardCanvas 생성 skip. reparent + active 토글은 focus 진입 시점에.
+                return;
+            }
+
             if (guestbookBoardCanvas != null)
             {
                 return;
@@ -7850,6 +7887,28 @@ namespace BookshelfPorting.Runtime
 
         private void SetGuestbookFocusPresentation(bool isFocused)
         {
+            // (v1.0 dashboard 통합) 외부 prefab 모드면 우리 DashboardScreenPanel만 토글.
+            // focus 진입 시점에 lazy reparent — BookshelfGenerator 초기화가 안정된 후라 안전.
+            if (useExternalDashboardPanel)
+            {
+                if (externalDashboardPanel != null)
+                {
+                    if (isFocused)
+                    {
+                        var dynamicHitArea = FindFirstObjectByType<GuestbookBoardHitArea>();
+                        if (dynamicHitArea != null && externalDashboardPanel.transform.parent != dynamicHitArea.transform)
+                        {
+                            externalDashboardPanel.transform.SetParent(dynamicHitArea.transform, false);
+                            externalDashboardPanel.transform.localPosition = new Vector3(-0.058f, 0f, 0f);
+                            externalDashboardPanel.transform.localRotation = Quaternion.Euler(0f, -90f, 0f);
+                            externalDashboardPanel.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
+                        }
+                    }
+                    externalDashboardPanel.SetActive(isFocused);
+                }
+                return;
+            }
+
             if (guestbookPanel != null)
             {
                 guestbookPanel.SetActive(isFocused);
@@ -9593,7 +9652,41 @@ namespace BookshelfPorting.Runtime
 
         private static bool IsPointerOverUi()
         {
-            return EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
+            // uGUI Canvas는 EventSystem이 인식
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+            {
+                return true;
+            }
+
+            // (v1.0 dashboard 통합 — MR #61) UI Toolkit World Space panel 위에 있는지도 체크.
+            // 우리 DashboardScreenPanel은 UIDocument 기반이라 EventSystem.IsPointerOverGameObject로 안 잡힘.
+            // 이걸 안 잡으면 BookshelfExperienceManager.Update가 dashboard 안 버튼 클릭을 가로채 자체 raycast 처리.
+            if (Mouse.current == null)
+            {
+                return false;
+            }
+            Vector2 pointerScreen = Mouse.current.position.ReadValue();
+            var documents = Object.FindObjectsByType<UIDocument>(FindObjectsSortMode.None);
+            for (int i = 0; i < documents.Length; i++)
+            {
+                UIDocument document = documents[i];
+                if (document == null || !document.isActiveAndEnabled)
+                {
+                    continue;
+                }
+                var root = document.rootVisualElement;
+                if (root == null || root.panel == null)
+                {
+                    continue;
+                }
+                Vector2 panelPosition = RuntimePanelUtils.ScreenToPanel(root.panel, pointerScreen);
+                var picked = root.panel.Pick(panelPosition);
+                if (picked != null)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static void EnsureEventSystem()

@@ -6,6 +6,7 @@ import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.entity.SpaceTemplate;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 public final class SpaceDtos {
 
@@ -20,11 +21,16 @@ public final class SpaceDtos {
             String guestbookVisibilityScope,
             long visitCount,
             long likeCount,
+            boolean liked,
             long layoutVersion,
             Long currentThemeInventoryId
     ) {
 
         public static SpaceResponse from(Space space) {
+            return from(space, false);
+        }
+
+        public static SpaceResponse from(Space space, boolean liked) {
             return new SpaceResponse(
                     space.getId(),
                     space.getOwnerUserId(),
@@ -33,6 +39,7 @@ public final class SpaceDtos {
                     space.getGuestbookVisibilityScope(),
                     space.getVisitCount(),
                     space.getLikeCount(),
+                    liked,
                     space.getLayoutVersion(),
                     space.getCurrentThemeInventoryId()
             );
@@ -45,7 +52,11 @@ public final class SpaceDtos {
             long followingCount,
             long bookshelfCount,
             long bookCount,
-            long readingRecordCount
+            long readingRecordCount,
+            long weeklyVisitorCount,
+            String ownerNickname,
+            String ownerProfileImageUrl,
+            String ownerIntroduction
     ) {
     }
 
@@ -103,5 +114,18 @@ public final class SpaceDtos {
     }
 
     public record SpaceTemplateListResponse(List<SpaceTemplateResponse> templates) {
+    }
+
+    public record GuestbookPostItWhitelistRequest(
+            @NotNull(message = "allowAll은 필수입니다.")
+            Boolean allowAll,
+            List<Long> allowedAssetIds
+    ) {
+    }
+
+    public record GuestbookPostItWhitelistResponse(
+            boolean allowAll,
+            List<Long> allowedAssetIds
+    ) {
     }
 }
