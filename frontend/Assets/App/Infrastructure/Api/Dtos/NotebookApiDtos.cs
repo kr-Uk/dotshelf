@@ -375,6 +375,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("likeCount")]
         public long LikeCount { get; set; }
 
+        [JsonProperty("liked")]
+        public bool Liked { get; set; }
+
         [JsonProperty("layoutVersion")]
         public long LayoutVersion { get; set; }
 
@@ -458,6 +461,18 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("readingRecordCount")]
         public long ReadingRecordCount { get; set; }
+
+        [JsonProperty("weeklyVisitorCount")]
+        public long WeeklyVisitorCount { get; set; }
+
+        [JsonProperty("ownerNickname")]
+        public string OwnerNickname { get; set; }
+
+        [JsonProperty("ownerProfileImageUrl")]
+        public string OwnerProfileImageUrl { get; set; }
+
+        [JsonProperty("ownerIntroduction")]
+        public string OwnerIntroduction { get; set; }
     }
 
     [Serializable]
@@ -714,6 +729,15 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("onboarded")]
         public bool Onboarded { get; set; }
+
+        [JsonProperty("mutual")]
+        public bool Mutual { get; set; }
+
+        [JsonProperty("following")]
+        public bool Following { get; set; }
+
+        [JsonProperty("blocked")]
+        public bool Blocked { get; set; }
     }
 
     [Serializable]
@@ -747,6 +771,15 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("profileImageUrl")]
         public string ProfileImageUrl { get; set; }
+
+        [JsonProperty("mutual")]
+        public bool Mutual { get; set; }
+
+        [JsonProperty("following")]
+        public bool Following { get; set; }
+
+        [JsonProperty("blocked")]
+        public bool Blocked { get; set; }
     }
 
     [Serializable]
@@ -754,6 +787,9 @@ namespace App.Infrastructure.Api.Dtos
     {
         [JsonProperty("users")]
         public List<UserSummaryResponseDto> Users { get; set; }
+
+        [JsonProperty("nextCursor")]
+        public string NextCursor { get; set; }
     }
 
     [Serializable]
@@ -843,6 +879,9 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("visibilityScope")]
         public string VisibilityScope { get; set; }
+
+        [JsonProperty("anonymous")]
+        public bool Anonymous { get; set; }
     }
 
     [Serializable]
@@ -857,8 +896,20 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("writerUserId")]
         public long WriterUserId { get; set; }
 
+        [JsonProperty("writerNickname")]
+        public string WriterNickname { get; set; }
+
+        [JsonProperty("writerProfileImageUrl")]
+        public string WriterProfileImageUrl { get; set; }
+
+        [JsonProperty("anonymous")]
+        public bool Anonymous { get; set; }
+
         [JsonProperty("postItInventoryId")]
         public long? PostItInventoryId { get; set; }
+
+        [JsonProperty("postItPreviewImageUrl")]
+        public string PostItPreviewImageUrl { get; set; }
 
         [JsonProperty("content")]
         public string Content { get; set; }
@@ -868,6 +919,12 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("replyCount")]
         public int ReplyCount { get; set; }
+
+        [JsonProperty("reply")]
+        public GuestbookReplyResponseDto Reply { get; set; }
+
+        [JsonProperty("createdAt")]
+        public string CreatedAt { get; set; }
     }
 
     [Serializable]
@@ -875,11 +932,17 @@ namespace App.Infrastructure.Api.Dtos
     {
         [JsonProperty("guestbooks")]
         public List<GuestbookResponseDto> Guestbooks { get; set; }
+
+        [JsonProperty("nextCursor")]
+        public string NextCursor { get; set; }
     }
 
     [Serializable]
     public sealed class GuestbookReplyRequestDto
     {
+        [JsonProperty("postItInventoryId")]
+        public long? PostItInventoryId { get; set; }
+
         [JsonProperty("content")]
         public string Content { get; set; }
 
@@ -899,11 +962,43 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("writerUserId")]
         public long WriterUserId { get; set; }
 
+        [JsonProperty("writerNickname")]
+        public string WriterNickname { get; set; }
+
+        [JsonProperty("postItInventoryId")]
+        public long? PostItInventoryId { get; set; }
+
+        [JsonProperty("postItPreviewImageUrl")]
+        public string PostItPreviewImageUrl { get; set; }
+
         [JsonProperty("content")]
         public string Content { get; set; }
 
         [JsonProperty("visibilityScope")]
         public string VisibilityScope { get; set; }
+
+        [JsonProperty("createdAt")]
+        public string CreatedAt { get; set; }
+    }
+
+    [Serializable]
+    public sealed class GuestbookPostItWhitelistRequestDto
+    {
+        [JsonProperty("allowAll")]
+        public bool AllowAll { get; set; }
+
+        [JsonProperty("allowedAssetIds")]
+        public List<long> AllowedAssetIds { get; set; }
+    }
+
+    [Serializable]
+    public sealed class GuestbookPostItWhitelistResponseDto
+    {
+        [JsonProperty("allowAll")]
+        public bool AllowAll { get; set; }
+
+        [JsonProperty("allowedAssetIds")]
+        public List<long> AllowedAssetIds { get; set; }
     }
 
     [Serializable]

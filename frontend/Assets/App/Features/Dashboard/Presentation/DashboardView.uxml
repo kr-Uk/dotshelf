@@ -1,0 +1,234 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <ui:VisualElement name="dashboard-root" class="dashboard-root">
+
+        <ui:VisualElement name="dashboard-body" class="dashboard-body">
+
+            <ui:VisualElement name="left-pane" class="dashboard-pane left-pane">
+
+                <ui:VisualElement name="profile-header" class="profile-header">
+                    <ui:VisualElement name="profile-image" class="profile-image" />
+                    <ui:VisualElement name="profile-text-block" class="profile-text-block">
+                        <ui:VisualElement name="profile-top-row" class="profile-top-row">
+                            <ui:Label name="nickname-label" class="nickname-label" text="Loading..." />
+                            <ui:VisualElement name="follow-stats" class="follow-stats">
+                                <ui:Button name="following-count-label" class="follow-stat follow-stat-button" text="팔로잉 0" />
+                                <ui:Button name="followers-count-label" class="follow-stat follow-stat-button" text="팔로워 0" />
+                            </ui:VisualElement>
+                        </ui:VisualElement>
+                        <ui:Label name="introduction-label" class="introduction-label" text="" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:VisualElement name="stats-row" class="stats-row">
+                    <ui:VisualElement name="stat-likes" class="stat-cell">
+                        <ui:Button name="like-toggle-button" class="like-toggle-button" text="♥" />
+                        <ui:Label name="like-count-label" class="stat-value" text="0" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="stat-books" class="stat-cell">
+                        <ui:Label class="stat-icon" text="📚" />
+                        <ui:Label name="book-count-label" class="stat-value" text="0" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="stat-records" class="stat-cell">
+                        <ui:Label class="stat-icon" text="✎" />
+                        <ui:Label name="record-count-label" class="stat-value" text="0" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:VisualElement name="recent-books-section" class="section-card">
+                    <ui:VisualElement class="section-card-header">
+                        <ui:Label class="section-title" text="최근 추가한 책" />
+                        <ui:Button name="recent-books-view-all-button" class="section-view-all" text="전체보기" />
+                    </ui:VisualElement>
+                    <ui:ScrollView name="recent-books-carousel" mode="Horizontal" vertical-scroller-visibility="Hidden" horizontal-scroller-visibility="Hidden" class="carousel-scroll" />
+                </ui:VisualElement>
+
+                <ui:VisualElement name="recent-records-section" class="section-card">
+                    <ui:VisualElement class="section-card-header">
+                        <ui:Label class="section-title" text="최근 작성한 독후감" />
+                        <ui:Button name="recent-records-view-all-button" class="section-view-all" text="전체보기" />
+                    </ui:VisualElement>
+                    <ui:ScrollView name="recent-records-carousel" mode="Horizontal" vertical-scroller-visibility="Hidden" horizontal-scroller-visibility="Hidden" class="carousel-scroll" />
+                </ui:VisualElement>
+
+            </ui:VisualElement>
+
+            <ui:VisualElement name="right-pane" class="dashboard-pane right-pane">
+                <ui:VisualElement name="guestbook-header" class="guestbook-header">
+                    <ui:Label name="guestbook-count-label" class="guestbook-count" text="방명록 0" />
+                    <ui:Label name="weekly-visitor-label" class="weekly-visitor" text="이번주 방문자 0" />
+                </ui:VisualElement>
+                <ui:VisualElement name="guestbook-grid" class="guestbook-grid" />
+                <ui:VisualElement name="guestbook-pagination" class="guestbook-pagination">
+                    <ui:Button name="guestbook-prev-button" class="page-button" text="◀" />
+                    <ui:Label name="guestbook-page-label" class="page-label" text="1" />
+                    <ui:Button name="guestbook-next-button" class="page-button" text="▶" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+        </ui:VisualElement>
+
+        <ui:VisualElement name="dashboard-action-overlay" class="dashboard-action-overlay" picking-mode="Ignore">
+            <ui:Button name="edit-dashboard-button" class="bottom-action-button edit-button" text="편집" />
+            <ui:Button name="write-guestbook-button" class="bottom-action-button write-button" text="방명록 작성" />
+        </ui:VisualElement>
+
+        <ui:VisualElement name="owned-books-modal" class="modal-root hidden">
+            <ui:VisualElement class="modal-backdrop" />
+            <ui:VisualElement class="modal-frame modal-frame-large">
+                <ui:VisualElement class="modal-header">
+                    <ui:Label class="modal-title" text="보유한 책" />
+                    <ui:Button name="owned-books-close-button" class="modal-close-button" text="✕" />
+                </ui:VisualElement>
+
+                <ui:VisualElement class="sort-row">
+                    <ui:Button name="owned-books-sort-added-desc" class="sort-button" text="추가한 날짜 순" />
+                    <ui:Button name="owned-books-sort-published-desc" class="sort-button" text="최신순" />
+                    <ui:Button name="owned-books-sort-published-asc" class="sort-button" text="과거순" />
+                    <ui:Button name="owned-books-sort-title" class="sort-button" text="가나다순" />
+                </ui:VisualElement>
+
+                <ui:ScrollView class="modal-scroll" vertical-scroller-visibility="Auto" horizontal-scroller-visibility="Hidden">
+                    <ui:VisualElement name="owned-books-grid" class="book-grid" />
+                </ui:ScrollView>
+
+                <ui:Button name="owned-books-load-more-button" class="modal-action-button secondary" text="더 보기" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="reading-records-modal" class="modal-root hidden">
+            <ui:VisualElement class="modal-backdrop" />
+            <ui:VisualElement class="modal-frame modal-frame-large">
+                <ui:VisualElement class="modal-header">
+                    <ui:Label class="modal-title" text="독후감" />
+                    <ui:Button name="reading-records-close-button" class="modal-close-button" text="✕" />
+                </ui:VisualElement>
+
+                <ui:VisualElement class="sort-row">
+                    <ui:Button name="records-sort-latest" class="sort-button" text="최신" />
+                    <ui:Button name="records-sort-oldest" class="sort-button" text="과거" />
+                    <ui:Button name="records-sort-most-liked" class="sort-button" text="좋아요" />
+                    <ui:Button name="records-sort-most-viewed" class="sort-button" text="조회수" />
+                    <ui:Button name="records-sort-most-commented" class="sort-button" text="댓글" />
+                </ui:VisualElement>
+
+                <ui:ScrollView class="modal-scroll" vertical-scroller-visibility="Auto" horizontal-scroller-visibility="Hidden">
+                    <ui:VisualElement name="reading-records-list" class="record-list" />
+                </ui:ScrollView>
+
+                <ui:Button name="reading-records-load-more-button" class="modal-action-button secondary" text="더 보기" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="dashboard-edit-modal" class="modal-root hidden">
+            <ui:VisualElement class="modal-backdrop" />
+            <ui:VisualElement class="modal-frame">
+                <ui:VisualElement class="modal-header">
+                    <ui:Label class="modal-title" text="대시보드 편집" />
+                    <ui:Button name="dashboard-edit-close-button" class="modal-close-button" text="✕" />
+                </ui:VisualElement>
+
+                <ui:Label class="form-label" text="한 줄 소개 (255자)" />
+                <ui:TextField name="dashboard-edit-introduction" class="form-textarea" multiline="true" max-length="255" />
+
+                <ui:Label class="form-label" text="방명록 공개 범위" />
+                <ui:VisualElement class="visibility-row">
+                    <ui:Button name="visibility-public" class="visibility-button" text="전체 공개" />
+                    <ui:Button name="visibility-followers" class="visibility-button" text="팔로워만" />
+                    <ui:Button name="visibility-private" class="visibility-button" text="비공개" />
+                </ui:VisualElement>
+
+                <ui:Label class="form-label" text="허용할 포스트잇 스타일" />
+                <ui:Toggle name="dashboard-edit-allow-all-toggle" class="form-toggle" label="모든 스타일 허용" />
+                <ui:ScrollView name="dashboard-edit-postit-list" class="postit-style-scroll" mode="Horizontal" vertical-scroller-visibility="Hidden" horizontal-scroller-visibility="Hidden" />
+
+                <ui:VisualElement class="modal-footer">
+                    <ui:Button name="dashboard-edit-cancel-button" class="modal-action-button secondary" text="취소" />
+                    <ui:Button name="dashboard-edit-submit-button" class="modal-action-button primary" text="저장" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="guestbook-detail-modal" class="modal-root hidden">
+            <ui:VisualElement class="modal-backdrop" />
+            <ui:VisualElement class="modal-frame">
+                <ui:VisualElement class="modal-header">
+                    <ui:Label class="modal-title" text="방명록" />
+                    <ui:Button name="guestbook-detail-close-button" class="modal-close-button" text="✕" />
+                </ui:VisualElement>
+
+                <ui:VisualElement class="guestbook-detail-card">
+                    <ui:Label name="guestbook-detail-content-text" class="guestbook-detail-content-text" />
+                    <ui:Label name="guestbook-detail-meta" class="guestbook-detail-meta" />
+                </ui:VisualElement>
+
+                <ui:VisualElement class="form-row guestbook-detail-actions-row">
+                    <ui:Button name="guestbook-detail-report-button" class="modal-action-button secondary small" text="신고" />
+                    <ui:Button name="guestbook-detail-delete-button" class="modal-action-button danger small hidden" text="삭제" />
+                </ui:VisualElement>
+
+                <ui:VisualElement name="guestbook-detail-reply-existing" class="reply-block hidden">
+                    <ui:Label class="form-label" text="답장" />
+                    <ui:VisualElement class="guestbook-detail-card reply-card">
+                        <ui:Label name="guestbook-detail-reply-content" class="guestbook-detail-content-text" />
+                        <ui:Label name="guestbook-detail-reply-meta" class="guestbook-detail-meta" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="form-row guestbook-detail-actions-row">
+                        <ui:Button name="guestbook-detail-reply-delete-button" class="modal-action-button danger small hidden" text="답장 삭제" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:VisualElement name="guestbook-detail-reply-form" class="reply-block hidden">
+                    <ui:Label class="form-label" text="답장 작성 (30자)" />
+                    <ui:TextField name="guestbook-detail-reply-input" class="form-textarea" multiline="true" max-length="30" />
+                    <ui:Label name="guestbook-detail-reply-counter" class="form-counter" text="0 / 30" />
+                    <ui:Label class="form-label" text="포스트잇 스타일" />
+                    <ui:ScrollView name="guestbook-detail-reply-style-list" class="postit-style-scroll" mode="Horizontal" vertical-scroller-visibility="Hidden" horizontal-scroller-visibility="Hidden" />
+                    <ui:VisualElement class="modal-footer">
+                        <ui:Button name="guestbook-detail-reply-submit-button" class="modal-action-button primary" text="답장 작성" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="guestbook-write-modal" class="modal-root hidden">
+            <ui:VisualElement class="modal-backdrop" />
+            <ui:VisualElement class="modal-frame">
+                <ui:VisualElement class="modal-header">
+                    <ui:Label class="modal-title" text="방명록 작성" />
+                    <ui:Button name="guestbook-write-close-button" class="modal-close-button" text="✕" />
+                </ui:VisualElement>
+
+                <ui:Label class="form-label" text="내용 (30자)" />
+                <ui:TextField name="guestbook-write-content" class="form-textarea" multiline="true" max-length="30" />
+                <ui:Label name="guestbook-write-counter" class="form-counter" text="0 / 30" />
+
+                <ui:Label class="form-label" text="포스트잇 스타일" />
+                <ui:ScrollView name="guestbook-write-style-list" class="postit-style-scroll" mode="Horizontal" vertical-scroller-visibility="Hidden" horizontal-scroller-visibility="Hidden" />
+
+                <ui:VisualElement class="form-row">
+                    <ui:Toggle name="guestbook-write-anonymous-toggle" class="form-toggle" label="익명으로 작성 (상대방에게만 공개)" />
+                </ui:VisualElement>
+
+                <ui:VisualElement class="modal-footer">
+                    <ui:Button name="guestbook-write-cancel-button" class="modal-action-button secondary" text="취소" />
+                    <ui:Button name="guestbook-write-submit-button" class="modal-action-button primary" text="작성" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="user-list-modal" class="modal-root hidden">
+            <ui:VisualElement name="user-list-modal-backdrop" class="modal-backdrop" />
+            <ui:VisualElement name="user-list-modal-frame" class="modal-frame">
+                <ui:VisualElement class="modal-header">
+                    <ui:Label name="user-list-modal-title" class="modal-title" text="팔로워" />
+                    <ui:Button name="user-list-modal-close-button" class="modal-close-button" text="✕" />
+                </ui:VisualElement>
+                <ui:ScrollView name="user-list-modal-scroll" class="modal-scroll" vertical-scroller-visibility="Auto" horizontal-scroller-visibility="Hidden">
+                    <ui:VisualElement name="user-list-modal-list" class="user-list" />
+                </ui:ScrollView>
+                <ui:Label name="user-list-modal-empty" class="modal-empty hidden" text="아직 없습니다." />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+    </ui:VisualElement>
+</ui:UXML>

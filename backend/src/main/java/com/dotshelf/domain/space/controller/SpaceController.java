@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dotshelf.domain.space.dto.SpaceDtos.DashboardResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListResponse;
@@ -53,16 +55,17 @@ public class SpaceController {
     }
 
     @GetMapping("/{spaceId}")
-    public ApiResponse<SpaceResponse> getSpace(@PathVariable Long spaceId) {
-        return ApiResponse.success(spaceService.getSpace(spaceId));
+    public ApiResponse<SpaceResponse> getSpace(@CurrentUser Long currentUserId, @PathVariable Long spaceId) {
+        return ApiResponse.success(spaceService.getSpace(currentUserId, spaceId));
     }
 
     @GetMapping("/{spaceId}/dashboard")
     public ApiResponse<DashboardResponse> getDashboard(
+            @CurrentUser Long currentUserId,
             @PathVariable Long spaceId,
             @RequestParam(defaultValue = "daily") String period
     ) {
-        return ApiResponse.success(spaceService.getDashboard(spaceId, period));
+        return ApiResponse.success(spaceService.getDashboard(currentUserId, spaceId, period));
     }
 
     @PostMapping("/{spaceId}/visits")
@@ -112,5 +115,18 @@ public class SpaceController {
     @GetMapping("/templates")
     public ApiResponse<SpaceTemplateListResponse> getTemplates() {
         return ApiResponse.success(spaceService.getTemplates());
+    }
+
+    @GetMapping("/me/guestbook-postit-whitelist")
+    public ApiResponse<GuestbookPostItWhitelistResponse> getGuestbookPostItWhitelist(@CurrentUser Long userId) {
+        return ApiResponse.success(spaceService.getGuestbookPostItWhitelist(userId));
+    }
+
+    @PutMapping("/me/guestbook-postit-whitelist")
+    public ApiResponse<GuestbookPostItWhitelistResponse> updateGuestbookPostItWhitelist(
+            @CurrentUser Long userId,
+            @RequestBody @Valid GuestbookPostItWhitelistRequest request
+    ) {
+        return ApiResponse.success(spaceService.updateGuestbookPostItWhitelist(userId, request));
     }
 }
