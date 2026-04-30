@@ -162,7 +162,11 @@ namespace BookshelfPorting.Runtime
             var apiManager = GetOrAddComponent<APIManager>(systems);
             var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(apiMode, apiBaseUrl, apiTimeoutSeconds));
 
-            apiManager.Configure(apiBaseUrl, apiAccessToken, apiTimeoutSeconds);
+            apiManager.Configure(
+                apiBaseUrl,
+                apiAccessToken,
+                apiTimeoutSeconds,
+                apiConfig != null && apiConfig.EnableVerboseLog);
             var notebookBookRepository = CreateNotebookBookRepository(apiMode, apiManager);
             var searchNotebookBooksUseCase = new SearchNotebookBooksUseCase(notebookBookRepository);
             var loadNotebookMarketBooksUseCase = new LoadNotebookMarketBooksUseCase(notebookBookRepository);

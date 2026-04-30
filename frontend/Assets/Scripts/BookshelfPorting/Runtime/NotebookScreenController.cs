@@ -17,9 +17,11 @@ namespace BookshelfPorting.Runtime
     {
         private static readonly string[] DefaultAdFolders =
         {
+            "Assets/Resources/UI/Ads",
             "Assets/Arts/UI/Ads"
         };
-        private const string MissingAdsWarning = "NotebookScreenController: No ad sprites assigned. Assign Sprite assets from Assets/Arts/UI/Ads to adImages.";
+        private const string AdResourcesPath = "UI/Ads";
+        private const string MissingAdsWarning = "NotebookScreenController: No ad sprites assigned. Assign Sprite assets under Assets/Resources/UI/Ads or to adImages.";
         private const string NotebookPanelSettingsResource = "NotebookPanelSettings";
 
         private enum NotebookUiState
@@ -98,6 +100,7 @@ namespace BookshelfPorting.Runtime
         private static Font cachedUiFont;
         private static Sprite roundedPanelSprite;
         private static Sprite roundedPillSprite;
+        private static Sprite fallbackAdSprite;
         private static readonly string[] BookCategories = { "전체", "읽는 중", "읽음", "안 읽음", "책장 1", "책장 2" };
         private static readonly string[] ReadingStatuses = { "읽음", "읽는 중", "안 읽음" };
         private static readonly DummyBook[] DummyBooks =
@@ -1836,8 +1839,11 @@ namespace BookshelfPorting.Runtime
             EnsureAdImages();
             if (adImages == null || adImages.Length == 0)
             {
-                screenSaverImage.sprite = null;
-                screenSaverImage.color = new Color(0.92f, 0.86f, 0.72f, 1f);
+                screenSaverImage.sprite = GetFallbackAdSprite();
+                screenSaverImage.color = Color.white;
+                screenSaverImage.preserveAspect = true;
+                screenSaverImage.raycastTarget = true;
+                StretchToFill(screenSaverImage.rectTransform);
                 WarnIfAdsMissing();
                 return;
             }
@@ -1860,6 +1866,19 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var resourceAds = Resources.LoadAll<Sprite>(AdResourcesPath);
+            if (resourceAds != null && resourceAds.Length > 0)
+            {
+                adImages = resourceAds
+                    .Where(sprite => sprite != null)
+                    .OrderBy(sprite => sprite.name)
+                    .ToArray();
+                if (adImages.Length > 0)
+                {
+                    return;
+                }
+            }
+
 #if UNITY_EDITOR
             var guids = AssetDatabase.FindAssets("t:Sprite", DefaultAdFolders)
                 .Select(guid => AssetDatabase.GUIDToAssetPath(guid))
@@ -1876,6 +1895,54 @@ namespace BookshelfPorting.Runtime
                 adImages[i] = AssetDatabase.LoadAssetAtPath<Sprite>(guids[i]);
             }
 #endif
+        }
+
+        private static Sprite GetFallbackAdSprite()
+        {
+            if (fallbackAdSprite != null)
+            {
+                return fallbackAdSprite;
+            }
+
+            const int width = 960;
+            const int height = 540;
+            var texture = new Texture2D(width, height, TextureFormat.RGBA32, false)
+            {
+                hideFlags = HideFlags.HideAndDontSave,
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var pixels = new Color32[width * height];
+            for (var y = 0; y < height; y++)
+            {
+                var v = y / (float)(height - 1);
+                for (var x = 0; x < width; x++)
+                {
+                    var u = x / (float)(width - 1);
+                    var sky = Color.Lerp(new Color(0.12f, 0.18f, 0.26f), new Color(0.28f, 0.58f, 0.78f), u);
+                    var warm = Color.Lerp(new Color(0.92f, 0.78f, 0.56f), new Color(0.48f, 0.68f, 0.82f), v);
+                    var color = Color.Lerp(sky, warm, 0.32f);
+
+                    var shelfBand = Mathf.Abs(v - 0.58f) < 0.055f || Mathf.Abs(v - 0.78f) < 0.035f;
+                    if (shelfBand)
+                    {
+                        color = Color.Lerp(color, new Color(0.94f, 0.84f, 0.66f), 0.45f);
+                    }
+
+                    var glow = Mathf.Clamp01(1f - Vector2.Distance(new Vector2(u, v), new Vector2(0.72f, 0.34f)) * 2.2f);
+                    color = Color.Lerp(color, new Color(0.86f, 0.96f, 1f), glow * 0.28f);
+                    pixels[y * width + x] = color;
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+
+            fallbackAdSprite = Sprite.Create(texture, new Rect(0f, 0f, width, height), new Vector2(0.5f, 0.5f), 100f);
+            fallbackAdSprite.name = "GeneratedNotebookAd";
+            fallbackAdSprite.hideFlags = HideFlags.HideAndDontSave;
+            return fallbackAdSprite;
         }
 
         private void WarnIfAdsMissing()

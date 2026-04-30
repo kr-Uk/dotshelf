@@ -63,12 +63,25 @@ namespace App.Infrastructure.Api
 
         public Coroutine GetBooks(string category, int limit, Action<BookListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
+            var normalizedCategory = string.IsNullOrWhiteSpace(category)
+                ? "RANKING"
+                : category.Trim().ToUpperInvariant();
+            var validLimit = Mathf.Max(1, limit);
+
+            if (normalizedCategory == "RECOMMENDED" || normalizedCategory == "RECOMMEND")
+            {
+                return Get<BookListResponseDto>(
+                    WithQuery("/v1/books/recommended", Query("limit", validLimit.ToString())),
+                    onSuccess,
+                    onError);
+            }
+
             var query = new Dictionary<string, string>
             {
-                ["category"] = string.IsNullOrWhiteSpace(category) ? "RANKING" : category,
-                ["limit"] = Mathf.Max(1, limit).ToString()
+                ["sort"] = "POPULAR",
+                ["limit"] = validLimit.ToString()
             };
-            return Get<BookListResponseDto>(WithQuery("/v1/books", query), onSuccess, onError);
+            return Get<BookListResponseDto>(WithQuery("/v1/books/ranking", query), onSuccess, onError);
         }
 
         public Coroutine GetBook(long bookId, Action<BookResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)

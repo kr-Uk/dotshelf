@@ -26,6 +26,7 @@ namespace App.Infrastructure.Api
         [SerializeField] private string baseUrl = "https://api.dotshelf.digital";
         [SerializeField] private string accessToken;
         [SerializeField] private int timeoutSeconds = 10;
+        [SerializeField] private bool enableVerboseLog;
 
         public static APIManager Instance { get; private set; }
         public bool HasAccessToken => !string.IsNullOrWhiteSpace(accessToken);
@@ -42,7 +43,7 @@ namespace App.Infrastructure.Api
             DontDestroyOnLoad(gameObject);
         }
 
-        public void Configure(string apiBaseUrl, string token = null, int timeout = 10)
+        public void Configure(string apiBaseUrl, string token = null, int timeout = 10, bool verboseLog = false)
         {
             baseUrl = NormalizeBaseUrl(apiBaseUrl, baseUrl);
             if (token != null)
@@ -51,6 +52,7 @@ namespace App.Infrastructure.Api
             }
 
             timeoutSeconds = Mathf.Max(1, timeout);
+            enableVerboseLog = verboseLog;
         }
 
         public void SetAccessToken(string token)
@@ -177,6 +179,11 @@ namespace App.Infrastructure.Api
                 var text = request.downloadHandler?.text;
                 try
                 {
+                    if (enableVerboseLog)
+                    {
+                        Debug.Log($"API {request.method} {request.url} OK: {request.responseCode}");
+                    }
+
                     var response = string.IsNullOrWhiteSpace(text)
                         ? default
                         : JsonConvert.DeserializeObject<TResponse>(text);
