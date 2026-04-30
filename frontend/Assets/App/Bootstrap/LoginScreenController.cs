@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using App.Auth;
+using App.Config;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -62,7 +63,9 @@ namespace App.Bootstrap
         private IAuthService authService;
 
         [Header("Development Social Login")]
-        [SerializeField] private bool useDevelopmentSocialTokens = true;
+        // Default off so a forgotten inspector token cannot be sent from a release build.
+        // Editor/dev builds can flip this on per-scene; runtime guard below also restricts use.
+        [SerializeField] private bool useDevelopmentSocialTokens = false;
         [SerializeField] private string googleDevelopmentToken;
         [SerializeField] private SocialTokenType googleDevelopmentTokenType = SocialTokenType.IdToken;
         [SerializeField] private string kakaoDevelopmentToken;
@@ -268,8 +271,32 @@ namespace App.Bootstrap
                 return;
             }
 
-            var client = AuthApiClient.EnsureInstance();
+            // Pull base URL / timeout from AppApiConfig if a host (AppRoot/ConfigLoader)
+            // is present in the scene. Without this the auth client always hits the
+            // hardcoded production URL, ignoring dev/staging environment settings.
+            var apiConfig = ResolveApiConfig();
+            string overrideBaseUrl = null;
+            int overrideTimeoutSeconds = 0;
+            if (apiConfig != null)
+            {
+                overrideBaseUrl = apiConfig.ResolveBaseUrl();
+                overrideTimeoutSeconds = apiConfig.RequestTimeoutSeconds;
+            }
+
+            var client = AuthApiClient.EnsureInstance(overrideBaseUrl, overrideTimeoutSeconds);
             authService = new BackendAuthService(client);
+        }
+
+        private static AppApiConfig ResolveApiConfig()
+        {
+            var appRoot = FindFirstObjectByType<AppRoot>(FindObjectsInactive.Include);
+            if (appRoot != null && appRoot.ApiConfig != null)
+            {
+                return appRoot.ApiConfig;
+            }
+
+            var configLoader = FindFirstObjectByType<ConfigLoader>(FindObjectsInactive.Include);
+            return configLoader != null ? configLoader.ApiConfig : null;
         }
 
         private void SetInteractable(bool interactable)
@@ -348,6 +375,12 @@ namespace App.Bootstrap
                 return false;
             }
 
+#if !(UNITY_EDITOR || DEVELOPMENT_BUILD)
+            // Hard-block release builds from ever using inspector-supplied test tokens,
+            // even if useDevelopmentSocialTokens was accidentally checked on the prefab.
+            Debug.LogWarning("[Auth] Development social tokens are disabled in release builds.");
+            return false;
+#else
             switch (provider)
             {
                 case SocialProvider.Google:
@@ -366,6 +399,7 @@ namespace App.Bootstrap
                 default:
                     return false;
             }
+#endif
         }
 
         public void SetCanvasVisible(bool isVisible)

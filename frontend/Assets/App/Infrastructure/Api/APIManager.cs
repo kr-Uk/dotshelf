@@ -64,7 +64,11 @@ namespace App.Infrastructure.Api
         public void Configure(string apiBaseUrl, string token = null, int timeout = 10)
         {
             baseUrl = NormalizeBaseUrl(apiBaseUrl, baseUrl);
-            if (token != null)
+            // Only override the access token when a non-empty value is supplied.
+            // AppApiConfig.ResolveAccessToken() returns string.Empty when no env var
+            // and no serialized token are set, which would otherwise erase a token
+            // hydrated from PlayerPrefs after a successful social/guest login.
+            if (!string.IsNullOrWhiteSpace(token))
             {
                 accessToken = token;
             }

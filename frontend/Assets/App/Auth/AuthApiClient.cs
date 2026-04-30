@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Text;
+using System.Text.RegularExpressions;
 using App.Infrastructure.Api.Dtos;
 using Newtonsoft.Json;
 using UnityEngine;
@@ -100,7 +101,7 @@ namespace App.Auth
                 request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(requestBodyJson));
             }
 
-            Debug.Log($"[Auth] -> POST {url} body={requestBodyJson ?? "(empty)"}");
+            Debug.Log($"[Auth] -> POST {url} body={Redact(requestBodyJson) ?? "(empty)"}");
 
             using (request)
             {
@@ -108,7 +109,7 @@ namespace App.Auth
 
                 var responseText = request.downloadHandler != null ? request.downloadHandler.text : null;
 
-                Debug.Log($"[Auth] <- {request.responseCode} {url} body={responseText}");
+                Debug.Log($"[Auth] <- {request.responseCode} {url} body={Redact(responseText)}");
 
                 if (request.result != UnityWebRequest.Result.Success)
                 {
@@ -201,6 +202,23 @@ namespace App.Auth
             return Uri.TryCreate(path, UriKind.Absolute, out _)
                 ? path
                 : $"{baseUrl}/{path.TrimStart('/')}";
+        }
+
+        // Redact provider/access/refresh tokens and OIDC nonce from JSON bodies before
+        // they reach Debug.Log. Unity logs leak through editor consoles, device logcat,
+        // CI batchmode logs, and crash reports, so the raw token must never be written.
+        private static readonly Regex SensitiveFieldRegex = new Regex(
+            "\"(token|accessToken|refreshToken|idToken|access_token|refresh_token|id_token|nonce|guestSessionId|guest_session_id)\"\\s*:\\s*\"[^\"]*\"",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static string Redact(string body)
+        {
+            if (string.IsNullOrEmpty(body))
+            {
+                return body;
+            }
+
+            return SensitiveFieldRegex.Replace(body, "\"$1\":\"***\"");
         }
     }
 }
