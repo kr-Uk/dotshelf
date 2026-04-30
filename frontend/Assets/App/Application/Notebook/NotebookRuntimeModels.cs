@@ -8,6 +8,34 @@ namespace App.Application.Notebook
         public int BalancePages { get; set; }
     }
 
+    public sealed class NotebookPurchaseHistoryResult
+    {
+        public NotebookPurchaseHistoryResult(IReadOnlyList<NotebookPurchaseHistoryItem> purchases)
+        {
+            Purchases = purchases ?? Array.Empty<NotebookPurchaseHistoryItem>();
+        }
+
+        public IReadOnlyList<NotebookPurchaseHistoryItem> Purchases { get; }
+    }
+
+    public sealed class NotebookPurchaseHistoryItem
+    {
+        public long Id { get; set; }
+        public long AssetId { get; set; }
+        public int PricePages { get; set; }
+        public string Status { get; set; }
+    }
+
+    public sealed class NotebookPaymentMethodResult
+    {
+        public NotebookPaymentMethodResult(IReadOnlyList<string> methods)
+        {
+            Methods = methods ?? Array.Empty<string>();
+        }
+
+        public IReadOnlyList<string> Methods { get; }
+    }
+
     public sealed class NotebookToggleResult
     {
         public bool Active { get; set; }
