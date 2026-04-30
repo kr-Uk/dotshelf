@@ -10,7 +10,7 @@ namespace Dotshelf.EditorTools
 {
     public static class MainScenePrefabExtractionUtility
     {
-        private const string MainScenePath = "Assets/Scenes/MainScene.unity";
+        private const string MainScenePath = "Assets/Scenes/MainRoomScene.unity";
         private const string PrefabFolder = "Assets/App/Composition/Prefabs";
         private const string ConfigFolder = "Assets/App/Composition/Configs";
         private const string ConfigPath = ConfigFolder + "/MainSceneCompositionConfig.asset";

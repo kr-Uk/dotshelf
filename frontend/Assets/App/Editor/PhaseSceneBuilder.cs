@@ -21,7 +21,7 @@ namespace App.Editor
     {
         private const string ApiConfigPath = "Assets/App/Config/AppApiConfig.asset";
         private const string BootstrapScenePath = "Assets/Scenes/BootstrapScene.unity";
-        private const string MainScenePath = "Assets/Scenes/MainScene.unity";
+        private const string MainScenePath = "Assets/Scenes/MainRoomScene.unity";
 
         [MenuItem("Tools/Project Setup/Run Phase 0-1 Setup")]
         public static void RunPhaseZeroAndOneSetup()
@@ -33,10 +33,10 @@ namespace App.Editor
             ConfigureBuildSettings();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("Phase 0-1 setup completed. MainScene is the first build scene.");
+            Debug.Log("Phase 0-1 setup completed. BootstrapScene is the first build scene.");
         }
 
-        [MenuItem("Tools/Project Setup/Build MainScene Content")]
+        [MenuItem("Tools/Project Setup/Build MainRoomScene Content")]
         public static void BuildMainSceneContent()
         {
             var scene = EditorSceneManager.OpenScene(MainScenePath, OpenSceneMode.Single);
@@ -51,7 +51,7 @@ namespace App.Editor
             EditorSceneManager.SaveScene(scene, MainScenePath);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("MainScene content generated and saved.");
+            Debug.Log("MainRoomScene content generated and saved.");
         }
 
         public static void CreateBootstrapScene()
@@ -63,11 +63,12 @@ namespace App.Editor
             var configLoader = appRootObject.AddComponent<ConfigLoader>();
             appRootObject.AddComponent<EnvironmentResolver>();
             appRootObject.AddComponent<SessionInitializer>();
-            appRootObject.AddComponent<SceneEntry>();
+            var sceneEntry = appRootObject.AddComponent<SceneEntry>();
 
             var apiConfig = EnsureApiConfigAsset();
             AssignSerializedReference(appRoot, "apiConfig", apiConfig);
             AssignSerializedReference(configLoader, "apiConfig", apiConfig);
+            AssignSerializedString(sceneEntry, "mainSceneName", SceneKeys.Main);
 
             EditorSceneManager.SaveScene(scene, BootstrapScenePath);
         }
@@ -200,8 +201,10 @@ namespace App.Editor
         {
             EditorBuildSettings.scenes = new[]
             {
+                new EditorBuildSettingsScene(BootstrapScenePath, true),
+                new EditorBuildSettingsScene("Assets/Scenes/LoginScene.unity", true),
                 new EditorBuildSettingsScene(MainScenePath, true),
-                new EditorBuildSettingsScene(BootstrapScenePath, true)
+                new EditorBuildSettingsScene("Assets/Scenes/StartScene.unity", true)
             };
         }
 
@@ -215,6 +218,19 @@ namespace App.Editor
             }
 
             property.objectReferenceValue = value;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void AssignSerializedString(Object target, string propertyName, string value)
+        {
+            var serializedObject = new SerializedObject(target);
+            var property = serializedObject.FindProperty(propertyName);
+            if (property == null)
+            {
+                return;
+            }
+
+            property.stringValue = value;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
         }
     }

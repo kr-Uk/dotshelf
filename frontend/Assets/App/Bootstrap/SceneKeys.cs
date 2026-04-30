@@ -2,8 +2,10 @@ namespace App.Bootstrap
 {
     public static class SceneKeys
     {
+        public const string Bootstrap = "BootstrapScene";
         public const string Start = "StartScene";
         public const string Login = "LoginScene";
-        public const string Main = "MainScene";
+        public const string MainRoom = "MainRoomScene";
+        public const string Main = MainRoom;
     }
 }

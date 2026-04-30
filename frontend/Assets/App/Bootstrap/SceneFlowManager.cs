@@ -1,3 +1,4 @@
+using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace App.Bootstrap
@@ -11,6 +12,13 @@ namespace App.Bootstrap
 
         public static void GoToMain()
         {
+            var sceneEntry = Object.FindFirstObjectByType<SceneEntry>(FindObjectsInactive.Include);
+            if (sceneEntry != null)
+            {
+                sceneEntry.LoadMainScene();
+                return;
+            }
+
             LoadIfNotActive(SceneKeys.Main);
         }
 

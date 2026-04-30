@@ -11,7 +11,7 @@ namespace App.Bootstrap
 
         private void Awake()
         {
-            // Phase 1+: load config, initialize session, register services, then enter MainScene.
+            // BootstrapScene owns global config/session services while MainRoomScene is loaded additively.
         }
     }
 }
