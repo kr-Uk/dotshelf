@@ -1,0 +1,69 @@
+# Test 환경 (단일 컨테이너).
+#
+# 운영(prod) 의 docker-compose.yml 과 독립 — SSAFY 호스트 위에 prod blue/green 과 함께 띄운다.
+#
+# 토폴로지:
+#   - api-test 컨테이너 (포트 9080, Tailscale IP 에 바인딩)
+#   - DB / Redis: dotshelf-prod 서버의 기존 PostgreSQL / Redis 를 그대로 사용
+#       * DB:    dotshelf_test (별도 database, prod 와 동일 instance)
+#       * Redis: prod 와 동일 instance, database index = 1 (prod=0)
+#   - OAuth 는 더미 ENV — 소셜 로그인 콜백 미테스트
+#   - JWT_SECRET 은 prod 와 다른 값 (토큰 cross-validity 차단)
+#
+# 사전 조건 (서버에서 다음을 미리 준비해야 한다):
+#   $EC2_DEPLOY_PATH/api-test/Dockerfile          ← backend/Dockerfile 과 동일 사본
+#   $EC2_DEPLOY_PATH/api-test/build/libs/*.jar    ← dev 브랜치 bootJar 산출물
+#   $EC2_DEPLOY_PATH/.env.test                    ← .env.test.example 참고
+#
+# 위 staging 은 현재 단계에서는 수동 (scp) — 차후 .gitlab-ci.yml 에 backend:test-deploy 잡이
+# 추가되면 자동화된다 (dev 브랜치 트리거).
+#
+# 사용:
+#   docker compose -f docker-compose.test.yml --env-file .env.test up -d --build api-test
+#   docker compose -f docker-compose.test.yml --env-file .env.test logs -f api-test
+#   docker compose -f docker-compose.test.yml --env-file .env.test down
+#
+# Promtail (prod compose 의 dotshelf-promtail) 이 dotshelf-api-test 컨테이너 로그도 수집하도록
+# promtail-config.yml 의 docker_sd filters / color relabel 정규식을 같이 갱신한다.
+services:
+  api-test:
+    build:
+      context: ./api-test
+      dockerfile: Dockerfile
+    image: dotshelf/api:test
+    container_name: dotshelf-api-test
+    restart: unless-stopped
+    extra_hosts:
+      - "dotshelf-prod:100.86.247.88"
+    ports:
+      - "100.74.2.103:9080:8080"
+    mem_limit: 2g
+    environment:
+      DEPLOY_COLOR: test
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      SPRING_DATA_REDIS_DATABASE: ${SPRING_DATA_REDIS_DATABASE:-1}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-1800}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-2592000}
+      GOOGLE_SERVER_CLIENT_ID: ${GOOGLE_SERVER_CLIENT_ID:-dummy.apps.googleusercontent.com}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-dummy.apps.googleusercontent.com}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-dummy-secret}
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS:-dummy.apps.googleusercontent.com}
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-dummy}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-dummy}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-http://localhost:18080/oauth/kakao/callback}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-dummy}
+      APPLE_CLIENT_IDS: ${APPLE_CLIENT_IDS:-dummy}
+      TZ: Asia/Seoul
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
