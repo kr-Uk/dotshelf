@@ -217,6 +217,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private BookshelfRuntimeDataStore dataStore = null;
         [SerializeField] private BookshelfApiSyncController bookshelfApiSyncController = null;
         [SerializeField] private NotebookScreenController notebookScreenController = null;
+        [SerializeField] private NotebookUiSceneLoader notebookUiSceneLoader = null;
 
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
         private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
@@ -224,6 +225,8 @@ namespace BookshelfPorting.Runtime
         private NotebookRuntimeUseCase notebookRuntimeUseCase;
 
         private Canvas hudCanvas;
+        private bool isNotebookFocusWaitingForScene;
+        private int notebookFocusRequestVersion;
         private Button overlayPreviousFocusButton;
         private Button overlayNextFocusButton;
         private Button bookshelfEditModeButton;
@@ -561,6 +564,11 @@ namespace BookshelfPorting.Runtime
             bookshelfApiSyncController = syncController;
         }
 
+        public void ConfigureNotebookUiSceneLoader(NotebookUiSceneLoader sceneLoader)
+        {
+            notebookUiSceneLoader = sceneLoader;
+        }
+
         public void NotifyBookshelfApiSynced()
         {
             RefreshBookshelfIndexIndicator(CurrentFocusArea == ExperienceFocusArea.Bookshelf && (state == null || !state.IsViewingBook));
@@ -725,6 +733,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            CancelPendingNotebookFocusRequest();
             PrepareQuarterViewReturn();
             currentMainViewMode = MainCameraViewMode.QuarterView;
             cameraController.MoveToMode(CameraMode.Overview);
@@ -737,6 +746,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            CancelPendingNotebookFocusRequest();
             PrepareQuarterViewReturn();
             currentMainViewMode = MainCameraViewMode.MainView;
             cameraController.MoveToMainView();
@@ -761,6 +771,7 @@ namespace BookshelfPorting.Runtime
             }
 
             PrepareQuarterViewReturn();
+            CancelPendingNotebookFocusRequest();
             currentMainViewMode = MainCameraViewMode.MainView;
             cameraController.ApplyMainView();
             SyncFromCameraMode(CameraMode.Overview);
@@ -800,6 +811,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            CancelPendingNotebookFocusRequest();
             cameraController.MoveToMode(CameraMode.Frontal);
         }
 
@@ -820,6 +832,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            CancelPendingNotebookFocusRequest();
             CancelBookPlacementEdit(false);
             SetBookshelfEditMode(false);
             cameraController.MoveToMode(CameraMode.Whiteboard);
@@ -844,7 +857,17 @@ namespace BookshelfPorting.Runtime
 
             CancelBookPlacementEdit(false);
             SetBookshelfEditMode(false);
-            ConfigureNotebookScreen();
+            var focusRequestVersion = BeginNotebookFocusRequest();
+            if (!EnsureNotebookUiReadyForFocus(focusRequestVersion))
+            {
+                return;
+            }
+
+            FocusNotebookImmediateWithLoadedUi();
+        }
+
+        private void FocusNotebookImmediateWithLoadedUi()
+        {
             if (CurrentFocusArea == ExperienceFocusArea.Notebook && notebookScreenController != null)
             {
                 notebookScreenController.SetImmersiveMode(true);
@@ -879,7 +902,9 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            CancelPendingNotebookFocusRequest();
             cameraController.MoveToMode(CameraMode.Overview);
+            notebookUiSceneLoader?.NotifyFocusExited();
         }
 
         private bool HandleFocusShortcuts()
@@ -9599,9 +9624,15 @@ namespace BookshelfPorting.Runtime
 
         private void ConfigureNotebookScreen()
         {
-            if (notebookScreenController == null)
+            if (notebookUiSceneLoader != null && !notebookUiSceneLoader.OwnsController(notebookScreenController))
             {
-                notebookScreenController = FindFirstObjectByType<NotebookScreenController>();
+                notebookScreenController = notebookUiSceneLoader.RefreshController();
+            }
+
+            if (notebookScreenController == null && notebookUiSceneLoader == null)
+            {
+                var controllers = FindObjectsByType<NotebookScreenController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+                notebookScreenController = controllers != null && controllers.Length > 0 ? controllers[0] : null;
             }
 
             if (notebookScreenController == null || Camera.main == null)
@@ -9620,6 +9651,95 @@ namespace BookshelfPorting.Runtime
                 loadNotebookMarketBooksUseCase,
                 addNotebookBookToShelfUseCase,
                 notebookRuntimeUseCase);
+            notebookUiSceneLoader?.MeasureCanvasActivationCost(notebookScreenController);
+        }
+
+        private int BeginNotebookFocusRequest()
+        {
+            if (!isNotebookFocusWaitingForScene)
+            {
+                notebookFocusRequestVersion++;
+            }
+
+            return notebookFocusRequestVersion;
+        }
+
+        private void CancelPendingNotebookFocusRequest()
+        {
+            if (!isNotebookFocusWaitingForScene)
+            {
+                return;
+            }
+
+            notebookFocusRequestVersion++;
+            isNotebookFocusWaitingForScene = false;
+        }
+
+        private bool EnsureNotebookUiReadyForFocus(int focusRequestVersion)
+        {
+            ConfigureNotebookScreen();
+            if (notebookScreenController != null)
+            {
+                BookshelfSceneInstaller.AlignNotebookAnchorToLoadedNotebook();
+                return true;
+            }
+
+            if (notebookUiSceneLoader == null)
+            {
+                return true;
+            }
+
+            if (isNotebookFocusWaitingForScene)
+            {
+                return false;
+            }
+
+            isNotebookFocusWaitingForScene = true;
+            notebookUiSceneLoader.EnsureLoaded(controller =>
+            {
+                isNotebookFocusWaitingForScene = false;
+                if (focusRequestVersion != notebookFocusRequestVersion || !isActiveAndEnabled)
+                {
+                    return;
+                }
+
+                notebookScreenController = controller;
+                ConfigureNotebookScreen();
+                if (notebookScreenController == null)
+                {
+                    ShowNotebookUiLoadFailure();
+                    return;
+                }
+
+                BookshelfSceneInstaller.AlignNotebookAnchorToLoadedNotebook();
+                FocusNotebookImmediateWithLoadedUi();
+            });
+            return false;
+        }
+
+        private void ShowNotebookUiLoadFailure()
+        {
+            Debug.LogError("Notebook UI scene load completed without a NotebookScreenController.");
+            if (bookshelfStatusPanel == null)
+            {
+                return;
+            }
+
+            bookshelfStatusPanel.SetActive(true);
+            if (bookshelfStatusTitleText != null)
+            {
+                bookshelfStatusTitleText.text = "노트북 화면 오류";
+            }
+
+            if (bookshelfStatusMessageText != null)
+            {
+                bookshelfStatusMessageText.text = "노트북 UI를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.";
+            }
+
+            if (bookshelfStatusAddButton != null)
+            {
+                bookshelfStatusAddButton.gameObject.SetActive(false);
+            }
         }
 
         public void ConfigureNotebookBookUseCases(

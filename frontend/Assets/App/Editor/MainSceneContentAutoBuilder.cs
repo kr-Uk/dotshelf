@@ -9,7 +9,7 @@ namespace App.Editor
     [InitializeOnLoad]
     internal static class MainSceneContentAutoBuilder
     {
-        private const string MainScenePath = "Assets/Scenes/MainScene.unity";
+        private const string MainRoomScenePath = "Assets/Scenes/MainRoomScene.unity";
 
         static MainSceneContentAutoBuilder()
         {
@@ -33,7 +33,7 @@ namespace App.Editor
             }
 
             var scene = SceneManager.GetActiveScene();
-            if (scene.path != MainScenePath || HasSavedBookshelfContent())
+            if (scene.path != MainRoomScenePath || HasSavedBookshelfContent())
             {
                 return;
             }
@@ -46,9 +46,9 @@ namespace App.Editor
 
             installer.InstallScene(forceGenerate: true);
             EditorSceneManager.MarkSceneDirty(scene);
-            EditorSceneManager.SaveScene(scene, MainScenePath);
+            EditorSceneManager.SaveScene(scene, MainRoomScenePath);
             AssetDatabase.SaveAssets();
-            Debug.Log("MainScene bookshelf content generated and saved.");
+            Debug.Log("MainRoomScene bookshelf content generated and saved.");
         }
 
         private static bool HasSavedBookshelfContent()

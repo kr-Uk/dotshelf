@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ab7263ed8ae7ed4a85e046820bcee85, type: 3}
+  m_Name: MainSceneCompositionConfig
+  m_EditorClassIdentifier: Assembly-CSharp::App.Config.MainSceneCompositionConfig
+  runtimeSystemsPrefab: {fileID: 7668760752131279891, guid: 6b86b3d6221b35a4799f7c8a871d0223, type: 3}
+  roomBackgroundPrefab: {fileID: 7849302877976168602, guid: c222bfa9cc601ef44902dfa239329964, type: 3}
+  bookshelfRigPrefab: {fileID: 8987270180500391411, guid: d09c0aa7b79ffe54bbc398239e01b825, type: 3}
+  notebookStationPrefab: {fileID: 7370849177019216503, guid: a9f31b23f6eb8a34c93a0c44f7e994ff, type: 3}
+  cameraAnchorsPrefab: {fileID: 1727907085578719631, guid: 0967fca7246325843a2e6cccb9c54f23, type: 3}

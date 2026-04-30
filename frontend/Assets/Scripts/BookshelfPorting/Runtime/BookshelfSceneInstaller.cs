@@ -161,6 +161,7 @@ namespace BookshelfPorting.Runtime
             var bookshelfApiSync = GetOrAddComponent<BookshelfApiSyncController>(systems);
             var environment = GetOrAddComponent<EnvironmentSetup>(systems);
             var apiManager = GetOrAddComponent<APIManager>(systems);
+            var notebookUiSceneLoader = GetOrAddComponent<NotebookUiSceneLoader>(systems);
             var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(apiMode, apiBaseUrl, apiTimeoutSeconds));
 
             apiManager.Configure(
@@ -225,6 +226,8 @@ namespace BookshelfPorting.Runtime
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);
             experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
+            notebookUiSceneLoader.Configure(SceneKeys.NotebookUi, unloadSceneOnFocusExit: false, enablePerformanceLog: Application.isPlaying);
+            experienceManager.ConfigureNotebookUiSceneLoader(notebookUiSceneLoader);
             experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase);
             if (usesHttpApi)
             {
@@ -381,7 +384,7 @@ namespace BookshelfPorting.Runtime
             var desk = guestbook.Find("NotebookStation/Desk");
             if (desk == null)
             {
-                return false;
+                return HasExternalNotebookUi();
             }
 
             if (desk.Find("Desktop") != null)
@@ -402,6 +405,12 @@ namespace BookshelfPorting.Runtime
             }
 
             return true;
+        }
+
+        private static bool HasExternalNotebookUi()
+        {
+            var controllers = Object.FindObjectsByType<NotebookScreenController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            return controllers != null && controllers.Length > 0;
         }
 
         private static GameObject FindOrCreateRoot(string name)
@@ -441,6 +450,13 @@ namespace BookshelfPorting.Runtime
             anchor.position = position;
             anchor.rotation = rotation;
             return anchor;
+        }
+
+        public static void AlignNotebookAnchorToLoadedNotebook()
+        {
+            var camerasRoot = GameObject.Find("Cameras");
+            var notebookAnchor = camerasRoot != null ? camerasRoot.transform.Find("NotebookAnchor") : null;
+            AlignNotebookAnchor(notebookAnchor);
         }
 
         private static void AlignNotebookAnchor(Transform notebookAnchor)
