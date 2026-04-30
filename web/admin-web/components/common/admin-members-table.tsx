@@ -3,7 +3,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -20,7 +19,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/common/status-badge";
-import { RoleGate } from "@/components/common/role-gate";
 import { api } from "@/lib/api";
 import {
   ADMIN_ROLE_LABEL,
@@ -65,36 +63,12 @@ export function AdminMembersTable() {
     }
   };
 
-  const toggleActive = async (m: AdminMember) => {
-    try {
-      await api(`/operations/admins/${m.id}/active`, {
-        method: "POST",
-        body: JSON.stringify({ active: !m.active }),
-      });
-      toast.success(`${m.name} ${m.active ? "비활성화" : "활성화"}`);
-      qc.setQueryData<AdminMember[]>(["admin-members"], (prev) =>
-        prev?.map((x) => (x.id === m.id ? { ...x, active: !x.active } : x)) ?? prev,
-      );
-    } catch {
-      toast.error("처리에 실패했어요.");
-    }
-  };
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
           관리자 목록과 역할 부여. 변경은 즉시 감사 로그에 기록됩니다.
         </p>
-        <RoleGate action="ops.role_assign" fallback="hide">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => toast.info("초대 메일 발송 (mock)")}
-          >
-            관리자 초대
-          </Button>
-        </RoleGate>
       </div>
 
       <Table>
@@ -145,13 +119,7 @@ export function AdminMembersTable() {
                   {m.active ? "활성" : "비활성"}
                 </StatusBadge>
               </TableCell>
-              <TableCell className="text-right">
-                <RoleGate action="ops.role_assign" fallback="hide">
-                  <Button size="sm" variant="ghost" onClick={() => toggleActive(m)}>
-                    {m.active ? "비활성화" : "활성화"}
-                  </Button>
-                </RoleGate>
-              </TableCell>
+              <TableCell className="text-right text-xs text-muted-foreground">—</TableCell>
             </TableRow>
           ))}
         </TableBody>

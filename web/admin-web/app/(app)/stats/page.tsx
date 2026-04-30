@@ -46,7 +46,7 @@ export default function StatsPage() {
     <div className="space-y-6">
       <PageHeader
         title="통계 · KPI"
-        description="사용자 / 콘텐츠 / 수익 / 모더레이션 / 시스템 KPI를 시계열·구성비로."
+        description="사용자 / 수익 / 모더레이션 / 시스템 KPI를 시계열·구성비로."
         actions={
           <>
             <Button size="sm" variant="outline">기간: 최근 30일</Button>
@@ -99,11 +99,6 @@ export default function StatsPage() {
           caption="최근 7일"
         />
         <StatCard
-          label="심사 SLA 평균"
-          value={data ? `${data.reviewsAvgSlaHours}h` : "—"}
-          caption="목표 24h 이내"
-        />
-        <StatCard
           label="모더레이션 미처리"
           value={data ? `${data.openModerationQueue}건` : "—"}
           caption="P1 / P2 / P3 합계"
@@ -112,8 +107,8 @@ export default function StatsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>모더레이션 큐 길이 + 심사 SLA (30일)</CardTitle>
-          <CardDescription>좌축: 미처리 큐 / 우축: 심사 평균 SLA(시간)</CardDescription>
+          <CardTitle>모더레이션 큐 길이 (30일)</CardTitle>
+          <CardDescription>미처리 신고 큐 추이</CardDescription>
         </CardHeader>
         <CardContent>
           {ts ? <ModerationChart data={ts.daily} /> : <ChartSkeleton />}
@@ -174,7 +169,7 @@ export default function StatsPage() {
         <Card>
           <CardHeader>
             <CardTitle>시스템 헬스 (30일)</CardTitle>
-            <CardDescription>API 에러율(좌) / 3D 자산 CDN 히트율(우)</CardDescription>
+            <CardDescription>API 에러율</CardDescription>
           </CardHeader>
           <CardContent>
             {ts ? <SystemChart data={ts.daily} /> : <ChartSkeleton />}

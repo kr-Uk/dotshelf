@@ -53,4 +53,8 @@ public class AssetPurchase extends BaseEntity {
         this.inventoryId = inventoryId;
         this.pricePages = pricePages;
     }
+
+    public void refund() {
+        this.purchaseStatus = "REFUNDED";
+    }
 }

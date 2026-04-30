@@ -20,7 +20,7 @@ export type AdminAction =
   // 사용자 관리
   | "user.force_logout"
   | "user.rename_nickname"
-  | "user.password_reset"
+  | "user.require_relogin"
   | "user.suspend_temp"
   | "user.suspend_perm"
   | "user.anonymize"
@@ -68,7 +68,7 @@ export const ROLE_ALLOW: Record<AdminAction, AdminRole[]> = {
   // 사용자
   "user.force_logout": ["super_admin", "moderator", "cs"],
   "user.rename_nickname": ["super_admin", "moderator"],
-  "user.password_reset": ["super_admin", "cs"],
+  "user.require_relogin": ["super_admin", "cs"],
   "user.suspend_temp": ["super_admin", "moderator"],
   "user.suspend_perm": SUPER_ONLY,
   "user.anonymize": SUPER_ONLY,

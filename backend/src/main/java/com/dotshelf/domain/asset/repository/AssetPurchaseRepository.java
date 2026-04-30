@@ -3,6 +3,7 @@ package com.dotshelf.domain.asset.repository;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -17,6 +18,8 @@ public interface AssetPurchaseRepository extends JpaRepository<AssetPurchase, Lo
     List<AssetPurchase> findByUserIdOrderByPurchasedAtDesc(Long userId);
 
     Page<AssetPurchase> findByUserIdOrderByPurchasedAtDesc(Long userId, Pageable pageable);
+
+    Optional<AssetPurchase> findByIdAndUserId(Long id, Long userId);
 
     long countByUserId(Long userId);
 

@@ -47,7 +47,7 @@ const GROUPS: Group[] = [
     actions: [
       { key: "user.force_logout", label: "강제 로그아웃" },
       { key: "user.rename_nickname", label: "닉네임 강제 변경" },
-      { key: "user.password_reset", label: "비밀번호 재설정" },
+      { key: "user.require_relogin", label: "재로그인 요구" },
       { key: "user.suspend_temp", label: "일시 정지" },
       { key: "user.suspend_perm", label: "영구 정지" },
       { key: "user.anonymize", label: "데이터 익명화" },

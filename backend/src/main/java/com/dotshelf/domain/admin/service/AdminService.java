@@ -46,6 +46,8 @@ import com.dotshelf.domain.admin.dto.AdminDtos.MaintenanceResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.OkResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.PageResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.PolicyVersionResponse;
+import com.dotshelf.domain.admin.dto.AdminDtos.RefundRequest;
+import com.dotshelf.domain.admin.dto.AdminDtos.RefundResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.ReportActionRequest;
 import com.dotshelf.domain.admin.dto.AdminDtos.ReportDetailResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.ReportListItemResponse;
@@ -82,14 +84,18 @@ import com.dotshelf.domain.admin.repository.SettlementAccountChangeRequestReposi
 import com.dotshelf.domain.admin.repository.SettlementAdjustmentRepository;
 import com.dotshelf.domain.admin.repository.SettlementPayoutBatchRepository;
 import com.dotshelf.domain.admin.repository.SettlementWithdrawalRepository;
+import com.dotshelf.domain.asset.entity.AssetPurchase;
 import com.dotshelf.domain.asset.repository.AssetPurchaseRepository;
 import com.dotshelf.domain.asset.repository.AssetRepository;
+import com.dotshelf.domain.auth.entity.AuthRefreshToken;
 import com.dotshelf.domain.auth.entity.SocialProvider;
 import com.dotshelf.domain.auth.entity.UserSocialAccount;
+import com.dotshelf.domain.auth.repository.AuthRefreshTokenRepository;
 import com.dotshelf.domain.auth.repository.UserSocialAccountRepository;
 import com.dotshelf.domain.book.entity.UserBook;
 import com.dotshelf.domain.book.repository.BookRepository;
 import com.dotshelf.domain.book.repository.UserBookRepository;
+import com.dotshelf.domain.book.service.KakaoBookSearchClient;
 import com.dotshelf.domain.bookshelf.entity.Bookshelf;
 import com.dotshelf.domain.bookshelf.repository.BookshelfItemRepository;
 import com.dotshelf.domain.bookshelf.repository.BookshelfRepository;
@@ -131,6 +137,8 @@ public class AdminService {
     private final UserService userService;
     private final UserRepository userRepository;
     private final UserSocialAccountRepository userSocialAccountRepository;
+    private final AuthRefreshTokenRepository authRefreshTokenRepository;
+    private final KakaoBookSearchClient kakaoBookSearchClient;
     private final PageWalletRepository pageWalletRepository;
     private final SpaceRepository spaceRepository;
     private final BookshelfRepository bookshelfRepository;
@@ -268,6 +276,12 @@ public class AdminService {
             target.changeStatus("SUSPENDED_PERM");
         } else if ("ANONYMIZE".equals(action)) {
             target.anonymize();
+        } else if ("FORCE_LOGOUT".equals(action) || "REQUIRE_RELOGIN".equals(action)) {
+            target.invalidateSessions();
+            revokeActiveRefreshTokens(target.getId());
+        } else if ("RENAME_NICKNAME".equals(action)) {
+            String nickname = normalizeNickname(request.nickname());
+            target.updateProfile(nickname, target.getProfileImageUrl(), target.getIntroduction());
         } else {
             throw new CustomException(ErrorCode.INVALID_INPUT, "지원하지 않는 사용자 액션입니다.");
         }
@@ -371,6 +385,45 @@ public class AdminService {
         );
     }
 
+    @Transactional
+    public RefundResponse refundPurchase(Long userId, Long targetUserId, RefundRequest request, String ipAddress) {
+        User admin = requireAdminUser(userId);
+        userService.getUser(targetUserId);
+        Long purchaseId = parseLongId(request.purchaseId(), "purchaseId가 올바르지 않습니다.");
+        AssetPurchase purchase = assetPurchaseRepository.findByIdAndUserId(purchaseId, targetUserId)
+                .orElseThrow(() -> new CustomException(ErrorCode.RESOURCE_NOT_FOUND));
+        if ("REFUNDED".equalsIgnoreCase(purchase.getPurchaseStatus())) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "이미 환불된 구매입니다.");
+        }
+        PageWallet wallet = pageWalletRepository.findByUserId(targetUserId)
+                .orElseGet(() -> pageWalletRepository.save(PageWallet.builder()
+                        .userId(targetUserId)
+                        .balancePages(0)
+                        .build()));
+        String before = "purchaseStatus=" + purchase.getPurchaseStatus()
+                + ", balancePages=" + wallet.getBalancePages();
+        purchase.refund();
+        wallet.charge(purchase.getPricePages());
+        settlementAdjustmentRepository.save(SettlementAdjustment.builder()
+                .userId(targetUserId)
+                .deltaPages(purchase.getPricePages())
+                .reason(request.reason())
+                .memo(request.comment())
+                .adjustedByUserId(admin.getId())
+                .build());
+        writeAudit(admin, "USER_REFUND", "ASSET_PURCHASE", purchase.getId(),
+                before,
+                "purchaseStatus=" + purchase.getPurchaseStatus() + ", balancePages=" + wallet.getBalancePages(),
+                request.comment(),
+                ipAddress);
+        return new RefundResponse(
+                String.valueOf(targetUserId),
+                String.valueOf(purchase.getId()),
+                purchase.getPricePages(),
+                wallet.getBalancePages()
+        );
+    }
+
     public SettlementReconciliationResponse getSettlementReconciliation(Long userId) {
         requireAdminUser(userId);
         long walletBalancePages = walletBalancePages();
@@ -429,8 +482,7 @@ public class AdminService {
                 assetPurchasePages(),
                 assetPurchaseRepository.count(),
                 spaceVisitRepository.count(),
-                0,
-                null
+                0
         );
     }
 
@@ -468,9 +520,8 @@ public class AdminService {
                 "UP",
                 dbStatus,
                 "UNKNOWN",
-                "UNKNOWN",
-                "UNKNOWN",
-                0,
+                paymentStatus(),
+                externalBookApiStatus(),
                 reportRepository.countByStatus(STATUS_PENDING),
                 maintenanceMode
         );
@@ -737,6 +788,27 @@ public class AdminService {
         throw new CustomException(ErrorCode.INVALID_INPUT, "지원하지 않는 신고 액션입니다.");
     }
 
+    private void revokeActiveRefreshTokens(Long targetUserId) {
+        List<AuthRefreshToken> tokens = authRefreshTokenRepository
+                .findByUserIdAndRevokedAtIsNullAndExpiresAtAfter(targetUserId, Instant.now());
+        tokens.forEach(AuthRefreshToken::revoke);
+    }
+
+    private String normalizeNickname(String nickname) {
+        if (nickname == null || nickname.isBlank()) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "새 닉네임은 필수입니다.");
+        }
+        return nickname.trim();
+    }
+
+    private Long parseLongId(String value, String message) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, message);
+        }
+    }
+
     private User requireAdminUser(Long userId) {
         Long currentUserId = userService.requireUserId(userId);
         User user = userService.getUser(currentUserId);
@@ -781,6 +853,24 @@ public class AdminService {
 
     private long pendingPayoutPages() {
         return settlementWithdrawalRepository.sumRequestedPagesByStatus("REQUESTED");
+    }
+
+    private String paymentStatus() {
+        try {
+            pageWalletRepository.count();
+            return "UP";
+        } catch (RuntimeException exception) {
+            return "DOWN";
+        }
+    }
+
+    private String externalBookApiStatus() {
+        try {
+            kakaoBookSearchClient.search("도서", 1, 1);
+            return "UP";
+        } catch (RuntimeException exception) {
+            return "DOWN";
+        }
     }
 
     private int walletBalance(Long userId) {
@@ -998,7 +1088,8 @@ public class AdminService {
                 + ", email=" + user.getEmail()
                 + ", nickname=" + user.getNickname()
                 + ", profileImageUrl=" + user.getProfileImageUrl()
-                + ", introduction=" + user.getIntroduction();
+                + ", introduction=" + user.getIntroduction()
+                + ", sessionInvalidatedAt=" + user.getSessionInvalidatedAt();
     }
 
     private String severity(Report report) {

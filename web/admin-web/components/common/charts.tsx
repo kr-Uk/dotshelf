@@ -171,32 +171,14 @@ export function ModerationChart({ data }: { data: KpiTimePoint[] }) {
       <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
         <CartesianGrid stroke={COLOR_GRID} strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="date" stroke={COLOR_AXIS} fontSize={11} tickFormatter={formatTickDate} tickMargin={6} />
-        <YAxis yAxisId="left" stroke={COLOR_AXIS} fontSize={11} width={36} />
-        <YAxis
-          yAxisId="right"
-          orientation="right"
-          stroke={COLOR_AXIS}
-          fontSize={11}
-          width={36}
-          tickFormatter={(v) => `${v}h`}
-        />
+        <YAxis stroke={COLOR_AXIS} fontSize={11} width={36} />
         <Tooltip contentStyle={tooltipStyle} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Line
-          yAxisId="left"
           type="monotone"
           dataKey="openModeration"
           name="미처리 큐"
           stroke={COLOR_PRIMARY}
-          strokeWidth={2}
-          dot={false}
-        />
-        <Line
-          yAxisId="right"
-          type="monotone"
-          dataKey="reviewSlaHours"
-          name="심사 SLA(h)"
-          stroke={COLOR_TERTIARY}
           strokeWidth={2}
           dot={false}
         />
@@ -218,14 +200,6 @@ export function SystemChart({ data }: { data: KpiTimePoint[] }) {
           width={42}
           tickFormatter={(v) => `${((v as number) * 100).toFixed(2)}%`}
         />
-        <YAxis
-          yAxisId="right"
-          orientation="right"
-          stroke={COLOR_AXIS}
-          fontSize={11}
-          width={42}
-          tickFormatter={(v) => `${((v as number) * 100).toFixed(0)}%`}
-        />
         <Tooltip
           contentStyle={tooltipStyle}
           formatter={(v, name) => [`${(Number(v ?? 0) * 100).toFixed(2)}%`, name]}
@@ -237,15 +211,6 @@ export function SystemChart({ data }: { data: KpiTimePoint[] }) {
           dataKey="apiErrorRate"
           name="API 에러율"
           stroke="var(--color-destructive)"
-          strokeWidth={2}
-          dot={false}
-        />
-        <Line
-          yAxisId="right"
-          type="monotone"
-          dataKey="cdnHitRate"
-          name="CDN 히트율"
-          stroke={COLOR_PRIMARY}
           strokeWidth={2}
           dot={false}
         />

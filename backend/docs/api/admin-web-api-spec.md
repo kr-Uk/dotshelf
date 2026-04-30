@@ -1,13 +1,15 @@
 # Admin Web API Spec
 
 작성일: 2026-04-29
+최종 갱신: 2026-04-30
 
-구현 상태: 2026-04-29 기준 `com.dotshelf.domain.admin` 수직 슬라이스로 1차 구현 완료.
+구현 상태: 2026-04-30 기준 `com.dotshelf.domain.admin` 수직 슬라이스로 admin-web 실제 운영 범위에 맞춰 축소/연결 완료.
 
 - Controller: `backend/src/main/java/com/dotshelf/domain/admin/controller/AdminController.java`
 - Service: `backend/src/main/java/com/dotshelf/domain/admin/service/AdminService.java`
 - DTO: `backend/src/main/java/com/dotshelf/domain/admin/dto/AdminDtos.java`
 - 신규 admin 테이블 SQL: `backend/src/main/resources/db/migration/V7__create_admin_tables.sql`
+- 세션 무효화 컬럼 SQL: `backend/src/main/resources/db/migration/V12__add_user_session_invalidated_at.sql`
 - 신규 테이블은 기존 `V6__create_admin_schema.sql`의 `admin` 스키마 아래 생성한다.
 
 ## 범위
@@ -15,6 +17,13 @@
 `web/admin-web`의 하드코딩/MSW 데이터를 백엔드 API로 교체하기 위한 1차 명세다.
 
 현재 좌측 메뉴 중 `심사`, `가입`은 사용하지 않는다. 화면과 라우트는 남기되 사이드바에서는 비활성화하고 하단으로 이동한다. 백엔드 1차 구현 범위에서도 제외한다.
+
+2026-04-30 축소 기준:
+
+- 홈 화면의 심사 큐 카드는 제거한다.
+- 소셜 로그인만 존재하므로 관리자 비밀번호 재설정은 제공하지 않는다. 대신 refresh token을 회수하는 `REQUIRE_RELOGIN`/`FORCE_LOGOUT`을 제공한다.
+- creator 등록/판매 기능이 후순위로 밀렸으므로 admin-web 정산 화면에서는 creator 출금, 계좌 변경, 회계사 확인서 탭을 노출하지 않는다.
+- CDN을 사용하지 않으므로 운영 시스템 상태와 통계 화면에서 CDN 항목을 제거한다.
 
 구현 대상 메뉴:
 
@@ -151,7 +160,7 @@ Response:
 
 ### GET `/v1/admin/dashboard/summary`
 
-홈 카드와 대시보드 수치를 반환한다.
+홈 카드와 대시보드 수치를 반환한다. admin-web은 현재 `moderation`, `settlement`, `ops`만 렌더링하며, `content`는 후속 콘텐츠 운영 화면에서만 사용한다.
 
 DB source:
 
@@ -169,7 +178,7 @@ Response:
   "content": {
     "books": 6,
     "assets": 6,
-    "activePromotions": 3
+    "activePromotions": 0
   },
   "moderation": {
     "open": 3,
@@ -378,7 +387,7 @@ DB source:
 
 ### POST `/v1/admin/users/{userId}/action`
 
-사용자 계정 상태를 변경한다.
+사용자 계정 상태 또는 운영 액션을 수행한다.
 
 Request:
 
@@ -386,7 +395,8 @@ Request:
 {
   "action": "SUSPEND_TEMP",
   "reason": "신고 누적 운영 조치",
-  "until": "2026-05-06T00:00:00Z"
+  "until": "2026-05-06T00:00:00Z",
+  "nickname": null
 }
 ```
 
@@ -396,11 +406,16 @@ Action:
 - `SUSPEND_TEMP`
 - `SUSPEND_PERM`
 - `ANONYMIZE`
+- `FORCE_LOGOUT`: 대상 사용자의 활성 refresh token을 모두 revoke한다.
+- `REQUIRE_RELOGIN`: 비밀번호 재설정 대신 사용한다. 소셜 로그인 구조상 서버가 변경할 비밀번호가 없으므로 세션 무효화 시각을 갱신하고 활성 refresh token을 revoke한다.
+- `RENAME_NICKNAME`: `nickname` 필수. `users.nickname`을 변경한다.
 
 DB note:
 
 - 현재 `users.status`는 문자열이므로 상태 저장은 가능하다.
 - 임시 정지 만료일을 보존하려면 `user_suspensions` 테이블이 추가로 필요하다.
+- 강제 로그아웃/재로그인 요구는 `users.session_invalidated_at`과 `auth_refresh_tokens.revoked_at`을 갱신한다. JWT 필터는 access token의 `issuedAt`이 `session_invalidated_at`보다 이전이면 `INVALID_TOKEN`으로 차단한다.
+- 모든 액션은 `admin.admin_audit_logs`에 before/after, reason, ip를 기록한다.
 
 ### GET `/v1/admin/users/{userId}/spaces`
 
@@ -474,11 +489,32 @@ Request:
 DB note:
 
 - 현재 `page_wallets.balance_pages`는 수정 가능하다.
-- 조정 이력 보존을 위해 `page_wallet_adjustments` 또는 `settlement_adjustments` 테이블 추가가 필요하다.
+- 조정 이력은 `admin.settlement_adjustments`에 보존한다.
+
+### POST `/v1/admin/users/{userId}/refund`
+
+에셋 구매를 환불 처리하고 사용자 지갑에 구매 페이지를 되돌린다.
+
+Request:
+
+```json
+{
+  "purchaseId": "1001",
+  "reason": "user_dispute",
+  "comment": "CS 확인 후 환불"
+}
+```
+
+DB source/update:
+
+- `asset_purchases.purchase_status = 'REFUNDED'`
+- `page_wallets.balance_pages += asset_purchases.price_pages`
+- `admin.settlement_adjustments`에 환불성 페이지 조정 이력을 기록한다.
+- `admin.admin_audit_logs`에 환불 전/후 상태를 기록한다.
 
 ## 정산
 
-현재 DB에는 실제 출금, 은행 계좌, 송금 배치 테이블이 없다. 1차 구현은 지갑/구매 기반의 read-only 요약부터 제공하고, 쓰기 액션은 마이그레이션 후 구현한다.
+현재 운영 범위에서는 creator 등록/판매/출금을 사용하지 않는다. admin-web 정산 화면은 지갑/구매 기반의 read-only 요약만 제공한다. creator 출금, 은행 계좌 변경, 송금 배치, 회계사 확인서는 테이블과 기존 API가 일부 존재하더라도 화면에서 숨기고 후속 기능 범위로 둔다.
 
 ### GET `/v1/admin/settlement/reconciliation`
 
@@ -503,17 +539,17 @@ Response:
 
 ### GET `/v1/admin/settlement/withdrawals`
 
-출금 요청 목록.
+출금 요청 목록. 2026-04-30 기준 admin-web에서는 호출하지 않는다.
 
 DB requirement:
 
 - `settlement_withdrawals` 신규 필요
 
-1차에서는 빈 목록을 반환할 수 있다.
+후속 creator 정산 기능을 다시 열 때 화면에 연결한다.
 
 ### GET `/v1/admin/settlement/payout-batches`
 
-송금 배치 목록.
+송금 배치 목록. 2026-04-30 기준 admin-web에서는 호출하지 않는다.
 
 DB requirement:
 
@@ -521,7 +557,7 @@ DB requirement:
 
 ### GET `/v1/admin/settlement/account-changes`
 
-계좌 변경 요청 목록.
+계좌 변경 요청 목록. 2026-04-30 기준 admin-web에서는 호출하지 않는다.
 
 DB requirement:
 
@@ -535,6 +571,7 @@ DB requirement:
 
 - 크리에이터/공급자 모델이 현재 DB에 없다.
 - 2차에서 `creators` 또는 `creator_profiles` 테이블을 추가해야 한다.
+- 2026-04-30 기준 admin-web에서는 호출하지 않는다.
 
 ## 통계
 
@@ -567,8 +604,7 @@ Response:
   "pageGmvPages": 2800,
   "assetPurchaseCount": 4,
   "spaceVisits": 7,
-  "apiErrorRate": 0,
-  "cdnHitRate": null
+  "apiErrorRate": 0
 }
 ```
 
@@ -616,9 +652,12 @@ Response:
 
 DB/source:
 
-- Spring Actuator `HealthEndpoint`
-- `reports` backlog
-- 외부 API 상태는 1차에서 `UNKNOWN` 또는 설정값 반환
+- API: admin service 응답 가능 여부
+- DB: `users.count()` 조회 가능 여부
+- 결제: `page_wallets.count()` 조회 가능 여부. 현재 외부 PG가 아니라 내부 페이지 지갑 상태를 의미한다.
+- 외부 도서 API: Kakao Book Search API 최소 호출 가능 여부
+- 신고 큐 적체: `reports.status = 'PENDING'`
+- CDN은 사용하지 않으므로 응답에서 제거한다.
 
 Response:
 
@@ -626,10 +665,9 @@ Response:
 {
   "api": "UP",
   "db": "UP",
-  "redis": "UP",
-  "externalBookApi": "UNKNOWN",
-  "cdn": "UNKNOWN",
-  "reviewQueueBacklog": 0,
+  "redis": "UNKNOWN",
+  "payment": "UP",
+  "externalBookApi": "UP",
   "moderationBacklog": 1,
   "maintenanceMode": false
 }
@@ -671,12 +709,14 @@ Request:
 {
   "title": "점검 안내",
   "body": "서비스 점검이 예정되어 있습니다.",
-  "audience": "ALL_USERS",
+  "audience": "all_users",
   "startsAt": "2026-04-30T00:00:00Z",
   "endsAt": "2026-04-30T02:00:00Z",
   "urgent": true
 }
 ```
+
+admin-web의 date input은 `YYYY-MM-DD`를 사용하므로 API 클라이언트에서 `startsAt=YYYY-MM-DDT00:00:00Z`, `endsAt=YYYY-MM-DDT23:59:59Z`로 변환한다. 대상 세그먼트는 현재 `all_users`, `internal`만 제공한다.
 
 ### GET `/v1/admin/operations/policies`
 
@@ -779,6 +819,8 @@ Response:
 ```
 
 ## 신규 마이그레이션 제안
+
+2026-04-30 변경에서는 신규 테이블을 추가하지 않았다. 다만 강제 로그아웃을 access token까지 무효화하기 위해 `V12__add_user_session_invalidated_at.sql`에서 `users.session_invalidated_at` 컬럼을 추가한다. 닉네임 변경은 `users`, 환불/잔액 조정은 `asset_purchases`, `page_wallets`, `admin.settlement_adjustments`, `admin.admin_audit_logs`를 사용한다.
 
 1차 API를 실제 운영 액션까지 닫으려면 아래 테이블이 필요하다.
 

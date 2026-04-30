@@ -16,7 +16,6 @@ import type {
   KpiTimePoint,
   KpiTimeseries,
   PolicyVersion,
-  QuarterlyAttestation,
   ReportItem,
   ReportSeverity,
   ReportStatus,
@@ -27,6 +26,7 @@ import type {
   UserHistoryItem,
   UserNote,
   UserPurchase,
+  UserSpaceSnapshot,
   UserState,
   UserSummary,
   WithdrawalRequest,
@@ -129,6 +129,13 @@ function booleanValue(source: unknown, fallback = false): boolean {
 function dateValue(source: unknown, fallback = new Date().toISOString()): string {
   const raw = text(source);
   return raw.length > 0 ? raw : fallback;
+}
+
+function dateInputToInstant(source: unknown, endOfDay = false): string | null {
+  const raw = text(source);
+  if (!raw) return null;
+  if (raw.includes("T")) return raw;
+  return `${raw}T${endOfDay ? "23:59:59" : "00:00:00"}Z`;
 }
 
 function normalizeKey(source: unknown): string {
@@ -234,45 +241,6 @@ function localResponse(path: string, init: RequestInit): { handled: boolean; val
     return { handled: true, value: { ok: true } };
   }
 
-  if (pathname === "/settlement/attestations" && method === "GET") {
-    return { handled: true, value: [] satisfies QuarterlyAttestation[] };
-  }
-
-  if (pathname === "/settlement/attestations" && method === "POST") {
-    return { handled: true, value: { ok: true } };
-  }
-
-  if (pathname === "/settlement/adjust" && method === "POST") {
-    return { handled: true, value: { ok: true } };
-  }
-
-  if (/^\/settlement\/withdrawals\/[^/]+\/(approve|reject)$/u.test(pathname) && method === "POST") {
-    return { handled: true, value: { ok: true } };
-  }
-
-  if (/^\/settlement\/account-changes\/[^/]+\/decision$/u.test(pathname) && method === "POST") {
-    return { handled: true, value: { ok: true } };
-  }
-
-  if (/^\/users\/[^/]+\/(refund|export)$/u.test(pathname) && method === "POST") {
-    return { handled: true, value: { ok: true } };
-  }
-
-  if (/^\/users\/[^/]+\/action$/u.test(pathname) && method === "POST") {
-    const kind = normalizeKey(parseJsonBody(init).kind);
-    if (["FORCE_LOGOUT", "RENAME_NICKNAME", "PASSWORD_RESET"].includes(kind)) {
-      return { handled: true, value: { ok: true } };
-    }
-  }
-
-  if (/^\/operations\/admins\/[^/]+\/active$/u.test(pathname) && method === "POST") {
-    return { handled: true, value: { ok: true } };
-  }
-
-  if (pathname === "/operations/policies/publish" && method === "POST") {
-    return { handled: true, value: { ok: true } };
-  }
-
   return { handled: false };
 }
 
@@ -299,6 +267,9 @@ function userAction(kind: unknown): string {
   if (normalized === "SUSPEND_7D" || normalized === "SUSPEND_TEMP") return "SUSPEND_TEMP";
   if (normalized === "SUSPEND_PERM") return "SUSPEND_PERM";
   if (normalized === "ANONYMIZE") return "ANONYMIZE";
+  if (normalized === "FORCE_LOGOUT") return "FORCE_LOGOUT";
+  if (normalized === "RENAME_NICKNAME") return "RENAME_NICKNAME";
+  if (normalized === "REQUIRE_RELOGIN") return "REQUIRE_RELOGIN";
   return "ACTIVATE";
 }
 
@@ -345,6 +316,7 @@ function adaptRequest(path: string, init: RequestInit): { path: string; init: Re
     nextInit = withJsonBody(init, {
       action: userAction(body.kind ?? body.action),
       reason: text(body.reason, text(body.kind ?? body.action)),
+      nickname: text(body.nickname),
     });
   }
 
@@ -357,14 +329,23 @@ function adaptRequest(path: string, init: RequestInit): { path: string; init: Re
     });
   }
 
+  if (method === "POST" && /^\/users\/[^/]+\/refund$/u.test(pathname)) {
+    const body = parseJsonBody(init);
+    nextInit = withJsonBody(init, {
+      purchaseId: text(body.purchaseId),
+      reason: text(body.reason, "other"),
+      comment: text(body.comment),
+    });
+  }
+
   if (method === "POST" && pathname === "/operations/announcements") {
     const body = parseJsonBody(init);
     nextInit = withJsonBody(init, {
       title: text(body.title),
       body: text(body.body),
       audience: text(body.audience, "all_users"),
-      startsAt: text(body.startsAt),
-      endsAt: text(body.endsAt),
+      startsAt: dateInputToInstant(body.startsAt),
+      endsAt: dateInputToInstant(body.endsAt, true),
       urgent: booleanValue(body.isUrgent ?? body.urgent),
     });
   }
@@ -475,17 +456,10 @@ function searchHitType(source: unknown): SearchHitType {
 }
 
 function mapDashboardStats(source: unknown): DashboardStats {
-  const content = nested(source, "content");
   const moderation = nested(source, "moderation");
   const settlement = nested(source, "settlement");
   const ops = nested(source, "ops");
   return {
-    reviewQueue: {
-      book: numberValue(content.books),
-      asset: numberValue(content.assets),
-      ad: numberValue(content.activePromotions),
-      slaAtRisk: 0,
-    },
     moderationQueue: {
       open: numberValue(moderation.open),
       autoFlagged: numberValue(moderation.autoFlagged),
@@ -494,7 +468,6 @@ function mapDashboardStats(source: unknown): DashboardStats {
     settlement: {
       pendingPayoutWon: pagesToWon(settlement.pendingPayoutPages),
       reconciliationOk: booleanValue(settlement.reconciliationOk, true),
-      withdrawalRequests: 0,
     },
     ops: {
       dau: numberValue(ops.todayVisits),
@@ -578,12 +551,24 @@ function mapUserHistory(source: unknown): UserHistoryItem {
   };
 }
 
+function mapUserSpace(source: unknown): UserSpaceSnapshot {
+  return {
+    spaceId: text(value(source, "spaceId")),
+    spaceName: text(value(source, "spaceName"), "이름 없는 공간"),
+    visibilityScope: text(value(source, "visibilityScope"), "PUBLIC"),
+    visitCount: numberValue(value(source, "visitCount")),
+    likeCount: numberValue(value(source, "likeCount")),
+    bookshelves: numberValue(value(source, "bookshelves")),
+    books: numberValue(value(source, "books")),
+  };
+}
+
 function mapReconciliation(source: unknown): AccountingReconciliation {
   const prepaid = pagesToWon(value(source, "walletBalancePages"));
   const pending = pagesToWon(value(source, "pendingPayoutPages"));
   return {
     prepaidBalanceWon: prepaid,
-    bankDepositWon: prepaid + pending,
+    assetPurchaseWon: pagesToWon(value(source, "assetPurchasePages")),
     pendingPayoutWon: pending,
     consistent: booleanValue(value(source, "consistent"), true),
     asOf: dateValue(value(source, "asOf")),
@@ -652,13 +637,11 @@ function mapKpi(source: unknown): KpiSnapshot {
     newSignups: numberValue(value(source, "newSignups")),
     guestConversion: guestConversion > 1 ? guestConversion / 100 : guestConversion,
     booksAdded: numberValue(value(source, "booksAdded")),
-    reviewsAvgSlaHours: 0,
     openModerationQueue: numberValue(value(source, "openModerationQueue")),
     pageGmvWon: pagesToWon(value(source, "pageGmvPages")),
     bookSalesWon: pagesToWon(value(source, "assetPurchaseCount")),
     adRevenueWon: 0,
     apiErrorRate: numberValue(value(source, "apiErrorRate")),
-    cdnHitRate: numberValue(value(source, "cdnHitRate"), 1),
   };
 }
 
@@ -672,9 +655,7 @@ function mapDaily(source: unknown): KpiTimePoint {
     bookSales: pagesToWon(value(source, "assetPurchasePages")),
     adRevenue: 0,
     openModeration: numberValue(value(source, "openModeration")),
-    reviewSlaHours: 0,
     apiErrorRate: 0,
-    cdnHitRate: 1,
   };
 }
 
@@ -702,10 +683,9 @@ function mapTimeseries(source: unknown): KpiTimeseries {
 
 function mapSystemHealth(source: unknown): SystemHealth {
   return {
-    payment: healthStatus(value(source, "api")),
+    payment: healthStatus(value(source, "payment")),
     externalBookApi: healthStatus(value(source, "externalBookApi")),
-    cdn: healthStatus(value(source, "cdn")),
-    reviewQueueBacklog: numberValue(value(source, "reviewQueueBacklog")),
+    moderationBacklog: numberValue(value(source, "moderationBacklog")),
     maintenanceMode: booleanValue(value(source, "maintenanceMode")),
   };
 }
@@ -781,6 +761,7 @@ function adaptPayload(path: string, method: string, payload: unknown): unknown {
   if (method === "GET" && /^\/users\/[^/]+\/notes$/u.test(pathname)) return pageItems(payload).map(mapUserNote);
   if (method === "POST" && /^\/users\/[^/]+\/notes$/u.test(pathname)) return mapUserNote(payload);
   if (method === "GET" && /^\/users\/[^/]+\/history$/u.test(pathname)) return pageItems(payload).map(mapUserHistory);
+  if (method === "GET" && /^\/users\/[^/]+\/spaces$/u.test(pathname)) return pageItems(payload).map(mapUserSpace);
   if (method === "GET" && pathname === "/settlement/reconciliation") return mapReconciliation(payload);
   if (method === "GET" && pathname === "/settlement/withdrawals") return pageItems(payload).map(mapWithdrawal);
   if (method === "GET" && pathname === "/settlement/payout-batches") return pageItems(payload).map(mapPayoutBatch);

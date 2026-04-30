@@ -195,7 +195,9 @@ public final class AdminDtos {
             String action,
             @Size(max = 500, message = "reason은 최대 500자입니다.")
             String reason,
-            Instant until
+            Instant until,
+            @Size(max = 50, message = "nickname은 최대 50자입니다.")
+            String nickname
     ) {
     }
 
@@ -277,6 +279,25 @@ public final class AdminDtos {
     }
 
     public record BalanceAdjustResponse(String userId, int balancePages, SettlementAdjustmentResponse adjustment) {
+    }
+
+    public record RefundRequest(
+            @NotBlank(message = "purchaseId는 필수입니다.")
+            String purchaseId,
+            @NotBlank(message = "reason은 필수입니다.")
+            @Size(max = 80, message = "reason은 최대 80자입니다.")
+            String reason,
+            @Size(max = 500, message = "comment는 최대 500자입니다.")
+            String comment
+    ) {
+    }
+
+    public record RefundResponse(
+            String userId,
+            String purchaseId,
+            int refundedPages,
+            int balancePages
+    ) {
     }
 
     public record SettlementAdjustmentResponse(
@@ -410,8 +431,7 @@ public final class AdminDtos {
             long pageGmvPages,
             long assetPurchaseCount,
             long spaceVisits,
-            double apiErrorRate,
-            Double cdnHitRate
+            double apiErrorRate
     ) {
     }
 
@@ -439,9 +459,8 @@ public final class AdminDtos {
             String api,
             String db,
             String redis,
+            String payment,
             String externalBookApi,
-            String cdn,
-            long reviewQueueBacklog,
             long moderationBacklog,
             boolean maintenanceMode
     ) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import {
   Select,
@@ -44,8 +44,11 @@ export function RefundDialog({
   purchases: UserPurchase[];
   onSubmit: (payload: RefundPayload) => void | Promise<void>;
 }) {
-  const refundable = purchases.filter((p) => !p.refunded);
+  const refundable = useMemo(() => purchases.filter((p) => !p.refunded), [purchases]);
   const [purchaseId, setPurchaseId] = useState<string>(refundable[0]?.id ?? "");
+  const selectedPurchaseId = refundable.some((purchase) => purchase.id === purchaseId)
+    ? purchaseId
+    : refundable[0]?.id ?? "";
 
   return (
     <ReasonDialog<RefundReason>
@@ -61,7 +64,7 @@ export function RefundDialog({
         <div className="grid gap-1.5">
           <Label htmlFor="refund-purchase">환불 대상 결제</Label>
           <Select
-            value={purchaseId}
+            value={selectedPurchaseId}
             onValueChange={(v) => setPurchaseId(v ?? "")}
           >
             <SelectTrigger id="refund-purchase" className="w-full">
@@ -84,8 +87,8 @@ export function RefundDialog({
         </div>
       }
       onSubmit={async (p) => {
-        if (!purchaseId) return;
-        await onSubmit({ ...p, purchaseId });
+        if (!selectedPurchaseId) return;
+        await onSubmit({ ...p, purchaseId: selectedPurchaseId });
       }}
     />
   );
