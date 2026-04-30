@@ -63,7 +63,10 @@ function Shelf({
   topPlank?: boolean;
 }) {
   return (
-    <div className="relative" style={{ width, height }}>
+    <div
+      className="relative"
+      style={{ width, height, maxWidth: "100%" }}
+    >
       {topPlank && (
         <div
           className="wood-grain absolute left-0 right-0"
@@ -71,7 +74,7 @@ function Shelf({
         />
       )}
       <div
-        className="absolute"
+        className="absolute overflow-hidden"
         style={{
           left: 12,
           right: 12,
