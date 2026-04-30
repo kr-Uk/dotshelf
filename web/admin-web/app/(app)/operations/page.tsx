@@ -40,12 +40,16 @@ const HEALTH_TONE = {
   ok: "success",
   degraded: "warn",
   down: "danger",
+  not_integrated: "neutral",
+  unknown: "neutral",
 } as const;
 
 const HEALTH_LABEL = {
   ok: "정상",
   degraded: "지연",
   down: "장애",
+  not_integrated: "미연동",
+  unknown: "확인 전",
 } as const;
 
 export default function OperationsPage() {

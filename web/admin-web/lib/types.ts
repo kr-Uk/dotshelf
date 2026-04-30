@@ -521,9 +521,16 @@ export interface PolicyVersion {
   requiresReConsent: boolean;
 }
 
+export type SystemHealthStatus =
+  | "ok"
+  | "degraded"
+  | "down"
+  | "not_integrated"
+  | "unknown";
+
 export interface SystemHealth {
-  payment: "ok" | "degraded" | "down";
-  externalBookApi: "ok" | "degraded" | "down";
+  payment: SystemHealthStatus;
+  externalBookApi: SystemHealthStatus;
   moderationBacklog: number;
   maintenanceMode: boolean;
 }

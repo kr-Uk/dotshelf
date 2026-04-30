@@ -1,6 +1,7 @@
 package com.dotshelf.global.security;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
 
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -9,7 +10,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.error.CustomException;
@@ -68,10 +68,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private void validateSession(AccessTokenClaims tokenClaims) {
-        User user = userRepository.findById(tokenClaims.userId())
+        UserRepository.SessionInvalidationView user = userRepository.findSessionInvalidationById(tokenClaims.userId())
                 .orElseThrow(() -> new CustomException(ErrorCode.INVALID_TOKEN));
-        if (user.getSessionInvalidatedAt() != null
-                && tokenClaims.issuedAt().isBefore(user.getSessionInvalidatedAt())) {
+        Instant sessionInvalidatedAt = user.getSessionInvalidatedAt();
+        if (sessionInvalidatedAt != null && tokenClaims.issuedAt().isBefore(sessionInvalidatedAt)) {
             throw new CustomException(ErrorCode.INVALID_TOKEN);
         }
     }

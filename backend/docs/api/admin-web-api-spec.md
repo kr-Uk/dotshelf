@@ -408,7 +408,7 @@ Action:
 - `ANONYMIZE`
 - `FORCE_LOGOUT`: 대상 사용자의 활성 refresh token을 모두 revoke한다.
 - `REQUIRE_RELOGIN`: 비밀번호 재설정 대신 사용한다. 소셜 로그인 구조상 서버가 변경할 비밀번호가 없으므로 세션 무효화 시각을 갱신하고 활성 refresh token을 revoke한다.
-- `RENAME_NICKNAME`: `nickname` 필수. `users.nickname`을 변경한다.
+- `RENAME_NICKNAME`: `nickname` 필수. 기존 사용자 닉네임과 중복되면 `U003 DUPLICATE_NICKNAME`을 반환한다.
 
 DB note:
 
@@ -511,6 +511,8 @@ DB source/update:
 - `page_wallets.balance_pages += asset_purchases.price_pages`
 - `admin.settlement_adjustments`에 환불성 페이지 조정 이력을 기록한다.
 - `admin.admin_audit_logs`에 환불 전/후 상태를 기록한다.
+- 구매 row는 비관적 잠금으로 조회해 같은 구매건의 동시 중복 환불을 막는다.
+- 관리자는 본인 구매건을 직접 환불할 수 없다.
 
 ## 정산
 
@@ -654,8 +656,8 @@ DB/source:
 
 - API: admin service 응답 가능 여부
 - DB: `users.count()` 조회 가능 여부
-- 결제: `page_wallets.count()` 조회 가능 여부. 현재 외부 PG가 아니라 내부 페이지 지갑 상태를 의미한다.
-- 외부 도서 API: Kakao Book Search API 최소 호출 가능 여부
+- 결제: 현재 외부 PG 연동이 없으므로 `NOT_INTEGRATED`
+- 외부 도서 API: Kakao Book Search API 최소 호출 가능 여부. 실제 호출 결과는 5분 TTL로 캐싱한다.
 - 신고 큐 적체: `reports.status = 'PENDING'`
 - CDN은 사용하지 않으므로 응답에서 제거한다.
 
@@ -666,12 +668,17 @@ Response:
   "api": "UP",
   "db": "UP",
   "redis": "UNKNOWN",
-  "payment": "UP",
+  "payment": "NOT_INTEGRATED",
   "externalBookApi": "UP",
   "moderationBacklog": 1,
   "maintenanceMode": false
 }
 ```
+
+Status note:
+
+- `payment`: 현재 외부 PG 연동이 없으므로 `NOT_INTEGRATED`를 반환한다. 지갑 테이블 count를 결제 상태로 오인하지 않게 하기 위한 값이다.
+- `externalBookApi`: Kakao 도서 검색 API 실제 호출 결과를 5분 TTL로 캐싱한다. health 화면 갱신만으로 외부 API quota를 과도하게 쓰지 않도록 한다.
 
 ### GET `/v1/admin/operations/admins`
 

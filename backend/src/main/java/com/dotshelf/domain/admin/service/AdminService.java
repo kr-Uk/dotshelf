@@ -1,5 +1,6 @@
 package com.dotshelf.domain.admin.service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -133,6 +134,7 @@ public class AdminService {
     private static final String ROLE_ADMIN = "ADMIN";
     private static final String ROLE_USER = "USER";
     private static final String STATUS_PENDING = "PENDING";
+    private static final Duration EXTERNAL_BOOK_API_HEALTH_TTL = Duration.ofMinutes(5);
 
     private final UserService userService;
     private final UserRepository userRepository;
@@ -163,6 +165,9 @@ public class AdminService {
     private final SettlementAccountChangeRequestRepository settlementAccountChangeRequestRepository;
     private final CreatorProfileRepository creatorProfileRepository;
     private final SettlementAdjustmentRepository settlementAdjustmentRepository;
+
+    private volatile String cachedExternalBookApiStatus = "UNKNOWN";
+    private volatile Instant externalBookApiStatusCheckedAt;
 
     public AdminMeResponse getMe(Long userId) {
         return AdminMeResponse.from(requireAdminUser(userId));
@@ -281,6 +286,9 @@ public class AdminService {
             revokeActiveRefreshTokens(target.getId());
         } else if ("RENAME_NICKNAME".equals(action)) {
             String nickname = normalizeNickname(request.nickname());
+            if (!target.getNickname().equals(nickname) && userRepository.existsByNickname(nickname)) {
+                throw new CustomException(ErrorCode.DUPLICATE_NICKNAME);
+            }
             target.updateProfile(nickname, target.getProfileImageUrl(), target.getIntroduction());
         } else {
             throw new CustomException(ErrorCode.INVALID_INPUT, "지원하지 않는 사용자 액션입니다.");
@@ -388,9 +396,12 @@ public class AdminService {
     @Transactional
     public RefundResponse refundPurchase(Long userId, Long targetUserId, RefundRequest request, String ipAddress) {
         User admin = requireAdminUser(userId);
+        if (admin.getId().equals(targetUserId)) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "관리자는 본인 구매를 환불할 수 없습니다.");
+        }
         userService.getUser(targetUserId);
         Long purchaseId = parseLongId(request.purchaseId(), "purchaseId가 올바르지 않습니다.");
-        AssetPurchase purchase = assetPurchaseRepository.findByIdAndUserId(purchaseId, targetUserId)
+        AssetPurchase purchase = assetPurchaseRepository.findByIdAndUserIdForUpdate(purchaseId, targetUserId)
                 .orElseThrow(() -> new CustomException(ErrorCode.RESOURCE_NOT_FOUND));
         if ("REFUNDED".equalsIgnoreCase(purchase.getPurchaseStatus())) {
             throw new CustomException(ErrorCode.INVALID_INPUT, "이미 환불된 구매입니다.");
@@ -856,15 +867,27 @@ public class AdminService {
     }
 
     private String paymentStatus() {
-        try {
-            pageWalletRepository.count();
-            return "UP";
-        } catch (RuntimeException exception) {
-            return "DOWN";
-        }
+        return "NOT_INTEGRATED";
     }
 
     private String externalBookApiStatus() {
+        Instant now = Instant.now();
+        if (externalBookApiStatusCheckedAt != null
+                && now.isBefore(externalBookApiStatusCheckedAt.plus(EXTERNAL_BOOK_API_HEALTH_TTL))) {
+            return cachedExternalBookApiStatus;
+        }
+        synchronized (this) {
+            Instant checkedAt = externalBookApiStatusCheckedAt;
+            if (checkedAt != null && now.isBefore(checkedAt.plus(EXTERNAL_BOOK_API_HEALTH_TTL))) {
+                return cachedExternalBookApiStatus;
+            }
+            cachedExternalBookApiStatus = resolveExternalBookApiStatus();
+            externalBookApiStatusCheckedAt = now;
+            return cachedExternalBookApiStatus;
+        }
+    }
+
+    private String resolveExternalBookApiStatus() {
         try {
             kakaoBookSearchClient.search("도서", 1, 1);
             return "UP";

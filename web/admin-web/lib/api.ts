@@ -440,6 +440,8 @@ function accountChangeStatus(source: unknown): BankAccountChangeRequest["status"
 
 function healthStatus(source: unknown): SystemHealth["payment"] {
   const normalized = normalizeKey(source);
+  if (normalized === "NOT_INTEGRATED" || normalized === "NOTINTEGRATED") return "not_integrated";
+  if (normalized === "UNKNOWN" || normalized === "") return "unknown";
   if (normalized === "DOWN" || normalized === "FAIL" || normalized === "ERROR") return "down";
   if (normalized === "DEGRADED" || normalized === "WARN" || normalized === "SLOW") return "degraded";
   return "ok";
