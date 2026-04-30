@@ -193,7 +193,7 @@ namespace App.Infrastructure.Api
                 response =>
                 {
                     var reviews = MapReviews(response);
-                    Debug.Log($"Book review API loaded {reviews.Count} item(s). bookId={bookId}");
+                    LogVerbose($"Book review API loaded {reviews.Count} item(s). bookId={bookId}");
                     onSuccess?.Invoke(new NotebookReviewListResult(reviews));
                 },
                 error => onError?.Invoke(MapError(error)));
@@ -215,7 +215,7 @@ namespace App.Infrastructure.Api
                 },
                 response =>
                 {
-                    Debug.Log($"Book review API created. bookId={bookId}, reviewId={response?.ReviewId ?? 0}");
+                    LogVerbose($"Book review API created. bookId={bookId}, reviewId={response?.ReviewId ?? 0}");
                     onSuccess?.Invoke(MapReview(response));
                 },
                 error => onError?.Invoke(MapError(error)));
@@ -396,6 +396,14 @@ namespace App.Infrastructure.Api
                 Error = message
             });
             return false;
+        }
+
+        private void LogVerbose(string message)
+        {
+            if (client != null && client.VerboseLogEnabled)
+            {
+                Debug.Log(message);
+            }
         }
 
         private static string NormalizeCategory(string category)

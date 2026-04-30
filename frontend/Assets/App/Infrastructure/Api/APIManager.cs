@@ -30,6 +30,7 @@ namespace App.Infrastructure.Api
 
         public static APIManager Instance { get; private set; }
         public bool HasAccessToken => !string.IsNullOrWhiteSpace(accessToken);
+        public bool EnableVerboseLog => enableVerboseLog;
 
         private void Awake()
         {

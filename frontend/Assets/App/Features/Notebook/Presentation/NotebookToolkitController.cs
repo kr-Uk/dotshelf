@@ -3417,8 +3417,28 @@ namespace App.Features.Notebook.Presentation
 
         private IEnumerable<BookViewModel> FilterRecommendedBooks()
         {
-            var source = recommendedBooks.Length > 0 ? recommendedBooks : marketBooks;
+            var source = recommendedBooks.Length > 0 ? recommendedBooks : BuildRecommendedFallbackBooks();
             return source.Where(MatchesSubTab);
+        }
+
+        private BookViewModel[] BuildRecommendedFallbackBooks()
+        {
+            if (marketBooks.Length == 0)
+            {
+                return Array.Empty<BookViewModel>();
+            }
+
+            var ordered = marketBooks
+                .OrderByDescending(book => book.Rating)
+                .ThenByDescending(book => book.Reviews)
+                .ThenBy(book => book.Title)
+                .ToArray();
+            var recommended = ordered
+                .Where(book => book.Rating >= 4.6f)
+                .Take(8)
+                .ToArray();
+
+            return recommended.Length > 0 ? recommended : ordered.Take(8).ToArray();
         }
 
         private void EnsureMarketBooksRequested()
@@ -3840,10 +3860,13 @@ namespace App.Features.Notebook.Presentation
                             return;
                         }
 
-                        recommendedBooks = MapApiSearchResults(response, string.Empty);
-                        if (recommendedBooks.Length == 0)
+                        var apiRecommendedBooks = MapApiSearchResults(response, string.Empty);
+                        recommendedBooks = apiRecommendedBooks.Length > 0
+                            ? apiRecommendedBooks
+                            : BuildRecommendedFallbackBooks();
+                        if (apiRecommendedBooks.Length == 0)
                         {
-                            recommendedBooks = marketBooks.Take(8).ToArray();
+                            UnityEngine.Debug.LogWarning("Notebook recommended API returned no items; using rating/review fallback.");
                         }
 
                         UnityEngine.Debug.Log($"Notebook recommended API loaded {recommendedBooks.Length} item(s).");
@@ -3856,14 +3879,14 @@ namespace App.Features.Notebook.Presentation
                             return;
                         }
 
-                        recommendedBooks = marketBooks.Take(8).ToArray();
+                        recommendedBooks = BuildRecommendedFallbackBooks();
                         UnityEngine.Debug.LogWarning($"Notebook recommended API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
                         RefreshAll();
                     });
             }
             catch (Exception exception)
             {
-                recommendedBooks = marketBooks.Take(8).ToArray();
+                recommendedBooks = BuildRecommendedFallbackBooks();
                 UnityEngine.Debug.LogWarning("Notebook recommended API failed before send.");
                 UnityEngine.Debug.LogException(exception);
                 RefreshAll();
