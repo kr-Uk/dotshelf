@@ -40,6 +40,25 @@ namespace App.Infrastructure.Api
 
             Instance = this;
             DontDestroyOnLoad(gameObject);
+            HydrateAccessTokenFromAuthSession();
+        }
+
+        // AuthSession (in Assembly-CSharp under App.Auth) cannot be referenced
+        // from this assembly directly, but its persisted access token must be
+        // available to APIManager once MainScene loads. We read the same
+        // PlayerPrefs key here. Keep this key in sync with AuthSession.cs.
+        private void HydrateAccessTokenFromAuthSession()
+        {
+            if (!string.IsNullOrWhiteSpace(accessToken))
+            {
+                return;
+            }
+
+            var stored = PlayerPrefs.GetString("Dotshelf.Auth.AccessToken", string.Empty);
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                accessToken = stored;
+            }
         }
 
         public void Configure(string apiBaseUrl, string token = null, int timeout = 10)

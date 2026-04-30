@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using App.Auth;
 using TMPro;
 using UnityEngine;
@@ -18,16 +19,12 @@ namespace App.Bootstrap
         private const string CanvasName = "LoginCanvas";
         private const string PreferredKoreanFontAssetName = "NotoSansKR-Regular";
         private const string FallbackKoreanFontAssetName = "NOTOSANSKR SDF";
-        private const float CardWidth = 900f;
+        private const float CardWidth = 720f;
         private const float CardHeight = 640f;
-        private const float PrimaryControlWidth = 380f;
-        private const float PrimaryControlHeight = 56f;
         private const float SocialButtonHeight = 52f;
-        private const float LoginPaneWidth = 360f;
-        private const float SocialPaneWidth = 300f;
+        private const float SocialPaneWidth = 360f;
         private const int UiLayer = 5;
         private const int CanvasSortingOrder = 5000;
-        private static readonly bool EnableDebugLogs = false;
 
         private static readonly Color BackgroundColor = Hex("#F4EFE6");
         private static readonly Color CardColor = Hex("#FFFDF9");
@@ -43,7 +40,6 @@ namespace App.Bootstrap
         private static readonly Color TextColor = Hex("#2D2418");
         private static readonly Color MutedTextColor = Hex("#7C6A56");
         private static readonly Color ErrorColor = Hex("#C14E4E");
-        private static readonly Color InputColor = Hex("#FDF9F3");
 
         private Canvas demoCanvas;
         private TMP_FontAsset fontAsset;
@@ -52,27 +48,17 @@ namespace App.Bootstrap
         private Sprite roundedRectSprite;
 
         private GameObject loginScreen;
-        private GameObject signupScreen;
 
-        private TMP_InputField loginIdInput;
-        private TMP_InputField loginPasswordInput;
         private TMP_Text loginMessageLabel;
-        private Button loginButton;
-        private Button showSignupButton;
         private Button appleLoginButton;
         private Button kakaoLoginButton;
         private Button googleLoginButton;
         private Button guestEntryButton;
 
-        private TMP_InputField signupEmailInput;
-        private TMP_InputField signupPasswordInput;
-        private TMP_InputField signupConfirmPasswordInput;
-        private TMP_Text signupMessageLabel;
-        private Button signupSubmitButton;
-        private Button backToLoginButton;
-
         private bool isInitialized;
         private bool listenersRegistered;
+        private bool isLoginInFlight;
+        private IAuthService authService;
 
         public void InitializeIfNeeded()
         {
@@ -91,7 +77,7 @@ namespace App.Bootstrap
             ApplyFontToLoginCanvas();
             EnsureEventSystem();
             DisableLegacyLoginUi();
-            ShowLoginScreen();
+            SetMessage(loginMessageLabel, string.Empty);
             Canvas.ForceUpdateCanvases();
         }
 
@@ -111,146 +97,104 @@ namespace App.Bootstrap
             UnregisterListeners();
         }
 
-        public void OnLoginButtonClicked()
-        {
-            var userId = loginIdInput != null ? loginIdInput.text.Trim() : string.Empty;
-            var password = loginPasswordInput != null ? loginPasswordInput.text.Trim() : string.Empty;
-
-            if (string.IsNullOrWhiteSpace(userId) && string.IsNullOrWhiteSpace(password))
-            {
-                SetMessage(loginMessageLabel, "아이디/이메일과 비밀번호를 입력해주세요.");
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(userId))
-            {
-                SetMessage(loginMessageLabel, "아이디 또는 이메일을 입력해주세요.");
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(password))
-            {
-                SetMessage(loginMessageLabel, "비밀번호를 입력해주세요.");
-                return;
-            }
-
-            SetMessage(loginMessageLabel, "로그인에 성공했습니다. 메인 화면으로 이동합니다.");
-            LogDebug($"[LoginDemo] Login validated for '{userId}'.");
-
-            SessionState.MarkLoggedIn();
-
-            // Mask the brief frames between scene unload and BookshelfSceneInstaller
-            // finishing its setup so the player never sees the empty default scene
-            // between login and main view. Cover self-destructs once MainScene is
-            // ready.
-            MainSceneTransitionCover.Show("메인 화면으로 이동 중입니다.");
-            SetCanvasVisible(false);
-            SceneFlowManager.GoToMain();
-        }
-
-        public void OnShowSignupButtonClicked()
-        {
-            SetMessage(loginMessageLabel, string.Empty);
-            SetMessage(signupMessageLabel, string.Empty);
-
-            if (signupEmailInput != null && string.IsNullOrWhiteSpace(signupEmailInput.text) && loginIdInput != null)
-            {
-                signupEmailInput.text = loginIdInput.text.Trim();
-            }
-
-            if (loginScreen != null)
-            {
-                loginScreen.SetActive(false);
-            }
-
-            if (signupScreen != null)
-            {
-                signupScreen.SetActive(true);
-            }
-        }
-
-        public void OnSignupSubmitButtonClicked()
-        {
-            var email = signupEmailInput != null ? signupEmailInput.text.Trim() : string.Empty;
-            var password = signupPasswordInput != null ? signupPasswordInput.text.Trim() : string.Empty;
-            var confirmPassword = signupConfirmPasswordInput != null ? signupConfirmPasswordInput.text.Trim() : string.Empty;
-
-            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(confirmPassword))
-            {
-                SetMessage(signupMessageLabel, "이메일, 비밀번호, 비밀번호 확인을 모두 입력해주세요.");
-                return;
-            }
-
-            if (!email.Contains("@"))
-            {
-                SetMessage(signupMessageLabel, "이메일 형식을 확인해주세요.");
-                return;
-            }
-
-            if (password != confirmPassword)
-            {
-                SetMessage(signupMessageLabel, "비밀번호가 일치하지 않습니다.");
-                return;
-            }
-
-            SetMessage(signupMessageLabel, string.Empty);
-            LogDebug($"[LoginDemo] Signup validated for '{email}'.");
-
-            // OnboardingScreenController is paired with this controller on the
-            // LoginScene's prefab (LoginSceneController.Awake guarantees it),
-            // so we never AddComponent at runtime — that would lose any
-            // [SerializeField] values configured in the inspector.
-            var onboardingController = GetComponent<OnboardingScreenController>();
-            if (onboardingController == null)
-            {
-                Debug.LogError("[LoginDemo] OnboardingScreenController is missing from LoginScene prefab — signup cannot start onboarding.");
-                return;
-            }
-
-            onboardingController.InitializeIfNeeded();
-            onboardingController.StartOnboarding();
-        }
-
-        public void OnBackToLoginButtonClicked()
-        {
-            ShowLoginScreen();
-        }
-
         public void OnAppleLoginButtonClicked()
         {
-            LogDebug("[LoginDemo] Apple login button clicked.");
-            HandleSocialLoginSuccess("Apple");
+            BeginNativeSocialLogin(SocialProvider.Apple, "Apple");
         }
 
         public void OnKakaoLoginButtonClicked()
         {
-            LogDebug("[LoginDemo] Kakao login button clicked.");
-            HandleSocialLoginSuccess("Kakao");
+            BeginNativeSocialLogin(SocialProvider.Kakao, "Kakao");
         }
 
         public void OnGoogleLoginButtonClicked()
         {
-            LogDebug("[LoginDemo] Google login button clicked.");
-            HandleSocialLoginSuccess("Google");
+            BeginNativeSocialLogin(SocialProvider.Google, "Google");
         }
 
-        public void OnGuestEntryButtonClicked()
+        // External entry point — once a platform SDK obtains a provider token,
+        // call this to ship it to BE /v1/auth/social-login. Unity does not
+        // have native Google/Kakao/Apple SDKs wired up in this repo yet, so
+        // the buttons currently surface a guide message; this method exists
+        // so a future SDK integration can complete the flow without further
+        // controller changes.
+        public async void SubmitSocialLogin(
+            SocialProvider provider,
+            string providerToken,
+            SocialTokenType tokenType = SocialTokenType.Default,
+            string nonce = null)
         {
-            LogDebug("[LoginDemo] Guest entry button clicked.");
-            SetMessage(loginMessageLabel, "게스트로 입장합니다. 테마 설정을 진행해주세요.");
+            if (isLoginInFlight)
+            {
+                return;
+            }
 
+            if (string.IsNullOrWhiteSpace(providerToken))
+            {
+                SetMessage(loginMessageLabel, "소셜 로그인 토큰을 받지 못했습니다. 다시 시도해주세요.");
+                return;
+            }
+
+            EnsureAuthService();
+            isLoginInFlight = true;
+            SetInteractable(false);
+            SetMessage(loginMessageLabel, $"{ProviderDisplayName(provider)} 로그인 중입니다...");
+
+            try
+            {
+                var result = await authService.SocialLoginAsync(provider, providerToken, tokenType, nonce);
+                ApplyLoginResult(result, ProviderDisplayName(provider));
+            }
+            finally
+            {
+                isLoginInFlight = false;
+                SetInteractable(true);
+            }
+        }
+
+        public async void OnGuestEntryButtonClicked()
+        {
+            if (isLoginInFlight)
+            {
+                Debug.Log("[LoginDemo] Guest button click ignored: another auth call is already in flight.");
+                return;
+            }
+
+            Debug.Log("[LoginDemo] Guest button clicked -> calling /v1/auth/guest-session");
+            EnsureAuthService();
+            isLoginInFlight = true;
+            SetInteractable(false);
+            SetMessage(loginMessageLabel, "게스트 세션을 발급받는 중입니다...");
+
+            GuestSessionResult result;
+            try
+            {
+                result = await authService.StartGuestSessionAsync();
+            }
+            finally
+            {
+                isLoginInFlight = false;
+                SetInteractable(true);
+            }
+
+            if (!result.IsSuccess)
+            {
+                Debug.LogWarning($"[LoginDemo] Guest session failed: code={result.ErrorCode} message={result.ErrorMessage}");
+                SetMessage(loginMessageLabel, result.ErrorMessage);
+                return;
+            }
+
+            Debug.Log($"[LoginDemo] Guest session OK: guestSessionId={result.GuestSessionId} expiresInSeconds={result.ExpiresInSeconds}");
+            AuthSession.SaveGuestSessionId(result.GuestSessionId);
+            // Read back from PlayerPrefs so the log proves what actually got
+            // persisted, not just what we tried to write.
+            Debug.Log($"[LoginDemo] PlayerPrefs[Dotshelf.Auth.GuestSessionId] = '{AuthSession.GuestSessionId}'");
             SessionState.MarkGuest();
+            SetMessage(loginMessageLabel, "게스트로 입장합니다. 테마 설정을 진행해주세요.");
 
             // Guest entry skips onboarding step 1 (profile) and step 3 (bookshelf
             // focus). The user only chooses a theme on step 2; the existing
             // completion modal then handles transition to the main scene.
-            //
-            // The OnboardingScreenController is paired with this controller on
-            // the LoginScene's prefab (LoginSceneController.Awake guarantees
-            // it), so GetComponent always returns a real instance. We don't
-            // AddComponent at runtime — that would lose any [SerializeField]
-            // values the inspector configured and hide the dependency from
-            // anyone reading the prefab.
             var onboardingController = GetComponent<OnboardingScreenController>();
             if (onboardingController == null)
             {
@@ -262,15 +206,67 @@ namespace App.Bootstrap
             onboardingController.StartOnboardingAsGuest();
         }
 
-        private void HandleSocialLoginSuccess(string providerName)
+        private void BeginNativeSocialLogin(SocialProvider provider, string displayName)
         {
-            SetMessage(loginMessageLabel, $"{providerName} 로그인에 성공했습니다. 메인 화면으로 이동합니다.");
+            // Platform-side native login (Google/Kakao/Apple SDK) is not wired
+            // into this Unity project yet. Once the SDK is integrated, that
+            // code should call SubmitSocialLogin(...) with the provider token.
+            // For now we surface a clear message instead of pretending to log
+            // the user in.
+            SetMessage(
+                loginMessageLabel,
+                $"{displayName} 로그인 SDK 연동이 준비되지 않았습니다. 게스트 입장으로 진행해주세요.");
+        }
 
+        private void ApplyLoginResult(LoginResult result, string providerDisplayName)
+        {
+            if (!result.IsSuccess)
+            {
+                SetMessage(loginMessageLabel, result.ErrorMessage);
+                return;
+            }
+
+            AuthSession.SaveTokens(
+                result.UserId,
+                result.AccessToken,
+                result.RefreshToken,
+                result.ExpiresIn);
             SessionState.MarkLoggedIn();
+            SetMessage(loginMessageLabel, $"{providerDisplayName} 로그인에 성공했습니다. 메인 화면으로 이동합니다.");
 
             MainSceneTransitionCover.Show("메인 화면으로 이동 중입니다.");
             SetCanvasVisible(false);
             SceneFlowManager.GoToMain();
+        }
+
+        private static string ProviderDisplayName(SocialProvider provider)
+        {
+            return provider switch
+            {
+                SocialProvider.Google => "Google",
+                SocialProvider.Kakao => "Kakao",
+                SocialProvider.Apple => "Apple",
+                _ => provider.ToString()
+            };
+        }
+
+        private void EnsureAuthService()
+        {
+            if (authService != null)
+            {
+                return;
+            }
+
+            var client = AuthApiClient.EnsureInstance();
+            authService = new BackendAuthService(client);
+        }
+
+        private void SetInteractable(bool interactable)
+        {
+            if (appleLoginButton != null) appleLoginButton.interactable = interactable;
+            if (kakaoLoginButton != null) kakaoLoginButton.interactable = interactable;
+            if (googleLoginButton != null) googleLoginButton.interactable = interactable;
+            if (guestEntryButton != null) guestEntryButton.interactable = interactable;
         }
 
         public void SetCanvasVisible(bool isVisible)
@@ -283,16 +279,6 @@ namespace App.Bootstrap
             demoCanvas.gameObject.SetActive(isVisible);
         }
 
-        private static void LogDebug(string message)
-        {
-            if (!EnableDebugLogs)
-            {
-                return;
-            }
-
-            Debug.Log(message);
-        }
-
         private void RegisterListeners()
         {
             if (listenersRegistered)
@@ -300,20 +286,10 @@ namespace App.Bootstrap
                 return;
             }
 
-            AddButtonListener(loginButton, OnLoginButtonClicked);
-            AddButtonListener(showSignupButton, OnShowSignupButtonClicked);
-            AddButtonListener(signupSubmitButton, OnSignupSubmitButtonClicked);
-            AddButtonListener(backToLoginButton, OnBackToLoginButtonClicked);
             AddButtonListener(appleLoginButton, OnAppleLoginButtonClicked);
             AddButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             AddButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
             AddButtonListener(guestEntryButton, OnGuestEntryButtonClicked);
-
-            AddInputListener(loginIdInput, ClearLoginMessage);
-            AddInputListener(loginPasswordInput, ClearLoginMessage);
-            AddInputListener(signupEmailInput, ClearSignupMessage);
-            AddInputListener(signupPasswordInput, ClearSignupMessage);
-            AddInputListener(signupConfirmPasswordInput, ClearSignupMessage);
 
             listenersRegistered = true;
         }
@@ -325,20 +301,10 @@ namespace App.Bootstrap
                 return;
             }
 
-            RemoveButtonListener(loginButton, OnLoginButtonClicked);
-            RemoveButtonListener(showSignupButton, OnShowSignupButtonClicked);
-            RemoveButtonListener(signupSubmitButton, OnSignupSubmitButtonClicked);
-            RemoveButtonListener(backToLoginButton, OnBackToLoginButtonClicked);
             RemoveButtonListener(appleLoginButton, OnAppleLoginButtonClicked);
             RemoveButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             RemoveButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
             RemoveButtonListener(guestEntryButton, OnGuestEntryButtonClicked);
-
-            RemoveInputListener(loginIdInput, ClearLoginMessage);
-            RemoveInputListener(loginPasswordInput, ClearLoginMessage);
-            RemoveInputListener(signupEmailInput, ClearSignupMessage);
-            RemoveInputListener(signupPasswordInput, ClearSignupMessage);
-            RemoveInputListener(signupConfirmPasswordInput, ClearSignupMessage);
 
             listenersRegistered = false;
         }
@@ -415,11 +381,7 @@ namespace App.Bootstrap
             loginScreen = CreateRectObject("LoginScreen", card.transform);
             StretchToParent((RectTransform)loginScreen.transform);
 
-            signupScreen = CreateRectObject("SignupScreen", card.transform);
-            StretchToParent((RectTransform)signupScreen.transform);
-
             BuildLoginScreen(loginScreen.transform);
-            BuildSignupScreen(signupScreen.transform);
         }
 
         private void BuildLoginScreen(Transform parent)
@@ -427,116 +389,56 @@ namespace App.Bootstrap
             var layoutRoot = CreateRectObject("LoginLayoutRoot", parent);
             StretchWithPadding((RectTransform)layoutRoot.transform, new Vector2(56f, 44f), new Vector2(-56f, -44f));
 
-            var horizontalLayout = layoutRoot.AddComponent<HorizontalLayoutGroup>();
-            horizontalLayout.padding = new RectOffset(0, 0, 0, 0);
-            horizontalLayout.spacing = 28f;
-            horizontalLayout.childAlignment = TextAnchor.MiddleCenter;
-            horizontalLayout.childControlWidth = false;
-            horizontalLayout.childControlHeight = true;
-            horizontalLayout.childForceExpandWidth = false;
-            horizontalLayout.childForceExpandHeight = true;
+            var pane = CreateColumn(layoutRoot.transform, "SocialPane", SocialPaneWidth, 16f);
+            ConfigurePaneLayout(pane, TextAnchor.MiddleCenter);
 
-            var leftPane = CreateColumn(layoutRoot.transform, "LoginPane", LoginPaneWidth, 18f);
-            ConfigurePaneLayout(leftPane, TextAnchor.MiddleCenter);
+            // CreateColumn returns a RectTransform that expects to be sized by
+            // a parent HorizontalLayoutGroup. Now that we render only this
+            // single pane, anchor it to fill the layout root vertically and
+            // size it to the configured pane width so the VerticalLayoutGroup
+            // inside it has a width to lay out children against.
+            pane.anchorMin = new Vector2(0.5f, 0f);
+            pane.anchorMax = new Vector2(0.5f, 1f);
+            pane.pivot = new Vector2(0.5f, 0.5f);
+            pane.anchoredPosition = Vector2.zero;
+            pane.sizeDelta = new Vector2(SocialPaneWidth, 0f);
 
-            var leftHeader = CreateLayoutText(
-                leftPane.transform,
-                "LoginGuideText",
-                "아이디 / 비밀번호를 입력해주세요",
-                20f,
+            var brand = CreateLayoutText(
+                pane.transform,
+                "Brand",
+                "BOOK ROOM",
+                14f,
+                FontStyles.Bold,
+                MutedTextColor,
+                TextAlignmentOptions.Center,
+                22f);
+            brand.characterSpacing = 6f;
+
+            var title = CreateLayoutText(
+                pane.transform,
+                "Title",
+                "로그인",
+                28f,
                 FontStyles.Bold,
                 TextColor,
-                TextAlignmentOptions.Left,
-                48f);
-            leftHeader.margin = new Vector4(0f, 0f, 0f, 4f);
+                TextAlignmentOptions.Center,
+                40f);
+            title.margin = new Vector4(0f, 0f, 0f, 8f);
 
-            loginIdInput = CreateStackInput(leftPane.transform, "LoginIdField", "아이디 입력", false);
-            loginPasswordInput = CreateStackInput(leftPane.transform, "LoginPasswordField", "비밀번호 입력", true);
-            loginButton = CreateStackButton(leftPane.transform, "LoginButton", "로그인", PrimaryColor, Color.white, false, BorderColor, PrimaryControlHeight);
-            showSignupButton = CreateStackButton(leftPane.transform, "ShowSignupButton", "회원가입", SecondaryColor, TextColor, true, BorderColor, PrimaryControlHeight);
+            appleLoginButton = CreateStackButton(pane.transform, "AppleButton", "Apple 로그인", AppleColor, Color.white, false, BorderColor, SocialButtonHeight);
+            kakaoLoginButton = CreateStackButton(pane.transform, "KakaoButton", "Kakao 로그인", KakaoColor, TextColor, false, BorderColor, SocialButtonHeight);
+            googleLoginButton = CreateStackButton(pane.transform, "GoogleButton", "Google 로그인", GoogleColor, TextColor, true, BorderColor, SocialButtonHeight);
+            guestEntryButton = CreateStackButton(pane.transform, "GuestEntryButton", "게스트로 입장하기", SecondaryColor, TextColor, true, BorderColor, SocialButtonHeight);
+
             loginMessageLabel = CreateLayoutText(
-                leftPane.transform,
+                pane.transform,
                 "LoginMessage",
                 string.Empty,
                 14f,
                 FontStyles.Normal,
                 ErrorColor,
-                TextAlignmentOptions.Left,
-                24f);
-
-            var divider = CreateImage(layoutRoot.transform, "Divider", WithAlpha(BorderColor, 0.9f));
-            divider.raycastTarget = false;
-            var dividerLayout = divider.gameObject.AddComponent<LayoutElement>();
-            dividerLayout.minWidth = 2f;
-            dividerLayout.preferredWidth = 2f;
-            dividerLayout.flexibleWidth = 0f;
-            dividerLayout.flexibleHeight = 1f;
-
-            var dividerRect = divider.rectTransform;
-            dividerRect.anchorMin = new Vector2(0.5f, 0f);
-            dividerRect.anchorMax = new Vector2(0.5f, 1f);
-            dividerRect.pivot = new Vector2(0.5f, 0.5f);
-            dividerRect.sizeDelta = new Vector2(2f, 0f);
-
-            var rightPane = CreateColumn(layoutRoot.transform, "SocialPane", SocialPaneWidth, 16f);
-            ConfigurePaneLayout(rightPane, TextAnchor.MiddleCenter);
-
-            var socialHeader = CreateLayoutText(
-                rightPane.transform,
-                "SocialGuideText",
-                "소셜 로그인",
-                18f,
-                FontStyles.Bold,
-                MutedTextColor,
                 TextAlignmentOptions.Center,
-                40f);
-            socialHeader.characterSpacing = 1f;
-
-            appleLoginButton = CreateStackButton(rightPane.transform, "AppleButton", "Apple 로그인", AppleColor, Color.white, false, BorderColor, SocialButtonHeight);
-            kakaoLoginButton = CreateStackButton(rightPane.transform, "KakaoButton", "Kakao 로그인", KakaoColor, TextColor, false, BorderColor, SocialButtonHeight);
-            googleLoginButton = CreateStackButton(rightPane.transform, "GoogleButton", "Google 로그인", GoogleColor, TextColor, true, BorderColor, SocialButtonHeight);
-            guestEntryButton = CreateStackButton(rightPane.transform, "GuestEntryButton", "게스트로 입장하기", SecondaryColor, TextColor, true, BorderColor, SocialButtonHeight);
-        }
-
-        private void BuildSignupScreen(Transform parent)
-        {
-            CreateText(parent, "Brand", "BOOK ROOM", 14f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center, new Vector2(0f, -34f), new Vector2(260f, 22f), 6f);
-            CreateText(parent, "Title", "회원가입", 36f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center, new Vector2(0f, -86f), new Vector2(360f, 42f));
-            CreateText(parent, "Subtitle", "이메일과 비밀번호만 받는 데모 화면입니다.", 16f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Center, new Vector2(0f, -126f), new Vector2(380f, 24f));
-
-            signupEmailInput = CreateLabeledInput(parent, "SignupEmailField", "이메일", "이메일 입력", new Vector2(0f, -196f), false);
-            signupPasswordInput = CreateLabeledInput(parent, "SignupPasswordField", "비밀번호", "비밀번호 입력", new Vector2(0f, -284f), true);
-            signupConfirmPasswordInput = CreateLabeledInput(parent, "SignupConfirmPasswordField", "비밀번호 확인", "비밀번호 다시 입력", new Vector2(0f, -372f), true);
-
-            signupMessageLabel = CreateText(parent, "SignupMessage", string.Empty, 14f, FontStyles.Normal, ErrorColor, TextAlignmentOptions.Center, new Vector2(0f, -430f), new Vector2(380f, 22f));
-            signupSubmitButton = CreateButton(parent, "SignupButton", "회원가입", PrimaryColor, Color.white, new Vector2(0f, -492f), new Vector2(PrimaryControlWidth, PrimaryControlHeight), false, BorderColor);
-            backToLoginButton = CreateButton(parent, "BackToLoginButton", "로그인으로 돌아가기", SecondaryColor, TextColor, new Vector2(0f, -556f), new Vector2(PrimaryControlWidth, PrimaryControlHeight), true, BorderColor);
-        }
-
-        private void ShowLoginScreen()
-        {
-            SetMessage(loginMessageLabel, string.Empty);
-            SetMessage(signupMessageLabel, string.Empty);
-
-            if (loginScreen != null)
-            {
-                loginScreen.SetActive(true);
-            }
-
-            if (signupScreen != null)
-            {
-                signupScreen.SetActive(false);
-            }
-        }
-
-        private void ClearLoginMessage(string _)
-        {
-            SetMessage(loginMessageLabel, string.Empty);
-        }
-
-        private void ClearSignupMessage(string _)
-        {
-            SetMessage(signupMessageLabel, string.Empty);
+                24f);
         }
 
         private void DisableLegacyLoginUi()
@@ -586,68 +488,6 @@ namespace App.Bootstrap
 #endif
         }
 
-        private TMP_InputField CreateLabeledInput(Transform parent, string objectName, string labelText, string placeholderText, Vector2 anchoredPosition, bool isPassword)
-        {
-            var container = CreateRectObject(objectName, parent);
-            var containerRect = (RectTransform)container.transform;
-            containerRect.anchorMin = new Vector2(0.5f, 1f);
-            containerRect.anchorMax = new Vector2(0.5f, 1f);
-            containerRect.pivot = new Vector2(0.5f, 1f);
-            containerRect.sizeDelta = new Vector2(PrimaryControlWidth, 72f);
-            containerRect.anchoredPosition = anchoredPosition;
-
-            CreateText(
-                container.transform,
-                "Label",
-                labelText,
-                12f,
-                FontStyles.Bold,
-                MutedTextColor,
-                TextAlignmentOptions.Left,
-                new Vector2(-PrimaryControlWidth * 0.5f, 0f),
-                new Vector2(PrimaryControlWidth, 18f),
-                4f,
-                new Vector2(0f, 1f));
-
-            var fieldBackground = CreateImage(container.transform, "FieldBackground", InputColor);
-            fieldBackground.sprite = roundedRectSprite;
-            fieldBackground.type = Image.Type.Sliced;
-            var fieldRect = fieldBackground.rectTransform;
-            fieldRect.anchorMin = new Vector2(0.5f, 1f);
-            fieldRect.anchorMax = new Vector2(0.5f, 1f);
-            fieldRect.pivot = new Vector2(0.5f, 1f);
-            fieldRect.sizeDelta = new Vector2(PrimaryControlWidth, PrimaryControlHeight);
-            fieldRect.anchoredPosition = new Vector2(0f, -20f);
-
-            var fieldOutline = fieldBackground.gameObject.AddComponent<Outline>();
-            fieldOutline.effectColor = WithAlpha(BorderColor, 0.95f);
-            fieldOutline.effectDistance = new Vector2(1f, -1f);
-
-            var input = fieldBackground.gameObject.AddComponent<TMP_InputField>();
-            input.targetGraphic = fieldBackground;
-            input.textViewport = CreateViewport(fieldBackground.transform);
-            input.contentType = isPassword ? TMP_InputField.ContentType.Password : TMP_InputField.ContentType.Standard;
-            input.lineType = TMP_InputField.LineType.SingleLine;
-            input.caretColor = TextColor;
-            input.selectionColor = WithAlpha(PrimaryColor, 0.25f);
-            input.customCaretColor = true;
-
-            var textComponent = CreateText(input.textViewport, "Text", string.Empty, 17f, FontStyles.Normal, TextColor, TextAlignmentOptions.MidlineLeft, Vector2.zero, Vector2.zero, 0f);
-            StretchWithPadding(textComponent.rectTransform, new Vector2(16f, 10f), new Vector2(-16f, -10f));
-            textComponent.textWrappingMode = TextWrappingModes.NoWrap;
-            textComponent.overflowMode = TextOverflowModes.Ellipsis;
-
-            var placeholder = CreateText(input.textViewport, "Placeholder", placeholderText, 17f, FontStyles.Normal, WithAlpha(MutedTextColor, 0.7f), TextAlignmentOptions.MidlineLeft, Vector2.zero, Vector2.zero, 0f);
-            StretchWithPadding(placeholder.rectTransform, new Vector2(16f, 10f), new Vector2(-16f, -10f));
-            placeholder.textWrappingMode = TextWrappingModes.NoWrap;
-            placeholder.overflowMode = TextOverflowModes.Ellipsis;
-
-            input.textComponent = textComponent;
-            input.placeholder = placeholder;
-
-            return input;
-        }
-
         private Button CreateButton(
             Transform parent,
             string objectName,
@@ -694,14 +534,6 @@ namespace App.Bootstrap
             StretchToParent(label.rectTransform);
 
             return button;
-        }
-
-        private RectTransform CreateViewport(Transform parent)
-        {
-            var viewportObject = CreateRectObject("TextArea", parent);
-            var viewport = (RectTransform)viewportObject.transform;
-            StretchToParent(viewport);
-            return viewport;
         }
 
         private TMP_Text CreateText(
@@ -834,22 +666,6 @@ namespace App.Bootstrap
             {
                 ApplyFontToText(tmpText);
             }
-
-            var inputFields = demoCanvas.GetComponentsInChildren<TMP_InputField>(true);
-            foreach (var inputField in inputFields)
-            {
-                if (inputField == null)
-                {
-                    continue;
-                }
-
-                ApplyFontToText(inputField.textComponent);
-
-                if (inputField.placeholder is TMP_Text placeholderText)
-                {
-                    ApplyFontToText(placeholderText);
-                }
-            }
         }
 
         private void ApplyFontToText(TMP_Text text)
@@ -891,31 +707,24 @@ namespace App.Bootstrap
             var commonText =
                 "BOOK ROOM" +
                 "로그인" +
-                "회원가입" +
-                "아이디 / 비밀번호를 입력해주세요" +
-                "데모용 화면입니다. 입력 검증만 동작합니다." +
-                "이메일과 비밀번호만 받는 데모 화면입니다." +
-                "아이디 / 이메일" +
-                "아이디 입력" +
-                "아이디 또는 이메일 입력" +
-                "비밀번호" +
-                "비밀번호 입력" +
-                "소셜 로그인" +
                 "Apple 로그인" +
                 "Kakao 로그인" +
                 "Google 로그인" +
                 "게스트로 입장하기" +
-                "이메일" +
-                "이메일 입력" +
-                "비밀번호 확인" +
-                "비밀번호 다시 입력" +
-                "로그인으로 돌아가기" +
-                "아이디/이메일과 비밀번호를 입력해주세요." +
-                "아이디 또는 이메일을 입력해주세요." +
-                "비밀번호를 입력해주세요." +
-                "이메일, 비밀번호, 비밀번호 확인을 모두 입력해주세요." +
-                "이메일 형식을 확인해주세요." +
-                "비밀번호가 일치하지 않습니다.";
+                "게스트 세션을 발급받는 중입니다..." +
+                "게스트로 입장합니다. 테마 설정을 진행해주세요." +
+                "Apple 로그인 중입니다..." +
+                "Kakao 로그인 중입니다..." +
+                "Google 로그인 중입니다..." +
+                "Apple 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
+                "Kakao 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
+                "Google 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
+                "Apple 로그인 SDK 연동이 준비되지 않았습니다. 게스트 입장으로 진행해주세요." +
+                "Kakao 로그인 SDK 연동이 준비되지 않았습니다. 게스트 입장으로 진행해주세요." +
+                "Google 로그인 SDK 연동이 준비되지 않았습니다. 게스트 입장으로 진행해주세요." +
+                "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요." +
+                "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요." +
+                "게스트 세션을 시작하지 못했습니다. 네트워크 상태를 확인해주세요.";
 
             targetFontAsset.TryAddCharacters(commonText, out _);
         }
@@ -1050,22 +859,6 @@ namespace App.Bootstrap
             }
         }
 
-        private static void AddInputListener(TMP_InputField inputField, UnityEngine.Events.UnityAction<string> callback)
-        {
-            if (inputField != null)
-            {
-                inputField.onValueChanged.AddListener(callback);
-            }
-        }
-
-        private static void RemoveInputListener(TMP_InputField inputField, UnityEngine.Events.UnityAction<string> callback)
-        {
-            if (inputField != null)
-            {
-                inputField.onValueChanged.RemoveListener(callback);
-            }
-        }
-
         private static GameObject CreateRectObject(string objectName, Transform parent)
         {
             var gameObject = new GameObject(objectName, typeof(RectTransform));
@@ -1134,45 +927,6 @@ namespace App.Bootstrap
             layoutElement.minHeight = preferredHeight;
 
             return text;
-        }
-
-        private TMP_InputField CreateStackInput(Transform parent, string objectName, string placeholderText, bool isPassword)
-        {
-            var fieldBackground = CreateImage(parent, objectName, InputColor);
-            fieldBackground.sprite = roundedRectSprite;
-            fieldBackground.type = Image.Type.Sliced;
-
-            var fieldLayout = fieldBackground.gameObject.AddComponent<LayoutElement>();
-            fieldLayout.minHeight = PrimaryControlHeight;
-            fieldLayout.preferredHeight = PrimaryControlHeight;
-            fieldLayout.flexibleWidth = 1f;
-
-            var fieldOutline = fieldBackground.gameObject.AddComponent<Outline>();
-            fieldOutline.effectColor = WithAlpha(BorderColor, 0.95f);
-            fieldOutline.effectDistance = new Vector2(1f, -1f);
-
-            var input = fieldBackground.gameObject.AddComponent<TMP_InputField>();
-            input.targetGraphic = fieldBackground;
-            input.textViewport = CreateViewport(fieldBackground.transform);
-            input.contentType = isPassword ? TMP_InputField.ContentType.Password : TMP_InputField.ContentType.Standard;
-            input.lineType = TMP_InputField.LineType.SingleLine;
-            input.caretColor = TextColor;
-            input.selectionColor = WithAlpha(PrimaryColor, 0.25f);
-            input.customCaretColor = true;
-
-            var textComponent = CreateText(input.textViewport, "Text", string.Empty, 17f, FontStyles.Normal, TextColor, TextAlignmentOptions.MidlineLeft, Vector2.zero, Vector2.zero, 0f);
-            StretchWithPadding(textComponent.rectTransform, new Vector2(16f, 10f), new Vector2(-16f, -10f));
-            textComponent.textWrappingMode = TextWrappingModes.NoWrap;
-            textComponent.overflowMode = TextOverflowModes.Ellipsis;
-
-            var placeholder = CreateText(input.textViewport, "Placeholder", placeholderText, 17f, FontStyles.Normal, WithAlpha(MutedTextColor, 0.7f), TextAlignmentOptions.MidlineLeft, Vector2.zero, Vector2.zero, 0f);
-            StretchWithPadding(placeholder.rectTransform, new Vector2(16f, 10f), new Vector2(-16f, -10f));
-            placeholder.textWrappingMode = TextWrappingModes.NoWrap;
-            placeholder.overflowMode = TextOverflowModes.Ellipsis;
-
-            input.textComponent = textComponent;
-            input.placeholder = placeholder;
-            return input;
         }
 
         private Button CreateStackButton(
