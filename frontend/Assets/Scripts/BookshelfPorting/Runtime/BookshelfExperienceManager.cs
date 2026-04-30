@@ -217,6 +217,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private BookshelfRuntimeDataStore dataStore = null;
         [SerializeField] private BookshelfApiSyncController bookshelfApiSyncController = null;
         [SerializeField] private NotebookScreenController notebookScreenController = null;
+        [SerializeField] private NotebookUiSceneLoader notebookUiSceneLoader = null;
 
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
         private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
@@ -224,6 +225,7 @@ namespace BookshelfPorting.Runtime
         private NotebookRuntimeUseCase notebookRuntimeUseCase;
 
         private Canvas hudCanvas;
+        private bool isNotebookFocusWaitingForScene;
         private Button overlayPreviousFocusButton;
         private Button overlayNextFocusButton;
         private Button bookshelfEditModeButton;
@@ -561,6 +563,11 @@ namespace BookshelfPorting.Runtime
             bookshelfApiSyncController = syncController;
         }
 
+        public void ConfigureNotebookUiSceneLoader(NotebookUiSceneLoader sceneLoader)
+        {
+            notebookUiSceneLoader = sceneLoader;
+        }
+
         public void NotifyBookshelfApiSynced()
         {
             RefreshBookshelfIndexIndicator(CurrentFocusArea == ExperienceFocusArea.Bookshelf && (state == null || !state.IsViewingBook));
@@ -844,7 +851,16 @@ namespace BookshelfPorting.Runtime
 
             CancelBookPlacementEdit(false);
             SetBookshelfEditMode(false);
-            ConfigureNotebookScreen();
+            if (!EnsureNotebookUiReadyForFocus())
+            {
+                return;
+            }
+
+            FocusNotebookImmediateWithLoadedUi();
+        }
+
+        private void FocusNotebookImmediateWithLoadedUi()
+        {
             if (CurrentFocusArea == ExperienceFocusArea.Notebook && notebookScreenController != null)
             {
                 notebookScreenController.SetImmersiveMode(true);
@@ -880,6 +896,7 @@ namespace BookshelfPorting.Runtime
             }
 
             cameraController.MoveToMode(CameraMode.Overview);
+            notebookUiSceneLoader?.NotifyFocusExited();
         }
 
         private bool HandleFocusShortcuts()
@@ -9599,9 +9616,15 @@ namespace BookshelfPorting.Runtime
 
         private void ConfigureNotebookScreen()
         {
-            if (notebookScreenController == null)
+            if (notebookUiSceneLoader != null && !notebookUiSceneLoader.OwnsController(notebookScreenController))
             {
-                notebookScreenController = FindFirstObjectByType<NotebookScreenController>();
+                notebookScreenController = notebookUiSceneLoader.RefreshController();
+            }
+
+            if (notebookScreenController == null && notebookUiSceneLoader == null)
+            {
+                var controllers = FindObjectsByType<NotebookScreenController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+                notebookScreenController = controllers != null && controllers.Length > 0 ? controllers[0] : null;
             }
 
             if (notebookScreenController == null || Camera.main == null)
@@ -9620,6 +9643,41 @@ namespace BookshelfPorting.Runtime
                 loadNotebookMarketBooksUseCase,
                 addNotebookBookToShelfUseCase,
                 notebookRuntimeUseCase);
+            notebookUiSceneLoader?.MeasureCanvasActivationCost(notebookScreenController);
+        }
+
+        private bool EnsureNotebookUiReadyForFocus()
+        {
+            ConfigureNotebookScreen();
+            if (notebookScreenController != null)
+            {
+                BookshelfSceneInstaller.AlignNotebookAnchorToLoadedNotebook();
+                return true;
+            }
+
+            if (notebookUiSceneLoader == null)
+            {
+                return true;
+            }
+
+            if (isNotebookFocusWaitingForScene)
+            {
+                return false;
+            }
+
+            isNotebookFocusWaitingForScene = true;
+            notebookUiSceneLoader.EnsureLoaded(controller =>
+            {
+                isNotebookFocusWaitingForScene = false;
+                notebookScreenController = controller;
+                ConfigureNotebookScreen();
+                BookshelfSceneInstaller.AlignNotebookAnchorToLoadedNotebook();
+                if (isActiveAndEnabled && notebookScreenController != null)
+                {
+                    FocusNotebookImmediate();
+                }
+            });
+            return false;
         }
 
         public void ConfigureNotebookBookUseCases(

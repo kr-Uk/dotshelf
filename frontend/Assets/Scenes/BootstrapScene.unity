@@ -156,7 +156,7 @@ MonoBehaviour:
   notebookUiSceneName: NotebookUIScene
   loadMainSceneOnStart: 1
   loadAdditively: 1
-  loadNotebookUiScene: 1
+  loadNotebookUiScene: 0
   setLoadedSceneActive: 1
   runInstallersAfterLoad: 1
   forceGenerateOnBootstrapLoad: 0

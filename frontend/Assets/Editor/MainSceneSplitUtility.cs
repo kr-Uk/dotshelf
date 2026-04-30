@@ -26,10 +26,12 @@ namespace Dotshelf.EditorTools
         private const string RuntimeSmokeStartTimeKey = "Dotshelf.MainSceneSplit.RuntimeSmoke.StartedAt";
         private const string RuntimeSmokeFrameCountKey = "Dotshelf.MainSceneSplit.RuntimeSmoke.FrameCount";
         private const string RuntimeSmokeExitCodeKey = "Dotshelf.MainSceneSplit.RuntimeSmoke.ExitCode";
+        private const string RuntimeSmokeNotebookFocusRequestedKey = "Dotshelf.MainSceneSplit.RuntimeSmoke.NotebookFocusRequested";
 
         private static double runtimeSmokeStartedAt;
         private static int runtimeSmokeFrameCount;
         private static int runtimeSmokeExitCode = -1;
+        private static bool runtimeSmokeNotebookFocusRequested;
 
         [InitializeOnLoadMethod]
         private static void ResumeRuntimeSmokeValidationIfNeeded()
@@ -42,6 +44,7 @@ namespace Dotshelf.EditorTools
             runtimeSmokeStartedAt = SessionState.GetFloat(RuntimeSmokeStartTimeKey, (float)EditorApplication.timeSinceStartup);
             runtimeSmokeFrameCount = SessionState.GetInt(RuntimeSmokeFrameCountKey, 0);
             runtimeSmokeExitCode = SessionState.GetInt(RuntimeSmokeExitCodeKey, -1);
+            runtimeSmokeNotebookFocusRequested = SessionState.GetBool(RuntimeSmokeNotebookFocusRequestedKey, false);
             EditorApplication.update -= TickRuntimeSmokeValidation;
             EditorApplication.update += TickRuntimeSmokeValidation;
         }
@@ -70,7 +73,7 @@ namespace Dotshelf.EditorTools
             AssignSerializedString(sceneEntry, "notebookUiSceneName", SceneKeys.NotebookUi);
             AssignSerializedBool(sceneEntry, "loadMainSceneOnStart", true);
             AssignSerializedBool(sceneEntry, "loadAdditively", true);
-            AssignSerializedBool(sceneEntry, "loadNotebookUiScene", true);
+            AssignSerializedBool(sceneEntry, "loadNotebookUiScene", false);
             AssignSerializedBool(sceneEntry, "setLoadedSceneActive", true);
             AssignSerializedBool(sceneEntry, "runInstallersAfterLoad", true);
             AssignSerializedBool(sceneEntry, "forceGenerateOnBootstrapLoad", false);
@@ -122,6 +125,8 @@ namespace Dotshelf.EditorTools
             SessionState.SetFloat(RuntimeSmokeStartTimeKey, (float)runtimeSmokeStartedAt);
             SessionState.SetInt(RuntimeSmokeFrameCountKey, runtimeSmokeFrameCount);
             SessionState.SetInt(RuntimeSmokeExitCodeKey, runtimeSmokeExitCode);
+            SessionState.SetBool(RuntimeSmokeNotebookFocusRequestedKey, false);
+            runtimeSmokeNotebookFocusRequested = false;
             EditorApplication.update -= TickRuntimeSmokeValidation;
             EditorApplication.update += TickRuntimeSmokeValidation;
             EditorApplication.EnterPlaymode();
@@ -212,7 +217,7 @@ namespace Dotshelf.EditorTools
             RequireSerializedString(serialized, "notebookUiSceneName", SceneKeys.NotebookUi);
             RequireSerializedBool(serialized, "loadMainSceneOnStart", true);
             RequireSerializedBool(serialized, "loadAdditively", true);
-            RequireSerializedBool(serialized, "loadNotebookUiScene", true);
+            RequireSerializedBool(serialized, "loadNotebookUiScene", false);
             RequireSerializedBool(serialized, "setLoadedSceneActive", true);
             RequireSerializedBool(serialized, "runInstallersAfterLoad", true);
             RequireSerializedBool(serialized, "forceGenerateOnBootstrapLoad", false);
@@ -315,14 +320,50 @@ namespace Dotshelf.EditorTools
 
             var mainRoomScene = SceneManager.GetSceneByName(SceneKeys.MainRoom);
             var notebookUiScene = SceneManager.GetSceneByName(SceneKeys.NotebookUi);
-            if (!mainRoomScene.IsValid() || !mainRoomScene.isLoaded ||
-                !notebookUiScene.IsValid() || !notebookUiScene.isLoaded)
+            if (!mainRoomScene.IsValid() || !mainRoomScene.isLoaded)
             {
                 return;
             }
 
             try
             {
+                if (!runtimeSmokeNotebookFocusRequested)
+                {
+                    if (notebookUiScene.IsValid() && notebookUiScene.isLoaded)
+                    {
+                        throw new InvalidOperationException("NotebookUIScene was preloaded before notebook focus. Lazy-load expectation failed.");
+                    }
+
+                    var experienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                    if (experienceManager == null)
+                    {
+                        throw new InvalidOperationException("Runtime smoke validation found no BookshelfExperienceManager.");
+                    }
+
+                    var cameraController = UnityEngine.Object.FindFirstObjectByType<CameraController>(FindObjectsInactive.Include);
+                    if (cameraController != null && cameraController.IsTransitioning)
+                    {
+                        return;
+                    }
+
+                    runtimeSmokeNotebookFocusRequested = true;
+                    SessionState.SetBool(RuntimeSmokeNotebookFocusRequestedKey, true);
+                    experienceManager.FocusNotebook();
+                    return;
+                }
+
+                notebookUiScene = SceneManager.GetSceneByName(SceneKeys.NotebookUi);
+                if (!notebookUiScene.IsValid() || !notebookUiScene.isLoaded)
+                {
+                    return;
+                }
+
+                var loader = UnityEngine.Object.FindFirstObjectByType<NotebookUiSceneLoader>(FindObjectsInactive.Include);
+                if (loader != null && loader.IsLoading)
+                {
+                    return;
+                }
+
                 if (SceneManager.GetActiveScene().name != SceneKeys.MainRoom)
                 {
                     throw new InvalidOperationException($"Active scene mismatch. Expected {SceneKeys.MainRoom}, got {SceneManager.GetActiveScene().name}.");
@@ -359,7 +400,7 @@ namespace Dotshelf.EditorTools
                     throw new InvalidOperationException("Runtime smoke validation found no APIManager.");
                 }
 
-                Debug.Log($"Bootstrap runtime smoke validation passed. scenes={SceneKeys.MainRoom}+{SceneKeys.NotebookUi}, catalog={catalogCount}, frames={runtimeSmokeFrameCount}.");
+                Debug.Log($"Bootstrap runtime smoke validation passed. scenes={SceneKeys.MainRoom}+lazy {SceneKeys.NotebookUi}, catalog={catalogCount}, frames={runtimeSmokeFrameCount}.");
                 FinishRuntimeSmokeValidation(0, null);
             }
             catch (Exception exception)
@@ -372,6 +413,7 @@ namespace Dotshelf.EditorTools
         {
             runtimeSmokeExitCode = exitCode;
             SessionState.SetInt(RuntimeSmokeExitCodeKey, exitCode);
+            SessionState.SetBool(RuntimeSmokeNotebookFocusRequestedKey, false);
             if (!string.IsNullOrWhiteSpace(failureMessage))
             {
                 Debug.LogError(failureMessage);

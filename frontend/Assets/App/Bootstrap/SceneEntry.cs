@@ -11,7 +11,7 @@ namespace App.Bootstrap
         [SerializeField] private string notebookUiSceneName = SceneKeys.NotebookUi;
         [SerializeField] private bool loadMainSceneOnStart = true;
         [SerializeField] private bool loadAdditively = true;
-        [SerializeField] private bool loadNotebookUiScene = true;
+        [SerializeField] private bool loadNotebookUiScene = false;
         [SerializeField] private bool setLoadedSceneActive = true;
         [SerializeField] private bool runInstallersAfterLoad = true;
         [SerializeField] private bool forceGenerateOnBootstrapLoad = false;
@@ -89,7 +89,7 @@ namespace App.Bootstrap
                 RunSceneInstallers(mainScene, forceGenerateOnBootstrapLoad);
             }
 
-            Debug.Log($"Dotshelf bootstrap loaded {mainSceneName} (additive={loadAdditively}, notebookUi={loadNotebookUiScene}).");
+            Debug.Log($"Dotshelf bootstrap loaded {mainSceneName} (additive={loadAdditively}, preloadNotebookUi={loadNotebookUiScene}).");
             isLoading = false;
         }
 
