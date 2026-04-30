@@ -48,6 +48,8 @@ public class User extends BaseEntity {
 
     private Instant lastLoginAt;
 
+    private Instant sessionInvalidatedAt;
+
     private Instant deletedAt;
 
     @Builder
@@ -70,6 +72,10 @@ public class User extends BaseEntity {
 
     public void markLogin() {
         this.lastLoginAt = Instant.now();
+    }
+
+    public void invalidateSessions() {
+        this.sessionInvalidatedAt = Instant.now();
     }
 
     public void delete() {

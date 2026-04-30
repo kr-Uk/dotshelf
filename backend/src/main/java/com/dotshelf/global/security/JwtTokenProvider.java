@@ -53,11 +53,15 @@ public class JwtTokenProvider {
     }
 
     public Long parseUserId(String token) {
+        return parseAccessToken(token).userId();
+    }
+
+    public AccessTokenClaims parseAccessToken(String token) {
         Claims claims = parse(token);
         if (!TOKEN_TYPE_ACCESS.equals(claims.get(CLAIM_TOKEN_TYPE, String.class))) {
             throw new CustomException(ErrorCode.INVALID_TOKEN);
         }
-        return Long.valueOf(claims.getSubject());
+        return new AccessTokenClaims(Long.valueOf(claims.getSubject()), claims.getIssuedAt().toInstant());
     }
 
     public Long parseRefreshUserId(String token) {
@@ -92,5 +96,8 @@ public class JwtTokenProvider {
         } catch (JwtException | IllegalArgumentException e) {
             throw new CustomException(ErrorCode.INVALID_TOKEN);
         }
+    }
+
+    public record AccessTokenClaims(Long userId, Instant issuedAt) {
     }
 }
