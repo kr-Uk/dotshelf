@@ -37,6 +37,16 @@ namespace Dotshelf.Scripts.RoomTheme
 
         private void ApplyMaterials(RoomThemeAsset theme)
         {
+            // 테마 머티리얼이 null이면 MaterialFactory의 기본 머티리얼로 복원
+            // — '기본' 테마(머티리얼 모두 null)로 돌아갈 때 산뜻 머티리얼이 그대로
+            // 남는 것을 막는다.
+            Material wallMat = theme.WallMaterial != null
+                ? theme.WallMaterial
+                : (materialFactory != null ? materialFactory.GetWallMaterial() : null);
+            Material floorMat = theme.FloorMaterial != null
+                ? theme.FloorMaterial
+                : (materialFactory != null ? materialFactory.GetFloorMaterial() : null);
+
             if (roomRoot != null)
             {
                 var renderers = roomRoot.GetComponentsInChildren<Renderer>(true);
@@ -44,13 +54,13 @@ namespace Dotshelf.Scripts.RoomTheme
                 {
                     var r = renderers[i];
                     var n = r.gameObject.name;
-                    if (theme.WallMaterial != null && n.Contains("Wall"))
+                    if (wallMat != null && n.Contains("Wall"))
                     {
-                        r.sharedMaterial = theme.WallMaterial;
+                        r.sharedMaterial = wallMat;
                     }
-                    else if (theme.FloorMaterial != null && n == "Floor")
+                    else if (floorMat != null && n == "Floor")
                     {
-                        r.sharedMaterial = theme.FloorMaterial;
+                        r.sharedMaterial = floorMat;
                     }
                 }
             }
