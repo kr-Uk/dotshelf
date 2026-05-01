@@ -978,7 +978,16 @@ namespace App.Bootstrap
                 },
                 onError: error =>
                 {
-                    Debug.LogWarning($"[RoomEditModeController] PATCH 실패 ({error?.Code}/{error?.Message}) — 이전 테마로 롤백.");
+                    // Code가 비어있으면 백엔드 응답 에러가 아니라 네트워크 connection 실패
+                    // (dev 환경에서 백엔드 미기동 등) — visual은 유지하고 warning만.
+                    bool isNetworkFailure = string.IsNullOrEmpty(error?.Code);
+                    if (isNetworkFailure)
+                    {
+                        Debug.LogWarning($"[RoomEditModeController] PATCH connection 실패 ({error?.Message}) — visual은 유지, 다음 로드 시 서버와 동기화.");
+                        return;
+                    }
+
+                    Debug.LogWarning($"[RoomEditModeController] PATCH 실패 ({error.Code}/{error.Message}) — 이전 테마로 롤백.");
                     if (previousAppliedTheme != null && previousAppliedTheme != theme)
                     {
                         themeApplier.Apply(previousAppliedTheme);
