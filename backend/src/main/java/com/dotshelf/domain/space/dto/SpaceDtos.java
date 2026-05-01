@@ -23,7 +23,13 @@ public final class SpaceDtos {
             long likeCount,
             boolean liked,
             long layoutVersion,
-            Long currentThemeInventoryId
+            Long currentThemeInventoryId,
+            Long currentWallpaperInventoryId,
+            Long currentFloorInventoryId,
+            Long currentDeskInventoryId,
+            Long currentDashboardInventoryId,
+            Long currentInteriorLightInventoryId,
+            Long currentExteriorLightInventoryId
     ) {
 
         public static SpaceResponse from(Space space) {
@@ -41,8 +47,32 @@ public final class SpaceDtos {
                     space.getLikeCount(),
                     liked,
                     space.getLayoutVersion(),
-                    space.getCurrentThemeInventoryId()
+                    space.getCurrentThemeInventoryId(),
+                    space.getCurrentWallpaperInventoryId(),
+                    space.getCurrentFloorInventoryId(),
+                    space.getCurrentDeskInventoryId(),
+                    space.getCurrentDashboardInventoryId(),
+                    space.getCurrentInteriorLightInventoryId(),
+                    space.getCurrentExteriorLightInventoryId()
             );
+        }
+    }
+
+    /**
+     * 카테고리별 PATCH 6 endpoint 공통 body. inventoryId가 null이면 해당 카테고리를
+     * 기본 외형으로 되돌린다(unset).
+     */
+    public record CategoryInventoryRequest(Long inventoryId) {
+    }
+
+    /**
+     * 카테고리별 PATCH/전체 테마 apply 공통 응답. themeReset이 true면 클라이언트가
+     * 룸 전체 reload 필요(커스터마이징 불가 테마 자동 해제).
+     */
+    public record SpaceMutationResponse(SpaceResponse space, boolean themeReset) {
+
+        public static SpaceMutationResponse of(Space space, boolean liked, boolean themeReset) {
+            return new SpaceMutationResponse(SpaceResponse.from(space, liked), themeReset);
         }
     }
 

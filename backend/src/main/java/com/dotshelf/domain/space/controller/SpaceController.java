@@ -12,12 +12,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.dotshelf.domain.book.dto.BookDtos.OwnedBookListResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.CategoryInventoryRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.DashboardResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.SpaceMutationResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyRequest;
@@ -106,6 +108,58 @@ public class SpaceController {
     @PatchMapping("/me/theme")
     public ApiResponse<SpaceResponse> applyTheme(@CurrentUser Long userId, @RequestBody ThemeApplyRequest request) {
         return ApiResponse.success(spaceService.applyTheme(userId, request));
+    }
+
+    // 카테고리별 개별 적용 6 endpoint — 기능명세서 §1.1, API 명세서 260502 갱신.
+    // body: { inventoryId: long? } — null이면 해당 카테고리 unset(기본 외형 복귀).
+    // response.themeReset == true면 클라이언트가 룸 전체 reload.
+
+    @PatchMapping("/me/wallpaper")
+    public ApiResponse<SpaceMutationResponse> changeWallpaper(
+            @CurrentUser Long userId,
+            @RequestBody CategoryInventoryRequest request
+    ) {
+        return ApiResponse.success(spaceService.changeWallpaper(userId, request));
+    }
+
+    @PatchMapping("/me/floor")
+    public ApiResponse<SpaceMutationResponse> changeFloor(
+            @CurrentUser Long userId,
+            @RequestBody CategoryInventoryRequest request
+    ) {
+        return ApiResponse.success(spaceService.changeFloor(userId, request));
+    }
+
+    @PatchMapping("/me/desk")
+    public ApiResponse<SpaceMutationResponse> changeDesk(
+            @CurrentUser Long userId,
+            @RequestBody CategoryInventoryRequest request
+    ) {
+        return ApiResponse.success(spaceService.changeDesk(userId, request));
+    }
+
+    @PatchMapping("/me/dashboard")
+    public ApiResponse<SpaceMutationResponse> changeDashboard(
+            @CurrentUser Long userId,
+            @RequestBody CategoryInventoryRequest request
+    ) {
+        return ApiResponse.success(spaceService.changeDashboard(userId, request));
+    }
+
+    @PatchMapping("/me/interior-light")
+    public ApiResponse<SpaceMutationResponse> changeInteriorLight(
+            @CurrentUser Long userId,
+            @RequestBody CategoryInventoryRequest request
+    ) {
+        return ApiResponse.success(spaceService.changeInteriorLight(userId, request));
+    }
+
+    @PatchMapping("/me/exterior-light")
+    public ApiResponse<SpaceMutationResponse> changeExteriorLight(
+            @CurrentUser Long userId,
+            @RequestBody CategoryInventoryRequest request
+    ) {
+        return ApiResponse.success(spaceService.changeExteriorLight(userId, request));
     }
 
     @PatchMapping("/me/visibility")

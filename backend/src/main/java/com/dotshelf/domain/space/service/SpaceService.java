@@ -13,9 +13,16 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dotshelf.domain.asset.entity.Asset;
+import com.dotshelf.domain.asset.entity.UserAssetInventory;
+import com.dotshelf.domain.asset.repository.AssetRepository;
+import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
 import com.dotshelf.domain.book.dto.BookDtos.OwnedBookListResponse;
 import com.dotshelf.domain.book.dto.BookDtos.OwnedBookSummary;
 import com.dotshelf.domain.book.repository.UserBookRepository;
+import com.dotshelf.domain.bookshelf.entity.Bookshelf;
+import com.dotshelf.domain.bookshelf.repository.BookshelfRepository;
+import com.dotshelf.domain.space.dto.SpaceDtos.CategoryInventoryRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.DashboardResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistResponse;
@@ -23,6 +30,7 @@ import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListItemResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.SpaceMutationResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateResponse;
@@ -73,6 +81,9 @@ public class SpaceService {
     private final UserBookRepository userBookRepository;
     private final UserRepository userRepository;
     private final UserService userService;
+    private final AssetRepository assetRepository;
+    private final UserAssetInventoryRepository userAssetInventoryRepository;
+    private final BookshelfRepository bookshelfRepository;
 
     @Transactional
     public SpaceResponse getMySpace(Long userId) {
@@ -192,6 +203,85 @@ public class SpaceService {
         Space space = findOrCreateMySpace(currentUserId);
         space.applyTheme(request.inventoryId());
         return SpaceResponse.from(space, isLiked(space.getId(), currentUserId));
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeWallpaper(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, Space::changeWallpaper);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeFloor(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, Space::changeFloor);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeDesk(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, Space::changeDesk);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeDashboard(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, Space::changeDashboard);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeInteriorLight(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, Space::changeInteriorLight);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeExteriorLight(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, Space::changeExteriorLight);
+    }
+
+    /**
+     * 카테고리별 PATCH 6개 endpoint 공통 로직.
+     * 1) 현재 적용된 전체 테마가 customization 불가이면 자동 해제(reset) — themeReset=true
+     * 2) 그 다음 사용자가 요청한 카테고리에 inventoryId set
+     * 3) inventory 보유 검증, 카테고리/타입 일치 검증은 후속 마디 (TODO)
+     */
+    private SpaceMutationResponse applyCategoryInventory(
+            Long userId,
+            CategoryInventoryRequest request,
+            java.util.function.BiConsumer<Space, Long> setter) {
+        Long currentUserId = userService.requireUserId(userId);
+        Space space = findOrCreateMySpace(currentUserId);
+        boolean themeReset = resetIfThemeLocked(space);
+        setter.accept(space, request.inventoryId());
+        return SpaceMutationResponse.of(space, isLiked(space.getId(), currentUserId), themeReset);
+    }
+
+    /**
+     * 현재 적용된 전체 테마가 `allows_customization == false`이면 모든 카테고리 ID와
+     * 책장 skin을 초기화하고 true 반환. 적용 테마가 없거나 customization 허용이면 false.
+     * (layout items 보관함 이동은 별도 마디 — Layout 도메인 통합 시점에 추가)
+     */
+    private boolean resetIfThemeLocked(Space space) {
+        Long themeInvId = space.getCurrentThemeInventoryId();
+        if (themeInvId == null) return false;
+
+        Asset themeAsset = resolveAssetByInventoryId(themeInvId);
+        if (themeAsset == null || themeAsset.isAllowsCustomization()) return false;
+
+        // 잠긴 테마 — Space와 모든 책장 skin을 일괄 초기화
+        space.resetCustomization();
+        List<Bookshelf> bookshelves = bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(space.getId());
+        for (Bookshelf b : bookshelves) {
+            b.resetSkin();
+        }
+        return true;
+    }
+
+    /**
+     * UserAssetInventory.id → Asset 조회. 인벤토리 또는 자산이 없으면 null 반환
+     * (호출부에서 null을 "검증 skip"으로 해석).
+     */
+    private Asset resolveAssetByInventoryId(Long inventoryId) {
+        if (inventoryId == null) return null;
+        UserAssetInventory inv = userAssetInventoryRepository.findById(inventoryId).orElse(null);
+        if (inv == null) return null;
+        return assetRepository.findById(inv.getAssetId()).orElse(null);
     }
 
     @Transactional
