@@ -3,6 +3,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using App.Auth;
 using App.Config;
+#if UNITY_EDITOR
+using App.Infrastructure.Api;
+#endif
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -57,6 +60,12 @@ namespace App.Bootstrap
         private Button kakaoLoginButton;
         private Button googleLoginButton;
         private Button guestEntryButton;
+#if UNITY_EDITOR
+        // Editor-only shortcut to MainScene. The field, the button creation,
+        // listener wiring, and the click handler are all gated so player builds
+        // ship without any dev affordance.
+        private Button devShortcutButton;
+#endif
 
         private bool isInitialized;
         private bool listenersRegistered;
@@ -157,6 +166,51 @@ namespace App.Bootstrap
         {
             StartSocialLogin(SocialProvider.Google);
         }
+
+#if UNITY_EDITOR
+        // Editor-only shortcut handler. Bypasses social-login / guest-session
+        // entirely and jumps straight to MainScene as an anonymous-API session.
+        //
+        // Auth state is wiped first so leftover artefacts from a prior play
+        // (guestSessionId, accessToken, refreshToken, IsGuest pref) cannot
+        // leak into the dev session — otherwise GuestBadgeController would
+        // still render the guest badge in MainScene and BookshelfSceneInstaller
+        // would route to the local-only path via AuthSession.IsGuestSession.
+        // After Clear() both flags read false, so MainScene boots as a clean
+        // anonymous user against the real API.
+        //
+        // APIManager.Instance may already be alive (DontDestroyOnLoad) with
+        // a hydrated token from earlier in the same play session — also reset
+        // its in-memory accessToken so the next request goes out anonymous.
+        //
+        // Application is fully-qualified because App.Application (UseCase
+        // layer) shadows UnityEngine.Application here.
+        public void OnDevShortcutButtonClicked()
+        {
+            if (!UnityEngine.Application.isPlaying)
+            {
+                return;
+            }
+
+            AuthSession.Clear();
+            SessionState.Clear();
+            if (APIManager.Instance != null)
+            {
+                APIManager.Instance.SetAccessToken(string.Empty);
+            }
+            // Mark this play session as dev-mode so BookshelfApiSyncController
+            // can soft-fall-back to the local catalog if /v1/spaces/me 401s
+            // (BE auth is currently unenforced for dev convenience but may
+            // partially re-enable). Cleared automatically when the play
+            // session ends because DevMainSceneMode is a static, not EditorPrefs.
+            DevMainSceneMode.Activate();
+
+            Debug.Log("[DEV MODE] entering MainScene by dev button");
+            MainSceneTransitionCover.Show("개발용 모드로 메인 화면 진입");
+            SetCanvasVisible(false);
+            SceneFlowManager.GoToMain();
+        }
+#endif
 
         // External entry point for the mobile SDK token flow — once a
         // platform SDK obtains a provider token, call this to ship it to
@@ -411,6 +465,9 @@ namespace App.Bootstrap
             if (kakaoLoginButton != null) kakaoLoginButton.interactable = interactable;
             if (googleLoginButton != null) googleLoginButton.interactable = interactable;
             if (guestEntryButton != null) guestEntryButton.interactable = interactable;
+#if UNITY_EDITOR
+            if (devShortcutButton != null) devShortcutButton.interactable = interactable;
+#endif
         }
 
         private static void SetButtonLabel(Button button, string text)
@@ -621,6 +678,9 @@ namespace App.Bootstrap
             AddButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             AddButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
             AddButtonListener(guestEntryButton, OnGuestEntryButtonClicked);
+#if UNITY_EDITOR
+            AddButtonListener(devShortcutButton, OnDevShortcutButtonClicked);
+#endif
 
             listenersRegistered = true;
         }
@@ -636,6 +696,9 @@ namespace App.Bootstrap
             RemoveButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             RemoveButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
             RemoveButtonListener(guestEntryButton, OnGuestEntryButtonClicked);
+#if UNITY_EDITOR
+            RemoveButtonListener(devShortcutButton, OnDevShortcutButtonClicked);
+#endif
 
             listenersRegistered = false;
         }
@@ -760,6 +823,20 @@ namespace App.Bootstrap
             kakaoLoginButton = CreateStackButton(pane.transform, "KakaoButton", "Kakao 로그인", KakaoColor, TextColor, false, BorderColor, SocialButtonHeight);
             googleLoginButton = CreateStackButton(pane.transform, "GoogleButton", "Google 로그인", GoogleColor, TextColor, true, BorderColor, SocialButtonHeight);
             guestEntryButton = CreateStackButton(pane.transform, "GuestEntryButton", "게스트로 입장하기", SecondaryColor, TextColor, true, BorderColor, SocialButtonHeight);
+#if UNITY_EDITOR
+            // Visually distinct (red outline + red label on the card background)
+            // so a dev never confuses this with a real login button. Stripped
+            // from player builds entirely by the surrounding UNITY_EDITOR.
+            devShortcutButton = CreateStackButton(
+                pane.transform,
+                "DevShortcutButton",
+                "[DEV] 메인씬 바로가기",
+                CardColor,
+                Color.red,
+                true,
+                Color.red,
+                SocialButtonHeight);
+#endif
 
             if (false)
             {
