@@ -12,9 +12,17 @@
 
 .dashboard-root {
     flex-grow: 1;
-    background-color: rgb(248, 245, 240);
+    background-color: rgb(253, 251, 246);
     padding: 38px;
     flex-direction: column;
+    opacity: 1;
+    transition-property: opacity;
+    transition-duration: var(--motion-base);
+    transition-timing-function: var(--easing-decelerate);
+}
+
+.dashboard-root--dimmed {
+    opacity: 0.7;
 }
 
 .dashboard-body {
@@ -23,7 +31,7 @@
 }
 
 .dashboard-pane {
-    background-color: rgba(255, 255, 255, 0.85);
+    background-color: rgb(255, 255, 255);
     border-radius: 19px;
     padding: 26px;
 }

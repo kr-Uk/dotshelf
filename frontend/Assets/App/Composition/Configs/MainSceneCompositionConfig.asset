@@ -17,3 +17,4 @@ MonoBehaviour:
   bookshelfRigPrefab: {fileID: 8987270180500391411, guid: d09c0aa7b79ffe54bbc398239e01b825, type: 3}
   notebookStationPrefab: {fileID: 7370849177019216503, guid: a9f31b23f6eb8a34c93a0c44f7e994ff, type: 3}
   cameraAnchorsPrefab: {fileID: 1727907085578719631, guid: 0967fca7246325843a2e6cccb9c54f23, type: 3}
+  dashboardScreenPanelPrefab: {fileID: 8806696963682412732, guid: 36896b623ca42400fb6faa99bdf80a4c, type: 3}

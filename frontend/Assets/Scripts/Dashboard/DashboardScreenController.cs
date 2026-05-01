@@ -269,6 +269,25 @@ namespace Dotshelf.Scripts.Dashboard
             onAllowAllToggleHandler = evt => RefreshWhitelistPickerSelections(evt.newValue);
         }
 
+        private const string DimmedClass = "dashboard-root--dimmed";
+        // focus 진입 전에도 보이게(사용자 D2 요청) — full로 시작하고 BookshelfExperienceManager가
+        // focus 해제 시점에 SetDimmed(true) 호출. 외부 panel 모드 활성 시 항상 visible.
+        private bool dimmed = false;
+
+        public void SetDimmed(bool isDimmed)
+        {
+            if (dimmed == isDimmed) return;
+            dimmed = isDimmed;
+            ApplyDimmedClass();
+        }
+
+        private void ApplyDimmedClass()
+        {
+            if (root == null) return;
+            if (dimmed) root.AddToClassList(DimmedClass);
+            else root.RemoveFromClassList(DimmedClass);
+        }
+
         public void Configure(
             IDashboardRepository dashboardRepo,
             IGuestbookRepository guestbookRepo,
@@ -299,6 +318,8 @@ namespace Dotshelf.Scripts.Dashboard
             {
                 root.styleSheets.Add(stylesheet);
             }
+
+            ApplyDimmedClass();
 
             QueryUI();
             if (!eventsWired)

@@ -223,6 +223,20 @@ namespace App.Tests.EditMode.Dashboard.Helpers
 
             onSuccess();
         }
+
+        public long? LastThemeInventoryId;
+
+        public void UpdateCurrentTheme(long? themeInventoryId, Action onSuccess, Action<DashboardApiError> onError)
+        {
+            LastThemeInventoryId = themeInventoryId;
+            if (ErrorToReturn != null)
+            {
+                onError(ErrorToReturn);
+                return;
+            }
+
+            onSuccess();
+        }
     }
 
     internal sealed class FakeFollowRepository : IFollowRepository

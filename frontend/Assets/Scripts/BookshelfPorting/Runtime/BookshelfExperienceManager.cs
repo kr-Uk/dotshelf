@@ -369,7 +369,7 @@ namespace BookshelfPorting.Runtime
         [Header("Dashboard Integration (v1.0)")]
         [Tooltip("GuestbookBoard 자리에 새 UI Toolkit dashboard prefab을 띄우는 모드. " +
                 "MR #61 시점에 UI Toolkit World Space input 라우팅이 BookshelfPorting raycast와 충돌해 " +
-                "click 동작 안 함. 별도 phase에서 fix 후 true로 토글 (default false로 옛 guestbookBoardCanvas 유지).")]
+                "click 동작 안 함. input fix 후 true로 토글 (default false로 옛 guestbookBoardCanvas 유지).")]
         [SerializeField] private bool useExternalDashboardPanel = false;
         [Tooltip("GuestbookBoard 자리에 띄울 새 dashboard prefab 인스턴스. 보통 scene root에 두고 코드가 reparent.")]
         [SerializeField] private GameObject externalDashboardPanel;
@@ -8008,6 +8008,12 @@ namespace BookshelfPorting.Runtime
                     externalDashboardPanel.SetActive(isFocused);
                 }
                 return;
+            }
+
+            // 옛 path — 외부 패널 reference가 있어도 사용 안 하므로 강제로 hidden
+            if (externalDashboardPanel != null && externalDashboardPanel.activeSelf)
+            {
+                externalDashboardPanel.SetActive(false);
             }
 
             if (guestbookPanel != null)
