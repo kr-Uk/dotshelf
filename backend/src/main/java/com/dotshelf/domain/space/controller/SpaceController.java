@@ -22,6 +22,7 @@ import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceMutationResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyMode;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.VisibilityRequest;
 import com.dotshelf.domain.space.service.SpaceService;
@@ -160,6 +161,19 @@ public class SpaceController {
             @RequestBody CategoryInventoryRequest request
     ) {
         return ApiResponse.success(spaceService.changeExteriorLight(userId, request));
+    }
+
+    /**
+     * 전체 테마 적용 (mode 명시). 기존 PATCH /me/theme는 mode 없는 단순 적용으로 유지.
+     * mode = RESET | KEEP_BLOCKERS_ONLY
+     */
+    @PostMapping("/me/theme/{inventoryId}/apply")
+    public ApiResponse<SpaceMutationResponse> applyThemeWithMode(
+            @CurrentUser Long userId,
+            @PathVariable Long inventoryId,
+            @RequestParam(name = "mode") ThemeApplyMode mode
+    ) {
+        return ApiResponse.success(spaceService.applyThemeWithMode(userId, inventoryId, mode));
     }
 
     @PatchMapping("/me/visibility")

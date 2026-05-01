@@ -130,6 +130,16 @@ public final class SpaceDtos {
     public record ThemeApplyRequest(Long inventoryId) {
     }
 
+    /**
+     * POST /v1/spaces/me/theme/{inventoryId}/apply 의 mode 값.
+     * RESET: 모든 설치 오브젝트 보관함 이동 + 책장 skin 모두 초기화 후 테마 적용
+     * KEEP_BLOCKERS_ONLY: 테마 기본 배치와 충돌하는 설치 오브젝트만 보관함 이동
+     */
+    public enum ThemeApplyMode {
+        RESET,
+        KEEP_BLOCKERS_ONLY
+    }
+
     public record SpaceTemplateResponse(Long id, String code, String name, String previewImageUrl, String layoutPayload) {
 
         public static SpaceTemplateResponse from(SpaceTemplate template) {

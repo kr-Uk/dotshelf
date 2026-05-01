@@ -12,6 +12,7 @@ import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetPurchaseResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.InventoryResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.ThemeContentsResponse;
 import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.entity.AssetCategory;
 import com.dotshelf.domain.asset.entity.AssetPurchase;
@@ -63,6 +64,44 @@ public class AssetService {
     public AssetResponse getAsset(Long userId, Long assetId) {
         Asset asset = getAsset(assetId);
         return AssetResponse.from(asset, isOwned(userId, asset.getId()), isWished(userId, asset.getId()));
+    }
+
+    /**
+     * 전체 테마 자산이 묶고 있는 카테고리별 자식 자산 ID를 반환.
+     * compatibleTargets(Lob, JSON) 형식 가정:
+     * {"wallpaper": 11, "floor": 12, "desk": 13, "dashboard": 14,
+     *  "interiorLight": 15, "exteriorLight": 16, "bookshelfSkinDefault": 17}
+     * 미설정 키는 null. 파싱 실패 시 모든 필드 null.
+     * (admin-web에서 자산 등록 시 같은 JSON 키 사용 — 변경 시 동기화 필요)
+     */
+    public ThemeContentsResponse getThemeContents(Long themeAssetId) {
+        Asset theme = getAsset(themeAssetId);
+        String json = theme.getCompatibleTargets();
+        if (json == null || json.isBlank()) {
+            return new ThemeContentsResponse(theme.getId(), null, null, null, null, null, null, null);
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = OBJECT_MAPPER.readTree(json);
+            return new ThemeContentsResponse(
+                    theme.getId(),
+                    asLong(node.get("wallpaper")),
+                    asLong(node.get("floor")),
+                    asLong(node.get("desk")),
+                    asLong(node.get("dashboard")),
+                    asLong(node.get("interiorLight")),
+                    asLong(node.get("exteriorLight")),
+                    asLong(node.get("bookshelfSkinDefault"))
+            );
+        } catch (Exception ex) {
+            return new ThemeContentsResponse(theme.getId(), null, null, null, null, null, null, null);
+        }
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper OBJECT_MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
+    private static Long asLong(com.fasterxml.jackson.databind.JsonNode node) {
+        return (node == null || node.isNull()) ? null : node.asLong();
     }
 
     public InventoryResponse getInventory(Long userId) {

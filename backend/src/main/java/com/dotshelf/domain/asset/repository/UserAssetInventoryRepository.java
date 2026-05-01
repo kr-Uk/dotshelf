@@ -14,4 +14,6 @@ public interface UserAssetInventoryRepository extends JpaRepository<UserAssetInv
     List<UserAssetInventory> findByUserId(Long userId);
 
     Optional<UserAssetInventory> findByUserIdAndAssetId(Long userId, Long assetId);
+
+    Optional<UserAssetInventory> findByIdAndUserId(Long id, Long userId);
 }
