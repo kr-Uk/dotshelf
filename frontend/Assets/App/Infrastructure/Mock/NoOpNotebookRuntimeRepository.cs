@@ -18,6 +18,16 @@ namespace App.Infrastructure.Mock
             onError?.Invoke(CreateDisabledError());
         }
 
+        public void LoadPurchaseHistory(Action<NotebookPurchaseHistoryResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            onError?.Invoke(CreateDisabledError());
+        }
+
+        public void LoadPaymentMethods(Action<NotebookPaymentMethodResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            onError?.Invoke(CreateDisabledError());
+        }
+
         public void LoadAssets(string category, string sort, int limit, Action<NotebookAssetListResult> onSuccess, Action<NotebookApiError> onError)
         {
             onError?.Invoke(CreateDisabledError());

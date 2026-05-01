@@ -21,6 +21,16 @@ namespace App.Application.Notebook
             repository.ChargePages(pagesAmount, onSuccess, onError);
         }
 
+        public void LoadPurchaseHistory(Action<NotebookPurchaseHistoryResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            repository.LoadPurchaseHistory(onSuccess, onError);
+        }
+
+        public void LoadPaymentMethods(Action<NotebookPaymentMethodResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            repository.LoadPaymentMethods(onSuccess, onError);
+        }
+
         public void LoadAssets(string category, string sort, int limit, Action<NotebookAssetListResult> onSuccess, Action<NotebookApiError> onError)
         {
             repository.LoadAssets(category, sort, limit, onSuccess, onError);
