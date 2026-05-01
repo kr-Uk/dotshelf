@@ -251,32 +251,33 @@ public class SpaceService {
      * - RESET: 모든 설치 오브젝트 보관함 이동 + 책장 skin 모두 초기화 후 테마 적용
      * - KEEP_BLOCKERS_ONLY: 테마 기본 배치와 충돌하는 설치 오브젝트만 보관함 이동
      *
-     * Layout(설치 오브젝트) 보관함 이동은 Layout 도메인 통합 시점에 추가 (TODO).
-     * 현 구현은 카테고리 ID + 책장 skin 초기화까지만.
+     * **현재 KEEP_BLOCKERS_ONLY는 Layout 도메인 통합 미완료라 501 NOT_IMPLEMENTED 반환.**
+     * 활성화는 Layout 도메인 통합 + 충돌 layout items 이동 로직 추가 후. 명세서 v1.0
+     * 수정 계획 페이지 후속 항목 참고.
      */
     @Transactional
     public SpaceMutationResponse applyThemeWithMode(Long userId, Long inventoryId, ThemeApplyMode mode) {
         if (mode == null) {
             throw new CustomException(ErrorCode.THEME_INVALID_MODE);
         }
+        if (mode == ThemeApplyMode.KEEP_BLOCKERS_ONLY) {
+            // 현재 RESET과 같은 동작이라 노출 시 클라이언트가 두 모드 차이를 오해할 수 있음.
+            // Layout 통합 후 활성화 — 그 전엔 501로 명확히 거절.
+            throw new CustomException(ErrorCode.THEME_MODE_NOT_IMPLEMENTED);
+        }
         Long currentUserId = userService.requireUserId(userId);
         verifyOwnedInventoryWithType(inventoryId, currentUserId, "THEME");
 
         Space space = findOrCreateMySpace(currentUserId);
         // RESET 모드: 카테고리 ID + 모든 책장 skin 초기화 (resetCustomization은 layoutVersion++도 처리)
-        if (mode == ThemeApplyMode.RESET) {
-            space.resetCustomization();
-            List<Bookshelf> bookshelves = bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(space.getId());
-            for (Bookshelf b : bookshelves) {
-                b.resetSkin();
-            }
+        space.resetCustomization();
+        List<Bookshelf> bookshelves = bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(space.getId());
+        for (Bookshelf b : bookshelves) {
+            b.resetSkin();
         }
-        // KEEP_BLOCKERS_ONLY 모드: 위 reset은 skip. 기존 카테고리/책장 외형 유지.
-        // (테마가 정의한 기본 배치와 충돌하는 layout items만 보관함 이동 — Layout 도메인 통합 시 구현)
 
         space.applyTheme(inventoryId);
-        // themeReset은 RESET 모드일 때만 true
-        return SpaceMutationResponse.of(space, isLiked(space.getId(), currentUserId), mode == ThemeApplyMode.RESET);
+        return SpaceMutationResponse.of(space, isLiked(space.getId(), currentUserId), true);
     }
 
     /**

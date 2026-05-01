@@ -29,10 +29,14 @@ import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.common.ToggleResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class AssetService {
@@ -44,6 +48,7 @@ public class AssetService {
     private final AssetPurchaseRepository assetPurchaseRepository;
     private final PageWalletRepository pageWalletRepository;
     private final UserService userService;
+    private final ObjectMapper objectMapper;
 
     public AssetListResponse getAssets(Long userId, String category, String sort, int limit) {
         Pageable pageable = PageRequest.of(0, Math.min(limit, 50), resolveSort(sort));
@@ -68,20 +73,20 @@ public class AssetService {
 
     /**
      * 전체 테마 자산이 묶고 있는 카테고리별 자식 자산 ID를 반환.
-     * compatibleTargets(Lob, JSON) 형식 가정:
+     * compatibleTargets(Lob, JSON) 형식 가정 (camelCase 키):
      * {"wallpaper": 11, "floor": 12, "desk": 13, "dashboard": 14,
      *  "interiorLight": 15, "exteriorLight": 16, "bookshelfSkinDefault": 17}
-     * 미설정 키는 null. 파싱 실패 시 모든 필드 null.
-     * (admin-web에서 자산 등록 시 같은 JSON 키 사용 — 변경 시 동기화 필요)
+     * 스키마 정의: API 명세서 260502 갱신의 "compatibleTargets JSON 스키마" 섹션.
+     * 미설정 키는 null. 파싱 실패 시 모든 필드 null + warn 로그.
      */
     public ThemeContentsResponse getThemeContents(Long themeAssetId) {
         Asset theme = getAsset(themeAssetId);
         String json = theme.getCompatibleTargets();
         if (json == null || json.isBlank()) {
-            return new ThemeContentsResponse(theme.getId(), null, null, null, null, null, null, null);
+            return emptyThemeContents(theme.getId());
         }
         try {
-            com.fasterxml.jackson.databind.JsonNode node = OBJECT_MAPPER.readTree(json);
+            JsonNode node = objectMapper.readTree(json);
             return new ThemeContentsResponse(
                     theme.getId(),
                     asLong(node.get("wallpaper")),
@@ -93,14 +98,18 @@ public class AssetService {
                     asLong(node.get("bookshelfSkinDefault"))
             );
         } catch (Exception ex) {
-            return new ThemeContentsResponse(theme.getId(), null, null, null, null, null, null, null);
+            // admin-web 자산 등록 UI 합류 전까지 raw DB 입력으로 들어오므로 형식 어긋남이
+            // 잠재적. 모든 필드 null로 폴백하되 raw + 예외 함께 남겨 admin이 추적 가능하게.
+            log.warn("Theme contents JSON parse failed: assetId={}, raw={}", themeAssetId, json, ex);
+            return emptyThemeContents(theme.getId());
         }
     }
 
-    private static final com.fasterxml.jackson.databind.ObjectMapper OBJECT_MAPPER =
-            new com.fasterxml.jackson.databind.ObjectMapper();
+    private static ThemeContentsResponse emptyThemeContents(Long themeAssetId) {
+        return new ThemeContentsResponse(themeAssetId, null, null, null, null, null, null, null);
+    }
 
-    private static Long asLong(com.fasterxml.jackson.databind.JsonNode node) {
+    private static Long asLong(JsonNode node) {
         return (node == null || node.isNull()) ? null : node.asLong();
     }
 
