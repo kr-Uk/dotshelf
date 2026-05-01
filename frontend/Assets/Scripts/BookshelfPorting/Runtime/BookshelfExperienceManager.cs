@@ -7994,18 +7994,24 @@ namespace BookshelfPorting.Runtime
             {
                 if (externalDashboardPanel != null)
                 {
-                    if (isFocused)
+                    var dynamicHitArea = FindFirstObjectByType<GuestbookBoardHitArea>();
+                    if (dynamicHitArea != null && externalDashboardPanel.transform.parent != dynamicHitArea.transform)
                     {
-                        var dynamicHitArea = FindFirstObjectByType<GuestbookBoardHitArea>();
-                        if (dynamicHitArea != null && externalDashboardPanel.transform.parent != dynamicHitArea.transform)
-                        {
-                            externalDashboardPanel.transform.SetParent(dynamicHitArea.transform, false);
-                            externalDashboardPanel.transform.localPosition = new Vector3(-0.058f, 0f, 0f);
-                            externalDashboardPanel.transform.localRotation = Quaternion.Euler(0f, -90f, 0f);
-                            externalDashboardPanel.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
-                        }
+                        externalDashboardPanel.transform.SetParent(dynamicHitArea.transform, false);
+                        externalDashboardPanel.transform.localPosition = new Vector3(-0.058f, 0f, 0f);
+                        externalDashboardPanel.transform.localRotation = Quaternion.Euler(0f, -90f, 0f);
+                        externalDashboardPanel.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
                     }
-                    externalDashboardPanel.SetActive(isFocused);
+                    // D2(ii): 진입 전엔 dim, 진입 후 full. 항상 active 유지.
+                    if (!externalDashboardPanel.activeSelf)
+                    {
+                        externalDashboardPanel.SetActive(true);
+                    }
+                    var controller = externalDashboardPanel.GetComponent<Dotshelf.Scripts.Dashboard.DashboardScreenController>();
+                    if (controller != null)
+                    {
+                        controller.SetDimmed(!isFocused);
+                    }
                 }
                 return;
             }

@@ -269,6 +269,23 @@ namespace Dotshelf.Scripts.Dashboard
             onAllowAllToggleHandler = evt => RefreshWhitelistPickerSelections(evt.newValue);
         }
 
+        private const string DimmedClass = "dashboard-root--dimmed";
+        private bool dimmed = true;
+
+        public void SetDimmed(bool isDimmed)
+        {
+            if (dimmed == isDimmed) return;
+            dimmed = isDimmed;
+            ApplyDimmedClass();
+        }
+
+        private void ApplyDimmedClass()
+        {
+            if (root == null) return;
+            if (dimmed) root.AddToClassList(DimmedClass);
+            else root.RemoveFromClassList(DimmedClass);
+        }
+
         public void Configure(
             IDashboardRepository dashboardRepo,
             IGuestbookRepository guestbookRepo,
@@ -299,6 +316,8 @@ namespace Dotshelf.Scripts.Dashboard
             {
                 root.styleSheets.Add(stylesheet);
             }
+
+            ApplyDimmedClass();
 
             QueryUI();
             if (!eventsWired)
