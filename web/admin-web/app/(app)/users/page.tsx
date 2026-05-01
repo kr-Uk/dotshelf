@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, MessageSquare, Receipt } from "lucide-react";
+import { Eye, MessageSquare, Receipt } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -50,6 +51,7 @@ import {
   type UserHistoryItem,
   type UserNote,
   type UserPurchase,
+  type UserSpaceSnapshot,
   type UserState,
   type UserSummary,
 } from "@/lib/types";
@@ -72,6 +74,7 @@ const STATE_TONE: Record<UserState, "success" | "warn" | "danger"> = {
 
 export default function UsersPage() {
   const auth = useAdminAccount();
+  const qc = useQueryClient();
   const canSpaceView = canRole(auth?.account.role, "user.force_logout");
 
   const [q, setQ] = useState("");
@@ -94,14 +97,19 @@ export default function UsersPage() {
   useKeyboardShortcut({ key: "ArrowDown" }, () => moveBy(1));
   useKeyboardShortcut({ key: "ArrowUp" }, () => moveBy(-1));
 
-  const action = async (kind: string) => {
+  const performAction = async (kind: string, payload: Record<string, unknown> = {}) => {
     if (!selected) return;
+    await api(`/users/${selected.id}/action`, {
+      method: "POST",
+      body: JSON.stringify({ kind, ...payload }),
+    });
+    toast.success(`${selected.nickname} — ${kind}`);
+    qc.invalidateQueries({ queryKey: ["users"] });
+  };
+
+  const action = async (kind: string, payload: Record<string, unknown> = {}) => {
     try {
-      await api(`/users/${selected.id}/action`, {
-        method: "POST",
-        body: JSON.stringify({ kind }),
-      });
-      toast.success(`${selected.nickname} — ${kind}`);
+      await performAction(kind, payload);
     } catch {
       toast.error("처리에 실패했어요.");
     }
@@ -110,6 +118,7 @@ export default function UsersPage() {
   const [refundOpen, setRefundOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [spaceOpen, setSpaceOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
 
   // 환불 모달이 열릴 때 사용할 구매 이력 — 모달 외부에서 prefetch.
   const purchasesQ = useQuery({
@@ -252,13 +261,13 @@ export default function UsersPage() {
                       </Button>
                     </RoleGate>
                     <RoleGate action="user.rename_nickname" fallback="disable">
-                      <Button size="sm" variant="outline" onClick={() => action("rename_nickname")}>
+                      <Button size="sm" variant="outline" onClick={() => setRenameOpen(true)}>
                         닉네임 강제 변경
                       </Button>
                     </RoleGate>
-                    <RoleGate action="user.password_reset" fallback="disable">
-                      <Button size="sm" variant="outline" onClick={() => action("password_reset")}>
-                        비밀번호 재설정
+                    <RoleGate action="user.require_relogin" fallback="disable">
+                      <Button size="sm" variant="outline" onClick={() => action("require_relogin")}>
+                        재로그인 요구
                       </Button>
                     </RoleGate>
                     <RoleGate action="user.suspend_temp" fallback="disable">
@@ -274,24 +283,6 @@ export default function UsersPage() {
                     <RoleGate action="user.anonymize" fallback="disable" reason="슈퍼 관리자만">
                       <Button size="sm" variant="ghost" onClick={() => action("anonymize")}>
                         데이터 익명화·삭제
-                      </Button>
-                    </RoleGate>
-                    <RoleGate action="user.password_reset" fallback="disable">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={async () => {
-                          try {
-                            await api(`/users/${selected.id}/export`, { method: "POST" });
-                            toast.success(
-                              "데이터 다운로드 요청 등록 — 처리 후 이메일로 안내됩니다.",
-                            );
-                          } catch {
-                            toast.error("요청 실패");
-                          }
-                        }}
-                      >
-                        <Download className="size-3.5" /> 데이터 다운로드 (법적 요청)
                       </Button>
                     </RoleGate>
                     <RoleGate action="user.force_logout" fallback="disable">
@@ -345,6 +336,8 @@ export default function UsersPage() {
                 body: JSON.stringify(p),
               });
               toast.success("환불 처리 완료");
+              qc.invalidateQueries({ queryKey: ["users"] });
+              qc.invalidateQueries({ queryKey: ["user-purchases", selected.id] });
             }}
           />
 
@@ -361,6 +354,7 @@ export default function UsersPage() {
               toast.success(
                 `잔액 ${p.pages > 0 ? "+" : ""}${p.pages}p 조정`,
               );
+              qc.invalidateQueries({ queryKey: ["users"] });
             }}
           />
 
@@ -368,6 +362,21 @@ export default function UsersPage() {
             open={spaceOpen}
             onOpenChange={setSpaceOpen}
             user={selected}
+          />
+
+          <NicknameDialog
+            key={`${selected.id}-${renameOpen}`}
+            open={renameOpen}
+            onOpenChange={setRenameOpen}
+            currentNickname={selected.nickname}
+            onSubmit={async ({ nickname, reason }) => {
+              try {
+                await performAction("rename_nickname", { nickname, reason });
+              } catch {
+                toast.error("닉네임 변경에 실패했어요.");
+                throw new Error("rename failed");
+              }
+            }}
           />
         </>
       )}
@@ -527,6 +536,77 @@ function UserHistoryView({ userId }: { userId: string }) {
   );
 }
 
+function NicknameDialog({
+  open,
+  onOpenChange,
+  currentNickname,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  currentNickname: string;
+  onSubmit: (payload: { nickname: string; reason: string }) => void | Promise<void>;
+}) {
+  const [nickname, setNickname] = useState(currentNickname);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const canSubmit = !busy && nickname.trim().length > 0 && reason.trim().length > 0;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setBusy(true);
+    try {
+      await onSubmit({ nickname: nickname.trim(), reason: reason.trim() });
+      onOpenChange(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>닉네임 강제 변경</DialogTitle>
+          <DialogDescription>
+            변경 사유는 감사 로그에 함께 기록됩니다.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="grid gap-1.5">
+            <Label htmlFor="forced-nickname">새 닉네임</Label>
+            <Input
+              id="forced-nickname"
+              value={nickname}
+              onChange={(event) => setNickname(event.target.value)}
+              maxLength={50}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="forced-nickname-reason">변경 사유</Label>
+            <Textarea
+              id="forced-nickname-reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              rows={3}
+              placeholder="정책 위반 닉네임, 개인정보 노출 등"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
+            취소
+          </Button>
+          <Button onClick={submit} disabled={!canSubmit}>
+            {busy ? "변경 중…" : "변경"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function SpaceSnapshotDialog({
   open,
   onOpenChange,
@@ -536,6 +616,13 @@ function SpaceSnapshotDialog({
   onOpenChange: (open: boolean) => void;
   user: UserSummary;
 }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["user-spaces", user.id],
+    queryFn: () => api<UserSpaceSnapshot[]>(`/users/${user.id}/spaces`),
+    enabled: open,
+  });
+  const spaces = data ?? [];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
@@ -557,12 +644,47 @@ function SpaceSnapshotDialog({
           <Stat label="상태" value={USER_STATE_LABEL[user.state]} />
         </div>
 
-        <div className="rounded-md border bg-muted/40 p-4 text-sm text-muted-foreground">
-          <p className="font-medium text-foreground">3D 공간 미리보기</p>
-          <p className="mt-1 text-xs">
-            v1.0 mock — 실제 공간 렌더는 실데이터 + 3D 뷰어 임베드가 필요합니다. 명세 §6에 따른 읽기 전용 스냅샷 자리.
-          </p>
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>공간</TableHead>
+              <TableHead>공개 범위</TableHead>
+              <TableHead className="text-right">방문</TableHead>
+              <TableHead className="text-right">좋아요</TableHead>
+              <TableHead className="text-right">책장 / 책</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading && <TableSkeletonRows rows={3} cols={5} />}
+            {!isLoading && spaces.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                  공간이 없어요.
+                </TableCell>
+              </TableRow>
+            )}
+            {spaces.map((space) => (
+              <TableRow key={space.spaceId}>
+                <TableCell>
+                  <div className="font-medium">{space.spaceName}</div>
+                  <div className="font-mono text-xs text-muted-foreground">
+                    {space.spaceId}
+                  </div>
+                </TableCell>
+                <TableCell>{space.visibilityScope}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatNumber(space.visitCount)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatNumber(space.likeCount)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatNumber(space.bookshelves)} / {formatNumber(space.books)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>닫기</Button>

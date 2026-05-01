@@ -1,16 +1,20 @@
 package com.dotshelf.global.security;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
 
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
+import com.dotshelf.global.security.JwtTokenProvider.AccessTokenClaims;
 
 import tools.jackson.databind.json.JsonMapper;
 import jakarta.servlet.FilterChain;
@@ -19,7 +23,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * `Authorization: Bearer ...` 헤더에서 JWT 를 꺼내 검증하고, 성공하면 `Authentication` 을
@@ -34,6 +37,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final UserRepository userRepository;
     private final JsonMapper jsonMapper;
 
     @Override
@@ -45,7 +49,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = resolveToken(request);
         if (token != null) {
             try {
-                Long userId = jwtTokenProvider.parseUserId(token);
+                AccessTokenClaims tokenClaims = jwtTokenProvider.parseAccessToken(token);
+                Long userId = tokenClaims.userId();
+                validateSession(tokenClaims);
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userId,
                         null,
@@ -59,6 +65,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         }
         filterChain.doFilter(request, response);
+    }
+
+    private void validateSession(AccessTokenClaims tokenClaims) {
+        UserRepository.SessionInvalidationView user = userRepository.findSessionInvalidationById(tokenClaims.userId())
+                .orElseThrow(() -> new CustomException(ErrorCode.INVALID_TOKEN));
+        Instant sessionInvalidatedAt = user.getSessionInvalidatedAt();
+        if (sessionInvalidatedAt != null && tokenClaims.issuedAt().isBefore(sessionInvalidatedAt)) {
+            throw new CustomException(ErrorCode.INVALID_TOKEN);
+        }
     }
 
     private String resolveToken(HttpServletRequest request) {

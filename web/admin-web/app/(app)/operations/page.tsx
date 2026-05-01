@@ -25,7 +25,6 @@ import { AdminMembersTable } from "@/components/common/admin-members-table";
 import { AnnouncementDialog } from "@/components/common/announcement-dialog";
 import { PageHeader } from "@/components/common/page-header";
 import { PermissionMatrix } from "@/components/common/permission-matrix";
-import { PolicyPublishDialog } from "@/components/common/policy-publish-dialog";
 import { RoleGate } from "@/components/common/role-gate";
 import { StatusBadge } from "@/components/common/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -41,18 +40,21 @@ const HEALTH_TONE = {
   ok: "success",
   degraded: "warn",
   down: "danger",
+  not_integrated: "neutral",
+  unknown: "neutral",
 } as const;
 
 const HEALTH_LABEL = {
   ok: "정상",
   degraded: "지연",
   down: "장애",
+  not_integrated: "미연동",
+  unknown: "확인 전",
 } as const;
 
 export default function OperationsPage() {
   const qc = useQueryClient();
   const [announceOpen, setAnnounceOpen] = useState(false);
-  const [policyOpen, setPolicyOpen] = useState(false);
 
   const [annQ, polQ, healthQ] = useQueries({
     queries: [
@@ -133,13 +135,8 @@ export default function OperationsPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>약관·정책</CardTitle>
-              <RoleGate action="ops.policy_publish" fallback="disable" reason="슈퍼 관리자만">
-                <Button size="sm" variant="outline" onClick={() => setPolicyOpen(true)}>
-                  새 버전 발행…
-                </Button>
-              </RoleGate>
             </div>
-            <CardDescription>변경 시 사용자 재동의 플로우 트리거</CardDescription>
+            <CardDescription>현재 발행된 약관·정책 버전</CardDescription>
           </CardHeader>
           <CardContent className="px-0">
             <Table>
@@ -175,7 +172,7 @@ export default function OperationsPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <CardTitle>시스템 상태</CardTitle>
-              <CardDescription>결제 · 외부 API · CDN · 검수 큐 적체 · 점검 모드</CardDescription>
+              <CardDescription>결제 · 외부 도서 API · 신고 큐 적체 · 점검 모드</CardDescription>
             </div>
             <RoleGate action="ops.maintenance_toggle" fallback="disable" reason="슈퍼 관리자만">
               <Button
@@ -188,14 +185,13 @@ export default function OperationsPage() {
             </RoleGate>
           </div>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
+        <CardContent className="grid gap-4 md:grid-cols-3">
           <HealthRow label="결제" status={health?.payment} />
           <HealthRow label="외부 도서 API" status={health?.externalBookApi} />
-          <HealthRow label="CDN" status={health?.cdn} />
           <div className="rounded-md border bg-card p-3">
-            <div className="text-xs text-muted-foreground">검수 큐 적체</div>
+            <div className="text-xs text-muted-foreground">신고 큐 적체</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">
-              {health?.reviewQueueBacklog ?? "—"}건
+              {health?.moderationBacklog ?? "—"}건
             </div>
           </div>
         </CardContent>
@@ -234,24 +230,6 @@ export default function OperationsPage() {
           });
           toast.success(`공지 발행 — ${p.isUrgent ? "긴급" : "일반"} · ${p.audience}`);
           qc.invalidateQueries({ queryKey: ["announcements"] });
-        }}
-      />
-
-      <PolicyPublishDialog
-        open={policyOpen}
-        onOpenChange={setPolicyOpen}
-        policies={policies}
-        onSubmit={async (p) => {
-          await api("/operations/policies/publish", {
-            method: "POST",
-            body: JSON.stringify(p),
-          });
-          toast.success(
-            `약관 새 버전 ${p.version} 발행 — ${
-              p.requiresReConsent ? "재동의 강제 활성" : "재동의 불필요"
-            }`,
-          );
-          qc.invalidateQueries({ queryKey: ["policies"] });
         }}
       />
     </div>

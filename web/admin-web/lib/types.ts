@@ -31,12 +31,6 @@ export interface AdminAccount {
 
 // --- Dashboard -----------------------------------------------------------
 export interface DashboardStats {
-  reviewQueue: {
-    book: number;
-    asset: number;
-    ad: number;
-    slaAtRisk: number;
-  };
   moderationQueue: {
     open: number;
     autoFlagged: number;
@@ -45,7 +39,6 @@ export interface DashboardStats {
   settlement: {
     pendingPayoutWon: number;
     reconciliationOk: boolean;
-    withdrawalRequests: number;
   };
   ops: {
     dau: number;
@@ -275,6 +268,16 @@ export interface UserHistoryItem {
   occurredAt: string;
 }
 
+export interface UserSpaceSnapshot {
+  spaceId: string;
+  spaceName: string;
+  visibilityScope: string;
+  visitCount: number;
+  likeCount: number;
+  bookshelves: number;
+  books: number;
+}
+
 // --- 정산 보강 ----------------------------------------------------------
 export interface BankAccountChangeRequest {
   id: string;
@@ -420,7 +423,7 @@ export interface UserSummary {
 // --- Settlement ----------------------------------------------------------
 export interface AccountingReconciliation {
   prepaidBalanceWon: number;
-  bankDepositWon: number;
+  assetPurchaseWon: number;
   pendingPayoutWon: number;
   consistent: boolean;
   asOf: string;
@@ -467,9 +470,7 @@ export interface KpiTimePoint {
   bookSales: number;
   adRevenue: number;
   openModeration: number;
-  reviewSlaHours: number;
   apiErrorRate: number; // 0~1
-  cdnHitRate: number; // 0~1
 }
 
 export interface CategoryRevenueSlice {
@@ -495,20 +496,18 @@ export interface KpiSnapshot {
   newSignups: number;
   guestConversion: number; // 0~1
   booksAdded: number;
-  reviewsAvgSlaHours: number;
   openModerationQueue: number;
   pageGmvWon: number;
   bookSalesWon: number;
   adRevenueWon: number;
   apiErrorRate: number; // 0~1
-  cdnHitRate: number; // 0~1
 }
 
 // --- Operations ----------------------------------------------------------
 export interface AnnouncementItem {
   id: string;
   title: string;
-  audience: "all_users" | "creators" | "internal";
+  audience: "all_users" | "internal";
   publishedAt: string;
   endsAt: string;
   isUrgent: boolean;
@@ -522,11 +521,17 @@ export interface PolicyVersion {
   requiresReConsent: boolean;
 }
 
+export type SystemHealthStatus =
+  | "ok"
+  | "degraded"
+  | "down"
+  | "not_integrated"
+  | "unknown";
+
 export interface SystemHealth {
-  payment: "ok" | "degraded" | "down";
-  externalBookApi: "ok" | "degraded" | "down";
-  cdn: "ok" | "degraded" | "down";
-  reviewQueueBacklog: number;
+  payment: SystemHealthStatus;
+  externalBookApi: SystemHealthStatus;
+  moderationBacklog: number;
   maintenanceMode: boolean;
 }
 

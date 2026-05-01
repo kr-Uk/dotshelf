@@ -28,7 +28,6 @@ import { Textarea } from "@/components/ui/textarea";
 
 const AUDIENCE_OPTIONS = [
   { value: "all_users", label: "사용자 앱 전체" },
-  { value: "creators", label: "크리에이터" },
   { value: "internal", label: "사내 (관리자)" },
 ] as const;
 

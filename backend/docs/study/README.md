@@ -23,6 +23,7 @@ push 단위 변경분에 대한 한국어 학습 노트. 무엇을 / 왜 / 어�
 | 2026-04-27 | `feat/be/apple` | [`2026-04-27-feat-be-apple.md`](./2026-04-27-feat-be-apple.md) | Apple 로그인 identityToken 검증 설정과 Unity 연동 문서 정리 |
 | 2026-04-27 | `feat/be/search` | [`2026-04-27-feat-be-search.md`](./2026-04-27-feat-be-search.md) | Kakao 도서 검색 API 연동과 ISBN 기반 책장 추가 흐름 구현 |
 | 2026-04-29 | `feat/be/create-web` | [`2026-04-29-feat-be-create-web.md`](./2026-04-29-feat-be-create-web.md) | 관리자 콘솔 API 수직 슬라이스와 admin-web 실데이터 연동 |
+| 2026-04-30 | `feat/be/admin-web` | [`2026-04-30-feat-be-admin-web.md`](./2026-04-30-feat-be-admin-web.md) | admin-web 운영 범위 축소와 사용자 운영 API/세션 무효화/정산·운영 화면 실데이터 연결 |
 
 ## 작성 규칙
 

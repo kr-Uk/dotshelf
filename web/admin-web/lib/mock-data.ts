@@ -40,12 +40,10 @@ export const mockAdminAccount: AdminAccount = {
 };
 
 export const mockDashboardStats: DashboardStats = {
-  reviewQueue: { book: 14, asset: 9, ad: 6, slaAtRisk: 3 },
   moderationQueue: { open: 27, autoFlagged: 4, p1: 1 },
   settlement: {
     pendingPayoutWon: 38_420_000,
     reconciliationOk: true,
-    withdrawalRequests: 4,
   },
   ops: {
     dau: 12_482,
@@ -650,7 +648,7 @@ export const mockQuarterlyAttestations: QuarterlyAttestation[] = [
 
 export const mockReconciliation: AccountingReconciliation = {
   prepaidBalanceWon: 184_320_000,
-  bankDepositWon: 142_900_000,
+  assetPurchaseWon: 142_900_000,
   pendingPayoutWon: 41_420_000,
   consistent: true,
   asOf: "2026-04-26T07:00:00.000Z",
@@ -734,9 +732,7 @@ function buildDailyKpi(days = 30, base = "2026-04-26"): KpiTimePoint[] {
       6,
       Math.round(22 + Math.sin((days - i) / 4) * 6 + n(6) * 8),
     );
-    const reviewSlaHours = +(18 + Math.sin((days - i) / 3) * 3 + n(7) * 4).toFixed(1);
     const apiErrorRate = +(0.0035 + n(8) * 0.0035).toFixed(4);
-    const cdnHitRate = +(0.97 + n(9) * 0.02).toFixed(4);
 
     points.push({
       date: d.toISOString().slice(0, 10),
@@ -746,9 +742,7 @@ function buildDailyKpi(days = 30, base = "2026-04-26"): KpiTimePoint[] {
       bookSales,
       adRevenue,
       openModeration,
-      reviewSlaHours,
       apiErrorRate,
-      cdnHitRate,
     });
   }
   return points;
@@ -780,13 +774,11 @@ export const mockKpi: KpiSnapshot = {
   newSignups: 482,
   guestConversion: 0.18,
   booksAdded: 3_204,
-  reviewsAvgSlaHours: 19.8,
   openModerationQueue: 27,
   pageGmvWon: 248_320_000,
   bookSalesWon: 184_290_000,
   adRevenueWon: 12_180_000,
   apiErrorRate: 0.0042,
-  cdnHitRate: 0.984,
 };
 
 export const mockAnnouncements: AnnouncementItem[] = [
@@ -801,7 +793,7 @@ export const mockAnnouncements: AnnouncementItem[] = [
   {
     id: "an_002",
     title: "광고 가드레일 정책 일부 개정",
-    audience: "creators",
+    audience: "all_users",
     publishedAt: "2026-04-22T07:00:00.000Z",
     endsAt: "2026-05-22T07:00:00.000Z",
     isUrgent: false,
@@ -835,8 +827,7 @@ export const mockPolicies: PolicyVersion[] = [
 export const mockSystemHealth: SystemHealth = {
   payment: "ok",
   externalBookApi: "degraded",
-  cdn: "ok",
-  reviewQueueBacklog: 29,
+  moderationBacklog: 29,
   maintenanceMode: false,
 };
 

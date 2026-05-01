@@ -30,6 +30,8 @@ import com.dotshelf.domain.admin.dto.AdminDtos.MaintenanceResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.OkResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.PageResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.PolicyVersionResponse;
+import com.dotshelf.domain.admin.dto.AdminDtos.RefundRequest;
+import com.dotshelf.domain.admin.dto.AdminDtos.RefundResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.ReportActionRequest;
 import com.dotshelf.domain.admin.dto.AdminDtos.ReportDetailResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.ReportListItemResponse;
@@ -210,6 +212,17 @@ public class AdminController {
             HttpServletRequest httpRequest
     ) {
         return ApiResponse.success(adminService.adjustBalance(userId, targetUserId, request, clientIp(httpRequest)));
+    }
+
+    @Operation(summary = "사용자 에셋 구매 환불")
+    @PostMapping("/users/{targetUserId}/refund")
+    public ApiResponse<RefundResponse> refundPurchase(
+            @CurrentUser Long userId,
+            @PathVariable Long targetUserId,
+            @RequestBody @Valid RefundRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        return ApiResponse.success(adminService.refundPurchase(userId, targetUserId, request, clientIp(httpRequest)));
     }
 
     @Operation(summary = "정산 대사 요약")
