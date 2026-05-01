@@ -23,5 +23,10 @@ namespace App.Application.Dashboard
             GuestbookPostItWhitelist whitelist,
             Action onSuccess,
             Action<DashboardApiError> onError);
+
+        void UpdateCurrentTheme(
+            long? themeInventoryId,
+            Action onSuccess,
+            Action<DashboardApiError> onError);
     }
 }

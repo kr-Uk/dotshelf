@@ -62,5 +62,18 @@ namespace App.Infrastructure.Api.Dashboard
                 onSuccess: _ => onSuccess?.Invoke(),
                 onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
         }
+
+        public void UpdateCurrentTheme(long? themeInventoryId, Action onSuccess, Action<DashboardApiError> onError)
+        {
+            ThemeApplyRequestDto request = new ThemeApplyRequestDto
+            {
+                InventoryId = themeInventoryId
+            };
+
+            client.ApplyMySpaceTheme(
+                request,
+                onSuccess: _ => onSuccess?.Invoke(),
+                onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
+        }
     }
 }
