@@ -12,6 +12,16 @@ namespace App.Domain.Dashboard
         public long LayoutVersion { get; }
         public long? CurrentThemeInventoryId { get; }
 
+        // 카테고리별 개별 적용 항목 inventory id. CurrentThemeInventoryId(전체 테마)와는
+        // 독립적으로 동작 — "테마1의 노트북 + 테마2의 바닥" 식 믹스 표현 가능.
+        // 책장 외형은 인스턴스별로 Bookshelf.skinInventoryId에 저장(별도 도메인).
+        public long? CurrentWallpaperInventoryId { get; }
+        public long? CurrentFloorInventoryId { get; }
+        public long? CurrentDeskInventoryId { get; }
+        public long? CurrentDashboardInventoryId { get; }
+        public long? CurrentInteriorLightInventoryId { get; }
+        public long? CurrentExteriorLightInventoryId { get; }
+
         public Space(
             long id,
             long ownerUserId,
@@ -21,7 +31,13 @@ namespace App.Domain.Dashboard
             long likeCount,
             bool liked,
             long layoutVersion,
-            long? currentThemeInventoryId = null)
+            long? currentThemeInventoryId = null,
+            long? currentWallpaperInventoryId = null,
+            long? currentFloorInventoryId = null,
+            long? currentDeskInventoryId = null,
+            long? currentDashboardInventoryId = null,
+            long? currentInteriorLightInventoryId = null,
+            long? currentExteriorLightInventoryId = null)
         {
             Id = id;
             OwnerUserId = ownerUserId;
@@ -32,6 +48,12 @@ namespace App.Domain.Dashboard
             Liked = liked;
             LayoutVersion = layoutVersion;
             CurrentThemeInventoryId = currentThemeInventoryId;
+            CurrentWallpaperInventoryId = currentWallpaperInventoryId;
+            CurrentFloorInventoryId = currentFloorInventoryId;
+            CurrentDeskInventoryId = currentDeskInventoryId;
+            CurrentDashboardInventoryId = currentDashboardInventoryId;
+            CurrentInteriorLightInventoryId = currentInteriorLightInventoryId;
+            CurrentExteriorLightInventoryId = currentExteriorLightInventoryId;
         }
     }
 }

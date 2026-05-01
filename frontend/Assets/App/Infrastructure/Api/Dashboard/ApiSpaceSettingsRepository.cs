@@ -75,5 +75,60 @@ namespace App.Infrastructure.Api.Dashboard
                 onSuccess: _ => onSuccess?.Invoke(),
                 onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
         }
+
+        public void ChangeWallpaper(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            client.ChangeMyWallpaper(BuildCategoryRequest(inventoryId),
+                onSuccess: dto => onSuccess?.Invoke(dto?.ThemeReset ?? false),
+                onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
+        }
+
+        public void ChangeFloor(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            client.ChangeMyFloor(BuildCategoryRequest(inventoryId),
+                onSuccess: dto => onSuccess?.Invoke(dto?.ThemeReset ?? false),
+                onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
+        }
+
+        public void ChangeDesk(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            client.ChangeMyDesk(BuildCategoryRequest(inventoryId),
+                onSuccess: dto => onSuccess?.Invoke(dto?.ThemeReset ?? false),
+                onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
+        }
+
+        public void ChangeDashboard(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            client.ChangeMyDashboard(BuildCategoryRequest(inventoryId),
+                onSuccess: dto => onSuccess?.Invoke(dto?.ThemeReset ?? false),
+                onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
+        }
+
+        public void ChangeInteriorLight(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            client.ChangeMyInteriorLight(BuildCategoryRequest(inventoryId),
+                onSuccess: dto => onSuccess?.Invoke(dto?.ThemeReset ?? false),
+                onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
+        }
+
+        public void ChangeExteriorLight(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            client.ChangeMyExteriorLight(BuildCategoryRequest(inventoryId),
+                onSuccess: dto => onSuccess?.Invoke(dto?.ThemeReset ?? false),
+                onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
+        }
+
+        public void ApplyThemeWithMode(long inventoryId, ThemeApplyMode mode, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            string modeStr = mode == ThemeApplyMode.Reset ? "RESET" : "KEEP_BLOCKERS_ONLY";
+            client.ApplyMySpaceThemeWithMode(inventoryId, modeStr,
+                onSuccess: dto => onSuccess?.Invoke(dto?.ThemeReset ?? false),
+                onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
+        }
+
+        private static CategoryInventoryRequestDto BuildCategoryRequest(long? inventoryId)
+        {
+            return new CategoryInventoryRequestDto { InventoryId = inventoryId };
+        }
     }
 }

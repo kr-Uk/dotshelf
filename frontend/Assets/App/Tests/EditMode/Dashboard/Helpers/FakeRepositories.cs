@@ -237,6 +237,42 @@ namespace App.Tests.EditMode.Dashboard.Helpers
 
             onSuccess();
         }
+
+        // 카테고리별 적용 6 + 전체 테마(mode) — 테스트 검증용. LastCategoryUpdate에 마지막 호출 캡처,
+        // ThemeResetToReturn으로 themeReset 응답 강제 가능.
+        public string LastCategoryUpdate;
+        public long? LastCategoryInventoryId;
+        public ThemeApplyMode? LastApplyMode;
+        public bool ThemeResetToReturn;
+
+        public void ChangeWallpaper(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+            => RouteCategoryCall("WALLPAPER", inventoryId, onSuccess, onError);
+        public void ChangeFloor(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+            => RouteCategoryCall("FLOOR", inventoryId, onSuccess, onError);
+        public void ChangeDesk(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+            => RouteCategoryCall("DESK", inventoryId, onSuccess, onError);
+        public void ChangeDashboard(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+            => RouteCategoryCall("DASHBOARD", inventoryId, onSuccess, onError);
+        public void ChangeInteriorLight(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+            => RouteCategoryCall("INTERIOR_LIGHT", inventoryId, onSuccess, onError);
+        public void ChangeExteriorLight(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+            => RouteCategoryCall("EXTERIOR_LIGHT", inventoryId, onSuccess, onError);
+
+        private void RouteCategoryCall(string category, long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            LastCategoryUpdate = category;
+            LastCategoryInventoryId = inventoryId;
+            if (ErrorToReturn != null) { onError(ErrorToReturn); return; }
+            onSuccess(ThemeResetToReturn);
+        }
+
+        public void ApplyThemeWithMode(long inventoryId, ThemeApplyMode mode, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            LastThemeInventoryId = inventoryId;
+            LastApplyMode = mode;
+            if (ErrorToReturn != null) { onError(ErrorToReturn); return; }
+            onSuccess(mode == ThemeApplyMode.Reset);
+        }
     }
 
     internal sealed class FakeFollowRepository : IFollowRepository
