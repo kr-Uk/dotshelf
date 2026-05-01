@@ -369,8 +369,8 @@ namespace BookshelfPorting.Runtime
         [Header("Dashboard Integration (v1.0)")]
         [Tooltip("GuestbookBoard 자리에 새 UI Toolkit dashboard prefab을 띄우는 모드. " +
                 "MR #61 시점에 UI Toolkit World Space input 라우팅이 BookshelfPorting raycast와 충돌해 " +
-                "click 동작 안 함 — 그래도 visibility 우선이라 default true로 켜고, input fix는 후속.")]
-        [SerializeField] private bool useExternalDashboardPanel = true;
+                "click 동작 안 함. input fix 후 true로 토글 (default false로 옛 guestbookBoardCanvas 유지).")]
+        [SerializeField] private bool useExternalDashboardPanel = false;
         [Tooltip("GuestbookBoard 자리에 띄울 새 dashboard prefab 인스턴스. 보통 scene root에 두고 코드가 reparent.")]
         [SerializeField] private GameObject externalDashboardPanel;
 
@@ -7994,26 +7994,26 @@ namespace BookshelfPorting.Runtime
             {
                 if (externalDashboardPanel != null)
                 {
-                    var dynamicHitArea = FindFirstObjectByType<GuestbookBoardHitArea>();
-                    if (dynamicHitArea != null && externalDashboardPanel.transform.parent != dynamicHitArea.transform)
+                    if (isFocused)
                     {
-                        externalDashboardPanel.transform.SetParent(dynamicHitArea.transform, false);
-                        externalDashboardPanel.transform.localPosition = new Vector3(-0.058f, 0f, 0f);
-                        externalDashboardPanel.transform.localRotation = Quaternion.Euler(0f, -90f, 0f);
-                        externalDashboardPanel.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
+                        var dynamicHitArea = FindFirstObjectByType<GuestbookBoardHitArea>();
+                        if (dynamicHitArea != null && externalDashboardPanel.transform.parent != dynamicHitArea.transform)
+                        {
+                            externalDashboardPanel.transform.SetParent(dynamicHitArea.transform, false);
+                            externalDashboardPanel.transform.localPosition = new Vector3(-0.058f, 0f, 0f);
+                            externalDashboardPanel.transform.localRotation = Quaternion.Euler(0f, -90f, 0f);
+                            externalDashboardPanel.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
+                        }
                     }
-                    // D2(ii): 진입 전엔 dim, 진입 후 full. 항상 active 유지.
-                    if (!externalDashboardPanel.activeSelf)
-                    {
-                        externalDashboardPanel.SetActive(true);
-                    }
-                    var controller = externalDashboardPanel.GetComponent<Dotshelf.Scripts.Dashboard.DashboardScreenController>();
-                    if (controller != null)
-                    {
-                        controller.SetDimmed(!isFocused);
-                    }
+                    externalDashboardPanel.SetActive(isFocused);
                 }
                 return;
+            }
+
+            // 옛 path — 외부 패널 reference가 있어도 사용 안 하므로 강제로 hidden
+            if (externalDashboardPanel != null && externalDashboardPanel.activeSelf)
+            {
+                externalDashboardPanel.SetActive(false);
             }
 
             if (guestbookPanel != null)
