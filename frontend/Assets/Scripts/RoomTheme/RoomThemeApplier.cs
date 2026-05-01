@@ -40,6 +40,13 @@ namespace Dotshelf.Scripts.RoomTheme
         const string FloorObjectName = "Floor";
         static readonly string[] WallObjectNamePatterns = { "LeftWall", "RightWall", "BackWall", "FrontWall" };
 
+        // v1.0 customization — 카테고리별 GameObject 이름 prefix 매칭. 정확한 prefab 구조와
+        // 다를 수 있으므로 매칭 0개일 때 warning 로그(silent fail 방지). 후속 마디에서
+        // BookshelfGenerator에 RoomEnvironmentSurfaces 컴포넌트 노출하는 게 결.
+        static readonly string[] BookshelfPatterns = { "BookshelfRoot", "Bookshelf_" };
+        static readonly string[] DeskPatterns = { "DeskRoot", "NotebookStation", "Desk_" };
+        static readonly string[] DashboardPatterns = { "DashboardScreenPanel", "GuestbookBoard", "Dashboard_" };
+
         private void ApplyMaterials(RoomThemeAsset theme)
         {
             // 테마 머티리얼이 null이면 MaterialFactory의 기본 머티리얼로 복원
@@ -51,9 +58,12 @@ namespace Dotshelf.Scripts.RoomTheme
             Material floorMat = theme.FloorMaterial != null
                 ? theme.FloorMaterial
                 : (materialFactory != null ? materialFactory.GetFloorMaterial() : null);
+            Material bookshelfMat = theme.BookshelfMaterial; // null이면 swap skip
+            Material deskMat = theme.FurnitureMaterial;
+            Material dashboardMat = theme.DashboardMaterial;
 
-            int wallSwapped = 0;
-            int floorSwapped = 0;
+            int wallSwapped = 0, floorSwapped = 0;
+            int bookshelfSwapped = 0, deskSwapped = 0, dashboardSwapped = 0;
 
             if (roomRoot != null)
             {
@@ -64,27 +74,39 @@ namespace Dotshelf.Scripts.RoomTheme
                     var n = r.gameObject.name;
                     if (wallMat != null && IsWallName(n))
                     {
-                        r.sharedMaterial = wallMat;
-                        wallSwapped++;
+                        r.sharedMaterial = wallMat; wallSwapped++;
                     }
                     else if (floorMat != null && n == FloorObjectName)
                     {
-                        r.sharedMaterial = floorMat;
-                        floorSwapped++;
+                        r.sharedMaterial = floorMat; floorSwapped++;
+                    }
+                    else if (bookshelfMat != null && MatchesAny(n, BookshelfPatterns))
+                    {
+                        r.sharedMaterial = bookshelfMat; bookshelfSwapped++;
+                    }
+                    else if (deskMat != null && MatchesAny(n, DeskPatterns))
+                    {
+                        r.sharedMaterial = deskMat; deskSwapped++;
+                    }
+                    else if (dashboardMat != null && MatchesAny(n, DashboardPatterns))
+                    {
+                        r.sharedMaterial = dashboardMat; dashboardSwapped++;
                     }
                 }
             }
 
-            // BookshelfGenerator의 GameObject 이름이 바뀌면 silent fail이 아니라
-            // warning으로 알리도록. roomRoot 자체가 null인 경우는 별개라 위에서 분리.
-            if (roomRoot != null && wallMat != null && wallSwapped == 0)
-            {
-                Debug.LogWarning($"[RoomThemeApplier] Wall renderer 매칭 0개. BookshelfGenerator의 GameObject 이름이 바뀌었거나 roomRoot가 잘못 잡혀있는지 확인하세요. 기대 패턴: {string.Join(",", WallObjectNamePatterns)}");
-            }
-            if (roomRoot != null && floorMat != null && floorSwapped == 0)
-            {
-                Debug.LogWarning($"[RoomThemeApplier] Floor renderer 매칭 0개. 기대 이름: '{FloorObjectName}'.");
-            }
+            // 매칭 0개일 때 warning — silent fail 방지. 머티리얼이 null인 카테고리는 검사 skip.
+            if (roomRoot == null) return;
+            if (wallMat != null && wallSwapped == 0)
+                Debug.LogWarning($"[RoomThemeApplier] Wall 매칭 0개 — 기대 패턴: {string.Join(",", WallObjectNamePatterns)}");
+            if (floorMat != null && floorSwapped == 0)
+                Debug.LogWarning($"[RoomThemeApplier] Floor 매칭 0개 — 기대 이름: '{FloorObjectName}'");
+            if (bookshelfMat != null && bookshelfSwapped == 0)
+                Debug.LogWarning($"[RoomThemeApplier] Bookshelf 매칭 0개 — 기대 패턴: {string.Join(",", BookshelfPatterns)}");
+            if (deskMat != null && deskSwapped == 0)
+                Debug.LogWarning($"[RoomThemeApplier] Desk 매칭 0개 — 기대 패턴: {string.Join(",", DeskPatterns)}");
+            if (dashboardMat != null && dashboardSwapped == 0)
+                Debug.LogWarning($"[RoomThemeApplier] Dashboard 매칭 0개 — 기대 패턴: {string.Join(",", DashboardPatterns)}");
 
             if (materialFactory != null)
             {
@@ -100,6 +122,15 @@ namespace Dotshelf.Scripts.RoomTheme
             }
         }
 
+        static bool MatchesAny(string name, string[] patterns)
+        {
+            for (int i = 0; i < patterns.Length; i++)
+            {
+                if (name.StartsWith(patterns[i])) return true;
+            }
+            return false;
+        }
+
         static bool IsWallName(string name)
         {
             for (int i = 0; i < WallObjectNamePatterns.Length; i++)
@@ -111,13 +142,19 @@ namespace Dotshelf.Scripts.RoomTheme
 
         private void ApplyLighting(RoomThemeAsset theme)
         {
+            // 외부조명 = 씬의 Directional Light(자연광/창문 통과). RoomThemeAsset의
+            // ExteriorLight* 값이 적용된다. (Legacy DirectionalLight* 프로퍼티는 ExteriorLight*에 alias.)
             if (directionalLight != null)
             {
-                directionalLight.color = theme.DirectionalLightColor;
+                directionalLight.color = theme.ExteriorLightColor;
                 directionalLight.useColorTemperature = true;
-                directionalLight.colorTemperature = theme.DirectionalLightKelvin;
+                directionalLight.colorTemperature = theme.ExteriorLightKelvin;
+                directionalLight.intensity = theme.ExteriorLightIntensity;
             }
 
+            // 내부조명 = ambient(천장등/스탠드 톤). InteriorLight color/kelvin은
+            // ambient에 직접 영향이 없어 기본은 ambientTint/intensity. 향후 별도 InteriorLight
+            // GameObject 슬롯이 추가되면 여기에 적용 (TODO).
             RenderSettings.ambientLight = theme.AmbientTint;
             RenderSettings.ambientIntensity = theme.AmbientIntensity;
         }

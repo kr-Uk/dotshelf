@@ -19,15 +19,26 @@ namespace App.Infrastructure.Catalogs
         [Header("Surface materials")]
         [SerializeField] private Material wallMaterial;
         [SerializeField] private Material floorMaterial;
-        [SerializeField] private Material bookshelfMaterial;
-        [SerializeField] private Material furnitureMaterial;
+        [SerializeField] private Material bookshelfMaterial;       // 책장 스킨 기본값(테마 RESET 시 모든 책장에 적용)
+        [SerializeField] private Material furnitureMaterial;       // 책상 본체(legacy 호환)
+        [SerializeField] private Material deskTopMaterial;         // 책상 상판(우드 등)
+        [SerializeField] private Material chairMaterial;           // 의자
+        [SerializeField] private Material dashboardMaterial;       // 대시보드 보드면
         [SerializeField] private Material accentMaterial;
 
-        [Header("Lighting")]
-        [SerializeField] private Color directionalLightColor = Color.white;
-        [SerializeField, Range(2700f, 8000f)] private float directionalLightKelvin = 6500f;
+        [Header("Interior lighting (실내 — 천장등/스탠드)")]
+        [SerializeField] private Color interiorLightColor = Color.white;
+        [SerializeField, Range(2700f, 8000f)] private float interiorLightKelvin = 6500f;
         [SerializeField] private Color ambientTint = Color.white;
         [SerializeField, Range(0f, 2f)] private float ambientIntensity = 1f;
+
+        [Header("Exterior lighting (외부 — 자연광/창문)")]
+        [SerializeField] private Color exteriorLightColor = Color.white;
+        [SerializeField, Range(2700f, 8000f)] private float exteriorLightKelvin = 6500f;
+        [SerializeField, Range(0f, 4f)] private float exteriorLightIntensity = 1f;
+
+        [Header("Customization 권한 — 전체 테마 자산일 때만 의미")]
+        [SerializeField] private bool allowsCustomization = true;
 
         [Header("Accent palette (UI/decoration tint)")]
         [SerializeField] private Color accentPrimary = Color.white;
@@ -45,15 +56,29 @@ namespace App.Infrastructure.Catalogs
         public Material FloorMaterial => floorMaterial;
         public Material BookshelfMaterial => bookshelfMaterial;
         public Material FurnitureMaterial => furnitureMaterial;
+        public Material DeskTopMaterial => deskTopMaterial;
+        public Material ChairMaterial => chairMaterial;
+        public Material DashboardMaterial => dashboardMaterial;
         public Material AccentMaterial => accentMaterial;
 
-        public Color DirectionalLightColor => directionalLightColor;
-        public float DirectionalLightKelvin => directionalLightKelvin;
+        public Color InteriorLightColor => interiorLightColor;
+        public float InteriorLightKelvin => interiorLightKelvin;
         public Color AmbientTint => ambientTint;
         public float AmbientIntensity => ambientIntensity;
+
+        public Color ExteriorLightColor => exteriorLightColor;
+        public float ExteriorLightKelvin => exteriorLightKelvin;
+        public float ExteriorLightIntensity => exteriorLightIntensity;
+
+        public bool AllowsCustomization => allowsCustomization;
 
         public Color AccentPrimary => accentPrimary;
         public Color AccentSecondary => accentSecondary;
         public Color AccentTertiary => accentTertiary;
+
+        // legacy alias — DirectionalLight* 이름으로 외부조명을 가리키던 기존 RoomThemeApplier 호환.
+        // 새 코드는 ExteriorLight*를 사용할 것.
+        public Color DirectionalLightColor => exteriorLightColor;
+        public float DirectionalLightKelvin => exteriorLightKelvin;
     }
 }
