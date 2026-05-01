@@ -50,6 +50,16 @@ public class Space extends BaseEntity {
 
     private Long currentThemeInventoryId;
 
+    // 카테고리별 개별 적용 항목. currentThemeInventoryId(전체 테마)와 독립적으로
+    // 동작하며, "테마1의 노트북 + 테마2의 바닥" 같은 믹스를 표현한다.
+    // 책장 외형은 인스턴스별로 bookshelves.skin_inventory_id에 저장(별도 테이블).
+    private Long currentWallpaperInventoryId;
+    private Long currentFloorInventoryId;
+    private Long currentDeskInventoryId;
+    private Long currentDashboardInventoryId;
+    private Long currentInteriorLightInventoryId;
+    private Long currentExteriorLightInventoryId;
+
     private LocalDateTime deletedAt;
 
     @Builder
@@ -88,5 +98,44 @@ public class Space extends BaseEntity {
 
     public void applyTheme(Long inventoryId) {
         this.currentThemeInventoryId = inventoryId;
+    }
+
+    public void changeWallpaper(Long inventoryId) {
+        this.currentWallpaperInventoryId = inventoryId;
+    }
+
+    public void changeFloor(Long inventoryId) {
+        this.currentFloorInventoryId = inventoryId;
+    }
+
+    public void changeDesk(Long inventoryId) {
+        this.currentDeskInventoryId = inventoryId;
+    }
+
+    public void changeDashboard(Long inventoryId) {
+        this.currentDashboardInventoryId = inventoryId;
+    }
+
+    public void changeInteriorLight(Long inventoryId) {
+        this.currentInteriorLightInventoryId = inventoryId;
+    }
+
+    public void changeExteriorLight(Long inventoryId) {
+        this.currentExteriorLightInventoryId = inventoryId;
+    }
+
+    /**
+     * 커스터마이징 불가 테마 자동 해제 시 호출. 카테고리 6 ID + 전체 테마 ID 모두 비우고
+     * layoutVersion을 올린다. bookshelves.skin_inventory_id 초기화는 별도(BookshelfRepository)에서.
+     */
+    public void resetCustomization() {
+        this.currentThemeInventoryId = null;
+        this.currentWallpaperInventoryId = null;
+        this.currentFloorInventoryId = null;
+        this.currentDeskInventoryId = null;
+        this.currentDashboardInventoryId = null;
+        this.currentInteriorLightInventoryId = null;
+        this.currentExteriorLightInventoryId = null;
+        this.layoutVersion += 1;
     }
 }

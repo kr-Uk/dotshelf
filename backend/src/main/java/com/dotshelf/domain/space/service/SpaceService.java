@@ -13,9 +13,16 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dotshelf.domain.asset.entity.Asset;
+import com.dotshelf.domain.asset.entity.UserAssetInventory;
+import com.dotshelf.domain.asset.repository.AssetRepository;
+import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
 import com.dotshelf.domain.book.dto.BookDtos.OwnedBookListResponse;
 import com.dotshelf.domain.book.dto.BookDtos.OwnedBookSummary;
 import com.dotshelf.domain.book.repository.UserBookRepository;
+import com.dotshelf.domain.bookshelf.entity.Bookshelf;
+import com.dotshelf.domain.bookshelf.repository.BookshelfRepository;
+import com.dotshelf.domain.space.dto.SpaceDtos.CategoryInventoryRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.DashboardResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistResponse;
@@ -23,9 +30,11 @@ import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListItemResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.SpaceMutationResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyMode;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.VisibilityRequest;
 import com.dotshelf.domain.space.entity.Space;
@@ -62,6 +71,15 @@ public class SpaceService {
     private static final int MAX_LIST_LIMIT = 50;
     private static final int MEMORY_SORT_WARNING_THRESHOLD = 500;
 
+    // 카테고리별 PATCH endpoint가 받는 inventory의 Asset.assetType 검증값.
+    // admin-web에서 자산 등록 시 같은 문자열 사용해야 함.
+    private static final String ASSET_TYPE_WALLPAPER = "WALLPAPER";
+    private static final String ASSET_TYPE_FLOOR = "FLOOR";
+    private static final String ASSET_TYPE_DESK_SET = "DESK_SET";
+    private static final String ASSET_TYPE_DASHBOARD_SKIN = "DASHBOARD_SKIN";
+    private static final String ASSET_TYPE_INTERIOR_LIGHT = "INTERIOR_LIGHT";
+    private static final String ASSET_TYPE_EXTERIOR_LIGHT = "EXTERIOR_LIGHT";
+
     private final SpaceRepository spaceRepository;
     private final SpaceTemplateRepository spaceTemplateRepository;
     private final SpaceVisitRepository spaceVisitRepository;
@@ -73,6 +91,9 @@ public class SpaceService {
     private final UserBookRepository userBookRepository;
     private final UserRepository userRepository;
     private final UserService userService;
+    private final AssetRepository assetRepository;
+    private final UserAssetInventoryRepository userAssetInventoryRepository;
+    private final BookshelfRepository bookshelfRepository;
 
     @Transactional
     public SpaceResponse getMySpace(Long userId) {
@@ -192,6 +213,141 @@ public class SpaceService {
         Space space = findOrCreateMySpace(currentUserId);
         space.applyTheme(request.inventoryId());
         return SpaceResponse.from(space, isLiked(space.getId(), currentUserId));
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeWallpaper(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, ASSET_TYPE_WALLPAPER, Space::changeWallpaper);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeFloor(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, ASSET_TYPE_FLOOR, Space::changeFloor);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeDesk(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, ASSET_TYPE_DESK_SET, Space::changeDesk);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeDashboard(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, ASSET_TYPE_DASHBOARD_SKIN, Space::changeDashboard);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeInteriorLight(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, ASSET_TYPE_INTERIOR_LIGHT, Space::changeInteriorLight);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeExteriorLight(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, ASSET_TYPE_EXTERIOR_LIGHT, Space::changeExteriorLight);
+    }
+
+    /**
+     * POST /v1/spaces/me/theme/{inventoryId}/apply?mode=RESET|KEEP_BLOCKERS_ONLY
+     * 전체 테마 적용(모드 명시) — 기존 PATCH /me/theme(mode 없음)과 별개.
+     * - RESET: 모든 설치 오브젝트 보관함 이동 + 책장 skin 모두 초기화 후 테마 적용
+     * - KEEP_BLOCKERS_ONLY: 테마 기본 배치와 충돌하는 설치 오브젝트만 보관함 이동
+     *
+     * **현재 KEEP_BLOCKERS_ONLY는 Layout 도메인 통합 미완료라 501 NOT_IMPLEMENTED 반환.**
+     * 활성화는 Layout 도메인 통합 + 충돌 layout items 이동 로직 추가 후. 명세서 v1.0
+     * 수정 계획 페이지 후속 항목 참고.
+     */
+    @Transactional
+    public SpaceMutationResponse applyThemeWithMode(Long userId, Long inventoryId, ThemeApplyMode mode) {
+        if (mode == null) {
+            throw new CustomException(ErrorCode.THEME_INVALID_MODE);
+        }
+        if (mode == ThemeApplyMode.KEEP_BLOCKERS_ONLY) {
+            // 현재 RESET과 같은 동작이라 노출 시 클라이언트가 두 모드 차이를 오해할 수 있음.
+            // Layout 통합 후 활성화 — 그 전엔 501로 명확히 거절.
+            throw new CustomException(ErrorCode.THEME_MODE_NOT_IMPLEMENTED);
+        }
+        Long currentUserId = userService.requireUserId(userId);
+        verifyOwnedInventoryWithType(inventoryId, currentUserId, "THEME");
+
+        Space space = findOrCreateMySpace(currentUserId);
+        // RESET 모드: 카테고리 ID + 모든 책장 skin 초기화 (resetCustomization은 layoutVersion++도 처리)
+        space.resetCustomization();
+        List<Bookshelf> bookshelves = bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(space.getId());
+        for (Bookshelf b : bookshelves) {
+            b.resetSkin();
+        }
+
+        space.applyTheme(inventoryId);
+        return SpaceMutationResponse.of(space, isLiked(space.getId(), currentUserId), true);
+    }
+
+    /**
+     * 카테고리별 PATCH 6개 endpoint 공통 로직.
+     * 1) inventoryId가 null이 아니면 사용자 보유 검증 + 카테고리/자산 타입 일치 검증
+     * 2) 현재 적용된 전체 테마가 customization 불가이면 자동 해제(reset) — themeReset=true
+     * 3) 사용자가 요청한 카테고리에 inventoryId set (null이면 unset = 기본 외형)
+     */
+    private SpaceMutationResponse applyCategoryInventory(
+            Long userId,
+            CategoryInventoryRequest request,
+            String expectedAssetType,
+            java.util.function.BiConsumer<Space, Long> setter) {
+        Long currentUserId = userService.requireUserId(userId);
+        Space space = findOrCreateMySpace(currentUserId);
+
+        Long invId = request.inventoryId();
+        if (invId != null) {
+            verifyOwnedInventoryWithType(invId, currentUserId, expectedAssetType);
+        }
+
+        boolean themeReset = resetIfThemeLocked(space);
+        setter.accept(space, invId);
+        return SpaceMutationResponse.of(space, isLiked(space.getId(), currentUserId), themeReset);
+    }
+
+    /**
+     * inventoryId가 사용자 본인 인벤토리인지 + assetType이 카테고리에 맞는지 확인.
+     * 위반 시 THEME_NOT_OWNED 또는 CATEGORY_INVENTORY_TYPE_MISMATCH.
+     */
+    private void verifyOwnedInventoryWithType(Long inventoryId, Long userId, String expectedAssetType) {
+        UserAssetInventory inv = userAssetInventoryRepository.findByIdAndUserId(inventoryId, userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.THEME_NOT_OWNED));
+        Asset asset = assetRepository.findById(inv.getAssetId())
+                .orElseThrow(() -> new CustomException(ErrorCode.THEME_NOT_OWNED));
+        if (expectedAssetType != null && !expectedAssetType.equalsIgnoreCase(asset.getAssetType())) {
+            throw new CustomException(ErrorCode.CATEGORY_INVENTORY_TYPE_MISMATCH);
+        }
+    }
+
+    /**
+     * 현재 적용된 전체 테마가 `allows_customization == false`이면 모든 카테고리 ID와
+     * 책장 skin을 초기화하고 true 반환. 적용 테마가 없거나 customization 허용이면 false.
+     * (layout items 보관함 이동은 별도 마디 — Layout 도메인 통합 시점에 추가)
+     */
+    private boolean resetIfThemeLocked(Space space) {
+        Long themeInvId = space.getCurrentThemeInventoryId();
+        if (themeInvId == null) return false;
+
+        Asset themeAsset = resolveAssetByInventoryId(themeInvId);
+        if (themeAsset == null || themeAsset.isAllowsCustomization()) return false;
+
+        // 잠긴 테마 — Space와 모든 책장 skin을 일괄 초기화
+        space.resetCustomization();
+        List<Bookshelf> bookshelves = bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(space.getId());
+        for (Bookshelf b : bookshelves) {
+            b.resetSkin();
+        }
+        return true;
+    }
+
+    /**
+     * UserAssetInventory.id → Asset 조회. 인벤토리 또는 자산이 없으면 null 반환
+     * (호출부에서 null을 "검증 skip"으로 해석).
+     */
+    private Asset resolveAssetByInventoryId(Long inventoryId) {
+        if (inventoryId == null) return null;
+        UserAssetInventory inv = userAssetInventoryRepository.findById(inventoryId).orElse(null);
+        if (inv == null) return null;
+        return assetRepository.findById(inv.getAssetId()).orElse(null);
     }
 
     @Transactional

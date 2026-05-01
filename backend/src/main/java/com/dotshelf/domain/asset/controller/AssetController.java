@@ -13,6 +13,7 @@ import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryListResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetPurchaseResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.InventoryResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.ThemeContentsResponse;
 import com.dotshelf.domain.asset.service.AssetService;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
@@ -42,6 +43,15 @@ public class AssetController {
     @GetMapping("/{assetId}")
     public ApiResponse<AssetResponse> getAsset(@CurrentUser Long userId, @PathVariable Long assetId) {
         return ApiResponse.success(assetService.getAsset(userId, assetId));
+    }
+
+    /**
+     * 전체 테마 자산이 묶고 있는 카테고리별 자식 자산 ID. Frontend가 테마 preview/apply 시
+     * 카테고리별 카탈로그에 매칭하는 용도.
+     */
+    @GetMapping("/{assetId}/contents")
+    public ApiResponse<ThemeContentsResponse> getThemeContents(@PathVariable Long assetId) {
+        return ApiResponse.success(assetService.getThemeContents(assetId));
     }
 
     @GetMapping("/categories")

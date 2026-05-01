@@ -36,6 +36,10 @@ public enum ErrorCode {
     SPACE_NOT_FOUND(HttpStatus.NOT_FOUND, "S003", "공간을 찾을 수 없습니다."),
     SPACE_OWNER_CANNOT_POST(HttpStatus.CONFLICT, "S004", "본인 공간에는 방명록을 작성할 수 없습니다."),
     SPACE_ACCESS_BLOCKED(HttpStatus.FORBIDDEN, "S005", "차단된 사용자의 공간에 접근할 수 없습니다."),
+    THEME_NOT_OWNED(HttpStatus.FORBIDDEN, "S006", "보유하지 않은 테마/꾸미기 항목입니다."),
+    THEME_INVALID_MODE(HttpStatus.BAD_REQUEST, "S007", "테마 적용 모드가 올바르지 않습니다."),
+    CATEGORY_INVENTORY_TYPE_MISMATCH(HttpStatus.CONFLICT, "S008", "카테고리와 자산 타입이 일치하지 않습니다."),
+    THEME_MODE_NOT_IMPLEMENTED(HttpStatus.NOT_IMPLEMENTED, "S009", "해당 테마 적용 모드는 아직 구현되지 않았습니다."),
 
     // Review
     REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "R001", "리뷰를 찾을 수 없습니다."),
