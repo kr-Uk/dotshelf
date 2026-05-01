@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using App.Application.Dashboard;
+using App.Infrastructure.Api;
+using App.Infrastructure.Api.Dashboard;
 using App.Infrastructure.Catalogs;
 using BookshelfPorting.Runtime;
 using Dotshelf.Scripts.RoomTheme;
@@ -230,6 +233,8 @@ namespace App.Bootstrap
 
         private RoomThemeCatalogAsset themeCatalog;
         private RoomThemeApplier themeApplier;
+        private UpdateSpaceThemeUseCase themeUseCase;
+        private RoomThemeAsset previousAppliedTheme;
 
         private GameObject placedItemsRoot;
         private GameObject selectedObject;
@@ -952,11 +957,51 @@ namespace App.Bootstrap
                 return;
             }
 
-            // D9(i) 낙관적 적용: 즉시 visual swap. 백엔드 PATCH wiring은 후속 마디.
+            // D9(i) 낙관적 적용: 즉시 visual swap → 백엔드 PATCH → 실패 시 rollback.
+            previousAppliedTheme = themeApplier.CurrentTheme;
             themeApplier.Apply(theme);
-
-            // 적용 후 그리드 재구성해서 강조 outline 갱신
             RebuildInventorySlots();
+
+            EnsureThemeUseCase();
+            if (themeUseCase == null)
+            {
+                Debug.LogWarning("[RoomEditModeController] ISpaceSettingsRepository 미주입 — 백엔드 PATCH skip (visual만 적용).");
+                return;
+            }
+
+            long? inventoryId = theme.AssetId > 0 ? (long?)theme.AssetId : null;
+            themeUseCase.Execute(
+                inventoryId,
+                onSuccess: () =>
+                {
+                    Debug.Log($"[RoomEditModeController] PATCH /spaces/me/theme OK → inventoryId={inventoryId}.");
+                },
+                onError: error =>
+                {
+                    Debug.LogWarning($"[RoomEditModeController] PATCH 실패 ({error?.Code}/{error?.Message}) — 이전 테마로 롤백.");
+                    if (previousAppliedTheme != null && previousAppliedTheme != theme)
+                    {
+                        themeApplier.Apply(previousAppliedTheme);
+                        RebuildInventorySlots();
+                    }
+                });
+        }
+
+        private void EnsureThemeUseCase()
+        {
+            if (themeUseCase != null) return;
+            try
+            {
+                var apiManager = APIManager.Instance;
+                if (apiManager == null) return;
+                var apiClient = new NotebookApiClient(apiManager);
+                var repo = new ApiSpaceSettingsRepository(apiClient);
+                themeUseCase = new UpdateSpaceThemeUseCase(repo);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[RoomEditModeController] UpdateSpaceThemeUseCase 생성 실패: {ex.Message}");
+            }
         }
 
         private void BuildInventorySlot(Transform parent, int slotIndex, InventoryEntry entry)
