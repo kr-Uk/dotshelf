@@ -842,6 +842,14 @@ namespace App.Bootstrap
                 return;
             }
 
+            // v1.0 customization — 1:1 카테고리 매핑이 명확한 toolbar 키는 CustomizationCatalog로 처리.
+            // 묶음 탭(FURNITURE/OBJECT_SKIN)은 후속 PR에서 sub-탭화.
+            if (TryResolveCustomizationCategory(selectedToolbarKey, out var category))
+            {
+                BuildCustomizationSlots(inventoryContentRoot.transform, category);
+                return;
+            }
+
             var slotIndex = 0;
             for (var i = 0; i < inventoryEntries.Count; i++)
             {
@@ -853,6 +861,131 @@ namespace App.Bootstrap
                 BuildInventorySlot(inventoryContentRoot.transform, slotIndex, entry);
                 slotIndex++;
             }
+        }
+
+        // toolbar 키 → CustomizationCategory 매핑. 1:1 명확 매핑만 true 반환,
+        // 묶음 탭(FURNITURE/OBJECT_SKIN/ALL)은 false.
+        private static bool TryResolveCustomizationCategory(string toolbarKey, out CustomizationCategory category)
+        {
+            switch (toolbarKey)
+            {
+                case "WALLPAPER":   category = CustomizationCategory.Wallpaper; return true;
+                case "LIGHT_INNER": category = CustomizationCategory.InteriorLight; return true;
+                case "LIGHT_OUTER": category = CustomizationCategory.ExteriorLight; return true;
+                default:            category = default; return false;
+            }
+        }
+
+        private readonly System.Collections.Generic.Dictionary<CustomizationCategory, CustomizationCatalogAsset> categoryCatalogCache
+            = new System.Collections.Generic.Dictionary<CustomizationCategory, CustomizationCatalogAsset>();
+
+        private void BuildCustomizationSlots(Transform parent, CustomizationCategory category)
+        {
+            var catalog = LoadCategoryCatalog(category);
+            if (catalog == null || catalog.Entries == null || catalog.Entries.Count == 0)
+            {
+                Debug.LogWarning($"[RoomEditModeController] {category} 카탈로그 비어있음 — Resources/Catalogs/{category}Catalog.asset에 entries 추가 또는 'Dotshelf > Design Preview > Generate Placeholder Catalogs' 메뉴 실행.");
+                return;
+            }
+
+            for (int i = 0; i < catalog.Entries.Count; i++)
+            {
+                var entry = catalog.Entries[i];
+                if (entry == null) continue;
+                BuildCustomizationSlot(parent, i, category, entry);
+            }
+        }
+
+        private CustomizationCatalogAsset LoadCategoryCatalog(CustomizationCategory category)
+        {
+            if (categoryCatalogCache.TryGetValue(category, out var cached) && cached != null)
+            {
+                return cached;
+            }
+            var loaded = Resources.Load<CustomizationCatalogAsset>($"Catalogs/{category}Catalog");
+            if (loaded != null)
+            {
+                categoryCatalogCache[category] = loaded;
+            }
+            return loaded;
+        }
+
+        // CustomizationEntry 슬롯 — 테마 슬롯과 같은 모양 (108x128 카드 + 썸네일 + 라벨).
+        // 클릭 시 OnCustomizationEntrySelected 호출 → visual swap + PATCH wiring.
+        private void BuildCustomizationSlot(Transform parent, int slotIndex, CustomizationCategory category, CustomizationEntry entry)
+        {
+            var slot = CreateImage(parent, $"{category}Slot_{slotIndex}", CardColor);
+            slot.sprite = roundedRectSprite;
+            slot.type = Image.Type.Sliced;
+            var rect = slot.rectTransform;
+            rect.sizeDelta = new Vector2(108f, 128f);
+
+            var layout = slot.gameObject.AddComponent<LayoutElement>();
+            layout.minWidth = 108f; layout.preferredWidth = 108f;
+            layout.minHeight = 128f; layout.preferredHeight = 128f;
+
+            var outline = slot.gameObject.AddComponent<Outline>();
+            outline.effectColor = WithAlpha(BorderColor, 0.9f);
+            outline.effectDistance = new Vector2(1f, -1f);
+
+            // 현재 적용 중인 항목은 강조 (Space 도메인의 카테고리별 ID와 비교)
+            if (IsCategoryEntryCurrent(category, entry.AssetId))
+            {
+                outline.effectColor = TextColor;
+                outline.effectDistance = new Vector2(2f, -2f);
+            }
+
+            var thumb = CreateImage(slot.transform, "Thumb", Hex("#E8DFCC"));
+            if (entry.PreviewSprite != null)
+            {
+                thumb.sprite = entry.PreviewSprite;
+                thumb.type = Image.Type.Simple;
+                thumb.preserveAspect = true;
+            }
+            else if (entry.PrimaryMaterial != null)
+            {
+                // PreviewSprite 없으면 머티리얼 색을 썸네일로 사용 (placeholder 단계)
+                thumb.sprite = roundedRectSprite;
+                thumb.type = Image.Type.Sliced;
+                thumb.color = entry.PrimaryMaterial.HasProperty("_BaseColor") ? entry.PrimaryMaterial.GetColor("_BaseColor") : entry.PrimaryMaterial.color;
+            }
+            else
+            {
+                thumb.sprite = roundedRectSprite;
+                thumb.type = Image.Type.Sliced;
+            }
+            var thumbRect = thumb.rectTransform;
+            thumbRect.anchorMin = new Vector2(0.5f, 1f);
+            thumbRect.anchorMax = new Vector2(0.5f, 1f);
+            thumbRect.pivot = new Vector2(0.5f, 1f);
+            thumbRect.sizeDelta = new Vector2(80f, 80f);
+            thumbRect.anchoredPosition = new Vector2(0f, -8f);
+
+            var labelText = CreateText(slot.transform, "Label",
+                string.IsNullOrEmpty(entry.DisplayName) ? category.ToString() : entry.DisplayName,
+                12f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
+            labelText.overflowMode = TextOverflowModes.Ellipsis;
+            var labelRect = labelText.rectTransform;
+            labelRect.anchorMin = new Vector2(0f, 0f);
+            labelRect.anchorMax = new Vector2(1f, 0f);
+            labelRect.pivot = new Vector2(0.5f, 0f);
+            labelRect.sizeDelta = new Vector2(-8f, 24f);
+            labelRect.anchoredPosition = new Vector2(0f, 6f);
+
+            var button = slot.gameObject.AddComponent<Button>();
+            button.targetGraphic = slot;
+            var capturedEntry = entry;
+            var capturedCategory = category;
+            button.onClick.AddListener(() => OnCustomizationEntrySelected(capturedCategory, capturedEntry));
+        }
+
+        // 현재 적용 중인 카테고리 항목인지 검사. Space.Current*InventoryId와 entry.AssetId 비교.
+        // 우선은 RoomThemeApplier.CurrentTheme의 spec를 reference로 사용 — 후속에서 Space 도메인 직접 매핑 가능.
+        private bool IsCategoryEntryCurrent(CustomizationCategory category, long assetId)
+        {
+            // TODO: Space 도메인의 6 카테고리 ID와 비교. 현재는 themeApplier의 CurrentTheme만 참고
+            // (전체 테마 적용 후 카테고리 강조는 후속 마디에서 정확히 처리).
+            return false;
         }
 
         // 전체 테마 카테고리 — 데코 인벤토리 대신 RoomThemeCatalogAsset의 테마들을
@@ -1030,6 +1163,197 @@ namespace App.Bootstrap
                 // 어느 단계(NotebookApiClient ctor / Repository ctor / UseCase ctor)에서 깨졌는지
                 // stack까지 같이 출력해야 디버깅 가능.
                 Debug.LogError($"[RoomEditModeController] UpdateSpaceThemeUseCase 생성 실패 ({ex.GetType().Name}).");
+                Debug.LogException(ex);
+            }
+        }
+
+        // 카테고리 카탈로그 셀 클릭 시 호출. visual swap + 백엔드 PATCH wiring (낙관적 적용).
+        // themeReset 응답 시 룸 전체 reload 필요 (TODO: Space 재로드 hook 추가 — 후속 마디).
+        // 빠른 연타 시 stale callback 무시 — categoryRequestVersion 카운터.
+        private int categoryRequestVersion;
+
+        private void OnCustomizationEntrySelected(CustomizationCategory category, CustomizationEntry entry)
+        {
+            if (entry == null) return;
+
+            // visual swap — 카테고리별로 적용 (현재는 단일 항목 swap 골격, RoomThemeApplier 카테고리
+            // swap helper 없으면 룸 root traverse하며 직접 처리)
+            ApplyEntryVisual(category, entry);
+            RebuildInventorySlots();
+
+            // 백엔드 PATCH wiring
+            EnsureSpaceSettingsRepository();
+            if (spaceSettingsRepo == null)
+            {
+                Debug.LogWarning("[RoomEditModeController] ISpaceSettingsRepository 미준비 — 백엔드 PATCH skip (visual만 적용).");
+                return;
+            }
+
+            int requestVersion = ++categoryRequestVersion;
+            long? invId = entry.AssetId > 0 ? (long?)entry.AssetId : null;
+
+            Action<bool> onSuccess = themeReset =>
+            {
+                if (requestVersion != categoryRequestVersion) return;
+                Debug.Log($"[RoomEditModeController] PATCH /spaces/me/{category.ToString().ToLower()} OK → invId={invId}, themeReset={themeReset}.");
+                if (themeReset)
+                {
+                    Debug.LogWarning("[RoomEditModeController] 커스터마이징 불가 테마 자동 해제 — 룸 전체 reload 필요(TODO).");
+                    // TODO: Space 재로드 + RoomThemeApplier.Apply(default theme) + 모든 책장 skin 초기화 visual
+                }
+            };
+            Action<DashboardApiError> onError = error =>
+            {
+                if (requestVersion != categoryRequestVersion) return;
+                bool isNetworkFailure = string.IsNullOrEmpty(error?.Code);
+                if (isNetworkFailure)
+                {
+                    Debug.LogWarning($"[RoomEditModeController] PATCH connection 실패 ({error?.Message}) — visual은 유지.");
+                    return;
+                }
+                Debug.LogWarning($"[RoomEditModeController] PATCH 실패 ({error.Code}/{error.Message}).");
+                // TODO: previousEntry 저장 후 rollback (현재는 visual만 적용, 다음 로드 시 서버와 동기화)
+            };
+
+            switch (category)
+            {
+                case CustomizationCategory.Wallpaper:
+                    spaceSettingsRepo.ChangeWallpaper(invId, onSuccess, onError); break;
+                case CustomizationCategory.Floor:
+                    spaceSettingsRepo.ChangeFloor(invId, onSuccess, onError); break;
+                case CustomizationCategory.Desk:
+                    spaceSettingsRepo.ChangeDesk(invId, onSuccess, onError); break;
+                case CustomizationCategory.DashboardSkin:
+                    spaceSettingsRepo.ChangeDashboard(invId, onSuccess, onError); break;
+                case CustomizationCategory.InteriorLight:
+                    spaceSettingsRepo.ChangeInteriorLight(invId, onSuccess, onError); break;
+                case CustomizationCategory.ExteriorLight:
+                    spaceSettingsRepo.ChangeExteriorLight(invId, onSuccess, onError); break;
+                default:
+                    Debug.LogWarning($"[RoomEditModeController] {category}는 카테고리별 PATCH 미지원 (책장/벽/바닥 데코는 별도 endpoint).");
+                    break;
+            }
+        }
+
+        // 카테고리별 visual swap. RoomThemeApplier가 RoomThemeAsset 단위로 처리하므로,
+        // CustomizationEntry 단일 항목은 룸 root traverse + sharedMaterial swap 또는
+        // light 직접 set로 처리. 메쉬/placement는 후속.
+        private void ApplyEntryVisual(CustomizationCategory category, CustomizationEntry entry)
+        {
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<Dotshelf.Scripts.RoomTheme.RoomThemeApplier>();
+                if (themeApplier == null)
+                {
+                    Debug.LogWarning("[RoomEditModeController] RoomThemeApplier 인스턴스 없음 — visual swap skip.");
+                    return;
+                }
+            }
+
+            // 라이트 카테고리는 씬의 Directional Light 직접 변경 (Applier 의존 없음)
+            if (category == CustomizationCategory.ExteriorLight)
+            {
+                var dirLight = FindFirstDirectionalLight();
+                if (dirLight != null)
+                {
+                    dirLight.color = entry.LightColor;
+                    dirLight.useColorTemperature = true;
+                    dirLight.colorTemperature = entry.ColorTemperatureKelvin;
+                    dirLight.intensity = entry.LightIntensity;
+                }
+                return;
+            }
+            if (category == CustomizationCategory.InteriorLight)
+            {
+                RenderSettings.ambientLight = entry.LightColor;
+                RenderSettings.ambientIntensity = entry.LightIntensity;
+                return;
+            }
+
+            // 머티리얼 카테고리는 룸 root에서 패턴 매칭하여 sharedMaterial swap.
+            // RoomThemeApplier가 같은 패턴을 알지만 단일 entry용 helper가 없어 inline.
+            var mat = entry.PrimaryMaterial;
+            if (mat == null) return;
+
+            // 카테고리별 GameObject 이름 패턴은 RoomThemeApplier와 동일.
+            string[] patterns = ResolveMaterialSwapPatterns(category);
+            if (patterns == null || patterns.Length == 0) return;
+
+            var roomRootTransform = FindRoomRoot();
+            if (roomRootTransform == null) return;
+            int swapped = 0;
+            foreach (var renderer in roomRootTransform.GetComponentsInChildren<Renderer>(true))
+            {
+                var name = renderer.gameObject.name;
+                bool match = false;
+                if (category == CustomizationCategory.Wallpaper)
+                {
+                    match = name.Contains("Wall");
+                }
+                else if (category == CustomizationCategory.Floor)
+                {
+                    match = name == "Floor";
+                }
+                else
+                {
+                    foreach (var p in patterns) { if (name.StartsWith(p)) { match = true; break; } }
+                }
+                if (match)
+                {
+                    renderer.sharedMaterial = mat;
+                    swapped++;
+                }
+            }
+            if (swapped == 0)
+            {
+                Debug.LogWarning($"[RoomEditModeController] {category} 매칭 0개 (entry={entry.DisplayName}).");
+            }
+        }
+
+        private static string[] ResolveMaterialSwapPatterns(CustomizationCategory category)
+        {
+            switch (category)
+            {
+                case CustomizationCategory.Wallpaper:     return new[] { "Wall" };
+                case CustomizationCategory.Floor:         return new[] { "Floor" };
+                case CustomizationCategory.BookshelfSkin: return new[] { "BookshelfRoot", "Bookshelf_" };
+                case CustomizationCategory.Desk:          return new[] { "DeskRoot", "NotebookStation", "Desk_" };
+                case CustomizationCategory.DashboardSkin: return new[] { "DashboardScreenPanel", "GuestbookBoard", "Dashboard_" };
+                default: return null;
+            }
+        }
+
+        private Transform FindRoomRoot()
+        {
+            var root = GameObject.Find("RoomRoot");
+            return root != null ? root.transform : null;
+        }
+
+        private Light FindFirstDirectionalLight()
+        {
+            var lights = FindObjectsByType<Light>(FindObjectsSortMode.None);
+            foreach (var l in lights)
+            {
+                if (l.type == LightType.Directional) return l;
+            }
+            return null;
+        }
+
+        private ISpaceSettingsRepository spaceSettingsRepo;
+
+        private void EnsureSpaceSettingsRepository()
+        {
+            if (spaceSettingsRepo != null) return;
+            var apiManager = APIManager.Instance;
+            if (apiManager == null) return;
+            try
+            {
+                var apiClient = new NotebookApiClient(apiManager);
+                spaceSettingsRepo = new ApiSpaceSettingsRepository(apiClient);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[RoomEditModeController] ApiSpaceSettingsRepository 생성 실패 ({ex.GetType().Name}).");
                 Debug.LogException(ex);
             }
         }
