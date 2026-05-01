@@ -95,12 +95,17 @@ namespace Dotshelf.EditorTools
             var path = $"{MaterialsRoot}/GoodVibes/{name}.mat";
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
             var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null)
+            {
+                Debug.LogError($"[ThemePackCreator] 'Universal Render Pipeline/Lit' shader 못 찾음 — URP 패키지 미설치 또는 shader 이름 변경. 머티리얼 '{name}' 생성 skip.");
+                return mat;
+            }
             if (mat == null)
             {
                 mat = new Material(shader) { name = name };
                 AssetDatabase.CreateAsset(mat, path);
             }
-            else if (mat.shader != shader && shader != null)
+            else if (mat.shader != shader)
             {
                 mat.shader = shader;
             }

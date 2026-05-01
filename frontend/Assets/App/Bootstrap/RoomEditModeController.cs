@@ -235,6 +235,9 @@ namespace App.Bootstrap
         private RoomThemeApplier themeApplier;
         private UpdateSpaceThemeUseCase themeUseCase;
         private RoomThemeAsset previousAppliedTheme;
+        // 빠른 테마 연타 시 stale callback 무시. 매 클릭마다 ++해서 onSuccess/onError에
+        // 캡쳐된 version과 현재 version이 다르면 응답 무시. (MR 72의 walletDetailRequestVersion 동일 패턴)
+        private int themeRequestVersion;
 
         private GameObject placedItemsRoot;
         private GameObject selectedObject;
@@ -970,14 +973,25 @@ namespace App.Bootstrap
             }
 
             long? inventoryId = theme.AssetId > 0 ? (long?)theme.AssetId : null;
+            // 연타 시 stale callback 무시: 캡쳐된 version과 현재 version이 다르면 이번 요청은
+            // 이미 다음 요청에 의해 덮였으므로 응답 무시. (rollback도, success log도 안 함)
+            int requestVersion = ++themeRequestVersion;
             themeUseCase.Execute(
                 inventoryId,
                 onSuccess: () =>
                 {
+                    if (requestVersion != themeRequestVersion)
+                    {
+                        return;
+                    }
                     Debug.Log($"[RoomEditModeController] PATCH /spaces/me/theme OK → inventoryId={inventoryId}.");
                 },
                 onError: error =>
                 {
+                    if (requestVersion != themeRequestVersion)
+                    {
+                        return;
+                    }
                     // Code가 비어있으면 백엔드 응답 에러가 아니라 네트워크 connection 실패
                     // (dev 환경에서 백엔드 미기동 등) — visual은 유지하고 warning만.
                     bool isNetworkFailure = string.IsNullOrEmpty(error?.Code);
@@ -999,17 +1013,24 @@ namespace App.Bootstrap
         private void EnsureThemeUseCase()
         {
             if (themeUseCase != null) return;
+            var apiManager = APIManager.Instance;
+            if (apiManager == null)
+            {
+                Debug.LogWarning("[RoomEditModeController] APIManager.Instance == null — UpdateSpaceThemeUseCase 생성 skip.");
+                return;
+            }
             try
             {
-                var apiManager = APIManager.Instance;
-                if (apiManager == null) return;
                 var apiClient = new NotebookApiClient(apiManager);
                 var repo = new ApiSpaceSettingsRepository(apiClient);
                 themeUseCase = new UpdateSpaceThemeUseCase(repo);
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[RoomEditModeController] UpdateSpaceThemeUseCase 생성 실패: {ex.Message}");
+                // 어느 단계(NotebookApiClient ctor / Repository ctor / UseCase ctor)에서 깨졌는지
+                // stack까지 같이 출력해야 디버깅 가능.
+                Debug.LogError($"[RoomEditModeController] UpdateSpaceThemeUseCase 생성 실패 ({ex.GetType().Name}).");
+                Debug.LogException(ex);
             }
         }
 

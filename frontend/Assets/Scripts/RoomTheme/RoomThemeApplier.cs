@@ -35,6 +35,11 @@ namespace Dotshelf.Scripts.RoomTheme
             Debug.Log($"[RoomThemeApplier] Applied theme '{theme.DisplayName}' (assetId={theme.AssetId}).");
         }
 
+        // BookshelfGenerator(.cs:585+)에서 CreateBox로 만드는 GameObject 이름 매칭 규칙.
+        // 이 이름들이 바뀌면 silent fail이 아니라 warning 로그로 알려준다(ApplyMaterials 끝).
+        const string FloorObjectName = "Floor";
+        static readonly string[] WallObjectNamePatterns = { "LeftWall", "RightWall", "BackWall", "FrontWall" };
+
         private void ApplyMaterials(RoomThemeAsset theme)
         {
             // 테마 머티리얼이 null이면 MaterialFactory의 기본 머티리얼로 복원
@@ -47,6 +52,9 @@ namespace Dotshelf.Scripts.RoomTheme
                 ? theme.FloorMaterial
                 : (materialFactory != null ? materialFactory.GetFloorMaterial() : null);
 
+            int wallSwapped = 0;
+            int floorSwapped = 0;
+
             if (roomRoot != null)
             {
                 var renderers = roomRoot.GetComponentsInChildren<Renderer>(true);
@@ -54,22 +62,51 @@ namespace Dotshelf.Scripts.RoomTheme
                 {
                     var r = renderers[i];
                     var n = r.gameObject.name;
-                    if (wallMat != null && n.Contains("Wall"))
+                    if (wallMat != null && IsWallName(n))
                     {
                         r.sharedMaterial = wallMat;
+                        wallSwapped++;
                     }
-                    else if (floorMat != null && n == "Floor")
+                    else if (floorMat != null && n == FloorObjectName)
                     {
                         r.sharedMaterial = floorMat;
+                        floorSwapped++;
                     }
                 }
             }
 
+            // BookshelfGenerator의 GameObject 이름이 바뀌면 silent fail이 아니라
+            // warning으로 알리도록. roomRoot 자체가 null인 경우는 별개라 위에서 분리.
+            if (roomRoot != null && wallMat != null && wallSwapped == 0)
+            {
+                Debug.LogWarning($"[RoomThemeApplier] Wall renderer 매칭 0개. BookshelfGenerator의 GameObject 이름이 바뀌었거나 roomRoot가 잘못 잡혀있는지 확인하세요. 기대 패턴: {string.Join(",", WallObjectNamePatterns)}");
+            }
+            if (roomRoot != null && floorMat != null && floorSwapped == 0)
+            {
+                Debug.LogWarning($"[RoomThemeApplier] Floor renderer 매칭 0개. 기대 이름: '{FloorObjectName}'.");
+            }
+
             if (materialFactory != null)
             {
-                int idx = Mathf.Clamp(theme.BookshelfStyleIndex, 0, 2);
-                materialFactory.ApplyTheme((BookshelfThemeStyle)idx);
+                var style = (BookshelfThemeStyle)theme.BookshelfStyleIndex;
+                if (System.Enum.IsDefined(typeof(BookshelfThemeStyle), style))
+                {
+                    materialFactory.ApplyTheme(style);
+                }
+                else
+                {
+                    Debug.LogWarning($"[RoomThemeApplier] bookshelfStyleIndex={theme.BookshelfStyleIndex}는 BookshelfThemeStyle enum 범위 밖 — 책장 tint 적용 skip.");
+                }
             }
+        }
+
+        static bool IsWallName(string name)
+        {
+            for (int i = 0; i < WallObjectNamePatterns.Length; i++)
+            {
+                if (name == WallObjectNamePatterns[i]) return true;
+            }
+            return false;
         }
 
         private void ApplyLighting(RoomThemeAsset theme)
