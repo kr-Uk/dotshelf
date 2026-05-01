@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using App.Auth;
 using App.Domain;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dtos;
@@ -39,6 +40,16 @@ namespace BookshelfPorting.Runtime
         {
             if (!IsConfigured || isRefreshing)
             {
+                return;
+            }
+
+            // Defensive: BookshelfSceneInstaller already skips Configure() in
+            // guest mode, but RefreshFromServer is also exposed for shelf
+            // create/delete/reorder callbacks. /v1/spaces/me is authenticated,
+            // so without a Bearer token it 401s and the shelf never populates.
+            if (AuthSession.IsGuestSession)
+            {
+                Debug.Log("[Auth] guest mode - using local bookshelf, skipping /v1/spaces/me");
                 return;
             }
 

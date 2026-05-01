@@ -1,5 +1,6 @@
 using App.Application.Books;
 using App.Application.Notebook;
+using App.Auth;
 using App.Bootstrap;
 using App.Config;
 using App.Infrastructure.Api;
@@ -163,6 +164,16 @@ namespace BookshelfPorting.Runtime
             var apiManager = GetOrAddComponent<APIManager>(systems);
             var notebookUiSceneLoader = GetOrAddComponent<NotebookUiSceneLoader>(systems);
 
+            // Guest mode: /v1/auth/guest-session has been issued but no social
+            // login has happened yet, so no Bearer token exists. Authenticated
+            // endpoints (notably /v1/spaces/me) would 401, so we skip the
+            // server-bookshelf path entirely and let BookshelfGenerator render
+            // a local temp room from the public book catalog. Once the user
+            // logs in and the scene reloads, AuthSession.IsGuestSession flips
+            // to false and the API sync wires up normally.
+            var isGuestSession = Application.isPlaying && AuthSession.IsGuestSession;
+            var useServerBookshelf = usesHttpApi && !isGuestSession;
+
             apiManager.Configure(
                 apiBaseUrl,
                 apiAccessToken,
@@ -178,9 +189,13 @@ namespace BookshelfPorting.Runtime
             var addNotebookBookToShelfUseCase = new AddNotebookBookToShelfUseCase(notebookBookRepository);
             var notebookRuntimeRepository = CreateNotebookRuntimeRepository(apiMode, apiManager);
             var notebookRuntimeUseCase = new NotebookRuntimeUseCase(notebookRuntimeRepository);
-            if (Application.isPlaying && usesHttpApi && !apiManager.HasAccessToken)
+            if (Application.isPlaying && usesHttpApi && !apiManager.HasAccessToken && !isGuestSession)
             {
                 Debug.LogWarning("Dotshelf RealApi mode has no access token. Public notebook APIs stay enabled, but authenticated actions are blocked until APIManager.SetAccessToken() is called.");
+            }
+            if (Application.isPlaying && isGuestSession)
+            {
+                Debug.Log($"[Auth] guest mode - using local bookshelf, skipping /v1/spaces/me (guestSessionId='{AuthSession.GuestSessionId}')");
             }
             if (Application.isPlaying && usesHttpApi)
             {
@@ -226,14 +241,14 @@ namespace BookshelfPorting.Runtime
             cameraController.ConfigureFrontalZoomSettings(3.25f, 0.8f, 4.5f, 0.45f, 0.15f);
             cameraController.ConfigureFrontalZoomInputPredicate(experienceManager.CanHandleFrontalZoomInput);
             generator.Configure(state, materialFactory, loadBooksUseCase);
-            generator.ConfigureServerBookshelfSnapshots(usesHttpApi);
+            generator.ConfigureServerBookshelfSnapshots(useServerBookshelf);
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);
             experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
             notebookUiSceneLoader.Configure(SceneKeys.NotebookUi, unloadSceneOnFocusExit: false, enablePerformanceLog: Application.isPlaying);
             experienceManager.ConfigureNotebookUiSceneLoader(notebookUiSceneLoader);
             experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase);
-            if (usesHttpApi)
+            if (useServerBookshelf)
             {
                 bookshelfApiSync.Configure(new NotebookApiClient(apiManager), generator, experienceManager);
                 experienceManager.ConfigureBookshelfApiSync(bookshelfApiSync);

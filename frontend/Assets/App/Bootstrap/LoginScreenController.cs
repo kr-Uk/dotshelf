@@ -278,6 +278,11 @@ namespace App.Bootstrap
             // persisted, not just what we tried to write.
             Debug.Log($"[LoginDemo] PlayerPrefs[Dotshelf.Auth.GuestSessionId] = '{AuthSession.GuestSessionId}'");
             SessionState.MarkGuest();
+            // Trace marker: BookshelfSceneInstaller checks AuthSession.IsGuestSession
+            // and skips /v1/spaces/me when this is true. Logging here makes the
+            // sequence (guest-session OK → guest mode → local bookshelf path)
+            // visible end-to-end in the player log without enabling verbose API logs.
+            Debug.Log($"[Auth] guest mode - using local bookshelf (IsGuestSession={AuthSession.IsGuestSession})");
             SetMessage(loginMessageLabel, "게스트로 입장합니다. 테마 설정을 진행해주세요.");
 
             // Guest entry skips onboarding step 1 (profile) and step 3 (bookshelf
