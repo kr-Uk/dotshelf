@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using App.Infrastructure.Catalogs;
 using BookshelfPorting.Runtime;
+using Dotshelf.Scripts.RoomTheme;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -225,6 +227,9 @@ namespace App.Bootstrap
         private string selectedToolbarKey = "ALL";
         private readonly Dictionary<string, Image> toolbarBackgrounds = new Dictionary<string, Image>();
         private readonly Dictionary<string, TMP_Text> toolbarLabels = new Dictionary<string, TMP_Text>();
+
+        private RoomThemeCatalogAsset themeCatalog;
+        private RoomThemeApplier themeApplier;
 
         private GameObject placedItemsRoot;
         private GameObject selectedObject;
@@ -823,6 +828,12 @@ namespace App.Bootstrap
                 Destroy(inventoryContentRoot.transform.GetChild(i).gameObject);
             }
 
+            if (selectedToolbarKey == "THEME_FULL")
+            {
+                BuildThemeSlots(inventoryContentRoot.transform);
+                return;
+            }
+
             var slotIndex = 0;
             for (var i = 0; i < inventoryEntries.Count; i++)
             {
@@ -834,6 +845,118 @@ namespace App.Bootstrap
                 BuildInventorySlot(inventoryContentRoot.transform, slotIndex, entry);
                 slotIndex++;
             }
+        }
+
+        // 전체 테마 카테고리 — 데코 인벤토리 대신 RoomThemeCatalogAsset의 테마들을
+        // 같은 슬롯 그리드에 채운다. 셀 클릭 시 RoomThemeApplier로 visual swap만 수행
+        // (백엔드 PATCH /spaces/me/theme wiring은 후속 마디 — A3-4).
+        private void BuildThemeSlots(Transform parent)
+        {
+            if (themeCatalog == null)
+            {
+                themeCatalog = Resources.Load<RoomThemeCatalogAsset>("RoomThemeCatalog");
+            }
+            if (themeCatalog == null || themeCatalog.Entries == null || themeCatalog.Entries.Count == 0)
+            {
+                Debug.LogWarning("[RoomEditModeController] RoomThemeCatalog 비어있음 — Resources/RoomThemeCatalog.asset에 카탈로그 + 테마 항목을 추가하세요.");
+                return;
+            }
+
+            for (var i = 0; i < themeCatalog.Entries.Count; i++)
+            {
+                var theme = themeCatalog.Entries[i];
+                if (theme == null) continue;
+                BuildThemeSlot(parent, i, theme);
+            }
+        }
+
+        private void BuildThemeSlot(Transform parent, int slotIndex, RoomThemeAsset theme)
+        {
+            var slot = CreateImage(parent, $"ThemeSlot_{slotIndex}", CardColor);
+            slot.sprite = roundedRectSprite;
+            slot.type = Image.Type.Sliced;
+            var rect = slot.rectTransform;
+            rect.sizeDelta = new Vector2(108f, 128f);
+
+            var layout = slot.gameObject.AddComponent<LayoutElement>();
+            layout.minWidth = 108f;
+            layout.preferredWidth = 108f;
+            layout.minHeight = 128f;
+            layout.preferredHeight = 128f;
+
+            var outline = slot.gameObject.AddComponent<Outline>();
+            outline.effectColor = WithAlpha(BorderColor, 0.9f);
+            outline.effectDistance = new Vector2(1f, -1f);
+
+            // 현재 적용된 테마는 강조
+            bool isCurrent = themeApplier != null && themeApplier.CurrentTheme == theme;
+            if (isCurrent)
+            {
+                outline.effectColor = TextColor;
+                outline.effectDistance = new Vector2(2f, -2f);
+            }
+
+            // 썸네일 — PreviewSprite가 있으면 그대로, 없으면 placeholder
+            var thumb = CreateImage(slot.transform, "Thumb", Hex("#E8DFCC"));
+            if (theme.PreviewSprite != null)
+            {
+                thumb.sprite = theme.PreviewSprite;
+                thumb.type = Image.Type.Simple;
+                thumb.preserveAspect = true;
+            }
+            else
+            {
+                thumb.sprite = roundedRectSprite;
+                thumb.type = Image.Type.Sliced;
+            }
+            var thumbRect = thumb.rectTransform;
+            thumbRect.anchorMin = new Vector2(0.5f, 1f);
+            thumbRect.anchorMax = new Vector2(0.5f, 1f);
+            thumbRect.pivot = new Vector2(0.5f, 1f);
+            thumbRect.sizeDelta = new Vector2(80f, 80f);
+            thumbRect.anchoredPosition = new Vector2(0f, -8f);
+
+            if (theme.PreviewSprite == null)
+            {
+                var glyph = CreateText(thumb.transform, "Glyph",
+                    ResolveSlotInitial(theme.DisplayName), 28f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center);
+                StretchToParent(glyph.rectTransform);
+            }
+
+            var labelText = CreateText(slot.transform, "Label", string.IsNullOrEmpty(theme.DisplayName) ? "테마" : theme.DisplayName,
+                12f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
+            labelText.overflowMode = TextOverflowModes.Ellipsis;
+            var labelRect = labelText.rectTransform;
+            labelRect.anchorMin = new Vector2(0f, 0f);
+            labelRect.anchorMax = new Vector2(1f, 0f);
+            labelRect.pivot = new Vector2(0.5f, 0f);
+            labelRect.sizeDelta = new Vector2(-8f, 24f);
+            labelRect.anchoredPosition = new Vector2(0f, 6f);
+
+            var button = slot.gameObject.AddComponent<Button>();
+            button.targetGraphic = slot;
+            var capturedTheme = theme;
+            button.onClick.AddListener(() => OnThemeSelected(capturedTheme));
+        }
+
+        private void OnThemeSelected(RoomThemeAsset theme)
+        {
+            if (theme == null) return;
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+            if (themeApplier == null)
+            {
+                Debug.LogWarning("[RoomEditModeController] RoomThemeApplier 인스턴스 없음 — MainRoomScene에 추가하세요.");
+                return;
+            }
+
+            // D9(i) 낙관적 적용: 즉시 visual swap. 백엔드 PATCH wiring은 후속 마디.
+            themeApplier.Apply(theme);
+
+            // 적용 후 그리드 재구성해서 강조 outline 갱신
+            RebuildInventorySlots();
         }
 
         private void BuildInventorySlot(Transform parent, int slotIndex, InventoryEntry entry)
