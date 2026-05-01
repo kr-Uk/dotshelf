@@ -270,7 +270,9 @@ namespace Dotshelf.Scripts.Dashboard
         }
 
         private const string DimmedClass = "dashboard-root--dimmed";
-        private bool dimmed = true;
+        // focus 진입 전에도 보이게(사용자 D2 요청) — full로 시작하고 BookshelfExperienceManager가
+        // focus 해제 시점에 SetDimmed(true) 호출. 외부 panel 모드 활성 시 항상 visible.
+        private bool dimmed = false;
 
         public void SetDimmed(bool isDimmed)
         {
