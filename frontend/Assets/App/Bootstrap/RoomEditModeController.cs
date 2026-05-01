@@ -979,13 +979,16 @@ namespace App.Bootstrap
             button.onClick.AddListener(() => OnCustomizationEntrySelected(capturedCategory, capturedEntry));
         }
 
-        // 현재 적용 중인 카테고리 항목인지 검사. Space.Current*InventoryId와 entry.AssetId 비교.
-        // 우선은 RoomThemeApplier.CurrentTheme의 spec를 reference로 사용 — 후속에서 Space 도메인 직접 매핑 가능.
+        // 현재 적용 중인 카테고리 항목인지 검사.
+        // 1차 구현: 마지막 클릭한 카테고리 entry를 lastAppliedEntries에 저장 → 같은 assetId면 강조.
+        // 정확한 매핑(서버 Space.Current*InventoryId 기반)은 themeReset reload hook 추가 시점에 후속.
+        private readonly System.Collections.Generic.Dictionary<CustomizationCategory, long> lastAppliedEntries
+            = new System.Collections.Generic.Dictionary<CustomizationCategory, long>();
+
         private bool IsCategoryEntryCurrent(CustomizationCategory category, long assetId)
         {
-            // TODO: Space 도메인의 6 카테고리 ID와 비교. 현재는 themeApplier의 CurrentTheme만 참고
-            // (전체 테마 적용 후 카테고리 강조는 후속 마디에서 정확히 처리).
-            return false;
+            if (assetId <= 0) return false;
+            return lastAppliedEntries.TryGetValue(category, out var current) && current == assetId;
         }
 
         // 전체 테마 카테고리 — 데코 인벤토리 대신 RoomThemeCatalogAsset의 테마들을
@@ -1176,9 +1179,9 @@ namespace App.Bootstrap
         {
             if (entry == null) return;
 
-            // visual swap — 카테고리별로 적용 (현재는 단일 항목 swap 골격, RoomThemeApplier 카테고리
-            // swap helper 없으면 룸 root traverse하며 직접 처리)
+            // visual swap — 카테고리별로 적용 + 강조 상태 갱신
             ApplyEntryVisual(category, entry);
+            if (entry.AssetId > 0) lastAppliedEntries[category] = entry.AssetId;
             RebuildInventorySlots();
 
             // 백엔드 PATCH wiring
@@ -1235,9 +1238,9 @@ namespace App.Bootstrap
             }
         }
 
-        // 카테고리별 visual swap. RoomThemeApplier가 RoomThemeAsset 단위로 처리하므로,
-        // CustomizationEntry 단일 항목은 룸 root traverse + sharedMaterial swap 또는
-        // light 직접 set로 처리. 메쉬/placement는 후속.
+        // 카테고리별 visual swap. RoomThemeApplier의 RoomRoot/DirectionalLight reference를
+        // 재사용해 GameObject.Find/FindObjectsByType 매 클릭마다 호출 안 하도록.
+        // 매칭 패턴은 RoomGameObjectPatterns로 통합(RoomThemeApplier와 동일).
         private void ApplyEntryVisual(CustomizationCategory category, CustomizationEntry entry)
         {
             if (themeApplier == null)
@@ -1250,10 +1253,10 @@ namespace App.Bootstrap
                 }
             }
 
-            // 라이트 카테고리는 씬의 Directional Light 직접 변경 (Applier 의존 없음)
+            // 라이트 카테고리: applier가 들고 있는 Directional Light + ambient 직접 set
             if (category == CustomizationCategory.ExteriorLight)
             {
-                var dirLight = FindFirstDirectionalLight();
+                var dirLight = themeApplier.DirectionalLight;
                 if (dirLight != null)
                 {
                     dirLight.color = entry.LightColor;
@@ -1270,35 +1273,16 @@ namespace App.Bootstrap
                 return;
             }
 
-            // 머티리얼 카테고리는 룸 root에서 패턴 매칭하여 sharedMaterial swap.
-            // RoomThemeApplier가 같은 패턴을 알지만 단일 entry용 helper가 없어 inline.
             var mat = entry.PrimaryMaterial;
             if (mat == null) return;
 
-            // 카테고리별 GameObject 이름 패턴은 RoomThemeApplier와 동일.
-            string[] patterns = ResolveMaterialSwapPatterns(category);
-            if (patterns == null || patterns.Length == 0) return;
-
-            var roomRootTransform = FindRoomRoot();
+            var roomRootTransform = themeApplier.RoomRoot;
             if (roomRootTransform == null) return;
+
             int swapped = 0;
             foreach (var renderer in roomRootTransform.GetComponentsInChildren<Renderer>(true))
             {
-                var name = renderer.gameObject.name;
-                bool match = false;
-                if (category == CustomizationCategory.Wallpaper)
-                {
-                    match = name.Contains("Wall");
-                }
-                else if (category == CustomizationCategory.Floor)
-                {
-                    match = name == "Floor";
-                }
-                else
-                {
-                    foreach (var p in patterns) { if (name.StartsWith(p)) { match = true; break; } }
-                }
-                if (match)
+                if (MatchesCategoryName(category, renderer.gameObject.name))
                 {
                     renderer.sharedMaterial = mat;
                     swapped++;
@@ -1310,33 +1294,18 @@ namespace App.Bootstrap
             }
         }
 
-        private static string[] ResolveMaterialSwapPatterns(CustomizationCategory category)
+        // RoomGameObjectPatterns에 통합된 매칭 규칙을 카테고리별로 위임. RoomThemeApplier와 동일.
+        private static bool MatchesCategoryName(CustomizationCategory category, string name)
         {
             switch (category)
             {
-                case CustomizationCategory.Wallpaper:     return new[] { "Wall" };
-                case CustomizationCategory.Floor:         return new[] { "Floor" };
-                case CustomizationCategory.BookshelfSkin: return new[] { "BookshelfRoot", "Bookshelf_" };
-                case CustomizationCategory.Desk:          return new[] { "DeskRoot", "NotebookStation", "Desk_" };
-                case CustomizationCategory.DashboardSkin: return new[] { "DashboardScreenPanel", "GuestbookBoard", "Dashboard_" };
-                default: return null;
+                case CustomizationCategory.Wallpaper:     return Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.IsWallName(name);
+                case CustomizationCategory.Floor:         return name == Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.Floor;
+                case CustomizationCategory.BookshelfSkin: return Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.MatchesPrefix(name, Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.Bookshelf);
+                case CustomizationCategory.Desk:          return Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.MatchesPrefix(name, Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.Desk);
+                case CustomizationCategory.DashboardSkin: return Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.MatchesPrefix(name, Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.Dashboard);
+                default: return false;
             }
-        }
-
-        private Transform FindRoomRoot()
-        {
-            var root = GameObject.Find("RoomRoot");
-            return root != null ? root.transform : null;
-        }
-
-        private Light FindFirstDirectionalLight()
-        {
-            var lights = FindObjectsByType<Light>(FindObjectsSortMode.None);
-            foreach (var l in lights)
-            {
-                if (l.type == LightType.Directional) return l;
-            }
-            return null;
         }
 
         private ISpaceSettingsRepository spaceSettingsRepo;

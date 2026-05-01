@@ -35,17 +35,13 @@ namespace Dotshelf.Scripts.RoomTheme
             Debug.Log($"[RoomThemeApplier] Applied theme '{theme.DisplayName}' (assetId={theme.AssetId}).");
         }
 
-        // BookshelfGenerator(.cs:585+)에서 CreateBox로 만드는 GameObject 이름 매칭 규칙.
-        // 이 이름들이 바뀌면 silent fail이 아니라 warning 로그로 알려준다(ApplyMaterials 끝).
-        const string FloorObjectName = "Floor";
-        static readonly string[] WallObjectNamePatterns = { "LeftWall", "RightWall", "BackWall", "FrontWall" };
+        // 매칭 패턴은 RoomGameObjectPatterns에 통합 — RoomEditModeController도 같은 패턴 사용.
+        // BookshelfGenerator의 GameObject 이름이 바뀌면 그 한 파일만 갱신.
 
-        // v1.0 customization — 카테고리별 GameObject 이름 prefix 매칭. 정확한 prefab 구조와
-        // 다를 수 있으므로 매칭 0개일 때 warning 로그(silent fail 방지). 후속 마디에서
-        // BookshelfGenerator에 RoomEnvironmentSurfaces 컴포넌트 노출하는 게 결.
-        static readonly string[] BookshelfPatterns = { "BookshelfRoot", "Bookshelf_" };
-        static readonly string[] DeskPatterns = { "DeskRoot", "NotebookStation", "Desk_" };
-        static readonly string[] DashboardPatterns = { "DashboardScreenPanel", "GuestbookBoard", "Dashboard_" };
+        // 외부에서 룸 root + Directional Light를 조회할 수 있도록 노출 (RoomEditModeController가
+        // 카테고리별 visual swap 시 GameObject.Find/FindObjectsByType 매번 호출 안 하도록).
+        public Transform RoomRoot => roomRoot;
+        public Light DirectionalLight => directionalLight;
 
         private void ApplyMaterials(RoomThemeAsset theme)
         {
@@ -72,23 +68,23 @@ namespace Dotshelf.Scripts.RoomTheme
                 {
                     var r = renderers[i];
                     var n = r.gameObject.name;
-                    if (wallMat != null && IsWallName(n))
+                    if (wallMat != null && RoomGameObjectPatterns.IsWallName(n))
                     {
                         r.sharedMaterial = wallMat; wallSwapped++;
                     }
-                    else if (floorMat != null && n == FloorObjectName)
+                    else if (floorMat != null && n == RoomGameObjectPatterns.Floor)
                     {
                         r.sharedMaterial = floorMat; floorSwapped++;
                     }
-                    else if (bookshelfMat != null && MatchesAny(n, BookshelfPatterns))
+                    else if (bookshelfMat != null && RoomGameObjectPatterns.MatchesPrefix(n, RoomGameObjectPatterns.Bookshelf))
                     {
                         r.sharedMaterial = bookshelfMat; bookshelfSwapped++;
                     }
-                    else if (deskMat != null && MatchesAny(n, DeskPatterns))
+                    else if (deskMat != null && RoomGameObjectPatterns.MatchesPrefix(n, RoomGameObjectPatterns.Desk))
                     {
                         r.sharedMaterial = deskMat; deskSwapped++;
                     }
-                    else if (dashboardMat != null && MatchesAny(n, DashboardPatterns))
+                    else if (dashboardMat != null && RoomGameObjectPatterns.MatchesPrefix(n, RoomGameObjectPatterns.Dashboard))
                     {
                         r.sharedMaterial = dashboardMat; dashboardSwapped++;
                     }
@@ -98,15 +94,15 @@ namespace Dotshelf.Scripts.RoomTheme
             // 매칭 0개일 때 warning — silent fail 방지. 머티리얼이 null인 카테고리는 검사 skip.
             if (roomRoot == null) return;
             if (wallMat != null && wallSwapped == 0)
-                Debug.LogWarning($"[RoomThemeApplier] Wall 매칭 0개 — 기대 패턴: {string.Join(",", WallObjectNamePatterns)}");
+                Debug.LogWarning($"[RoomThemeApplier] Wall 매칭 0개 — 기대 패턴: {string.Join(",", RoomGameObjectPatterns.Wall)}");
             if (floorMat != null && floorSwapped == 0)
-                Debug.LogWarning($"[RoomThemeApplier] Floor 매칭 0개 — 기대 이름: '{FloorObjectName}'");
+                Debug.LogWarning($"[RoomThemeApplier] Floor 매칭 0개 — 기대 이름: '{RoomGameObjectPatterns.Floor}'");
             if (bookshelfMat != null && bookshelfSwapped == 0)
-                Debug.LogWarning($"[RoomThemeApplier] Bookshelf 매칭 0개 — 기대 패턴: {string.Join(",", BookshelfPatterns)}");
+                Debug.LogWarning($"[RoomThemeApplier] Bookshelf 매칭 0개 — 기대 패턴: {string.Join(",", RoomGameObjectPatterns.Bookshelf)}");
             if (deskMat != null && deskSwapped == 0)
-                Debug.LogWarning($"[RoomThemeApplier] Desk 매칭 0개 — 기대 패턴: {string.Join(",", DeskPatterns)}");
+                Debug.LogWarning($"[RoomThemeApplier] Desk 매칭 0개 — 기대 패턴: {string.Join(",", RoomGameObjectPatterns.Desk)}");
             if (dashboardMat != null && dashboardSwapped == 0)
-                Debug.LogWarning($"[RoomThemeApplier] Dashboard 매칭 0개 — 기대 패턴: {string.Join(",", DashboardPatterns)}");
+                Debug.LogWarning($"[RoomThemeApplier] Dashboard 매칭 0개 — 기대 패턴: {string.Join(",", RoomGameObjectPatterns.Dashboard)}");
 
             if (materialFactory != null)
             {
@@ -120,24 +116,6 @@ namespace Dotshelf.Scripts.RoomTheme
                     Debug.LogWarning($"[RoomThemeApplier] bookshelfStyleIndex={theme.BookshelfStyleIndex}는 BookshelfThemeStyle enum 범위 밖 — 책장 tint 적용 skip.");
                 }
             }
-        }
-
-        static bool MatchesAny(string name, string[] patterns)
-        {
-            for (int i = 0; i < patterns.Length; i++)
-            {
-                if (name.StartsWith(patterns[i])) return true;
-            }
-            return false;
-        }
-
-        static bool IsWallName(string name)
-        {
-            for (int i = 0; i < WallObjectNamePatterns.Length; i++)
-            {
-                if (name == WallObjectNamePatterns[i]) return true;
-            }
-            return false;
         }
 
         private void ApplyLighting(RoomThemeAsset theme)
