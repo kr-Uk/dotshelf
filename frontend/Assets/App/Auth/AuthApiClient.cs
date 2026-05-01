@@ -53,6 +53,17 @@ namespace App.Auth
             return StartCoroutine(SendJson("/v1/auth/social-login", request, onSuccess, onError));
         }
 
+        // Desktop browser-OAuth code exchange. Hits a separate BE endpoint so
+        // BE can disambiguate code-flow (server swaps code → tokens with its
+        // own client_secret) from the mobile SDK token-flow above.
+        public Coroutine PostSocialLoginCode(
+            SocialLoginByCodeRequestDto request,
+            Action<AuthTokenResponseDto> onSuccess,
+            Action<ApiErrorResponseDto> onError)
+        {
+            return StartCoroutine(SendJson("/v1/auth/social-login/code", request, onSuccess, onError));
+        }
+
         public Coroutine PostGuestSession(
             Action<GuestSessionResponseDto> onSuccess,
             Action<ApiErrorResponseDto> onError)
@@ -208,7 +219,7 @@ namespace App.Auth
         // they reach Debug.Log. Unity logs leak through editor consoles, device logcat,
         // CI batchmode logs, and crash reports, so the raw token must never be written.
         private static readonly Regex SensitiveFieldRegex = new Regex(
-            "\"(token|accessToken|refreshToken|idToken|access_token|refresh_token|id_token|nonce|guestSessionId|guest_session_id)\"\\s*:\\s*\"[^\"]*\"",
+            "\"(token|accessToken|refreshToken|idToken|access_token|refresh_token|id_token|nonce|guestSessionId|guest_session_id|code|state)\"\\s*:\\s*\"[^\"]*\"",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static string Redact(string body)

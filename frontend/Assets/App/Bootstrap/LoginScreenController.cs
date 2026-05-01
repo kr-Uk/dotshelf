@@ -1,3 +1,5 @@
+using System;
+using System.Threading;
 using System.Threading.Tasks;
 using App.Auth;
 using App.Config;
@@ -55,7 +57,6 @@ namespace App.Bootstrap
         private Button kakaoLoginButton;
         private Button googleLoginButton;
         private Button guestEntryButton;
-        private Button signUpButton;
 
         private bool isInitialized;
         private bool listenersRegistered;
@@ -73,6 +74,17 @@ namespace App.Bootstrap
         [SerializeField] private string appleDevelopmentToken;
         [SerializeField] private SocialTokenType appleDevelopmentTokenType = SocialTokenType.IdToken;
         [SerializeField] private string appleDevelopmentNonce;
+
+        [Header("Desktop Browser OAuth")]
+        // On Windows / macOS / Linux standalone builds and the editor, social
+        // login uses the authorization-code flow: Unity opens an external
+        // browser and a transient loopback HttpListener catches the redirect.
+        // Mobile platforms ignore these fields and fall through to the SDK
+        // path (currently a stub).
+        [SerializeField] private bool enableDesktopBrowserOAuth = true;
+        [SerializeField] private OAuthBrowserProviderConfig[] desktopBrowserOAuthProviders;
+
+        private CancellationTokenSource browserOAuthCts;
 
         public void InitializeIfNeeded()
         {
@@ -109,29 +121,50 @@ namespace App.Bootstrap
         private void OnDisable()
         {
             UnregisterListeners();
+            // Cancel any in-flight browser OAuth wait so the listener task does
+            // not outlive the controller and leak the loopback HttpListener.
+            CancelInFlightBrowserOAuth();
+        }
+
+        private void OnDestroy()
+        {
+            CancelInFlightBrowserOAuth();
+        }
+
+        private void CancelInFlightBrowserOAuth()
+        {
+            var cts = browserOAuthCts;
+            if (cts == null)
+            {
+                return;
+            }
+            browserOAuthCts = null;
+            try { cts.Cancel(); } catch { /* already disposed */ }
+            cts.Dispose();
         }
 
         public void OnAppleLoginButtonClicked()
         {
-            StartSocialLoginOrPromptSignUp(SocialProvider.Apple);
+            StartSocialLogin(SocialProvider.Apple);
         }
 
         public void OnKakaoLoginButtonClicked()
         {
-            StartSocialLoginOrPromptSignUp(SocialProvider.Kakao);
+            StartSocialLogin(SocialProvider.Kakao);
         }
 
         public void OnGoogleLoginButtonClicked()
         {
-            StartSocialLoginOrPromptSignUp(SocialProvider.Google);
+            StartSocialLogin(SocialProvider.Google);
         }
 
-        // External entry point — once a platform SDK obtains a provider token,
-        // call this to ship it to BE /v1/auth/social-login. Unity does not
-        // have native Google/Kakao/Apple SDKs wired up in this repo yet, so
-        // the buttons currently surface a guide message; this method exists
-        // so a future SDK integration can complete the flow without further
-        // controller changes.
+        // External entry point for the mobile SDK token flow — once a
+        // platform SDK obtains a provider token, call this to ship it to
+        // BE /v1/auth/social-login. Unity does not have native Google/
+        // Kakao/Apple SDKs wired up in this repo yet, so on mobile the
+        // buttons surface a guide message; this method exists so a future
+        // SDK integration can complete the flow without further controller
+        // changes. Desktop runs the browser-OAuth code flow instead.
         public async void SubmitSocialLogin(
             SocialProvider provider,
             string providerToken,
@@ -157,6 +190,47 @@ namespace App.Bootstrap
             try
             {
                 var result = await authService.SocialLoginAsync(provider, providerToken, tokenType, nonce);
+                ApplyLoginResult(result, ProviderDisplayName(provider));
+            }
+            finally
+            {
+                isLoginInFlight = false;
+                SetInteractable(true);
+            }
+        }
+
+        // External entry point for the desktop browser-OAuth code flow.
+        // After WindowsOAuthBrowserFlow captures the redirect, the resulting
+        // (code, redirectUri, state, nonce) tuple ships to BE which performs
+        // the server-side code-for-tokens exchange and returns the same
+        // AuthTokenResponseDto as the mobile path — so ApplyLoginResult is
+        // shared between flows.
+        public async void SubmitSocialLoginCode(
+            SocialProvider provider,
+            string code,
+            string redirectUri,
+            string state,
+            string nonce = null)
+        {
+            if (isLoginInFlight)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                SetMessage(loginMessageLabel, "Authorization code 를 받지 못했습니다. 다시 시도해주세요.");
+                return;
+            }
+
+            EnsureAuthService();
+            isLoginInFlight = true;
+            SetInteractable(false);
+            SetMessage(loginMessageLabel, $"{ProviderDisplayName(provider)} 로그인 정보를 확인 중입니다...");
+
+            try
+            {
+                var result = await authService.SocialLoginByCodeAsync(provider, code, redirectUri, state, nonce);
                 ApplyLoginResult(result, ProviderDisplayName(provider));
             }
             finally
@@ -244,10 +318,37 @@ namespace App.Bootstrap
                 result.UserId,
                 result.AccessToken,
                 result.RefreshToken,
-                result.ExpiresIn);
+                result.ExpiresIn,
+                result.NewUser,
+                result.Onboarded);
             SessionState.MarkLoggedIn();
-            SetMessage(loginMessageLabel, $"{providerDisplayName} 로그인에 성공했습니다. 메인 화면으로 이동합니다.");
 
+            // Route based on the BE response:
+            //   newUser=true     → first social-login, account just created → run onboarding from step 1.
+            //   onboarded=false  → existing account that never finished onboarding → also run onboarding.
+            //   otherwise        → returning, fully onboarded user → go straight to MainScene.
+            // Either flag means onboarding is required, so OR them.
+            var requiresOnboarding = result.NewUser || !result.Onboarded;
+            if (requiresOnboarding)
+            {
+                SetMessage(loginMessageLabel, $"{providerDisplayName} 로그인에 성공했습니다. 프로필 설정을 진행해주세요.");
+                var onboardingController = GetComponent<OnboardingScreenController>();
+                if (onboardingController == null)
+                {
+                    Debug.LogError("[LoginDemo] OnboardingScreenController is missing from LoginScene prefab — cannot run onboarding for new/incomplete user.");
+                    // Fall through to main-scene transition so the user is not left on a blank login screen.
+                    MainSceneTransitionCover.Show("메인 화면으로 이동 중입니다.");
+                    SetCanvasVisible(false);
+                    SceneFlowManager.GoToMain();
+                    return;
+                }
+
+                onboardingController.InitializeIfNeeded();
+                onboardingController.StartOnboarding();
+                return;
+            }
+
+            SetMessage(loginMessageLabel, $"{providerDisplayName} 로그인에 성공했습니다. 메인 화면으로 이동합니다.");
             MainSceneTransitionCover.Show("메인 화면으로 이동 중입니다.");
             SetCanvasVisible(false);
             SceneFlowManager.GoToMain();
@@ -305,7 +406,6 @@ namespace App.Bootstrap
             if (kakaoLoginButton != null) kakaoLoginButton.interactable = interactable;
             if (googleLoginButton != null) googleLoginButton.interactable = interactable;
             if (guestEntryButton != null) guestEntryButton.interactable = interactable;
-            if (signUpButton != null) signUpButton.interactable = interactable;
         }
 
         private static void SetButtonLabel(Button button, string text)
@@ -322,7 +422,20 @@ namespace App.Bootstrap
             }
         }
 
-        private void StartSocialLoginFromButton(SocialProvider provider)
+        // Social login is the only registration path: BE creates the account on
+        // the first /v1/auth/social-login call (newUser=true), so the UI never
+        // needs a separate sign-up entry. New users are routed through
+        // ApplyLoginResult into the existing onboarding flow once BE returns.
+        //
+        // Routing order:
+        //   1. Dev token override (editor / dev builds only) — fastest test path
+        //   2. Platform-specific:
+        //        Desktop (Windows / macOS / Linux / editor) → browser OAuth code flow
+        //        Mobile  (iOS / Android)                    → SDK token flow (stub)
+        // The SDK-missing message is reserved for the mobile branch only;
+        // desktop always runs the browser flow even with no inspector config
+        // (the flow itself surfaces a specific config-missing message).
+        private void StartSocialLogin(SocialProvider provider)
         {
             if (TryGetDevelopmentSocialLoginPayload(provider, out var token, out var tokenType, out var nonce))
             {
@@ -330,35 +443,115 @@ namespace App.Bootstrap
                 return;
             }
 
+#if UNITY_STANDALONE || UNITY_EDITOR
+            // Desktop / editor — always run the browser OAuth flow. Even if
+            // the inspector array is empty we still call the flow so the user
+            // sees a specific "OAuth 클라이언트 ID가 설정되어 있지 않습니다"
+            // message rather than the generic SDK-missing one.
+            StartDesktopBrowserOAuth(provider);
+#else
+            // Mobile — SDK has not been wired up yet. Surface the SDK message.
             SetMessage(
                 loginMessageLabel,
-                $"{ProviderDisplayName(provider)} 로그인용 토큰이 없습니다. SDK 토큰을 연결하거나 LoginScreenController 개발용 토큰 값을 설정해주세요.");
+                $"{ProviderDisplayName(provider)} 로그인 SDK 연동이 준비되지 않았습니다. SDK 연동 후 다시 시도하거나 게스트 입장으로 진행해주세요.");
+#endif
         }
 
-        public void OnSignUpButtonClicked()
+#if UNITY_STANDALONE || UNITY_EDITOR
+        private void StartDesktopBrowserOAuth(SocialProvider provider)
         {
-            var onboardingController = GetComponent<OnboardingScreenController>();
-            if (onboardingController == null)
+            if (!enableDesktopBrowserOAuth)
             {
-                Debug.LogError("[LoginDemo] OnboardingScreenController is missing from LoginScene prefab — sign-up cannot start.");
-                SetMessage(loginMessageLabel, "회원가입 화면을 열 수 없습니다. 잠시 후 다시 시도해주세요.");
+                SetMessage(
+                    loginMessageLabel,
+                    "데스크톱 OAuth 흐름이 비활성화되어 있습니다. LoginScreenController 의 Enable Desktop Browser OAuth 체크박스를 켜주세요.");
                 return;
             }
 
-            onboardingController.InitializeIfNeeded();
-            onboardingController.StartOnboarding();
+            // Inspector entry may be null (no array yet) or partial (only
+            // clientId). MergeWithDefaults fills in built-in authorize endpoint /
+            // scope so the inspector typically only needs a clientId per provider.
+            var userConfig = ResolveBrowserOAuthConfig(provider);
+            var providerConfig = OAuthBrowserDefaults.MergeWithDefaults(provider, userConfig);
+
+            _ = RunDesktopBrowserOAuthAsync(provider, providerConfig);
         }
 
-        private void StartSocialLoginOrPromptSignUp(SocialProvider provider)
+        private OAuthBrowserProviderConfig ResolveBrowserOAuthConfig(SocialProvider provider)
         {
-            if (TryGetDevelopmentSocialLoginPayload(provider, out var token, out var tokenType, out var nonce))
+            if (desktopBrowserOAuthProviders == null)
             {
-                SubmitSocialLogin(provider, token, tokenType, nonce);
+                return null;
+            }
+
+            foreach (var candidate in desktopBrowserOAuthProviders)
+            {
+                if (candidate != null && candidate.provider == provider)
+                {
+                    return candidate;
+                }
+            }
+            return null;
+        }
+
+        private async Task RunDesktopBrowserOAuthAsync(SocialProvider provider, OAuthBrowserProviderConfig providerConfig)
+        {
+            if (isLoginInFlight)
+            {
                 return;
             }
 
-            SetMessage(loginMessageLabel, "로그인 토큰을 확인할 수 없습니다. 먼저 회원가입을 진행해주세요.");
+            CancelInFlightBrowserOAuth();
+            browserOAuthCts = new CancellationTokenSource();
+            var token = browserOAuthCts.Token;
+
+            isLoginInFlight = true;
+            SetInteractable(false);
+            SetMessage(
+                loginMessageLabel,
+                $"{ProviderDisplayName(provider)} 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요.");
+
+            OAuthBrowserResult oauthResult;
+            try
+            {
+                oauthResult = await WindowsOAuthBrowserFlow.ExecuteAsync(providerConfig, cancellationToken: token);
+            }
+            catch (OperationCanceledException)
+            {
+                oauthResult = OAuthBrowserResult.Failure("CANCELLED", "로그인이 취소되었습니다.");
+            }
+            catch (Exception ex)
+            {
+                oauthResult = OAuthBrowserResult.Failure("OAUTH_UNEXPECTED", ex.Message);
+            }
+
+            // The await above resumes on the Unity main thread (default
+            // sync context), so the Unity-API calls below are safe.
+            if (!oauthResult.IsSuccess)
+            {
+                SetMessage(
+                    loginMessageLabel,
+                    string.IsNullOrWhiteSpace(oauthResult.ErrorMessage)
+                        ? $"{ProviderDisplayName(provider)} 로그인에 실패했습니다."
+                        : oauthResult.ErrorMessage);
+                isLoginInFlight = false;
+                SetInteractable(true);
+                return;
+            }
+
+            // Hand off to the shared submit path. SubmitSocialLoginCode owns
+            // its own isLoginInFlight gate, so release this stage's guard
+            // first to avoid a double-lock.
+            isLoginInFlight = false;
+            SetInteractable(true);
+            SubmitSocialLoginCode(
+                provider,
+                oauthResult.Code,
+                oauthResult.RedirectUri,
+                oauthResult.State,
+                oauthResult.Nonce);
         }
+#endif
 
         private bool TryGetDevelopmentSocialLoginPayload(
             SocialProvider provider,
@@ -423,7 +616,6 @@ namespace App.Bootstrap
             AddButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             AddButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
             AddButtonListener(guestEntryButton, OnGuestEntryButtonClicked);
-            AddButtonListener(signUpButton, OnSignUpButtonClicked);
 
             listenersRegistered = true;
         }
@@ -439,7 +631,6 @@ namespace App.Bootstrap
             RemoveButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             RemoveButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
             RemoveButtonListener(guestEntryButton, OnGuestEntryButtonClicked);
-            RemoveButtonListener(signUpButton, OnSignUpButtonClicked);
 
             listenersRegistered = false;
         }
@@ -571,16 +762,6 @@ namespace App.Bootstrap
                 SetButtonLabel(kakaoLoginButton, "Kakao 로그인 (준비 중)");
                 SetButtonLabel(googleLoginButton, "Google 로그인 (준비 중)");
             }
-
-            signUpButton = CreateStackButton(
-                pane.transform,
-                "SignUpButton",
-                "회원가입",
-                CardColor,
-                PrimaryColor,
-                true,
-                BorderColor,
-                44f);
 
             loginMessageLabel = CreateLayoutText(
                 pane.transform,
@@ -871,12 +1052,27 @@ namespace App.Bootstrap
                 "Apple 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
                 "Kakao 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
                 "Google 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
-                "Apple 로그인 SDK 연동이 준비되지 않았습니다. 게스트 입장으로 진행해주세요." +
-                "Kakao 로그인 SDK 연동이 준비되지 않았습니다. 게스트 입장으로 진행해주세요." +
-                "Google 로그인 SDK 연동이 준비되지 않았습니다. 게스트 입장으로 진행해주세요." +
+                "Apple 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
+                "Kakao 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
+                "Google 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
+                "Apple 로그인 SDK 연동이 준비되지 않았습니다. SDK 연동 후 다시 시도하거나 게스트 입장으로 진행해주세요." +
+                "Kakao 로그인 SDK 연동이 준비되지 않았습니다. SDK 연동 후 다시 시도하거나 게스트 입장으로 진행해주세요." +
+                "Google 로그인 SDK 연동이 준비되지 않았습니다. SDK 연동 후 다시 시도하거나 게스트 입장으로 진행해주세요." +
                 "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요." +
                 "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요." +
-                "게스트 세션을 시작하지 못했습니다. 네트워크 상태를 확인해주세요.";
+                "게스트 세션을 시작하지 못했습니다. 네트워크 상태를 확인해주세요." +
+                "Apple 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요." +
+                "Kakao 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요." +
+                "Google 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요." +
+                "Apple 로그인 정보를 확인 중입니다..." +
+                "Kakao 로그인 정보를 확인 중입니다..." +
+                "Google 로그인 정보를 확인 중입니다..." +
+                "Authorization code 를 받지 못했습니다. 다시 시도해주세요." +
+                "브라우저 로그인 응답을 시간 안에 받지 못했습니다. 다시 시도해주세요." +
+                "로그인이 취소되었습니다." +
+                "State 검증에 실패했습니다. 다시 시도해주세요." +
+                "OAuth 클라이언트 ID가 설정되어 있지 않습니다." +
+                "데스크톱 OAuth 흐름이 비활성화되어 있습니다.";
 
             targetFontAsset.TryAddCharacters(commonText, out _);
         }

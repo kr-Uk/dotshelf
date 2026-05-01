@@ -70,6 +70,33 @@ namespace App.Infrastructure.Api.Dtos
         public string Nonce { get; set; }
     }
 
+    // Browser-OAuth (desktop) login: Unity opens an external browser, OAuth
+    // provider redirects back to a loopback URL with `?code=...&state=...`,
+    // and Unity ships the code to BE here. BE swaps the code for provider
+    // tokens server-side using its own client_secret + the same redirectUri.
+    [Serializable]
+    public sealed class SocialLoginByCodeRequestDto
+    {
+        [JsonProperty("provider")]
+        public string Provider { get; set; }
+
+        [JsonProperty("code")]
+        public string Code { get; set; }
+
+        // Must match the redirect_uri used in the authorize request, otherwise
+        // the OAuth provider rejects the code exchange.
+        [JsonProperty("redirectUri")]
+        public string RedirectUri { get; set; }
+
+        [JsonProperty("state")]
+        public string State { get; set; }
+
+        // OIDC nonce, sent to the authorize endpoint and (for Google/Apple)
+        // baked into the resulting id_token. BE re-validates against this.
+        [JsonProperty("nonce")]
+        public string Nonce { get; set; }
+    }
+
     [Serializable]
     public sealed class TokenRefreshRequestDto
     {
