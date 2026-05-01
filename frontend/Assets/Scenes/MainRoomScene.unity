@@ -1058,6 +1058,11 @@ Material:
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
+--- !u!4 &665307079 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 4901883628837947877, guid: 6b86b3d6221b35a4799f7c8a871d0223, type: 3}
+  m_PrefabInstance: {fileID: 2949486601533712908}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &746833862 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 8988660427549594636, guid: 0967fca7246325843a2e6cccb9c54f23, type: 3}
@@ -1603,6 +1608,38 @@ Material:
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
+--- !u!1 &940876676 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 7668760752131279891, guid: 6b86b3d6221b35a4799f7c8a871d0223, type: 3}
+  m_PrefabInstance: {fileID: 2949486601533712908}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &940876685 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 1756564791657781441, guid: 6b86b3d6221b35a4799f7c8a871d0223, type: 3}
+  m_PrefabInstance: {fileID: 2949486601533712908}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 940876676}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 787225fbb1cc40e44b6b1b0b3613d744, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.MaterialFactory
+--- !u!114 &940876688
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 940876676}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7bf9fbebec3ae429dae8709452da98c3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Dotshelf.Scripts.RoomTheme.RoomThemeApplier
+  roomRoot: {fileID: 665307079}
+  materialFactory: {fileID: 940876685}
+  directionalLight: {fileID: 410087040}
+  currentTheme: {fileID: 0}
 --- !u!1 &943278451
 GameObject:
   m_ObjectHideFlags: 0
@@ -3497,7 +3534,10 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 7668760752131279891, guid: 6b86b3d6221b35a4799f7c8a871d0223, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 940876688}
   m_SourcePrefab: {fileID: 100100000, guid: 6b86b3d6221b35a4799f7c8a871d0223, type: 3}
 --- !u!1001 &8386430499883572578
 PrefabInstance:
