@@ -35,8 +35,10 @@ namespace App.Infrastructure.Api
 
         private void Awake()
         {
+            // 진단용 LogError (260503 Mac localhost bug 추적). 검증 끝나면 cleanup commit으로 제거.
             if (Instance != null && Instance != this)
             {
+                Debug.LogError($"[APIManager-DIAG] Awake DESTROY duplicate — instanceID={GetInstanceID()}, baseUrl='{baseUrl}', existingInstanceID={Instance.GetInstanceID()}, existingBaseUrl='{Instance.baseUrl}'");
                 Destroy(gameObject);
                 return;
             }
@@ -44,6 +46,7 @@ namespace App.Infrastructure.Api
             Instance = this;
             DontDestroyOnLoad(gameObject);
             HydrateAccessTokenFromAuthSession();
+            Debug.LogError($"[APIManager-DIAG] Awake set Instance — instanceID={GetInstanceID()}, baseUrl='{baseUrl}', scene='{gameObject.scene.name}', goName='{gameObject.name}'");
         }
 
         private void HydrateAccessTokenFromAuthSession()
@@ -62,7 +65,10 @@ namespace App.Infrastructure.Api
 
         public void Configure(string apiBaseUrl, string token = null, int timeout = 10, bool verboseLog = false)
         {
+            // 진단용 LogError (260503 Mac localhost bug 추적). 검증 끝나면 cleanup commit으로 제거.
+            var beforeBaseUrl = baseUrl;
             baseUrl = NormalizeBaseUrl(apiBaseUrl, baseUrl);
+            Debug.LogError($"[APIManager-DIAG] Configure — instanceID={GetInstanceID()}, apiBaseUrl arg='{apiBaseUrl}', baseUrl before='{beforeBaseUrl}', baseUrl after='{baseUrl}'");
             if (string.IsNullOrWhiteSpace(accessToken))
             {
                 HydrateAccessTokenFromAuthSession();
@@ -405,7 +411,10 @@ namespace App.Infrastructure.Api
                 return path;
             }
 
-            return $"{baseUrl}/{path.TrimStart('/')}";
+            // 진단용 LogError (260503 Mac localhost bug 추적). 검증 끝나면 cleanup commit으로 제거.
+            var built = $"{baseUrl}/{path.TrimStart('/')}";
+            Debug.LogError($"[APIManager-DIAG] BuildUrl — instanceID={GetInstanceID()}, baseUrl='{baseUrl}', path='{path}', built='{built}'");
+            return built;
         }
 
         private static readonly System.Collections.Generic.HashSet<string> KnownAbsoluteSchemes =
