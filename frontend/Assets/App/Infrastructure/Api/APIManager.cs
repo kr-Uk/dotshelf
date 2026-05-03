@@ -35,14 +35,8 @@ namespace App.Infrastructure.Api
 
         private void Awake()
         {
-            // 진단용 LogWarning (260503 Mac localhost bug 추적). 검증 끝나면 cleanup commit으로 제거.
-            // LogError 아닌 이유: duplicate destroy는 race fix path의 정상 동작이라 빨간색/Pause-on-Error/CI stderr 게이트 부담을 피함.
             if (Instance != null && Instance != this)
             {
-                // race 추적 중 destroy 직전 인스턴스의 baseUrl도 잡고 싶으나, Instance가 동시 destroy 중이면 reference 위험 → Unity null check.
-                var existingBaseUrl = Instance != null ? Instance.baseUrl : "<destroyed>";
-                var existingInstanceId = Instance != null ? Instance.GetInstanceID().ToString() : "<destroyed>";
-                Debug.LogWarning($"[APIManager-DIAG] Awake DESTROY duplicate — instanceID={GetInstanceID()}, baseUrl='{baseUrl}', existingInstanceID={existingInstanceId}, existingBaseUrl='{existingBaseUrl}'");
                 Destroy(gameObject);
                 return;
             }
@@ -50,7 +44,6 @@ namespace App.Infrastructure.Api
             Instance = this;
             DontDestroyOnLoad(gameObject);
             HydrateAccessTokenFromAuthSession();
-            Debug.LogWarning($"[APIManager-DIAG] Awake set Instance — instanceID={GetInstanceID()}, baseUrl='{baseUrl}', scene='{gameObject.scene.name}', goName='{gameObject.name}'");
         }
 
         private void HydrateAccessTokenFromAuthSession()
@@ -69,10 +62,7 @@ namespace App.Infrastructure.Api
 
         public void Configure(string apiBaseUrl, string token = null, int timeout = 10, bool verboseLog = false)
         {
-            // 진단용 LogWarning (260503 Mac localhost bug 추적). 검증 끝나면 cleanup commit으로 제거.
-            var beforeBaseUrl = baseUrl;
             baseUrl = NormalizeBaseUrl(apiBaseUrl, baseUrl);
-            Debug.LogWarning($"[APIManager-DIAG] Configure — instanceID={GetInstanceID()}, apiBaseUrl arg='{apiBaseUrl}', baseUrl before='{beforeBaseUrl}', baseUrl after='{baseUrl}'");
             if (string.IsNullOrWhiteSpace(accessToken))
             {
                 HydrateAccessTokenFromAuthSession();
@@ -421,10 +411,7 @@ namespace App.Infrastructure.Api
                 return path;
             }
 
-            // 진단용 LogWarning (260503 Mac localhost bug 추적). 검증 끝나면 cleanup commit으로 제거.
-            var built = $"{baseUrl}/{path.TrimStart('/')}";
-            Debug.LogWarning($"[APIManager-DIAG] BuildUrl — instanceID={GetInstanceID()}, baseUrl='{baseUrl}', path='{path}', built='{built}'");
-            return built;
+            return $"{baseUrl}/{path.TrimStart('/')}";
         }
 
         private static readonly System.Collections.Generic.HashSet<string> KnownAbsoluteSchemes =
