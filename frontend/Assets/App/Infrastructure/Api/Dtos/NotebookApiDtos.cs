@@ -317,6 +317,59 @@ namespace App.Infrastructure.Api.Dtos
     }
 
     [Serializable]
+    public sealed class UserBookPlacementResponseDto
+    {
+        [JsonProperty("id")]
+        public long Id { get; set; }
+
+        [JsonProperty("userId")]
+        public long UserId { get; set; }
+
+        [JsonProperty("bookId")]
+        public long BookId { get; set; }
+
+        [JsonProperty("readingStatus")]
+        public string ReadingStatus { get; set; }
+
+        [JsonProperty("storageStatus")]
+        public string StorageStatus { get; set; }
+
+        [JsonProperty("ownerRating")]
+        public decimal? OwnerRating { get; set; }
+
+        [JsonProperty("liked")]
+        public bool Liked { get; set; }
+
+        [JsonProperty("bookshelfItemId")]
+        public long? BookshelfItemId { get; set; }
+
+        [JsonProperty("bookshelfId")]
+        public long? BookshelfId { get; set; }
+
+        [JsonProperty("sectionId")]
+        public long? SectionId { get; set; }
+
+        [JsonProperty("slotNo")]
+        public int? SlotNo { get; set; }
+
+        [JsonProperty("facingDirection")]
+        public string FacingDirection { get; set; }
+
+        [JsonProperty("displayStyle")]
+        public string DisplayStyle { get; set; }
+    }
+
+    [Serializable]
+    public sealed class UserBookPlacementListResponseDto
+    {
+        [JsonProperty("books")]
+        public List<UserBookPlacementResponseDto> Books { get; set; }
+
+        [JsonProperty("nextCursor")]
+        public string NextCursor { get; set; }
+    }
+
+    [Serializable]
     public sealed class AssetResponseDto
     {
         [JsonProperty("id")]

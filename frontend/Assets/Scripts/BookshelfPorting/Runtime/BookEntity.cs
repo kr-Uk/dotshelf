@@ -16,6 +16,12 @@ namespace BookshelfPorting.Runtime
         [Header("Visuals")]
         public MeshRenderer[] tintRenderers;
         public string bookId;
+        public string source;
+        public string isbn13;
+        public string isbn10;
+        public string publishedDate;
+        public string coverImageUrl;
+        public string sourceUrl;
         public string userBookId;
         public string bookshelfItemId;
         public string bookshelfId;
@@ -39,6 +45,9 @@ namespace BookshelfPorting.Runtime
         public string reportTitle;
         public string reportBody;
         public string reportUpdatedLabel;
+        public bool reportLiked;
+        public int reportLikeCount;
+        public int reportCommentCount;
 
         public ShelfSection CurrentSection { get; private set; }
         public ShelfSection OriginalSection { get; private set; }
@@ -97,6 +106,8 @@ namespace BookshelfPorting.Runtime
             isPublic = reportVisibility == VisibilityScope.Public;
             reportTitle = readingRecord?.Title;
             reportBody = readingRecord?.Content;
+            reportLikeCount = readingRecord?.LikeCount ?? 0;
+            reportCommentCount = readingRecord?.CommentCount ?? 0;
             reportUpdatedLabel = readingRecord != null && readingRecord.UpdatedAt != DateTimeOffset.MinValue
                 ? readingRecord.UpdatedAt.ToString("yyyy.MM.dd")
                 : string.Empty;

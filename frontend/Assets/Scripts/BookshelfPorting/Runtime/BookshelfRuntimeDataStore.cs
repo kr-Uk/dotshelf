@@ -27,6 +27,9 @@ namespace BookshelfPorting.Runtime
         public string reportTitle;
         public string reportBody;
         public string reportUpdatedLabel;
+        public bool reportLiked;
+        public int reportLikeCount;
+        public int reportCommentCount;
     }
 
     [Serializable]
@@ -152,7 +155,10 @@ namespace BookshelfPorting.Runtime
                     memoPreview = meta.memoPreview,
                     reportTitle = meta.reportTitle,
                     reportBody = meta.reportBody,
-                    reportUpdatedLabel = meta.reportUpdatedLabel
+                    reportUpdatedLabel = meta.reportUpdatedLabel,
+                    reportLiked = meta.reportLiked,
+                    reportLikeCount = meta.reportLikeCount,
+                    reportCommentCount = meta.reportCommentCount
                 });
             }
 
@@ -246,7 +252,10 @@ namespace BookshelfPorting.Runtime
                 memoPreview = ResolveMemoPreview(book),
                 reportTitle = book.reportTitle ?? string.Empty,
                 reportBody = book.reportBody ?? string.Empty,
-                reportUpdatedLabel = book.reportUpdatedLabel ?? string.Empty
+                reportUpdatedLabel = book.reportUpdatedLabel ?? string.Empty,
+                reportLiked = book.reportLiked,
+                reportLikeCount = book.reportLikeCount,
+                reportCommentCount = book.reportCommentCount
             };
         }
 
@@ -276,6 +285,9 @@ namespace BookshelfPorting.Runtime
             book.reportTitle = meta.reportTitle;
             book.reportBody = meta.reportBody;
             book.reportUpdatedLabel = meta.reportUpdatedLabel;
+            book.reportLiked = meta.reportLiked;
+            book.reportLikeCount = meta.reportLikeCount;
+            book.reportCommentCount = meta.reportCommentCount;
             if (string.IsNullOrWhiteSpace(meta.memoPreview) && !string.IsNullOrWhiteSpace(meta.reportBody))
             {
                 meta.memoPreview = meta.reportBody;

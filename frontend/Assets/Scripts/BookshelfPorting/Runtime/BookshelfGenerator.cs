@@ -226,6 +226,18 @@ namespace BookshelfPorting.Runtime
                 bookshelfServerIds[i] = shelf.BookshelfId;
                 bookshelfNames[i] = string.IsNullOrWhiteSpace(shelf.Name) ? GetDefaultBookshelfName(i) : shelf.Name;
                 bookshelfVisibilityScopes[i] = shelf.VisibilityScope;
+                if (shelf.HasThemeStyle)
+                {
+                    if (shelf.ThemeStyle == BookshelfThemeStyle.Default)
+                    {
+                        bookshelfDesignStyles.Remove(i);
+                    }
+                    else
+                    {
+                        bookshelfDesignStyles[i] = shelf.ThemeStyle;
+                    }
+                }
+
                 bookshelfSectionServerIds[i] = CreateSectionServerIdMap(shelf);
                 bookshelfLayoutSnapshots[i] = CreateServerBookshelfLayoutSnapshot(shelf, i);
             }

@@ -12,6 +12,8 @@ namespace BookshelfPorting.Runtime
         public int DisplayOrder { get; set; }
         public string BodyInventoryId { get; set; }
         public string SkinInventoryId { get; set; }
+        public bool HasThemeStyle { get; set; }
+        public BookshelfThemeStyle ThemeStyle { get; set; } = BookshelfThemeStyle.Default;
         public List<BookshelfRuntimeSectionSnapshot> Sections { get; } = new List<BookshelfRuntimeSectionSnapshot>();
         public List<BookshelfRuntimeBookSnapshot> Books { get; } = new List<BookshelfRuntimeBookSnapshot>();
     }
