@@ -40,8 +40,8 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
     }
 
     @Override
-    public SocialUserInfo verify(String token, SocialTokenType tokenType, String nonce) {
-        String accessToken = resolveAccessToken(token, tokenType);
+    public SocialUserInfo verify(String token, SocialTokenType tokenType, String redirectUri, String nonce) {
+        String accessToken = resolveAccessToken(token, tokenType, redirectUri);
         Map<String, Object> response = requestUserInfo(accessToken);
         String providerUserId = stringValue(response.get("id"));
         if (providerUserId == null) {
@@ -70,22 +70,22 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
         );
     }
 
-    private String resolveAccessToken(String token, SocialTokenType tokenType) {
+    private String resolveAccessToken(String token, SocialTokenType tokenType, String redirectUri) {
         if (tokenType == null) {
             return token;
         }
         return switch (tokenType) {
             case ACCESS_TOKEN -> token;
-            case AUTHORIZATION_CODE -> exchangeCodeForAccessToken(token);
+            case AUTHORIZATION_CODE -> exchangeCodeForAccessToken(token, redirectUri);
             case ID_TOKEN -> throw new CustomException(ErrorCode.INVALID_INPUT, "KAKAO는 ID_TOKEN을 지원하지 않습니다.");
         };
     }
 
-    private String exchangeCodeForAccessToken(String code) {
+    private String exchangeCodeForAccessToken(String code, String requestRedirectUri) {
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         body.add("grant_type", "authorization_code");
         body.add("client_id", restApiKey());
-        body.add("redirect_uri", redirectUri());
+        body.add("redirect_uri", redirectUri(requestRedirectUri));
         body.add("code", code);
         String clientSecret = properties.kakao().clientSecret();
         if (clientSecret != null && !clientSecret.isBlank()) {
@@ -135,12 +135,15 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
         return restApiKey;
     }
 
-    private String redirectUri() {
-        String redirectUri = properties.kakao().redirectUri();
+    private String redirectUri(String requestRedirectUri) {
+        String redirectUri = requestRedirectUri;
+        if (redirectUri == null || redirectUri.isBlank()) {
+            redirectUri = properties.kakao().redirectUri();
+        }
         if (redirectUri == null || redirectUri.isBlank()) {
             throw new CustomException(ErrorCode.INVALID_TOKEN, "KAKAO_REDIRECT_URI 설정이 필요합니다.");
         }
-        return redirectUri;
+        return redirectUri.trim();
     }
 
     private Map<String, Object> mapValue(Map<String, Object> source, String key) {

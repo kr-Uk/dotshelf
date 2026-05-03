@@ -20,7 +20,8 @@ namespace App.Auth
             SocialProvider provider,
             string providerToken,
             SocialTokenType tokenType = SocialTokenType.Default,
-            string nonce = null)
+            string nonce = null,
+            string redirectUri = null)
         {
             if (string.IsNullOrWhiteSpace(providerToken))
             {
@@ -41,7 +42,8 @@ namespace App.Auth
                 Provider = provider.ToBackendString(),
                 Token = providerToken,
                 TokenType = tokenType.ToBackendString(provider),
-                Nonce = nonce
+                Nonce = nonce,
+                RedirectUri = redirectUri
             };
 
             var tcs = new TaskCompletionSource<LoginResult>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -54,6 +56,83 @@ namespace App.Auth
                         tcs.TrySetResult(LoginResult.Failure(
                             "EMPTY_RESPONSE",
                             "\uC11C\uBC84 \uC751\uB2F5\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694."));
+                        return;
+                    }
+
+                    tcs.TrySetResult(LoginResult.Success(
+                        response.UserId,
+                        response.AccessToken,
+                        response.RefreshToken,
+                        response.ExpiresIn,
+                        response.NewUser,
+                        response.Onboarded));
+
+                    AuthSession.SaveTokens(
+                        response.UserId,
+                        response.AccessToken,
+                        response.RefreshToken,
+                        response.ExpiresIn,
+                        response.NewUser,
+                        response.Onboarded);
+
+                    if (!SessionState.IsGuest)
+                    {
+                        AuthSession.SaveGuestSessionId(string.Empty);
+                        SessionState.SetPendingIntent(GuestPostLoginIntent.None);
+                    }
+                },
+                error => tcs.TrySetResult(LoginResult.Failure(
+                    error?.Code,
+                    AuthErrorMessages.ResolveLoginMessage(error))));
+
+            return tcs.Task;
+        }
+
+        public Task<LoginResult> SocialLoginByCodeAsync(
+            SocialProvider provider,
+            string code,
+            string redirectUri,
+            string state,
+            string nonce = null)
+        {
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                return Task.FromResult(LoginResult.Failure(
+                    "INVALID_INPUT",
+                    "소셜 로그인 code가 비어 있습니다."));
+            }
+
+            if (string.IsNullOrWhiteSpace(redirectUri))
+            {
+                return Task.FromResult(LoginResult.Failure(
+                    "INVALID_INPUT",
+                    "redirectUri가 필요합니다."));
+            }
+
+            var request = new SocialLoginByCodeRequestDto
+            {
+                Provider = provider.ToBackendString(),
+                TokenType = SocialTokenType.AuthorizationCode.ToBackendString(provider),
+                // BE record's @NotBlank(token) validation needs the same code
+                // value here. Once BE accepts a first-class `code` field this
+                // assignment can drop and Token can be removed from the DTO.
+                Token = code,
+                Code = code,
+                RedirectUri = redirectUri,
+                State = state,
+                Nonce = nonce
+            };
+
+            var tcs = new TaskCompletionSource<LoginResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            client.PostSocialLoginCode(
+                request,
+                response =>
+                {
+                    if (response == null || string.IsNullOrWhiteSpace(response.AccessToken))
+                    {
+                        tcs.TrySetResult(LoginResult.Failure(
+                            "EMPTY_RESPONSE",
+                            "서버 응답이 올바르지 않습니다. 잠시 후 다시 시도해주세요."));
                         return;
                     }
 

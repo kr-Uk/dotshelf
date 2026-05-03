@@ -139,14 +139,15 @@ Desktop 구현 순서:
 
 1. 로그인 시작 시 랜덤 `state`를 생성해서 앱 메모리에 저장한다.
 2. Kakao authorize URL에 `redirect_uri=http://localhost:18080/oauth/kakao/callback`와 `state`를 함께 넣는다.
-3. Unity 데스크탑 앱이 local callback 또는 deep link로 `code`와 `state`를 받는다.
+3. Unity 데스크탑 앱이 `localhost:18080` local callback으로 `code`와 `state`를 받는다.
 4. 받은 `state`가 저장한 값과 같을 때만 아래 BE 요청을 보낸다.
 
 ```json
 {
   "provider": "KAKAO",
   "tokenType": "AUTHORIZATION_CODE",
-  "token": "Kakao authorization code"
+  "token": "Kakao authorization code",
+  "redirectUri": "http://localhost:18080/oauth/kakao/callback"
 }
 ```
 

@@ -21,6 +21,8 @@ public final class AuthDtos {
             @Schema(description = "제공자 토큰. GOOGLE=id_token 또는 server auth code, KAKAO=access_token 또는 authorization code, APPLE=identity_token")
             @NotBlank(message = "token은 필수입니다.")
             String token,
+            @Schema(description = "authorization code 교환 시 provider에 전달할 redirect URI", example = "http://127.0.0.1:12345/dotshelf/oauth/callback/")
+            String redirectUri,
             @Schema(description = "Apple identityToken nonce 검증값. provider=APPLE일 때 Apple 요청에 넣은 nonce와 같은 값", example = "base64url-random-nonce")
             String nonce
     ) {

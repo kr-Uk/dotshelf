@@ -13,6 +13,14 @@ namespace App.Auth
         public static string RefreshToken => PlayerPrefs.GetString(AuthStorageKeys.RefreshToken, string.Empty);
         public static string GuestSessionId => PlayerPrefs.GetString(AuthStorageKeys.GuestSessionId, string.Empty);
         public static bool HasAccessToken => !string.IsNullOrWhiteSpace(AccessToken);
+
+        // True when /v1/auth/guest-session has been issued but no social-login
+        // exchange has happened yet — i.e., no Bearer token is available.
+        // Authenticated endpoints (anything that returns 401 without a token)
+        // must be skipped while this is true; the main-scene bookshelf falls
+        // back to the local catalog instead of /v1/spaces/me.
+        public static bool IsGuestSession =>
+            !HasAccessToken && !string.IsNullOrWhiteSpace(GuestSessionId);
         public static bool NewUser => PlayerPrefs.GetInt(AuthStorageKeys.NewUser, 0) == 1;
         public static bool Onboarded => PlayerPrefs.GetInt(AuthStorageKeys.Onboarded, 0) == 1;
 

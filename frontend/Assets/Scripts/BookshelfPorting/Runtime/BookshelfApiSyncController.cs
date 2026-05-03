@@ -1,6 +1,10 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using App.Auth;
+#if UNITY_EDITOR
+using App.Bootstrap;
+#endif
 using App.Domain;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dtos;
@@ -42,6 +46,16 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            // Defensive: BookshelfSceneInstaller already skips Configure() in
+            // guest mode, but RefreshFromServer is also exposed for shelf
+            // create/delete/reorder callbacks. /v1/spaces/me is authenticated,
+            // so without a Bearer token it 401s and the shelf never populates.
+            if (AuthSession.IsGuestSession)
+            {
+                Debug.Log("[Auth] guest mode - using local bookshelf, skipping /v1/spaces/me");
+                return;
+            }
+
             isRefreshing = true;
             client.GetMySpace(
                 space =>
@@ -58,8 +72,48 @@ namespace BookshelfPorting.Runtime
                         LoadBookshelfItems,
                         error => FinishRefresh(false, FormatError(error)));
                 },
-                error => FinishRefresh(false, FormatError(error)));
+                error =>
+                {
+#if UNITY_EDITOR
+                    // Dev shortcut entry: BE auth is currently relaxed but may
+                    // partially 401 on /v1/spaces/me. Soft-fall-back to the
+                    // local book catalog so MainScene still renders a populated
+                    // bookshelf instead of breaking the dev flow.
+                    if (DevMainSceneMode.IsActive && IsAuthFailure(error))
+                    {
+                        Debug.Log("[DEV MODE] server bookshelf unavailable, using local fallback");
+                        ApplyDevLocalFallback();
+                        FinishRefresh(true, null);
+                        return;
+                    }
+#endif
+                    FinishRefresh(false, FormatError(error));
+                });
         }
+
+#if UNITY_EDITOR
+        private static bool IsAuthFailure(ApiErrorResponseDto error)
+        {
+            var statusCode = error?.StatusCode ?? 0L;
+            return statusCode == 401L || statusCode == 403L;
+        }
+
+        // Flip the generator into local-catalog mode and rebuild. Generate()
+        // does ClearGenerated → BuildRoom → BuildBookshelf, so the brief
+        // empty-shelf state created by the initial server-mode Generate gets
+        // replaced with a populated shelf using the public /v1/books catalog
+        // (which does not require auth).
+        private void ApplyDevLocalFallback()
+        {
+            if (generator == null)
+            {
+                return;
+            }
+
+            generator.ConfigureServerBookshelfSnapshots(false);
+            generator.Generate();
+        }
+#endif
 
         public void CreateBookshelf(string name)
         {
