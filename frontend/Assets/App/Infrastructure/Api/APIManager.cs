@@ -399,7 +399,13 @@ namespace App.Infrastructure.Api
             // path가 진짜 절대 URL인지 검증.
             // (이전 버그) 단순 Uri.TryCreate(path, UriKind.Absolute) 만 쓰면 한글 인코딩 들어간 path도
             // absolute로 잘못 인식해서 baseUrl 없이 path만 반환 → UnityWebRequest가 default 'localhost'
-            // host로 채워 호출 실패. http/https/ws/wss/file 같은 known scheme이어야 진짜 절대 URL로 인정.
+            // host로 채워 호출 실패. http/https/ws/wss 같은 HTTP 계열 known scheme이어야 진짜 절대 URL로 인정.
+            //
+            // (260503 Mac localhost bug fix) "file" 제거. Mac/Linux Mono는 POSIX 절대 경로 "/v1/..."를
+            // Uri.TryCreate에서 file:///v1/... 로 인식해 IsKnownAbsoluteScheme("file") 통과 → early return →
+            // baseUrl 없이 "/v1/..." 반환 → UnityWebRequest가 localhost로 fallback. Windows .NET은 "/" 시작
+            // 경로를 absolute로 안 보므로 fall-through 정상 동작 → Mac/Windows 차이의 정확한 root cause.
+            // API 호출 path에 file:// scheme 쓸 일 없음.
             if (Uri.TryCreate(path, UriKind.Absolute, out var parsed) && IsKnownAbsoluteScheme(parsed.Scheme))
             {
                 return path;
@@ -411,7 +417,7 @@ namespace App.Infrastructure.Api
         private static readonly System.Collections.Generic.HashSet<string> KnownAbsoluteSchemes =
             new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase)
             {
-                "http", "https", "ws", "wss", "file"
+                "http", "https", "ws", "wss"
             };
 
         private static bool IsKnownAbsoluteScheme(string scheme)
