@@ -20,7 +20,8 @@ namespace App.Auth
             SocialProvider provider,
             string providerToken,
             SocialTokenType tokenType = SocialTokenType.Default,
-            string nonce = null)
+            string nonce = null,
+            string redirectUri = null)
         {
             if (string.IsNullOrWhiteSpace(providerToken))
             {
@@ -41,7 +42,8 @@ namespace App.Auth
                 Provider = provider.ToBackendString(),
                 Token = providerToken,
                 TokenType = tokenType.ToBackendString(provider),
-                Nonce = nonce
+                Nonce = nonce,
+                RedirectUri = redirectUri
             };
 
             var tcs = new TaskCompletionSource<LoginResult>(TaskCreationOptions.RunContinuationsAsynchronously);

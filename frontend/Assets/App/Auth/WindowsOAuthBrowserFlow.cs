@@ -74,10 +74,16 @@ namespace App.Auth
                         extraQuery = "access_type=offline&prompt=consent"
                     };
                 case SocialProvider.Kakao:
+                    // clientId is the Kakao REST API key — public by design (the
+                    // server holds the secret). Hardcoded here so a fresh
+                    // LoginScreenController without an inspector entry still has
+                    // a working Kakao login. Inspector value still wins via
+                    // MergeWithDefaults if a per-environment key needs override.
                     return new OAuthBrowserProviderConfig
                     {
                         provider = SocialProvider.Kakao,
                         authorizeEndpoint = "https://kauth.kakao.com/oauth/authorize",
+                        clientId = "d1b4d86b431150acd3ef6970ca2fa695",
                         scope = "profile_nickname account_email",
                         responseType = "code",
                         useNonce = false,
@@ -124,7 +130,9 @@ namespace App.Auth
                 authorizeEndpoint = !string.IsNullOrWhiteSpace(userConfig.authorizeEndpoint)
                     ? userConfig.authorizeEndpoint
                     : defaults.authorizeEndpoint,
-                clientId = userConfig.clientId,
+                clientId = !string.IsNullOrWhiteSpace(userConfig.clientId)
+                    ? userConfig.clientId
+                    : defaults.clientId,
                 scope = !string.IsNullOrWhiteSpace(userConfig.scope)
                     ? userConfig.scope
                     : defaults.scope,

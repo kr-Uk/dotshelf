@@ -46,8 +46,8 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
     }
 
     @Override
-    public SocialUserInfo verify(String token, SocialTokenType tokenType, String nonce) {
-        String idToken = shouldExchangeCode(token, tokenType) ? exchangeCodeForIdToken(token) : token;
+    public SocialUserInfo verify(String token, SocialTokenType tokenType, String redirectUri, String nonce) {
+        String idToken = shouldExchangeCode(token, tokenType) ? exchangeCodeForIdToken(token, redirectUri) : token;
         Jwt jwt = decode(idToken);
         return new SocialUserInfo(
                 SocialProvider.GOOGLE,
@@ -73,7 +73,7 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
         };
     }
 
-    private String exchangeCodeForIdToken(String code) {
+    private String exchangeCodeForIdToken(String code, String redirectUri) {
         String clientId = serverClientId();
         String clientSecret = properties.google().clientSecret();
         if (clientSecret == null || clientSecret.isBlank()) {
@@ -85,6 +85,7 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
         body.add("code", code);
         body.add("client_id", clientId);
         body.add("client_secret", clientSecret);
+        body.add("redirect_uri", requiredRedirectUri(redirectUri));
 
         try {
             Map<String, Object> response = restClient.post()
@@ -110,6 +111,13 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
             throw new CustomException(ErrorCode.INVALID_TOKEN, "GOOGLE_SERVER_CLIENT_ID 설정이 필요합니다.");
         }
         return serverClientId;
+    }
+
+    private String requiredRedirectUri(String redirectUri) {
+        if (redirectUri == null || redirectUri.isBlank()) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "GOOGLE redirectUri는 필수입니다.");
+        }
+        return redirectUri.trim();
     }
 
     private String stringValue(Object value) {

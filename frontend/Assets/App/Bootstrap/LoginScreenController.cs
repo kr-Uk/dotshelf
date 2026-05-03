@@ -223,7 +223,8 @@ namespace App.Bootstrap
             SocialProvider provider,
             string providerToken,
             SocialTokenType tokenType = SocialTokenType.Default,
-            string nonce = null)
+            string nonce = null,
+            string redirectUri = null)
         {
             if (isLoginInFlight)
             {
@@ -243,7 +244,7 @@ namespace App.Bootstrap
 
             try
             {
-                var result = await authService.SocialLoginAsync(provider, providerToken, tokenType, nonce);
+                var result = await authService.SocialLoginAsync(provider, providerToken, tokenType, nonce, redirectUri);
                 ApplyLoginResult(result, ProviderDisplayName(provider));
             }
             finally
@@ -1144,6 +1145,8 @@ namespace App.Bootstrap
                 "Apple 로그인 중입니다..." +
                 "Kakao 로그인 중입니다..." +
                 "Google 로그인 중입니다..." +
+                "Kakao 로그인 창을 여는 중입니다..." +
+                "Kakao 인증 정보를 서버에 확인하는 중입니다..." +
                 "Apple 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
                 "Kakao 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
                 "Google 로그인에 성공했습니다. 메인 화면으로 이동합니다." +

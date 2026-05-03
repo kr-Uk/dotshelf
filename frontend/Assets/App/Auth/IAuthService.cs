@@ -25,7 +25,8 @@ namespace App.Auth
             SocialProvider provider,
             string providerToken,
             SocialTokenType tokenType = SocialTokenType.Default,
-            string nonce = null);
+            string nonce = null,
+            string redirectUri = null);
 
         // BE: POST /v1/auth/social-login/code. Desktop browser-OAuth flow:
         // Unity opens the provider's authorize page in an external browser,

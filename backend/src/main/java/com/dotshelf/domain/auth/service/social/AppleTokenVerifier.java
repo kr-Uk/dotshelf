@@ -27,7 +27,7 @@ public class AppleTokenVerifier extends JwtSocialTokenVerifierSupport {
     }
 
     @Override
-    public SocialUserInfo verify(String token, SocialTokenType tokenType, String nonce) {
+    public SocialUserInfo verify(String token, SocialTokenType tokenType, String redirectUri, String nonce) {
         if (tokenType != null && tokenType != SocialTokenType.ID_TOKEN) {
             throw new CustomException(ErrorCode.INVALID_INPUT, "APPLE은 ID_TOKEN만 지원합니다.");
         }

@@ -50,6 +50,7 @@ public class AuthService {
                 request.provider(),
                 request.tokenType(),
                 request.token(),
+                request.redirectUri(),
                 request.nonce()
         );
         return loginWithSocialUser(socialUser);
