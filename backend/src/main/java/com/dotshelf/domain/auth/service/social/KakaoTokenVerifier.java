@@ -40,7 +40,7 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
     }
 
     @Override
-    public SocialUserInfo verify(String token, SocialTokenType tokenType, String nonce) {
+    public SocialUserInfo verify(String token, SocialTokenType tokenType, String redirectUri, String nonce) {
         String accessToken = resolveAccessToken(token, tokenType);
         Map<String, Object> response = requestUserInfo(accessToken);
         String providerUserId = stringValue(response.get("id"));
