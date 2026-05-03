@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: AppApiConfig
   m_EditorClassIdentifier:
   apiMode: 0
-  devBaseUrl: https://api.dotshelf.digital
+  devBaseUrl: https://dev-api.dotshelf.digital
   prodBaseUrl: https://api.dotshelf.digital
   healthCheckPath: /health
   requestTimeoutSeconds: 10
