@@ -701,6 +701,7 @@ namespace App.Infrastructure.Api
                 Provider = request.Provider,
                 TokenType = request.TokenType,
                 Token = FirstNonEmpty(request.Token),
+                RedirectUri = request.RedirectUri,
                 Nonce = request.Nonce
             };
         }
