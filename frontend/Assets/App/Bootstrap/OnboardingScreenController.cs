@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using App.Infrastructure.Api;
+using App.Infrastructure.Api.Dtos;
 using BookshelfPorting.Runtime;
 using TMPro;
 using UnityEngine;
@@ -108,6 +110,19 @@ namespace App.Bootstrap
 
         private string selectedTheme = string.Empty;
         private bool nicknameChecked;
+        // True between user clicking 중복확인 and the BE response arriving. Used
+        // to gate re-entrancy and to reject stale callbacks if the user edits
+        // the field mid-flight (the post-edit OnNicknameChanged already resets
+        // nicknameChecked, but a late success callback could otherwise overwrite
+        // it back to true with the wrong nickname).
+        private bool isCheckingNickname;
+        // True between user clicking 다음 and the PATCH /v1/users/me response
+        // arriving. Drops repeat clicks while in-flight so only one profile
+        // save round-trip is ever active. Independent of isCheckingNickname:
+        // 다음-button validation runs after 중복확인 has already settled, so
+        // they cannot overlap, but each flow needs its own re-entrancy guard.
+        private bool isSubmittingProfile;
+        private NotebookApiClient nicknameApiClient;
         private Texture2D profileTexture;
         private Sprite profileSprite;
         private bool isInitialized;
@@ -857,6 +872,14 @@ namespace App.Bootstrap
 
         private void OnDuplicateCheckButtonClicked()
         {
+            // Re-entrancy guard: a previous click is still waiting on BE.
+            // Drop the second click silently — the in-flight response will
+            // settle the UI shortly.
+            if (isCheckingNickname)
+            {
+                return;
+            }
+
             var nickname = nicknameInput != null ? nicknameInput.text.Trim() : string.Empty;
             if (string.IsNullOrWhiteSpace(nickname))
             {
@@ -865,9 +888,74 @@ namespace App.Bootstrap
                 return;
             }
 
-            nicknameChecked = true;
-            SetStep1Feedback("사용 가능한 닉네임입니다.", SuccessColor, true);
-                LogDebug($"[OnboardingDemo] Nickname available: '{nickname}'.");
+            // Capture the nickname value for the request so a late callback
+            // arriving after the user has edited the field can be discarded.
+            var requestedNickname = nickname;
+            isCheckingNickname = true;
+            nicknameChecked = false;
+            SetStep1Feedback("확인 중...", MutedTextColor, false);
+
+            EnsureNicknameApiClient().CheckNickname(
+                requestedNickname,
+                onSuccess: response => HandleNicknameCheckSuccess(requestedNickname, response),
+                onError: error => HandleNicknameCheckError(requestedNickname, error));
+        }
+
+        private void HandleNicknameCheckSuccess(string requestedNickname, NicknameAvailabilityResponseDto response)
+        {
+            isCheckingNickname = false;
+            // Stale-response guard: ignore if the user has since changed the
+            // input. OnNicknameChanged has already reset nicknameChecked and
+            // displayed the "중복확인을 해주세요" prompt, so leaving it alone is
+            // the right behavior.
+            if (!IsCurrentNickname(requestedNickname))
+            {
+                return;
+            }
+
+            if (response != null && response.Available)
+            {
+                nicknameChecked = true;
+                SetStep1Feedback("사용 가능한 닉네임입니다.", SuccessColor, true);
+            }
+            else
+            {
+                nicknameChecked = false;
+                SetStep1Feedback("이미 사용 중인 닉네임입니다.", ErrorColor, false);
+            }
+        }
+
+        private void HandleNicknameCheckError(string requestedNickname, ApiErrorResponseDto error)
+        {
+            isCheckingNickname = false;
+            if (!IsCurrentNickname(requestedNickname))
+            {
+                return;
+            }
+
+            nicknameChecked = false;
+            SetStep1Feedback("닉네임 확인에 실패했습니다. 다시 시도해주세요.", ErrorColor, false);
+            // Don't echo the nickname in logs — keep diagnostic to error metadata.
+            Debug.LogWarning(
+                $"[OnboardingDemo] Nickname check failed: code={error?.Code} message={error?.Message}");
+        }
+
+        private bool IsCurrentNickname(string requestedNickname)
+        {
+            var current = nicknameInput != null ? nicknameInput.text.Trim() : string.Empty;
+            return string.Equals(current, requestedNickname, StringComparison.Ordinal);
+        }
+
+        private NotebookApiClient EnsureNicknameApiClient()
+        {
+            // APIManager.Instance is a DontDestroyOnLoad singleton hydrated by
+            // AppRoot at boot. NotebookApiClient is cheap to construct but we
+            // cache it so repeated checks reuse the same client.
+            if (nicknameApiClient == null)
+            {
+                nicknameApiClient = new NotebookApiClient(APIManager.Instance);
+            }
+            return nicknameApiClient;
         }
 
         private void OnNicknameChanged(string _)
@@ -878,6 +966,14 @@ namespace App.Bootstrap
 
         private void OnStep1NextButtonClicked()
         {
+            // Re-entrancy guard: a previous click is still waiting on PATCH.
+            // Drop the second click silently — the in-flight response will
+            // either advance to Step2 or surface an error message.
+            if (isSubmittingProfile)
+            {
+                return;
+            }
+
             var nickname = nicknameInput != null ? nicknameInput.text.Trim() : string.Empty;
             if (string.IsNullOrWhiteSpace(nickname))
             {
@@ -891,7 +987,43 @@ namespace App.Bootstrap
                 return;
             }
 
+            // BE @Size(max=255) on introduction; null/blank is allowed. Trim
+            // here to drop trailing whitespace from the input field.
+            var introduction = introInput != null ? introInput.text.Trim() : string.Empty;
+
+            isSubmittingProfile = true;
+            SetStep1Feedback("프로필을 저장하는 중입니다...", MutedTextColor, true);
+
+            var request = new UpdateProfileRequestDto
+            {
+                Nickname = nickname,
+                ProfileImageUrl = null,
+                Introduction = introduction
+            };
+
+            EnsureNicknameApiClient().UpdateMe(
+                request,
+                onSuccess: _ => HandleProfileUpdateSuccess(),
+                onError: error => HandleProfileUpdateError(error));
+        }
+
+        private void HandleProfileUpdateSuccess()
+        {
+            isSubmittingProfile = false;
+            // Clear the inline status before navigating so a stale "저장하는 중"
+            // message cannot bleed through into Step2.
+            SetStep1Feedback(string.Empty, MutedTextColor, true);
             ShowStep2();
+        }
+
+        private void HandleProfileUpdateError(ApiErrorResponseDto error)
+        {
+            isSubmittingProfile = false;
+            SetStep1Feedback("프로필 저장에 실패했습니다. 다시 시도해주세요.", ErrorColor, true);
+            // Don't echo nickname/introduction in logs — keep diagnostic to
+            // BE-supplied error metadata only.
+            Debug.LogWarning(
+                $"[OnboardingDemo] Profile update failed: code={error?.Code} message={error?.Message}");
         }
 
         private void OnRandomThemeButtonClicked()
@@ -915,6 +1047,12 @@ namespace App.Bootstrap
             }
 
             SetMessage(step2MessageLabel, string.Empty, ErrorColor);
+
+            // TODO(theme-be-wiring): selectedTheme 라벨("내추럴"·"클래식"·"모던"·"빈티지"·"파스텔")이
+            // BE asset/inventory 모델에 정식 등록되면 여기서 PATCH /v1/spaces/me/theme 를 호출해
+            // ApiSpaceSettingsRepository.UpdateCurrentTheme(inventoryId, ...) 로 적용한다.
+            // 현재는 라벨 ↔ inventoryId 매핑이 없어 호출하면 4xx가 확정이라 로컬 상태로만 둔다.
+            // 게스트는 이 분기에서 그대로 메인으로 빠지므로 wiring 추가 시 isGuestFlow 분기도 유지해야 함.
 
             // Guest entry has no step 3 — show the same completion modal that
             // the regular flow displays after step 3, so the completion logic
