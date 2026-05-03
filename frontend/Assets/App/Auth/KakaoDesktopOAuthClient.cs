@@ -11,6 +11,9 @@ namespace App.Auth
 {
     internal static class KakaoDesktopOAuthClient
     {
+        private const int CallbackPollDelayMilliseconds = 50;
+        private const int CallbackReadTimeoutMilliseconds = 5000;
+
         public static Task<KakaoOAuthResult> RequestAuthorizationCodeAsync(
             string clientId,
             string redirectUri,
@@ -68,29 +71,49 @@ namespace App.Auth
             CancellationToken cancellationToken,
             ManualResetEventSlim listenerReady)
         {
-            TcpListener listener = null;
+            List<TcpListener> listeners = null;
             try
             {
-                listener = CreateLoopbackCompatibleListener(port);
-                listener.Start();
+                listeners = StartLoopbackListeners(port);
                 listenerReady.Set();
 
-                using (cancellationToken.Register(() => listener.Stop()))
-                using (var client = listener.AcceptTcpClient())
-                using (var stream = client.GetStream())
+                using (cancellationToken.Register(() => StopListeners(listeners)))
                 {
-                    if (!IsLoopback(client.Client.RemoteEndPoint))
+                    while (true)
                     {
-                        var failure = KakaoOAuthResult.Failure("Kakao callback must come from localhost.");
-                        WriteHttpResponse(stream, failure);
-                        return failure;
-                    }
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var listener = FirstPendingListener(listeners);
+                        if (listener == null)
+                        {
+                            Thread.Sleep(CallbackPollDelayMilliseconds);
+                            continue;
+                        }
 
-                    var requestText = ReadHttpRequest(stream);
-                    var result = ParseCallbackRequest(requestText, expectedPath, expectedState);
-                    WriteHttpResponse(stream, result);
-                    return result;
+                        using (var client = listener.AcceptTcpClient())
+                        using (cancellationToken.Register(() => client.Close()))
+                        using (var stream = client.GetStream())
+                        {
+                            client.ReceiveTimeout = CallbackReadTimeoutMilliseconds;
+                            client.SendTimeout = CallbackReadTimeoutMilliseconds;
+
+                            if (!IsLoopback(client.Client.RemoteEndPoint))
+                            {
+                                var failure = KakaoOAuthResult.Failure("Kakao callback must come from localhost.");
+                                WriteHttpResponse(stream, failure);
+                                return failure;
+                            }
+
+                            var requestText = ReadHttpRequest(stream);
+                            var result = ParseCallbackRequest(requestText, expectedPath, expectedState);
+                            WriteHttpResponse(stream, result);
+                            return result;
+                        }
+                    }
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return KakaoOAuthResult.Failure("Kakao login timed out.");
             }
             catch (SocketException) when (cancellationToken.IsCancellationRequested)
             {
@@ -100,29 +123,107 @@ namespace App.Auth
             {
                 return KakaoOAuthResult.Failure("Kakao login timed out.");
             }
+            catch (IOException exception) when (cancellationToken.IsCancellationRequested || IsSocketTimeout(exception))
+            {
+                return KakaoOAuthResult.Failure("Kakao callback request timed out.");
+            }
             catch (Exception exception)
             {
                 return KakaoOAuthResult.Failure(exception.Message);
             }
             finally
             {
-                listener?.Stop();
+                StopListeners(listeners);
             }
         }
 
-        private static TcpListener CreateLoopbackCompatibleListener(int port)
+        private static List<TcpListener> StartLoopbackListeners(int port)
         {
-            var listener = new TcpListener(IPAddress.IPv6Any, port);
+            var listeners = new List<TcpListener>();
             try
             {
-                listener.Server.DualMode = true;
-                return listener;
+                var ipv4Listener = new TcpListener(IPAddress.Loopback, port);
+                ipv4Listener.Start();
+                listeners.Add(ipv4Listener);
+
+                if (Socket.OSSupportsIPv6)
+                {
+                    AddIpv6LoopbackListener(listeners, port);
+                }
+
+                return listeners;
             }
-            catch (NotSupportedException)
+            catch
             {
-                listener.Stop();
-                return new TcpListener(IPAddress.Loopback, port);
+                StopListeners(listeners);
+                throw;
             }
+        }
+
+        private static void AddIpv6LoopbackListener(List<TcpListener> listeners, int port)
+        {
+            var ipv6Listener = new TcpListener(IPAddress.IPv6Loopback, port);
+            try
+            {
+                try
+                {
+                    ipv6Listener.Server.DualMode = false;
+                }
+                catch (NotSupportedException)
+                {
+                    // Older Unity/Mono runtimes may not expose DualMode. The socket
+                    // is still bound to IPv6 loopback, so it does not open externally.
+                }
+
+                ipv6Listener.Start();
+                listeners.Add(ipv6Listener);
+            }
+            catch
+            {
+                ipv6Listener.Stop();
+                throw;
+            }
+        }
+
+        private static TcpListener FirstPendingListener(List<TcpListener> listeners)
+        {
+            foreach (var listener in listeners)
+            {
+                if (listener.Pending())
+                {
+                    return listener;
+                }
+            }
+
+            return null;
+        }
+
+        private static void StopListeners(List<TcpListener> listeners)
+        {
+            if (listeners == null)
+            {
+                return;
+            }
+
+            foreach (var listener in listeners)
+            {
+                try
+                {
+                    listener.Stop();
+                }
+                catch (SocketException)
+                {
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+            }
+        }
+
+        private static bool IsSocketTimeout(IOException exception)
+        {
+            return exception.InnerException is SocketException socketException &&
+                   socketException.SocketErrorCode == SocketError.TimedOut;
         }
 
         private static bool IsLoopback(EndPoint endPoint)
