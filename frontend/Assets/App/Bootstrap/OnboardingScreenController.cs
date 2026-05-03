@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using App.Infrastructure.Api;
+using App.Infrastructure.Api.Dtos;
 using BookshelfPorting.Runtime;
 using TMPro;
 using UnityEngine;
@@ -38,14 +40,9 @@ namespace App.Bootstrap
         private const float MainScenePreviewCoverAlpha = 0.62f;
         private static readonly bool EnableDebugLogs = false;
 
-        private static readonly string[] ThemeNames =
-        {
-            "내추럴",
-            "클래식",
-            "모던",
-            "빈티지",
-            "파스텔"
-        };
+        // Theme list / default / sprite mapping all live in
+        // OnboardingThemePreviewProvider so adding a theme is a one-file edit.
+        private static readonly string[] ThemeNames = OnboardingThemePreviewProvider.OrderedThemeIds;
 
         private static readonly Color BackgroundColor = Hex("#F4EFE6");
         private static readonly Color CardColor = Hex("#FFFDF9");
@@ -91,6 +88,8 @@ namespace App.Bootstrap
 
         private TMP_Text step2MessageLabel;
         private Image themePreviewImage;
+        private GameObject themePreviewPlaceholderShelf;
+        private OnboardingThemePreviewProvider themePreviewProvider;
         private TMP_Text themePreviewTitleLabel;
         private TMP_Text themePreviewCaptionLabel;
         private Button step2PreviousButton;
@@ -111,6 +110,19 @@ namespace App.Bootstrap
 
         private string selectedTheme = string.Empty;
         private bool nicknameChecked;
+        // True between user clicking 중복확인 and the BE response arriving. Used
+        // to gate re-entrancy and to reject stale callbacks if the user edits
+        // the field mid-flight (the post-edit OnNicknameChanged already resets
+        // nicknameChecked, but a late success callback could otherwise overwrite
+        // it back to true with the wrong nickname).
+        private bool isCheckingNickname;
+        // True between user clicking 다음 and the PATCH /v1/users/me response
+        // arriving. Drops repeat clicks while in-flight so only one profile
+        // save round-trip is ever active. Independent of isCheckingNickname:
+        // 다음-button validation runs after 중복확인 has already settled, so
+        // they cannot overlap, but each flow needs its own re-entrancy guard.
+        private bool isSubmittingProfile;
+        private NotebookApiClient nicknameApiClient;
         private Texture2D profileTexture;
         private Sprite profileSprite;
         private bool isInitialized;
@@ -130,6 +142,9 @@ namespace App.Bootstrap
             isInitialized = true;
             whiteSprite = CreateWhiteSprite();
             roundedRectSprite = CreateRoundedRectSprite(64, 14);
+            // Provider must exist before BuildOnboardingCanvas → BuildStep2Panel
+            // wires the preview area; UpdateThemePreview reads it.
+            themePreviewProvider = new OnboardingThemePreviewProvider(roundedRectSprite);
             fontAsset = ResolveFontAsset();
             WarmupOnboardingGlyphs(fontAsset);
 
@@ -298,7 +313,9 @@ namespace App.Bootstrap
         private void ResetFlowState()
         {
             nicknameChecked = false;
-            selectedTheme = string.Empty;
+            // Default selection so step 2 entry already shows a real preview
+            // instead of the procedural placeholder; user can switch or proceed.
+            selectedTheme = OnboardingThemePreviewProvider.DefaultThemeId;
             currentStep = 1;
             ResetStep3FlowState();
 
@@ -316,7 +333,8 @@ namespace App.Bootstrap
             SetStep1Feedback(string.Empty, MutedTextColor, false);
             ResetProfilePreview();
             UpdateThemeSelectionVisuals();
-            UpdateThemePreview(string.Empty);
+            // Reflect the default selection set above — keep in sync with selectedTheme.
+            UpdateThemePreview(selectedTheme);
             SetStep3OverlayStatus("메인 화면과 책장 포커스 화면으로 이동할 준비가 되었습니다.");
             SetStepPresentationMode(false);
         }
@@ -582,7 +600,11 @@ namespace App.Bootstrap
             var panel = CreateRectObject("Step2_ThemePanel", parent);
             StretchToParent((RectTransform)panel.transform);
 
-            var column = CreateColumn(panel.transform, "Layout", 18f, new RectOffset(0, 0, 0, 0), TextAnchor.UpperCenter);
+            // Column spacing tuned so the fixed-height items (header, random
+            // button, preview card, theme buttons, message, nav row) fit
+            // within ContentRoot's 876px (CardHeight 980 − 52*2 padding).
+            // Bumping the spacing back up will push the nav row off-screen.
+            var column = CreateColumn(panel.transform, "Layout", 12f, new RectOffset(0, 0, 0, 0), TextAnchor.UpperCenter);
             StretchToParent(column);
 
             CreateSectionText(column, "StepCaption", "STEP 2", 14f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center, 28f, 2f);
@@ -597,28 +619,61 @@ namespace App.Bootstrap
 
             CreateSpacer(column, 8f);
 
-            themePreviewImage = CreateImage(column, "ThemePreviewImage", PreviewAccentColor);
+            // Single rounded card holds title + caption + preview image so
+            // the three read as one cohesive group instead of stacked items.
+            // Inner column is driven by fixed-height children, so the card's
+            // own preferredHeight can be a deterministic sum (no
+            // ContentSizeFitter, which the rest of this builder also avoids).
+            var card = CreateImage(column, "ThemePreviewCard", SecondaryColor);
+            card.sprite = roundedRectSprite;
+            card.type = Image.Type.Sliced;
+            card.raycastTarget = false;
+
+            // Card height = padding(22+22) + title(40) + caption(30) + image(270)
+            // + 2 column gaps(10*2). Capped (no flexibleHeight) so it never grows
+            // and pushes the nav row out of ContentRoot's 876px budget.
+            var cardLayout = card.gameObject.AddComponent<LayoutElement>();
+            cardLayout.preferredHeight = 404f;
+            cardLayout.minHeight = 404f;
+            cardLayout.flexibleWidth = 1f;
+
+            var cardOutline = card.gameObject.AddComponent<Outline>();
+            cardOutline.effectColor = WithAlpha(BorderColor, 0.55f);
+            cardOutline.effectDistance = new Vector2(1f, -1f);
+
+            var cardContent = CreateColumn(card.transform, "CardContent", 10f, new RectOffset(28, 28, 22, 22), TextAnchor.UpperCenter);
+            StretchToParent(cardContent);
+
+            themePreviewTitleLabel = CreateSectionText(cardContent, "ThemePreviewTitle", "테마 미리보기", 26f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center, 40f);
+            themePreviewCaptionLabel = CreateSectionText(cardContent, "ThemePreviewCaption", "테마를 선택하면 이 영역이 변경됩니다.", 16f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Center, 30f);
+
+            themePreviewImage = CreateImage(cardContent, "ThemePreviewImage", PreviewAccentColor);
             themePreviewImage.sprite = roundedRectSprite;
             themePreviewImage.type = Image.Type.Sliced;
             themePreviewImage.raycastTarget = false;
+            // preserveAspect only kicks in when type is Simple (real theme
+            // sprite). Sliced placeholder ignores it. Setting it once here so
+            // UpdateThemePreview does not need to flip it on every selection.
+            themePreviewImage.preserveAspect = true;
 
+            // 270 is larger than the pre-card 250 (room to breathe) but small
+            // enough that the parent panel's column still fits in ContentRoot.
             var previewLayout = themePreviewImage.gameObject.AddComponent<LayoutElement>();
-            previewLayout.preferredHeight = 300f;
-            previewLayout.minHeight = 300f;
+            previewLayout.preferredHeight = 270f;
+            previewLayout.minHeight = 270f;
             previewLayout.flexibleWidth = 1f;
 
             var previewOutline = themePreviewImage.gameObject.AddComponent<Outline>();
             previewOutline.effectColor = WithAlpha(BorderColor, 0.92f);
             previewOutline.effectDistance = new Vector2(1f, -1f);
 
+            // Image's only child is the procedural placeholder shelf, which
+            // is shown only when the real preview sprite is missing.
             var previewContent = CreateRectObject("ThemePreviewContent", themePreviewImage.transform);
             StretchWithPadding((RectTransform)previewContent.transform, new Vector2(32f, 32f), new Vector2(-32f, -32f));
 
-            var previewColumn = CreateColumn(previewContent.transform, "Layout", 14f, new RectOffset(0, 0, 0, 0), TextAnchor.MiddleCenter);
+            var previewColumn = CreateColumn(previewContent.transform, "Layout", 0f, new RectOffset(0, 0, 0, 0), TextAnchor.MiddleCenter);
             StretchToParent(previewColumn);
-
-            themePreviewTitleLabel = CreateSectionText(previewColumn, "ThemePreviewTitle", "테마 미리보기", 26f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center, 40f);
-            themePreviewCaptionLabel = CreateSectionText(previewColumn, "ThemePreviewCaption", "테마를 선택하면 이 영역이 변경됩니다.", 16f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Center, 30f);
 
             var previewShelf = CreateImage(previewColumn, "PreviewShelf", WithAlpha(CardColor, 0.78f));
             previewShelf.sprite = roundedRectSprite;
@@ -628,6 +683,10 @@ namespace App.Bootstrap
             previewShelfLayout.preferredHeight = 150f;
             previewShelfLayout.minHeight = 150f;
             previewShelfLayout.flexibleWidth = 1f;
+            // Captured so UpdateThemePreview can hide the placeholder shelf
+            // (with its fake books) once a real theme sprite is shown — and
+            // restore it when the selection clears or the sprite is missing.
+            themePreviewPlaceholderShelf = previewShelf.gameObject;
 
             CreatePreviewAccentBar(previewShelf.transform, "ShelfTop", new Vector2(0.5f, 0.32f), new Vector2(460f, 12f));
             CreatePreviewAccentBar(previewShelf.transform, "ShelfBottom", new Vector2(0.5f, 0.68f), new Vector2(460f, 12f));
@@ -813,6 +872,14 @@ namespace App.Bootstrap
 
         private void OnDuplicateCheckButtonClicked()
         {
+            // Re-entrancy guard: a previous click is still waiting on BE.
+            // Drop the second click silently — the in-flight response will
+            // settle the UI shortly.
+            if (isCheckingNickname)
+            {
+                return;
+            }
+
             var nickname = nicknameInput != null ? nicknameInput.text.Trim() : string.Empty;
             if (string.IsNullOrWhiteSpace(nickname))
             {
@@ -821,9 +888,105 @@ namespace App.Bootstrap
                 return;
             }
 
-            nicknameChecked = true;
-            SetStep1Feedback("사용 가능한 닉네임입니다.", SuccessColor, true);
-                LogDebug($"[OnboardingDemo] Nickname available: '{nickname}'.");
+#if UNITY_EDITOR
+            // Dev mode: BE may not be reachable (no token, BE not deployed,
+            // or APIManager.Instance not initialized). Skip the round-trip
+            // and force a success — the empty/blank guard above is still
+            // honored, so the existing "닉네임을 입력해주세요." feedback path
+            // for empty input still works.
+            if (DevMainSceneMode.IsActive)
+            {
+                nicknameChecked = true;
+                SetStep1Feedback("사용 가능한 닉네임입니다.", SuccessColor, true);
+                return;
+            }
+#endif
+
+            // Capture the nickname value for the request so a late callback
+            // arriving after the user has edited the field can be discarded.
+            var requestedNickname = nickname;
+            var client = EnsureNicknameApiClient();
+            if (client == null)
+            {
+                // APIManager not ready — leave nicknameChecked=false so the
+                // user can retry. EnsureNicknameApiClient already logged.
+                SetStep1Feedback("닉네임 확인에 실패했습니다. 다시 시도해주세요.", ErrorColor, false);
+                return;
+            }
+
+            isCheckingNickname = true;
+            nicknameChecked = false;
+            SetStep1Feedback("확인 중...", MutedTextColor, false);
+
+            client.CheckNickname(
+                requestedNickname,
+                onSuccess: response => HandleNicknameCheckSuccess(requestedNickname, response),
+                onError: error => HandleNicknameCheckError(requestedNickname, error));
+        }
+
+        private void HandleNicknameCheckSuccess(string requestedNickname, NicknameAvailabilityResponseDto response)
+        {
+            isCheckingNickname = false;
+            // Stale-response guard: ignore if the user has since changed the
+            // input. OnNicknameChanged has already reset nicknameChecked and
+            // displayed the "중복확인을 해주세요" prompt, so leaving it alone is
+            // the right behavior.
+            if (!IsCurrentNickname(requestedNickname))
+            {
+                return;
+            }
+
+            if (response != null && response.Available)
+            {
+                nicknameChecked = true;
+                SetStep1Feedback("사용 가능한 닉네임입니다.", SuccessColor, true);
+            }
+            else
+            {
+                nicknameChecked = false;
+                SetStep1Feedback("이미 사용 중인 닉네임입니다.", ErrorColor, false);
+            }
+        }
+
+        private void HandleNicknameCheckError(string requestedNickname, ApiErrorResponseDto error)
+        {
+            isCheckingNickname = false;
+            if (!IsCurrentNickname(requestedNickname))
+            {
+                return;
+            }
+
+            nicknameChecked = false;
+            SetStep1Feedback("닉네임 확인에 실패했습니다. 다시 시도해주세요.", ErrorColor, false);
+            // Don't echo the nickname in logs — keep diagnostic to error metadata.
+            Debug.LogWarning(
+                $"[OnboardingDemo] Nickname check failed: code={error?.Code} message={error?.Message}");
+        }
+
+        private bool IsCurrentNickname(string requestedNickname)
+        {
+            var current = nicknameInput != null ? nicknameInput.text.Trim() : string.Empty;
+            return string.Equals(current, requestedNickname, StringComparison.Ordinal);
+        }
+
+        // Returns null if APIManager.Instance is unavailable — callers must
+        // null-check before invoking. Matching the resilience pattern used
+        // in SpaceVisitorOverlayController and SettingsScreenController so
+        // that a missing AppRoot (e.g. an onboarding test scene loaded
+        // standalone, or a race during scene transition) cannot throw NRE
+        // out of the constructor.
+        private NotebookApiClient EnsureNicknameApiClient()
+        {
+            if (APIManager.Instance == null)
+            {
+                Debug.LogWarning("[OnboardingDemo] APIManager.Instance is null — BE call skipped.");
+                return null;
+            }
+            if (nicknameApiClient == null)
+            {
+                nicknameApiClient = new NotebookApiClient(APIManager.Instance);
+            }
+            return nicknameApiClient;
         }
 
         private void OnNicknameChanged(string _)
@@ -834,6 +997,14 @@ namespace App.Bootstrap
 
         private void OnStep1NextButtonClicked()
         {
+            // Re-entrancy guard: a previous click is still waiting on PATCH.
+            // Drop the second click silently — the in-flight response will
+            // either advance to Step2 or surface an error message.
+            if (isSubmittingProfile)
+            {
+                return;
+            }
+
             var nickname = nicknameInput != null ? nicknameInput.text.Trim() : string.Empty;
             if (string.IsNullOrWhiteSpace(nickname))
             {
@@ -847,7 +1018,62 @@ namespace App.Bootstrap
                 return;
             }
 
+#if UNITY_EDITOR
+            // Dev mode: skip PATCH /v1/users/me. The empty-nickname and
+            // !nicknameChecked guards above still apply, so dev still has
+            // to clear the same client-side validation as a real user.
+            if (DevMainSceneMode.IsActive)
+            {
+                SetStep1Feedback(string.Empty, MutedTextColor, true);
+                ShowStep2();
+                return;
+            }
+#endif
+
+            // BE @Size(max=255) on introduction; null/blank is allowed. Trim
+            // here to drop trailing whitespace from the input field.
+            var introduction = introInput != null ? introInput.text.Trim() : string.Empty;
+
+            var request = new UpdateProfileRequestDto
+            {
+                Nickname = nickname,
+                ProfileImageUrl = null,
+                Introduction = introduction
+            };
+
+            var client = EnsureNicknameApiClient();
+            if (client == null)
+            {
+                SetStep1Feedback("프로필 저장에 실패했습니다. 다시 시도해주세요.", ErrorColor, true);
+                return;
+            }
+
+            isSubmittingProfile = true;
+            SetStep1Feedback("프로필을 저장하는 중입니다...", MutedTextColor, true);
+
+            client.UpdateMe(
+                request,
+                onSuccess: _ => HandleProfileUpdateSuccess(),
+                onError: error => HandleProfileUpdateError(error));
+        }
+
+        private void HandleProfileUpdateSuccess()
+        {
+            isSubmittingProfile = false;
+            // Clear the inline status before navigating so a stale "저장하는 중"
+            // message cannot bleed through into Step2.
+            SetStep1Feedback(string.Empty, MutedTextColor, true);
             ShowStep2();
+        }
+
+        private void HandleProfileUpdateError(ApiErrorResponseDto error)
+        {
+            isSubmittingProfile = false;
+            SetStep1Feedback("프로필 저장에 실패했습니다. 다시 시도해주세요.", ErrorColor, true);
+            // Don't echo nickname/introduction in logs — keep diagnostic to
+            // BE-supplied error metadata only.
+            Debug.LogWarning(
+                $"[OnboardingDemo] Profile update failed: code={error?.Code} message={error?.Message}");
         }
 
         private void OnRandomThemeButtonClicked()
@@ -871,6 +1097,12 @@ namespace App.Bootstrap
             }
 
             SetMessage(step2MessageLabel, string.Empty, ErrorColor);
+
+            // TODO(theme-be-wiring): selectedTheme 라벨("내추럴"·"클래식"·"모던"·"빈티지"·"파스텔")이
+            // BE asset/inventory 모델에 정식 등록되면 여기서 PATCH /v1/spaces/me/theme 를 호출해
+            // ApiSpaceSettingsRepository.UpdateCurrentTheme(inventoryId, ...) 로 적용한다.
+            // 현재는 라벨 ↔ inventoryId 매핑이 없어 호출하면 4xx가 확정이라 로컬 상태로만 둔다.
+            // 게스트는 이 분기에서 그대로 메인으로 빠지므로 wiring 추가 시 isGuestFlow 분기도 유지해야 함.
 
             // Guest entry has no step 3 — show the same completion modal that
             // the regular flow displays after step 3, so the completion logic
@@ -976,15 +1208,44 @@ namespace App.Bootstrap
 
             if (string.IsNullOrWhiteSpace(themeName))
             {
-                themePreviewImage.color = PreviewAccentColor;
+                ApplyPlaceholderPreview();
                 SetMessage(themePreviewTitleLabel, "테마 미리보기", TextColor);
                 SetMessage(themePreviewCaptionLabel, "테마를 선택하면 이 영역이 변경됩니다.", MutedTextColor);
                 return;
             }
 
-            themePreviewImage.color = GetThemePreviewColor(themeName);
+            // Real preview sprite from the data layer when available; otherwise
+            // keep the procedural placeholder + per-theme tint so the screen
+            // does not regress to a blank panel just because the .png is
+            // missing from Resources/.
+            if (themePreviewProvider != null && themePreviewProvider.TryGetPreviewSprite(themeName, out var sprite))
+            {
+                themePreviewImage.sprite = sprite;
+                themePreviewImage.type = Image.Type.Simple;
+                themePreviewImage.color = Color.white;
+                if (themePreviewPlaceholderShelf != null)
+                {
+                    themePreviewPlaceholderShelf.SetActive(false);
+                }
+            }
+            else
+            {
+                ApplyPlaceholderPreview(GetThemePreviewColor(themeName));
+            }
+
             SetMessage(themePreviewTitleLabel, $"{themeName} 테마", TextColor);
             SetMessage(themePreviewCaptionLabel, GetThemePreviewCaption(themeName), MutedTextColor);
+        }
+
+        private void ApplyPlaceholderPreview(Color? tintOverride = null)
+        {
+            themePreviewImage.sprite = roundedRectSprite;
+            themePreviewImage.type = Image.Type.Sliced;
+            themePreviewImage.color = tintOverride ?? PreviewAccentColor;
+            if (themePreviewPlaceholderShelf != null)
+            {
+                themePreviewPlaceholderShelf.SetActive(true);
+            }
         }
 
         private static string GetThemeDebugName(string themeName)

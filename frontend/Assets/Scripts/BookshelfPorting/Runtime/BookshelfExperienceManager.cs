@@ -514,12 +514,31 @@ namespace BookshelfPorting.Runtime
         private MainCameraViewMode currentMainViewMode = MainCameraViewMode.MainView;
         public MainCameraViewMode CurrentMainViewMode => currentMainViewMode;
 
-        // Set by the onboarding flow during Step 3. Used by SettingsScreenController to
-        // hide the floating mode-change / settings buttons only while onboarding Step 3
-        // is in progress; cleared as soon as onboarding completes. Bookshelf focus
-        // features (back button, left/right nav, scroll zoom, interactions) remain
-        // fully available during Step 3 — this flag only gates main-scene chrome.
-        public bool IsOnboardingStep3Active { get; set; }
+        // Set by the onboarding flow during Step 3. Originally only gated the
+        // floating mode-change / settings chrome (SettingsScreenController),
+        // but the onboarding "first book" experience now also hides the
+        // bookshelf-focus chrome (back button, top index panel, left status
+        // panel, right action buttons, bottom nav, hamburger menu, edit-mode
+        // button, page-flip arrows) and auto-opens the book-add panel. The
+        // setter wires those side-effects through OnOnboardingStep3StateChanged
+        // so any caller flipping this flag does not need to know about them.
+        // Cleared back to false after onboarding completes — the regular
+        // per-frame layout sync resumes naturally.
+        public bool IsOnboardingStep3Active
+        {
+            get => isOnboardingStep3Active;
+            set
+            {
+                if (isOnboardingStep3Active == value)
+                {
+                    return;
+                }
+                isOnboardingStep3Active = value;
+                OnOnboardingStep3StateChanged(value);
+            }
+        }
+        private bool isOnboardingStep3Active;
+        private Coroutine onboardingAutoOpenBookAddRoutine;
 
         // Set by RoomEditModeController while the player is in room-decoration edit
         // mode. While true, the main scene's input handlers (click-to-focus on
@@ -693,6 +712,138 @@ namespace BookshelfPorting.Runtime
             {
                 FocusBookshelf();
                 return;
+            }
+        }
+
+        // Resilience layer that re-applies the onboarding Step3 UI override
+        // after Update has finished. Cost model (verified in code review):
+        //   - flag off  → 1 bool read, exits immediately. This is the
+        //     overwhelming common case once onboarding is past Step3.
+        //   - flag on, all targets already hidden → 16 null/activeSelf reads.
+        //     SetActive is NOT called — HideOnboardingChromeIfActive's
+        //     activeSelf guard makes that path a noop. Net cost: 16 cheap
+        //     property reads, no Unity messaging churn.
+        //   - flag on, an external sync (RefreshFocusBackButton,
+        //     SyncBookshelfBottomNav, BookshelfStatusPanel.SetActive(true),
+        //     etc.) re-activated a target this frame → that single target
+        //     gets exactly one SetActive(false) call, here, before paint.
+        //
+        // Heavier alternatives considered (not adopted in this MR):
+        //   1. Add `if (isOnboardingStep3Active) return;` guards inside the
+        //      ~5 per-frame sync methods that toggle these GameObjects.
+        //      Touches more surface area in BookshelfExperienceManager and
+        //      every new chrome sync added later has to remember the guard.
+        //   2. Re-parent the 16 targets under an inactive container on
+        //      Step3 entry. Cleaner runtime cost (zero LateUpdate work) but
+        //      breaks layout/sibling order assumptions in the existing
+        //      build code, and onboarding is the only flow that needs it.
+        //   3. Replace SetActive with CanvasGroup.alpha=0 + interactable=
+        //      false on each target. Same blast radius as (2) and adds 16
+        //      CanvasGroup components to GameObjects that otherwise don't
+        //      need them.
+        // Resilience layer wins on contained blast radius — the entire
+        // override lives in this method + EnforceOnboardingStep3UiHidden.
+        // Migrate to (1) or (2) only if profiling actually attributes
+        // measurable cost here.
+        private void LateUpdate()
+        {
+            if (isOnboardingStep3Active)
+            {
+                EnforceOnboardingStep3UiHidden();
+            }
+        }
+
+        private void OnOnboardingStep3StateChanged(bool active)
+        {
+            if (active)
+            {
+                EnforceOnboardingStep3UiHidden();
+
+                // Auto-open the book-add panel once the focus state allows it.
+                // CanOpenBookAddPanel may be false at this exact frame (Step3
+                // can be flipped before FocusBookshelf has finished), so retry
+                // with a short timeout instead of giving up immediately.
+                if (onboardingAutoOpenBookAddRoutine != null)
+                {
+                    StopCoroutine(onboardingAutoOpenBookAddRoutine);
+                }
+                onboardingAutoOpenBookAddRoutine = StartCoroutine(AutoOpenBookAddPanelWhenReadyAsync());
+            }
+            else
+            {
+                if (onboardingAutoOpenBookAddRoutine != null)
+                {
+                    StopCoroutine(onboardingAutoOpenBookAddRoutine);
+                    onboardingAutoOpenBookAddRoutine = null;
+                }
+                // No explicit re-show: chrome is restored by the existing
+                // SyncBookshelfBottomNav / focus-mode visibility code paths
+                // that run when onboarding ends and FocusMainView() is called.
+            }
+        }
+
+        private IEnumerator AutoOpenBookAddPanelWhenReadyAsync()
+        {
+            const float TimeoutSeconds = 6f;
+            var deadline = Time.unscaledTime + TimeoutSeconds;
+            while (Time.unscaledTime < deadline)
+            {
+                if (!isOnboardingStep3Active)
+                {
+                    yield break;
+                }
+                if (CanOpenBookAddPanel())
+                {
+                    OpenBookAddPanel();
+                    onboardingAutoOpenBookAddRoutine = null;
+                    yield break;
+                }
+                yield return null;
+            }
+            // Timed out: the user can still finish the onboarding via the
+            // step3 panel "완료" button (it lives on the OnboardingScreenController
+            // canvas, not on the chrome we just hid). Leaving the routine null
+            // signals "not retrying" — re-flipping the flag will create a new
+            // routine.
+            onboardingAutoOpenBookAddRoutine = null;
+        }
+
+        // Hides the focus-mode chrome that the onboarding "first book"
+        // experience must not expose. UI elements may not be built yet (Awake
+        // / Start order) so each branch null-checks; activeSelf check inside
+        // HideOnboardingChromeIfActive skips SetActive churn when the
+        // GameObject is already hidden — this is what keeps the LateUpdate
+        // resilience layer cheap (see LateUpdate's cost model comment).
+        //
+        // Caller policy: invoked from (a) LateUpdate while step3 is active,
+        // and (b) OnOnboardingStep3StateChanged once on the entry edge so
+        // the user does not see chrome flicker for one frame between the
+        // flag flipping and the next LateUpdate firing.
+        private void EnforceOnboardingStep3UiHidden()
+        {
+            HideOnboardingChromeIfActive(focusBackButton != null ? focusBackButton.gameObject : null);
+            HideOnboardingChromeIfActive(bookshelfStatusPanel);
+            HideOnboardingChromeIfActive(bookshelfBottomNavPanel);
+            HideOnboardingChromeIfActive(bookshelfIndexPanel);
+            HideOnboardingChromeIfActive(hamburgerButton != null ? hamburgerButton.gameObject : null);
+            HideOnboardingChromeIfActive(hamburgerMenuPanel);
+            HideOnboardingChromeIfActive(bookshelfEditModeButton != null ? bookshelfEditModeButton.gameObject : null);
+            HideOnboardingChromeIfActive(openBookAddButton != null ? openBookAddButton.gameObject : null);
+            HideOnboardingChromeIfActive(openBookSearchButton != null ? openBookSearchButton.gameObject : null);
+            HideOnboardingChromeIfActive(openBookshelfManageButton != null ? openBookshelfManageButton.gameObject : null);
+            HideOnboardingChromeIfActive(openBookshelfDesignButton != null ? openBookshelfDesignButton.gameObject : null);
+            HideOnboardingChromeIfActive(addBookshelfButton != null ? addBookshelfButton.gameObject : null);
+            HideOnboardingChromeIfActive(openBookshelfNameEditButton != null ? openBookshelfNameEditButton.gameObject : null);
+            HideOnboardingChromeIfActive(deleteBookshelfButton != null ? deleteBookshelfButton.gameObject : null);
+            HideOnboardingChromeIfActive(overlayPreviousFocusButton != null ? overlayPreviousFocusButton.gameObject : null);
+            HideOnboardingChromeIfActive(overlayNextFocusButton != null ? overlayNextFocusButton.gameObject : null);
+        }
+
+        private static void HideOnboardingChromeIfActive(GameObject go)
+        {
+            if (go != null && go.activeSelf)
+            {
+                go.SetActive(false);
             }
         }
 

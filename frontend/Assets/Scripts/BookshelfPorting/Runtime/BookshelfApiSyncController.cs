@@ -61,6 +61,12 @@ namespace BookshelfPorting.Runtime
                 space =>
                 {
                     currentSpaceId = space?.Id;
+                    // Forward to the visitor overlay so it can hide on own
+                    // space (the common case here — GetMySpace always returns
+                    // the local user's space). When a future "visit other
+                    // user's space" flow lands it should call SetCurrentSpace
+                    // directly with the GET /v1/spaces/{spaceId} response.
+                    SpaceVisitorOverlayController.Instance?.SetCurrentSpace(space);
                     if (!currentSpaceId.HasValue || currentSpaceId.Value <= 0)
                     {
                         FinishRefresh(false, "내 공간 정보를 찾을 수 없습니다.");
