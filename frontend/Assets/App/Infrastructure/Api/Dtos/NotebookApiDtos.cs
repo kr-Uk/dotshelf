@@ -63,6 +63,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("token")]
         public string Token { get; set; }
 
+        [JsonProperty("redirectUri")]
+        public string RedirectUri { get; set; }
+
         // Required by BE for provider=APPLE; the value must match the nonce
         // claim baked into the Apple identityToken. See AuthDtos.java in
         // backend/src/main/java/com/dotshelf/domain/auth/dto/.

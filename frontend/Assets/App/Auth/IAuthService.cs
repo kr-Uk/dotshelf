@@ -25,7 +25,8 @@ namespace App.Auth
             SocialProvider provider,
             string providerToken,
             SocialTokenType tokenType = SocialTokenType.Default,
-            string nonce = null);
+            string nonce = null,
+            string redirectUri = null);
 
         // BE: POST /v1/auth/guest-session. Returns a session id that later
         // ships with /v1/auth/guest-migration once the user logs in.

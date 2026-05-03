@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using App.Auth;
 using App.Config;
@@ -26,6 +27,9 @@ namespace App.Bootstrap
         private const float SocialPaneWidth = 360f;
         private const int UiLayer = 5;
         private const int CanvasSortingOrder = 5000;
+        private const string DefaultKakaoDesktopClientId = "d1b4d86b431150acd3ef6970ca2fa695";
+        private const string DefaultKakaoDesktopRedirectUri = "http://localhost:18080/oauth/kakao/callback";
+        private static readonly TimeSpan KakaoDesktopOAuthTimeout = TimeSpan.FromMinutes(3);
 
         private static readonly Color BackgroundColor = Hex("#F4EFE6");
         private static readonly Color CardColor = Hex("#FFFDF9");
@@ -73,6 +77,10 @@ namespace App.Bootstrap
         [SerializeField] private string appleDevelopmentToken;
         [SerializeField] private SocialTokenType appleDevelopmentTokenType = SocialTokenType.IdToken;
         [SerializeField] private string appleDevelopmentNonce;
+
+        [Header("Kakao Desktop OAuth")]
+        [SerializeField] private string kakaoDesktopClientId = DefaultKakaoDesktopClientId;
+        [SerializeField] private string kakaoDesktopRedirectUri = DefaultKakaoDesktopRedirectUri;
 
         public void InitializeIfNeeded()
         {
@@ -128,15 +136,15 @@ namespace App.Bootstrap
 
         // External entry point — once a platform SDK obtains a provider token,
         // call this to ship it to BE /v1/auth/social-login. Unity does not
-        // have native Google/Kakao/Apple SDKs wired up in this repo yet, so
-        // the buttons currently surface a guide message; this method exists
-        // so a future SDK integration can complete the flow without further
-        // controller changes.
+        // have native Google/Kakao/Apple SDKs wired up in this repo yet.
+        // Desktop Kakao OAuth and future SDK integrations both complete by
+        // calling this method with a provider token or authorization code.
         public async void SubmitSocialLogin(
             SocialProvider provider,
             string providerToken,
             SocialTokenType tokenType = SocialTokenType.Default,
-            string nonce = null)
+            string nonce = null,
+            string redirectUri = null)
         {
             if (isLoginInFlight)
             {
@@ -156,7 +164,7 @@ namespace App.Bootstrap
 
             try
             {
-                var result = await authService.SocialLoginAsync(provider, providerToken, tokenType, nonce);
+                var result = await authService.SocialLoginAsync(provider, providerToken, tokenType, nonce, redirectUri);
                 ApplyLoginResult(result, ProviderDisplayName(provider));
             }
             finally
@@ -357,7 +365,92 @@ namespace App.Bootstrap
                 return;
             }
 
+            if (provider == SocialProvider.Kakao && CanUseKakaoDesktopOAuth())
+            {
+                BeginKakaoDesktopOAuthLogin();
+                return;
+            }
+
             SetMessage(loginMessageLabel, "로그인 토큰을 확인할 수 없습니다. 먼저 회원가입을 진행해주세요.");
+        }
+
+        private async void BeginKakaoDesktopOAuthLogin()
+        {
+            if (isLoginInFlight)
+            {
+                return;
+            }
+
+            if (!TryGetKakaoDesktopOAuthConfig(out var clientId, out var redirectUri))
+            {
+                SetMessage(loginMessageLabel, "Kakao Desktop OAuth 설정을 확인해주세요.");
+                return;
+            }
+
+            EnsureAuthService();
+            isLoginInFlight = true;
+            SetInteractable(false);
+            SetMessage(loginMessageLabel, "Kakao 로그인 창을 여는 중입니다...");
+
+            try
+            {
+                var oauthResult = await KakaoDesktopOAuthClient.RequestAuthorizationCodeAsync(
+                    clientId,
+                    redirectUri,
+                    KakaoDesktopOAuthTimeout,
+                    Application.OpenURL);
+
+                if (!oauthResult.IsSuccess)
+                {
+                    Debug.LogWarning($"[Auth] Kakao Desktop OAuth failed: {oauthResult.ErrorMessage}");
+                    SetMessage(loginMessageLabel, "Kakao 로그인 인증을 완료하지 못했습니다. 다시 시도해주세요.");
+                    return;
+                }
+
+                SetMessage(loginMessageLabel, "Kakao 인증 정보를 서버에 확인하는 중입니다...");
+                var loginResult = await authService.SocialLoginAsync(
+                    SocialProvider.Kakao,
+                    oauthResult.Code,
+                    SocialTokenType.AuthorizationCode,
+                    null,
+                    redirectUri);
+                ApplyLoginResult(loginResult, ProviderDisplayName(SocialProvider.Kakao));
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                SetMessage(loginMessageLabel, "Kakao 로그인 중 오류가 발생했습니다. 다시 시도해주세요.");
+            }
+            finally
+            {
+                isLoginInFlight = false;
+                SetInteractable(true);
+            }
+        }
+
+        private bool TryGetKakaoDesktopOAuthConfig(out string clientId, out string redirectUri)
+        {
+            clientId = string.IsNullOrWhiteSpace(kakaoDesktopClientId)
+                ? DefaultKakaoDesktopClientId
+                : kakaoDesktopClientId.Trim();
+            redirectUri = string.IsNullOrWhiteSpace(kakaoDesktopRedirectUri)
+                ? DefaultKakaoDesktopRedirectUri
+                : kakaoDesktopRedirectUri.Trim();
+
+            return !string.IsNullOrWhiteSpace(clientId) &&
+                   Uri.TryCreate(redirectUri, UriKind.Absolute, out var uri) &&
+                   uri.Scheme == Uri.UriSchemeHttp &&
+                   uri.IsLoopback &&
+                   uri.Port > 0;
+        }
+
+        private static bool CanUseKakaoDesktopOAuth()
+        {
+#if UNITY_EDITOR || UNITY_STANDALONE
+            return true;
+#else
+            return false;
+#endif
         }
 
         private bool TryGetDevelopmentSocialLoginPayload(
@@ -868,6 +961,8 @@ namespace App.Bootstrap
                 "Apple 로그인 중입니다..." +
                 "Kakao 로그인 중입니다..." +
                 "Google 로그인 중입니다..." +
+                "Kakao 로그인 창을 여는 중입니다..." +
+                "Kakao 인증 정보를 서버에 확인하는 중입니다..." +
                 "Apple 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
                 "Kakao 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
                 "Google 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
