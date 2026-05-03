@@ -234,9 +234,18 @@ namespace App.Auth
             }
             catch (Exception ex)
             {
-                return OAuthBrowserResult.Failure(
-                    "LISTENER_START_FAILED",
-                    $"콜백 리스너를 시작하지 못했습니다: {ex.Message}");
+                // OS-level message (e.g. "Access is denied", "The process cannot
+                // access the file") leaks English text into the Korean UI and
+                // is rarely actionable for an end user. Keep the raw exception
+                // in the log for the developer, surface a friendly message in
+                // the UI. HttpListenerException tends to indicate Windows
+                // ACL / non-admin / domain-policy issues — call those out
+                // separately.
+                Debug.LogWarning($"[Auth] HttpListener start failed: {ex.GetType().Name}: {ex.Message}");
+                var userMessage = ex is HttpListenerException
+                    ? "운영체제 권한 문제로 로그인을 시작할 수 없습니다. 관리자 권한으로 실행하거나 관리자에게 문의해주세요."
+                    : "콜백 리스너를 시작하지 못했습니다. 잠시 후 다시 시도해주세요.";
+                return OAuthBrowserResult.Failure("LISTENER_START_FAILED", userMessage);
             }
 
             try

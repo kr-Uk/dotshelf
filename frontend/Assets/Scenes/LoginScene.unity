@@ -346,6 +346,7 @@ GameObject:
   - component: {fileID: 47858501}
   - component: {fileID: 47858502}
   - component: {fileID: 47858503}
+  - component: {fileID: 47858504}
   m_Layer: 5
   m_Name: LoginSceneRoot
   m_TagString: Untagged
@@ -384,10 +385,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe9049c7360694c4cb85b37b8ceb5a90, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Bootstrap.LoginSceneController
-  loginButton: {fileID: 707316305}
-  userIdInput: {fileID: 1539175678}
-  passwordInput: {fileID: 6947226}
-  errorLabel: {fileID: 2078587531}
 --- !u!114 &47858502
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -444,6 +441,35 @@ Canvas:
   m_SortingLayerID: 0
   m_SortingOrder: 0
   m_TargetDisplay: 0
+--- !u!114 &47858504
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 47858499}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ac8e8ad2ec9482d97ae459d690c8a7f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::App.Bootstrap.LoginScreenController
+  useDevelopmentSocialTokens: 0
+  googleDevelopmentToken: 
+  googleDevelopmentTokenType: 2
+  kakaoDevelopmentToken: 
+  kakaoDevelopmentTokenType: 1
+  appleDevelopmentToken: 
+  appleDevelopmentTokenType: 2
+  appleDevelopmentNonce: 
+  enableDesktopBrowserOAuth: 1
+  desktopBrowserOAuthProviders:
+  - provider: 0
+    authorizeEndpoint: 
+    clientId: 502970247403-j8f8ctqsdk9h1kog2ahiu2n9g0usb9ha.apps.googleusercontent.com
+    scope: 
+    responseType: 
+    useNonce: 1
+    extraQuery: 
 --- !u!1 &122077081
 GameObject:
   m_ObjectHideFlags: 0

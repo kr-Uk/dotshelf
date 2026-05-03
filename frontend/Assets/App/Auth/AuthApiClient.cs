@@ -53,15 +53,25 @@ namespace App.Auth
             return StartCoroutine(SendJson("/v1/auth/social-login", request, onSuccess, onError));
         }
 
-        // Desktop browser-OAuth code exchange. Hits a separate BE endpoint so
-        // BE can disambiguate code-flow (server swaps code → tokens with its
-        // own client_secret) from the mobile SDK token-flow above.
+        // Desktop browser-OAuth code exchange. Posts to the same /social-login
+        // endpoint as the mobile token-flow above. BE disambiguates the two
+        // flows by `tokenType`: code-flow sends "AUTHORIZATION_CODE", token-
+        // flow sends ID_TOKEN / ACCESS_TOKEN. The wire body shapes differ
+        // (code/redirectUri/state vs token) so the client keeps separate
+        // DTOs and helper methods, but they share a single backend route.
+        //
+        // BE expectation: SocialLoginRequest record needs to be extended to
+        // accept the optional `code`, `redirectUri`, and `state` fields and
+        // route to a server-side code-exchange handler when tokenType is
+        // AUTHORIZATION_CODE. Until BE catches up the call returns the
+        // generic 500 envelope (Spring NoHandlerFoundException → 500 wrap)
+        // and surfaces via AuthErrorMessages.
         public Coroutine PostSocialLoginCode(
             SocialLoginByCodeRequestDto request,
             Action<AuthTokenResponseDto> onSuccess,
             Action<ApiErrorResponseDto> onError)
         {
-            return StartCoroutine(SendJson("/v1/auth/social-login/code", request, onSuccess, onError));
+            return StartCoroutine(SendJson("/v1/auth/social-login", request, onSuccess, onError));
         }
 
         public Coroutine PostGuestSession(

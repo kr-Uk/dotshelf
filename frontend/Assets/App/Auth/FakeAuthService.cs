@@ -110,6 +110,11 @@ namespace App.Auth
             var request = new SocialLoginByCodeRequestDto
             {
                 Provider = provider.ToBackendString(),
+                TokenType = SocialTokenType.AuthorizationCode.ToBackendString(provider),
+                // BE record's @NotBlank(token) validation needs the same code
+                // value here. Once BE accepts a first-class `code` field this
+                // assignment can drop and Token can be removed from the DTO.
+                Token = code,
                 Code = code,
                 RedirectUri = redirectUri,
                 State = state,

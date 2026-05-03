@@ -506,6 +506,19 @@ namespace App.Bootstrap
             }
 
 #if UNITY_STANDALONE || UNITY_EDITOR
+            // Apple sign-in on desktop relies on response_mode=form_post,
+            // which is incompatible with the loopback HttpListener used by
+            // WindowsOAuthBrowserFlow. Starting the flow would just dead-end
+            // at a 5-minute timeout — surface a clear message instead so a
+            // QA tester / user is not left staring at a doomed browser tab.
+            if (provider == SocialProvider.Apple)
+            {
+                SetMessage(
+                    loginMessageLabel,
+                    "Apple 로그인은 현재 모바일에서만 지원됩니다. 데스크톱에서는 Google 또는 Kakao 로그인을 이용해주세요.");
+                return;
+            }
+
             // Desktop / editor — always run the browser OAuth flow. Even if
             // the inspector array is empty we still call the flow so the user
             // sees a specific "OAuth 클라이언트 ID가 설정되어 있지 않습니다"
