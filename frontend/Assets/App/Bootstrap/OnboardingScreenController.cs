@@ -38,14 +38,9 @@ namespace App.Bootstrap
         private const float MainScenePreviewCoverAlpha = 0.62f;
         private static readonly bool EnableDebugLogs = false;
 
-        private static readonly string[] ThemeNames =
-        {
-            "내추럴",
-            "클래식",
-            "모던",
-            "빈티지",
-            "파스텔"
-        };
+        // Theme list / default / sprite mapping all live in
+        // OnboardingThemePreviewProvider so adding a theme is a one-file edit.
+        private static readonly string[] ThemeNames = OnboardingThemePreviewProvider.OrderedThemeIds;
 
         private static readonly Color BackgroundColor = Hex("#F4EFE6");
         private static readonly Color CardColor = Hex("#FFFDF9");
@@ -91,6 +86,8 @@ namespace App.Bootstrap
 
         private TMP_Text step2MessageLabel;
         private Image themePreviewImage;
+        private GameObject themePreviewPlaceholderShelf;
+        private OnboardingThemePreviewProvider themePreviewProvider;
         private TMP_Text themePreviewTitleLabel;
         private TMP_Text themePreviewCaptionLabel;
         private Button step2PreviousButton;
@@ -130,6 +127,9 @@ namespace App.Bootstrap
             isInitialized = true;
             whiteSprite = CreateWhiteSprite();
             roundedRectSprite = CreateRoundedRectSprite(64, 14);
+            // Provider must exist before BuildOnboardingCanvas → BuildStep2Panel
+            // wires the preview area; UpdateThemePreview reads it.
+            themePreviewProvider = new OnboardingThemePreviewProvider(roundedRectSprite);
             fontAsset = ResolveFontAsset();
             WarmupOnboardingGlyphs(fontAsset);
 
@@ -298,7 +298,9 @@ namespace App.Bootstrap
         private void ResetFlowState()
         {
             nicknameChecked = false;
-            selectedTheme = string.Empty;
+            // Default selection so step 2 entry already shows a real preview
+            // instead of the procedural placeholder; user can switch or proceed.
+            selectedTheme = OnboardingThemePreviewProvider.DefaultThemeId;
             currentStep = 1;
             ResetStep3FlowState();
 
@@ -316,7 +318,8 @@ namespace App.Bootstrap
             SetStep1Feedback(string.Empty, MutedTextColor, false);
             ResetProfilePreview();
             UpdateThemeSelectionVisuals();
-            UpdateThemePreview(string.Empty);
+            // Reflect the default selection set above — keep in sync with selectedTheme.
+            UpdateThemePreview(selectedTheme);
             SetStep3OverlayStatus("메인 화면과 책장 포커스 화면으로 이동할 준비가 되었습니다.");
             SetStepPresentationMode(false);
         }
@@ -582,7 +585,11 @@ namespace App.Bootstrap
             var panel = CreateRectObject("Step2_ThemePanel", parent);
             StretchToParent((RectTransform)panel.transform);
 
-            var column = CreateColumn(panel.transform, "Layout", 18f, new RectOffset(0, 0, 0, 0), TextAnchor.UpperCenter);
+            // Column spacing tuned so the fixed-height items (header, random
+            // button, preview card, theme buttons, message, nav row) fit
+            // within ContentRoot's 876px (CardHeight 980 − 52*2 padding).
+            // Bumping the spacing back up will push the nav row off-screen.
+            var column = CreateColumn(panel.transform, "Layout", 12f, new RectOffset(0, 0, 0, 0), TextAnchor.UpperCenter);
             StretchToParent(column);
 
             CreateSectionText(column, "StepCaption", "STEP 2", 14f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center, 28f, 2f);
@@ -597,28 +604,61 @@ namespace App.Bootstrap
 
             CreateSpacer(column, 8f);
 
-            themePreviewImage = CreateImage(column, "ThemePreviewImage", PreviewAccentColor);
+            // Single rounded card holds title + caption + preview image so
+            // the three read as one cohesive group instead of stacked items.
+            // Inner column is driven by fixed-height children, so the card's
+            // own preferredHeight can be a deterministic sum (no
+            // ContentSizeFitter, which the rest of this builder also avoids).
+            var card = CreateImage(column, "ThemePreviewCard", SecondaryColor);
+            card.sprite = roundedRectSprite;
+            card.type = Image.Type.Sliced;
+            card.raycastTarget = false;
+
+            // Card height = padding(22+22) + title(40) + caption(30) + image(270)
+            // + 2 column gaps(10*2). Capped (no flexibleHeight) so it never grows
+            // and pushes the nav row out of ContentRoot's 876px budget.
+            var cardLayout = card.gameObject.AddComponent<LayoutElement>();
+            cardLayout.preferredHeight = 404f;
+            cardLayout.minHeight = 404f;
+            cardLayout.flexibleWidth = 1f;
+
+            var cardOutline = card.gameObject.AddComponent<Outline>();
+            cardOutline.effectColor = WithAlpha(BorderColor, 0.55f);
+            cardOutline.effectDistance = new Vector2(1f, -1f);
+
+            var cardContent = CreateColumn(card.transform, "CardContent", 10f, new RectOffset(28, 28, 22, 22), TextAnchor.UpperCenter);
+            StretchToParent(cardContent);
+
+            themePreviewTitleLabel = CreateSectionText(cardContent, "ThemePreviewTitle", "테마 미리보기", 26f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center, 40f);
+            themePreviewCaptionLabel = CreateSectionText(cardContent, "ThemePreviewCaption", "테마를 선택하면 이 영역이 변경됩니다.", 16f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Center, 30f);
+
+            themePreviewImage = CreateImage(cardContent, "ThemePreviewImage", PreviewAccentColor);
             themePreviewImage.sprite = roundedRectSprite;
             themePreviewImage.type = Image.Type.Sliced;
             themePreviewImage.raycastTarget = false;
+            // preserveAspect only kicks in when type is Simple (real theme
+            // sprite). Sliced placeholder ignores it. Setting it once here so
+            // UpdateThemePreview does not need to flip it on every selection.
+            themePreviewImage.preserveAspect = true;
 
+            // 270 is larger than the pre-card 250 (room to breathe) but small
+            // enough that the parent panel's column still fits in ContentRoot.
             var previewLayout = themePreviewImage.gameObject.AddComponent<LayoutElement>();
-            previewLayout.preferredHeight = 300f;
-            previewLayout.minHeight = 300f;
+            previewLayout.preferredHeight = 270f;
+            previewLayout.minHeight = 270f;
             previewLayout.flexibleWidth = 1f;
 
             var previewOutline = themePreviewImage.gameObject.AddComponent<Outline>();
             previewOutline.effectColor = WithAlpha(BorderColor, 0.92f);
             previewOutline.effectDistance = new Vector2(1f, -1f);
 
+            // Image's only child is the procedural placeholder shelf, which
+            // is shown only when the real preview sprite is missing.
             var previewContent = CreateRectObject("ThemePreviewContent", themePreviewImage.transform);
             StretchWithPadding((RectTransform)previewContent.transform, new Vector2(32f, 32f), new Vector2(-32f, -32f));
 
-            var previewColumn = CreateColumn(previewContent.transform, "Layout", 14f, new RectOffset(0, 0, 0, 0), TextAnchor.MiddleCenter);
+            var previewColumn = CreateColumn(previewContent.transform, "Layout", 0f, new RectOffset(0, 0, 0, 0), TextAnchor.MiddleCenter);
             StretchToParent(previewColumn);
-
-            themePreviewTitleLabel = CreateSectionText(previewColumn, "ThemePreviewTitle", "테마 미리보기", 26f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center, 40f);
-            themePreviewCaptionLabel = CreateSectionText(previewColumn, "ThemePreviewCaption", "테마를 선택하면 이 영역이 변경됩니다.", 16f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Center, 30f);
 
             var previewShelf = CreateImage(previewColumn, "PreviewShelf", WithAlpha(CardColor, 0.78f));
             previewShelf.sprite = roundedRectSprite;
@@ -628,6 +668,10 @@ namespace App.Bootstrap
             previewShelfLayout.preferredHeight = 150f;
             previewShelfLayout.minHeight = 150f;
             previewShelfLayout.flexibleWidth = 1f;
+            // Captured so UpdateThemePreview can hide the placeholder shelf
+            // (with its fake books) once a real theme sprite is shown — and
+            // restore it when the selection clears or the sprite is missing.
+            themePreviewPlaceholderShelf = previewShelf.gameObject;
 
             CreatePreviewAccentBar(previewShelf.transform, "ShelfTop", new Vector2(0.5f, 0.32f), new Vector2(460f, 12f));
             CreatePreviewAccentBar(previewShelf.transform, "ShelfBottom", new Vector2(0.5f, 0.68f), new Vector2(460f, 12f));
@@ -976,15 +1020,44 @@ namespace App.Bootstrap
 
             if (string.IsNullOrWhiteSpace(themeName))
             {
-                themePreviewImage.color = PreviewAccentColor;
+                ApplyPlaceholderPreview();
                 SetMessage(themePreviewTitleLabel, "테마 미리보기", TextColor);
                 SetMessage(themePreviewCaptionLabel, "테마를 선택하면 이 영역이 변경됩니다.", MutedTextColor);
                 return;
             }
 
-            themePreviewImage.color = GetThemePreviewColor(themeName);
+            // Real preview sprite from the data layer when available; otherwise
+            // keep the procedural placeholder + per-theme tint so the screen
+            // does not regress to a blank panel just because the .png is
+            // missing from Resources/.
+            if (themePreviewProvider != null && themePreviewProvider.TryGetPreviewSprite(themeName, out var sprite))
+            {
+                themePreviewImage.sprite = sprite;
+                themePreviewImage.type = Image.Type.Simple;
+                themePreviewImage.color = Color.white;
+                if (themePreviewPlaceholderShelf != null)
+                {
+                    themePreviewPlaceholderShelf.SetActive(false);
+                }
+            }
+            else
+            {
+                ApplyPlaceholderPreview(GetThemePreviewColor(themeName));
+            }
+
             SetMessage(themePreviewTitleLabel, $"{themeName} 테마", TextColor);
             SetMessage(themePreviewCaptionLabel, GetThemePreviewCaption(themeName), MutedTextColor);
+        }
+
+        private void ApplyPlaceholderPreview(Color? tintOverride = null)
+        {
+            themePreviewImage.sprite = roundedRectSprite;
+            themePreviewImage.type = Image.Type.Sliced;
+            themePreviewImage.color = tintOverride ?? PreviewAccentColor;
+            if (themePreviewPlaceholderShelf != null)
+            {
+                themePreviewPlaceholderShelf.SetActive(true);
+            }
         }
 
         private static string GetThemeDebugName(string themeName)
