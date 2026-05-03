@@ -73,6 +73,58 @@ namespace App.Infrastructure.Api.Dtos
         public string Nonce { get; set; }
     }
 
+    // Browser-OAuth (desktop) login: Unity opens an external browser, OAuth
+    // provider redirects back to a loopback URL with `?code=...&state=...`,
+    // and Unity ships the code to BE here. BE swaps the code for provider
+    // tokens server-side using its own client_secret + the same redirectUri.
+    //
+    // Posted to the unified /v1/auth/social-login endpoint (same path as the
+    // mobile token-flow). BE disambiguates the two flows by inspecting
+    // `tokenType` — code-flow always sends `AUTHORIZATION_CODE`, token-flow
+    // sends ID_TOKEN / ACCESS_TOKEN. The DTOs are kept separate on the client
+    // because code/redirectUri/state are meaningless for token-flow and
+    // mixing them into one shape obscures intent.
+    [Serializable]
+    public sealed class SocialLoginByCodeRequestDto
+    {
+        [JsonProperty("provider")]
+        public string Provider { get; set; }
+
+        // Discriminator for the unified /social-login endpoint. Always
+        // "AUTHORIZATION_CODE" for the desktop browser-OAuth flow.
+        [JsonProperty("tokenType")]
+        public string TokenType { get; set; }
+
+        // The current BE record SocialLoginRequest only declares
+        // (provider, tokenType, token, nonce) and validates `token` with
+        // @NotBlank. Until BE adds first-class `code` support, populate
+        // `token` with the same authorization-code value so the request
+        // passes validation and BE's code-exchange path
+        // (GoogleTokenVerifier#exchangeCodeForIdToken,
+        // KakaoTokenVerifier#exchangeCodeForAccessToken) consumes it.
+        // BE deserialization is lenient (FAIL_ON_UNKNOWN_PROPERTIES=false)
+        // so the additional `code`/`redirectUri`/`state` fields are ignored
+        // for now and stay forward-compatible if BE later adopts them.
+        [JsonProperty("token")]
+        public string Token { get; set; }
+
+        [JsonProperty("code")]
+        public string Code { get; set; }
+
+        // Must match the redirect_uri used in the authorize request, otherwise
+        // the OAuth provider rejects the code exchange.
+        [JsonProperty("redirectUri")]
+        public string RedirectUri { get; set; }
+
+        [JsonProperty("state")]
+        public string State { get; set; }
+
+        // OIDC nonce, sent to the authorize endpoint and (for Google/Apple)
+        // baked into the resulting id_token. BE re-validates against this.
+        [JsonProperty("nonce")]
+        public string Nonce { get; set; }
+    }
+
     [Serializable]
     public sealed class TokenRefreshRequestDto
     {

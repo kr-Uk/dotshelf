@@ -88,6 +88,83 @@ namespace App.Auth
             return tcs.Task;
         }
 
+        public Task<LoginResult> SocialLoginByCodeAsync(
+            SocialProvider provider,
+            string code,
+            string redirectUri,
+            string state,
+            string nonce = null)
+        {
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                return Task.FromResult(LoginResult.Failure(
+                    "INVALID_INPUT",
+                    "소셜 로그인 code가 비어 있습니다."));
+            }
+
+            if (string.IsNullOrWhiteSpace(redirectUri))
+            {
+                return Task.FromResult(LoginResult.Failure(
+                    "INVALID_INPUT",
+                    "redirectUri가 필요합니다."));
+            }
+
+            var request = new SocialLoginByCodeRequestDto
+            {
+                Provider = provider.ToBackendString(),
+                TokenType = SocialTokenType.AuthorizationCode.ToBackendString(provider),
+                // BE record's @NotBlank(token) validation needs the same code
+                // value here. Once BE accepts a first-class `code` field this
+                // assignment can drop and Token can be removed from the DTO.
+                Token = code,
+                Code = code,
+                RedirectUri = redirectUri,
+                State = state,
+                Nonce = nonce
+            };
+
+            var tcs = new TaskCompletionSource<LoginResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            client.PostSocialLoginCode(
+                request,
+                response =>
+                {
+                    if (response == null || string.IsNullOrWhiteSpace(response.AccessToken))
+                    {
+                        tcs.TrySetResult(LoginResult.Failure(
+                            "EMPTY_RESPONSE",
+                            "서버 응답이 올바르지 않습니다. 잠시 후 다시 시도해주세요."));
+                        return;
+                    }
+
+                    tcs.TrySetResult(LoginResult.Success(
+                        response.UserId,
+                        response.AccessToken,
+                        response.RefreshToken,
+                        response.ExpiresIn,
+                        response.NewUser,
+                        response.Onboarded));
+
+                    AuthSession.SaveTokens(
+                        response.UserId,
+                        response.AccessToken,
+                        response.RefreshToken,
+                        response.ExpiresIn,
+                        response.NewUser,
+                        response.Onboarded);
+
+                    if (!SessionState.IsGuest)
+                    {
+                        AuthSession.SaveGuestSessionId(string.Empty);
+                        SessionState.SetPendingIntent(GuestPostLoginIntent.None);
+                    }
+                },
+                error => tcs.TrySetResult(LoginResult.Failure(
+                    error?.Code,
+                    AuthErrorMessages.ResolveLoginMessage(error))));
+
+            return tcs.Task;
+        }
+
         public Task<GuestSessionResult> StartGuestSessionAsync()
         {
             var tcs = new TaskCompletionSource<GuestSessionResult>(TaskCreationOptions.RunContinuationsAsynchronously);

@@ -53,6 +53,27 @@ namespace App.Auth
             return StartCoroutine(SendJson("/v1/auth/social-login", request, onSuccess, onError));
         }
 
+        // Desktop browser-OAuth code exchange. Posts to the same /social-login
+        // endpoint as the mobile token-flow above. BE disambiguates the two
+        // flows by `tokenType`: code-flow sends "AUTHORIZATION_CODE", token-
+        // flow sends ID_TOKEN / ACCESS_TOKEN. The wire body shapes differ
+        // (code/redirectUri/state vs token) so the client keeps separate
+        // DTOs and helper methods, but they share a single backend route.
+        //
+        // BE expectation: SocialLoginRequest record needs to be extended to
+        // accept the optional `code`, `redirectUri`, and `state` fields and
+        // route to a server-side code-exchange handler when tokenType is
+        // AUTHORIZATION_CODE. Until BE catches up the call returns the
+        // generic 500 envelope (Spring NoHandlerFoundException → 500 wrap)
+        // and surfaces via AuthErrorMessages.
+        public Coroutine PostSocialLoginCode(
+            SocialLoginByCodeRequestDto request,
+            Action<AuthTokenResponseDto> onSuccess,
+            Action<ApiErrorResponseDto> onError)
+        {
+            return StartCoroutine(SendJson("/v1/auth/social-login", request, onSuccess, onError));
+        }
+
         public Coroutine PostGuestSession(
             Action<GuestSessionResponseDto> onSuccess,
             Action<ApiErrorResponseDto> onError)
@@ -208,7 +229,7 @@ namespace App.Auth
         // they reach Debug.Log. Unity logs leak through editor consoles, device logcat,
         // CI batchmode logs, and crash reports, so the raw token must never be written.
         private static readonly Regex SensitiveFieldRegex = new Regex(
-            "\"(token|accessToken|refreshToken|idToken|access_token|refresh_token|id_token|nonce|guestSessionId|guest_session_id)\"\\s*:\\s*\"[^\"]*\"",
+            "\"(token|accessToken|refreshToken|idToken|access_token|refresh_token|id_token|nonce|guestSessionId|guest_session_id|code|state)\"\\s*:\\s*\"[^\"]*\"",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static string Redact(string body)
