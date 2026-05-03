@@ -161,7 +161,16 @@ namespace BookshelfPorting.Runtime
             var experienceManager = GetOrAddComponent<BookshelfExperienceManager>(systems);
             var bookshelfApiSync = GetOrAddComponent<BookshelfApiSyncController>(systems);
             var environment = GetOrAddComponent<EnvironmentSetup>(systems);
-            var apiManager = GetOrAddComponent<APIManager>(systems);
+            // MR #76 후속 (260503): APIManager 이중 인스턴스화 race fix.
+            // 이전: GetOrAddComponent로 무조건 BookshelfSystems에 새 APIManager 추가 → RuntimeSystems
+            // prefab의 APIManager와 동시 존재 → Awake duplicate destroy 로직이 race되며 Configure가
+            // destroy 예정 인스턴스에 적용. Mac Editor에서만 Awake 순서가 어긋나 살아남은 Instance가
+            // 빈/stale baseUrl 보유 → UnityWebRequest가 default 'localhost' host로 fallback (cf.
+            // APIManager.BuildUrl 주석). Windows에서는 우연히 순서가 맞아 발생 안 함.
+            // fix: scene에 이미 있는 인스턴스(보통 RuntimeSystems prefab) 우선 사용, 없으면 fallback.
+            var apiManager = APIManager.Instance
+                ?? UnityEngine.Object.FindFirstObjectByType<APIManager>()
+                ?? systems.AddComponent<APIManager>();
             var notebookUiSceneLoader = GetOrAddComponent<NotebookUiSceneLoader>(systems);
 
             // Guest mode: /v1/auth/guest-session has been issued but no social
