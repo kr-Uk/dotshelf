@@ -369,17 +369,37 @@ namespace App.Bootstrap
                 return;
             }
 
-            Debug.Log($"[LoginDemo] Guest session OK: guestSessionId={result.GuestSessionId} expiresInSeconds={result.ExpiresInSeconds}");
+            // Guest-session log intentionally omits guestSessionId / guestToken —
+            // both are credentials that BE / a man-in-the-middle could use to
+            // hijack this guest's data, and Unity logs leak through editor
+            // consoles, device logcat, CI batchmode logs, and crash reports.
+            Debug.Log($"[LoginDemo] Guest session OK: expiresInSeconds={result.ExpiresInSeconds}");
             AuthSession.SaveGuestSessionId(result.GuestSessionId);
-            // Read back from PlayerPrefs so the log proves what actually got
-            // persisted, not just what we tried to write.
-            Debug.Log($"[LoginDemo] PlayerPrefs[Dotshelf.Auth.GuestSessionId] = '{AuthSession.GuestSessionId}'");
+
+            // Promote the guestToken to the active access token so authenticated
+            // BE calls in MainScene (BookshelfApiSyncController.GetMySpace,
+            // visit recording, etc.) carry the guest credential and BE can
+            // resolve a server-side space record for this guest. BE controls
+            // the guest's permission scope server-side, so SessionState.IsGuest
+            // (a separate UI/feature gate) is still set below to keep the
+            // "guest can't change profile / withdraw / change visibility"
+            // restrictions in place — those are policy, not auth.
+            if (!string.IsNullOrWhiteSpace(result.GuestToken))
+            {
+                AuthSession.SaveTokens(
+                    userId: 0L,
+                    accessToken: result.GuestToken,
+                    refreshToken: string.Empty,
+                    expiresInSeconds: result.ExpiresInSeconds,
+                    newUser: false,
+                    onboarded: false);
+                if (APIManager.Instance != null)
+                {
+                    APIManager.Instance.SetAccessToken(result.GuestToken);
+                }
+            }
+
             SessionState.MarkGuest();
-            // Trace marker: BookshelfSceneInstaller checks AuthSession.IsGuestSession
-            // and skips /v1/spaces/me when this is true. Logging here makes the
-            // sequence (guest-session OK → guest mode → local bookshelf path)
-            // visible end-to-end in the player log without enabling verbose API logs.
-            Debug.Log($"[Auth] guest mode - using local bookshelf (IsGuestSession={AuthSession.IsGuestSession})");
             SetMessage(loginMessageLabel, "게스트로 입장합니다. 테마 설정을 진행해주세요.");
 
             // Guest entry skips onboarding step 1 (profile) and step 3 (bookshelf
