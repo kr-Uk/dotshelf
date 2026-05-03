@@ -905,11 +905,20 @@ namespace App.Bootstrap
             // Capture the nickname value for the request so a late callback
             // arriving after the user has edited the field can be discarded.
             var requestedNickname = nickname;
+            var client = EnsureNicknameApiClient();
+            if (client == null)
+            {
+                // APIManager not ready — leave nicknameChecked=false so the
+                // user can retry. EnsureNicknameApiClient already logged.
+                SetStep1Feedback("닉네임 확인에 실패했습니다. 다시 시도해주세요.", ErrorColor, false);
+                return;
+            }
+
             isCheckingNickname = true;
             nicknameChecked = false;
             SetStep1Feedback("확인 중...", MutedTextColor, false);
 
-            EnsureNicknameApiClient().CheckNickname(
+            client.CheckNickname(
                 requestedNickname,
                 onSuccess: response => HandleNicknameCheckSuccess(requestedNickname, response),
                 onError: error => HandleNicknameCheckError(requestedNickname, error));
@@ -960,11 +969,19 @@ namespace App.Bootstrap
             return string.Equals(current, requestedNickname, StringComparison.Ordinal);
         }
 
+        // Returns null if APIManager.Instance is unavailable — callers must
+        // null-check before invoking. Matching the resilience pattern used
+        // in SpaceVisitorOverlayController and SettingsScreenController so
+        // that a missing AppRoot (e.g. an onboarding test scene loaded
+        // standalone, or a race during scene transition) cannot throw NRE
+        // out of the constructor.
         private NotebookApiClient EnsureNicknameApiClient()
         {
-            // APIManager.Instance is a DontDestroyOnLoad singleton hydrated by
-            // AppRoot at boot. NotebookApiClient is cheap to construct but we
-            // cache it so repeated checks reuse the same client.
+            if (APIManager.Instance == null)
+            {
+                Debug.LogWarning("[OnboardingDemo] APIManager.Instance is null — BE call skipped.");
+                return null;
+            }
             if (nicknameApiClient == null)
             {
                 nicknameApiClient = new NotebookApiClient(APIManager.Instance);
@@ -1017,9 +1034,6 @@ namespace App.Bootstrap
             // here to drop trailing whitespace from the input field.
             var introduction = introInput != null ? introInput.text.Trim() : string.Empty;
 
-            isSubmittingProfile = true;
-            SetStep1Feedback("프로필을 저장하는 중입니다...", MutedTextColor, true);
-
             var request = new UpdateProfileRequestDto
             {
                 Nickname = nickname,
@@ -1027,7 +1041,17 @@ namespace App.Bootstrap
                 Introduction = introduction
             };
 
-            EnsureNicknameApiClient().UpdateMe(
+            var client = EnsureNicknameApiClient();
+            if (client == null)
+            {
+                SetStep1Feedback("프로필 저장에 실패했습니다. 다시 시도해주세요.", ErrorColor, true);
+                return;
+            }
+
+            isSubmittingProfile = true;
+            SetStep1Feedback("프로필을 저장하는 중입니다...", MutedTextColor, true);
+
+            client.UpdateMe(
                 request,
                 onSuccess: _ => HandleProfileUpdateSuccess(),
                 onError: error => HandleProfileUpdateError(error));

@@ -123,7 +123,6 @@ namespace App.Bootstrap
         // BE call inside SelectPrivacyOption so applying a server-fetched
         // value during initial load does not echo back as an update.
         private NotebookApiClient settingsApiClient;
-        private AuthApiClient settingsAuthApiClient;
         private bool isLogoutInFlight;
         private bool isProfileLoadInFlight;
         private bool isProfileSaveInFlight;
@@ -1036,8 +1035,15 @@ namespace App.Bootstrap
                 VisibilityScope = MapPrivacyIndexToScope(selectedPrivacyIndex)
             };
 
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                ShowNoticeToast("공개 범위 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                return;
+            }
+
             isVisibilityUpdateInFlight = true;
-            EnsureSettingsApiClient().UpdateMySpaceVisibility(
+            client.UpdateMySpaceVisibility(
                 request,
                 onSuccess: _ =>
                 {
@@ -1055,13 +1061,21 @@ namespace App.Bootstrap
         {
             // Mirror App.Domain.Dashboard.VisibilityScope as serialized by
             // DashboardDtoMapper.FormatVisibility — keep the strings in sync
-            // if BE ever renames the enum.
-            return index switch
+            // if BE ever renames the enum. Caller is the radio handler, so
+            // index is bounded by PrivacyOptionLabels.Length, but we still
+            // guard explicitly: a silent default-to-PUBLIC for an out-of-band
+            // index would mis-apply the user's privacy preference, which is
+            // worse than failing loudly.
+            switch (index)
             {
-                1 => "FOLLOWERS_ONLY",
-                2 => "PRIVATE",
-                _ => "PUBLIC",
-            };
+                case 0: return "PUBLIC";
+                case 1: return "FOLLOWERS_ONLY";
+                case 2: return "PRIVATE";
+                default:
+                    Debug.LogWarning(
+                        $"[Settings] MapPrivacyIndexToScope received out-of-range index={index} — falling back to PUBLIC.");
+                    return "PUBLIC";
+            }
         }
 
         private static int MapScopeToPrivacyIndex(string scope)
@@ -1197,10 +1211,17 @@ namespace App.Bootstrap
                 Introduction = cachedProfile?.Introduction
             };
 
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                SetMessage(profileEditFormMessageLabel, "프로필 저장에 실패했습니다. 다시 시도해주세요.", ErrorColor);
+                return;
+            }
+
             isProfileSaveInFlight = true;
             SetMessage(profileEditFormMessageLabel, "프로필을 저장하는 중입니다...", MutedTextColor);
 
-            EnsureSettingsApiClient().UpdateMe(
+            client.UpdateMe(
                 request,
                 onSuccess: response =>
                 {
@@ -1356,8 +1377,15 @@ namespace App.Bootstrap
             }
 #endif
 
+            var withdrawalClient = EnsureSettingsApiClient();
+            if (withdrawalClient == null)
+            {
+                ShowNoticeToast("회원 탈퇴에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                return;
+            }
+
             isWithdrawalInFlight = true;
-            EnsureSettingsApiClient().DeleteMe(
+            withdrawalClient.DeleteMe(
                 onSuccess: _ =>
                 {
                     isWithdrawalInFlight = false;
@@ -1397,11 +1425,30 @@ namespace App.Bootstrap
                 return;
             }
 
-            // PostLogout's onComplete fires for both success and BE error —
-            // we always clear locally afterwards because keeping a stale
-            // local session after a failed revoke is worse than the revoke
-            // failure itself. BE-side revoke retry is out of scope here.
-            EnsureSettingsAuthApiClient().PostLogout(refreshToken, FinishAccountClearAndReturnToLogin);
+            // Switched from AuthApiClient.PostLogout (success/error both routed
+            // to onComplete) to NotebookApiClient.Logout so BE failures get an
+            // explicit warn log. Local-clear policy is unchanged: keeping a
+            // stale local session after a failed revoke is worse than the
+            // revoke failure itself, so both branches still fall through to
+            // FinishAccountClearAndReturnToLogin. BE-side revoke retry is
+            // out of scope here — surfacing the failure in logs is the goal.
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                FinishAccountClearAndReturnToLogin();
+                return;
+            }
+
+            var request = new LogoutRequestDto { RefreshToken = refreshToken };
+            client.Logout(
+                request,
+                onSuccess: _ => FinishAccountClearAndReturnToLogin(),
+                onError: error =>
+                {
+                    Debug.LogWarning(
+                        $"[Settings] Logout BE call failed (local session cleared anyway): code={error?.Code} message={error?.Message}");
+                    FinishAccountClearAndReturnToLogin();
+                });
         }
 
         private void FinishAccountClearAndReturnToLogin()
@@ -1440,8 +1487,16 @@ namespace App.Bootstrap
             }
 #endif
 
+            var loadClient = EnsureSettingsApiClient();
+            if (loadClient == null)
+            {
+                // No toast — initial load failure is not user-driven, the
+                // EnsureSettingsApiClient warn log is enough trace.
+                return;
+            }
+
             isProfileLoadInFlight = true;
-            EnsureSettingsApiClient().GetMe(
+            loadClient.GetMe(
                 onSuccess: profile =>
                 {
                     isProfileLoadInFlight = false;
@@ -1476,22 +1531,23 @@ namespace App.Bootstrap
             // point for a follow-up that calls GetMySpace here.
         }
 
+        // Returns null if APIManager.Instance is unavailable — callers must
+        // null-check before invoking. Mirrors the resilience pattern used in
+        // SpaceVisitorOverlayController and OnboardingScreenController so a
+        // missing AppRoot (e.g. settings opened during a scene transition,
+        // or a hot-reload race) cannot throw NRE out of the constructor.
         private NotebookApiClient EnsureSettingsApiClient()
         {
+            if (APIManager.Instance == null)
+            {
+                Debug.LogWarning("[Settings] APIManager.Instance is null — BE call skipped.");
+                return null;
+            }
             if (settingsApiClient == null)
             {
                 settingsApiClient = new NotebookApiClient(APIManager.Instance);
             }
             return settingsApiClient;
-        }
-
-        private AuthApiClient EnsureSettingsAuthApiClient()
-        {
-            if (settingsAuthApiClient == null)
-            {
-                settingsAuthApiClient = AuthApiClient.EnsureInstance();
-            }
-            return settingsAuthApiClient;
         }
 
         private void OnWithdrawalCancel()

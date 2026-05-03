@@ -715,10 +715,36 @@ namespace BookshelfPorting.Runtime
             }
         }
 
-        // Re-applies the onboarding Step3 UI override after Update has finished
-        // and the per-frame layout sync may have re-shown chrome that we want
-        // hidden. Runs unconditionally cheap when the flag is off (single bool
-        // check) so there is no need to gate registration.
+        // Resilience layer that re-applies the onboarding Step3 UI override
+        // after Update has finished. Cost model (verified in code review):
+        //   - flag off  → 1 bool read, exits immediately. This is the
+        //     overwhelming common case once onboarding is past Step3.
+        //   - flag on, all targets already hidden → 16 null/activeSelf reads.
+        //     SetActive is NOT called — HideOnboardingChromeIfActive's
+        //     activeSelf guard makes that path a noop. Net cost: 16 cheap
+        //     property reads, no Unity messaging churn.
+        //   - flag on, an external sync (RefreshFocusBackButton,
+        //     SyncBookshelfBottomNav, BookshelfStatusPanel.SetActive(true),
+        //     etc.) re-activated a target this frame → that single target
+        //     gets exactly one SetActive(false) call, here, before paint.
+        //
+        // Heavier alternatives considered (not adopted in this MR):
+        //   1. Add `if (isOnboardingStep3Active) return;` guards inside the
+        //      ~5 per-frame sync methods that toggle these GameObjects.
+        //      Touches more surface area in BookshelfExperienceManager and
+        //      every new chrome sync added later has to remember the guard.
+        //   2. Re-parent the 16 targets under an inactive container on
+        //      Step3 entry. Cleaner runtime cost (zero LateUpdate work) but
+        //      breaks layout/sibling order assumptions in the existing
+        //      build code, and onboarding is the only flow that needs it.
+        //   3. Replace SetActive with CanvasGroup.alpha=0 + interactable=
+        //      false on each target. Same blast radius as (2) and adds 16
+        //      CanvasGroup components to GameObjects that otherwise don't
+        //      need them.
+        // Resilience layer wins on contained blast radius — the entire
+        // override lives in this method + EnforceOnboardingStep3UiHidden.
+        // Migrate to (1) or (2) only if profiling actually attributes
+        // measurable cost here.
         private void LateUpdate()
         {
             if (isOnboardingStep3Active)
@@ -784,8 +810,15 @@ namespace BookshelfPorting.Runtime
 
         // Hides the focus-mode chrome that the onboarding "first book"
         // experience must not expose. UI elements may not be built yet (Awake
-        // / Start order) so each branch null-checks; activeSelf check skips
-        // SetActive churn when the GameObject is already hidden.
+        // / Start order) so each branch null-checks; activeSelf check inside
+        // HideOnboardingChromeIfActive skips SetActive churn when the
+        // GameObject is already hidden — this is what keeps the LateUpdate
+        // resilience layer cheap (see LateUpdate's cost model comment).
+        //
+        // Caller policy: invoked from (a) LateUpdate while step3 is active,
+        // and (b) OnOnboardingStep3StateChanged once on the entry edge so
+        // the user does not see chrome flicker for one frame between the
+        // flag flipping and the next LateUpdate firing.
         private void EnforceOnboardingStep3UiHidden()
         {
             HideOnboardingChromeIfActive(focusBackButton != null ? focusBackButton.gameObject : null);
