@@ -10,6 +10,7 @@ namespace App.Infrastructure.Mock.Dashboard
         private string introduction = "오늘도 한 페이지";
         private VisibilityScope guestbookVisibility = VisibilityScope.Public;
         private GuestbookPostItWhitelist whitelist = new GuestbookPostItWhitelist(true, null);
+        private long? currentThemeInventoryId;
 
         public void UpdateIntroduction(string newIntroduction, Action onSuccess, Action<DashboardApiError> onError)
         {
@@ -35,7 +36,14 @@ namespace App.Infrastructure.Mock.Dashboard
             onSuccess();
         }
 
+        public void UpdateCurrentTheme(long? themeInventoryId, Action onSuccess, Action<DashboardApiError> onError)
+        {
+            currentThemeInventoryId = themeInventoryId;
+            onSuccess();
+        }
+
         public string CurrentIntroduction => introduction;
         public VisibilityScope CurrentGuestbookVisibility => guestbookVisibility;
+        public long? CurrentThemeInventoryId => currentThemeInventoryId;
     }
 }

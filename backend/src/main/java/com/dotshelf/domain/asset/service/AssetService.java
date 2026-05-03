@@ -12,6 +12,7 @@ import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetPurchaseResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.InventoryResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.ThemeContentsResponse;
 import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.entity.AssetCategory;
 import com.dotshelf.domain.asset.entity.AssetPurchase;
@@ -28,10 +29,14 @@ import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.common.ToggleResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class AssetService {
@@ -43,6 +48,7 @@ public class AssetService {
     private final AssetPurchaseRepository assetPurchaseRepository;
     private final PageWalletRepository pageWalletRepository;
     private final UserService userService;
+    private final ObjectMapper objectMapper;
 
     public AssetListResponse getAssets(Long userId, String category, String sort, int limit) {
         Pageable pageable = PageRequest.of(0, Math.min(limit, 50), resolveSort(sort));
@@ -63,6 +69,48 @@ public class AssetService {
     public AssetResponse getAsset(Long userId, Long assetId) {
         Asset asset = getAsset(assetId);
         return AssetResponse.from(asset, isOwned(userId, asset.getId()), isWished(userId, asset.getId()));
+    }
+
+    /**
+     * 전체 테마 자산이 묶고 있는 카테고리별 자식 자산 ID를 반환.
+     * compatibleTargets(Lob, JSON) 형식 가정 (camelCase 키):
+     * {"wallpaper": 11, "floor": 12, "desk": 13, "dashboard": 14,
+     *  "interiorLight": 15, "exteriorLight": 16, "bookshelfSkinDefault": 17}
+     * 스키마 정의: API 명세서 260502 갱신의 "compatibleTargets JSON 스키마" 섹션.
+     * 미설정 키는 null. 파싱 실패 시 모든 필드 null + warn 로그.
+     */
+    public ThemeContentsResponse getThemeContents(Long themeAssetId) {
+        Asset theme = getAsset(themeAssetId);
+        String json = theme.getCompatibleTargets();
+        if (json == null || json.isBlank()) {
+            return emptyThemeContents(theme.getId());
+        }
+        try {
+            JsonNode node = objectMapper.readTree(json);
+            return new ThemeContentsResponse(
+                    theme.getId(),
+                    asLong(node.get("wallpaper")),
+                    asLong(node.get("floor")),
+                    asLong(node.get("desk")),
+                    asLong(node.get("dashboard")),
+                    asLong(node.get("interiorLight")),
+                    asLong(node.get("exteriorLight")),
+                    asLong(node.get("bookshelfSkinDefault"))
+            );
+        } catch (Exception ex) {
+            // admin-web 자산 등록 UI 합류 전까지 raw DB 입력으로 들어오므로 형식 어긋남이
+            // 잠재적. 모든 필드 null로 폴백하되 raw + 예외 함께 남겨 admin이 추적 가능하게.
+            log.warn("Theme contents JSON parse failed: assetId={}, raw={}", themeAssetId, json, ex);
+            return emptyThemeContents(theme.getId());
+        }
+    }
+
+    private static ThemeContentsResponse emptyThemeContents(Long themeAssetId) {
+        return new ThemeContentsResponse(themeAssetId, null, null, null, null, null, null, null);
+    }
+
+    private static Long asLong(JsonNode node) {
+        return (node == null || node.isNull()) ? null : node.asLong();
     }
 
     public InventoryResponse getInventory(Long userId) {

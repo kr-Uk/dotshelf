@@ -84,6 +84,14 @@ public class Bookshelf extends BaseEntity {
         this.displayOrder = displayOrder;
     }
 
+    /**
+     * 커스터마이징 불가 테마 자동 해제 시 호출. 책장 인스턴스의 외형을 기본으로 되돌린다.
+     * SpaceCustomizationService.resetIfThemeLocked에서 모든 책장에 대해 일괄 호출.
+     */
+    public void resetSkin() {
+        this.skinInventoryId = null;
+    }
+
     public void delete() {
         this.status = "DELETED";
         this.deletedAt = LocalDateTime.now();

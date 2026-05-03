@@ -49,6 +49,36 @@ namespace App.Infrastructure.Api
                 error => onError?.Invoke(MapError(error)));
         }
 
+        public void LoadPurchaseHistory(Action<NotebookPurchaseHistoryResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            if (!RequireAuthenticatedApi(onError, "Purchase history API requires an access token."))
+            {
+                return;
+            }
+
+            client.GetPurchases(
+                response => onSuccess?.Invoke(new NotebookPurchaseHistoryResult(MapPurchaseHistory(response))),
+                error => onError?.Invoke(MapError(error)));
+        }
+
+        public void LoadPaymentMethods(Action<NotebookPaymentMethodResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            if (!RequireAuthenticatedApi(onError, "Payment method API requires an access token."))
+            {
+                return;
+            }
+
+            client.GetPaymentMethods(
+                response =>
+                {
+                    IReadOnlyList<string> methods = response?.Methods != null
+                        ? response.Methods
+                        : Array.Empty<string>();
+                    onSuccess?.Invoke(new NotebookPaymentMethodResult(methods));
+                },
+                error => onError?.Invoke(MapError(error)));
+        }
+
         public void LoadAssets(string category, string sort, int limit, Action<NotebookAssetListResult> onSuccess, Action<NotebookApiError> onError)
         {
             client.GetAssets(
@@ -303,6 +333,26 @@ namespace App.Infrastructure.Api
             return reviews
                 .Where(review => review != null)
                 .Select(MapReview)
+                .ToArray();
+        }
+
+        private static IReadOnlyList<NotebookPurchaseHistoryItem> MapPurchaseHistory(PurchaseHistoryListResponseDto response)
+        {
+            var purchases = response?.Purchases;
+            if (purchases == null || purchases.Count == 0)
+            {
+                return Array.Empty<NotebookPurchaseHistoryItem>();
+            }
+
+            return purchases
+                .Where(purchase => purchase != null)
+                .Select(purchase => new NotebookPurchaseHistoryItem
+                {
+                    Id = purchase.Id,
+                    AssetId = purchase.AssetId,
+                    PricePages = purchase.PricePages,
+                    Status = FirstNonEmpty(purchase.Status, "UNKNOWN")
+                })
                 .ToArray();
         }
 

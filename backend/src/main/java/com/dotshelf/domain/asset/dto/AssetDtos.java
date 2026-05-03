@@ -22,7 +22,8 @@ public final class AssetDtos {
             String previewImageUrl,
             int pricePages,
             boolean owned,
-            boolean wished
+            boolean wished,
+            boolean allowsCustomization
     ) {
 
         public static AssetResponse from(Asset asset, boolean owned, boolean wished) {
@@ -36,12 +37,30 @@ public final class AssetDtos {
                     asset.getPreviewImageUrl(),
                     asset.getPricePages(),
                     owned,
-                    wished
+                    wished,
+                    asset.isAllowsCustomization()
             );
         }
     }
 
     public record AssetListResponse(List<AssetResponse> assets) {
+    }
+
+    /**
+     * 전체 테마 자산이 묶고 있는 자식 자산 ID 매핑.
+     * Asset.compatibleTargets (Lob, JSON) 에 저장된 children에서 카테고리별로 파싱.
+     * 미설정 키는 null. Frontend는 이 응답을 받아 카테고리별 카탈로그에 매칭.
+     */
+    public record ThemeContentsResponse(
+            Long themeAssetId,
+            Long wallpaper,
+            Long floor,
+            Long desk,
+            Long dashboard,
+            Long interiorLight,
+            Long exteriorLight,
+            Long bookshelfSkinDefault
+    ) {
     }
 
     public record AssetCategoryResponse(

@@ -243,6 +243,8 @@ namespace App.Features.Notebook.Presentation
         private readonly List<Button> bookRatingStarButtons = new();
         private SpaceViewModel[] apiSpaces = Array.Empty<SpaceViewModel>();
         private DecorObjectViewModel[] apiDecorObjects = Array.Empty<DecorObjectViewModel>();
+        private IReadOnlyList<NotebookPurchaseHistoryItem> purchaseHistoryItems = Array.Empty<NotebookPurchaseHistoryItem>();
+        private IReadOnlyList<string> paymentMethodItems = Array.Empty<string>();
 
         private UnityAction closeRequested;
         private Font uiFont;
@@ -264,6 +266,8 @@ namespace App.Features.Notebook.Presentation
         private VisualElement bookDetailCover;
         private VisualElement bookDetailReviews;
         private VisualElement bookReviewPanel;
+        private VisualElement walletPanel;
+        private VisualElement walletPurchaseList;
         private VisualElement detailCover;
         private ScrollView recommendScrollView;
         private TextField searchField;
@@ -278,6 +282,8 @@ namespace App.Features.Notebook.Presentation
         private Label heroTitleLabel;
         private Label heroCopyLabel;
         private Label pageBalanceLabel;
+        private Label walletPanelBalanceLabel;
+        private Label walletMethodLabel;
         private Label resultLabel;
         private Label searchResultsTitleLabel;
         private Label searchResultsCountLabel;
@@ -322,6 +328,7 @@ namespace App.Features.Notebook.Presentation
         private int searchRequestVersion;
         private int marketBooksRequestVersion;
         private int runtimeRequestVersion;
+        private int walletDetailRequestVersion;
 
         private string query = string.Empty;
         private string appliedSearchQuery = string.Empty;
@@ -333,6 +340,7 @@ namespace App.Features.Notebook.Presentation
         private string activeRankingSort = RankingSorts[0];
         private string activeObjectSort = ObjectSorts[0];
         private string activeObjectCategory = ObjectCategories[0];
+        private string walletHistoryMessage = string.Empty;
         private int selectedBookIndex;
         private int pageIndex;
         private int pages;
@@ -350,6 +358,8 @@ namespace App.Features.Notebook.Presentation
         private bool marketBooksRequested;
         private bool runtimeDataRequested;
         private bool runtimeDataLoading;
+        private bool walletPanelOpen;
+        private bool walletDetailsLoading;
         private bool shelfTargetLoading;
         private BookViewModel selectedBookOverride;
         private float selectedReviewRating = 5f;
@@ -762,6 +772,7 @@ namespace App.Features.Notebook.Presentation
             BuildMain(pageScroll.contentContainer);
             BuildFooter(pageScroll.contentContainer);
             BuildScrollRail(dashboard);
+            BuildWalletPanel(dashboard);
             BuildBookDetailModal(dashboard);
             BuildToast(dashboard);
             UpdateScrollThumb();
@@ -799,6 +810,8 @@ namespace App.Features.Notebook.Presentation
             bookDetailCover = null;
             bookDetailReviews = null;
             bookReviewPanel = null;
+            walletPanel = null;
+            walletPurchaseList = null;
             detailCover = null;
             recommendScrollView = null;
             searchField = null;
@@ -813,6 +826,8 @@ namespace App.Features.Notebook.Presentation
             heroTitleLabel = null;
             heroCopyLabel = null;
             pageBalanceLabel = null;
+            walletPanelBalanceLabel = null;
+            walletMethodLabel = null;
             resultLabel = null;
             searchResultsTitleLabel = null;
             searchResultsCountLabel = null;
@@ -844,6 +859,9 @@ namespace App.Features.Notebook.Presentation
             nextPageButton = null;
             addButton = null;
             draggingPageScrollbar = false;
+            walletPanelOpen = false;
+            walletDetailsLoading = false;
+            walletHistoryMessage = string.Empty;
             pageScrollbarPointerId = -1;
         }
 
@@ -979,6 +997,12 @@ namespace App.Features.Notebook.Presentation
             wallet.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.72f);
             Round(wallet, 20);
             Border(wallet, Line);
+            UsePointerCursor(wallet);
+            wallet.RegisterCallback<ClickEvent>(evt =>
+            {
+                evt.StopPropagation();
+                ToggleWalletPanel();
+            });
             right.Add(wallet);
 
             var coin = Text("P", 13, Color.white, FontStyle.Bold);
@@ -1016,6 +1040,124 @@ namespace App.Features.Notebook.Presentation
             close.style.borderLeftWidth = 0;
             close.clicked += () => closeRequested?.Invoke();
             right.Add(close);
+        }
+
+        private void BuildWalletPanel(VisualElement parent)
+        {
+            var panel = new VisualElement { name = "wallet-detail-panel" };
+            walletPanel = panel;
+            panel.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            panel.style.display = DisplayStyle.None;
+            panel.style.position = Position.Absolute;
+            panel.style.top = 70;
+            panel.style.right = 52;
+            panel.style.width = 320;
+            panel.style.maxHeight = 430;
+            panel.style.paddingLeft = 18;
+            panel.style.paddingRight = 18;
+            panel.style.paddingTop = 16;
+            panel.style.paddingBottom = 16;
+            panel.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.97f);
+            panel.style.overflow = Overflow.Hidden;
+            Round(panel, 18);
+            Border(panel, Rgba(0x0E, 0x1D, 0x2A, 0.12f));
+            parent.Add(panel);
+
+            var titleRow = Row("wallet-detail-title");
+            titleRow.style.alignItems = Align.Center;
+            titleRow.style.marginBottom = 12;
+            panel.Add(titleRow);
+
+            var title = Text("페이지 지갑", 18, Ink, FontStyle.Bold);
+            titleRow.Add(title);
+
+            var titleSpacer = new VisualElement();
+            titleSpacer.style.flexGrow = 1f;
+            titleRow.Add(titleSpacer);
+
+            var close = CloseIconButton("지갑 닫기");
+            close.style.width = 28;
+            close.style.height = 28;
+            close.style.backgroundColor = Color.clear;
+            close.style.borderTopWidth = 0;
+            close.style.borderRightWidth = 0;
+            close.style.borderBottomWidth = 0;
+            close.style.borderLeftWidth = 0;
+            close.clicked += () => SetWalletPanelOpen(false, false);
+            titleRow.Add(close);
+
+            var balanceCard = Row("wallet-balance-card");
+            balanceCard.style.alignItems = Align.Center;
+            balanceCard.style.justifyContent = Justify.SpaceBetween;
+            balanceCard.style.height = 78;
+            balanceCard.style.paddingLeft = 14;
+            balanceCard.style.paddingRight = 14;
+            balanceCard.style.marginBottom = 12;
+            balanceCard.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.10f);
+            Round(balanceCard, 14);
+            Border(balanceCard, Rgba(0x58, 0xB9, 0xFF, 0.24f));
+            panel.Add(balanceCard);
+
+            var balanceColumn = new VisualElement();
+            balanceColumn.style.flexDirection = FlexDirection.Column;
+            balanceCard.Add(balanceColumn);
+
+            var balanceLabel = Text("보유 페이지", 11, FaintInk, FontStyle.Normal);
+            balanceLabel.style.marginBottom = 4;
+            balanceColumn.Add(balanceLabel);
+
+            walletPanelBalanceLabel = Text(string.Empty, 28, AccentDeep, FontStyle.Bold);
+            balanceColumn.Add(walletPanelBalanceLabel);
+
+            var charge = TextButton("+1,000P", true);
+            charge.style.height = 36;
+            charge.clicked += () =>
+            {
+                PulseElement(charge);
+                ChargePagesThroughApi(1000);
+            };
+            balanceCard.Add(charge);
+
+            var methodTitle = Text("결제 수단", 12, Ink, FontStyle.Bold);
+            methodTitle.style.marginBottom = 6;
+            panel.Add(methodTitle);
+
+            walletMethodLabel = Text("불러오는 중", 12, SoftInk, FontStyle.Normal);
+            walletMethodLabel.style.whiteSpace = WhiteSpace.Normal;
+            walletMethodLabel.style.marginBottom = 14;
+            panel.Add(walletMethodLabel);
+
+            var historyRow = Row("wallet-history-header");
+            historyRow.style.alignItems = Align.Center;
+            historyRow.style.marginBottom = 8;
+            panel.Add(historyRow);
+
+            var historyTitle = Text("오브젝트 구매내역", 12, Ink, FontStyle.Bold);
+            historyRow.Add(historyTitle);
+
+            var historySpacer = new VisualElement();
+            historySpacer.style.flexGrow = 1f;
+            historyRow.Add(historySpacer);
+
+            var refresh = TextButton("새로고침", false);
+            refresh.style.height = 28;
+            refresh.style.paddingLeft = 10;
+            refresh.style.paddingRight = 10;
+            refresh.clicked += () =>
+            {
+                PulseElement(refresh);
+                RequestWalletDetails();
+            };
+            historyRow.Add(refresh);
+
+            walletPurchaseList = new VisualElement { name = "wallet-purchase-list" };
+            walletPurchaseList.style.flexDirection = FlexDirection.Column;
+            walletPurchaseList.style.minHeight = 112;
+            walletPurchaseList.style.maxHeight = 190;
+            walletPurchaseList.style.overflow = Overflow.Hidden;
+            panel.Add(walletPurchaseList);
+
+            RefreshWalletPanel();
         }
 
         private void BuildHero(VisualElement parent)
@@ -2825,6 +2967,215 @@ namespace App.Features.Notebook.Presentation
             {
                 pageBalanceLabel.text = $"{pages:N0} P";
             }
+
+            RefreshWalletPanel();
+        }
+
+        private void ToggleWalletPanel()
+        {
+            SetWalletPanelOpen(!walletPanelOpen, true);
+        }
+
+        private void SetWalletPanelOpen(bool open, bool animate)
+        {
+            walletPanelOpen = open;
+            if (walletPanel == null)
+            {
+                return;
+            }
+
+            if (open)
+            {
+                walletPanel.style.display = DisplayStyle.Flex;
+                RefreshWalletPanel();
+                SyncWalletFromApi();
+                RequestWalletDetails();
+                if (animate)
+                {
+                    SlideFadeInFromRight(walletPanel, 24, 52, 0.16f);
+                }
+                else
+                {
+                    walletPanel.style.opacity = 1f;
+                    walletPanel.style.right = 52;
+                }
+            }
+            else
+            {
+                walletPanel.style.display = DisplayStyle.None;
+            }
+        }
+
+        private void RequestWalletDetails()
+        {
+            if (!walletPanelOpen)
+            {
+                return;
+            }
+
+            if (notebookRuntimeUseCase == null)
+            {
+                walletDetailsLoading = false;
+                purchaseHistoryItems = Array.Empty<NotebookPurchaseHistoryItem>();
+                paymentMethodItems = Array.Empty<string>();
+                walletHistoryMessage = "결제 API가 설정되지 않았습니다.";
+                RefreshWalletPanel();
+                return;
+            }
+
+            var requestVersion = ++walletDetailRequestVersion;
+            walletDetailsLoading = true;
+            walletHistoryMessage = string.Empty;
+            RefreshWalletPanel();
+
+            notebookRuntimeUseCase.LoadPurchaseHistory(
+                result =>
+                {
+                    if (requestVersion != walletDetailRequestVersion)
+                    {
+                        return;
+                    }
+
+                    purchaseHistoryItems = result?.Purchases ?? Array.Empty<NotebookPurchaseHistoryItem>();
+                    walletDetailsLoading = false;
+                    walletHistoryMessage = string.Empty;
+                    RefreshWalletPanel();
+                },
+                error =>
+                {
+                    if (requestVersion != walletDetailRequestVersion)
+                    {
+                        return;
+                    }
+
+                    walletDetailsLoading = false;
+                    purchaseHistoryItems = Array.Empty<NotebookPurchaseHistoryItem>();
+                    walletHistoryMessage = "구매내역을 불러오지 못했습니다.";
+                    UnityEngine.Debug.LogWarning($"Notebook purchase history API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    RefreshWalletPanel();
+                });
+
+            notebookRuntimeUseCase.LoadPaymentMethods(
+                result =>
+                {
+                    if (requestVersion != walletDetailRequestVersion)
+                    {
+                        return;
+                    }
+
+                    paymentMethodItems = result?.Methods ?? Array.Empty<string>();
+                    RefreshWalletPanel();
+                },
+                error =>
+                {
+                    if (requestVersion != walletDetailRequestVersion)
+                    {
+                        return;
+                    }
+
+                    paymentMethodItems = Array.Empty<string>();
+                    UnityEngine.Debug.LogWarning($"Notebook payment methods API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    RefreshWalletPanel();
+                });
+        }
+
+        private void RefreshWalletPanel()
+        {
+            if (walletPanelBalanceLabel != null)
+            {
+                walletPanelBalanceLabel.text = $"{pages:N0} P";
+            }
+
+            if (walletMethodLabel != null)
+            {
+                walletMethodLabel.text = paymentMethodItems.Count > 0
+                    ? string.Join(", ", paymentMethodItems)
+                    : "등록된 결제수단 없음";
+            }
+
+            if (walletPurchaseList == null)
+            {
+                return;
+            }
+
+            walletPurchaseList.Clear();
+            if (!string.IsNullOrWhiteSpace(walletHistoryMessage))
+            {
+                walletPurchaseList.Add(CreateWalletEmptyState(walletHistoryMessage));
+                return;
+            }
+
+            if (walletDetailsLoading)
+            {
+                walletPurchaseList.Add(CreateWalletEmptyState("구매내역을 불러오는 중입니다."));
+                return;
+            }
+
+            if (purchaseHistoryItems.Count == 0)
+            {
+                walletPurchaseList.Add(CreateWalletEmptyState("아직 구매한 오브젝트가 없습니다."));
+                return;
+            }
+
+            foreach (var item in purchaseHistoryItems.Take(5))
+            {
+                walletPurchaseList.Add(CreatePurchaseHistoryRow(item));
+            }
+        }
+
+        private VisualElement CreateWalletEmptyState(string message)
+        {
+            var empty = Text(message, 12, FaintInk, FontStyle.Normal);
+            empty.style.height = 72;
+            empty.style.unityTextAlign = TextAnchor.MiddleCenter;
+            empty.style.whiteSpace = WhiteSpace.Normal;
+            empty.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.04f);
+            Round(empty, 12);
+            return empty;
+        }
+
+        private VisualElement CreatePurchaseHistoryRow(NotebookPurchaseHistoryItem item)
+        {
+            var row = Row("wallet-purchase-row");
+            row.style.height = 44;
+            row.style.alignItems = Align.Center;
+            row.style.marginBottom = 7;
+            row.style.paddingLeft = 12;
+            row.style.paddingRight = 12;
+            row.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.04f);
+            Round(row, 12);
+            Border(row, Rgba(0x0E, 0x1D, 0x2A, 0.06f));
+
+            var left = new VisualElement();
+            left.style.flexDirection = FlexDirection.Column;
+            left.style.flexGrow = 1f;
+            left.style.minWidth = 0;
+            row.Add(left);
+
+            var name = Text($"Asset #{item.AssetId}", 12, Ink, FontStyle.Bold);
+            left.Add(name);
+
+            var status = Text(FormatPurchaseStatus(item.Status), 10, FaintInk, FontStyle.Normal);
+            status.style.marginTop = 2;
+            left.Add(status);
+
+            var price = Text($"{Mathf.Max(0, item.PricePages):N0} P", 12, AccentDeep, FontStyle.Bold);
+            price.style.marginLeft = 10;
+            row.Add(price);
+            return row;
+        }
+
+        private static string FormatPurchaseStatus(string status)
+        {
+            var normalized = string.IsNullOrWhiteSpace(status) ? string.Empty : status.Trim().ToUpperInvariant();
+            return normalized switch
+            {
+                "COMPLETED" => "구매 완료",
+                "PAID" => "결제 완료",
+                "CANCELED" => "취소됨",
+                "FAILED" => "실패",
+                _ => string.IsNullOrWhiteSpace(status) ? "상태 없음" : status
+            };
         }
 
         private void RefreshFilters()
@@ -5008,6 +5359,10 @@ namespace App.Features.Notebook.Presentation
                 {
                     pages = Mathf.Max(0, wallet?.BalancePages ?? pages);
                     RefreshWallet();
+                    if (walletPanelOpen)
+                    {
+                        RequestWalletDetails();
+                    }
                     ShowToast($"+{amount:N0}P 충전 완료");
                 },
                 error =>
@@ -5136,6 +5491,10 @@ namespace App.Features.Notebook.Presentation
                     ownedObjectIds.Add(item.Id);
                     wishedObjectIds.Remove(item.Id);
                     SyncWalletFromApi();
+                    if (walletPanelOpen)
+                    {
+                        RequestWalletDetails();
+                    }
                     RefreshObjectMarket();
                     ShowToast($"오브젝트 구매 완료 · {item.Name}");
                 },

@@ -10,12 +10,14 @@ namespace App.Config
         [SerializeField] private GameObject bookshelfRigPrefab;
         [SerializeField] private GameObject notebookStationPrefab;
         [SerializeField] private GameObject cameraAnchorsPrefab;
+        [SerializeField] private GameObject dashboardScreenPanelPrefab;
 
         public GameObject RuntimeSystemsPrefab => runtimeSystemsPrefab;
         public GameObject RoomBackgroundPrefab => roomBackgroundPrefab;
         public GameObject BookshelfRigPrefab => bookshelfRigPrefab;
         public GameObject NotebookStationPrefab => notebookStationPrefab;
         public GameObject CameraAnchorsPrefab => cameraAnchorsPrefab;
+        public GameObject DashboardScreenPanelPrefab => dashboardScreenPanelPrefab;
 
         public void Configure(
             GameObject runtimeSystems,

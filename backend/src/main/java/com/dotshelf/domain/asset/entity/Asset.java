@@ -75,10 +75,17 @@ public class Asset extends BaseEntity {
     @Column(nullable = false)
     private boolean isActive = true;
 
+    /**
+     * 전체 테마 자산에서만 의미. false면 해당 테마 적용 후 일부 카테고리 변경 시
+     * 자동 해제(themeReset 응답)된다. 다른 assetType은 무시.
+     */
+    @Column(nullable = false)
+    private boolean allowsCustomization = true;
+
     @Builder
     private Asset(Long categoryId, String code, String name, String tier, String assetScope, String assetType,
                   String unityResourceKey, String assetUrl, String previewImageUrl, int pricePages,
-                  String creator, String supplier, String compatibleTargets) {
+                  String creator, String supplier, String compatibleTargets, Boolean allowsCustomization) {
         this.categoryId = categoryId;
         this.code = code;
         this.name = name;
@@ -92,5 +99,6 @@ public class Asset extends BaseEntity {
         this.creator = creator;
         this.supplier = supplier;
         this.compatibleTargets = compatibleTargets;
+        this.allowsCustomization = allowsCustomization == null ? true : allowsCustomization;
     }
 }

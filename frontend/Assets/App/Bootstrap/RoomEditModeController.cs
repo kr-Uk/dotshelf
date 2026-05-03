@@ -1,6 +1,11 @@
 using System;
 using System.Collections.Generic;
+using App.Application.Dashboard;
+using App.Infrastructure.Api;
+using App.Infrastructure.Api.Dashboard;
+using App.Infrastructure.Catalogs;
 using BookshelfPorting.Runtime;
+using Dotshelf.Scripts.RoomTheme;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -225,6 +230,14 @@ namespace App.Bootstrap
         private string selectedToolbarKey = "ALL";
         private readonly Dictionary<string, Image> toolbarBackgrounds = new Dictionary<string, Image>();
         private readonly Dictionary<string, TMP_Text> toolbarLabels = new Dictionary<string, TMP_Text>();
+
+        private RoomThemeCatalogAsset themeCatalog;
+        private RoomThemeApplier themeApplier;
+        private UpdateSpaceThemeUseCase themeUseCase;
+        private RoomThemeAsset previousAppliedTheme;
+        // 빠른 테마 연타 시 stale callback 무시. 매 클릭마다 ++해서 onSuccess/onError에
+        // 캡쳐된 version과 현재 version이 다르면 응답 무시. (MR 72의 walletDetailRequestVersion 동일 패턴)
+        private int themeRequestVersion;
 
         private GameObject placedItemsRoot;
         private GameObject selectedObject;
@@ -823,6 +836,12 @@ namespace App.Bootstrap
                 Destroy(inventoryContentRoot.transform.GetChild(i).gameObject);
             }
 
+            if (selectedToolbarKey == "THEME_FULL")
+            {
+                BuildThemeSlots(inventoryContentRoot.transform);
+                return;
+            }
+
             var slotIndex = 0;
             for (var i = 0; i < inventoryEntries.Count; i++)
             {
@@ -833,6 +852,185 @@ namespace App.Bootstrap
                 }
                 BuildInventorySlot(inventoryContentRoot.transform, slotIndex, entry);
                 slotIndex++;
+            }
+        }
+
+        // 전체 테마 카테고리 — 데코 인벤토리 대신 RoomThemeCatalogAsset의 테마들을
+        // 같은 슬롯 그리드에 채운다. 셀 클릭 시 RoomThemeApplier로 visual swap만 수행
+        // (백엔드 PATCH /spaces/me/theme wiring은 후속 마디 — A3-4).
+        private void BuildThemeSlots(Transform parent)
+        {
+            if (themeCatalog == null)
+            {
+                themeCatalog = Resources.Load<RoomThemeCatalogAsset>("RoomThemeCatalog");
+            }
+            if (themeCatalog == null || themeCatalog.Entries == null || themeCatalog.Entries.Count == 0)
+            {
+                Debug.LogWarning("[RoomEditModeController] RoomThemeCatalog 비어있음 — Resources/RoomThemeCatalog.asset에 카탈로그 + 테마 항목을 추가하세요.");
+                return;
+            }
+
+            for (var i = 0; i < themeCatalog.Entries.Count; i++)
+            {
+                var theme = themeCatalog.Entries[i];
+                if (theme == null) continue;
+                BuildThemeSlot(parent, i, theme);
+            }
+        }
+
+        private void BuildThemeSlot(Transform parent, int slotIndex, RoomThemeAsset theme)
+        {
+            var slot = CreateImage(parent, $"ThemeSlot_{slotIndex}", CardColor);
+            slot.sprite = roundedRectSprite;
+            slot.type = Image.Type.Sliced;
+            var rect = slot.rectTransform;
+            rect.sizeDelta = new Vector2(108f, 128f);
+
+            var layout = slot.gameObject.AddComponent<LayoutElement>();
+            layout.minWidth = 108f;
+            layout.preferredWidth = 108f;
+            layout.minHeight = 128f;
+            layout.preferredHeight = 128f;
+
+            var outline = slot.gameObject.AddComponent<Outline>();
+            outline.effectColor = WithAlpha(BorderColor, 0.9f);
+            outline.effectDistance = new Vector2(1f, -1f);
+
+            // 현재 적용된 테마는 강조
+            bool isCurrent = themeApplier != null && themeApplier.CurrentTheme == theme;
+            if (isCurrent)
+            {
+                outline.effectColor = TextColor;
+                outline.effectDistance = new Vector2(2f, -2f);
+            }
+
+            // 썸네일 — PreviewSprite가 있으면 그대로, 없으면 placeholder
+            var thumb = CreateImage(slot.transform, "Thumb", Hex("#E8DFCC"));
+            if (theme.PreviewSprite != null)
+            {
+                thumb.sprite = theme.PreviewSprite;
+                thumb.type = Image.Type.Simple;
+                thumb.preserveAspect = true;
+            }
+            else
+            {
+                thumb.sprite = roundedRectSprite;
+                thumb.type = Image.Type.Sliced;
+            }
+            var thumbRect = thumb.rectTransform;
+            thumbRect.anchorMin = new Vector2(0.5f, 1f);
+            thumbRect.anchorMax = new Vector2(0.5f, 1f);
+            thumbRect.pivot = new Vector2(0.5f, 1f);
+            thumbRect.sizeDelta = new Vector2(80f, 80f);
+            thumbRect.anchoredPosition = new Vector2(0f, -8f);
+
+            if (theme.PreviewSprite == null)
+            {
+                var glyph = CreateText(thumb.transform, "Glyph",
+                    ResolveSlotInitial(theme.DisplayName), 28f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center);
+                StretchToParent(glyph.rectTransform);
+            }
+
+            var labelText = CreateText(slot.transform, "Label", string.IsNullOrEmpty(theme.DisplayName) ? "테마" : theme.DisplayName,
+                12f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
+            labelText.overflowMode = TextOverflowModes.Ellipsis;
+            var labelRect = labelText.rectTransform;
+            labelRect.anchorMin = new Vector2(0f, 0f);
+            labelRect.anchorMax = new Vector2(1f, 0f);
+            labelRect.pivot = new Vector2(0.5f, 0f);
+            labelRect.sizeDelta = new Vector2(-8f, 24f);
+            labelRect.anchoredPosition = new Vector2(0f, 6f);
+
+            var button = slot.gameObject.AddComponent<Button>();
+            button.targetGraphic = slot;
+            var capturedTheme = theme;
+            button.onClick.AddListener(() => OnThemeSelected(capturedTheme));
+        }
+
+        private void OnThemeSelected(RoomThemeAsset theme)
+        {
+            if (theme == null) return;
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+            if (themeApplier == null)
+            {
+                Debug.LogWarning("[RoomEditModeController] RoomThemeApplier 인스턴스 없음 — MainRoomScene에 추가하세요.");
+                return;
+            }
+
+            // D9(i) 낙관적 적용: 즉시 visual swap → 백엔드 PATCH → 실패 시 rollback.
+            previousAppliedTheme = themeApplier.CurrentTheme;
+            themeApplier.Apply(theme);
+            RebuildInventorySlots();
+
+            EnsureThemeUseCase();
+            if (themeUseCase == null)
+            {
+                Debug.LogWarning("[RoomEditModeController] ISpaceSettingsRepository 미주입 — 백엔드 PATCH skip (visual만 적용).");
+                return;
+            }
+
+            long? inventoryId = theme.AssetId > 0 ? (long?)theme.AssetId : null;
+            // 연타 시 stale callback 무시: 캡쳐된 version과 현재 version이 다르면 이번 요청은
+            // 이미 다음 요청에 의해 덮였으므로 응답 무시. (rollback도, success log도 안 함)
+            int requestVersion = ++themeRequestVersion;
+            themeUseCase.Execute(
+                inventoryId,
+                onSuccess: () =>
+                {
+                    if (requestVersion != themeRequestVersion)
+                    {
+                        return;
+                    }
+                    Debug.Log($"[RoomEditModeController] PATCH /spaces/me/theme OK → inventoryId={inventoryId}.");
+                },
+                onError: error =>
+                {
+                    if (requestVersion != themeRequestVersion)
+                    {
+                        return;
+                    }
+                    // Code가 비어있으면 백엔드 응답 에러가 아니라 네트워크 connection 실패
+                    // (dev 환경에서 백엔드 미기동 등) — visual은 유지하고 warning만.
+                    bool isNetworkFailure = string.IsNullOrEmpty(error?.Code);
+                    if (isNetworkFailure)
+                    {
+                        Debug.LogWarning($"[RoomEditModeController] PATCH connection 실패 ({error?.Message}) — visual은 유지, 다음 로드 시 서버와 동기화.");
+                        return;
+                    }
+
+                    Debug.LogWarning($"[RoomEditModeController] PATCH 실패 ({error.Code}/{error.Message}) — 이전 테마로 롤백.");
+                    if (previousAppliedTheme != null && previousAppliedTheme != theme)
+                    {
+                        themeApplier.Apply(previousAppliedTheme);
+                        RebuildInventorySlots();
+                    }
+                });
+        }
+
+        private void EnsureThemeUseCase()
+        {
+            if (themeUseCase != null) return;
+            var apiManager = APIManager.Instance;
+            if (apiManager == null)
+            {
+                Debug.LogWarning("[RoomEditModeController] APIManager.Instance == null — UpdateSpaceThemeUseCase 생성 skip.");
+                return;
+            }
+            try
+            {
+                var apiClient = new NotebookApiClient(apiManager);
+                var repo = new ApiSpaceSettingsRepository(apiClient);
+                themeUseCase = new UpdateSpaceThemeUseCase(repo);
+            }
+            catch (Exception ex)
+            {
+                // 어느 단계(NotebookApiClient ctor / Repository ctor / UseCase ctor)에서 깨졌는지
+                // stack까지 같이 출력해야 디버깅 가능.
+                Debug.LogError($"[RoomEditModeController] UpdateSpaceThemeUseCase 생성 실패 ({ex.GetType().Name}).");
+                Debug.LogException(ex);
             }
         }
 
