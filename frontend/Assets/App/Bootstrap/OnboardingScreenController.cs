@@ -888,6 +888,20 @@ namespace App.Bootstrap
                 return;
             }
 
+#if UNITY_EDITOR
+            // Dev mode: BE may not be reachable (no token, BE not deployed,
+            // or APIManager.Instance not initialized). Skip the round-trip
+            // and force a success — the empty/blank guard above is still
+            // honored, so the existing "닉네임을 입력해주세요." feedback path
+            // for empty input still works.
+            if (DevMainSceneMode.IsActive)
+            {
+                nicknameChecked = true;
+                SetStep1Feedback("사용 가능한 닉네임입니다.", SuccessColor, true);
+                return;
+            }
+#endif
+
             // Capture the nickname value for the request so a late callback
             // arriving after the user has edited the field can be discarded.
             var requestedNickname = nickname;
@@ -986,6 +1000,18 @@ namespace App.Bootstrap
                 SetStep1Feedback("닉네임 중복확인을 해주세요.", ErrorColor, false);
                 return;
             }
+
+#if UNITY_EDITOR
+            // Dev mode: skip PATCH /v1/users/me. The empty-nickname and
+            // !nicknameChecked guards above still apply, so dev still has
+            // to clear the same client-side validation as a real user.
+            if (DevMainSceneMode.IsActive)
+            {
+                SetStep1Feedback(string.Empty, MutedTextColor, true);
+                ShowStep2();
+                return;
+            }
+#endif
 
             // BE @Size(max=255) on introduction; null/blank is allowed. Trim
             // here to drop trailing whitespace from the input field.

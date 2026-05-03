@@ -61,10 +61,15 @@ namespace App.Bootstrap
         private Button googleLoginButton;
         private Button guestEntryButton;
 #if UNITY_EDITOR
-        // Editor-only shortcut to MainScene. The field, the button creation,
-        // listener wiring, and the click handler are all gated so player builds
-        // ship without any dev affordance.
+        // Editor-only shortcuts. Field/build/wire/handler are all gated so
+        // player builds ship without any dev affordance.
+        //   devShortcutButton          — "[DEV] 빠른 입장": MainScene 즉시 진입
+        //   devOnboardingTestButton    — "[DEV] 온보딩 테스트": 로그인 없이 Step1부터
+        // Both flip DevMainSceneMode.IsActive so downstream code (nickname
+        // check, profile save, /v1/spaces/me sync) can short-circuit BE calls
+        // when BE auth is not wired up yet.
         private Button devShortcutButton;
+        private Button devOnboardingTestButton;
 #endif
 
         private bool isInitialized;
@@ -209,6 +214,43 @@ namespace App.Bootstrap
             MainSceneTransitionCover.Show("개발용 모드로 메인 화면 진입");
             SetCanvasVisible(false);
             SceneFlowManager.GoToMain();
+        }
+
+        // Editor-only: enter the onboarding flow from Step1 without a real
+        // login. Auth artefacts are wiped (same reason as the quick-entry
+        // path: leftover guest/access tokens would make the flow think it is
+        // authenticated). DevMainSceneMode.Activate() flips the flag that
+        // OnboardingScreenController checks to short-circuit nickname check
+        // and profile save against BE — see those handlers for the gate.
+        public void OnDevOnboardingTestButtonClicked()
+        {
+            if (!UnityEngine.Application.isPlaying)
+            {
+                return;
+            }
+
+            AuthSession.Clear();
+            SessionState.Clear();
+            if (APIManager.Instance != null)
+            {
+                APIManager.Instance.SetAccessToken(string.Empty);
+            }
+            DevMainSceneMode.Activate();
+
+            var onboardingController = GetComponent<OnboardingScreenController>();
+            if (onboardingController == null)
+            {
+                Debug.LogError("[DEV] OnboardingScreenController is missing on LoginScene prefab — dev onboarding test cannot start.");
+                return;
+            }
+
+            Debug.Log("[DEV MODE] entering onboarding step 1 (test)");
+            SetCanvasVisible(false);
+            onboardingController.InitializeIfNeeded();
+            // Use the regular flow (not StartOnboardingAsGuest) so Step1 is
+            // visible — the whole point of the test button is to exercise
+            // Step1→Step2→Step3 without BE.
+            onboardingController.StartOnboarding();
         }
 #endif
 
@@ -468,6 +510,7 @@ namespace App.Bootstrap
             if (guestEntryButton != null) guestEntryButton.interactable = interactable;
 #if UNITY_EDITOR
             if (devShortcutButton != null) devShortcutButton.interactable = interactable;
+            if (devOnboardingTestButton != null) devOnboardingTestButton.interactable = interactable;
 #endif
         }
 
@@ -694,6 +737,7 @@ namespace App.Bootstrap
             AddButtonListener(guestEntryButton, OnGuestEntryButtonClicked);
 #if UNITY_EDITOR
             AddButtonListener(devShortcutButton, OnDevShortcutButtonClicked);
+            AddButtonListener(devOnboardingTestButton, OnDevOnboardingTestButtonClicked);
 #endif
 
             listenersRegistered = true;
@@ -712,6 +756,7 @@ namespace App.Bootstrap
             RemoveButtonListener(guestEntryButton, OnGuestEntryButtonClicked);
 #if UNITY_EDITOR
             RemoveButtonListener(devShortcutButton, OnDevShortcutButtonClicked);
+            RemoveButtonListener(devOnboardingTestButton, OnDevOnboardingTestButtonClicked);
 #endif
 
             listenersRegistered = false;
@@ -839,12 +884,21 @@ namespace App.Bootstrap
             guestEntryButton = CreateStackButton(pane.transform, "GuestEntryButton", "게스트로 입장하기", SecondaryColor, TextColor, true, BorderColor, SocialButtonHeight);
 #if UNITY_EDITOR
             // Visually distinct (red outline + red label on the card background)
-            // so a dev never confuses this with a real login button. Stripped
+            // so a dev never confuses these with a real login button. Stripped
             // from player builds entirely by the surrounding UNITY_EDITOR.
             devShortcutButton = CreateStackButton(
                 pane.transform,
                 "DevShortcutButton",
-                "[DEV] 메인씬 바로가기",
+                "[DEV] 빠른 입장",
+                CardColor,
+                Color.red,
+                true,
+                Color.red,
+                SocialButtonHeight);
+            devOnboardingTestButton = CreateStackButton(
+                pane.transform,
+                "DevOnboardingTestButton",
+                "[DEV] 온보딩 테스트",
                 CardColor,
                 Color.red,
                 true,

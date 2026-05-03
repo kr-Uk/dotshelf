@@ -514,12 +514,31 @@ namespace BookshelfPorting.Runtime
         private MainCameraViewMode currentMainViewMode = MainCameraViewMode.MainView;
         public MainCameraViewMode CurrentMainViewMode => currentMainViewMode;
 
-        // Set by the onboarding flow during Step 3. Used by SettingsScreenController to
-        // hide the floating mode-change / settings buttons only while onboarding Step 3
-        // is in progress; cleared as soon as onboarding completes. Bookshelf focus
-        // features (back button, left/right nav, scroll zoom, interactions) remain
-        // fully available during Step 3 — this flag only gates main-scene chrome.
-        public bool IsOnboardingStep3Active { get; set; }
+        // Set by the onboarding flow during Step 3. Originally only gated the
+        // floating mode-change / settings chrome (SettingsScreenController),
+        // but the onboarding "first book" experience now also hides the
+        // bookshelf-focus chrome (back button, top index panel, left status
+        // panel, right action buttons, bottom nav, hamburger menu, edit-mode
+        // button, page-flip arrows) and auto-opens the book-add panel. The
+        // setter wires those side-effects through OnOnboardingStep3StateChanged
+        // so any caller flipping this flag does not need to know about them.
+        // Cleared back to false after onboarding completes — the regular
+        // per-frame layout sync resumes naturally.
+        public bool IsOnboardingStep3Active
+        {
+            get => isOnboardingStep3Active;
+            set
+            {
+                if (isOnboardingStep3Active == value)
+                {
+                    return;
+                }
+                isOnboardingStep3Active = value;
+                OnOnboardingStep3StateChanged(value);
+            }
+        }
+        private bool isOnboardingStep3Active;
+        private Coroutine onboardingAutoOpenBookAddRoutine;
 
         // Set by RoomEditModeController while the player is in room-decoration edit
         // mode. While true, the main scene's input handlers (click-to-focus on
@@ -693,6 +712,105 @@ namespace BookshelfPorting.Runtime
             {
                 FocusBookshelf();
                 return;
+            }
+        }
+
+        // Re-applies the onboarding Step3 UI override after Update has finished
+        // and the per-frame layout sync may have re-shown chrome that we want
+        // hidden. Runs unconditionally cheap when the flag is off (single bool
+        // check) so there is no need to gate registration.
+        private void LateUpdate()
+        {
+            if (isOnboardingStep3Active)
+            {
+                EnforceOnboardingStep3UiHidden();
+            }
+        }
+
+        private void OnOnboardingStep3StateChanged(bool active)
+        {
+            if (active)
+            {
+                EnforceOnboardingStep3UiHidden();
+
+                // Auto-open the book-add panel once the focus state allows it.
+                // CanOpenBookAddPanel may be false at this exact frame (Step3
+                // can be flipped before FocusBookshelf has finished), so retry
+                // with a short timeout instead of giving up immediately.
+                if (onboardingAutoOpenBookAddRoutine != null)
+                {
+                    StopCoroutine(onboardingAutoOpenBookAddRoutine);
+                }
+                onboardingAutoOpenBookAddRoutine = StartCoroutine(AutoOpenBookAddPanelWhenReadyAsync());
+            }
+            else
+            {
+                if (onboardingAutoOpenBookAddRoutine != null)
+                {
+                    StopCoroutine(onboardingAutoOpenBookAddRoutine);
+                    onboardingAutoOpenBookAddRoutine = null;
+                }
+                // No explicit re-show: chrome is restored by the existing
+                // SyncBookshelfBottomNav / focus-mode visibility code paths
+                // that run when onboarding ends and FocusMainView() is called.
+            }
+        }
+
+        private IEnumerator AutoOpenBookAddPanelWhenReadyAsync()
+        {
+            const float TimeoutSeconds = 6f;
+            var deadline = Time.unscaledTime + TimeoutSeconds;
+            while (Time.unscaledTime < deadline)
+            {
+                if (!isOnboardingStep3Active)
+                {
+                    yield break;
+                }
+                if (CanOpenBookAddPanel())
+                {
+                    OpenBookAddPanel();
+                    onboardingAutoOpenBookAddRoutine = null;
+                    yield break;
+                }
+                yield return null;
+            }
+            // Timed out: the user can still finish the onboarding via the
+            // step3 panel "완료" button (it lives on the OnboardingScreenController
+            // canvas, not on the chrome we just hid). Leaving the routine null
+            // signals "not retrying" — re-flipping the flag will create a new
+            // routine.
+            onboardingAutoOpenBookAddRoutine = null;
+        }
+
+        // Hides the focus-mode chrome that the onboarding "first book"
+        // experience must not expose. UI elements may not be built yet (Awake
+        // / Start order) so each branch null-checks; activeSelf check skips
+        // SetActive churn when the GameObject is already hidden.
+        private void EnforceOnboardingStep3UiHidden()
+        {
+            HideOnboardingChromeIfActive(focusBackButton != null ? focusBackButton.gameObject : null);
+            HideOnboardingChromeIfActive(bookshelfStatusPanel);
+            HideOnboardingChromeIfActive(bookshelfBottomNavPanel);
+            HideOnboardingChromeIfActive(bookshelfIndexPanel);
+            HideOnboardingChromeIfActive(hamburgerButton != null ? hamburgerButton.gameObject : null);
+            HideOnboardingChromeIfActive(hamburgerMenuPanel);
+            HideOnboardingChromeIfActive(bookshelfEditModeButton != null ? bookshelfEditModeButton.gameObject : null);
+            HideOnboardingChromeIfActive(openBookAddButton != null ? openBookAddButton.gameObject : null);
+            HideOnboardingChromeIfActive(openBookSearchButton != null ? openBookSearchButton.gameObject : null);
+            HideOnboardingChromeIfActive(openBookshelfManageButton != null ? openBookshelfManageButton.gameObject : null);
+            HideOnboardingChromeIfActive(openBookshelfDesignButton != null ? openBookshelfDesignButton.gameObject : null);
+            HideOnboardingChromeIfActive(addBookshelfButton != null ? addBookshelfButton.gameObject : null);
+            HideOnboardingChromeIfActive(openBookshelfNameEditButton != null ? openBookshelfNameEditButton.gameObject : null);
+            HideOnboardingChromeIfActive(deleteBookshelfButton != null ? deleteBookshelfButton.gameObject : null);
+            HideOnboardingChromeIfActive(overlayPreviousFocusButton != null ? overlayPreviousFocusButton.gameObject : null);
+            HideOnboardingChromeIfActive(overlayNextFocusButton != null ? overlayNextFocusButton.gameObject : null);
+        }
+
+        private static void HideOnboardingChromeIfActive(GameObject go)
+        {
+            if (go != null && go.activeSelf)
+            {
+                go.SetActive(false);
             }
         }
 
