@@ -301,7 +301,8 @@ namespace App.Bootstrap
             string code,
             string redirectUri,
             string state,
-            string nonce = null)
+            string nonce = null,
+            string codeVerifier = null)
         {
             if (isLoginInFlight)
             {
@@ -321,7 +322,7 @@ namespace App.Bootstrap
 
             try
             {
-                var result = await authService.SocialLoginByCodeAsync(provider, code, redirectUri, state, nonce);
+                var result = await authService.SocialLoginByCodeAsync(provider, code, redirectUri, state, nonce, codeVerifier);
                 ApplyLoginResult(result, ProviderDisplayName(provider));
             }
             finally
@@ -604,7 +605,8 @@ namespace App.Bootstrap
                 oauthResult.Code,
                 oauthResult.RedirectUri,
                 oauthResult.State,
-                oauthResult.Nonce);
+                oauthResult.Nonce,
+                oauthResult.CodeVerifier);
         }
 #endif
 

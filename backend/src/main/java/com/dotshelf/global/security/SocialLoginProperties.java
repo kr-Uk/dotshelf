@@ -12,7 +12,7 @@ public record SocialLoginProperties(
 ) {
 
     public SocialLoginProperties {
-        google = google == null ? new Google(null, null, null, null, null, null) : google;
+        google = google == null ? new Google(null, null, null, null, null, null, null) : google;
         kakao = kakao == null ? new Kakao(null, null, null, null, null) : kakao;
         apple = apple == null ? new Apple(null, null, null) : apple;
     }
@@ -23,16 +23,26 @@ public record SocialLoginProperties(
             List<String> issuers,
             String jwksUri,
             String clientSecret,
-            String tokenUri
+            String tokenUri,
+            // Desktop OAuth용 client_id. PKCE 흐름에서 사용 (client_secret 불필요).
+            // FE가 authorize 시 사용한 client_id와 정확히 일치해야 Google이 code 교환을 허용.
+            // 자동으로 clientIds(audience whitelist)에도 포함됨 — id_token aud 검증 통과.
+            String desktopClientId
     ) {
 
         public Google {
             if (serverClientId != null && serverClientId.isBlank()) {
                 serverClientId = null;
             }
+            if (desktopClientId != null && desktopClientId.isBlank()) {
+                desktopClientId = null;
+            }
             clientIds = normalize(clientIds);
             if (serverClientId != null && !clientIds.contains(serverClientId)) {
                 clientIds = append(clientIds, serverClientId);
+            }
+            if (desktopClientId != null && !clientIds.contains(desktopClientId)) {
+                clientIds = append(clientIds, desktopClientId);
             }
             issuers = normalize(issuers);
             if (issuers.isEmpty()) {

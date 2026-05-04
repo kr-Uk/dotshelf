@@ -76,17 +76,38 @@ Desktop은 `WindowsOAuthBrowserFlow.OAuthBrowserDefaults`에 Desktop Client ID�
 Google은 RFC 8252대로 loopback IP의 모든 port를 자동 허용하므로 Kakao처럼 redirect URI를
 콘솔에 일일이 등록할 필요 없음.
 
+Desktop은 **PKCE (RFC 7636)** 흐름 사용 — `client_secret` 없이 `code_verifier` + `code_challenge`
+로 Google이 검증. Desktop client는 본질적으로 public client이므로 client_secret 의존 제거가
+정공법 (native app OAuth standard).
+
 ### Google BE Request
+
+Mobile (id_token 직접 전송):
 
 ```json
 {
   "provider": "GOOGLE",
-  "token": "google id_token 또는 server auth code"
+  "tokenType": "ID_TOKEN",
+  "token": "google id_token"
 }
 ```
 
-Desktop은 `tokenType=AUTHORIZATION_CODE`와 함께 `code` + `redirectUri`를 보내고, BE가 Google
-token endpoint에 server-side 교환 후 id_token을 검증한다.
+Desktop (PKCE authorization-code):
+
+```json
+{
+  "provider": "GOOGLE",
+  "tokenType": "AUTHORIZATION_CODE",
+  "token": "google authorization code (= code 값과 동일)",
+  "code": "google authorization code",
+  "redirectUri": "http://127.0.0.1:{선택된_port}/dotshelf/oauth/callback/",
+  "codeVerifier": "PKCE code_verifier (RFC 7636)"
+}
+```
+
+BE는 `codeVerifier` 있으면 PKCE 흐름 (`client_secret` 없이 `code_verifier`로 교환), 없으면
+legacy server pair (`GOOGLE_CLIENT_SECRET`) fallback. Desktop client_id는 BE의
+`GOOGLE_DESKTOP_CLIENT_ID` env로 등록 필요 — FE authorize 시 사용한 client_id와 정확 일치.
 
 ## Kakao
 
@@ -185,23 +206,26 @@ Desktop은 Kakao REST OAuth로 받은 authorization code를 BE로 보낸다. 브
 
 Desktop 구현 순서 (`WindowsOAuthBrowserFlow.ExecuteAsync`):
 
-1. 로그인 시작 시 랜덤 `state`를 생성해서 앱 메모리에 저장.
-2. `PreferredCallbackPorts` (18080~18084)를 차례로 시도해 비어있는 첫 port에 HttpListener 시작.
-3. Kakao authorize URL에 `redirect_uri=http://127.0.0.1:{선택된_port}/dotshelf/oauth/callback/`와 `state`를 함께 넣음.
-4. Unity 데스크탑 앱이 해당 port local callback으로 `code`와 `state`를 받음.
-5. 받은 `state`가 저장한 값과 같을 때만 아래 BE 요청 (`SubmitSocialLoginCode`).
+1. 로그인 시작 시 랜덤 `state` + PKCE `code_verifier` 생성 (RFC 7636).
+2. `code_challenge = BASE64URL(SHA256(code_verifier))` 계산.
+3. `PreferredCallbackPorts` (18080~18084)를 차례로 시도해 비어있는 첫 port에 HttpListener 시작.
+4. Kakao authorize URL에 `redirect_uri`, `state`, `code_challenge`, `code_challenge_method=S256` 포함.
+5. Unity 데스크탑 앱이 해당 port local callback으로 `code`와 `state`를 받음.
+6. 받은 `state`가 저장한 값과 같을 때만 아래 BE 요청 (`SubmitSocialLoginCode`) — `codeVerifier` 함께 전달.
 
 ```json
 {
   "provider": "KAKAO",
   "tokenType": "AUTHORIZATION_CODE",
   "token": "Kakao authorization code",
-  "redirectUri": "http://127.0.0.1:{선택된_port}/dotshelf/oauth/callback/"
+  "redirectUri": "http://127.0.0.1:{선택된_port}/dotshelf/oauth/callback/",
+  "codeVerifier": "PKCE code_verifier"
 }
 ```
 
-`redirectUri`는 BE의 token-exchange 호출에 그대로 전달되어 카카오 토큰 엔드포인트가 등록값과
-일치하는지 검증한다 (FE 클라이언트가 보낸 값을 BE가 수정 없이 forward).
+BE는 `codeVerifier`를 Kakao token 교환 호출에 그대로 forward해서 Kakao가 SHA256(code_verifier)
+== code_challenge 검증 (defense in depth — Kakao는 PKCE + client_secret 동시 사용 가능).
+`redirectUri`는 카카오 콘솔 등록값과 정확 일치해야 함.
 
 ## Apple
 
@@ -258,12 +282,18 @@ Apple은 이메일과 이름을 최초 동의 시점에만 내려줄 수 있다.
 | Env Var | 용도 | 출처 |
 | --- | --- | --- |
 | `GOOGLE_SERVER_CLIENT_ID` | Google id_token `aud` 검증용 (Web/Server clientId) | Google Cloud Console |
-| `GOOGLE_CLIENT_IDS` | Google id_token 다중 audience 검증 (Desktop/Android/iOS clientId 콤마구분 추가) | Google Cloud Console |
-| `GOOGLE_CLIENT_SECRET` | Desktop server-side code-for-token 교환에 필요 | Google Cloud Console (Desktop Client) |
+| `GOOGLE_CLIENT_IDS` | Google id_token 다중 audience 검증. Desktop/Android/iOS client_id 자동 포함됨 | Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | Mobile server auth code 흐름 fallback용 (PKCE 흐름은 불필요) | Google Cloud Console (Web/Server Client) |
+| **`GOOGLE_DESKTOP_CLIENT_ID`** | **Desktop PKCE 흐름의 client_id (FE authorize 시 사용한 값과 정확 일치 필수)** | **Google Cloud Console (Desktop Client)** |
 | `KAKAO_REST_API_KEY` | Desktop authorization-code 교환 + access_token 검증 | Kakao Developers (REST API 키, **Native App Key 아님**) |
-| `KAKAO_CLIENT_SECRET` | Kakao 보안 강화 (선택, 콘솔에서 발급한 경우만) | Kakao Developers |
+| `KAKAO_CLIENT_SECRET` | Kakao 보안 강화 (선택, 콘솔에서 발급한 경우만). PKCE와 동시 사용 가능 (defense in depth) | Kakao Developers |
 | `KAKAO_REDIRECT_URI` | Desktop code 교환 호출 시 default redirect URI fallback (FE가 매번 보내므로 사실상 미사용) | 위 등록 URI 중 하나 |
 | `APPLE_CLIENT_IDS` | Apple identityToken `aud` 검증 (Bundle ID + Services ID 콤마구분) | Apple Developer |
+
+PKCE 흐름 (Desktop):
+- `client_secret` 의존 제거 — Desktop client는 본질적으로 public이므로 PKCE가 정공법 (RFC 8252)
+- BE는 `codeVerifier` 있으면 PKCE 모드, 없으면 server pair fallback (mobile 흐름 호환)
+- 머지 후 dev/prod `.env`에 `GOOGLE_DESKTOP_CLIENT_ID` 추가 필요
 
 확인 방법 (서버 접근 가능 시):
 ```bash

@@ -54,7 +54,8 @@ public class AuthService {
                 request.tokenType(),
                 request.token(),
                 request.redirectUri(),
-                request.nonce()
+                request.nonce(),
+                request.codeVerifier()
         );
         return loginWithSocialUser(socialUser);
     }

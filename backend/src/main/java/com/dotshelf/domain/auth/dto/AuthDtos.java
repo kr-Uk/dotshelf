@@ -24,7 +24,9 @@ public final class AuthDtos {
             @Schema(description = "authorization code 교환 시 provider에 전달할 redirect URI", example = "http://127.0.0.1:12345/dotshelf/oauth/callback/")
             String redirectUri,
             @Schema(description = "Apple identityToken nonce 검증값. provider=APPLE일 때 Apple 요청에 넣은 nonce와 같은 값", example = "base64url-random-nonce")
-            String nonce
+            String nonce,
+            @Schema(description = "PKCE code_verifier (RFC 7636). Desktop OAuth 흐름에서 native client가 authorize 시점에 생성한 random string. 있으면 BE는 token 교환 호출에 그대로 forward해서 OAuth 제공자가 SHA256(code_verifier) == code_challenge 검증함. null이면 legacy server pair(client_secret) fallback.", example = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
+            String codeVerifier
     ) {
     }
 

@@ -82,6 +82,7 @@ class KakaoTokenVerifierTest {
                 "authorization-code",
                 SocialTokenType.AUTHORIZATION_CODE,
                 REQUEST_REDIRECT_URI,
+                null,
                 null
         );
 

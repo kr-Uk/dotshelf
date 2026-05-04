@@ -60,7 +60,7 @@ class GoogleTokenVerifierTest {
     void verify_withAuthorizationCode_sendsRedirectUri() {
         GoogleTokenVerifier verifier = verifier();
 
-        assertThatThrownBy(() -> verifier.verify("authorization-code", SocialTokenType.AUTHORIZATION_CODE, REDIRECT_URI, null))
+        assertThatThrownBy(() -> verifier.verify("authorization-code", SocialTokenType.AUTHORIZATION_CODE, REDIRECT_URI, null, null))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_TOKEN);
@@ -78,7 +78,7 @@ class GoogleTokenVerifierTest {
     void verify_withAuthorizationCodeAndMissingRedirectUri_throwsInvalidInput() {
         GoogleTokenVerifier verifier = verifier();
 
-        assertThatThrownBy(() -> verifier.verify("authorization-code", SocialTokenType.AUTHORIZATION_CODE, " ", null))
+        assertThatThrownBy(() -> verifier.verify("authorization-code", SocialTokenType.AUTHORIZATION_CODE, " ", null, null))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
@@ -97,7 +97,8 @@ class GoogleTokenVerifierTest {
                         List.of("https://accounts.google.com", "accounts.google.com"),
                         "http://127.0.0.1:1/keys",
                         CLIENT_SECRET,
-                        tokenUri
+                        tokenUri,
+                        null  // desktopClientId — server pair 흐름 테스트
                 ),
                 null,
                 null

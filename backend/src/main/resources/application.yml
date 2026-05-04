@@ -56,6 +56,9 @@ social:
     server-client-id: ${GOOGLE_SERVER_CLIENT_ID:${GOOGLE_CLIENT_ID:}}
     client-ids: ${GOOGLE_CLIENT_IDS:${GOOGLE_CLIENT_ID:}}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
+    # Desktop OAuth용 client_id (PKCE 흐름). FE가 authorize 시 사용한 값과 정확히 일치해야 함.
+    # 미설정 시 PKCE 흐름은 server-client-id로 시도 (Google이 거절할 수 있음).
+    desktop-client-id: ${GOOGLE_DESKTOP_CLIENT_ID:}
     issuers:
       - https://accounts.google.com
       - accounts.google.com

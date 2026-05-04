@@ -46,8 +46,8 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
     }
 
     @Override
-    public SocialUserInfo verify(String token, SocialTokenType tokenType, String redirectUri, String nonce) {
-        String idToken = shouldExchangeCode(token, tokenType) ? exchangeCodeForIdToken(token, redirectUri) : token;
+    public SocialUserInfo verify(String token, SocialTokenType tokenType, String redirectUri, String nonce, String codeVerifier) {
+        String idToken = shouldExchangeCode(token, tokenType) ? exchangeCodeForIdToken(token, redirectUri, codeVerifier) : token;
         Jwt jwt = decode(idToken);
         return new SocialUserInfo(
                 SocialProvider.GOOGLE,
@@ -73,18 +73,39 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
         };
     }
 
-    private String exchangeCodeForIdToken(String code, String redirectUri) {
-        String clientId = serverClientId();
-        String clientSecret = properties.google().clientSecret();
-        if (clientSecret == null || clientSecret.isBlank()) {
-            throw new CustomException(ErrorCode.INVALID_TOKEN, "GOOGLE_CLIENT_SECRET 설정이 필요합니다.");
+    private String exchangeCodeForIdToken(String code, String redirectUri, String codeVerifier) {
+        // PKCE 흐름 (RFC 7636): code_verifier가 있으면 client_secret 없이 PKCE-only 교환.
+        // Desktop/Native client는 client_secret이 본질적으로 public이라 PKCE가 정공법.
+        // code_verifier 없으면 legacy server pair (client_secret) 흐름으로 fallback —
+        // mobile/web에서 server auth code 흐름 (server-side OAuth)는 client_secret 사용.
+        boolean usePkce = codeVerifier != null && !codeVerifier.isBlank();
+
+        String clientId;
+        String clientSecret;
+        if (usePkce) {
+            // PKCE 흐름은 FE authorize 시 사용한 client_id와 일치해야 함. Desktop client_id 우선,
+            // 미설정 시 server-client-id로 fallback (Desktop authorize였으면 Google이 거절).
+            String desktopId = properties.google().desktopClientId();
+            clientId = (desktopId != null && !desktopId.isBlank()) ? desktopId : serverClientId();
+            clientSecret = null;
+        } else {
+            clientId = serverClientId();
+            clientSecret = properties.google().clientSecret();
+            if (clientSecret == null || clientSecret.isBlank()) {
+                throw new CustomException(ErrorCode.INVALID_TOKEN, "GOOGLE_CLIENT_SECRET 설정이 필요합니다 (PKCE 흐름은 codeVerifier 전달 필요).");
+            }
         }
 
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         body.add("grant_type", "authorization_code");
         body.add("code", code);
         body.add("client_id", clientId);
-        body.add("client_secret", clientSecret);
+        if (clientSecret != null) {
+            body.add("client_secret", clientSecret);
+        }
+        if (usePkce) {
+            body.add("code_verifier", codeVerifier);
+        }
         body.add("redirect_uri", requiredRedirectUri(redirectUri));
 
         try {
