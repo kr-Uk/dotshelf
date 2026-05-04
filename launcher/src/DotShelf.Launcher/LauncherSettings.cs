@@ -43,9 +43,36 @@ internal sealed class LauncherSettings
             settings.InstallRoot = Path.GetFullPath(settings.InstallRoot);
             return settings;
         }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            // bare catch 는 OOM/StackOverflow 같은 시스템 예외까지 삼키므로 예상 가능한
+            // 케이스만 명시. 손상된 settings 는 .broken-{ts}.json 으로 백업해서 다음
+            // Save 가 깔끔히 새 파일을 만들도록 한다 (조용히 덮어쓰면 BestGameScore 등
+            // 사용자 데이터가 흔적 없이 사라짐).
+            TryBackupCorruptedFile(SettingsFile);
+            return CreateDefault();
+        }
+    }
+
+    private static void TryBackupCorruptedFile(FileInfo file)
+    {
+        if (!file.Exists)
+        {
+            return;
+        }
+
+        try
+        {
+            var timestamp = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss");
+            var stem = Path.GetFileNameWithoutExtension(file.Name);
+            var directory = file.DirectoryName ?? "";
+            var backupPath = Path.Combine(directory, $"{stem}.broken-{timestamp}.json");
+            file.MoveTo(backupPath);
+        }
         catch
         {
-            return CreateDefault();
+            // 백업 자체가 실패해도 default 로 진행. corrupted 원본은 다음 Load 에서
+            // 다시 catch 되어 결과적으로 같은 동작.
         }
     }
 

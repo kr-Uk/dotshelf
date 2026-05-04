@@ -139,16 +139,40 @@ public sealed class PackageInstaller
         var state = await GetInstallStateAsync(cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Dotshelf is not installed.");
 
-        var entryPointPath = Path.Combine(state.InstallPath, state.EntryPoint);
+        if (string.IsNullOrWhiteSpace(state.InstallPath) || string.IsNullOrWhiteSpace(state.EntryPoint))
+        {
+            throw new InvalidOperationException("Install state is incomplete.");
+        }
+
+        var installPath = Path.GetFullPath(state.InstallPath);
+        var versionsPath = Path.GetFullPath(paths.VersionsDirectory.FullName);
+        if (!installPath.StartsWith(versionsPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Installed path is outside the launcher versions directory.");
+        }
+
+        var entryPointPath = Path.GetFullPath(Path.Combine(installPath, state.EntryPoint));
+        if (!entryPointPath.StartsWith(installPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Entry point is outside the install directory.");
+        }
+
+        if (!entryPointPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Entry point must be an .exe.");
+        }
+
         if (!File.Exists(entryPointPath))
         {
             throw new FileNotFoundException("Installed entrypoint was not found.", entryPointPath);
         }
 
+        // UseShellExecute=false: Windows ShellExecute (확장자 verb) 우회. 정확히 .exe 만
+        // CreateProcess 로 직접 실행 — .bat/.lnk/.html 같은 임의 verb 실행 차단.
         var startInfo = new ProcessStartInfo(entryPointPath)
         {
-            WorkingDirectory = state.InstallPath,
-            UseShellExecute = true
+            WorkingDirectory = installPath,
+            UseShellExecute = false
         };
 
         return Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start Dotshelf.");

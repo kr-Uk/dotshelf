@@ -919,14 +919,19 @@ public partial class MainWindow : Window
 
     private void BannerClickArea_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (BannerClickArea.Tag is not string url || string.IsNullOrWhiteSpace(url))
+        // IsBannerDisplayable 가 fetch 시점에 https 검증하지만, 클릭 시점에 한 번 더
+        // 확인 (defense in depth — RenderBanner 가 가드 우회해서 호출되는 회귀 방지).
+        if (BannerClickArea.Tag is not string url ||
+            string.IsNullOrWhiteSpace(url) ||
+            !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps)
         {
             return;
         }
 
         try
         {
-            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+            Process.Start(new ProcessStartInfo { FileName = uri.AbsoluteUri, UseShellExecute = true });
         }
         catch (Exception exception)
         {
