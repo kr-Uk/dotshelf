@@ -128,8 +128,14 @@ namespace App.Bootstrap
         private bool isProfileSaveInFlight;
         private bool isVisibilityUpdateInFlight;
         private bool isWithdrawalInFlight;
+        private bool isNotificationUpdateInFlight;
+        private bool isNotificationLoadInFlight;
         private UserProfileResponseDto cachedProfile;
         private bool suppressVisibilityRequest;
+        // Suppresses the per-toggle PATCH while LoadCurrentNotificationSettings
+        // is applying the server response — otherwise SetIsOnWithoutNotify
+        // would fire onValueChanged → OnNotificationToggleChanged → echo PATCH.
+        private bool suppressNotificationToggleListener;
 
         private GameObject paymentMethodsTabContent;
         private GameObject purchaseHistoryTabContent;
@@ -233,6 +239,7 @@ namespace App.Bootstrap
             // server-side nickname/introduction even if the user changed it
             // from a different device or session.
             LoadCurrentProfile();
+            LoadCurrentNotificationSettings();
         }
 
         public void CloseSettings()
@@ -1496,19 +1503,45 @@ namespace App.Bootstrap
             }
 
             isProfileLoadInFlight = true;
-            loadClient.GetMe(
-                onSuccess: profile =>
-                {
-                    isProfileLoadInFlight = false;
-                    cachedProfile = profile;
-                    ApplyProfileToUi(profile);
-                },
-                onError: error =>
-                {
-                    isProfileLoadInFlight = false;
-                    ShowNoticeToast("프로필 정보를 불러오지 못했습니다.");
-                    Debug.LogWarning($"[Settings] GetMe failed: code={error?.Code} message={error?.Message}");
-                });
+            // hasRetried lifts a single auto-retry through the closure: if
+            // the first GetMe gets a 401/403 and SessionRefresh succeeds,
+            // we re-issue the request once. Any further failure (real auth
+            // failure, refresh fail, second 401) takes the normal error
+            // path so the user does not loop indefinitely.
+            var hasRetried = false;
+            void DoLoadCurrentProfile(NotebookApiClient apiClient)
+            {
+                apiClient.GetMe(
+                    onSuccess: profile =>
+                    {
+                        isProfileLoadInFlight = false;
+                        cachedProfile = profile;
+                        ApplyProfileToUi(profile);
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoLoadCurrentProfile(apiClient),
+                                onAbort: () =>
+                                {
+                                    isProfileLoadInFlight = false;
+                                    // Refresh impossible (no refresh token /
+                                    // refresh failed). Surface the same
+                                    // load-failure UX; FinishAccountClear...
+                                    // is reserved for explicit logout/withdraw.
+                                    ShowNoticeToast("세션이 만료되었습니다. 다시 로그인해주세요.");
+                                });
+                            return;
+                        }
+                        isProfileLoadInFlight = false;
+                        ShowNoticeToast("프로필 정보를 불러오지 못했습니다.");
+                        Debug.LogWarning($"[Settings] GetMe failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoLoadCurrentProfile(loadClient);
         }
 
         private void ApplyProfileToUi(UserProfileResponseDto profile)
@@ -1536,6 +1569,233 @@ namespace App.Bootstrap
         // SpaceVisitorOverlayController and OnboardingScreenController so a
         // missing AppRoot (e.g. settings opened during a scene transition,
         // or a hot-reload race) cannot throw NRE out of the constructor.
+        // ---- Notification settings wiring ----
+        // Toggle index → BE field name (NotificationSettingRequestDto property).
+        // Index follows BuildNotificationView's CreateNotificationCheckboxRow
+        // call order:
+        //   0: 방명록 추가          → notifyNewGuestbook
+        //   1: 방명록 답글          → notifyGuestbookReply
+        //   2: 책 추가              → notifyBookAddedByOthers
+        //   3: 독서 기록 좋아요     → notifyReadingRecordReaction
+        //   4: 독서 기록 댓글       → notifyReadingRecordComment
+        // BE field notifyNewFollower exists (and gates would work) but there
+        // is no UserFollowed event publisher on the BE side yet, so adding a
+        // UI toggle here would be a setting that the server never acts on —
+        // intentionally out of scope for this PR.
+        private void OnNotificationToggleChanged(int index, bool value)
+        {
+            if (suppressNotificationToggleListener)
+            {
+                return;
+            }
+
+            if (isNotificationUpdateInFlight)
+            {
+                // Another PATCH is in flight — revert this toggle visually
+                // so the user sees that the click was rejected (we cannot
+                // reliably enqueue without complicating the rollback path).
+                RevertNotificationToggle(index, !value);
+                ShowNoticeToast("이전 변경 처리가 끝난 후 다시 시도해주세요.");
+                return;
+            }
+
+            if (SessionState.IsGuest)
+            {
+                RevertNotificationToggle(index, !value);
+                ShowNoticeToast("게스트 상태에서는 알림 설정을 변경할 수 없습니다.");
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                // Dev mode: optimistic only, no BE round-trip.
+                return;
+            }
+#endif
+
+            var request = BuildNotificationPartialRequest(index, value);
+            if (request == null)
+            {
+                // Defensive: BuildNotificationPartialRequest only returns null
+                // for indices outside the known range (currently 0..4). Keep
+                // the local UI change so the user is not stranded, but skip
+                // the network call — there is no field to PATCH.
+                Debug.LogWarning(
+                    $"[Settings] Unknown notification toggle index={index}; skipping PATCH.");
+                return;
+            }
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                RevertNotificationToggle(index, !value);
+                ShowNoticeToast("알림 설정 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                return;
+            }
+
+            isNotificationUpdateInFlight = true;
+            // Same single-retry-on-401 pattern as LoadCurrentProfile: if the
+            // PATCH races a session expiry, refresh once then re-issue. Any
+            // further failure takes the normal toast+revert path.
+            var hasRetried = false;
+            void DoUpdateNotificationSetting(NotebookApiClient apiClient, NotificationSettingRequestDto requestDto)
+            {
+                apiClient.UpdateNotificationSettings(
+                    requestDto,
+                    onSuccess: _ =>
+                    {
+                        isNotificationUpdateInFlight = false;
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoUpdateNotificationSetting(apiClient, requestDto),
+                                onAbort: () =>
+                                {
+                                    isNotificationUpdateInFlight = false;
+                                    RevertNotificationToggle(index, !value);
+                                    ShowNoticeToast("세션이 만료되었습니다. 다시 로그인해주세요.");
+                                });
+                            return;
+                        }
+                        isNotificationUpdateInFlight = false;
+                        RevertNotificationToggle(index, !value);
+                        ShowNoticeToast("알림 설정 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                        Debug.LogWarning(
+                            $"[Settings] UpdateMyNotificationSettings failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoUpdateNotificationSetting(client, request);
+        }
+
+        private static NotificationSettingRequestDto BuildNotificationPartialRequest(int index, bool value)
+        {
+            var request = new NotificationSettingRequestDto();
+            switch (index)
+            {
+                case 0: request.NotifyNewGuestbook = value; return request;
+                case 1: request.NotifyGuestbookReply = value; return request;
+                case 2: request.NotifyBookAddedByOthers = value; return request;
+                case 3: request.NotifyReadingRecordReaction = value; return request;
+                case 4: request.NotifyReadingRecordComment = value; return request;
+                default: return null;
+            }
+        }
+
+        private void RevertNotificationToggle(int index, bool toValue)
+        {
+            if (index < 0 || index >= dependentNotificationToggles.Count)
+            {
+                return;
+            }
+            var toggle = dependentNotificationToggles[index];
+            if (toggle == null)
+            {
+                return;
+            }
+            // SetIsOnWithoutNotify avoids retriggering OnNotificationToggleChanged
+            // which would otherwise loop on the rollback path.
+            toggle.SetIsOnWithoutNotify(toValue);
+        }
+
+        private void LoadCurrentNotificationSettings()
+        {
+            if (isNotificationLoadInFlight)
+            {
+                return;
+            }
+            if (SessionState.IsGuest)
+            {
+                return;
+            }
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                return;
+            }
+#endif
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                return;
+            }
+
+            isNotificationLoadInFlight = true;
+            // Same single-retry-on-401 pattern as LoadCurrentProfile. Background
+            // load — onAbort stays silent because LoadCurrentProfile fires on
+            // the same screen-open trigger and already surfaces the
+            // session-expired toast; duplicating here would stack toasts.
+            var hasRetried = false;
+            void DoLoadCurrentNotificationSettings(NotebookApiClient apiClient)
+            {
+                apiClient.GetNotificationSettings(
+                    onSuccess: response =>
+                    {
+                        isNotificationLoadInFlight = false;
+                        ApplyNotificationSettingsToUi(response);
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoLoadCurrentNotificationSettings(apiClient),
+                                onAbort: () =>
+                                {
+                                    isNotificationLoadInFlight = false;
+                                });
+                            return;
+                        }
+                        isNotificationLoadInFlight = false;
+                        Debug.LogWarning(
+                            $"[Settings] GetMyNotificationSettings failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoLoadCurrentNotificationSettings(client);
+        }
+
+        private void ApplyNotificationSettingsToUi(NotificationSettingResponseDto response)
+        {
+            if (response == null)
+            {
+                return;
+            }
+            // Suppress listener so SetIsOnWithoutNotify doesn't fan out into
+            // PATCH-back loops while we apply the server snapshot.
+            suppressNotificationToggleListener = true;
+            try
+            {
+                ApplyToggleAtIndex(0, response.NotifyNewGuestbook);
+                ApplyToggleAtIndex(1, response.NotifyGuestbookReply);
+                ApplyToggleAtIndex(2, response.NotifyBookAddedByOthers);
+                ApplyToggleAtIndex(3, response.NotifyReadingRecordReaction);
+                ApplyToggleAtIndex(4, response.NotifyReadingRecordComment);
+            }
+            finally
+            {
+                suppressNotificationToggleListener = false;
+            }
+        }
+
+        private void ApplyToggleAtIndex(int index, bool value)
+        {
+            if (index < 0 || index >= dependentNotificationToggles.Count)
+            {
+                return;
+            }
+            var toggle = dependentNotificationToggles[index];
+            if (toggle != null)
+            {
+                toggle.SetIsOnWithoutNotify(value);
+            }
+        }
+
         private NotebookApiClient EnsureSettingsApiClient()
         {
             if (APIManager.Instance == null)
@@ -1836,7 +2096,11 @@ namespace App.Bootstrap
             toggleRect.sizeDelta = new Vector2(64f, 50f);
             toggleRect.anchoredPosition = new Vector2(-20f, 0f);
             toggle.isOn = initialOn;
+            // Capture the index by-value so the closure points at this row's
+            // slot in dependentNotificationToggles regardless of later adds.
+            var capturedIndex = dependentNotificationToggles.Count;
             dependentNotificationToggles.Add(toggle);
+            toggle.onValueChanged.AddListener(value => OnNotificationToggleChanged(capturedIndex, value));
         }
 
         private void RefreshNotificationDependentEnabled()

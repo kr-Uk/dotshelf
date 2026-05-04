@@ -3,11 +3,13 @@ package com.dotshelf.domain.readingrecord.service;
 import java.util.Comparator;
 import java.util.List;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dotshelf.domain.book.entity.UserBook;
 import com.dotshelf.domain.book.service.BookService;
+import com.dotshelf.domain.notification.event.NotificationEvents.ReadingRecordLiked;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordPageResponse;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordRequest;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordResponse;
@@ -41,6 +43,7 @@ public class ReadingRecordService {
     private final BookService bookService;
     private final UserService userService;
     private final FollowRepository followRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ReadingRecordResponse getRecord(Long userId, Long recordId) {
         return ReadingRecordResponse.from(getReadableRecord(userId, recordId));
@@ -162,12 +165,17 @@ public class ReadingRecordService {
     public ToggleResponse like(Long userId, Long recordId) {
         Long currentUserId = userService.requireUserId(userId);
         ReadingRecord record = getReadableRecord(currentUserId, recordId);
+        boolean createdLike = false;
         if (!likeRepository.existsByReadingRecordIdAndUserId(recordId, currentUserId)) {
             likeRepository.save(ReadingRecordLike.builder()
                     .readingRecordId(recordId)
                     .userId(currentUserId)
                     .build());
             record.increaseLikeCount();
+            createdLike = true;
+        }
+        if (createdLike) {
+            eventPublisher.publishEvent(new ReadingRecordLiked(getRecordOwnerUserId(record), currentUserId, recordId));
         }
         return new ToggleResponse(true, record.getLikeCount());
     }
@@ -192,6 +200,10 @@ public class ReadingRecordService {
         ReadingRecord record = getActiveRecordEntity(recordId);
         requireReadable(viewerUserId, record);
         return record;
+    }
+
+    public Long getRecordOwnerUserId(ReadingRecord record) {
+        return bookService.getUserBook(record.getUserBookId()).getUserId();
     }
 
     private ReadingRecord getActiveRecordEntity(Long recordId) {
