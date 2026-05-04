@@ -472,11 +472,11 @@ MonoBehaviour:
     extraQuery: 
   - provider: 1
     authorizeEndpoint: https://kauth.kakao.com/oauth/authorize
-    clientId: d1b4d86b431150acd3ef6970ca2fa695
-    scope: 
-    responseType: 
+    clientId: d8c6ed5428758bd9a50e1f41a70d3d69
+    scope:
+    responseType:
     useNonce: 0
-    extraQuery: 
+    extraQuery:
 --- !u!1 &122077081
 GameObject:
   m_ObjectHideFlags: 0

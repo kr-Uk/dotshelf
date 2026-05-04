@@ -135,17 +135,26 @@ Desktop authorization-code 흐름에서 사용. **Native App Key와 다름** —
 현재 FE 코드 (`WindowsOAuthBrowserFlow.OAuthBrowserDefaults`)에 hardcoded된 값:
 
 ```text
-d1b4d86b431150acd3ef6970ca2fa695
+d8c6ed5428758bd9a50e1f41a70d3d69
 ```
 
-**머지 전 인프라 담당자에게 cross-check 필수**: 이 값이 실제 카카오 콘솔의 REST API Key와
-일치하는지 확인. 다르면 KOE101 `invalid_client` 에러로 redirect URI 등록까지 통과해도
-token 교환 단계에서 실패한다.
+이 값은 인프라 담당자가 운영하는 Dotshelf 카카오 앱의 REST API Key와 일치해야 한다. 다르면
+KOE006 (등록되지 않은 redirect URI) 또는 KOE101 (invalid_client)로 흐름 깨짐 — Kakao가
+client_id로 매칭한 앱과 redirect URI 등록한 앱이 달라지기 때문.
 
-cross-check 방법:
-- 카카오 콘솔 → 내 애플리케이션 → 앱 선택 → 앱 설정 → 앱 키 → \"REST API 키\" 값과 비교
-- 다르면 `OAuthBrowserDefaults.CreateDefault(SocialProvider.Kakao).clientId` 값을 갱신해서
-  follow-up MR
+### Kakao 동의항목 (scope)
+
+FE가 authorize 호출 시 보내는 scope. 콘솔의 \"카카오 로그인 → 동의항목\" 활성화 상태와
+정확히 일치해야 한다 (활성화 안 된 항목 보내면 KOE205).
+
+```text
+account_email profile_nickname
+```
+
+각 항목은 사용자가 OAuth 동의 화면에서 선택적으로 거부 가능 → BE 응답에서 해당 필드 null
+가능. BE의 `User.email`은 nullable + UNIQUE 제거 (V17 migration). 사용자 nickname 거부 시
+처리는 BE의 `KakaoTokenVerifier`가 임시 닉네임 생성 (현재 처리 검증은 follow-up).
+콘솔에서 동의항목 추가/제거 시 FE `OAuthBrowserDefaults.CreateDefault(Kakao).scope`도 동기 갱신.
 
 ### Kakao Redirect URI
 

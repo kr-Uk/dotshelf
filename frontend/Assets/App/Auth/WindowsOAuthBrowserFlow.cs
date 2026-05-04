@@ -89,16 +89,17 @@ namespace App.Auth
                     // a working Kakao login. Inspector value still wins via
                     // MergeWithDefaults if a per-environment key needs override.
                     //
-                    // scope는 빈 값 — Kakao Developers 콘솔 동의항목 미설정 상태에서
-                    // 임의 scope 보내면 KOE205 ("설정하지 않은 동의 항목 ..."). BE는
-                    // email/nickname null 허용이라 동의항목 활성화 전까지 scope 비움.
-                    // 콘솔에서 동의항목 활성화 + 검수 통과 후 scope 추가는 follow-up.
+                    // scope: account_email + profile_nickname — Kakao 콘솔 "카카오 로그인 →
+                    // 동의항목"에서 두 항목 활성화한 상태로 가정. 사용자가 OAuth 동의 화면에서
+                    // 항목 거부 가능 — 그 경우 BE 응답에서 해당 필드 null로 옴 (User 엔티티
+                    // email/nickname nullable 처리 — V17 migration). 향후 콘솔에서 동의항목
+                    // 추가/제거 시 이 scope도 동기 갱신 필요.
                     return new OAuthBrowserProviderConfig
                     {
                         provider = SocialProvider.Kakao,
                         authorizeEndpoint = "https://kauth.kakao.com/oauth/authorize",
-                        clientId = "d1b4d86b431150acd3ef6970ca2fa695",
-                        scope = string.Empty,
+                        clientId = "d8c6ed5428758bd9a50e1f41a70d3d69",
+                        scope = "account_email profile_nickname",
                         responseType = "code",
                         useNonce = false,
                         extraQuery = null
