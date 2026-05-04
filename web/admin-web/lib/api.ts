@@ -354,7 +354,7 @@ function adaptRequest(path: string, init: RequestInit): { path: string; init: Re
     nextInit = withJsonBody(init, announcementRequestBody(body));
   }
 
-  if (method === "PATCH" && /^\/operations\/announcements\/[^/]+$/u.test(pathname)) {
+  if (method === "PUT" && /^\/operations\/announcements\/[^/]+$/u.test(pathname)) {
     const body = parseJsonBody(init);
     nextInit = withJsonBody(init, announcementRequestBody(body));
   }
@@ -788,7 +788,7 @@ function adaptPayload(path: string, method: string, payload: unknown): unknown {
   if (method === "POST" && /^\/operations\/admins\/[^/]+\/role$/u.test(pathname)) return mapAdminMember(payload);
   if (method === "GET" && pathname === "/operations/announcements") return pageItems(payload).map(mapAnnouncement);
   if (method === "POST" && pathname === "/operations/announcements") return mapAnnouncement(payload);
-  if (method === "PATCH" && /^\/operations\/announcements\/[^/]+$/u.test(pathname)) return mapAnnouncement(payload);
+  if (method === "PUT" && /^\/operations\/announcements\/[^/]+$/u.test(pathname)) return mapAnnouncement(payload);
   if (method === "GET" && pathname === "/operations/policies") return pageItems(payload).map(mapPolicy);
   if (method === "GET" && pathname === "/audit") return pageItems(payload).map(mapAuditLog);
   if (method === "GET" && pathname === "/search") return pageItems(payload).map(mapSearchHit);

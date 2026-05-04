@@ -114,7 +114,7 @@ export default function OperationsPage() {
     try {
       if (editingAnnouncement) {
         await api(`/operations/announcements/${editingAnnouncement.id}`, {
-          method: "PATCH",
+          method: "PUT",
           body: JSON.stringify(payload),
         });
         toast.success("공지 수정 완료");

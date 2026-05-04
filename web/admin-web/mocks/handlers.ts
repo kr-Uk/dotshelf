@@ -384,7 +384,7 @@ export const handlers = [
     mockAnnouncements.unshift(announcement);
     return HttpResponse.json(announcement);
   }),
-  http.patch("/api/operations/announcements/:id", async ({ params, request }) => {
+  http.put("/api/operations/announcements/:id", async ({ params, request }) => {
     await delay(220);
     const id = params.id as string;
     const body = (await request.json()) as {
