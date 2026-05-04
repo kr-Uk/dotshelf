@@ -29,18 +29,12 @@ namespace App.Infrastructure.Api
         [SerializeField] private string accessToken;
         [SerializeField] private int timeoutSeconds = 10;
         [SerializeField] private bool enableVerboseLog;
+        private long currentUserId;
 
         public static APIManager Instance { get; private set; }
         public bool HasAccessToken => !string.IsNullOrWhiteSpace(accessToken);
         public bool EnableVerboseLog => enableVerboseLog;
-        public long CurrentUserId
-        {
-            get
-            {
-                var raw = PlayerPrefs.GetString(AuthStorageKeys.UserId, string.Empty);
-                return long.TryParse(raw, out var userId) ? userId : 0L;
-            }
-        }
+        public long CurrentUserId => currentUserId;
 
         private void Awake()
         {
@@ -57,6 +51,7 @@ namespace App.Infrastructure.Api
 
         private void HydrateAccessTokenFromAuthSession()
         {
+            currentUserId = ReadStoredUserId();
             if (!string.IsNullOrWhiteSpace(accessToken))
             {
                 return;
@@ -84,6 +79,7 @@ namespace App.Infrastructure.Api
             if (!string.IsNullOrWhiteSpace(token))
             {
                 accessToken = token;
+                currentUserId = ReadStoredUserId();
             }
 
             timeoutSeconds = Mathf.Max(1, timeout);
@@ -93,6 +89,13 @@ namespace App.Infrastructure.Api
         public void SetAccessToken(string token)
         {
             accessToken = token;
+            currentUserId = string.IsNullOrWhiteSpace(token) ? 0L : ReadStoredUserId();
+        }
+
+        private static long ReadStoredUserId()
+        {
+            var raw = PlayerPrefs.GetString(AuthStorageKeys.UserId, string.Empty);
+            return long.TryParse(raw, out var userId) ? userId : 0L;
         }
 
         public Coroutine CheckHealth(

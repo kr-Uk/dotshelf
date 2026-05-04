@@ -4481,15 +4481,8 @@ namespace App.Features.Notebook.Presentation
 
                 var id = item.Id.ToString();
                 var ownerId = item.OwnerUserId.ToString();
-                if (item.Following)
-                {
-                    followedUserIds.Add(ownerId);
-                }
-
-                if (item.Liked)
-                {
-                    likedSpaceIds.Add(id);
-                }
+                SetLocalState(followedUserIds, ownerId, item.Following);
+                SetLocalState(likedSpaceIds, id, item.Liked);
 
                 yield return new SpaceViewModel(
                     id,

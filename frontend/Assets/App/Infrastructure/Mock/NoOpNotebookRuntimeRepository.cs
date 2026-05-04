@@ -9,8 +9,11 @@ namespace App.Infrastructure.Mock
     {
         private const string DisabledCode = "NOTEBOOK_API_DISABLED";
         private const string DisabledMessage = "Notebook runtime API repository is disabled.";
-        private readonly HashSet<long> followedUserIds = new HashSet<long> { 201L, 204L };
-        private readonly HashSet<long> likedSpaceIds = new HashSet<long> { 3001L, 3003L };
+        // Demo seed for LocalMock: user initially follows 201/204 and liked spaces 3001/3003.
+        private static readonly long[] DemoSeedFollowedUserIds = { 201L, 204L };
+        private static readonly long[] DemoSeedLikedSpaceIds = { 3001L, 3003L };
+        private readonly HashSet<long> followedUserIds = new HashSet<long>(DemoSeedFollowedUserIds);
+        private readonly HashSet<long> likedSpaceIds = new HashSet<long>(DemoSeedLikedSpaceIds);
         private readonly List<NotebookSpaceItem> spaces;
         private readonly Dictionary<long, List<NotebookUserItem>> followersByUser = new Dictionary<long, List<NotebookUserItem>>();
         private readonly Dictionary<long, List<NotebookUserItem>> followingsByUser = new Dictionary<long, List<NotebookUserItem>>();

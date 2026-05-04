@@ -138,7 +138,7 @@ namespace App.Infrastructure.Api
                 "POPULAR",
                 cursor,
                 Mathf.Max(1, limit),
-                response => onSuccess?.Invoke(new NotebookSpaceListResult(MapSpaces(response, limit, client.CurrentUserId), response?.NextCursor)),
+                response => onSuccess?.Invoke(new NotebookSpaceListResult(MapSpaces(response, limit, client.CurrentUserId), null)),
                 error => onError?.Invoke(MapError(error)));
         }
 

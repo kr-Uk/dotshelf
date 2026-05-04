@@ -232,10 +232,10 @@ namespace App.Infrastructure.Api
                 query["keyword"] = keyword.Trim();
             }
 
-            if (!string.IsNullOrWhiteSpace(cursor))
-            {
-                query["cursor"] = cursor.Trim();
-            }
+            // /v1/spaces currently supports keyword/sort/limit only.
+            // Keep cursor in the public method signature for Application-layer
+            // compatibility, but do not send it until the backend returns a real
+            // nextCursor for this endpoint.
 
             return Get<SpaceListResponseDto>(WithQuery("/v1/spaces", query), onSuccess, onError);
         }
