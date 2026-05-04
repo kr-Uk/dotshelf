@@ -1,0 +1,625 @@
+<Window x:Class="DotShelf.Launcher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DotShelf 런처"
+        Height="660"
+        Width="1160"
+        MinHeight="620"
+        MinWidth="1040"
+        Background="Transparent"
+        AllowsTransparency="True"
+        ResizeMode="NoResize"
+        WindowStyle="None"
+        FontFamily="Malgun Gothic, Segoe UI"
+        WindowStartupLocation="CenterScreen"
+        KeyDown="Window_KeyDown"
+        KeyUp="Window_KeyUp">
+    <Window.Resources>
+        <SolidColorBrush x:Key="PaperBrush" Color="#FAF7F1" />
+        <SolidColorBrush x:Key="PaperPanelBrush" Color="#FFFDF8" />
+        <SolidColorBrush x:Key="CharcoalBrush" Color="#3D3028" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#7D7068" />
+        <SolidColorBrush x:Key="WoodBrush" Color="#B08E75" />
+        <SolidColorBrush x:Key="WoodDarkBrush" Color="#5C4332" />
+        <SolidColorBrush x:Key="BeigeBrush" Color="#EADBC8" />
+        <SolidColorBrush x:Key="SageBrush" Color="#3F4A3A" />
+
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource CharcoalBrush}" />
+            <Setter Property="Foreground" Value="#FFFDF8" />
+            <Setter Property="BorderBrush" Value="{StaticResource CharcoalBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Padding" Value="18,10" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonChrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="18"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonChrome" Property="Background" Value="#4A3A30" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonChrome" Property="Opacity" Value="0.48" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SecondaryButtonStyle" BasedOn="{StaticResource PrimaryButtonStyle}" TargetType="Button">
+            <Setter Property="Background" Value="#FFFDF8" />
+            <Setter Property="Foreground" Value="{StaticResource CharcoalBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BeigeBrush}" />
+        </Style>
+
+        <Style x:Key="CompactSecondaryButtonStyle" BasedOn="{StaticResource SecondaryButtonStyle}" TargetType="Button">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="10,4" />
+        </Style>
+
+        <Style x:Key="WindowButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Background" Value="#FFFDF8" />
+            <Setter Property="Foreground" Value="{StaticResource CharcoalBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BeigeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="14">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F0E4D8" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#C7AC92" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#FFFDF8" />
+            <Setter Property="Foreground" Value="{StaticResource CharcoalBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BeigeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+
+        <Style TargetType="ProgressBar">
+            <Setter Property="Foreground" Value="{StaticResource WoodBrush}" />
+            <Setter Property="Background" Value="#EFE3CF" />
+            <Setter Property="Height" Value="10" />
+        </Style>
+    </Window.Resources>
+
+    <Border Margin="14"
+            Background="{StaticResource PaperBrush}"
+            BorderBrush="#D8C3AB"
+            BorderThickness="1.2"
+            CornerRadius="28">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="34"
+                              ShadowDepth="12"
+                              Opacity="0.20"
+                              Color="#3A2E26" />
+        </Border.Effect>
+
+        <Grid>
+            <Border Height="48"
+                    VerticalAlignment="Top"
+                    Background="Transparent"
+                    MouseLeftButtonDown="TitleBar_MouseLeftButtonDown"
+                    Panel.ZIndex="20" />
+
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        Margin="0,16,24,0"
+                        Panel.ZIndex="30">
+                <Button Content="−"
+                        Style="{StaticResource WindowButtonStyle}"
+                        Margin="0,0,8,0"
+                        Click="MinimizeButton_Click" />
+                <Button Content="×"
+                        Style="{StaticResource WindowButtonStyle}"
+                        Click="CloseButton_Click" />
+            </StackPanel>
+
+            <Grid Margin="24,24,24,24">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="310" />
+                    <ColumnDefinition Width="18" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0"
+                        Background="#4A3A30"
+                        CornerRadius="22"
+                        Padding="20"
+                        ClipToBounds="True">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0">
+                            <StackPanel Orientation="Horizontal">
+                                <Border Width="34"
+                                        Height="34"
+                                        CornerRadius="8"
+                                        Background="{StaticResource WoodBrush}">
+                                    <Grid>
+                                        <Rectangle Height="18"
+                                                   Width="23"
+                                                   Fill="#FFFDF8"
+                                                   RadiusX="2"
+                                                   RadiusY="2"
+                                                   VerticalAlignment="Center" />
+                                        <Rectangle Height="2"
+                                                   Width="23"
+                                                   Fill="{StaticResource WoodBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,-7,0,0" />
+                                        <Rectangle Height="2"
+                                                   Width="23"
+                                                   Fill="{StaticResource WoodBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,7,0,0" />
+                                    </Grid>
+                                </Border>
+                                <TextBlock Text="DotShelf"
+                                           Foreground="#FFFDF8"
+                                           FontSize="24"
+                                           FontWeight="SemiBold"
+                                           Margin="12,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="내 라이브러리"
+                                       Foreground="#E8D8C6"
+                                       FontSize="13"
+                                       Margin="0,14,0,0" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" Margin="0,24,0,18">
+                            <TextBlock Text="앱"
+                                       Foreground="#CBB9A7"
+                                       FontSize="12"
+                                       FontWeight="SemiBold" />
+                            <Border Background="#5C493E"
+                                    BorderBrush="#A38069"
+                                    BorderThickness="1"
+                                    CornerRadius="14"
+                                    Padding="14"
+                                    Margin="0,8,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="36" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="28"
+                                            Height="28"
+                                            CornerRadius="7"
+                                            Background="#DCC8B4"
+                                            VerticalAlignment="Top">
+                                        <TextBlock Text="D"
+                                                   Foreground="#3A2E26"
+                                                   FontSize="17"
+                                                   FontWeight="Bold"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                    </Border>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="DotShelf"
+                                                   Foreground="#FFFDF8"
+                                                   FontSize="15"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="설치 · 업데이트 · 실행"
+                                                   Foreground="#E8D8C6"
+                                                   FontSize="12"
+                                                   Margin="0,5,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+
+                        <Border Grid.Row="2"
+                                Background="#3A2E26"
+                                BorderBrush="#5C4332"
+                                BorderThickness="1"
+                                CornerRadius="18"
+                                Padding="14"
+                                ClipToBounds="True">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Grid Grid.Row="0">
+                                    <StackPanel>
+                                        <TextBlock Text="다운로드 대기 게임"
+                                                   Foreground="#FFFDF8"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="책을 모으고 장애물을 피하세요."
+                                                   Foreground="#CBB9A7"
+                                                   FontSize="12"
+                                                   Margin="0,6,0,0" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Right">
+                                        <TextBlock Text="{Binding ElementName=GameScoreText, Path=Text}"
+                                                   Foreground="#FFFDF8"
+                                                   FontSize="18"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="/"
+                                                   Foreground="#CBB9A7"
+                                                   FontSize="14"
+                                                   Margin="6,3,6,0" />
+                                        <TextBlock Text="{Binding ElementName=GameBestScoreText, Path=Text}"
+                                                   Foreground="#CBB9A7"
+                                                   FontSize="18"
+                                                   FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <Border Grid.Row="1"
+                                        Background="#EFE3CF"
+                                        BorderBrush="#C9AD92"
+                                        BorderThickness="1"
+                                        CornerRadius="14"
+                                        ClipToBounds="True"
+                                        Margin="0,14,0,0">
+                                    <Grid>
+                                        <Canvas x:Name="GameCanvas"
+                                                Background="#EFE3CF"
+                                                ClipToBounds="True"
+                                                Focusable="True"
+                                                MouseLeftButtonDown="GameCanvas_MouseLeftButtonDown" />
+
+                                        <Border x:Name="GameOverlay"
+                                                Background="#F2EDE0CE"
+                                                Padding="18">
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock x:Name="GameOverlayTitle"
+                                                           Text="하늘책 수집"
+                                                           Foreground="{StaticResource CharcoalBrush}"
+                                                           FontSize="20"
+                                                           FontWeight="SemiBold"
+                                                           TextAlignment="Center" />
+                                                <TextBlock x:Name="GameOverlayDescription"
+                                                           Text="책을 받으면 점수가 오르고, 어두운 장애물에 닿으면 게임이 끝납니다."
+                                                           Foreground="{StaticResource MutedBrush}"
+                                                           FontSize="12"
+                                                           TextWrapping="Wrap"
+                                                           TextAlignment="Center"
+                                                           LineHeight="18"
+                                                           Margin="0,10,0,10" />
+                                                <TextBlock x:Name="GameOverlayInstruction"
+                                                           Text="← / → 방향키로 이동"
+                                                           Foreground="{StaticResource CharcoalBrush}"
+                                                           FontSize="12"
+                                                           FontWeight="SemiBold"
+                                                           TextAlignment="Center"
+                                                           Margin="0,0,0,14" />
+                                                <Button x:Name="StartGameButton"
+                                                        Content="시작하기"
+                                                        Width="108"
+                                                        Height="36"
+                                                        HorizontalAlignment="Center"
+                                                        Style="{StaticResource PrimaryButtonStyle}"
+                                                        Click="StartGameButton_Click" />
+                                                <Button x:Name="RetryGameButton"
+                                                        Content="다시하기"
+                                                        Width="108"
+                                                        Height="36"
+                                                        HorizontalAlignment="Center"
+                                                        Style="{StaticResource PrimaryButtonStyle}"
+                                                        Visibility="Collapsed"
+                                                        Click="RetryGameButton_Click" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <TextBlock x:Name="GameScoreText"
+                                   Text="0"
+                                   Visibility="Collapsed" />
+                        <TextBlock x:Name="GameBestScoreText"
+                                   Text="0"
+                                   Visibility="Collapsed" />
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Border x:Name="BannerRow"
+                            Grid.Row="0"
+                            Visibility="Collapsed"
+                            Background="{StaticResource PaperPanelBrush}"
+                            BorderBrush="{StaticResource BeigeBrush}"
+                            BorderThickness="1"
+                            CornerRadius="18"
+                            Padding="14,12"
+                            Margin="0,0,0,14">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border x:Name="BannerClickArea"
+                                    Grid.Column="0"
+                                    Background="Transparent"
+                                    MouseLeftButtonUp="BannerClickArea_MouseLeftButtonUp">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border x:Name="BannerAccent"
+                                            Grid.Column="0"
+                                            Width="4"
+                                            CornerRadius="2"
+                                            Margin="0,2,12,2" />
+                                    <Border x:Name="BannerChip"
+                                            Grid.Column="1"
+                                            CornerRadius="10"
+                                            Padding="10,4"
+                                            VerticalAlignment="Center"
+                                            Margin="0,0,12,0">
+                                        <TextBlock x:Name="BannerChipText"
+                                                   Foreground="#FFFDF8"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold" />
+                                    </Border>
+                                    <TextBlock x:Name="BannerTitle"
+                                               Grid.Column="2"
+                                               VerticalAlignment="Center"
+                                               FontSize="14"
+                                               Foreground="{StaticResource CharcoalBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               Margin="0,0,12,0" />
+                                </Grid>
+                            </Border>
+
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        VerticalAlignment="Center">
+                                <Button x:Name="BannerPrevButton"
+                                        Content="‹"
+                                        Style="{StaticResource WindowButtonStyle}"
+                                        Width="28"
+                                        Height="28"
+                                        FontSize="16"
+                                        Margin="0,0,6,0"
+                                        Click="BannerPrevButton_Click" />
+                                <Button x:Name="BannerNextButton"
+                                        Content="›"
+                                        Style="{StaticResource WindowButtonStyle}"
+                                        Width="28"
+                                        Height="28"
+                                        FontSize="16"
+                                        Click="BannerNextButton_Click" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="1"
+                            Background="{StaticResource PaperPanelBrush}"
+                            BorderBrush="{StaticResource BeigeBrush}"
+                            BorderThickness="1"
+                            CornerRadius="22"
+                            Padding="24">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="190" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel>
+                                <TextBlock Text="라이브러리"
+                                           Foreground="{StaticResource WoodBrush}"
+                                           FontSize="13"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="DotShelf"
+                                           Foreground="{StaticResource CharcoalBrush}"
+                                           FontSize="42"
+                                           FontWeight="SemiBold"
+                                           Margin="0,4,0,0" />
+                                <TextBlock Text="따뜻한 3D 책장 공간을 설치하고 최신 상태로 유지합니다."
+                                           Foreground="{StaticResource MutedBrush}"
+                                           FontSize="15"
+                                           Margin="0,10,0,0" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1"
+                                        VerticalAlignment="Center">
+                                <Button x:Name="ActionButton"
+                                        Content="설치하기"
+                                        Height="44"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Margin="0,0,0,10"
+                                        Click="ActionButton_Click" />
+                                <Button x:Name="LaunchButton"
+                                        Content="시작하기"
+                                        Height="44"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Margin="0,0,0,10"
+                                        Click="LaunchButton_Click" />
+                                <Button x:Name="DeleteButton"
+                                        Content="삭제하기"
+                                        Height="40"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Click="DeleteButton_Click" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Row="2" Margin="0,18,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="18" />
+                            <ColumnDefinition Width="310" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0"
+                                Background="{StaticResource PaperPanelBrush}"
+                                BorderBrush="{StaticResource BeigeBrush}"
+                                BorderThickness="1"
+                                CornerRadius="22"
+                                Padding="22">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0">
+                                    <TextBlock x:Name="VersionText"
+                                               Text="설치되지 않음"
+                                               Foreground="{StaticResource CharcoalBrush}"
+                                               FontSize="24"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock x:Name="StatusText"
+                                               Text="최신 빌드 정보를 확인하는 중입니다."
+                                               Foreground="{StaticResource MutedBrush}"
+                                               FontSize="14"
+                                               Margin="0,8,0,0" />
+                                    <TextBlock x:Name="PackageSizeText"
+                                               Text="설치 파일 크기 확인 중"
+                                               Foreground="{StaticResource MutedBrush}"
+                                               FontSize="13"
+                                               Margin="0,8,0,0" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Margin="0,22,0,18">
+                                    <Grid Margin="0,0,0,8">
+                                        <TextBlock Text="다운로드 / 설치 진행"
+                                                   Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="12" />
+                                        <TextBlock Text="{Binding ElementName=ProgressBar, Path=Value, StringFormat={}{0:0}%}"
+                                                   Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="12"
+                                                   HorizontalAlignment="Right" />
+                                    </Grid>
+                                    <ProgressBar x:Name="ProgressBar"
+                                                 Minimum="0"
+                                                 Maximum="100" />
+                                </StackPanel>
+
+                                <Border Grid.Row="2"
+                                        Background="#F7EEDF"
+                                        BorderBrush="#E4D6C3"
+                                        BorderThickness="1"
+                                        CornerRadius="16"
+                                        Padding="16">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
+
+                                        <Grid Grid.Row="0">
+                                            <TextBlock Text="설치 위치"
+                                                       Foreground="{StaticResource CharcoalBrush}"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold"
+                                                       VerticalAlignment="Center" />
+                                            <Button x:Name="ChooseInstallLocationButton"
+                                                    Content="위치 선택"
+                                                    Width="104"
+                                                    Height="34"
+                                                    HorizontalAlignment="Right"
+                                                    Style="{StaticResource CompactSecondaryButtonStyle}"
+                                                    Click="ChooseInstallLocationButton_Click" />
+                                        </Grid>
+
+                                        <ScrollViewer Grid.Row="1"
+                                                      MaxHeight="118"
+                                                      VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Disabled"
+                                                      Margin="0,10,0,0">
+                                            <TextBlock x:Name="InstallPathText"
+                                                       Text="아직 설치된 앱이 없습니다."
+                                                       Foreground="{StaticResource MutedBrush}"
+                                                       FontSize="12"
+                                                       TextWrapping="Wrap"
+                                                       LineHeight="18" />
+                                        </ScrollViewer>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Column="2"
+                                Background="#4A3A30"
+                                CornerRadius="22"
+                                Padding="22">
+                            <StackPanel>
+                                <TextBlock Text="작업 기록"
+                                           Foreground="#FFFDF8"
+                                           FontSize="17"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="다운로드, 압축 해제, 실행 결과가 표시됩니다."
+                                           Foreground="#E8D8C6"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           LineHeight="18"
+                                           Margin="0,8,0,14" />
+                                <TextBox x:Name="LogTextBox"
+                                         IsReadOnly="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         TextWrapping="Wrap"
+                                         AcceptsReturn="True"
+                                         FontFamily="Consolas, Malgun Gothic"
+                                         FontSize="12"
+                                         Height="318"
+                                         Background="#3A2E26"
+                                         Foreground="#F0E4D8"
+                                         BorderBrush="#5C4332"
+                                         Padding="12" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

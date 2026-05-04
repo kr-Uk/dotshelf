@@ -1,0 +1,11 @@
+{
+  "latestVersion": "0.1.0",
+  "mandatory": false,
+  "packageUrl": "https://dotshelf.digital/launcher/windows/Dotshelf-0.1.0.zip",
+  "sha256": "C9C6F6F8AA407EF69C2E73591818BF9800B76F51859D4AF4EBC5DF087758E406",
+  "entrypoint": "Dotshelf.exe",
+  "minLauncherVersion": "0.1.0",
+  "releaseNotes": [
+    "Initial launcher-compatible Unity build."
+  ]
+}
