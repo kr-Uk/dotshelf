@@ -50,6 +50,8 @@ namespace BookshelfPorting.Runtime
         private const int ShelfManageMaxRowCount = 24;
         private const float ShelfManageRowHeight = 50f;
         private const float ShelfManageViewportHeight = 220f;
+        // Runtime HUD selector keeps one row of shelf chips readable without
+        // turning the add/search overlays into full shelf-management screens.
         private const int BookshelfSelectorMaxButtons = 12;
         private static readonly Color32 DeleteButtonBackground = new(196, 78, 72, 255);
         private static readonly Color32 DeleteButtonHighlighted = new(176, 62, 58, 255);
@@ -463,6 +465,7 @@ namespace BookshelfPorting.Runtime
         private int bookshelfNameInputIndex = -1;
         private int pendingDeleteBookshelfIndex = -1;
         private int pendingBookAddCatalogIndex = -1;
+        private BookAddCatalogItem pendingBookAddCatalogItem;
         private BookOrientation pendingBookAddOrientation = BookOrientation.Front;
         private App.Domain.ReadingStatus pendingBookAddReadingStatus = App.Domain.ReadingStatus.Unread;
         private bool isBookAddPlacementSelectionActive;
@@ -1445,7 +1448,7 @@ namespace BookshelfPorting.Runtime
 
         private void RequestServerBookSnapshot(BookEntity book)
         {
-            if (book == null || bookshelfApiSyncController == null || !bookshelfApiSyncController.IsConfigured)
+            if (book == null || bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
             {
                 return;
             }
@@ -1693,43 +1696,42 @@ namespace BookshelfPorting.Runtime
             var sourceSection = book.CurrentSection;
 
             pendingDeleteBook = null;
-            ActiveDetailBook = null;
-            isBookEditPanelOpen = false;
-
-            if (state.ActiveViewedBook == book && interactionController != null)
-            {
-                interactionController.CloseViewedBook(true);
-            }
-
-            state.RemoveBook(book);
-            if (sourceSection != null)
-            {
-                state.LayoutSection(sourceSection, this, true);
-            }
-
-            if (bookDetailPanel != null)
-            {
-                bookDetailPanel.SetActive(false);
-            }
-
-            if (bookEditPanel != null)
-            {
-                bookEditPanel.SetActive(false);
-            }
-
             var didStartDeleteSync = bookshelfApiSyncController != null &&
                                      bookshelfApiSyncController.RemoveBook(
                                          book,
-                                         () => ShowDeleteResultDialog("책 삭제 완료", "책장에서 책을 삭제했습니다.", true),
+                                         () =>
+                                         {
+                                             RemoveBookLocally(book, sourceSection, false);
+                                             ShowDeleteResultDialog("책장에서 제거 완료", "책장에서 책을 제거했습니다.", true);
+                                         },
                                          error => RefreshServerStateAfterMutationFailure("책 삭제", error));
-            if (!didStartDeleteSync)
+            if (didStartDeleteSync)
             {
-                ShowDeleteResultDialog("책 삭제 완료", "책장에서 책을 삭제했습니다.", true);
+                ActiveDetailBook = null;
+                isBookEditPanelOpen = false;
+                if (bookDetailPanel != null)
+                {
+                    bookDetailPanel.SetActive(false);
+                }
+
+                if (bookEditPanel != null)
+                {
+                    bookEditPanel.SetActive(false);
+                }
+
+                RefreshHud();
+                return;
             }
 
-            Destroy(book.gameObject);
-            MarkBookshelfEditDirty();
-            RefreshHud();
+            if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                ShowDeleteResultDialog("책 삭제 실패", "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.", false);
+                RefreshHud();
+                return;
+            }
+
+            RemoveBookLocally(book, sourceSection, false);
+            ShowDeleteResultDialog("책장에서 제거 완료", "책장에서 책을 제거했습니다.", true);
         }
 
         private void DeleteActiveBookFromDetail()
@@ -1753,10 +1755,57 @@ namespace BookshelfPorting.Runtime
 
             pendingDeleteBook = null;
             pendingDeleteReportBook = null;
-            ActiveDetailBook = null;
-            activeReportBook = null;
-            isBookReportReadPanelOpen = false;
-            isBookReportWritePanelOpen = false;
+            var didStartDeleteSync = bookshelfApiSyncController != null &&
+                                     bookshelfApiSyncController.RemoveBook(
+                                         book,
+                                         () =>
+                                         {
+                                             RemoveBookLocally(book, sourceSection, true);
+                                             ShowDeleteResultDialog("책장에서 제거 완료", "책장에서 책을 제거했습니다.", true);
+                                         },
+                                         error => RefreshServerStateAfterMutationFailure("책 삭제", error));
+            if (didStartDeleteSync)
+            {
+                ActiveDetailBook = null;
+                activeReportBook = null;
+                isBookReportReadPanelOpen = false;
+                isBookReportWritePanelOpen = false;
+                if (bookDetailPanel != null)
+                {
+                    bookDetailPanel.SetActive(false);
+                }
+
+                if (bookReportReadPanel != null)
+                {
+                    bookReportReadPanel.SetActive(false);
+                }
+
+                if (bookReportWritePanel != null)
+                {
+                    bookReportWritePanel.SetActive(false);
+                }
+
+                RefreshHud();
+                return;
+            }
+
+            if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                ShowDeleteResultDialog("책 삭제 실패", "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.", false);
+                RefreshHud();
+                return;
+            }
+
+            RemoveBookLocally(book, sourceSection, true);
+            ShowDeleteResultDialog("책장에서 제거 완료", "책장에서 책을 제거했습니다.", true);
+        }
+
+        private void RemoveBookLocally(BookEntity book, ShelfSection sourceSection, bool closeReportPanels)
+        {
+            if (book == null || state == null)
+            {
+                return;
+            }
 
             if (state.ActiveViewedBook == book && interactionController != null)
             {
@@ -1769,29 +1818,44 @@ namespace BookshelfPorting.Runtime
                 state.LayoutSection(sourceSection, this, true);
             }
 
+            if (ActiveDetailBook == book)
+            {
+                ActiveDetailBook = null;
+            }
+
+            if (activeReportBook == book)
+            {
+                activeReportBook = null;
+            }
+
+            isBookEditPanelOpen = false;
+            if (closeReportPanels)
+            {
+                isBookReportReadPanelOpen = false;
+                isBookReportWritePanelOpen = false;
+            }
+
             if (bookDetailPanel != null)
             {
                 bookDetailPanel.SetActive(false);
             }
 
-            if (bookReportReadPanel != null)
+            if (bookEditPanel != null)
             {
-                bookReportReadPanel.SetActive(false);
+                bookEditPanel.SetActive(false);
             }
 
-            if (bookReportWritePanel != null)
+            if (closeReportPanels)
             {
-                bookReportWritePanel.SetActive(false);
-            }
+                if (bookReportReadPanel != null)
+                {
+                    bookReportReadPanel.SetActive(false);
+                }
 
-            var didStartDeleteSync = bookshelfApiSyncController != null &&
-                                     bookshelfApiSyncController.RemoveBook(
-                                         book,
-                                         () => ShowDeleteResultDialog("책 삭제 완료", "책장에서 책을 삭제했습니다.", true),
-                                         error => RefreshServerStateAfterMutationFailure("책 삭제", error));
-            if (!didStartDeleteSync)
-            {
-                ShowDeleteResultDialog("책 삭제 완료", "책장에서 책을 삭제했습니다.", true);
+                if (bookReportWritePanel != null)
+                {
+                    bookReportWritePanel.SetActive(false);
+                }
             }
 
             Destroy(book.gameObject);
@@ -1807,7 +1871,6 @@ namespace BookshelfPorting.Runtime
                 $"서버 요청을 완료하지 못해 최신 상태로 다시 불러옵니다.\n{NormalizeMutationErrorMessage(errorMessage)}",
                 false);
             bookshelfApiSyncController?.RefreshFromServer();
-            RefreshHud();
         }
 
         private void ToggleReadState()
@@ -2873,6 +2936,7 @@ namespace BookshelfPorting.Runtime
             if (mode != BookshelfOverlayMode.BookAddConfirm)
             {
                 pendingBookAddCatalogIndex = -1;
+                pendingBookAddCatalogItem = null;
             }
 
             if (mode != BookshelfOverlayMode.BookAdd && mode != BookshelfOverlayMode.BookAddConfirm)
@@ -5149,6 +5213,7 @@ namespace BookshelfPorting.Runtime
             isBookAddPanelOpen = false;
             isBookAddConfirmPanelOpen = false;
             pendingBookAddCatalogIndex = -1;
+            pendingBookAddCatalogItem = null;
             bookAddFeedbackMessage = string.Empty;
             shouldResetBookAddScrollToTop = true;
             for (var i = 0; i < bookAddResultCatalogIndices.Length; i++)
@@ -5385,14 +5450,15 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (IsCatalogBookAlreadyOnActiveShelf(catalogIndex))
+            if (IsCatalogBookAlreadyOnActiveShelf(item))
             {
-                bookAddFeedbackMessage = GetCatalogBookDuplicateMessage(catalogIndex);
+                bookAddFeedbackMessage = GetCatalogBookDuplicateMessage(item);
                 RefreshBookAddPanel(bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1);
                 return;
             }
 
             pendingBookAddCatalogIndex = catalogIndex;
+            pendingBookAddCatalogItem = item;
             pendingBookAddOrientation = item.Orientation;
             pendingBookAddReadingStatus = App.Domain.ReadingStatus.Unread;
             bookAddFeedbackMessage = string.Empty;
@@ -5436,6 +5502,7 @@ namespace BookshelfPorting.Runtime
         {
             isBookAddConfirmPanelOpen = false;
             pendingBookAddCatalogIndex = -1;
+            pendingBookAddCatalogItem = null;
             if (bookAddConfirmPanel != null)
             {
                 bookAddConfirmPanel.SetActive(false);
@@ -5445,8 +5512,7 @@ namespace BookshelfPorting.Runtime
         private void ConfirmAddCatalogBookToShelf()
         {
             if (!CanOpenBookAddPanel() ||
-                pendingBookAddCatalogIndex < 0 ||
-                GetBookAddCatalogItem(pendingBookAddCatalogIndex) == null)
+                pendingBookAddCatalogItem == null)
             {
                 CloseBookAddConfirmPanel();
                 return;
@@ -5459,16 +5525,15 @@ namespace BookshelfPorting.Runtime
         private void BeginBookAddPlacementSelection()
         {
             if (!CanOpenBookAddPanel() ||
-                pendingBookAddCatalogIndex < 0 ||
-                GetBookAddCatalogItem(pendingBookAddCatalogIndex) == null)
+                pendingBookAddCatalogItem == null)
             {
                 CloseBookAddConfirmPanel();
                 return;
             }
 
-            if (IsCatalogBookAlreadyOnActiveShelf(pendingBookAddCatalogIndex))
+            if (IsCatalogBookAlreadyOnActiveShelf(pendingBookAddCatalogItem))
             {
-                bookAddFeedbackMessage = GetCatalogBookDuplicateMessage(pendingBookAddCatalogIndex);
+                bookAddFeedbackMessage = GetCatalogBookDuplicateMessage(pendingBookAddCatalogItem);
                 SetBookshelfOverlayMode(BookshelfOverlayMode.BookAdd);
                 RefreshHud();
                 return;
@@ -5518,7 +5583,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (!AddCatalogBookToShelfAtPointer(pendingBookAddCatalogIndex, pendingBookAddOrientation, pointer))
+            if (!AddCatalogBookToShelfAtPointer(pendingBookAddCatalogItem, pendingBookAddOrientation, pointer))
             {
                 RefreshHud();
                 return;
@@ -5545,6 +5610,7 @@ namespace BookshelfPorting.Runtime
             isBookAddPlacementSelectionActive = false;
             bookshelfGenerator?.HideBookAddPlacementGuide();
             pendingBookAddCatalogIndex = -1;
+            pendingBookAddCatalogItem = null;
             bookAddFeedbackMessage = string.Empty;
 
             if (reopenAddPanel && CanOpenBookAddPanel())
@@ -5566,7 +5632,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var item = GetBookAddCatalogItem(pendingBookAddCatalogIndex);
+            var item = pendingBookAddCatalogItem;
             if (item == null)
             {
                 CloseBookAddConfirmPanel();
@@ -5623,9 +5689,9 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (IsCatalogBookAlreadyOnActiveShelf(catalogIndex))
+            if (IsCatalogBookAlreadyOnActiveShelf(item))
             {
-                bookAddFeedbackMessage = GetCatalogBookDuplicateMessage(catalogIndex);
+                bookAddFeedbackMessage = GetCatalogBookDuplicateMessage(item);
                 RefreshHud();
                 return;
             }
@@ -5655,27 +5721,24 @@ namespace BookshelfPorting.Runtime
 
                 book.readingStatus = pendingBookAddReadingStatus;
                 book.isRead = pendingBookAddReadingStatus == App.Domain.ReadingStatus.Read;
-                bookshelfApiSyncController?.AddBookToActiveShelf(book);
-                bookAddFeedbackMessage = $"{item.Title} 추가 완료 · {GetReadingStatusLabel(pendingBookAddReadingStatus)} · {GetOrientationLabel(orientation)}";
+                SyncAddedBookOrRollback(book, book.CurrentSection, item, orientation);
             }
 
             RefreshHud();
         }
 
-        private bool AddCatalogBookToShelfAtPointer(int catalogIndex, BookOrientation orientation, Vector2 pointer)
+        private bool AddCatalogBookToShelfAtPointer(BookAddCatalogItem item, BookOrientation orientation, Vector2 pointer)
         {
-            var item = GetBookAddCatalogItem(catalogIndex);
             if (!CanOpenBookAddPanel() ||
-                catalogIndex < 0 ||
                 item == null ||
                 Camera.main == null)
             {
                 return false;
             }
 
-            if (IsCatalogBookAlreadyOnActiveShelf(catalogIndex))
+            if (IsCatalogBookAlreadyOnActiveShelf(item))
             {
-                bookAddFeedbackMessage = GetCatalogBookDuplicateMessage(catalogIndex);
+                bookAddFeedbackMessage = GetCatalogBookDuplicateMessage(item);
                 return false;
             }
 
@@ -5706,9 +5769,81 @@ namespace BookshelfPorting.Runtime
 
             book.readingStatus = pendingBookAddReadingStatus;
             book.isRead = pendingBookAddReadingStatus == App.Domain.ReadingStatus.Read;
-            bookshelfApiSyncController?.AddBookToActiveShelf(book);
-            bookAddFeedbackMessage = $"{item.Title} 추가 완료 · {GetReadingStatusLabel(pendingBookAddReadingStatus)} · {GetOrientationLabel(orientation)}";
+            SyncAddedBookOrRollback(book, book.CurrentSection, item, orientation);
             return true;
+        }
+
+        private void SyncAddedBookOrRollback(
+            BookEntity book,
+            ShelfSection sourceSection,
+            BookAddCatalogItem item,
+            BookOrientation orientation)
+        {
+            if (book == null || item == null)
+            {
+                return;
+            }
+
+            var readingStatus = book.readingStatus;
+            var successMessage = $"{item.Title} 추가 완료 · {GetReadingStatusLabel(readingStatus)} · {GetOrientationLabel(orientation)}";
+            var hasServerSync = bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled;
+            if (!hasServerSync)
+            {
+                bookAddFeedbackMessage = successMessage;
+                return;
+            }
+
+            bookAddFeedbackMessage = $"{item.Title} 추가 요청 중입니다.";
+            var didStartAddSync = bookshelfApiSyncController.AddBookToActiveShelf(
+                book,
+                _ =>
+                {
+                    bookAddFeedbackMessage = successMessage;
+                    RefreshHud();
+                },
+                error => RollbackAddedBookAfterApiFailure(book, sourceSection, item.Title, error));
+            if (!didStartAddSync)
+            {
+                RollbackAddedBookAfterApiFailure(
+                    book,
+                    sourceSection,
+                    item.Title,
+                    "책장/섹션 서버 식별자를 찾을 수 없습니다.");
+            }
+        }
+
+        private void RollbackAddedBookAfterApiFailure(
+            BookEntity book,
+            ShelfSection sourceSection,
+            string title,
+            string errorMessage)
+        {
+            Debug.LogWarning($"Book add failed on server. Rolling back local book. {errorMessage}");
+            if (book != null)
+            {
+                if (state != null)
+                {
+                    if (state.ActiveViewedBook == book && interactionController != null)
+                    {
+                        interactionController.CloseViewedBook(true);
+                    }
+
+                    state.RemoveBook(book);
+                    if (sourceSection != null)
+                    {
+                        state.LayoutSection(sourceSection, this, true);
+                    }
+                }
+
+                Destroy(book.gameObject);
+            }
+
+            bookAddFeedbackMessage = $"{title} 추가 실패";
+            ShowDeleteResultDialog(
+                "책 추가 실패",
+                $"서버 요청을 완료하지 못해 추가한 책을 되돌렸습니다.\n{NormalizeMutationErrorMessage(errorMessage)}",
+                false);
+            RefreshHud();
         }
 
         private bool HasOpenBookshelfModal()
@@ -6750,7 +6885,7 @@ namespace BookshelfPorting.Runtime
                 }
                 else if (showPlacementSelection)
                 {
-                    var selectedAddItem = GetBookAddCatalogItem(pendingBookAddCatalogIndex);
+                    var selectedAddItem = pendingBookAddCatalogItem;
                     var title = selectedAddItem != null ? selectedAddItem.Title : "선택한 책";
                     bookshelfStatusMessageText.text = string.IsNullOrWhiteSpace(bookAddFeedbackMessage)
                         ? $"{title}을(를) 꽂을 칸이나 책 사이를 클릭하세요. Esc 또는 우클릭으로 취소할 수 있습니다."
@@ -7361,6 +7496,11 @@ namespace BookshelfPorting.Runtime
         private bool IsCatalogBookAlreadyOnActiveShelf(int catalogIndex)
         {
             var item = GetBookAddCatalogItem(catalogIndex);
+            return IsCatalogBookAlreadyOnActiveShelf(item);
+        }
+
+        private bool IsCatalogBookAlreadyOnActiveShelf(BookAddCatalogItem item)
+        {
             if (bookshelfGenerator == null ||
                 item == null)
             {
@@ -7373,6 +7513,11 @@ namespace BookshelfPorting.Runtime
         private string GetCatalogBookDuplicateMessage(int catalogIndex)
         {
             var item = GetBookAddCatalogItem(catalogIndex);
+            return GetCatalogBookDuplicateMessage(item);
+        }
+
+        private static string GetCatalogBookDuplicateMessage(BookAddCatalogItem item)
+        {
             var title = item != null ? item.Title : "선택한 책";
             return $"{title}은(는) 이미 현재 책장에 있습니다.";
         }
@@ -7634,7 +7779,14 @@ namespace BookshelfPorting.Runtime
                                              error => RefreshServerStateAfterMutationFailure("책장 삭제", error));
                 if (!didStartDeleteSync)
                 {
-                    ShowDeleteResultDialog("책장 삭제 완료", "책장을 삭제했습니다.", true);
+                    if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+                    {
+                        RefreshServerStateAfterMutationFailure("책장 삭제", "책장 서버 식별자를 찾을 수 없습니다.");
+                    }
+                    else
+                    {
+                        ShowDeleteResultDialog("책장 삭제 완료", "책장을 삭제했습니다.", true);
+                    }
                 }
             }
 
@@ -8070,7 +8222,7 @@ namespace BookshelfPorting.Runtime
                 var isConfirmingDelete = pendingDeleteBook == ActiveDetailBook;
                 deleteDetailBookButton.gameObject.SetActive(canDeleteBook);
                 deleteDetailBookButton.interactable = canDeleteBook;
-                SetButtonLabel(deleteDetailBookButton, isConfirmingDelete ? "한 번 더 눌러 책 삭제" : "책 삭제");
+                SetButtonLabel(deleteDetailBookButton, isConfirmingDelete ? "한 번 더 눌러 제거" : "책장에서 제거");
                 StyleDeleteActionButton(deleteDetailBookButton, canDeleteBook, isConfirmingDelete, 13);
             }
 
@@ -8332,7 +8484,7 @@ namespace BookshelfPorting.Runtime
 
         private bool TryOpenReportAfterServerRefresh(BookEntity book)
         {
-            if (book == null || bookshelfApiSyncController == null || !bookshelfApiSyncController.IsConfigured)
+            if (book == null || bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
             {
                 return false;
             }
@@ -8438,7 +8590,7 @@ namespace BookshelfPorting.Runtime
 
         private void RequestReportSocialSnapshot(BookEntity book)
         {
-            if (book == null || bookshelfApiSyncController == null || !bookshelfApiSyncController.IsConfigured)
+            if (book == null || bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
             {
                 return;
             }
@@ -8461,7 +8613,7 @@ namespace BookshelfPorting.Runtime
 
         private void RequestReportComments(BookEntity book)
         {
-            if (book == null || bookshelfApiSyncController == null || !bookshelfApiSyncController.IsConfigured)
+            if (book == null || bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
             {
                 return;
             }
@@ -8569,7 +8721,7 @@ namespace BookshelfPorting.Runtime
             }
 
             var canUseReportSocial = bookshelfApiSyncController != null &&
-                                     bookshelfApiSyncController.IsConfigured &&
+                                     bookshelfApiSyncController.IsServerSyncEnabled &&
                                      !string.IsNullOrWhiteSpace(activeReportBook.readingRecordId);
             if (bookReportCommentInputField != null)
             {
@@ -8735,6 +8887,12 @@ namespace BookshelfPorting.Runtime
                                          error => RestoreBookReportAfterDeleteFailure(book, rollback, error));
             if (!didStartDeleteSync)
             {
+                if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+                {
+                    RestoreBookReportAfterDeleteFailure(book, rollback, "독후감 서버 식별자를 찾을 수 없습니다.");
+                    return;
+                }
+
                 ShowDeleteResultDialog("독후감 삭제 완료", "독후감을 삭제했습니다.", true);
             }
 
@@ -8820,6 +8978,12 @@ namespace BookshelfPorting.Runtime
                                              error => RestoreBookReportAfterDeleteFailure(book, rollback, error));
                 if (!didStartDeleteSync)
                 {
+                    if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+                    {
+                        RestoreBookReportAfterDeleteFailure(book, rollback, "독후감 서버 식별자를 찾을 수 없습니다.");
+                        return;
+                    }
+
                     ShowDeleteResultDialog("독후감 삭제 완료", "빈 내용으로 저장되어 독후감을 삭제했습니다.", true);
                 }
 
@@ -8956,7 +9120,7 @@ namespace BookshelfPorting.Runtime
             {
                 var isConfirmingDelete = pendingDeleteBook == ActiveDetailBook;
                 deleteBookButton.gameObject.SetActive(true);
-                SetButtonLabel(deleteBookButton, isConfirmingDelete ? "한 번 더 눌러 삭제" : "책 삭제");
+                SetButtonLabel(deleteBookButton, isConfirmingDelete ? "한 번 더 눌러 제거" : "책장에서 제거");
                 StyleDeleteActionButton(deleteBookButton, true, isConfirmingDelete, 14);
             }
 
@@ -10715,6 +10879,7 @@ namespace BookshelfPorting.Runtime
             {
                 isBookAddConfirmPanelOpen = false;
                 pendingBookAddCatalogIndex = -1;
+                pendingBookAddCatalogItem = null;
                 bookAddConfirmPanel.SetActive(false);
             }
 

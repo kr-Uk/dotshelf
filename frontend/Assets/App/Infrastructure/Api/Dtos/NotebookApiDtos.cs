@@ -1635,6 +1635,21 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("coverImageUrl")]
         public string CoverImageUrl { get; set; }
+
+        [JsonProperty("avgRating")]
+        public decimal? AvgRating { get; set; }
+
+        [JsonProperty("averageRating")]
+        public decimal? AverageRating { get; set; }
+
+        [JsonProperty("likeCount")]
+        public int? LikeCount { get; set; }
+
+        [JsonProperty("reviewCount")]
+        public int? ReviewCount { get; set; }
+
+        [JsonProperty("recordCount")]
+        public int? RecordCount { get; set; }
     }
 
     [Serializable]
