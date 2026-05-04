@@ -1,9 +1,5 @@
 package com.dotshelf.domain.guestbook.service;
 
-import org.springframework.data.domain.PageRequest;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -12,7 +8,10 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import com.dotshelf.domain.user.repository.UserRepository;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.dotshelf.domain.guestbook.dto.GuestbookDtos.GuestbookListResponse;
 import com.dotshelf.domain.guestbook.dto.GuestbookDtos.GuestbookReplyRequest;
@@ -23,11 +22,13 @@ import com.dotshelf.domain.guestbook.entity.Guestbook;
 import com.dotshelf.domain.guestbook.entity.GuestbookReply;
 import com.dotshelf.domain.guestbook.repository.GuestbookReplyRepository;
 import com.dotshelf.domain.guestbook.repository.GuestbookRepository;
-import com.dotshelf.domain.notification.service.NotificationService;
+import com.dotshelf.domain.notification.event.NotificationEvents.GuestbookCreated;
+import com.dotshelf.domain.notification.event.NotificationEvents.GuestbookReplyCreated;
 import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.repository.UserBlockRepository;
+import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
@@ -43,7 +44,7 @@ public class GuestbookService {
     private final GuestbookReplyRepository replyRepository;
     private final SpaceService spaceService;
     private final UserService userService;
-    private final NotificationService notificationService;
+    private final ApplicationEventPublisher eventPublisher;
     private final UserRepository userRepository;
     private final UserBlockRepository userBlockRepository;
 
@@ -137,7 +138,7 @@ public class GuestbookService {
                 .visibilityScope(request.visibilityScope())
                 .anonymous(request.anonymous())
                 .build());
-        notificationService.notifyGuestbookCreated(space.getOwnerUserId(), currentUserId, guestbook.getId());
+        eventPublisher.publishEvent(new GuestbookCreated(space.getOwnerUserId(), currentUserId, guestbook.getId()));
         return buildGuestbookResponses(List.of(guestbook), currentUserId).get(0);
     }
 
@@ -194,7 +195,7 @@ public class GuestbookService {
                 .visibilityScope(request.visibilityScope())
                 .build());
         guestbook.increaseReplyCount();
-        notificationService.notifyGuestbookReplyCreated(guestbook.getWriterUserId(), currentUserId, reply.getId());
+        eventPublisher.publishEvent(new GuestbookReplyCreated(guestbook.getWriterUserId(), currentUserId, reply.getId()));
         return GuestbookReplyResponse.from(reply, userService.getUser(currentUserId));
     }
 

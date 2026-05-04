@@ -13,7 +13,6 @@ import com.dotshelf.domain.notification.dto.NotificationDtos.NotificationListRes
 import com.dotshelf.domain.notification.dto.NotificationDtos.NotificationResponse;
 import com.dotshelf.domain.notification.entity.Notification;
 import com.dotshelf.domain.notification.repository.NotificationRepository;
-import com.dotshelf.domain.user.entity.Follow;
 import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.entity.UserNotificationSetting;
 import com.dotshelf.domain.user.repository.FollowRepository;
@@ -36,6 +35,7 @@ public class NotificationService {
     private static final String TYPE_BOOK_ADDED = "BOOK_ADDED";
     private static final String TYPE_READING_RECORD_LIKED = "READING_RECORD_LIKED";
     private static final String TYPE_READING_RECORD_COMMENTED = "READING_RECORD_COMMENTED";
+    private static final String TYPE_READING_RECORD_COMMENT_REPLIED = "READING_RECORD_COMMENT_REPLIED";
 
     private static final String TARGET_GUESTBOOK = "GUESTBOOK";
     private static final String TARGET_GUESTBOOK_REPLY = "GUESTBOOK_REPLY";
@@ -76,6 +76,9 @@ public class NotificationService {
 
     @Transactional
     public void notifyGuestbookCreated(Long receiverUserId, Long senderUserId, Long guestbookId) {
+        if (isInvalidPair(receiverUserId, senderUserId)) {
+            return;
+        }
         User sender = userService.getUser(senderUserId);
         createIfEnabled(
                 receiverUserId,
@@ -90,6 +93,9 @@ public class NotificationService {
 
     @Transactional
     public void notifyGuestbookReplyCreated(Long receiverUserId, Long senderUserId, Long replyId) {
+        if (isInvalidPair(receiverUserId, senderUserId)) {
+            return;
+        }
         User sender = userService.getUser(senderUserId);
         createIfEnabled(
                 receiverUserId,
@@ -105,9 +111,7 @@ public class NotificationService {
     @Transactional
     public void notifyBookAddedToFollowers(Long senderUserId, Long userBookId, String bookTitle) {
         User sender = userService.getUser(senderUserId);
-        List<Long> receiverUserIds = followRepository.findByFollowingUserId(senderUserId).stream()
-                .map(Follow::getFollowerUserId)
-                .toList();
+        List<Long> receiverUserIds = followRepository.findFollowerUserIdsByFollowingUserId(senderUserId);
         if (receiverUserIds.isEmpty()) {
             return;
         }
@@ -115,7 +119,7 @@ public class NotificationService {
                 .findByUserIdIn(receiverUserIds)
                 .stream()
                 .collect(Collectors.toMap(UserNotificationSetting::getUserId, Function.identity()));
-        String message = sender.getNickname() + "님이 \"" + displayTitle(bookTitle) + "\" 책을 책장에 추가했습니다.";
+        String message = bookAddedMessage(sender.getNickname(), bookTitle);
         for (Long receiverUserId : receiverUserIds) {
             UserNotificationSetting setting = settingByUserId.get(receiverUserId);
             if (setting != null && !setting.isNotifyBookAddedByOthers()) {
@@ -134,6 +138,9 @@ public class NotificationService {
 
     @Transactional
     public void notifyReadingRecordLiked(Long receiverUserId, Long senderUserId, Long readingRecordId) {
+        if (isInvalidPair(receiverUserId, senderUserId)) {
+            return;
+        }
         User sender = userService.getUser(senderUserId);
         createIfEnabled(
                 receiverUserId,
@@ -148,6 +155,9 @@ public class NotificationService {
 
     @Transactional
     public void notifyReadingRecordCommented(Long receiverUserId, Long senderUserId, Long commentId) {
+        if (isInvalidPair(receiverUserId, senderUserId)) {
+            return;
+        }
         User sender = userService.getUser(senderUserId);
         createIfEnabled(
                 receiverUserId,
@@ -162,12 +172,15 @@ public class NotificationService {
 
     @Transactional
     public void notifyReadingRecordCommentReplied(Long receiverUserId, Long senderUserId, Long commentId) {
+        if (isInvalidPair(receiverUserId, senderUserId)) {
+            return;
+        }
         User sender = userService.getUser(senderUserId);
         createIfEnabled(
                 receiverUserId,
                 senderUserId,
                 UserNotificationSetting::isNotifyReadingRecordComment,
-                TYPE_READING_RECORD_COMMENTED,
+                TYPE_READING_RECORD_COMMENT_REPLIED,
                 TARGET_READING_RECORD_COMMENT,
                 commentId,
                 sender.getNickname() + "님이 댓글에 답글을 남겼습니다."
@@ -177,14 +190,13 @@ public class NotificationService {
     private void createIfEnabled(Long receiverUserId, Long senderUserId,
                                  Predicate<UserNotificationSetting> enabled,
                                  String type, String targetType, Long targetId, String message) {
-        if (receiverUserId == null || senderUserId == null || receiverUserId.equals(senderUserId)) {
+        if (isInvalidPair(receiverUserId, senderUserId)) {
             return;
         }
-        UserNotificationSetting setting = notificationSettingRepository.findByUserId(receiverUserId)
-                .orElseGet(() -> notificationSettingRepository.save(UserNotificationSetting.builder()
-                        .userId(receiverUserId)
-                        .build()));
-        if (!enabled.test(setting)) {
+        boolean notificationEnabled = notificationSettingRepository.findByUserId(receiverUserId)
+                .map(enabled::test)
+                .orElse(true);
+        if (!notificationEnabled) {
             return;
         }
         create(receiverUserId, senderUserId, type, targetType, targetId, message);
@@ -192,7 +204,7 @@ public class NotificationService {
 
     private void create(Long receiverUserId, Long senderUserId,
                         String type, String targetType, Long targetId, String message) {
-        if (receiverUserId == null || senderUserId == null || receiverUserId.equals(senderUserId)) {
+        if (isInvalidPair(receiverUserId, senderUserId)) {
             return;
         }
         notificationRepository.save(Notification.builder()
@@ -205,17 +217,25 @@ public class NotificationService {
                 .build());
     }
 
-    private static String displayTitle(String bookTitle) {
+    private static boolean isInvalidPair(Long receiverUserId, Long senderUserId) {
+        return receiverUserId == null || senderUserId == null || receiverUserId.equals(senderUserId);
+    }
+
+    private static String bookAddedMessage(String nickname, String bookTitle) {
         if (bookTitle == null || bookTitle.isBlank()) {
-            return "새 책";
+            return nickname + "님이 책장에 새 책을 추가했습니다.";
         }
-        return bookTitle.trim();
+        return nickname + "님이 \"" + bookTitle.trim() + "\" 책을 책장에 추가했습니다.";
     }
 
     private static String truncateMessage(String message) {
         if (message.length() <= MAX_MESSAGE_LENGTH) {
             return message;
         }
-        return message.substring(0, MAX_MESSAGE_LENGTH);
+        int cut = MAX_MESSAGE_LENGTH;
+        if (Character.isHighSurrogate(message.charAt(cut - 1))) {
+            cut--;
+        }
+        return message.substring(0, cut);
     }
 }

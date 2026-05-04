@@ -3,12 +3,13 @@ package com.dotshelf.domain.readingrecord.service;
 import java.util.Comparator;
 import java.util.List;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dotshelf.domain.book.entity.UserBook;
 import com.dotshelf.domain.book.service.BookService;
-import com.dotshelf.domain.notification.service.NotificationService;
+import com.dotshelf.domain.notification.event.NotificationEvents.ReadingRecordLiked;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordPageResponse;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordRequest;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordResponse;
@@ -42,7 +43,7 @@ public class ReadingRecordService {
     private final BookService bookService;
     private final UserService userService;
     private final FollowRepository followRepository;
-    private final NotificationService notificationService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ReadingRecordResponse getRecord(Long userId, Long recordId) {
         return ReadingRecordResponse.from(getReadableRecord(userId, recordId));
@@ -174,7 +175,7 @@ public class ReadingRecordService {
             createdLike = true;
         }
         if (createdLike) {
-            notificationService.notifyReadingRecordLiked(getRecordOwnerUserId(record), currentUserId, recordId);
+            eventPublisher.publishEvent(new ReadingRecordLiked(getRecordOwnerUserId(record), currentUserId, recordId));
         }
         return new ToggleResponse(true, record.getLikeCount());
     }

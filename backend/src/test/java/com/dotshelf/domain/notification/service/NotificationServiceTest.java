@@ -18,7 +18,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dotshelf.domain.notification.entity.Notification;
 import com.dotshelf.domain.notification.repository.NotificationRepository;
-import com.dotshelf.domain.user.entity.Follow;
 import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.entity.UserNotificationSetting;
 import com.dotshelf.domain.user.repository.FollowRepository;
@@ -90,16 +89,7 @@ class NotificationServiceTest {
                 .build();
         disabled.update(null, null, null, null, null, false);
         given(userService.getUser(7L)).willReturn(user("지은"));
-        given(followRepository.findByFollowingUserId(7L)).willReturn(List.of(
-                Follow.builder()
-                        .followerUserId(1L)
-                        .followingUserId(7L)
-                        .build(),
-                Follow.builder()
-                        .followerUserId(2L)
-                        .followingUserId(7L)
-                        .build()
-        ));
+        given(followRepository.findFollowerUserIdsByFollowingUserId(7L)).willReturn(List.of(1L, 2L));
         given(notificationSettingRepository.findByUserIdIn(List.of(1L, 2L))).willReturn(List.of(enabled, disabled));
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
 
@@ -111,6 +101,47 @@ class NotificationServiceTest {
         assertThat(notification.getType()).isEqualTo("BOOK_ADDED");
         assertThat(notification.getTargetType()).isEqualTo("USER_BOOK");
         assertThat(notification.getTargetId()).isEqualTo(100L);
+    }
+
+    @Test
+    @DisplayName("설정 row가 없으면 기본 ON으로 간주하되 새 설정 row를 생성하지 않는다")
+    void notifyReadingRecordLiked_missingSetting_savesWithoutCreatingSetting() {
+        given(userService.getUser(2L)).willReturn(user("민수"));
+        given(notificationSettingRepository.findByUserId(1L)).willReturn(Optional.empty());
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+
+        notificationService.notifyReadingRecordLiked(1L, 2L, 10L);
+
+        then(notificationRepository).should().save(captor.capture());
+        then(notificationSettingRepository).should().findByUserId(1L);
+        then(notificationSettingRepository).shouldHaveNoMoreInteractions();
+        assertThat(captor.getValue().getReceiverUserId()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("댓글 답글 알림은 댓글 알림과 다른 type으로 저장한다")
+    void notifyReadingRecordCommentReplied_savesReplyType() {
+        given(userService.getUser(2L)).willReturn(user("민수"));
+        given(notificationSettingRepository.findByUserId(1L))
+                .willReturn(Optional.of(UserNotificationSetting.builder()
+                        .userId(1L)
+                        .build()));
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+
+        notificationService.notifyReadingRecordCommentReplied(1L, 2L, 20L);
+
+        then(notificationRepository).should().save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo("READING_RECORD_COMMENT_REPLIED");
+    }
+
+    @Test
+    @DisplayName("발신자와 수신자가 같으면 Notification을 저장하지 않는다")
+    void notifyReadingRecordLiked_selfNotification_skipsNotification() {
+        notificationService.notifyReadingRecordLiked(1L, 1L, 10L);
+
+        then(userService).shouldHaveNoInteractions();
+        then(notificationSettingRepository).shouldHaveNoInteractions();
+        then(notificationRepository).shouldHaveNoInteractions();
     }
 
     private static User user(String nickname) {

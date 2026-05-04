@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,7 +36,7 @@ import com.dotshelf.domain.book.repository.UserBookRepository;
 import com.dotshelf.domain.bookshelf.entity.BookshelfItem;
 import com.dotshelf.domain.bookshelf.repository.BookshelfItemRepository;
 import com.dotshelf.domain.bookshelf.service.BookshelfService;
-import com.dotshelf.domain.notification.service.NotificationService;
+import com.dotshelf.domain.notification.event.NotificationEvents.BookAdded;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.common.ToggleResponse;
 import com.dotshelf.global.error.CustomException;
@@ -68,7 +69,7 @@ public class BookService {
     private final BookshelfItemRepository bookshelfItemRepository;
     private final BookshelfService bookshelfService;
     private final UserService userService;
-    private final NotificationService notificationService;
+    private final ApplicationEventPublisher eventPublisher;
     private final KakaoBookSearchClient kakaoBookSearchClient;
 
     public BookSearchListResponse searchBooks(String keyword, int page, int size) {
@@ -193,9 +194,10 @@ public class BookService {
                             .bookId(book.getId())
                             .build());
                 });
+        String previousStorageStatus = createdUserBook ? null : userBook.getStorageStatus();
         userBook.placeOnShelf();
-        bookshelfItemRepository.findByUserBookIdAndStatus(userBook.getId(), "ACTIVE")
-                .ifPresent(BookshelfItem::remove);
+        Optional<BookshelfItem> activeItem = bookshelfItemRepository.findByUserBookIdAndStatus(userBook.getId(), "ACTIVE");
+        activeItem.ifPresent(BookshelfItem::remove);
         BookshelfItem item = bookshelfItemRepository.save(BookshelfItem.builder()
                 .bookshelfId(bookshelfId)
                 .bookshelfSectionId(sectionId)
@@ -205,10 +207,14 @@ public class BookService {
                 .facingDirection(facingDirection)
                 .displayStyle(displayStyle)
                 .build());
-        if (createdUserBook) {
-            notificationService.notifyBookAddedToFollowers(currentUserId, userBook.getId(), book.getTitle());
+        if (isNewShelfAddition(createdUserBook, previousStorageStatus, activeItem.isPresent())) {
+            eventPublisher.publishEvent(new BookAdded(currentUserId, userBook.getId(), book.getTitle()));
         }
         return UserBookResponse.from(userBook, item);
+    }
+
+    private static boolean isNewShelfAddition(boolean createdUserBook, String previousStorageStatus, boolean hadActiveItem) {
+        return createdUserBook || !"ON_SHELF".equalsIgnoreCase(previousStorageStatus) || !hadActiveItem;
     }
 
     @Transactional

@@ -1,9 +1,11 @@
 package com.dotshelf.domain.readingrecord.service;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.dotshelf.domain.notification.service.NotificationService;
+import com.dotshelf.domain.notification.event.NotificationEvents.ReadingRecordCommentReplied;
+import com.dotshelf.domain.notification.event.NotificationEvents.ReadingRecordCommented;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.CommentListResponse;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.CommentRequest;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.CommentResponse;
@@ -28,7 +30,7 @@ public class ReadingRecordCommentService {
     private final ReadingRecordCommentLikeRepository likeRepository;
     private final ReadingRecordService readingRecordService;
     private final UserService userService;
-    private final NotificationService notificationService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public CommentListResponse getComments(Long viewerUserId, Long readingRecordId) {
         readingRecordService.getReadableRecord(viewerUserId, readingRecordId);
@@ -62,9 +64,9 @@ public class ReadingRecordCommentService {
                 .build());
         record.increaseCommentCount();
         Long recordOwnerUserId = readingRecordService.getRecordOwnerUserId(record);
-        notificationService.notifyReadingRecordCommented(recordOwnerUserId, currentUserId, comment.getId());
+        eventPublisher.publishEvent(new ReadingRecordCommented(recordOwnerUserId, currentUserId, comment.getId()));
         if (parent != null && !parent.getUserId().equals(recordOwnerUserId)) {
-            notificationService.notifyReadingRecordCommentReplied(parent.getUserId(), currentUserId, comment.getId());
+            eventPublisher.publishEvent(new ReadingRecordCommentReplied(parent.getUserId(), currentUserId, comment.getId()));
         }
         return CommentResponse.from(comment);
     }
