@@ -23,6 +23,7 @@ import com.dotshelf.domain.guestbook.entity.Guestbook;
 import com.dotshelf.domain.guestbook.entity.GuestbookReply;
 import com.dotshelf.domain.guestbook.repository.GuestbookReplyRepository;
 import com.dotshelf.domain.guestbook.repository.GuestbookRepository;
+import com.dotshelf.domain.notification.service.NotificationService;
 import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.user.entity.User;
@@ -42,6 +43,7 @@ public class GuestbookService {
     private final GuestbookReplyRepository replyRepository;
     private final SpaceService spaceService;
     private final UserService userService;
+    private final NotificationService notificationService;
     private final UserRepository userRepository;
     private final UserBlockRepository userBlockRepository;
 
@@ -135,6 +137,7 @@ public class GuestbookService {
                 .visibilityScope(request.visibilityScope())
                 .anonymous(request.anonymous())
                 .build());
+        notificationService.notifyGuestbookCreated(space.getOwnerUserId(), currentUserId, guestbook.getId());
         return buildGuestbookResponses(List.of(guestbook), currentUserId).get(0);
     }
 
@@ -191,6 +194,7 @@ public class GuestbookService {
                 .visibilityScope(request.visibilityScope())
                 .build());
         guestbook.increaseReplyCount();
+        notificationService.notifyGuestbookReplyCreated(guestbook.getWriterUserId(), currentUserId, reply.getId());
         return GuestbookReplyResponse.from(reply, userService.getUser(currentUserId));
     }
 
