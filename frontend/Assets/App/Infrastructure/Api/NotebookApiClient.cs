@@ -23,11 +23,6 @@ namespace App.Infrastructure.Api
             return RequireApi().CheckHealth(onComplete, path);
         }
 
-        public Coroutine StartGuestSession(Action<GuestSessionResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
-        {
-            return Post<GuestSessionResponseDto>("/v1/auth/guest-session", onSuccess, onError);
-        }
-
         public Coroutine SocialLogin(SocialLoginRequestDto request, Action<AuthTokenResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Post<SocialLoginRequestDto, AuthTokenResponseDto>("/v1/auth/social-login", NormalizeSocialLoginRequest(request), onSuccess, onError);
@@ -41,11 +36,6 @@ namespace App.Infrastructure.Api
         public Coroutine Logout(LogoutRequestDto request, Action<VoidResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Post<LogoutRequestDto, VoidResponseDto>("/v1/auth/logout", request, onSuccess, onError);
-        }
-
-        public Coroutine ImportGuestData(GuestMigrationRequestDto request, Action<IdResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
-        {
-            return Post<GuestMigrationRequestDto, IdResponseDto>("/v1/auth/guest-migration", request, onSuccess, onError);
         }
 
         public Coroutine SearchBooks(string keyword, Action<BookListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)

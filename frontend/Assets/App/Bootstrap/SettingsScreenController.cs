@@ -1024,12 +1024,6 @@ namespace App.Bootstrap
                 return;
             }
 
-            if (SessionState.IsGuest)
-            {
-                ShowNoticeToast("게스트 상태에서는 공개 범위를 변경할 수 없습니다. 로그인 후 다시 시도해주세요.");
-                return;
-            }
-
 #if UNITY_EDITOR
             if (DevMainSceneMode.IsActive)
             {
@@ -1188,12 +1182,6 @@ namespace App.Bootstrap
             if (!string.Equals(password, confirmPassword, StringComparison.Ordinal))
             {
                 SetMessage(profileEditFormMessageLabel, "비밀번호가 일치하지 않습니다.", ErrorColor);
-                return;
-            }
-
-            if (SessionState.IsGuest)
-            {
-                SetMessage(profileEditFormMessageLabel, "게스트 상태에서는 프로필을 수정할 수 없습니다. 로그인 후 다시 시도해주세요.", ErrorColor);
                 return;
             }
 
@@ -1369,13 +1357,6 @@ namespace App.Bootstrap
                 return;
             }
 
-            if (SessionState.IsGuest)
-            {
-                ShowNoticeToast("게스트 상태에서는 회원 탈퇴를 진행할 수 없습니다.");
-                HideWithdrawalConfirmPopup();
-                return;
-            }
-
 #if UNITY_EDITOR
             if (DevMainSceneMode.IsActive)
             {
@@ -1422,11 +1403,11 @@ namespace App.Bootstrap
             }
 #endif
 
-            // Guest sessions hold no refresh token — there is nothing for BE
-            // to revoke, so skip the round-trip and clear locally. Same path
-            // used when the refresh token is missing for any other reason.
+            // No refresh token to revoke — clear locally and skip the
+            // round-trip. Same path used when the refresh token is missing
+            // for any reason.
             var refreshToken = AuthSession.RefreshToken;
-            if (SessionState.IsGuest || string.IsNullOrWhiteSpace(refreshToken))
+            if (string.IsNullOrWhiteSpace(refreshToken))
             {
                 FinishAccountClearAndReturnToLogin();
                 return;
@@ -1464,7 +1445,6 @@ namespace App.Bootstrap
             isWithdrawalInFlight = false;
             HideWithdrawalConfirmPopup();
             AuthSession.Clear();
-            SessionState.Clear();
             if (APIManager.Instance != null)
             {
                 APIManager.Instance.SetAccessToken(string.Empty);
@@ -1477,13 +1457,6 @@ namespace App.Bootstrap
         {
             if (isProfileLoadInFlight)
             {
-                return;
-            }
-
-            if (SessionState.IsGuest)
-            {
-                // Guest has no /v1/users/me record on BE; the form stays
-                // whatever the inspector left it as.
                 return;
             }
 
@@ -1599,13 +1572,6 @@ namespace App.Bootstrap
                 return;
             }
 
-            if (SessionState.IsGuest)
-            {
-                RevertNotificationToggle(index, !value);
-                ShowNoticeToast("게스트 상태에서는 알림 설정을 변경할 수 없습니다.");
-                return;
-            }
-
 #if UNITY_EDITOR
             if (DevMainSceneMode.IsActive)
             {
@@ -1705,10 +1671,6 @@ namespace App.Bootstrap
         private void LoadCurrentNotificationSettings()
         {
             if (isNotificationLoadInFlight)
-            {
-                return;
-            }
-            if (SessionState.IsGuest)
             {
                 return;
             }

@@ -174,21 +174,19 @@ namespace BookshelfPorting.Runtime
                 ?? systems.AddComponent<APIManager>();
             var notebookUiSceneLoader = GetOrAddComponent<NotebookUiSceneLoader>(systems);
 
-            // Guest mode: /v1/auth/guest-session has been issued but no social
-            // login has happened yet, so no Bearer token exists. Authenticated
-            // endpoints (notably /v1/spaces/me) would 401, so we skip the
-            // server-bookshelf path entirely and let BookshelfGenerator render
-            // a local temp room from the public book catalog. Once the user
-            // logs in and the scene reloads, AuthSession.IsGuestSession flips
-            // to false and the API sync wires up normally.
-            var isGuestSession = Application.isPlaying && AuthSession.IsGuestSession;
-            var useServerBookshelf = usesHttpApi && !isGuestSession;
-
             apiManager.Configure(
                 apiBaseUrl,
                 apiAccessToken,
                 apiTimeoutSeconds,
                 apiConfig != null && apiConfig.EnableVerboseLog);
+
+            // Server bookshelf path needs a Bearer token. Without one, /v1/spaces/me
+            // 401s and the shelf would render empty — fall back to the local catalog
+            // path until the user logs in. Computed after Configure() so the token
+            // hydrated by Configure (env var / inspector / PlayerPrefs) is reflected.
+            // (MR #88 replaced the IsGuestSession gate.)
+            var useServerBookshelf = usesHttpApi && apiManager.HasAccessToken;
+
             var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(
                 apiMode,
                 apiBaseUrl,
@@ -199,13 +197,9 @@ namespace BookshelfPorting.Runtime
             var addNotebookBookToShelfUseCase = new AddNotebookBookToShelfUseCase(notebookBookRepository);
             var notebookRuntimeRepository = CreateNotebookRuntimeRepository(apiMode, apiManager);
             var notebookRuntimeUseCase = new NotebookRuntimeUseCase(notebookRuntimeRepository);
-            if (Application.isPlaying && usesHttpApi && !apiManager.HasAccessToken && !isGuestSession)
+            if (Application.isPlaying && usesHttpApi && !apiManager.HasAccessToken)
             {
                 Debug.LogWarning("Dotshelf RealApi mode has no access token. Public notebook APIs stay enabled, but authenticated actions are blocked until APIManager.SetAccessToken() is called.");
-            }
-            if (Application.isPlaying && isGuestSession)
-            {
-                Debug.Log($"[Auth] guest mode - using local bookshelf, skipping /v1/spaces/me (guestSessionId='{AuthSession.GuestSessionId}')");
             }
             if (Application.isPlaying && usesHttpApi)
             {

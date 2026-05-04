@@ -59,7 +59,6 @@ namespace App.Bootstrap
         private Button appleLoginButton;
         private Button kakaoLoginButton;
         private Button googleLoginButton;
-        private Button guestEntryButton;
 #if UNITY_EDITOR
         // Editor-only shortcuts. Field/build/wire/handler are all gated so
         // player builds ship without any dev affordance.
@@ -173,16 +172,13 @@ namespace App.Bootstrap
         }
 
 #if UNITY_EDITOR
-        // Editor-only shortcut handler. Bypasses social-login / guest-session
-        // entirely and jumps straight to MainScene as an anonymous-API session.
+        // Editor-only shortcut handler. Bypasses social-login entirely and
+        // jumps straight to MainScene as an anonymous-API session.
         //
-        // Auth state is wiped first so leftover artefacts from a prior play
-        // (guestSessionId, accessToken, refreshToken, IsGuest pref) cannot
-        // leak into the dev session — otherwise GuestBadgeController would
-        // still render the guest badge in MainScene and BookshelfSceneInstaller
-        // would route to the local-only path via AuthSession.IsGuestSession.
-        // After Clear() both flags read false, so MainScene boots as a clean
-        // anonymous user against the real API.
+        // Auth state is wiped first so leftover tokens (accessToken,
+        // refreshToken) from a prior play do not leak into the dev session.
+        // After Clear() the session is anonymous and BookshelfSceneInstaller
+        // boots against the real API.
         //
         // APIManager.Instance may already be alive (DontDestroyOnLoad) with
         // a hydrated token from earlier in the same play session — also reset
@@ -198,7 +194,6 @@ namespace App.Bootstrap
             }
 
             AuthSession.Clear();
-            SessionState.Clear();
             if (APIManager.Instance != null)
             {
                 APIManager.Instance.SetAccessToken(string.Empty);
@@ -218,7 +213,7 @@ namespace App.Bootstrap
 
         // Editor-only: enter the onboarding flow from Step1 without a real
         // login. Auth artefacts are wiped (same reason as the quick-entry
-        // path: leftover guest/access tokens would make the flow think it is
+        // path: leftover access tokens would make the flow think it is
         // authenticated). DevMainSceneMode.Activate() flips the flag that
         // OnboardingScreenController checks to short-circuit nickname check
         // and profile save against BE — see those handlers for the gate.
@@ -230,7 +225,6 @@ namespace App.Bootstrap
             }
 
             AuthSession.Clear();
-            SessionState.Clear();
             if (APIManager.Instance != null)
             {
                 APIManager.Instance.SetAccessToken(string.Empty);
@@ -247,9 +241,9 @@ namespace App.Bootstrap
             Debug.Log("[DEV MODE] entering onboarding step 1 (test)");
             SetCanvasVisible(false);
             onboardingController.InitializeIfNeeded();
-            // Use the regular flow (not StartOnboardingAsGuest) so Step1 is
-            // visible — the whole point of the test button is to exercise
-            // Step1→Step2→Step3 without BE.
+            // Use the regular onboarding flow so Step1 is visible — the whole
+            // point of the test button is to exercise Step1→Step2→Step3
+            // without BE.
             onboardingController.StartOnboarding();
         }
 #endif
@@ -337,85 +331,6 @@ namespace App.Bootstrap
             }
         }
 
-        public async void OnGuestEntryButtonClicked()
-        {
-            if (isLoginInFlight)
-            {
-                Debug.Log("[LoginDemo] Guest button click ignored: another auth call is already in flight.");
-                return;
-            }
-
-            Debug.Log("[LoginDemo] Guest button clicked -> calling /v1/auth/guest-session");
-            EnsureAuthService();
-            isLoginInFlight = true;
-            SetInteractable(false);
-            SetMessage(loginMessageLabel, "게스트 세션을 발급받는 중입니다...");
-
-            GuestSessionResult result;
-            try
-            {
-                result = await authService.StartGuestSessionAsync();
-            }
-            finally
-            {
-                isLoginInFlight = false;
-                SetInteractable(true);
-            }
-
-            if (!result.IsSuccess)
-            {
-                Debug.LogWarning($"[LoginDemo] Guest session failed: code={result.ErrorCode} message={result.ErrorMessage}");
-                SetMessage(loginMessageLabel, result.ErrorMessage);
-                return;
-            }
-
-            // Guest-session log intentionally omits guestSessionId / guestToken —
-            // both are credentials that BE / a man-in-the-middle could use to
-            // hijack this guest's data, and Unity logs leak through editor
-            // consoles, device logcat, CI batchmode logs, and crash reports.
-            Debug.Log($"[LoginDemo] Guest session OK: expiresInSeconds={result.ExpiresInSeconds}");
-            AuthSession.SaveGuestSessionId(result.GuestSessionId);
-
-            // Promote the guestToken to the active access token so authenticated
-            // BE calls in MainScene (BookshelfApiSyncController.GetMySpace,
-            // visit recording, etc.) carry the guest credential and BE can
-            // resolve a server-side space record for this guest. BE controls
-            // the guest's permission scope server-side, so SessionState.IsGuest
-            // (a separate UI/feature gate) is still set below to keep the
-            // "guest can't change profile / withdraw / change visibility"
-            // restrictions in place — those are policy, not auth.
-            if (!string.IsNullOrWhiteSpace(result.GuestToken))
-            {
-                AuthSession.SaveTokens(
-                    userId: 0L,
-                    accessToken: result.GuestToken,
-                    refreshToken: string.Empty,
-                    expiresInSeconds: result.ExpiresInSeconds,
-                    newUser: false,
-                    onboarded: false);
-                if (APIManager.Instance != null)
-                {
-                    APIManager.Instance.SetAccessToken(result.GuestToken);
-                }
-            }
-
-            SessionState.MarkGuest();
-            SetMessage(loginMessageLabel, "게스트로 입장합니다. 테마 설정을 진행해주세요.");
-
-            // Guest entry skips onboarding step 1 (profile) and step 3 (bookshelf
-            // focus). The user only chooses a theme on step 2; the existing
-            // completion modal then handles transition to the main scene.
-            var onboardingController = GetComponent<OnboardingScreenController>();
-            if (onboardingController == null)
-            {
-                Debug.LogError("[LoginDemo] OnboardingScreenController is missing from LoginScene prefab — guest entry cannot start.");
-                return;
-            }
-
-            onboardingController.InitializeIfNeeded();
-            onboardingController.StartOnboardingAsGuest();
-        }
-
         private void BeginNativeSocialLogin(SocialProvider provider, string displayName)
         {
             // Platform-side native login (Google/Kakao/Apple SDK) is not wired
@@ -425,7 +340,7 @@ namespace App.Bootstrap
             // the user in.
             SetMessage(
                 loginMessageLabel,
-                $"{displayName} 로그인 SDK 연동이 준비되지 않았습니다. 게스트 입장으로 진행해주세요.");
+                $"{displayName} 로그인 SDK 연동이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.");
         }
 
         private void ApplyLoginResult(LoginResult result, string providerDisplayName)
@@ -443,7 +358,6 @@ namespace App.Bootstrap
                 result.ExpiresIn,
                 result.NewUser,
                 result.Onboarded);
-            SessionState.MarkLoggedIn();
 
             // Route based on the BE response:
             //   newUser=true     → first social-login, account just created → run onboarding from step 1.
@@ -527,7 +441,6 @@ namespace App.Bootstrap
             if (appleLoginButton != null) appleLoginButton.interactable = interactable;
             if (kakaoLoginButton != null) kakaoLoginButton.interactable = interactable;
             if (googleLoginButton != null) googleLoginButton.interactable = interactable;
-            if (guestEntryButton != null) guestEntryButton.interactable = interactable;
 #if UNITY_EDITOR
             if (devShortcutButton != null) devShortcutButton.interactable = interactable;
             if (devOnboardingTestButton != null) devOnboardingTestButton.interactable = interactable;
@@ -589,10 +502,13 @@ namespace App.Bootstrap
             // message rather than the generic SDK-missing one.
             StartDesktopBrowserOAuth(provider);
 #else
-            // Mobile — SDK has not been wired up yet. Surface the SDK message.
+            // Mobile — native social SDKs are not wired up yet, so neither
+            // the social login flow nor the desktop browser-OAuth fallback
+            // can run. Until the SDK integration lands (별도 PR) the only
+            // working entry point is a desktop / editor build.
             SetMessage(
                 loginMessageLabel,
-                $"{ProviderDisplayName(provider)} 로그인 SDK 연동이 준비되지 않았습니다. SDK 연동 후 다시 시도하거나 게스트 입장으로 진행해주세요.");
+                $"{ProviderDisplayName(provider)} 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요.");
 #endif
         }
 
@@ -754,7 +670,6 @@ namespace App.Bootstrap
             AddButtonListener(appleLoginButton, OnAppleLoginButtonClicked);
             AddButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             AddButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
-            AddButtonListener(guestEntryButton, OnGuestEntryButtonClicked);
 #if UNITY_EDITOR
             AddButtonListener(devShortcutButton, OnDevShortcutButtonClicked);
             AddButtonListener(devOnboardingTestButton, OnDevOnboardingTestButtonClicked);
@@ -773,7 +688,6 @@ namespace App.Bootstrap
             RemoveButtonListener(appleLoginButton, OnAppleLoginButtonClicked);
             RemoveButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             RemoveButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
-            RemoveButtonListener(guestEntryButton, OnGuestEntryButtonClicked);
 #if UNITY_EDITOR
             RemoveButtonListener(devShortcutButton, OnDevShortcutButtonClicked);
             RemoveButtonListener(devOnboardingTestButton, OnDevOnboardingTestButtonClicked);
@@ -901,7 +815,6 @@ namespace App.Bootstrap
             appleLoginButton = CreateStackButton(pane.transform, "AppleButton", "Apple 로그인", AppleColor, Color.white, false, BorderColor, SocialButtonHeight);
             kakaoLoginButton = CreateStackButton(pane.transform, "KakaoButton", "Kakao 로그인", KakaoColor, TextColor, false, BorderColor, SocialButtonHeight);
             googleLoginButton = CreateStackButton(pane.transform, "GoogleButton", "Google 로그인", GoogleColor, TextColor, true, BorderColor, SocialButtonHeight);
-            guestEntryButton = CreateStackButton(pane.transform, "GuestEntryButton", "게스트로 입장하기", SecondaryColor, TextColor, true, BorderColor, SocialButtonHeight);
 #if UNITY_EDITOR
             // Visually distinct (red outline + red label on the card background)
             // so a dev never confuses these with a real login button. Stripped
@@ -1213,9 +1126,6 @@ namespace App.Bootstrap
                 "Apple 로그인" +
                 "Kakao 로그인" +
                 "Google 로그인" +
-                "게스트로 입장하기" +
-                "게스트 세션을 발급받는 중입니다..." +
-                "게스트로 입장합니다. 테마 설정을 진행해주세요." +
                 "Apple 로그인 중입니다..." +
                 "Kakao 로그인 중입니다..." +
                 "Google 로그인 중입니다..." +
@@ -1227,12 +1137,11 @@ namespace App.Bootstrap
                 "Apple 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
                 "Kakao 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
                 "Google 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
-                "Apple 로그인 SDK 연동이 준비되지 않았습니다. SDK 연동 후 다시 시도하거나 게스트 입장으로 진행해주세요." +
-                "Kakao 로그인 SDK 연동이 준비되지 않았습니다. SDK 연동 후 다시 시도하거나 게스트 입장으로 진행해주세요." +
-                "Google 로그인 SDK 연동이 준비되지 않았습니다. SDK 연동 후 다시 시도하거나 게스트 입장으로 진행해주세요." +
+                "Apple 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요." +
+                "Kakao 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요." +
+                "Google 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요." +
                 "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요." +
                 "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요." +
-                "게스트 세션을 시작하지 못했습니다. 네트워크 상태를 확인해주세요." +
                 "Apple 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요." +
                 "Kakao 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요." +
                 "Google 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요." +
