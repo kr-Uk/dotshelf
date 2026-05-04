@@ -17,6 +17,8 @@ namespace BookshelfPorting.Runtime
         public float ownerRating;
         public float averageRating;
         public int totalLikeCount;
+        public int reviewCount;
+        public bool hasAggregateBookStats;
         public bool isLiked;
         public bool isPaidCoverOwned;
         public bool isDecoration;
@@ -146,6 +148,8 @@ namespace BookshelfPorting.Runtime
                     ownerRating = meta.ownerRating,
                     averageRating = meta.averageRating,
                     totalLikeCount = meta.totalLikeCount,
+                    reviewCount = meta.reviewCount,
+                    hasAggregateBookStats = meta.hasAggregateBookStats,
                     isLiked = meta.isLiked,
                     isPaidCoverOwned = meta.isPaidCoverOwned,
                     isDecoration = meta.isDecoration,
@@ -243,6 +247,8 @@ namespace BookshelfPorting.Runtime
                 ownerRating = book.ownerRating,
                 averageRating = ResolveDefaultAverageRating(book),
                 totalLikeCount = ResolveDefaultLikeCount(book),
+                reviewCount = Mathf.Max(0, book.reviewCount),
+                hasAggregateBookStats = book.hasAggregateBookStats,
                 isLiked = book.isLiked,
                 isPaidCoverOwned = book.isPaidCoverOwned,
                 isDecoration = book.isDecoration,
@@ -274,7 +280,12 @@ namespace BookshelfPorting.Runtime
             book.memoPreview = meta.memoPreview;
             book.readingStatus = meta.readingStatus;
             book.ownerRating = Mathf.Clamp(meta.ownerRating, 0f, 5f);
-            book.rating = Mathf.RoundToInt(Mathf.Clamp(meta.averageRating > 0f ? meta.averageRating : book.ownerRating, 0f, 5f));
+            book.averageRating = Mathf.Clamp(meta.averageRating, 0f, 5f);
+            book.totalLikeCount = Mathf.Max(0, meta.totalLikeCount);
+            book.reviewCount = Mathf.Max(0, meta.reviewCount);
+            book.hasAggregateBookStats = meta.hasAggregateBookStats;
+            var displayRating = meta.hasAggregateBookStats ? meta.averageRating : book.ownerRating;
+            book.rating = Mathf.RoundToInt(Mathf.Clamp(displayRating, 0f, 5f));
             book.isLiked = meta.isLiked;
             book.isPaidCoverOwned = meta.isPaidCoverOwned;
             book.isDecoration = meta.isDecoration;
@@ -328,6 +339,11 @@ namespace BookshelfPorting.Runtime
                 return 0f;
             }
 
+            if (book.hasAggregateBookStats)
+            {
+                return Mathf.Clamp(book.averageRating, 0f, 5f);
+            }
+
             if (book.rating > 0)
             {
                 return Mathf.Clamp(book.rating, 0f, 5f);
@@ -348,7 +364,12 @@ namespace BookshelfPorting.Runtime
                 return 0;
             }
 
-            return 0;
+            if (book.hasAggregateBookStats)
+            {
+                return Mathf.Max(0, book.totalLikeCount);
+            }
+
+            return book.isLiked ? 1 : 0;
         }
     }
 }

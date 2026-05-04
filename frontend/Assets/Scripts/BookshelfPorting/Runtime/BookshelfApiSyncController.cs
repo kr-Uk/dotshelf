@@ -280,17 +280,27 @@ namespace BookshelfPorting.Runtime
                 error => Debug.LogWarning($"Bookshelf update failed: {FormatError(error)}"));
         }
 
-        public void DeleteBookshelf(string bookshelfServerId)
+        public bool DeleteBookshelf(string bookshelfServerId, Action onSucceeded = null, Action<string> onFailed = null)
         {
             if (!IsConfigured || !TryParseId(bookshelfServerId, out var bookshelfId))
             {
-                return;
+                return false;
             }
 
             client.DeleteBookshelf(
                 bookshelfId,
-                _ => RefreshFromServer(),
-                error => Debug.LogWarning($"Bookshelf delete failed: {FormatError(error)}"));
+                _ =>
+                {
+                    onSucceeded?.Invoke();
+                    RefreshFromServer();
+                },
+                error =>
+                {
+                    var message = FormatError(error);
+                    Debug.LogWarning($"Bookshelf delete failed: {message}");
+                    onFailed?.Invoke(message);
+                });
+            return true;
         }
 
         public void ReorderBookshelves()
@@ -495,11 +505,11 @@ namespace BookshelfPorting.Runtime
             return false;
         }
 
-        public void DeleteReadingRecord(BookEntity book)
+        public bool DeleteReadingRecord(BookEntity book, Action onSucceeded = null, Action<string> onFailed = null)
         {
             if (!IsConfigured || book == null || !TryParseId(book.readingRecordId, out var recordId))
             {
-                return;
+                return false;
             }
 
             client.DeleteReadingRecord(
@@ -511,8 +521,15 @@ namespace BookshelfPorting.Runtime
                     book.reportBody = string.Empty;
                     book.reportUpdatedLabel = string.Empty;
                     book.memoPreview = book.description;
+                    onSucceeded?.Invoke();
                 },
-                error => Debug.LogWarning($"Reading record delete failed: {FormatError(error)}"));
+                error =>
+                {
+                    var message = FormatError(error);
+                    Debug.LogWarning($"Reading record delete failed: {message}");
+                    onFailed?.Invoke(message);
+                });
+            return true;
         }
 
         public void ToggleReadingRecordLike(BookEntity book, bool liked, Action<BookEntity> onUpdated = null)
@@ -694,29 +711,42 @@ namespace BookshelfPorting.Runtime
                 error => Debug.LogWarning($"Kakao/manual book add failed: {FormatError(error)}"));
         }
 
-        public void RemoveBook(BookEntity book)
+        public bool RemoveBook(BookEntity book, Action onSucceeded = null, Action<string> onFailed = null)
         {
             if (!IsConfigured || book == null)
             {
-                return;
+                return false;
             }
 
             if (TryParseId(book.bookshelfItemId, out var itemId))
             {
                 client.RemoveBookshelfItem(
                     itemId,
-                    _ => { },
-                    error => Debug.LogWarning($"Bookshelf item remove failed: {FormatError(error)}"));
-                return;
+                    _ => onSucceeded?.Invoke(),
+                    error =>
+                    {
+                        var message = FormatError(error);
+                        Debug.LogWarning($"Bookshelf item remove failed: {message}");
+                        onFailed?.Invoke(message);
+                    });
+                return true;
             }
 
             if (TryParseId(book.userBookId, out var userBookId))
             {
                 client.DeleteUserBook(
                     userBookId,
-                    _ => { },
-                    error => Debug.LogWarning($"User book delete failed: {FormatError(error)}"));
+                    _ => onSucceeded?.Invoke(),
+                    error =>
+                    {
+                        var message = FormatError(error);
+                        Debug.LogWarning($"User book delete failed: {message}");
+                        onFailed?.Invoke(message);
+                    });
+                return true;
             }
+
+            return false;
         }
 
         public void ArchiveBook(BookEntity book)
@@ -1059,10 +1089,11 @@ namespace BookshelfPorting.Runtime
             book.description = string.IsNullOrWhiteSpace(response.Description) ? book.description : response.Description;
             book.memoPreview = string.IsNullOrWhiteSpace(book.memoPreview) ? book.description : book.memoPreview;
             book.isPaidCoverOwned = response.HasPaidCover;
-            if (response.AvgRating > 0m)
-            {
-                book.rating = Mathf.RoundToInt(Mathf.Clamp((float)response.AvgRating, 0f, 5f));
-            }
+            book.averageRating = Mathf.Clamp((float)response.AvgRating, 0f, 5f);
+            book.totalLikeCount = Mathf.Max(0, response.LikeCount);
+            book.reviewCount = Mathf.Max(0, response.ReviewCount);
+            book.hasAggregateBookStats = true;
+            book.rating = Mathf.RoundToInt(Mathf.Clamp(book.averageRating, 0f, 5f));
         }
 
         private static void ApplyBookshelfItemResponse(BookEntity book, BookshelfItemResponseDto response)

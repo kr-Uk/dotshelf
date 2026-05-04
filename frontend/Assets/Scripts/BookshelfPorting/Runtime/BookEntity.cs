@@ -34,6 +34,10 @@ namespace BookshelfPorting.Runtime
         public string description;
         public string memoPreview;
         public int rating;
+        public float averageRating;
+        public int totalLikeCount;
+        public int reviewCount;
+        public bool hasAggregateBookStats;
         public float ownerRating;
         public ReadingStatus readingStatus = ReadingStatus.Unread;
         public bool isLiked;
@@ -88,6 +92,10 @@ namespace BookshelfPorting.Runtime
                 author = book.Author;
                 publisher = book.Publisher;
                 description = book.Description;
+                averageRating = Mathf.Clamp((float)book.AverageRating, 0f, 5f);
+                totalLikeCount = Mathf.Max(0, (int)book.LikeCount);
+                reviewCount = Mathf.Max(0, book.RatingCount);
+                hasAggregateBookStats = true;
             }
 
             if (userBook == null)
@@ -97,7 +105,7 @@ namespace BookshelfPorting.Runtime
 
             userBookId = userBook.UserBookId;
             ownerRating = userBook.OwnerRating.HasValue ? (float)userBook.OwnerRating.Value : 0f;
-            rating = Mathf.RoundToInt(ownerRating);
+            rating = Mathf.RoundToInt(hasAggregateBookStats ? averageRating : ownerRating);
             readingStatus = userBook.ReadingStatus;
             isLiked = userBook.IsLiked;
             isRead = readingStatus == ReadingStatus.Read;

@@ -2661,7 +2661,11 @@ namespace BookshelfPorting.Runtime
                         book.reportVisibility,
                         book.reportTitle,
                         book.reportBody,
-                        book.reportUpdatedLabel));
+                        book.reportUpdatedLabel,
+                        averageRating: book.averageRating,
+                        totalLikeCount: book.totalLikeCount,
+                        reviewCount: book.reviewCount,
+                        hasAggregateBookStats: book.hasAggregateBookStats));
                 }
 
                 snapshot.Sections.Add(sectionSnapshot);
@@ -2769,7 +2773,11 @@ namespace BookshelfPorting.Runtime
                     source.ReportVisibility,
                     source.ReportTitle,
                     source.ReportBody,
-                    source.ReportUpdatedLabel));
+                    source.ReportUpdatedLabel,
+                    averageRating: source.AverageRating,
+                    totalLikeCount: source.TotalLikeCount,
+                    reviewCount: source.ReviewCount,
+                    hasAggregateBookStats: source.HasAggregateBookStats));
             }
 
             return snapshot;
@@ -2842,7 +2850,11 @@ namespace BookshelfPorting.Runtime
                 userBook?.OwnerRating.HasValue == true ? (float)userBook.OwnerRating.Value : 0f,
                 userBook?.ReadingStatus ?? ReadingStatus.Unread,
                 userBook?.IsLiked ?? false,
-                readingRecord == null || readingRecord.VisibilityScope == VisibilityScope.Public);
+                readingRecord == null || readingRecord.VisibilityScope == VisibilityScope.Public,
+                averageRating: book != null ? (float)book.AverageRating : 0f,
+                totalLikeCount: book != null ? Mathf.Max(0, (int)book.LikeCount) : 0,
+                reviewCount: book != null ? Mathf.Max(0, book.RatingCount) : 0,
+                hasAggregateBookStats: book != null);
         }
 
         private void MergeBookshelfSnapshots(int sourceIndex, int targetIndex)
@@ -3233,7 +3245,11 @@ namespace BookshelfPorting.Runtime
             book.description = string.IsNullOrWhiteSpace(placement.Description) ? book.description : placement.Description;
             book.memoPreview = string.IsNullOrWhiteSpace(placement.MemoPreview) ? book.memoPreview : placement.MemoPreview;
             book.ownerRating = Mathf.Clamp(placement.OwnerRating, 0f, 5f);
-            book.rating = Mathf.RoundToInt(book.ownerRating);
+            book.averageRating = Mathf.Clamp(placement.AverageRating, 0f, 5f);
+            book.totalLikeCount = Mathf.Max(0, placement.TotalLikeCount);
+            book.reviewCount = Mathf.Max(0, placement.ReviewCount);
+            book.hasAggregateBookStats = placement.HasAggregateBookStats;
+            book.rating = Mathf.RoundToInt(book.hasAggregateBookStats ? book.averageRating : book.ownerRating);
             book.readingStatus = placement.ReadingStatus;
             book.isRead = placement.ReadingStatus == ReadingStatus.Read;
             book.isLiked = placement.IsLiked;
@@ -3985,7 +4001,11 @@ namespace BookshelfPorting.Runtime
                 VisibilityScope reportVisibility = VisibilityScope.Public,
                 string reportTitle = null,
                 string reportBody = null,
-                string reportUpdatedLabel = null)
+                string reportUpdatedLabel = null,
+                float averageRating = 0f,
+                int totalLikeCount = 0,
+                int reviewCount = 0,
+                bool hasAggregateBookStats = false)
             {
                 BookKey = bookKey;
                 Orientation = orientation;
@@ -4010,6 +4030,10 @@ namespace BookshelfPorting.Runtime
                 ReportTitle = reportTitle;
                 ReportBody = reportBody;
                 ReportUpdatedLabel = reportUpdatedLabel;
+                AverageRating = averageRating;
+                TotalLikeCount = totalLikeCount;
+                ReviewCount = reviewCount;
+                HasAggregateBookStats = hasAggregateBookStats;
             }
 
             public string BookKey { get; }
@@ -4035,6 +4059,10 @@ namespace BookshelfPorting.Runtime
             public string ReportTitle { get; }
             public string ReportBody { get; }
             public string ReportUpdatedLabel { get; }
+            public float AverageRating { get; }
+            public int TotalLikeCount { get; }
+            public int ReviewCount { get; }
+            public bool HasAggregateBookStats { get; }
         }
     }
 }
