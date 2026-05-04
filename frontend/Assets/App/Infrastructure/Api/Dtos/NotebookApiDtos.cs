@@ -139,28 +139,6 @@ namespace App.Infrastructure.Api.Dtos
         public string RefreshToken { get; set; }
     }
 
-    [Serializable]
-    public sealed class GuestSessionResponseDto
-    {
-        [JsonProperty("guestToken")]
-        public string GuestToken { get; set; }
-
-        [JsonProperty("expiresInSeconds")]
-        public long ExpiresInSeconds { get; set; }
-
-        [JsonProperty("guestSessionId")]
-        public string GuestSessionId { get; set; }
-    }
-
-    [Serializable]
-    public sealed class GuestMigrationRequestDto
-    {
-        [JsonProperty("guestSessionId")]
-        public string GuestSessionId { get; set; }
-
-        [JsonProperty("payload")]
-        public string Payload { get; set; }
-    }
 
     [Serializable]
     public sealed class AddBookToShelfRequestDto

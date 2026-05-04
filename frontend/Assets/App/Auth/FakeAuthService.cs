@@ -74,12 +74,6 @@ namespace App.Auth
                         response.ExpiresIn,
                         response.NewUser,
                         response.Onboarded);
-
-                    if (!SessionState.IsGuest)
-                    {
-                        AuthSession.SaveGuestSessionId(string.Empty);
-                        SessionState.SetPendingIntent(GuestPostLoginIntent.None);
-                    }
                 },
                 error => tcs.TrySetResult(LoginResult.Failure(
                     error?.Code,
@@ -151,42 +145,10 @@ namespace App.Auth
                         response.ExpiresIn,
                         response.NewUser,
                         response.Onboarded);
-
-                    if (!SessionState.IsGuest)
-                    {
-                        AuthSession.SaveGuestSessionId(string.Empty);
-                        SessionState.SetPendingIntent(GuestPostLoginIntent.None);
-                    }
                 },
                 error => tcs.TrySetResult(LoginResult.Failure(
                     error?.Code,
                     AuthErrorMessages.ResolveLoginMessage(error))));
-
-            return tcs.Task;
-        }
-
-        public Task<GuestSessionResult> StartGuestSessionAsync()
-        {
-            var tcs = new TaskCompletionSource<GuestSessionResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-            client.PostGuestSession(
-                response =>
-                {
-                    if (response == null || string.IsNullOrWhiteSpace(response.GuestSessionId))
-                    {
-                        tcs.TrySetResult(GuestSessionResult.Failure(
-                            "EMPTY_RESPONSE",
-                            "\uAC8C\uC2A4\uD2B8 \uC138\uC158\uC744 \uC2DC\uC791\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694."));
-                        return;
-                    }
-
-                    tcs.TrySetResult(GuestSessionResult.Success(
-                        response.GuestSessionId,
-                        response.GuestToken,
-                        response.ExpiresInSeconds));
-                },
-                error => tcs.TrySetResult(GuestSessionResult.Failure(
-                    error?.Code,
-                    AuthErrorMessages.ResolveGuestMessage(error))));
 
             return tcs.Task;
         }

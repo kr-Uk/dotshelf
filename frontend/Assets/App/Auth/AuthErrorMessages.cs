@@ -19,21 +19,6 @@ namespace App.Auth
             return MapByCode(error.Code, error.StatusCode, "\uB85C\uADF8\uC778\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694.");
         }
 
-        public static string ResolveGuestMessage(ApiErrorResponseDto error)
-        {
-            if (error == null)
-            {
-                return "\uAC8C\uC2A4\uD2B8 \uC138\uC158\uC744 \uC2DC\uC791\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uB124\uD2B8\uC6CC\uD06C \uC0C1\uD0DC\uB97C \uD655\uC778\uD574\uC8FC\uC138\uC694.";
-            }
-
-            if (!string.IsNullOrWhiteSpace(error.Message))
-            {
-                return error.Message;
-            }
-
-            return MapByCode(error.Code, error.StatusCode, "\uAC8C\uC2A4\uD2B8 \uC138\uC158\uC744 \uC2DC\uC791\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uB124\uD2B8\uC6CC\uD06C \uC0C1\uD0DC\uB97C \uD655\uC778\uD574\uC8FC\uC138\uC694.");
-        }
-
         private static string MapByCode(string code, long statusCode, string fallback)
         {
             if (!string.IsNullOrWhiteSpace(code))

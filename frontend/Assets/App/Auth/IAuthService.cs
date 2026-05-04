@@ -39,9 +39,5 @@ namespace App.Auth
             string redirectUri,
             string state,
             string nonce = null);
-
-        // BE: POST /v1/auth/guest-session. Returns a session id that later
-        // ships with /v1/auth/guest-migration once the user logs in.
-        Task<GuestSessionResult> StartGuestSessionAsync();
     }
 }

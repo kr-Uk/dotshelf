@@ -65,16 +65,6 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            // Defensive: BookshelfSceneInstaller already skips Configure() in
-            // guest mode, but RefreshFromServer is also exposed for shelf
-            // create/delete/reorder callbacks. /v1/spaces/me is authenticated,
-            // so without a Bearer token it 401s and the shelf never populates.
-            if (AuthSession.IsGuestSession)
-            {
-                Debug.Log("[Auth] guest mode - using local bookshelf, skipping /v1/spaces/me");
-                return;
-            }
-
             isRefreshing = true;
             client.GetMySpace(
                 space =>
@@ -124,8 +114,6 @@ namespace BookshelfPorting.Runtime
         // same overlay forward + bookshelf load + visit record path.
         //
         // Own-space detection: SpaceResponse.OwnerUserId == AuthSession.UserId.
-        // For guests AuthSession.UserId is 0 — they will never own a visited
-        // space, so visit-record fires for every guest-visited space.
         public void EnterSpaceById(long spaceId)
         {
             if (!IsConfigured || isRefreshing)
@@ -181,22 +169,11 @@ namespace BookshelfPorting.Runtime
         private bool IsOwnSpace(long ownerUserId)
         {
             var myUserId = AuthSession.UserId;
-            // Guest (myUserId == 0) cannot own any space record on BE, so
-            // they always pass the not-own check and visits get recorded.
             return myUserId != 0 && ownerUserId == myUserId;
         }
 
         private void RecordVisitOnce(long spaceId)
         {
-            // BE SpaceService.recordVisit calls userService.requireUserId(),
-            // which rejects guest tokens. Skipping here also keeps the visited
-            // set untouched so a later login in the same session can still
-            // record the visit on re-entry.
-            if (AuthSession.IsGuestSession)
-            {
-                return;
-            }
-
             // Mark BEFORE the call (record-on-attempt) so a slow BE round-trip
             // cannot cause the user to navigate away and re-enter, racing two
             // visit POSTs. Worst case: BE call fails and we never retry — that

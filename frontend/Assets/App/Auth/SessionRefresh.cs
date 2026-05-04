@@ -88,7 +88,6 @@ namespace App.Auth
         public static void ClearAndReturnToLogin()
         {
             AuthSession.Clear();
-            SessionState.Clear();
             if (APIManager.Instance != null)
             {
                 APIManager.Instance.SetAccessToken(string.Empty);

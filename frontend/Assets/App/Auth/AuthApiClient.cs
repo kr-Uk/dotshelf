@@ -75,13 +75,6 @@ namespace App.Auth
             return StartCoroutine(SendJson("/v1/auth/social-login", request, onSuccess, onError));
         }
 
-        public Coroutine PostGuestSession(
-            Action<GuestSessionResponseDto> onSuccess,
-            Action<ApiErrorResponseDto> onError)
-        {
-            return StartCoroutine(SendJson<object, GuestSessionResponseDto>("/v1/auth/guest-session", null, onSuccess, onError));
-        }
-
         public Coroutine PostTokenRefresh(
             string refreshToken,
             Action<AuthTokenResponseDto> onSuccess,

@@ -9,6 +9,5 @@ namespace App.Domain.Auth
         public const string AccessTokenExpiresAt = "Dotshelf.Auth.AccessTokenExpiresAt";
         public const string NewUser = "Dotshelf.Auth.NewUser";
         public const string Onboarded = "Dotshelf.Auth.Onboarded";
-        public const string GuestSessionId = "Dotshelf.Auth.GuestSessionId";
     }
 }
