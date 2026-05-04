@@ -1,3 +1,7 @@
+// MR #98 review #2: production 빌드 포함 + smoke test 사용자 데이터 변경 위험 차단.
+// 클래스 전체를 UNITY_EDITOR 가드 — 릴리즈 빌드에서는 컴파일 자체에서 제외되어 reflection
+// 으로도 도달 불가. dev 환경에서만 진단 도구로 사용.
+#if UNITY_EDITOR
 using System;
 using System.Collections;
 using System.Text;
@@ -15,6 +19,8 @@ namespace App.Bootstrap
     /// 빈 GameObject 에 부착 후 인스펙터의 ContextMenu("Run Smoke Test") 또는 runOnStart 토글로 실행.
     /// 실제 서비스 흐름과 동일한 APIManager 경로를 통과시키므로 Authorization 헤더 부착/envelope
     /// 파싱이 production code path 그대로 검증된다.
+    ///
+    /// **UNITY_EDITOR 전용** — 릴리즈/플레이어 빌드에는 포함되지 않는다.
     /// </summary>
     public sealed class ApiSmokeTestRunner : MonoBehaviour
     {
@@ -83,12 +89,15 @@ namespace App.Bootstrap
             yield return ProbeGet<InventoryResponseDto>(
                 "3 GET /v1/assets/me/inventory", "/v1/assets/me/inventory");
 
+            // MR #98 review #2: 다른 사용자/세션과 충돌 안 나게 timestamp 부여. 50자 nickname
+            // DB 제약 안 넘게 prefix 짧게.
+            string smokeNickname = "smoketest_" + DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             yield return ProbePatch<UpdateProfileRequestDto, UserProfileResponseDto>(
                 "4 PATCH /v1/users/me",
                 "/v1/users/me",
                 new UpdateProfileRequestDto
                 {
-                    Nickname = "smoketest",
+                    Nickname = smokeNickname,
                     Introduction = "smoke-test ping",
                     ProfileImageUrl = string.Empty
                 });
@@ -345,3 +354,4 @@ namespace App.Bootstrap
         }
     }
 }
+#endif

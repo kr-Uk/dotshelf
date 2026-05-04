@@ -39,5 +39,26 @@ namespace App.Infrastructure.Api
             GameObject host = new GameObject("AutoApiManager (fallback)");
             return host.AddComponent<APIManager>();
         }
+
+        // 기본 진단 로그 길이 한도. 상위 호출자가 별도 한도를 주지 않는 한 이 값으로 잘림.
+        public const int DefaultLogBodyMaxChars = 1500;
+
+        /// <summary>
+        /// 진단 로그용 body 문자열 truncation. ApiSmokeTestRunner 의 bodyLogMaxChars 와 동일 정책으로
+        /// 일반 컨트롤러(Onboarding/Settings/SceneInstaller 등) 의 진단 로그도 잘림. error.Body 에
+        /// 큰 응답이 통째로 들어와 Console 폭주하는 것을 방지 (MR #98 review #5).
+        /// </summary>
+        public static string TrimForLog(string body, int maxChars = DefaultLogBodyMaxChars)
+        {
+            if (string.IsNullOrEmpty(body))
+            {
+                return body == null ? "(null)" : "(empty)";
+            }
+            if (maxChars <= 0 || body.Length <= maxChars)
+            {
+                return body;
+            }
+            return body.Substring(0, maxChars) + $"... (truncated, total {body.Length} chars)";
+        }
     }
 }

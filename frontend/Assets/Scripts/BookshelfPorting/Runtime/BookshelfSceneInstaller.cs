@@ -209,10 +209,16 @@ namespace BookshelfPorting.Runtime
             // 메인씬 진입 시 /v1/users/me 호출 — 토큰 보유 상태에서만 실행. 결과는 별도 저장소가
             // 없어서 로그만 남김 (개별 화면이 자기 cachedProfile 들고 있음). status/body 가
             // Console 에 가시화되어 진단/디버그에 도움.
+            //
+            // MR #98 review #3: production 빌드에서 매 메인씬 진입마다 BE 호출하면 운영 traffic
+            // 부담 (사용자 1만명 × 5회/일 = 5만 req/일). UNITY_EDITOR 와 DEVELOPMENT_BUILD 에서만
+            // 자동 발동. release player 빌드에서는 컴파일 자체에서 제외되어 호출 안 됨.
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (Application.isPlaying && usesHttpApi && apiManager.HasAccessToken)
             {
                 SyncCurrentUserProfileOnSceneEntry(apiManager);
             }
+#endif
 
             var camerasRoot = FindOrCreateRoot("Cameras").transform;
             var overviewPosition = new Vector3(1.55f, 1.30f, -1.95f);
@@ -523,7 +529,9 @@ namespace BookshelfPorting.Runtime
 
         // 메인씬 진입 시 BE 의 사용자 프로필을 한 번 동기화한다. 결과는 Console 에 status/body 로
         // 남기고, 후속 동기 처리(개별 화면의 cachedProfile)는 각 컨트롤러가 자체적으로 GetMe 를
-        // 다시 호출해 채운다 (Settings.LoadCurrentProfile 참조).
+        // 다시 호출해 채운다 (Settings.LoadCurrentProfile 참조). 호출 사이트와 동일하게
+        // dev/development 빌드에서만 컴파일 (MR #98 review #3).
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
         private static void SyncCurrentUserProfileOnSceneEntry(APIManager apiManager)
         {
             string url = ApiEndpointDefaults.DefaultBaseUrl.TrimEnd('/') + "/v1/users/me";
@@ -542,8 +550,9 @@ namespace BookshelfPorting.Runtime
                 {
                     Debug.LogWarning(
                         $"[MainScene] GET /v1/users/me 실패 → STATUS={(error != null ? error.StatusCode.ToString() : "?")} " +
-                        $"code={error?.Code} message={error?.Message} body={error?.Body}");
+                        $"code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)}");
                 });
         }
+#endif
     }
 }

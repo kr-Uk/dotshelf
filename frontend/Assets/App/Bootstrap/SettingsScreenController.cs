@@ -1238,7 +1238,7 @@ namespace App.Bootstrap
                     SetMessage(profileEditFormMessageLabel, "프로필 저장에 실패했습니다. 다시 시도해주세요.", ErrorColor);
                     Debug.LogWarning(
                         $"[Settings] PATCH /v1/users/me 실패 → STATUS={(error != null ? error.StatusCode.ToString() : "?")} " +
-                        $"code={error?.Code} message={error?.Message} body={error?.Body}");
+                        $"code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)}");
                 });
         }
 
@@ -1527,7 +1527,7 @@ namespace App.Bootstrap
                         ShowNoticeToast("프로필 정보를 불러오지 못했습니다.");
                         Debug.LogWarning(
                             $"[Settings] GET /v1/users/me 실패 → STATUS={(error != null ? error.StatusCode.ToString() : "?")} " +
-                            $"code={error?.Code} message={error?.Message} body={error?.Body}");
+                            $"code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)}");
                     });
             }
             DoLoadCurrentProfile(loadClient);

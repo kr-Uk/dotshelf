@@ -929,7 +929,7 @@ namespace App.Bootstrap
             SetStep1Feedback("닉네임 확인에 실패했습니다. 다시 시도해주세요.", ErrorColor, false);
             Debug.LogWarning(
                 $"[OnboardingDemo] nickname/check 실패 → STATUS={(error != null ? error.StatusCode.ToString() : "?")} " +
-                $"code={error?.Code} message={error?.Message} body={error?.Body} " +
+                $"code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)} " +
                 $"nickname='{requestedNickname}'");
         }
 
