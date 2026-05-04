@@ -53,6 +53,9 @@ namespace BookshelfPorting.Runtime
         // Runtime HUD selector keeps one row of shelf chips readable without
         // turning the add/search overlays into full shelf-management screens.
         private const int BookshelfSelectorMaxButtons = 12;
+        private const int BookRatingChoiceCount = 10;
+        private const float BookRatingStep = 0.5f;
+        private const float BookshelfTransientStatusDuration = 2.8f;
         private static readonly Color32 DeleteButtonBackground = new(196, 78, 72, 255);
         private static readonly Color32 DeleteButtonHighlighted = new(176, 62, 58, 255);
         private static readonly Color32 DeleteButtonConfirmBackground = new(176, 50, 48, 255);
@@ -213,6 +216,93 @@ namespace BookshelfPorting.Runtime
                 book.isPublic = IsPublic;
                 book.readingStatus = ReadingStatus;
                 book.isRead = IsRead;
+            }
+        }
+
+        private readonly struct BookStateMutationSnapshot
+        {
+            public readonly App.Domain.ReadingStatus ReadingStatus;
+            public readonly bool IsRead;
+            public readonly float OwnerRating;
+            public readonly float AverageRating;
+            public readonly int TotalLikeCount;
+            public readonly int ReviewCount;
+            public readonly bool HasAggregateBookStats;
+            public readonly bool IsLiked;
+            public readonly int DisplayRating;
+
+            public BookStateMutationSnapshot(BookEntity book, BookMetaData meta)
+            {
+                ReadingStatus = meta != null ? meta.readingStatus : book != null ? book.readingStatus : App.Domain.ReadingStatus.Unread;
+                IsRead = meta != null ? meta.isRead : book != null && book.isRead;
+                OwnerRating = meta != null ? meta.ownerRating : book != null ? book.ownerRating : 0f;
+                AverageRating = meta != null ? meta.averageRating : book != null ? book.averageRating : 0f;
+                TotalLikeCount = meta != null ? meta.totalLikeCount : book != null ? book.totalLikeCount : 0;
+                ReviewCount = meta != null ? meta.reviewCount : book != null ? book.reviewCount : 0;
+                HasAggregateBookStats = meta != null ? meta.hasAggregateBookStats : book != null && book.hasAggregateBookStats;
+                IsLiked = meta != null ? meta.isLiked : book != null && book.isLiked;
+                DisplayRating = book != null ? book.rating : Mathf.RoundToInt(Mathf.Clamp(HasAggregateBookStats ? AverageRating : OwnerRating, 0f, 5f));
+            }
+
+            public void ApplyTo(BookMetaData meta)
+            {
+                if (meta == null)
+                {
+                    return;
+                }
+
+                meta.readingStatus = ReadingStatus;
+                meta.isRead = IsRead;
+                meta.ownerRating = OwnerRating;
+                meta.averageRating = AverageRating;
+                meta.totalLikeCount = TotalLikeCount;
+                meta.reviewCount = ReviewCount;
+                meta.hasAggregateBookStats = HasAggregateBookStats;
+                meta.isLiked = IsLiked;
+            }
+
+            public void ApplyTo(BookEntity book)
+            {
+                if (book == null)
+                {
+                    return;
+                }
+
+                book.readingStatus = ReadingStatus;
+                book.isRead = IsRead;
+                book.ownerRating = OwnerRating;
+                book.averageRating = AverageRating;
+                book.totalLikeCount = TotalLikeCount;
+                book.reviewCount = ReviewCount;
+                book.hasAggregateBookStats = HasAggregateBookStats;
+                book.isLiked = IsLiked;
+                book.rating = DisplayRating;
+            }
+        }
+
+        private sealed class PendingMutationRetry
+        {
+            public PendingMutationRetry(string key, string operationName, string message, System.Action retryAction)
+            {
+                Key = key;
+                OperationName = operationName;
+                Message = message;
+                RetryAction = retryAction;
+                AttemptCount = 1;
+            }
+
+            public string Key { get; }
+            public string OperationName { get; private set; }
+            public string Message { get; private set; }
+            public System.Action RetryAction { get; private set; }
+            public int AttemptCount { get; private set; }
+
+            public void Update(string operationName, string message, System.Action retryAction)
+            {
+                OperationName = operationName;
+                Message = message;
+                RetryAction = retryAction;
+                AttemptCount++;
             }
         }
 
@@ -438,6 +528,7 @@ namespace BookshelfPorting.Runtime
         private readonly Text[] bookshelfManageRowTexts = new Text[ShelfManageMaxRowCount];
         private readonly BookshelfManageDragHandle[] bookshelfManageDragHandles = new BookshelfManageDragHandle[ShelfManageMaxRowCount];
         private readonly Image[] bookshelfManageDragHandleImages = new Image[ShelfManageMaxRowCount];
+        private readonly List<PendingMutationRetry> pendingMutationRetries = new List<PendingMutationRetry>();
         private Button shelfManageSortTitleButton;
         private Button shelfManageSortAuthorButton;
         private Button shelfManageSortStatusButton;
@@ -457,6 +548,7 @@ namespace BookshelfPorting.Runtime
         private GameObject deleteResultDialogPanel;
         private Text deleteResultTitleText;
         private Text deleteResultMessageText;
+        private Button retryDeleteResultDialogButton;
         private Button closeDeleteResultDialogButton;
         private GameObject bookshelfStatusPanel;
         private Text bookshelfStatusTitleText;
@@ -465,6 +557,7 @@ namespace BookshelfPorting.Runtime
         private int bookshelfNameInputIndex = -1;
         private int pendingDeleteBookshelfIndex = -1;
         private int pendingBookAddCatalogIndex = -1;
+        private int pendingBookAddBookshelfIndex = -1;
         private BookAddCatalogItem pendingBookAddCatalogItem;
         private BookOrientation pendingBookAddOrientation = BookOrientation.Front;
         private App.Domain.ReadingStatus pendingBookAddReadingStatus = App.Domain.ReadingStatus.Unread;
@@ -481,9 +574,16 @@ namespace BookshelfPorting.Runtime
         private bool deleteResultDialogIsSuccess;
         private string deleteResultDialogTitle = string.Empty;
         private string deleteResultDialogMessage = string.Empty;
+        private string deleteResultRetryLabel = "재시도";
+        private System.Action deleteResultRetryAction;
         private bool hasUnsavedBookshelfEditChanges;
         private System.Action pendingBookshelfNavigationAfterSave;
         private BookSearchFilter activeBookSearchFilter = BookSearchFilter.All;
+        private bool isBookshelfTransientStatusVisible;
+        private bool bookshelfTransientStatusIsError;
+        private string bookshelfTransientStatusTitle = string.Empty;
+        private string bookshelfTransientStatusMessage = string.Empty;
+        private float bookshelfTransientStatusExpiresAt;
         private string bookAddFeedbackMessage = string.Empty;
         private bool shouldResetBookAddScrollToTop;
         private bool shouldResetBookSearchScrollToTop;
@@ -577,7 +677,7 @@ namespace BookshelfPorting.Runtime
         private Button bookFocusWriteReportButton;
         private Text bookFocusRatingText;
         private GameObject bookRatingChoicePanel;
-        private readonly Button[] bookRatingChoiceButtons = new Button[5];
+        private readonly Button[] bookRatingChoiceButtons = new Button[BookRatingChoiceCount];
         private bool isBookRatingChoicePanelOpen;
         private GameObject bookReportWritePanel;
         private Text bookReportWriteTitleText;
@@ -752,6 +852,11 @@ namespace BookshelfPorting.Runtime
             RefreshHud();
         }
 
+        public void NotifyBookPlacementCommitted(BookEntity book)
+        {
+            SyncBookPlacementOrRefresh(book, "책 배치 저장");
+        }
+
         private void Awake()
         {
             EnsureEventSystem();
@@ -778,6 +883,7 @@ namespace BookshelfPorting.Runtime
         private void Update()
         {
             ApplyResponsiveFocusOverlayLayout();
+            ExpireBookshelfTransientStatusIfNeeded();
 
             if (AreSceneInteractionsSuppressed)
             {
@@ -1617,7 +1723,7 @@ namespace BookshelfPorting.Runtime
         {
             if (placementEditBook != null)
             {
-                bookshelfApiSyncController?.SyncBookPlacement(placementEditBook);
+                SyncBookPlacementOrRefresh(placementEditBook, "책 배치 저장");
             }
 
             CloseBookPlacementEditor(false);
@@ -1694,17 +1800,23 @@ namespace BookshelfPorting.Runtime
 
             var book = ActiveDetailBook;
             var sourceSection = book.CurrentSection;
+            var retryKey = BuildMutationRetryKey("책 삭제", book);
 
             pendingDeleteBook = null;
             var didStartDeleteSync = bookshelfApiSyncController != null &&
                                      bookshelfApiSyncController.RemoveBook(
                                          book,
                                          () =>
-                                         {
-                                             RemoveBookLocally(book, sourceSection, false);
-                                             ShowDeleteResultDialog("책장에서 제거 완료", "책장에서 책을 제거했습니다.", true);
-                                         },
-                                         error => RefreshServerStateAfterMutationFailure("책 삭제", error));
+                                          {
+                                              ClearPendingMutationRetry(retryKey);
+                                              RemoveBookLocally(book, sourceSection, false);
+                                              ShowDeleteResultDialog("책장에서 제거 완료", "책장에서 책을 제거했습니다.", true);
+                                          },
+                                          error => RefreshServerStateAfterMutationFailure(
+                                              "책 삭제",
+                                              error,
+                                              () => RetryRemoveBook(book, sourceSection, false),
+                                              retryKey));
             if (didStartDeleteSync)
             {
                 ActiveDetailBook = null;
@@ -1725,7 +1837,16 @@ namespace BookshelfPorting.Runtime
 
             if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
             {
-                ShowDeleteResultDialog("책 삭제 실패", "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.", false);
+                ShowDeleteResultDialog(
+                    "책 삭제 실패",
+                    "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+                    false,
+                    RegisterPendingMutationRetry(
+                        retryKey,
+                        "책 삭제",
+                        "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+                        () => RetryRemoveBook(book, sourceSection, false)),
+                    "재시도");
                 RefreshHud();
                 return;
             }
@@ -1752,6 +1873,7 @@ namespace BookshelfPorting.Runtime
 
             var book = ActiveDetailBook;
             var sourceSection = book.CurrentSection;
+            var retryKey = BuildMutationRetryKey("책 삭제", book);
 
             pendingDeleteBook = null;
             pendingDeleteReportBook = null;
@@ -1759,11 +1881,16 @@ namespace BookshelfPorting.Runtime
                                      bookshelfApiSyncController.RemoveBook(
                                          book,
                                          () =>
-                                         {
-                                             RemoveBookLocally(book, sourceSection, true);
-                                             ShowDeleteResultDialog("책장에서 제거 완료", "책장에서 책을 제거했습니다.", true);
-                                         },
-                                         error => RefreshServerStateAfterMutationFailure("책 삭제", error));
+                                          {
+                                              ClearPendingMutationRetry(retryKey);
+                                              RemoveBookLocally(book, sourceSection, true);
+                                              ShowDeleteResultDialog("책장에서 제거 완료", "책장에서 책을 제거했습니다.", true);
+                                          },
+                                          error => RefreshServerStateAfterMutationFailure(
+                                              "책 삭제",
+                                              error,
+                                              () => RetryRemoveBook(book, sourceSection, true),
+                                              retryKey));
             if (didStartDeleteSync)
             {
                 ActiveDetailBook = null;
@@ -1791,13 +1918,68 @@ namespace BookshelfPorting.Runtime
 
             if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
             {
-                ShowDeleteResultDialog("책 삭제 실패", "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.", false);
+                ShowDeleteResultDialog(
+                    "책 삭제 실패",
+                    "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+                    false,
+                    RegisterPendingMutationRetry(
+                        retryKey,
+                        "책 삭제",
+                        "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+                        () => RetryRemoveBook(book, sourceSection, true)),
+                    "재시도");
                 RefreshHud();
                 return;
             }
 
             RemoveBookLocally(book, sourceSection, true);
             ShowDeleteResultDialog("책장에서 제거 완료", "책장에서 책을 제거했습니다.", true);
+        }
+
+        private void RetryRemoveBook(BookEntity book, ShelfSection sourceSection, bool closeReportPanels)
+        {
+            if (book == null)
+            {
+                RefreshServerStateAfterMutationFailure("책 삭제", "삭제할 책을 찾을 수 없습니다.");
+                return;
+            }
+
+            var retryKey = BuildMutationRetryKey("책 삭제", book);
+            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                ClearPendingMutationRetry(retryKey);
+                RemoveBookLocally(book, sourceSection, closeReportPanels);
+                ShowDeleteResultDialog("책장에서 제거 완료", "책장에서 책을 제거했습니다.", true);
+                return;
+            }
+
+            var didStartDeleteSync = bookshelfApiSyncController.RemoveBook(
+                book,
+                () =>
+                {
+                    ClearPendingMutationRetry(retryKey);
+                    RemoveBookLocally(book, sourceSection, closeReportPanels);
+                    ShowDeleteResultDialog("책장에서 제거 완료", "책장에서 책을 제거했습니다.", true);
+                },
+                error => RefreshServerStateAfterMutationFailure(
+                    "책 삭제",
+                    error,
+                    () => RetryRemoveBook(book, sourceSection, closeReportPanels),
+                    retryKey));
+
+            if (!didStartDeleteSync)
+            {
+                ShowDeleteResultDialog(
+                    "책 삭제 실패",
+                    "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+                    false,
+                    RegisterPendingMutationRetry(
+                        retryKey,
+                        "책 삭제",
+                        "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+                        () => RetryRemoveBook(book, sourceSection, closeReportPanels)),
+                    "재시도");
+            }
         }
 
         private void RemoveBookLocally(BookEntity book, ShelfSection sourceSection, bool closeReportPanels)
@@ -1863,14 +2045,411 @@ namespace BookshelfPorting.Runtime
             RefreshHud();
         }
 
-        private void RefreshServerStateAfterMutationFailure(string operationName, string errorMessage)
+        private static string BuildMutationRetryKey(string operationName, object target)
+        {
+            var normalizedOperation = string.IsNullOrWhiteSpace(operationName) ? "mutation" : operationName.Trim();
+            var targetKey = "global";
+            if (target is UnityEngine.Object unityObject)
+            {
+                targetKey = unityObject != null ? unityObject.GetInstanceID().ToString() : "destroyed";
+            }
+            else if (target != null)
+            {
+                targetKey = target.ToString();
+                if (string.IsNullOrWhiteSpace(targetKey))
+                {
+                    targetKey = target.GetHashCode().ToString();
+                }
+            }
+
+            return $"{normalizedOperation}::{targetKey}";
+        }
+
+        private System.Action RegisterPendingMutationRetry(
+            string retryKey,
+            string operationName,
+            string errorMessage,
+            System.Action retryAction)
+        {
+            if (retryAction == null)
+            {
+                return null;
+            }
+
+            var key = string.IsNullOrWhiteSpace(retryKey)
+                ? BuildMutationRetryKey(operationName, null)
+                : retryKey.Trim();
+            var message = NormalizeMutationErrorMessage(errorMessage);
+            var entry = pendingMutationRetries.Find(item => item.Key == key);
+            if (entry == null)
+            {
+                pendingMutationRetries.Add(new PendingMutationRetry(key, operationName, message, retryAction));
+            }
+            else
+            {
+                entry.Update(operationName, message, retryAction);
+            }
+
+            return () => RunPendingMutationRetry(key);
+        }
+
+        private void ClearPendingMutationRetry(string retryKey)
+        {
+            if (string.IsNullOrWhiteSpace(retryKey) || pendingMutationRetries.Count == 0)
+            {
+                return;
+            }
+
+            pendingMutationRetries.RemoveAll(entry => entry.Key == retryKey);
+        }
+
+        private void RunPendingMutationRetry(string retryKey)
+        {
+            if (string.IsNullOrWhiteSpace(retryKey))
+            {
+                return;
+            }
+
+            var index = pendingMutationRetries.FindIndex(entry => entry.Key == retryKey);
+            if (index < 0)
+            {
+                RefreshHud();
+                return;
+            }
+
+            var retry = pendingMutationRetries[index];
+            pendingMutationRetries.RemoveAt(index);
+            ShowBookshelfTransientStatus("재시도 중", $"{retry.OperationName} 요청을 다시 보냅니다.", false);
+            InvokePendingMutationRetry(retry);
+            RefreshHud();
+        }
+
+        private void RunAllPendingMutationRetriesFromStatusPanel()
+        {
+            if (pendingMutationRetries.Count == 0)
+            {
+                RefreshHud();
+                return;
+            }
+
+            var retries = pendingMutationRetries.ToArray();
+            pendingMutationRetries.Clear();
+            ShowBookshelfTransientStatus("재시도 중", $"{retries.Length}개 저장 요청을 다시 보냅니다.", false);
+            for (var i = 0; i < retries.Length; i++)
+            {
+                InvokePendingMutationRetry(retries[i]);
+            }
+
+            RefreshHud();
+        }
+
+        private void InvokePendingMutationRetry(PendingMutationRetry retry)
+        {
+            if (retry == null || retry.RetryAction == null)
+            {
+                return;
+            }
+
+            try
+            {
+                retry.RetryAction.Invoke();
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogException(exception);
+                RegisterPendingMutationRetry(
+                    retry.Key,
+                    retry.OperationName,
+                    exception.Message,
+                    retry.RetryAction);
+                ShowBookshelfTransientStatus(
+                    $"{retry.OperationName} 실패",
+                    "재시도 중 오류가 발생했습니다. 다시 시도할 수 있습니다.",
+                    true);
+            }
+        }
+
+        private string GetPendingMutationRetryStatusMessage()
+        {
+            if (pendingMutationRetries.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var latest = pendingMutationRetries[pendingMutationRetries.Count - 1];
+            return pendingMutationRetries.Count == 1
+                ? $"{latest.OperationName} 요청이 아직 서버에 반영되지 않았습니다. {latest.Message}"
+                : $"{latest.OperationName} 외 {pendingMutationRetries.Count - 1}개 요청이 아직 서버에 반영되지 않았습니다. 전체 재시도할 수 있습니다.";
+        }
+
+        private void RefreshServerStateAfterMutationFailure(
+            string operationName,
+            string errorMessage,
+            System.Action retryAction = null,
+            string retryKey = null)
         {
             Debug.LogWarning($"{operationName} failed on server. Refreshing bookshelf state. {errorMessage}");
+            var pendingRetryAction = RegisterPendingMutationRetry(retryKey, operationName, errorMessage, retryAction);
+            ShowBookshelfTransientStatus(
+                $"{operationName} 실패",
+                retryAction == null ? "최신 책장 상태를 다시 불러옵니다." : "재시도할 수 있습니다.",
+                true);
             ShowDeleteResultDialog(
                 $"{operationName} 실패",
-                $"서버 요청을 완료하지 못해 최신 상태로 다시 불러옵니다.\n{NormalizeMutationErrorMessage(errorMessage)}",
-                false);
-            bookshelfApiSyncController?.RefreshFromServer();
+                retryAction == null
+                    ? $"서버 요청을 완료하지 못해 최신 상태로 다시 불러옵니다.\n{NormalizeMutationErrorMessage(errorMessage)}"
+                    : $"서버 요청을 완료하지 못했습니다. 이 세션에서 다시 시도할 수 있습니다.\n{NormalizeMutationErrorMessage(errorMessage)}",
+                false,
+                pendingRetryAction,
+                "재시도");
+            if (retryAction == null)
+            {
+                bookshelfApiSyncController?.RefreshFromServer();
+            }
+        }
+
+        private void SyncBookshelfCreateOrRefresh(string name, string operationName)
+        {
+            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                return;
+            }
+
+            var retryKey = BuildMutationRetryKey(operationName, name);
+            if (!bookshelfApiSyncController.CreateBookshelf(
+                    name,
+                    () =>
+                    {
+                        ClearPendingMutationRetry(retryKey);
+                        ShowBookshelfTransientStatus("책장 저장 완료", "새 책장이 서버에 저장되었습니다.", false);
+                    },
+                    error => RefreshServerStateAfterMutationFailure(
+                        operationName,
+                        error,
+                        () => SyncBookshelfCreateOrRefresh(name, operationName),
+                        retryKey)))
+            {
+                RefreshServerStateAfterMutationFailure(
+                    operationName,
+                    "책장 추가 요청을 시작할 수 없습니다.",
+                    () => SyncBookshelfCreateOrRefresh(name, operationName),
+                    retryKey);
+            }
+        }
+
+        private void SyncBookshelfUpdateOrRefresh(int displayIndex, string operationName)
+        {
+            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                return;
+            }
+
+            var retryKey = BuildMutationRetryKey(operationName, displayIndex);
+            if (!bookshelfApiSyncController.UpdateBookshelf(
+                    displayIndex,
+                    () =>
+                    {
+                        ClearPendingMutationRetry(retryKey);
+                        ShowBookshelfTransientStatus("책장 저장 완료", $"{operationName}이 서버에 반영되었습니다.", false);
+                    },
+                    error => RefreshServerStateAfterMutationFailure(
+                        operationName,
+                        error,
+                        () => SyncBookshelfUpdateOrRefresh(displayIndex, operationName),
+                        retryKey)))
+            {
+                RefreshServerStateAfterMutationFailure(
+                    operationName,
+                    "책장 서버 식별자를 찾을 수 없습니다.",
+                    () => SyncBookshelfUpdateOrRefresh(displayIndex, operationName),
+                    retryKey);
+            }
+        }
+
+        private void SyncBookshelfReorderOrRefresh(string operationName)
+        {
+            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                return;
+            }
+
+            var retryKey = BuildMutationRetryKey(operationName, "all");
+            if (!bookshelfApiSyncController.ReorderBookshelves(
+                    () =>
+                    {
+                        ClearPendingMutationRetry(retryKey);
+                        ShowBookshelfTransientStatus("책장 순서 저장 완료", "책장 순서가 서버에 반영되었습니다.", false);
+                    },
+                    error => RefreshServerStateAfterMutationFailure(
+                        operationName,
+                        error,
+                        () => SyncBookshelfReorderOrRefresh(operationName),
+                        retryKey)))
+            {
+                RefreshServerStateAfterMutationFailure(
+                    operationName,
+                    "책장 순서 저장에 필요한 서버 식별자를 찾을 수 없습니다.",
+                    () => SyncBookshelfReorderOrRefresh(operationName),
+                    retryKey);
+            }
+        }
+
+        private void SyncBookPlacementOrRefresh(BookEntity book, string operationName)
+        {
+            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                return;
+            }
+
+            var retryKey = BuildMutationRetryKey(operationName, book);
+            if (!bookshelfApiSyncController.SyncBookPlacement(
+                    book,
+                    _ =>
+                    {
+                        ClearPendingMutationRetry(retryKey);
+                        ShowBookshelfTransientStatus("책 배치 저장 완료", "책 위치가 서버에 반영되었습니다.", false);
+                        RefreshHud();
+                    },
+                    error => RefreshServerStateAfterMutationFailure(
+                        operationName,
+                        error,
+                        () => SyncBookPlacementOrRefresh(book, operationName),
+                        retryKey)))
+            {
+                RefreshServerStateAfterMutationFailure(
+                    operationName,
+                    "책 배치 저장에 필요한 서버 식별자를 찾을 수 없습니다.",
+                    () => SyncBookPlacementOrRefresh(book, operationName),
+                    retryKey);
+            }
+        }
+
+        private void SyncBookStateOrRollback(
+            BookEntity book,
+            BookStateMutationSnapshot rollback,
+            BookStateMutationSnapshot desired,
+            string operationName)
+        {
+            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                return;
+            }
+
+            var retryKey = BuildMutationRetryKey(operationName, book);
+            if (!bookshelfApiSyncController.SyncBookState(
+                    book,
+                    updatedBook =>
+                    {
+                        ClearPendingMutationRetry(retryKey);
+                        ApplyBookEntityToMeta(updatedBook);
+                        ShowBookshelfTransientStatus("책 상태 저장 완료", $"{operationName}이 서버에 반영되었습니다.", false);
+                        RefreshBookDetailPanel();
+                        RefreshHud();
+                    },
+                    error => RollbackBookStateMutation(
+                        book,
+                        rollback,
+                        operationName,
+                        error,
+                        () => RetryBookStateMutation(book, desired, () => SyncBookStateOrRollback(book, rollback, desired, operationName)),
+                        retryKey)))
+            {
+                RollbackBookStateMutation(
+                    book,
+                    rollback,
+                    operationName,
+                    "책 상태 저장에 필요한 서버 식별자를 찾을 수 없습니다.",
+                    () => RetryBookStateMutation(book, desired, () => SyncBookStateOrRollback(book, rollback, desired, operationName)),
+                    retryKey);
+            }
+        }
+
+        private void SyncBookLikeOrRollback(
+            BookEntity book,
+            BookStateMutationSnapshot rollback,
+            BookStateMutationSnapshot desired,
+            string operationName)
+        {
+            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                return;
+            }
+
+            var retryKey = BuildMutationRetryKey(operationName, book);
+            if (!bookshelfApiSyncController.SyncBookLike(
+                    book,
+                    updatedBook =>
+                    {
+                        ClearPendingMutationRetry(retryKey);
+                        ApplyBookEntityToMeta(updatedBook);
+                        ShowBookshelfTransientStatus("좋아요 저장 완료", "좋아요 상태가 서버에 반영되었습니다.", false);
+                        RefreshBookDetailPanel();
+                        RefreshHud();
+                    },
+                    error => RollbackBookStateMutation(
+                        book,
+                        rollback,
+                        operationName,
+                        error,
+                        () => RetryBookStateMutation(book, desired, () => SyncBookLikeOrRollback(book, rollback, desired, operationName)),
+                        retryKey)))
+            {
+                RollbackBookStateMutation(
+                    book,
+                    rollback,
+                    operationName,
+                    "좋아요 저장에 필요한 서버 식별자를 찾을 수 없습니다.",
+                    () => RetryBookStateMutation(book, desired, () => SyncBookLikeOrRollback(book, rollback, desired, operationName)),
+                    retryKey);
+            }
+        }
+
+        private void RollbackBookStateMutation(
+            BookEntity book,
+            BookStateMutationSnapshot rollback,
+            string operationName,
+            string errorMessage,
+            System.Action retryAction = null,
+            string retryKey = null)
+        {
+            Debug.LogWarning($"{operationName} failed on server. Restoring local book state. {errorMessage}");
+            var pendingRetryAction = RegisterPendingMutationRetry(retryKey, operationName, errorMessage, retryAction);
+            ShowBookshelfTransientStatus(
+                $"{operationName} 실패",
+                retryAction == null ? "서버 요청을 완료하지 못해 변경 전 상태로 되돌렸습니다." : "변경 전 상태로 되돌렸습니다. 재시도할 수 있습니다.",
+                true);
+            rollback.ApplyTo(book);
+
+            if (dataStore != null && book != null)
+            {
+                var meta = dataStore.GetOrCreateBookMeta(book);
+                rollback.ApplyTo(meta);
+                dataStore.ApplyBookMeta(book, meta);
+            }
+
+            ShowDeleteResultDialog(
+                $"{operationName} 실패",
+                $"서버 요청을 완료하지 못해 변경 전 상태로 되돌렸습니다.\n{NormalizeMutationErrorMessage(errorMessage)}",
+                false,
+                pendingRetryAction,
+                "재시도");
+            RefreshBookDetailPanel();
+            RefreshHud();
+        }
+
+        private void RetryBookStateMutation(BookEntity book, BookStateMutationSnapshot desired, System.Action syncAction)
+        {
+            desired.ApplyTo(book);
+            if (dataStore != null && book != null)
+            {
+                var meta = dataStore.GetOrCreateBookMeta(book);
+                desired.ApplyTo(meta);
+                dataStore.ApplyBookMeta(book, meta);
+            }
+
+            RefreshBookDetailPanel();
+            RefreshHud();
+            syncAction?.Invoke();
         }
 
         private void ToggleReadState()
@@ -1892,11 +2471,13 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var rollback = new BookStateMutationSnapshot(book, meta);
             meta.readingStatus = GetNextReadingStatus(meta.readingStatus);
             meta.isRead = meta.readingStatus == App.Domain.ReadingStatus.Read;
             isBookRatingChoicePanelOpen = false;
             dataStore.ApplyBookMeta(book, meta);
-            bookshelfApiSyncController?.SyncBookState(book);
+            var desired = new BookStateMutationSnapshot(book, meta);
+            SyncBookStateOrRollback(book, rollback, desired, "독서 상태 변경");
             RefreshBookDetailPanel();
             RefreshHud();
         }
@@ -1920,6 +2501,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var rollback = new BookStateMutationSnapshot(book, meta);
             var wasLiked = meta.isLiked;
             meta.isLiked = !meta.isLiked;
             if (meta.hasAggregateBookStats && wasLiked != meta.isLiked)
@@ -1928,7 +2510,8 @@ namespace BookshelfPorting.Runtime
             }
             isBookRatingChoicePanelOpen = false;
             dataStore.ApplyBookMeta(book, meta);
-            bookshelfApiSyncController?.SyncBookLike(book);
+            var desired = new BookStateMutationSnapshot(book, meta);
+            SyncBookLikeOrRollback(book, rollback, desired, "좋아요 변경");
             RefreshBookDetailPanel();
             RefreshHud();
         }
@@ -1956,7 +2539,7 @@ namespace BookshelfPorting.Runtime
             RefreshHud();
         }
 
-        private void SetOwnerRating(int rating)
+        private void SetOwnerRating(float rating)
         {
             var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
             if (book == null || dataStore == null || !CanUseOwnerBookActions())
@@ -1970,13 +2553,15 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var rollback = new BookStateMutationSnapshot(book, meta);
             var previousRating = meta.ownerRating;
-            var clampedRating = Mathf.Clamp(rating, 1, 5);
+            var clampedRating = Mathf.Clamp(SnapRatingToStep(rating), BookRatingStep, 5f);
             meta.ownerRating = Mathf.Approximately(meta.ownerRating, clampedRating) ? 0f : clampedRating;
             ApplyOwnerRatingToLocalAggregate(meta, previousRating, meta.ownerRating);
             isBookRatingChoicePanelOpen = false;
             dataStore.ApplyBookMeta(book, meta);
-            bookshelfApiSyncController?.SyncBookState(book);
+            var desired = new BookStateMutationSnapshot(book, meta);
+            SyncBookStateOrRollback(book, rollback, desired, "별점 저장");
             RefreshBookDetailPanel();
             RefreshHud();
         }
@@ -1988,9 +2573,9 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var previous = Mathf.RoundToInt(Mathf.Clamp(previousOwnerRating, 0f, 5f));
-            var next = Mathf.RoundToInt(Mathf.Clamp(nextOwnerRating, 0f, 5f));
-            if (previous == next)
+            var previous = SnapRatingToStep(Mathf.Clamp(previousOwnerRating, 0f, 5f));
+            var next = SnapRatingToStep(Mathf.Clamp(nextOwnerRating, 0f, 5f));
+            if (Mathf.Approximately(previous, next))
             {
                 return;
             }
@@ -2014,6 +2599,16 @@ namespace BookshelfPorting.Runtime
             meta.reviewCount = Mathf.Max(0, count);
             meta.averageRating = count > 0 ? Mathf.Clamp(total / count, 0f, 5f) : 0f;
             meta.hasAggregateBookStats = true;
+        }
+
+        private static float GetRatingChoiceValue(int index)
+        {
+            return Mathf.Clamp((index + 1) * BookRatingStep, BookRatingStep, 5f);
+        }
+
+        private static float SnapRatingToStep(float rating)
+        {
+            return Mathf.Round(Mathf.Clamp(rating, 0f, 5f) / BookRatingStep) * BookRatingStep;
         }
 
         private void ToggleVisibilityState()
@@ -2594,6 +3189,7 @@ namespace BookshelfPorting.Runtime
             deleteResultMessageText.fontSize = 15;
             deleteResultMessageText.horizontalOverflow = HorizontalWrapMode.Wrap;
             deleteResultMessageText.color = new Color32(84, 74, 66, 255);
+            retryDeleteResultDialogButton = CreateButton(deleteResultDialogPanel.transform, "RetryDeleteResultDialogButton", "재시도", new Vector2(194f, -130f), RunDeleteResultRetryAction, new Vector2(106f, 36f), new Vector2(0f, 1f));
             closeDeleteResultDialogButton = CreateButton(deleteResultDialogPanel.transform, "CloseDeleteResultDialogButton", "확인", new Vector2(318f, -130f), CloseDeleteResultDialog, new Vector2(106f, 36f), new Vector2(0f, 1f));
 
             bookshelfStatusPanel = CreatePanel(canvasObject.transform, "BookshelfStatusPanel", new Vector2(24f, 24f), new Vector2(320f, 128f), new Vector2(0f, 0f));
@@ -2681,14 +3277,14 @@ namespace BookshelfPorting.Runtime
             bookRatingChoicePanel.SetActive(false);
             for (var i = 0; i < bookRatingChoiceButtons.Length; i++)
             {
-                var rating = i + 1;
+                var rating = GetRatingChoiceValue(i);
                 bookRatingChoiceButtons[i] = CreateButton(
                     bookRatingChoicePanel.transform,
-                    $"BookRatingChoiceButton_{rating}",
-                    $"{rating}★",
-                    new Vector2(-124f + i * 62f, 0f),
+                    $"BookRatingChoiceButton_{i + 1}",
+                    $"{FormatRatingValue(rating)}★",
+                    new Vector2(-248f + i * 55f, 0f),
                     () => SetOwnerRating(rating),
-                    new Vector2(54f, 36f),
+                    new Vector2(50f, 36f),
                     new Vector2(0.5f, 0.5f));
             }
 
@@ -3735,21 +4331,42 @@ namespace BookshelfPorting.Runtime
             var contentWidth = panelWidth - padding * 2f;
             var buttonWidth = 116f;
             var buttonHeight = 38f;
+            var buttonGap = 14f;
             var buttonY = -panelHeight + padding + OverlayButtonBottomPaddingExtra;
+            var hasRetry = deleteResultRetryAction != null;
+            var closeX = padding + contentWidth - buttonWidth;
+            var retryX = closeX - buttonGap - buttonWidth;
 
             SetHudObjectRect(deleteResultDialogPanel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(panelWidth, panelHeight));
             SetHudComponentRect(deleteResultTitleText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -40f), new Vector2(contentWidth, 30f));
             SetHudComponentRect(deleteResultMessageText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -86f), new Vector2(contentWidth, 58f));
-            SetHudComponentRect(closeDeleteResultDialogButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + contentWidth - buttonWidth, buttonY), new Vector2(buttonWidth, buttonHeight));
+            SetHudComponentRect(retryDeleteResultDialogButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(retryX, buttonY), new Vector2(buttonWidth, buttonHeight));
+            SetHudComponentRect(closeDeleteResultDialogButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(closeX, buttonY), new Vector2(buttonWidth, buttonHeight));
+            if (retryDeleteResultDialogButton != null)
+            {
+                retryDeleteResultDialogButton.gameObject.SetActive(hasRetry);
+            }
         }
 
         private void ShowDeleteResultDialog(string title, string message, bool isSuccess)
+        {
+            ShowDeleteResultDialog(title, message, isSuccess, null, null);
+        }
+
+        private void ShowDeleteResultDialog(
+            string title,
+            string message,
+            bool isSuccess,
+            System.Action retryAction,
+            string retryLabel = null)
         {
             deleteResultDialogTitle = string.IsNullOrWhiteSpace(title) ? (isSuccess ? "삭제 완료" : "삭제 실패") : title;
             deleteResultDialogMessage = string.IsNullOrWhiteSpace(message)
                 ? isSuccess ? "요청한 항목을 삭제했습니다." : "삭제 요청을 완료하지 못했습니다."
                 : message;
             deleteResultDialogIsSuccess = isSuccess;
+            deleteResultRetryAction = retryAction;
+            deleteResultRetryLabel = string.IsNullOrWhiteSpace(retryLabel) ? "재시도" : retryLabel.Trim();
             isDeleteResultDialogOpen = true;
             RefreshDeleteResultDialog();
         }
@@ -3762,6 +4379,8 @@ namespace BookshelfPorting.Runtime
         private void CloseDeleteResultDialog(bool refresh)
         {
             isDeleteResultDialogOpen = false;
+            deleteResultRetryAction = null;
+            deleteResultRetryLabel = "재시도";
             if (deleteResultBackdrop != null)
             {
                 deleteResultBackdrop.SetActive(false);
@@ -3816,6 +4435,22 @@ namespace BookshelfPorting.Runtime
                 deleteResultMessageText.text = deleteResultDialogMessage;
             }
 
+            var hasRetry = deleteResultRetryAction != null;
+            if (retryDeleteResultDialogButton != null)
+            {
+                retryDeleteResultDialogButton.gameObject.SetActive(hasRetry);
+                retryDeleteResultDialogButton.interactable = hasRetry;
+                SetButtonLabel(retryDeleteResultDialogButton, deleteResultRetryLabel);
+                StyleHudButton(
+                    retryDeleteResultDialogButton,
+                    new Color32(238, 248, 241, 245),
+                    new Color32(247, 255, 250, 255),
+                    new Color32(224, 219, 214, 140),
+                    15,
+                    new Color32(53, 94, 73, 255),
+                    true);
+            }
+
             StyleHudButton(
                 closeDeleteResultDialogButton,
                 deleteResultDialogIsSuccess ? new Color32(66, 116, 84, 245) : DeleteButtonBackground,
@@ -3824,6 +4459,65 @@ namespace BookshelfPorting.Runtime
                 15,
                 Color.white,
                 true);
+        }
+
+        private void RunDeleteResultRetryAction()
+        {
+            var retry = deleteResultRetryAction;
+            if (retry == null)
+            {
+                CloseDeleteResultDialog();
+                return;
+            }
+
+            CloseDeleteResultDialog(false);
+            ShowBookshelfTransientStatus("재시도 중", "서버 요청을 다시 보냅니다.", false);
+            retry.Invoke();
+            RefreshHud();
+        }
+
+        private bool IsBookshelfTransientStatusActive()
+        {
+            return isBookshelfTransientStatusVisible &&
+                   bookshelfTransientStatusExpiresAt > 0f &&
+                   Time.unscaledTime < bookshelfTransientStatusExpiresAt;
+        }
+
+        private void ShowBookshelfTransientStatus(string title, string message, bool isError)
+        {
+            bookshelfTransientStatusTitle = string.IsNullOrWhiteSpace(title)
+                ? (isError ? "요청 실패" : "저장 완료")
+                : title.Trim();
+            bookshelfTransientStatusMessage = string.IsNullOrWhiteSpace(message)
+                ? (isError ? "요청을 완료하지 못했습니다." : "변경사항이 반영되었습니다.")
+                : message.Trim();
+            bookshelfTransientStatusIsError = isError;
+            isBookshelfTransientStatusVisible = true;
+            bookshelfTransientStatusExpiresAt = Time.unscaledTime + BookshelfTransientStatusDuration;
+            RefreshHud();
+        }
+
+        private void ExpireBookshelfTransientStatusIfNeeded()
+        {
+            if (!isBookshelfTransientStatusVisible ||
+                bookshelfTransientStatusExpiresAt <= 0f ||
+                Time.unscaledTime < bookshelfTransientStatusExpiresAt)
+            {
+                return;
+            }
+
+            isBookshelfTransientStatusVisible = false;
+            bookshelfTransientStatusTitle = string.Empty;
+            bookshelfTransientStatusMessage = string.Empty;
+            RefreshHud();
+        }
+
+        private void CloseBookshelfTransientStatusFromStatusPanel()
+        {
+            isBookshelfTransientStatusVisible = false;
+            bookshelfTransientStatusTitle = string.Empty;
+            bookshelfTransientStatusMessage = string.Empty;
+            RefreshHud();
         }
 
         private static string NormalizeMutationErrorMessage(string errorMessage)
@@ -4027,7 +4721,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var panelWidth = Mathf.Clamp(toolbarHeight * 2.78f, 300f, 360f);
+            var panelWidth = Mathf.Clamp(toolbarHeight * 5.35f, 560f, 680f);
             var panelHeight = Mathf.Clamp(toolbarHeight * 0.46f, 50f, 62f);
             SetHudObjectRect(
                 bookRatingChoicePanel,
@@ -4037,8 +4731,8 @@ namespace BookshelfPorting.Runtime
                 new Vector2(panelWidth, panelHeight));
 
             var padding = Mathf.Clamp(panelWidth * 0.045f, 12f, 16f);
-            var gap = Mathf.Clamp(panelWidth * 0.018f, 5f, 8f);
-            var buttonWidth = (panelWidth - padding * 2f - gap * 4f) / 5f;
+            var gap = Mathf.Clamp(panelWidth * 0.012f, 5f, 8f);
+            var buttonWidth = (panelWidth - padding * 2f - gap * (bookRatingChoiceButtons.Length - 1)) / bookRatingChoiceButtons.Length;
             var buttonHeight = Mathf.Clamp(panelHeight - 14f, 36f, 46f);
             var startX = -panelWidth * 0.5f + padding + buttonWidth * 0.5f;
             for (var i = 0; i < bookRatingChoiceButtons.Length; i++)
@@ -4567,7 +5261,8 @@ namespace BookshelfPorting.Runtime
                                      !isBookshelfSwitching &&
                                      !IsBookshelfEditMode &&
                                      !isDraggingBook &&
-                                     !isPlacementEditing;
+                                     !isPlacementEditing &&
+                                     !isBookAddPlacementSelectionActive;
             if (overlayPreviousFocusButton != null)
             {
                 overlayPreviousFocusButton.gameObject.SetActive(showBookshelfOverlay);
@@ -5103,7 +5798,7 @@ namespace BookshelfPorting.Runtime
             if (bookshelfNameInputField.text != previousName)
             {
                 MarkBookshelfEditDirty();
-                bookshelfApiSyncController?.UpdateBookshelf(displayIndex);
+                SyncBookshelfUpdateOrRefresh(displayIndex, "책장 이름 변경");
             }
 
             SetBookshelfOverlayMode(BookshelfOverlayMode.None);
@@ -5213,6 +5908,7 @@ namespace BookshelfPorting.Runtime
             isBookAddPanelOpen = false;
             isBookAddConfirmPanelOpen = false;
             pendingBookAddCatalogIndex = -1;
+            pendingBookAddBookshelfIndex = -1;
             pendingBookAddCatalogItem = null;
             bookAddFeedbackMessage = string.Empty;
             shouldResetBookAddScrollToTop = true;
@@ -5313,7 +6009,10 @@ namespace BookshelfPorting.Runtime
 
             if (bookAddHintText != null)
             {
-                bookAddHintText.text = "책장을 고른 뒤 책을 선택하고, 꽂을 칸이나 책 사이를 직접 지정합니다.";
+                var sectionSummary = bookshelfGenerator != null && bookshelfGenerator.ActiveBookshelfSectionCount > 0
+                    ? $" 현재 빈 섹션 {bookshelfGenerator.ActiveBookshelfEmptySectionCount}/{bookshelfGenerator.ActiveBookshelfSectionCount}개."
+                    : string.Empty;
+                bookAddHintText.text = $"책장을 고른 뒤 책을 선택하고, 꽂을 칸이나 책 사이를 직접 지정합니다.{sectionSummary}";
             }
 
             RefreshBookshelfSelectorButtons(bookAddShelfSelectorButtons, displayIndex, CanOpenBookAddPanel());
@@ -5458,6 +6157,7 @@ namespace BookshelfPorting.Runtime
             }
 
             pendingBookAddCatalogIndex = catalogIndex;
+            pendingBookAddBookshelfIndex = bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1;
             pendingBookAddCatalogItem = item;
             pendingBookAddOrientation = item.Orientation;
             pendingBookAddReadingStatus = App.Domain.ReadingStatus.Unread;
@@ -5502,6 +6202,7 @@ namespace BookshelfPorting.Runtime
         {
             isBookAddConfirmPanelOpen = false;
             pendingBookAddCatalogIndex = -1;
+            pendingBookAddBookshelfIndex = -1;
             pendingBookAddCatalogItem = null;
             if (bookAddConfirmPanel != null)
             {
@@ -5540,6 +6241,7 @@ namespace BookshelfPorting.Runtime
             }
 
             isBookAddPlacementSelectionActive = true;
+            pendingBookAddBookshelfIndex = bookshelfGenerator != null ? bookshelfGenerator.ActiveBookshelfIndex : pendingBookAddBookshelfIndex;
             isBookAddPanelOpen = false;
             isBookAddConfirmPanelOpen = false;
             bookAddFeedbackMessage = string.Empty;
@@ -5583,6 +6285,15 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (pendingBookAddBookshelfIndex >= 0 &&
+                bookshelfGenerator != null &&
+                bookshelfGenerator.ActiveBookshelfIndex != pendingBookAddBookshelfIndex)
+            {
+                bookAddFeedbackMessage = "책을 추가할 책장이 바뀌었습니다. 다시 위치를 선택해 주세요.";
+                CancelBookAddPlacementSelection(true, true);
+                return;
+            }
+
             if (!AddCatalogBookToShelfAtPointer(pendingBookAddCatalogItem, pendingBookAddOrientation, pointer))
             {
                 RefreshHud();
@@ -5591,6 +6302,9 @@ namespace BookshelfPorting.Runtime
 
             isBookAddPlacementSelectionActive = false;
             bookshelfGenerator?.HideBookAddPlacementGuide();
+            pendingBookAddCatalogIndex = -1;
+            pendingBookAddBookshelfIndex = -1;
+            pendingBookAddCatalogItem = null;
             SetBookshelfOverlayMode(BookshelfOverlayMode.None);
             RefreshHud();
         }
@@ -5610,6 +6324,7 @@ namespace BookshelfPorting.Runtime
             isBookAddPlacementSelectionActive = false;
             bookshelfGenerator?.HideBookAddPlacementGuide();
             pendingBookAddCatalogIndex = -1;
+            pendingBookAddBookshelfIndex = -1;
             pendingBookAddCatalogItem = null;
             bookAddFeedbackMessage = string.Empty;
 
@@ -5646,7 +6361,9 @@ namespace BookshelfPorting.Runtime
 
             if (bookAddConfirmMetaText != null)
             {
-                var shelfName = bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfName : "현재 책장";
+                var shelfName = bookshelfGenerator != null
+                    ? bookshelfGenerator.GetBookshelfName(pendingBookAddBookshelfIndex >= 0 ? pendingBookAddBookshelfIndex : bookshelfGenerator.DisplayBookshelfIndex)
+                    : "현재 책장";
                 bookAddConfirmMetaText.text = $"{item.Author} · {item.Publisher} · {shelfName}";
             }
 
@@ -5721,7 +6438,7 @@ namespace BookshelfPorting.Runtime
 
                 book.readingStatus = pendingBookAddReadingStatus;
                 book.isRead = pendingBookAddReadingStatus == App.Domain.ReadingStatus.Read;
-                SyncAddedBookOrRollback(book, book.CurrentSection, item, orientation);
+                SyncAddedBookOrRollback(book, book.CurrentSection, bookshelfGenerator != null ? bookshelfGenerator.ActiveBookshelfIndex : -1, item, orientation);
             }
 
             RefreshHud();
@@ -5769,13 +6486,14 @@ namespace BookshelfPorting.Runtime
 
             book.readingStatus = pendingBookAddReadingStatus;
             book.isRead = pendingBookAddReadingStatus == App.Domain.ReadingStatus.Read;
-            SyncAddedBookOrRollback(book, book.CurrentSection, item, orientation);
+            SyncAddedBookOrRollback(book, book.CurrentSection, bookshelfGenerator != null ? bookshelfGenerator.ActiveBookshelfIndex : -1, item, orientation);
             return true;
         }
 
         private void SyncAddedBookOrRollback(
             BookEntity book,
             ShelfSection sourceSection,
+            int targetBookshelfIndex,
             BookAddCatalogItem item,
             BookOrientation orientation)
         {
@@ -5790,15 +6508,19 @@ namespace BookshelfPorting.Runtime
             if (!hasServerSync)
             {
                 bookAddFeedbackMessage = successMessage;
+                ShowBookshelfTransientStatus("책 추가 완료", "로컬 책장에 책을 추가했습니다.", false);
                 return;
             }
 
             bookAddFeedbackMessage = $"{item.Title} 추가 요청 중입니다.";
-            var didStartAddSync = bookshelfApiSyncController.AddBookToActiveShelf(
+            var didStartAddSync = bookshelfApiSyncController.AddBookToShelf(
                 book,
-                _ =>
+                targetBookshelfIndex,
+                updatedBook =>
                 {
+                    ApplyBookEntityToMeta(updatedBook);
                     bookAddFeedbackMessage = successMessage;
+                    ShowBookshelfTransientStatus("책 추가 저장 완료", $"{item.Title}이(가) 서버에 저장되었습니다.", false);
                     RefreshHud();
                 },
                 error => RollbackAddedBookAfterApiFailure(book, sourceSection, item.Title, error));
@@ -5989,11 +6711,38 @@ namespace BookshelfPorting.Runtime
             var query = bookSearchInputField != null ? bookSearchInputField.text : string.Empty;
             bookSearchResults.Clear();
             var allBooks = new List<BookEntity>();
+            var allMatchCount = 0;
+            var readingMatchCount = 0;
+            var readMatchCount = 0;
+            var likedMatchCount = 0;
             CollectActiveShelfBooks(allBooks);
             for (var i = 0; i < allBooks.Count; i++)
             {
                 var book = allBooks[i];
-                if (DoesBookMatchSearch(book, query, activeBookSearchFilter))
+                var matchesQuery = DoesBookMatchSearch(book, query, BookSearchFilter.All);
+                if (!matchesQuery)
+                {
+                    continue;
+                }
+
+                allMatchCount++;
+                if (DoesBookMatchSearch(book, query, BookSearchFilter.Reading))
+                {
+                    readingMatchCount++;
+                }
+
+                if (DoesBookMatchSearch(book, query, BookSearchFilter.Read))
+                {
+                    readMatchCount++;
+                }
+
+                if (DoesBookMatchSearch(book, query, BookSearchFilter.Liked))
+                {
+                    likedMatchCount++;
+                }
+
+                if (activeBookSearchFilter == BookSearchFilter.All ||
+                    DoesBookMatchSearch(book, query, activeBookSearchFilter))
                 {
                     bookSearchResults.Add(book);
                 }
@@ -6035,6 +6784,10 @@ namespace BookshelfPorting.Runtime
                 StyleBookAddResultButton(button);
             }
 
+            SetButtonLabel(bookSearchAllFilterButton, $"전체 {allMatchCount}");
+            SetButtonLabel(bookSearchReadingFilterButton, $"읽는 중 {readingMatchCount}");
+            SetButtonLabel(bookSearchReadFilterButton, $"완독 {readMatchCount}");
+            SetButtonLabel(bookSearchLikedFilterButton, $"좋아요 {likedMatchCount}");
             StyleBookSearchFilterButton(bookSearchAllFilterButton, activeBookSearchFilter == BookSearchFilter.All);
             StyleBookSearchFilterButton(bookSearchReadingFilterButton, activeBookSearchFilter == BookSearchFilter.Reading);
             StyleBookSearchFilterButton(bookSearchReadFilterButton, activeBookSearchFilter == BookSearchFilter.Read);
@@ -6050,13 +6803,16 @@ namespace BookshelfPorting.Runtime
 
             if (bookSearchStatusText != null)
             {
+                var sectionSummary = bookshelfGenerator != null && bookshelfGenerator.ActiveBookshelfSectionCount > 0
+                    ? $" · 빈 섹션 {bookshelfGenerator.ActiveBookshelfEmptySectionCount}/{bookshelfGenerator.ActiveBookshelfSectionCount}"
+                    : string.Empty;
                 bookSearchStatusText.text = bookSearchResults.Count == 0
                     ? "일치하는 책이 없습니다."
                     : bookSearchResults.Count > bookSearchResultButtons.Length
-                        ? $"{bookSearchResults.Count}권 중 {visibleCount}권 표시 · 스크롤"
+                        ? $"{bookSearchResults.Count}권 중 {visibleCount}권 표시 · 스크롤{sectionSummary}"
                         : canScroll
-                            ? $"{bookSearchResults.Count}권 · 스크롤"
-                            : $"{bookSearchResults.Count}권";
+                            ? $"{bookSearchResults.Count}권 · 스크롤{sectionSummary}"
+                            : $"{bookSearchResults.Count}권{sectionSummary}";
             }
 
             bookSearchPanel.transform.SetAsLastSibling();
@@ -6320,7 +7076,7 @@ namespace BookshelfPorting.Runtime
 
             bookshelfGenerator.CycleActiveBookshelfVisibility();
             MarkBookshelfEditDirty();
-            bookshelfApiSyncController?.UpdateBookshelf(bookshelfGenerator.DisplayBookshelfIndex);
+            SyncBookshelfUpdateOrRefresh(bookshelfGenerator.DisplayBookshelfIndex, "책장 공개 범위 변경");
             RefreshHud();
         }
 
@@ -6334,7 +7090,7 @@ namespace BookshelfPorting.Runtime
             if (bookshelfGenerator.AddBookshelf())
             {
                 MarkBookshelfEditDirty();
-                bookshelfApiSyncController?.CreateBookshelf(bookshelfGenerator.DisplayBookshelfName);
+                SyncBookshelfCreateOrRefresh(bookshelfGenerator.DisplayBookshelfName, "책장 추가");
                 isBookshelfManagePanelOpen = true;
                 RefreshHud();
             }
@@ -6400,7 +7156,7 @@ namespace BookshelfPorting.Runtime
                 bookshelfGenerator.MoveBookshelfOrder(sourceIndex, targetIndex))
             {
                 MarkBookshelfEditDirty();
-                bookshelfApiSyncController?.ReorderBookshelves();
+                SyncBookshelfReorderOrRefresh("책장 순서 변경");
                 isBookshelfManagePanelOpen = true;
                 RefreshHud();
                 return;
@@ -6549,7 +7305,13 @@ namespace BookshelfPorting.Runtime
                 }
             }
 
-            return $"{bookshelfGenerator.GetBookshelfName(activeIndex)} · {total}권   읽는 중 {reading}   완독 {read}   좋아요 {liked}";
+            var sectionCount = bookshelfGenerator.ActiveBookshelfSectionCount;
+            var emptySectionCount = bookshelfGenerator.ActiveBookshelfEmptySectionCount;
+            var sectionSummary = sectionCount > 0
+                ? $"빈 섹션 {emptySectionCount}/{sectionCount}"
+                : "섹션 정보 없음";
+
+            return $"{bookshelfGenerator.GetBookshelfName(activeIndex)} · {total}권 · {sectionSummary}   읽는 중 {reading}   완독 {read}   좋아요 {liked}";
         }
 
         private void SortActiveBookshelfBooks(ShelfBookSortMode sortMode)
@@ -6850,6 +7612,31 @@ namespace BookshelfPorting.Runtime
                                          !isDraggingBook &&
                                          !IsBookshelfEditMode &&
                                          !isSwitching;
+            var showPendingRetries = isBookshelfFocused &&
+                                     pendingMutationRetries.Count > 0 &&
+                                     !isViewingBook &&
+                                     !isDraggingBook &&
+                                     !IsBookshelfEditMode &&
+                                     !isBookAddPlacementSelectionActive &&
+                                     !isBookSearchPanelOpen &&
+                                     !isBookAddPanelOpen &&
+                                     !isBookAddConfirmPanelOpen &&
+                                     !isBookshelfManagePanelOpen &&
+                                     !isBookPlacementEditorOpen &&
+                                     !HasOpenBookshelfModal() &&
+                                     !isSwitching;
+            var showTransient = isBookshelfFocused &&
+                                IsBookshelfTransientStatusActive() &&
+                                !isViewingBook &&
+                                !isDraggingBook &&
+                                !IsBookshelfEditMode &&
+                                !isBookAddPlacementSelectionActive &&
+                                !isBookSearchPanelOpen &&
+                                !isBookAddPanelOpen &&
+                                !isBookAddConfirmPanelOpen &&
+                                !isBookshelfManagePanelOpen &&
+                                !HasOpenBookshelfModal() &&
+                                !isSwitching;
             var showEmpty = isBookshelfFocused &&
                             !isViewingBook &&
                             !isDraggingBook &&
@@ -6861,7 +7648,7 @@ namespace BookshelfPorting.Runtime
                             bookshelfGenerator != null &&
                             bookshelfGenerator.ActiveBookshelfBookCount == 0;
             var showSwitching = isBookshelfFocused && isSwitching;
-            var show = showPlacementSelection || showEmpty || showSwitching;
+            var show = showPlacementSelection || showPendingRetries || showTransient || showEmpty || showSwitching;
             bookshelfStatusPanel.SetActive(show);
             if (!show)
             {
@@ -6874,7 +7661,16 @@ namespace BookshelfPorting.Runtime
                     ? "책장 이동 중"
                     : showPlacementSelection
                         ? "책 추가"
-                        : "빈 책장";
+                        : showPendingRetries
+                            ? $"{pendingMutationRetries.Count}개 변경 저장 필요"
+                            : showTransient
+                                ? bookshelfTransientStatusTitle
+                                : "빈 책장";
+                bookshelfStatusTitleText.color = (showPendingRetries || showTransient && bookshelfTransientStatusIsError)
+                    ? new Color32(112, 46, 42, 255)
+                    : showTransient
+                        ? new Color32(44, 84, 60, 255)
+                        : new Color32(49, 42, 36, 255);
             }
 
             if (bookshelfStatusMessageText != null)
@@ -6891,15 +7687,27 @@ namespace BookshelfPorting.Runtime
                         ? $"{title}을(를) 꽂을 칸이나 책 사이를 클릭하세요. Esc 또는 우클릭으로 취소할 수 있습니다."
                         : bookAddFeedbackMessage;
                 }
+                else if (showPendingRetries)
+                {
+                    bookshelfStatusMessageText.text = GetPendingMutationRetryStatusMessage();
+                }
+                else if (showTransient)
+                {
+                    bookshelfStatusMessageText.text = bookshelfTransientStatusMessage;
+                }
                 else
                 {
-                    bookshelfStatusMessageText.text = "여기에 첫 책을 추가해보세요.";
+                    var sectionCount = bookshelfGenerator != null ? bookshelfGenerator.ActiveBookshelfSectionCount : 0;
+                    var emptyCount = bookshelfGenerator != null ? bookshelfGenerator.ActiveBookshelfEmptySectionCount : 0;
+                    bookshelfStatusMessageText.text = sectionCount > 0
+                        ? $"빈 섹션 {emptyCount}/{sectionCount}개가 열려 있습니다. 여기에 첫 책을 추가해보세요."
+                        : "여기에 첫 책을 추가해보세요.";
                 }
             }
 
             if (bookshelfStatusAddButton != null)
             {
-                var showActionButton = showPlacementSelection || showEmpty;
+                var showActionButton = showPlacementSelection || showPendingRetries || showTransient || showEmpty;
                 bookshelfStatusAddButton.gameObject.SetActive(showActionButton);
                 if (showActionButton)
                 {
@@ -6908,21 +7716,29 @@ namespace BookshelfPorting.Runtime
                     {
                         bookshelfStatusAddButton.onClick.AddListener(CancelBookAddPlacementSelectionFromStatusPanel);
                     }
+                    else if (showPendingRetries)
+                    {
+                        bookshelfStatusAddButton.onClick.AddListener(RunAllPendingMutationRetriesFromStatusPanel);
+                    }
+                    else if (showTransient)
+                    {
+                        bookshelfStatusAddButton.onClick.AddListener(CloseBookshelfTransientStatusFromStatusPanel);
+                    }
                     else
                     {
                         bookshelfStatusAddButton.onClick.AddListener(OpenBookAddFromStatusPanel);
                     }
 
-                    SetButtonLabel(bookshelfStatusAddButton, showPlacementSelection ? "취소" : "책 추가");
+                    SetButtonLabel(bookshelfStatusAddButton, showPlacementSelection ? "취소" : showPendingRetries ? "전체 재시도" : showTransient ? "닫기" : "책 추가");
                 }
 
                 StyleHudButton(
                     bookshelfStatusAddButton,
-                    new Color32(238, 248, 241, 235),
-                    new Color32(247, 255, 250, 255),
+                    (showPendingRetries || showTransient && bookshelfTransientStatusIsError) ? new Color32(255, 235, 232, 238) : new Color32(238, 248, 241, 235),
+                    (showPendingRetries || showTransient && bookshelfTransientStatusIsError) ? new Color32(255, 242, 238, 255) : new Color32(247, 255, 250, 255),
                     new Color32(224, 219, 214, 140),
                     13,
-                    new Color32(53, 94, 73, 255),
+                    (showPendingRetries || showTransient && bookshelfTransientStatusIsError) ? new Color32(112, 46, 42, 255) : new Color32(53, 94, 73, 255),
                     true);
             }
         }
@@ -7615,7 +8431,7 @@ namespace BookshelfPorting.Runtime
                 if (previous != style)
                 {
                     MarkBookshelfEditDirty();
-                    bookshelfApiSyncController?.UpdateBookshelf(displayIndex);
+                    SyncBookshelfUpdateOrRefresh(displayIndex, "책장 디자인 변경");
                 }
 
                 RefreshHud();
@@ -7711,7 +8527,7 @@ namespace BookshelfPorting.Runtime
             if (bookshelfGenerator.AddBookshelf())
             {
                 MarkBookshelfEditDirty();
-                bookshelfApiSyncController?.CreateBookshelf(bookshelfGenerator.DisplayBookshelfName);
+                SyncBookshelfCreateOrRefresh(bookshelfGenerator.DisplayBookshelfName, "책장 추가");
                 RefreshHud();
             }
         }
@@ -7976,14 +8792,22 @@ namespace BookshelfPorting.Runtime
 
         private static string GetOwnerRatingLabel(float rating)
         {
-            var rounded = Mathf.RoundToInt(Mathf.Clamp(rating, 0f, 5f));
-            return rounded <= 0 ? "미지정" : $"{rounded}/5";
+            var snapped = SnapRatingToStep(Mathf.Clamp(rating, 0f, 5f));
+            return snapped <= 0f ? "미지정" : $"{FormatRatingValue(snapped)}/5";
         }
 
         private static string GetOwnerRatingButtonLabel(float rating)
         {
-            var rounded = Mathf.RoundToInt(Mathf.Clamp(rating, 0f, 5f));
-            return rounded <= 0 ? "별점" : $"{rounded}★";
+            var snapped = SnapRatingToStep(Mathf.Clamp(rating, 0f, 5f));
+            return snapped <= 0f ? "별점" : $"{FormatRatingValue(snapped)}★";
+        }
+
+        private static string FormatRatingValue(float rating)
+        {
+            var snapped = SnapRatingToStep(rating);
+            return Mathf.Approximately(snapped, Mathf.Round(snapped))
+                ? Mathf.RoundToInt(snapped).ToString()
+                : snapped.ToString("0.0");
         }
 
         private static string GetAverageRatingLabel(float rating)
@@ -8077,6 +8901,7 @@ namespace BookshelfPorting.Runtime
             if (direction == 0 ||
                 CurrentFocusArea != ExperienceFocusArea.Bookshelf ||
                 isBookPlacementEditorOpen ||
+                isBookAddPlacementSelectionActive ||
                 bookshelfGenerator == null ||
                 bookshelfGenerator.IsBookshelfSwitching)
             {
@@ -8431,12 +9256,13 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var selectedRating = Mathf.RoundToInt(Mathf.Clamp(meta.ownerRating, 0f, 5f));
+            var selectedRating = SnapRatingToStep(Mathf.Clamp(meta.ownerRating, 0f, 5f));
             for (var i = 0; i < bookRatingChoiceButtons.Length; i++)
             {
-                var rating = i + 1;
-                var isSelected = rating == selectedRating;
-                SetButtonLabel(bookRatingChoiceButtons[i], isSelected ? $"✓ {rating}★" : $"{rating}★");
+                var rating = GetRatingChoiceValue(i);
+                var isSelected = Mathf.Approximately(rating, selectedRating);
+                var label = $"{FormatRatingValue(rating)}★";
+                SetButtonLabel(bookRatingChoiceButtons[i], isSelected ? $"✓ {label}" : label);
                 StyleHudButton(
                     bookRatingChoiceButtons[i],
                     isSelected ? new Color32(197, 128, 67, 245) : new Color32(255, 255, 255, 240),
