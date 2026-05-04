@@ -32,6 +32,14 @@ namespace App.Infrastructure.Api
         public static APIManager Instance { get; private set; }
         public bool HasAccessToken => !string.IsNullOrWhiteSpace(accessToken);
         public bool EnableVerboseLog => enableVerboseLog;
+        public long CurrentUserId
+        {
+            get
+            {
+                var raw = PlayerPrefs.GetString(AuthStorageKeys.UserId, string.Empty);
+                return long.TryParse(raw, out var userId) ? userId : 0L;
+            }
+        }
 
         private void Awake()
         {

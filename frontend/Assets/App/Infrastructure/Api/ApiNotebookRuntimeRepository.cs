@@ -128,10 +128,17 @@ namespace App.Infrastructure.Api
 
         public void LoadSpaces(int limit, Action<NotebookSpaceListResult> onSuccess, Action<NotebookApiError> onError)
         {
+            LoadSpaces(null, null, limit, onSuccess, onError);
+        }
+
+        public void LoadSpaces(string keyword, string cursor, int limit, Action<NotebookSpaceListResult> onSuccess, Action<NotebookApiError> onError)
+        {
             client.GetSpaces(
+                keyword,
                 "POPULAR",
+                cursor,
                 Mathf.Max(1, limit),
-                response => onSuccess?.Invoke(new NotebookSpaceListResult(MapSpaces(response, limit))),
+                response => onSuccess?.Invoke(new NotebookSpaceListResult(MapSpaces(response, limit, client.CurrentUserId), response?.NextCursor)),
                 error => onError?.Invoke(MapError(error)));
         }
 
@@ -212,6 +219,26 @@ namespace App.Infrastructure.Api
             {
                 client.UnfollowUser(userId, success, error);
             }
+        }
+
+        public void LoadUserFollowers(long userId, string cursor, int limit, Action<NotebookUserListResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            client.GetUserFollowers(
+                userId,
+                cursor,
+                Mathf.Max(1, limit),
+                response => onSuccess?.Invoke(new NotebookUserListResult(MapUsers(response), response?.NextCursor)),
+                error => onError?.Invoke(MapError(error)));
+        }
+
+        public void LoadUserFollowings(long userId, string cursor, int limit, Action<NotebookUserListResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            client.GetUserFollowings(
+                userId,
+                cursor,
+                Mathf.Max(1, limit),
+                response => onSuccess?.Invoke(new NotebookUserListResult(MapUsers(response), response?.NextCursor)),
+                error => onError?.Invoke(MapError(error)));
         }
 
         public void LoadBookReviews(long bookId, Action<NotebookReviewListResult> onSuccess, Action<NotebookApiError> onError)
@@ -295,7 +322,7 @@ namespace App.Infrastructure.Api
             }).ToArray();
         }
 
-        private static IReadOnlyList<NotebookSpaceItem> MapSpaces(SpaceListResponseDto response, int limit)
+        private static IReadOnlyList<NotebookSpaceItem> MapSpaces(SpaceListResponseDto response, int limit, long currentUserId)
         {
             var spaces = response?.Spaces;
             if (spaces == null || spaces.Count == 0)
@@ -311,13 +338,39 @@ namespace App.Infrastructure.Api
                     Id = space.SpaceId,
                     OwnerUserId = space.OwnerUserId,
                     OwnerName = FirstNonEmpty(space.OwnerNickname, $"User {space.OwnerUserId}"),
+                    OwnerProfileImageUrl = space.OwnerProfileImageUrl,
                     SpaceName = FirstNonEmpty(space.SpaceName, $"Space {space.SpaceId}"),
+                    Mood = FirstNonEmpty(space.Mood, "COMMUNITY"),
                     Description = FirstNonEmpty(space.Description, space.Mood, space.VisibilityScope),
+                    ThumbnailUrl = space.ThumbnailUrl,
                     FollowerCount = Math.Max(0, space.FollowerCount),
                     LikeCount = Math.Max(0, space.LikeCount),
                     VisitCount = Math.Max(0, space.VisitCount),
                     Following = space.Following,
-                    Liked = space.Liked
+                    Liked = space.Liked,
+                    IsOwnSpace = currentUserId > 0L && space.OwnerUserId == currentUserId
+                })
+                .ToArray();
+        }
+
+        private static IReadOnlyList<NotebookUserItem> MapUsers(UserListResponseDto response)
+        {
+            var users = response?.Users;
+            if (users == null || users.Count == 0)
+            {
+                return Array.Empty<NotebookUserItem>();
+            }
+
+            return users
+                .Where(user => user != null && user.Id > 0)
+                .Select(user => new NotebookUserItem
+                {
+                    Id = user.Id,
+                    Nickname = FirstNonEmpty(user.Nickname, $"User {user.Id}"),
+                    ProfileImageUrl = user.ProfileImageUrl,
+                    Mutual = user.Mutual,
+                    Following = user.Following,
+                    Blocked = user.Blocked
                 })
                 .ToArray();
         }

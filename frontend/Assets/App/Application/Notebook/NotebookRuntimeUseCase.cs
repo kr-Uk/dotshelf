@@ -51,6 +51,11 @@ namespace App.Application.Notebook
             repository.LoadSpaces(limit, onSuccess, onError);
         }
 
+        public void LoadSpaces(string keyword, string cursor, int limit, Action<NotebookSpaceListResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            repository.LoadSpaces(keyword, cursor, limit, onSuccess, onError);
+        }
+
         public void LoadDefaultShelfTarget(Action<NotebookShelfTarget> onSuccess, Action<NotebookApiError> onError)
         {
             repository.LoadDefaultShelfTarget(onSuccess, onError);
@@ -64,6 +69,16 @@ namespace App.Application.Notebook
         public void FollowUser(long userId, bool following, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
             repository.FollowUser(userId, following, onSuccess, onError);
+        }
+
+        public void LoadUserFollowers(long userId, string cursor, int limit, Action<NotebookUserListResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            repository.LoadUserFollowers(userId, cursor, limit, onSuccess, onError);
+        }
+
+        public void LoadUserFollowings(long userId, string cursor, int limit, Action<NotebookUserListResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            repository.LoadUserFollowings(userId, cursor, limit, onSuccess, onError);
         }
 
         public void LoadBookReviews(long bookId, Action<NotebookReviewListResult> onSuccess, Action<NotebookApiError> onError)
