@@ -77,12 +77,14 @@ namespace App.Application.Notebook
 
     public sealed class NotebookSpaceListResult
     {
-        public NotebookSpaceListResult(IReadOnlyList<NotebookSpaceItem> spaces)
+        public NotebookSpaceListResult(IReadOnlyList<NotebookSpaceItem> spaces, string nextCursor = null)
         {
             Spaces = spaces ?? Array.Empty<NotebookSpaceItem>();
+            NextCursor = nextCursor;
         }
 
         public IReadOnlyList<NotebookSpaceItem> Spaces { get; }
+        public string NextCursor { get; }
     }
 
     public sealed class NotebookSpaceItem
@@ -90,13 +92,39 @@ namespace App.Application.Notebook
         public long Id { get; set; }
         public long OwnerUserId { get; set; }
         public string OwnerName { get; set; }
+        public string OwnerProfileImageUrl { get; set; }
         public string SpaceName { get; set; }
+        public string Mood { get; set; }
         public string Description { get; set; }
+        public string ThumbnailUrl { get; set; }
         public long FollowerCount { get; set; }
         public long LikeCount { get; set; }
         public long VisitCount { get; set; }
         public bool Following { get; set; }
         public bool Liked { get; set; }
+        public bool IsOwnSpace { get; set; }
+    }
+
+    public sealed class NotebookUserListResult
+    {
+        public NotebookUserListResult(IReadOnlyList<NotebookUserItem> users, string nextCursor = null)
+        {
+            Users = users ?? Array.Empty<NotebookUserItem>();
+            NextCursor = nextCursor;
+        }
+
+        public IReadOnlyList<NotebookUserItem> Users { get; }
+        public string NextCursor { get; }
+    }
+
+    public sealed class NotebookUserItem
+    {
+        public long Id { get; set; }
+        public string Nickname { get; set; }
+        public string ProfileImageUrl { get; set; }
+        public bool Mutual { get; set; }
+        public bool Following { get; set; }
+        public bool Blocked { get; set; }
     }
 
     public sealed class NotebookShelfTarget

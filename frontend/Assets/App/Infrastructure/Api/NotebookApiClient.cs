@@ -16,6 +16,7 @@ namespace App.Infrastructure.Api
         }
 
         public bool VerboseLogEnabled => api != null && api.EnableVerboseLog;
+        public long CurrentUserId => api != null ? api.CurrentUserId : 0L;
 
         public Coroutine CheckHealth(Action<ApiHealthCheckResult> onComplete, string path = "/health")
         {
@@ -215,11 +216,27 @@ namespace App.Infrastructure.Api
 
         public Coroutine GetSpaces(string sort, int limit, Action<SpaceListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
+            return GetSpaces(null, sort, null, limit, onSuccess, onError);
+        }
+
+        public Coroutine GetSpaces(string keyword, string sort, string cursor, int limit, Action<SpaceListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
             var query = new Dictionary<string, string>
             {
                 ["sort"] = string.IsNullOrWhiteSpace(sort) ? "POPULAR" : sort,
                 ["limit"] = Mathf.Max(1, limit).ToString()
             };
+
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                query["keyword"] = keyword.Trim();
+            }
+
+            // /v1/spaces currently supports keyword/sort/limit only.
+            // Keep cursor in the public method signature for Application-layer
+            // compatibility, but do not send it until the backend returns a real
+            // nextCursor for this endpoint.
+
             return Get<SpaceListResponseDto>(WithQuery("/v1/spaces", query), onSuccess, onError);
         }
 

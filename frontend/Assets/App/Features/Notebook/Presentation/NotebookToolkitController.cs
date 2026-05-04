@@ -116,7 +116,8 @@ namespace App.Features.Notebook.Presentation
                 int followers,
                 int likes,
                 int visits,
-                Color accentColor)
+                Color accentColor,
+                bool isOwnSpace = false)
             {
                 Id = id;
                 OwnerId = ownerId;
@@ -129,6 +130,7 @@ namespace App.Features.Notebook.Presentation
                 Likes = likes;
                 Visits = visits;
                 AccentColor = accentColor;
+                IsOwnSpace = isOwnSpace;
             }
 
             public string Id { get; }
@@ -138,10 +140,31 @@ namespace App.Features.Notebook.Presentation
             public string Mood { get; }
             public string Description { get; }
             public string ThumbnailKey { get; }
-            public int Followers { get; }
-            public int Likes { get; }
+            public int Followers { get; set; }
+            public int Likes { get; set; }
             public int Visits { get; }
             public Color AccentColor { get; }
+            public bool IsOwnSpace { get; }
+        }
+
+        private sealed class UserViewModel
+        {
+            public UserViewModel(long id, string nickname, string profileImageUrl, bool mutual, bool following, bool blocked)
+            {
+                Id = id;
+                Nickname = nickname;
+                ProfileImageUrl = profileImageUrl;
+                Mutual = mutual;
+                Following = following;
+                Blocked = blocked;
+            }
+
+            public long Id { get; }
+            public string Nickname { get; }
+            public string ProfileImageUrl { get; }
+            public bool Mutual { get; }
+            public bool Following { get; set; }
+            public bool Blocked { get; }
         }
 
         private sealed class DecorObjectViewModel
@@ -239,6 +262,7 @@ namespace App.Features.Notebook.Presentation
         private readonly Dictionary<string, long> bookUserBookIds = new();
         private readonly HashSet<string> pendingShelfBookIds = new();
         private readonly Dictionary<string, List<BookReviewViewModel>> bookReviewMap = new();
+        private readonly List<UserViewModel> socialListUsers = new();
         private readonly HashSet<string> requestedBookReviewIds = new();
         private readonly List<Button> bookRatingStarButtons = new();
         private SpaceViewModel[] apiSpaces = Array.Empty<SpaceViewModel>();
@@ -259,6 +283,9 @@ namespace App.Features.Notebook.Presentation
         private VisualElement bookDetailContent;
         private VisualElement bookDetailModalPanel;
         private VisualElement otherSpacesContent;
+        private VisualElement otherSpacesList;
+        private VisualElement socialListPanel;
+        private VisualElement socialListContent;
         private VisualElement objectMarketContent;
         private VisualElement objectList;
         private VisualElement recommendList;
@@ -271,12 +298,14 @@ namespace App.Features.Notebook.Presentation
         private VisualElement detailCover;
         private ScrollView recommendScrollView;
         private TextField searchField;
+        private TextField otherSpacesSearchField;
         private TextField bookReviewInput;
         private Button clearSearchButton;
         private Button bookFavoriteButton;
         private Button bookDetailAddButton;
         private Button bookReviewMoreButton;
         private Button bookReviewToggleButton;
+        private Button socialListMoreButton;
         private Label headerSubtitleLabel;
         private Label heroEyebrowLabel;
         private Label heroTitleLabel;
@@ -289,6 +318,9 @@ namespace App.Features.Notebook.Presentation
         private Label searchResultsCountLabel;
         private Label searchResultsHintLabel;
         private Label objectResultLabel;
+        private Label otherSpacesStatusLabel;
+        private Label socialListTitleLabel;
+        private Label socialListHintLabel;
         private Label bookDetailTitle;
         private Label bookDetailAuthor;
         private Label bookDetailPublisher;
@@ -328,6 +360,8 @@ namespace App.Features.Notebook.Presentation
         private int searchRequestVersion;
         private int marketBooksRequestVersion;
         private int runtimeRequestVersion;
+        private int otherSpacesRequestVersion;
+        private int socialListRequestVersion;
         private int walletDetailRequestVersion;
 
         private string query = string.Empty;
@@ -340,7 +374,15 @@ namespace App.Features.Notebook.Presentation
         private string activeRankingSort = RankingSorts[0];
         private string activeObjectSort = ObjectSorts[0];
         private string activeObjectCategory = ObjectCategories[0];
+        private string otherSpacesQuery = string.Empty;
+        private string appliedOtherSpacesQuery = string.Empty;
+        private string otherSpacesNextCursor = string.Empty;
+        private string otherSpacesErrorMessage = string.Empty;
+        private string socialListMode = string.Empty;
+        private string socialListOwnerName = string.Empty;
+        private string socialListCursor = string.Empty;
         private string walletHistoryMessage = string.Empty;
+        private long socialListOwnerUserId;
         private int selectedBookIndex;
         private int pageIndex;
         private int pages;
@@ -358,6 +400,9 @@ namespace App.Features.Notebook.Presentation
         private bool marketBooksRequested;
         private bool runtimeDataRequested;
         private bool runtimeDataLoading;
+        private bool otherSpacesLoading;
+        private bool socialListLoading;
+        private bool socialListPanelOpen;
         private bool walletPanelOpen;
         private bool walletDetailsLoading;
         private bool shelfTargetLoading;
@@ -446,6 +491,15 @@ namespace App.Features.Notebook.Presentation
             marketBooksLoading = false;
             runtimeDataRequested = false;
             runtimeDataLoading = false;
+            otherSpacesLoading = false;
+            otherSpacesQuery = string.Empty;
+            appliedOtherSpacesQuery = string.Empty;
+            otherSpacesNextCursor = string.Empty;
+            otherSpacesErrorMessage = string.Empty;
+            socialListLoading = false;
+            socialListPanelOpen = false;
+            socialListUsers.Clear();
+            socialListCursor = string.Empty;
             marketBooks = Array.Empty<BookViewModel>();
             recommendedBooks = Array.Empty<BookViewModel>();
             apiSpaces = Array.Empty<SpaceViewModel>();
@@ -773,6 +827,7 @@ namespace App.Features.Notebook.Presentation
             BuildFooter(pageScroll.contentContainer);
             BuildScrollRail(dashboard);
             BuildWalletPanel(dashboard);
+            BuildSocialListPanel(dashboard);
             BuildBookDetailModal(dashboard);
             BuildToast(dashboard);
             UpdateScrollThumb();
@@ -803,6 +858,9 @@ namespace App.Features.Notebook.Presentation
             bookDetailContent = null;
             bookDetailModalPanel = null;
             otherSpacesContent = null;
+            otherSpacesList = null;
+            socialListPanel = null;
+            socialListContent = null;
             objectMarketContent = null;
             objectList = null;
             recommendList = null;
@@ -815,12 +873,14 @@ namespace App.Features.Notebook.Presentation
             detailCover = null;
             recommendScrollView = null;
             searchField = null;
+            otherSpacesSearchField = null;
             bookReviewInput = null;
             clearSearchButton = null;
             bookFavoriteButton = null;
             bookDetailAddButton = null;
             bookReviewMoreButton = null;
             bookReviewToggleButton = null;
+            socialListMoreButton = null;
             headerSubtitleLabel = null;
             heroEyebrowLabel = null;
             heroTitleLabel = null;
@@ -833,6 +893,9 @@ namespace App.Features.Notebook.Presentation
             searchResultsCountLabel = null;
             searchResultsHintLabel = null;
             objectResultLabel = null;
+            otherSpacesStatusLabel = null;
+            socialListTitleLabel = null;
+            socialListHintLabel = null;
             bookDetailTitle = null;
             bookDetailAuthor = null;
             bookDetailPublisher = null;
@@ -1158,6 +1221,79 @@ namespace App.Features.Notebook.Presentation
             panel.Add(walletPurchaseList);
 
             RefreshWalletPanel();
+        }
+
+        private void BuildSocialListPanel(VisualElement parent)
+        {
+            var panel = new VisualElement { name = "social-list-panel" };
+            socialListPanel = panel;
+            panel.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            panel.style.display = DisplayStyle.None;
+            panel.style.position = Position.Absolute;
+            panel.style.top = 108;
+            panel.style.right = 42;
+            panel.style.width = 360;
+            panel.style.maxHeight = 620;
+            panel.style.paddingLeft = 18;
+            panel.style.paddingRight = 18;
+            panel.style.paddingTop = 16;
+            panel.style.paddingBottom = 16;
+            panel.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.97f);
+            panel.style.overflow = Overflow.Hidden;
+            Round(panel, 20);
+            Border(panel, Rgba(0x0E, 0x1D, 0x2A, 0.12f));
+            parent.Add(panel);
+
+            var titleRow = Row("social-list-title-row");
+            titleRow.style.alignItems = Align.Center;
+            titleRow.style.marginBottom = 6;
+            panel.Add(titleRow);
+
+            socialListTitleLabel = Text("팔로워", 18, Ink, FontStyle.Bold);
+            titleRow.Add(socialListTitleLabel);
+
+            var spacer = new VisualElement();
+            spacer.style.flexGrow = 1f;
+            titleRow.Add(spacer);
+
+            var close = CloseIconButton("목록 닫기");
+            close.style.width = 28;
+            close.style.height = 28;
+            close.style.backgroundColor = Color.clear;
+            close.style.borderTopWidth = 0;
+            close.style.borderRightWidth = 0;
+            close.style.borderBottomWidth = 0;
+            close.style.borderLeftWidth = 0;
+            close.clicked += CloseSocialListPanel;
+            titleRow.Add(close);
+
+            socialListHintLabel = Text(string.Empty, 11, FaintInk, FontStyle.Normal);
+            socialListHintLabel.style.whiteSpace = WhiteSpace.Normal;
+            socialListHintLabel.style.marginBottom = 12;
+            panel.Add(socialListHintLabel);
+
+            var listScroll = new ScrollView(ScrollViewMode.Vertical) { name = "social-list-scroll" };
+            listScroll.style.maxHeight = 442;
+            listScroll.style.minHeight = 260;
+            listScroll.style.minWidth = 0;
+            listScroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            listScroll.verticalScrollerVisibility = ScrollerVisibility.Auto;
+            listScroll.contentContainer.style.flexDirection = FlexDirection.Column;
+            socialListContent = listScroll.contentContainer;
+            panel.Add(listScroll);
+
+            var more = TextButton("더 보기", false);
+            more.style.height = 36;
+            more.style.marginTop = 12;
+            more.clicked += () =>
+            {
+                PulseElement(more);
+                RequestSocialListPage(true);
+            };
+            panel.Add(more);
+            socialListMoreButton = more;
+
+            RefreshSocialListPanel();
         }
 
         private void BuildHero(VisualElement parent)
@@ -1917,11 +2053,89 @@ namespace App.Features.Notebook.Presentation
         {
             BuildSectionHeader(
                 parent,
-                "OTHER SPACES · 탐색",
-                "다른 이의 공간",
-                "명세의 방문하기, 팔로우, 공간 좋아요 액션을 바로 확인할 수 있습니다.");
+                "OTHER SPACES · COMMUNITY",
+                "다른 공간",
+                "공간을 검색하고, 마음에 드는 서재 주인을 팔로우해보세요.");
+
+            var searchPanel = new VisualElement { name = "other-spaces-search-panel" };
+            searchPanel.style.flexDirection = FlexDirection.Column;
+            searchPanel.style.paddingLeft = 16;
+            searchPanel.style.paddingRight = 16;
+            searchPanel.style.paddingTop = 14;
+            searchPanel.style.paddingBottom = 14;
+            searchPanel.style.marginBottom = 16;
+            searchPanel.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.78f);
+            Round(searchPanel, 18);
+            Border(searchPanel, Rgba(0x58, 0xB9, 0xFF, 0.18f));
+            parent.Add(searchPanel);
+
+            var searchRow = Row("other-spaces-search-row");
+            searchRow.style.alignItems = Align.Center;
+            searchRow.style.minHeight = 44;
+            searchRow.style.minWidth = 0;
+            searchRow.style.flexWrap = Wrap.Wrap;
+            searchPanel.Add(searchRow);
+
+            var inputFrame = CreateInputFrame(42);
+            inputFrame.style.flexGrow = 1f;
+            inputFrame.style.minWidth = 260;
+            inputFrame.style.marginRight = 10;
+            inputFrame.style.marginBottom = 6;
+            inputFrame.style.flexDirection = FlexDirection.Row;
+            inputFrame.style.alignItems = Align.Center;
+            searchRow.Add(inputFrame);
+
+            var inputHint = Text("공간 이름으로 검색", 11, FaintInk, FontStyle.Normal);
+            inputHint.style.marginRight = 10;
+            inputHint.style.flexShrink = 0;
+            inputFrame.Add(inputHint);
+
+            otherSpacesSearchField = new TextField { value = otherSpacesQuery };
+            otherSpacesSearchField.style.flexGrow = 1f;
+            otherSpacesSearchField.style.minWidth = 0;
+            otherSpacesSearchField.style.fontSize = 13;
+            otherSpacesSearchField.RegisterValueChangedCallback(evt => otherSpacesQuery = evt.newValue ?? string.Empty);
+            otherSpacesSearchField.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter)
+                {
+                    evt.StopPropagation();
+                    SearchOtherSpaces();
+                }
+            });
+            RegisterFieldStyling(otherSpacesSearchField);
+            inputFrame.Add(otherSpacesSearchField);
+
+            var searchButton = TextButton("검색", true);
+            searchButton.style.width = 72;
+            searchButton.style.height = 38;
+            searchButton.style.marginRight = 8;
+            searchButton.style.marginBottom = 6;
+            searchButton.clicked += () =>
+            {
+                PulseElement(searchButton);
+                SearchOtherSpaces();
+            };
+            searchRow.Add(searchButton);
+
+            var resetButton = TextButton("초기화", false);
+            resetButton.style.width = 78;
+            resetButton.style.height = 38;
+            resetButton.style.marginBottom = 6;
+            resetButton.clicked += () =>
+            {
+                PulseElement(resetButton);
+                ClearOtherSpacesSearch();
+            };
+            searchRow.Add(resetButton);
+
+            otherSpacesStatusLabel = Text(GetOtherSpacesStatusText(), 11, FaintInk, FontStyle.Normal);
+            otherSpacesStatusLabel.style.whiteSpace = WhiteSpace.Normal;
+            otherSpacesStatusLabel.style.marginTop = 4;
+            searchPanel.Add(otherSpacesStatusLabel);
 
             var grid = Row("other-spaces-grid");
+            otherSpacesList = grid;
             grid.style.flexWrap = Wrap.Wrap;
             grid.style.alignItems = Align.Stretch;
             parent.Add(grid);
@@ -1933,23 +2147,77 @@ namespace App.Features.Notebook.Presentation
 
             if (apiSpaces.Length == 0)
             {
-                grid.Add(EmptyState(runtimeDataLoading ? "공간 API를 불러오는 중입니다." : "표시할 공간 API 데이터가 없습니다."));
+                grid.Add(EmptyState(GetOtherSpacesEmptyText()));
             }
+        }
+
+        private void SearchOtherSpaces()
+        {
+            otherSpacesQuery = otherSpacesSearchField?.value?.Trim() ?? otherSpacesQuery?.Trim() ?? string.Empty;
+            RequestSpaces(otherSpacesQuery);
+        }
+
+        private void ClearOtherSpacesSearch()
+        {
+            otherSpacesQuery = string.Empty;
+            appliedOtherSpacesQuery = string.Empty;
+            otherSpacesSearchField?.SetValueWithoutNotify(string.Empty);
+            RequestSpaces(string.Empty);
+        }
+
+        private string GetOtherSpacesStatusText()
+        {
+            if (otherSpacesLoading)
+            {
+                return "공간 목록을 불러오는 중입니다.";
+            }
+
+            if (!string.IsNullOrWhiteSpace(otherSpacesErrorMessage))
+            {
+                return otherSpacesErrorMessage;
+            }
+
+            var count = apiSpaces?.Length ?? 0;
+            if (string.IsNullOrWhiteSpace(appliedOtherSpacesQuery))
+            {
+                return count > 0 ? $"인기 공간 {count:N0}개를 보여줍니다." : "인기 공간을 불러오지 못했습니다.";
+            }
+
+            return count > 0
+                ? $"'{appliedOtherSpacesQuery}' 검색 결과 {count:N0}개"
+                : $"'{appliedOtherSpacesQuery}' 검색 결과가 없습니다.";
+        }
+
+        private string GetOtherSpacesEmptyText()
+        {
+            if (otherSpacesLoading || runtimeDataLoading)
+            {
+                return "공간 API를 불러오는 중입니다.";
+            }
+
+            if (!string.IsNullOrWhiteSpace(otherSpacesErrorMessage))
+            {
+                return otherSpacesErrorMessage;
+            }
+
+            return string.IsNullOrWhiteSpace(appliedOtherSpacesQuery)
+                ? "표시할 공간 데이터가 없습니다."
+                : "검색된 공간이 없습니다. 다른 검색어를 입력해보세요.";
         }
 
         private VisualElement CreateSpaceCard(SpaceViewModel space)
         {
             var card = new VisualElement { name = $"space-{space.Id}" };
-            card.style.width = Length.Percent(48.7f);
-            card.style.minWidth = 280;
-            card.style.minHeight = 314;
+            card.style.width = Length.Percent(48.6f);
+            card.style.minWidth = 300;
+            card.style.minHeight = 344;
             card.style.marginRight = 10;
             card.style.marginBottom = 10;
             card.style.paddingLeft = 0;
             card.style.paddingRight = 0;
             card.style.paddingTop = 0;
             card.style.paddingBottom = 0;
-            card.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.78f);
+            card.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.86f);
             card.style.overflow = Overflow.Hidden;
             Round(card, 18);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.10f));
@@ -1957,7 +2225,7 @@ namespace App.Features.Notebook.Presentation
             card.RegisterCallback<ClickEvent>(_ => ShowToast($"공간 상세로 이동 · {space.Title}"));
 
             var thumbnail = new VisualElement { name = "space-thumbnail" };
-            thumbnail.style.height = 132;
+            thumbnail.style.height = 146;
             thumbnail.style.flexShrink = 0;
             thumbnail.style.overflow = Overflow.Hidden;
             BuildSpaceThumbnail(thumbnail, space);
@@ -2005,6 +2273,7 @@ namespace App.Features.Notebook.Presentation
 
             var top = Row("space-top");
             top.style.alignItems = Align.Center;
+            top.style.minWidth = 0;
             content.Add(top);
 
             var titleBox = new VisualElement();
@@ -2019,7 +2288,8 @@ namespace App.Features.Notebook.Presentation
 
             var title = Text(space.Title, 18, Ink, FontStyle.Bold);
             title.style.whiteSpace = WhiteSpace.Normal;
-            title.style.minHeight = 28;
+            title.style.minHeight = 48;
+            title.style.maxHeight = 52;
             titleBox.Add(title);
 
             var owner = Text(space.Owner, 12, SoftInk, FontStyle.Normal);
@@ -2037,16 +2307,20 @@ namespace App.Features.Notebook.Presentation
 
             var description = Text(space.Description, 12, SoftInk, FontStyle.Normal);
             description.style.whiteSpace = WhiteSpace.Normal;
-            description.style.minHeight = 42;
+            description.style.minHeight = 46;
+            description.style.maxHeight = 50;
             description.style.marginTop = 12;
             content.Add(description);
 
             var stats = Row("space-stats");
             stats.style.marginTop = 10;
-            stats.style.minHeight = 22;
+            stats.style.minHeight = 26;
             stats.style.alignItems = Align.Center;
+            stats.style.flexWrap = Wrap.Wrap;
             content.Add(stats);
-            stats.Add(MetricLabel($"팔로워 {space.Followers:N0}", AccentDeep));
+            var followers = MetricButton($"팔로워 {space.Followers:N0}", AccentDeep, () => OpenSocialListPanel(space, "followers"));
+            stats.Add(followers);
+            stats.Add(MetricButton("팔로잉", AccentDeep, () => OpenSocialListPanel(space, "followings")));
             stats.Add(MetricLabel($"좋아요 {space.Likes:N0}", Ink));
             stats.Add(MetricLabel($"방문 {space.Visits:N0}", Ink));
 
@@ -2065,17 +2339,30 @@ namespace App.Features.Notebook.Presentation
 
             var follow = TextButton(string.Empty, false);
             follow.style.height = 34;
+            follow.style.minWidth = 76;
             follow.style.marginRight = 8;
             follow.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
             follow.clicked += () =>
             {
-                ToggleSpaceFollowThroughApi(space, follow);
+                ToggleSpaceFollowThroughApi(space, follow, followers);
             };
-            actions.Add(follow);
-            RefreshFollowButton(follow, space.OwnerId);
+            if (space.IsOwnSpace)
+            {
+                follow.text = "내 공간";
+                follow.SetEnabled(false);
+                follow.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.06f);
+                follow.style.color = FaintInk;
+                Border(follow, Rgba(0x0E, 0x1D, 0x2A, 0.08f));
+            }
+            else
+            {
+                actions.Add(follow);
+                RefreshFollowButton(follow, space.OwnerId);
+            }
 
             var like = TextButton(string.Empty, false);
             like.style.height = 34;
+            like.style.minWidth = 88;
             like.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
             like.clicked += () =>
             {
@@ -3236,6 +3523,202 @@ namespace App.Features.Notebook.Presentation
                 otherSpacesContent.Clear();
                 BuildOtherSpaces(otherSpacesContent);
             }
+
+            RefreshSocialListPanel();
+        }
+
+        private void RefreshSocialListPanel()
+        {
+            if (socialListPanel == null)
+            {
+                return;
+            }
+
+            socialListPanel.style.display = socialListPanelOpen ? DisplayStyle.Flex : DisplayStyle.None;
+            if (!socialListPanelOpen)
+            {
+                return;
+            }
+
+            var modeLabel = socialListMode == "followings" ? "팔로잉" : "팔로워";
+            if (socialListTitleLabel != null)
+            {
+                socialListTitleLabel.text = $"{socialListOwnerName}님의 {modeLabel}";
+            }
+
+            if (socialListHintLabel != null)
+            {
+                socialListHintLabel.text = socialListLoading
+                    ? "목록을 불러오는 중입니다."
+                    : $"{socialListUsers.Count:N0}명을 표시하고 있습니다.";
+            }
+
+            if (socialListContent != null)
+            {
+                socialListContent.Clear();
+                if (socialListUsers.Count == 0)
+                {
+                    socialListContent.Add(EmptyState(socialListLoading ? "사용자 목록을 불러오는 중입니다." : "표시할 사용자가 없습니다."));
+                }
+                else
+                {
+                    foreach (var user in socialListUsers)
+                    {
+                        socialListContent.Add(CreateSocialUserRow(user));
+                    }
+                }
+            }
+
+            if (socialListMoreButton != null)
+            {
+                socialListMoreButton.style.display = !string.IsNullOrWhiteSpace(socialListCursor) && !socialListLoading
+                    ? DisplayStyle.Flex
+                    : DisplayStyle.None;
+            }
+        }
+
+        private VisualElement CreateSocialUserRow(UserViewModel user)
+        {
+            var row = Row("social-user-row");
+            row.style.alignItems = Align.Center;
+            row.style.minHeight = 64;
+            row.style.marginBottom = 8;
+            row.style.paddingLeft = 10;
+            row.style.paddingRight = 10;
+            row.style.paddingTop = 8;
+            row.style.paddingBottom = 8;
+            row.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.04f);
+            Round(row, 14);
+            Border(row, Rgba(0x0E, 0x1D, 0x2A, 0.06f));
+
+            var avatar = Text(FirstText(user?.Nickname, "U").Substring(0, 1), 15, Surface, FontStyle.Bold);
+            avatar.style.width = 38;
+            avatar.style.height = 38;
+            avatar.style.flexShrink = 0;
+            avatar.style.unityTextAlign = TextAnchor.MiddleCenter;
+            avatar.style.backgroundColor = SearchCoverColor(0, user?.Id.ToString());
+            Round(avatar, 19);
+            row.Add(avatar);
+
+            var info = new VisualElement();
+            info.style.flexGrow = 1f;
+            info.style.minWidth = 0;
+            info.style.marginLeft = 10;
+            row.Add(info);
+
+            var nickname = Text(FirstText(user?.Nickname, $"User {user?.Id ?? 0}"), 13, Ink, FontStyle.Bold);
+            nickname.style.whiteSpace = WhiteSpace.Normal;
+            nickname.style.maxHeight = 34;
+            info.Add(nickname);
+
+            var meta = Text(user != null && user.Mutual ? "맞팔로우" : user != null && user.Following ? "팔로잉 중" : "새로운 사용자", 10, FaintInk, FontStyle.Normal);
+            meta.style.marginTop = 3;
+            info.Add(meta);
+
+            var follow = TextButton(string.Empty, false);
+            follow.style.height = 32;
+            follow.style.minWidth = 76;
+            follow.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            follow.clicked += () => ToggleUserFollowThroughApi(user, follow);
+            row.Add(follow);
+            RefreshSocialFollowButton(follow, user);
+            return row;
+        }
+
+        private void OpenSocialListPanel(SpaceViewModel space, string mode)
+        {
+            if (space == null || !TryParseApiId(space.OwnerId, out var ownerUserId))
+            {
+                ShowToast("사용자 목록을 열 수 없습니다.");
+                return;
+            }
+
+            socialListPanelOpen = true;
+            socialListMode = mode == "followings" ? "followings" : "followers";
+            socialListOwnerUserId = ownerUserId;
+            socialListOwnerName = FirstText(space.Owner, "사용자");
+            socialListCursor = string.Empty;
+            socialListUsers.Clear();
+            RefreshSocialListPanel();
+            SlideFadeInFromRight(socialListPanel, 72, 42, 0.16f);
+            RequestSocialListPage(false);
+        }
+
+        private void CloseSocialListPanel()
+        {
+            socialListPanelOpen = false;
+            socialListUsers.Clear();
+            socialListCursor = string.Empty;
+            socialListLoading = false;
+            RefreshSocialListPanel();
+        }
+
+        private void RequestSocialListPage(bool append)
+        {
+            if (!socialListPanelOpen || socialListOwnerUserId <= 0L)
+            {
+                return;
+            }
+
+            if (!append)
+            {
+                socialListUsers.Clear();
+                socialListCursor = string.Empty;
+            }
+
+            var requestCursor = append ? socialListCursor : string.Empty;
+            var requestVersion = ++socialListRequestVersion;
+            socialListLoading = true;
+            RefreshSocialListPanel();
+
+            if (notebookRuntimeUseCase == null)
+            {
+                socialListLoading = false;
+                RefreshSocialListPanel();
+                ShowToast("사용자 목록 API가 준비되지 않았습니다.");
+                return;
+            }
+
+            Action<NotebookUserListResult> onSuccess = result =>
+            {
+                if (requestVersion != socialListRequestVersion)
+                {
+                    return;
+                }
+
+                var users = MapRuntimeUsers(result);
+                if (!append)
+                {
+                    socialListUsers.Clear();
+                }
+
+                socialListUsers.AddRange(users);
+                socialListCursor = result?.NextCursor ?? string.Empty;
+                socialListLoading = false;
+                RefreshSocialListPanel();
+            };
+
+            Action<NotebookApiError> onError = error =>
+            {
+                if (requestVersion != socialListRequestVersion)
+                {
+                    return;
+                }
+
+                socialListLoading = false;
+                RefreshSocialListPanel();
+                UnityEngine.Debug.LogWarning($"Notebook social list API failed. mode={socialListMode}, user={socialListOwnerUserId}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                ShowToast("사용자 목록을 불러오지 못했습니다.");
+            };
+
+            if (socialListMode == "followings")
+            {
+                notebookRuntimeUseCase.LoadUserFollowings(socialListOwnerUserId, requestCursor, 30, onSuccess, onError);
+            }
+            else
+            {
+                notebookRuntimeUseCase.LoadUserFollowers(socialListOwnerUserId, requestCursor, 30, onSuccess, onError);
+            }
         }
 
         private void RefreshModeVisibility()
@@ -3831,7 +4314,7 @@ namespace App.Features.Notebook.Presentation
             }
 
             RequestWallet(requestVersion);
-            RequestSpaces(requestVersion);
+            RequestSpaces(string.Empty);
             RequestAssets(requestVersion);
         }
 
@@ -3880,29 +4363,55 @@ namespace App.Features.Notebook.Presentation
                 error => UnityEngine.Debug.LogWarning($"Notebook wallet sync API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}"));
         }
 
-        private void RequestSpaces(int requestVersion)
+        private void RequestSpaces(string keyword, string cursor = null)
         {
+            var requestVersion = ++otherSpacesRequestVersion;
+            otherSpacesLoading = true;
+            otherSpacesErrorMessage = string.Empty;
+            appliedOtherSpacesQuery = string.IsNullOrWhiteSpace(keyword) ? string.Empty : keyword.Trim();
+            otherSpacesNextCursor = cursor ?? string.Empty;
+            RefreshCommunityPanels();
+
+            if (notebookRuntimeUseCase == null)
+            {
+                otherSpacesLoading = false;
+                apiSpaces = Array.Empty<SpaceViewModel>();
+                otherSpacesErrorMessage = "공간 API가 준비되지 않았습니다.";
+                RefreshCommunityPanels();
+                UnityEngine.Debug.LogWarning("Notebook spaces API use case is not configured.");
+                return;
+            }
+
             notebookRuntimeUseCase.LoadSpaces(
-                12,
+                appliedOtherSpacesQuery,
+                cursor,
+                20,
                 result =>
                 {
-                    if (requestVersion != runtimeRequestVersion)
+                    if (requestVersion != otherSpacesRequestVersion)
                     {
                         return;
                     }
 
                     apiSpaces = MapRuntimeSpaces(result).ToArray();
+                    otherSpacesNextCursor = result?.NextCursor ?? string.Empty;
+                    otherSpacesLoading = false;
                     RefreshCommunityPanels();
                 },
                 error =>
                 {
-                    if (requestVersion == runtimeRequestVersion)
+                    if (requestVersion == otherSpacesRequestVersion)
                     {
                         apiSpaces = Array.Empty<SpaceViewModel>();
+                        otherSpacesLoading = false;
+                        otherSpacesErrorMessage = string.IsNullOrWhiteSpace(appliedOtherSpacesQuery)
+                            ? "인기 공간을 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
+                            : $"'{appliedOtherSpacesQuery}' 검색 요청에 실패했습니다. 잠시 후 다시 시도해주세요.";
                         RefreshCommunityPanels();
                     }
 
                     UnityEngine.Debug.LogWarning($"Notebook spaces API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    ShowToast("공간 목록 API 요청에 실패했습니다.");
                 });
         }
 
@@ -3972,28 +4481,57 @@ namespace App.Features.Notebook.Presentation
 
                 var id = item.Id.ToString();
                 var ownerId = item.OwnerUserId.ToString();
-                if (item.Following)
-                {
-                    followedUserIds.Add(ownerId);
-                }
-
-                if (item.Liked)
-                {
-                    likedSpaceIds.Add(id);
-                }
+                SetLocalState(followedUserIds, ownerId, item.Following);
+                SetLocalState(likedSpaceIds, id, item.Liked);
 
                 yield return new SpaceViewModel(
                     id,
                     ownerId,
                     FirstText(item.OwnerName, $"User {item.OwnerUserId}"),
                     FirstText(item.SpaceName, $"Space {item.Id}"),
-                    "API · COMMUNITY",
+                    FirstText(item.Mood, "API · COMMUNITY"),
                     FirstText(item.Description, "API에서 불러온 공간입니다."),
                     "api-space",
                     ClampToInt(item.FollowerCount),
                     ClampToInt(item.LikeCount),
                     ClampToInt(item.VisitCount),
-                    SearchCoverColor(i, id));
+                    SearchCoverColor(i, id),
+                    item.IsOwnSpace);
+            }
+        }
+
+        private IEnumerable<UserViewModel> MapRuntimeUsers(NotebookUserListResult result)
+        {
+            var users = result?.Users;
+            if (users == null)
+            {
+                yield break;
+            }
+
+            foreach (var item in users)
+            {
+                if (item == null || item.Id <= 0L)
+                {
+                    continue;
+                }
+
+                var userId = item.Id.ToString();
+                if (item.Following)
+                {
+                    followedUserIds.Add(userId);
+                }
+                else
+                {
+                    followedUserIds.Remove(userId);
+                }
+
+                yield return new UserViewModel(
+                    item.Id,
+                    FirstText(item.Nickname, $"User {item.Id}"),
+                    item.ProfileImageUrl,
+                    item.Mutual,
+                    item.Following,
+                    item.Blocked);
             }
         }
 
@@ -5040,6 +5578,10 @@ namespace App.Features.Notebook.Presentation
             {
                 searchPageOpen = false;
             }
+            if (tab != HeaderTabs[1])
+            {
+                CloseSocialListPanel();
+            }
 
             pageIndex = 0;
             if (pageScrollView != null)
@@ -5372,7 +5914,7 @@ namespace App.Features.Notebook.Presentation
                 });
         }
 
-        private void ToggleSpaceFollowThroughApi(SpaceViewModel space, Button button)
+        private void ToggleSpaceFollowThroughApi(SpaceViewModel space, Button button, Button followersButton = null)
         {
             if (space == null || notebookRuntimeUseCase == null || !TryParseApiId(space.OwnerId, out var userId))
             {
@@ -5380,7 +5922,16 @@ namespace App.Features.Notebook.Presentation
                 return;
             }
 
+            if (space.IsOwnSpace)
+            {
+                ShowToast("내 공간은 팔로우할 수 없습니다.");
+                return;
+            }
+
+            var wasFollowing = followedUserIds.Contains(space.OwnerId);
             var nextFollowing = !followedUserIds.Contains(space.OwnerId);
+            SetLocalState(followedUserIds, space.OwnerId, nextFollowing);
+            RefreshFollowButton(button, space.OwnerId);
             button?.SetEnabled(false);
             notebookRuntimeUseCase.FollowUser(
                 userId,
@@ -5388,15 +5939,59 @@ namespace App.Features.Notebook.Presentation
                 result =>
                 {
                     SetLocalState(followedUserIds, space.OwnerId, result?.Active ?? nextFollowing);
+                    space.Followers = result != null && result.Count > 0L
+                        ? ClampToInt(result.Count)
+                        : Mathf.Max(0, space.Followers + (followedUserIds.Contains(space.OwnerId) == wasFollowing ? 0 : followedUserIds.Contains(space.OwnerId) ? 1 : -1));
                     RefreshFollowButton(button, space.OwnerId);
+                    RefreshFollowerMetric(followersButton, space);
                     button?.SetEnabled(true);
                     ShowToast(followedUserIds.Contains(space.OwnerId) ? $"{space.Owner}님을 팔로우했습니다." : $"{space.Owner}님 팔로우를 해제했습니다.");
                 },
                 error =>
                 {
+                    SetLocalState(followedUserIds, space.OwnerId, wasFollowing);
                     button?.SetEnabled(true);
                     RefreshFollowButton(button, space.OwnerId);
+                    RefreshFollowerMetric(followersButton, space);
                     UnityEngine.Debug.LogWarning($"Space follow API failed. user={space.OwnerId}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    ShowToast("팔로우 API 요청에 실패했습니다.");
+                });
+        }
+
+        private void ToggleUserFollowThroughApi(UserViewModel user, Button button)
+        {
+            if (user == null || notebookRuntimeUseCase == null)
+            {
+                ShowToast("팔로우 API에 필요한 사용자 정보가 없습니다.");
+                return;
+            }
+
+            var userKey = user.Id.ToString();
+            var wasFollowing = followedUserIds.Contains(userKey) || user.Following;
+            var nextFollowing = !wasFollowing;
+            user.Following = nextFollowing;
+            SetLocalState(followedUserIds, userKey, nextFollowing);
+            RefreshSocialFollowButton(button, user);
+            button?.SetEnabled(false);
+
+            notebookRuntimeUseCase.FollowUser(
+                user.Id,
+                nextFollowing,
+                result =>
+                {
+                    user.Following = result?.Active ?? nextFollowing;
+                    SetLocalState(followedUserIds, userKey, user.Following);
+                    RefreshSocialFollowButton(button, user);
+                    button?.SetEnabled(true);
+                    RefreshCommunityPanels();
+                },
+                error =>
+                {
+                    user.Following = wasFollowing;
+                    SetLocalState(followedUserIds, userKey, wasFollowing);
+                    RefreshSocialFollowButton(button, user);
+                    button?.SetEnabled(true);
+                    UnityEngine.Debug.LogWarning($"User follow API failed. user={user.Id}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
                     ShowToast("팔로우 API 요청에 실패했습니다.");
                 });
         }
@@ -5575,9 +6170,56 @@ namespace App.Features.Notebook.Presentation
             return label;
         }
 
+        private Button MetricButton(string text, Color color, Action onClick)
+        {
+            var button = TextButton(text, false);
+            button.style.height = 24;
+            button.style.paddingLeft = 8;
+            button.style.paddingRight = 8;
+            button.style.marginRight = 6;
+            button.style.marginBottom = 4;
+            button.style.fontSize = 10;
+            button.style.color = color;
+            button.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.05f);
+            Border(button, Rgba(0x0E, 0x1D, 0x2A, 0.06f));
+            button.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            button.clicked += () =>
+            {
+                PulseElement(button);
+                onClick?.Invoke();
+            };
+            return button;
+        }
+
         private void RefreshFollowButton(Button button, string userId)
         {
-            RefreshToggleButton(button, followedUserIds.Contains(userId), "팔로우 중", "팔로우");
+            RefreshToggleButton(button, followedUserIds.Contains(userId), "팔로잉", "팔로우");
+        }
+
+        private static void RefreshFollowerMetric(Button button, SpaceViewModel space)
+        {
+            if (button == null || space == null)
+            {
+                return;
+            }
+
+            button.text = $"팔로워 {space.Followers:N0}";
+        }
+
+        private void RefreshSocialFollowButton(Button button, UserViewModel user)
+        {
+            if (button == null || user == null)
+            {
+                return;
+            }
+
+            var selected = followedUserIds.Contains(user.Id.ToString()) || user.Following;
+            RefreshToggleButton(button, selected, "팔로잉", "팔로우");
+            if (user.Blocked)
+            {
+                button.text = "차단됨";
+                button.SetEnabled(false);
+            }
         }
 
         private static void RefreshToggleButton(Button button, bool selected, string selectedText, string defaultText)

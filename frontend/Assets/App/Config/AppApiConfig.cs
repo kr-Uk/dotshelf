@@ -1,4 +1,5 @@
 using System;
+using App.Domain;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -17,9 +18,9 @@ namespace App.Config
         [FormerlySerializedAs("useMockApi")]
         [Tooltip("RealApi: production/dev server, LocalMock: local mock/no-op repositories without HTTP")]
         [SerializeField] private AppApiMode apiMode = AppApiMode.RealApi;
-        [SerializeField] private string devBaseUrl = "https://api.dotshelf.digital";
-        [SerializeField] private string prodBaseUrl = "https://api.dotshelf.digital";
-        [SerializeField] private string healthCheckPath = "/health";
+        [SerializeField] private string devBaseUrl = ApiEndpointDefaults.DevBaseUrl;
+        [SerializeField] private string prodBaseUrl = ApiEndpointDefaults.ProdBaseUrl;
+        [SerializeField] private string healthCheckPath = ApiEndpointDefaults.HealthCheckPath;
         [Tooltip("Optional editor/dev access token. Prefer DOTSHELF_ACCESS_TOKEN for local runs.")]
         [SerializeField] private string accessToken = string.Empty;
 
