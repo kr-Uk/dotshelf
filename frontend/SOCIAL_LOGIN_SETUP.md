@@ -106,6 +106,26 @@ Unity Android/iOS Kakao SDK 설정에 사용한다.
 eeabd73a76a6aa3fa5619b73836df269
 ```
 
+### Kakao REST API Key (Desktop OAuth용)
+
+Desktop authorization-code 흐름에서 사용. **Native App Key와 다름** — Kakao 콘솔의 \"앱 키\"
+탭에서 \"REST API 키\"로 별도 표기되는 값을 등록한다.
+
+현재 FE 코드 (`WindowsOAuthBrowserFlow.OAuthBrowserDefaults`)에 hardcoded된 값:
+
+```text
+d1b4d86b431150acd3ef6970ca2fa695
+```
+
+**머지 전 인프라 담당자에게 cross-check 필수**: 이 값이 실제 카카오 콘솔의 REST API Key와
+일치하는지 확인. 다르면 KOE101 `invalid_client` 에러로 redirect URI 등록까지 통과해도
+token 교환 단계에서 실패한다.
+
+cross-check 방법:
+- 카카오 콘솔 → 내 애플리케이션 → 앱 선택 → 앱 설정 → 앱 키 → \"REST API 키\" 값과 비교
+- 다르면 `OAuthBrowserDefaults.CreateDefault(SocialProvider.Kakao).clientId` 값을 갱신해서
+  follow-up MR
+
 ### Kakao Redirect URI
 
 Desktop REST OAuth 흐름에서 Unity 데스크탑 앱이 authorization code를 받을 URI다.

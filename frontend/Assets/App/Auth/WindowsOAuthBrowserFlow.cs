@@ -196,6 +196,7 @@ namespace App.Auth
 {
     using System.Collections.Generic;
     using System.Net;
+    using System.Net.Sockets;
     using System.Security.Cryptography;
     using System.Text;
     using System.Threading;
@@ -237,19 +238,22 @@ namespace App.Auth
             {
                 (listener, redirectUri) = StartListenerOnPreferredPort();
             }
-            catch (HttpListenerException ex)
+            catch (HttpListenerException ex) when (ex.ErrorCode == ErrorAccessDenied)
             {
-                Debug.LogWarning($"[Auth] HttpListener start failed (all ports busy or ACL): {ex.GetType().Name}: {ex.Message}");
+                // Windows URL ACL 거부 — 일반 사용자에게 \"관리자 권한\" 안내가 정확.
+                Debug.LogWarning($"[Auth] HttpListener ACL denied: {ex.GetType().Name}: {ex.Message}");
                 return OAuthBrowserResult.Failure(
-                    "LISTENER_START_FAILED",
+                    "LISTENER_ACL_DENIED",
                     "운영체제 권한 문제로 로그인을 시작할 수 없습니다. 관리자 권한으로 실행하거나 관리자에게 문의해주세요.");
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is HttpListenerException || ex is SocketException)
             {
-                Debug.LogWarning($"[Auth] HttpListener start failed: {ex.GetType().Name}: {ex.Message}");
+                // 일반 사용자에게 18080~18084 같은 port 숫자는 actionable 안 되므로 단순 안내.
+                // 진단 정보는 LogWarning에만 남김.
+                Debug.LogWarning($"[Auth] HttpListener start failed (all preferred ports unavailable): {ex.GetType().Name}: {ex.Message}");
                 return OAuthBrowserResult.Failure(
                     "LISTENER_START_FAILED",
-                    "콜백 리스너를 시작하지 못했습니다. 다른 프로그램이 18080~18084 포트를 점유하고 있는지 확인 후 재시도해주세요.");
+                    "로그인 콜백을 받을 수 없습니다. 앱을 재시작하거나 잠시 후 다시 시도해주세요.");
             }
 
             try
@@ -327,9 +331,14 @@ namespace App.Auth
         }
 
         // PreferredCallbackPorts를 차례로 시도해서 비어있는 첫 port에 HttpListener를 시작.
-        // 모두 점유면 마지막 예외 throw → 호출자가 catch해서 사용자 메시지로 변환.
-        // race가 있긴 함 (port check ↔ HttpListener.Start 사이) — Windows에서 HttpListenerException
-        // 으로 감지되니 다음 port로 넘어감.
+        // 예외 분류:
+        // - SocketException, HttpListenerException(ErrorCode != 5) — port 점유/race로 추정,
+        //   다음 port로 fall-through. 5개 모두 실패 시 마지막 예외 throw.
+        // - HttpListenerException(ErrorCode == 5, ERROR_ACCESS_DENIED) — Windows URL ACL
+        //   문제. 다음 port도 같은 ACL 정책에 막힐 가능성 매우 높음 → 즉시 break (사용자에게
+        //   관리자 권한 안내). 5번 시도 시간 + 방화벽 팝업 5번 회피.
+        // - 그 외 예외는 throw — OOM/StackOverflow 같은 critical 예외를 swallow하면 안 됨.
+        private const int ErrorAccessDenied = 5;
         private static (HttpListener listener, string redirectUri) StartListenerOnPreferredPort()
         {
             Exception lastException = null;
@@ -344,7 +353,18 @@ namespace App.Auth
                     listener.Start();
                     return (listener, redirectUri);
                 }
-                catch (Exception ex)
+                catch (HttpListenerException ex) when (ex.ErrorCode == ErrorAccessDenied)
+                {
+                    // ACL 권한 부족 — 다른 port도 같은 결과 → 즉시 escalate.
+                    try { ((IDisposable)listener)?.Dispose(); } catch { }
+                    throw;
+                }
+                catch (HttpListenerException ex)
+                {
+                    lastException = ex;
+                    try { ((IDisposable)listener)?.Dispose(); } catch { }
+                }
+                catch (SocketException ex)
                 {
                     lastException = ex;
                     try { ((IDisposable)listener)?.Dispose(); } catch { }
