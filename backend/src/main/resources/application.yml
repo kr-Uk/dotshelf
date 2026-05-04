@@ -78,3 +78,11 @@ social:
     issuers:
       - https://appleid.apple.com
     jwks-uri: https://appleid.apple.com/auth/keys
+
+payment:
+  inicis:
+    mid: ${INICIS_MID:}
+    sign-key: ${INICIS_SIGN_KEY:}
+    return-url: ${INICIS_RETURN_URL:}
+    close-url: ${INICIS_CLOSE_URL:}
+    request-script-url: ${INICIS_REQUEST_SCRIPT_URL:https://stdpay.inicis.com/stdjs/INIStdPay.js}
