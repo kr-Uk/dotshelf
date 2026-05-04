@@ -125,18 +125,30 @@ namespace App.Infrastructure.Api.Dashboard
             // Skipping the round-trip means callers see a stable error code
             // regardless of when the BE gate flips, and we do not advertise a
             // mode the server cannot fulfill. Remove this branch when BE
-            // implements KEEP_BLOCKERS_ONLY.
+            // implements KEEP_BLOCKERS_ONLY. Message lookup is kept in
+            // DashboardErrorMessages.Format so callers get the same Korean
+            // string regardless of whether this short-circuit fires or BE
+            // returns the same code from server-side. Error is left null —
+            // it mirrors raw BE response.error which has no client-side
+            // analogue here.
             if (mode == ThemeApplyMode.KeepBlockersOnly)
             {
                 onError?.Invoke(new DashboardApiError
                 {
                     Code = "THEME_MODE_NOT_IMPLEMENTED",
-                    Message = "이 모드는 아직 지원되지 않습니다.",
-                    Error = "THEME_MODE_NOT_IMPLEMENTED"
+                    Message = "이 모드는 아직 지원되지 않습니다."
                 });
                 return;
             }
-            client.ApplyMySpaceThemeWithMode(inventoryId, "RESET",
+            // Default-throw on unknown modes so a future ThemeApplyMode value
+            // cannot silently fall through as RESET. KEEP_BLOCKERS_ONLY is
+            // gated above; only Reset reaches this switch today.
+            string modeStr = mode switch
+            {
+                ThemeApplyMode.Reset => "RESET",
+                _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported ThemeApplyMode")
+            };
+            client.ApplyMySpaceThemeWithMode(inventoryId, modeStr,
                 onSuccess: dto => onSuccess?.Invoke(dto?.ThemeReset ?? false),
                 onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
         }

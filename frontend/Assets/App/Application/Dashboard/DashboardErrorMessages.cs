@@ -38,6 +38,11 @@ namespace App.Application.Dashboard
                 case "GUESTBOOK_REPLY_POSTIT_REQUIRED": return "답장 포스트잇 스타일을 선택하세요.";
                 case "INTRODUCTION_TOO_LONG": return "한 줄 소개는 255자 이하로 입력하세요.";
                 case "REPORT_REASON_REQUIRED": return "신고 사유를 선택하세요.";
+                // ApiSpaceSettingsRepository.ApplyThemeWithMode short-circuits
+                // KEEP_BLOCKERS_ONLY with this code; backend also returns it
+                // when the mode is invoked server-side. Single mapping so
+                // callers see the same Korean string either way.
+                case "THEME_MODE_NOT_IMPLEMENTED": return "이 모드는 아직 지원되지 않습니다.";
                 default: return string.IsNullOrEmpty(error.Message) ? "오류가 발생했습니다." : error.Message;
             }
         }
