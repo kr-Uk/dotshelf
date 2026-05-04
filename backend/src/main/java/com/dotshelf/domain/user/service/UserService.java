@@ -71,6 +71,12 @@ public class UserService {
             throw new CustomException(ErrorCode.DUPLICATE_NICKNAME);
         }
         user.updateProfile(request.nickname(), request.profileImageUrl(), request.introduction());
+        // 온보딩 첫 프로필 set 시점에 isOnboarded 를 영구화. PATCH /v1/users/me 가 온보딩 step1 에서
+        // 호출되는 유일한 완료 신호이므로 여기서 flip. 이후 Settings 등에서 재호출돼도 idempotent.
+        // 다음 socialLogin 응답의 onboarded=true 로 FE 가 onboarding 반복하지 않게 됨.
+        if (!user.isOnboarded()) {
+            user.completeOnboarding();
+        }
         return UserProfileResponse.from(user);
     }
 

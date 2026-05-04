@@ -206,6 +206,14 @@ namespace BookshelfPorting.Runtime
                 apiManager.CheckHealth(null, apiHealthCheckPath);
             }
 
+            // 메인씬 진입 시 /v1/users/me 호출 — 토큰 보유 상태에서만 실행. 결과는 별도 저장소가
+            // 없어서 로그만 남김 (개별 화면이 자기 cachedProfile 들고 있음). status/body 가
+            // Console 에 가시화되어 진단/디버그에 도움.
+            if (Application.isPlaying && usesHttpApi && apiManager.HasAccessToken)
+            {
+                SyncCurrentUserProfileOnSceneEntry(apiManager);
+            }
+
             var camerasRoot = FindOrCreateRoot("Cameras").transform;
             var overviewPosition = new Vector3(1.55f, 1.30f, -1.95f);
             var overviewTarget = new Vector3(-0.55f, 0.72f, 0.62f);
@@ -511,6 +519,31 @@ namespace BookshelfPorting.Runtime
 
             notebookAnchor.position = anchorPosition;
             notebookAnchor.rotation = Quaternion.LookRotation((screenCenter - anchorPosition).normalized, Vector3.up);
+        }
+
+        // 메인씬 진입 시 BE 의 사용자 프로필을 한 번 동기화한다. 결과는 Console 에 status/body 로
+        // 남기고, 후속 동기 처리(개별 화면의 cachedProfile)는 각 컨트롤러가 자체적으로 GetMe 를
+        // 다시 호출해 채운다 (Settings.LoadCurrentProfile 참조).
+        private static void SyncCurrentUserProfileOnSceneEntry(APIManager apiManager)
+        {
+            string url = ApiEndpointDefaults.DefaultBaseUrl.TrimEnd('/') + "/v1/users/me";
+            Debug.Log($"[MainScene] GET /v1/users/me 요청 → {url}");
+
+            NotebookApiClient client = new NotebookApiClient(apiManager);
+            client.GetMe(
+                onSuccess: profile =>
+                {
+                    Debug.Log(
+                        $"[MainScene] GET /v1/users/me 응답 → STATUS=2xx (onSuccess) " +
+                        $"BODY={{id={profile?.Id},nickname='{profile?.Nickname}'," +
+                        $"onboarded={profile?.Onboarded},hasIntro={!string.IsNullOrEmpty(profile?.Introduction)}}}");
+                },
+                onError: error =>
+                {
+                    Debug.LogWarning(
+                        $"[MainScene] GET /v1/users/me 실패 → STATUS={(error != null ? error.StatusCode.ToString() : "?")} " +
+                        $"code={error?.Code} message={error?.Message} body={error?.Body}");
+                });
         }
     }
 }
