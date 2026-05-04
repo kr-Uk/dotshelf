@@ -20,6 +20,8 @@ import com.dotshelf.domain.auth.repository.UserSocialAccountRepository;
 import com.dotshelf.domain.auth.service.social.SocialTokenVerifierRegistry;
 import com.dotshelf.domain.auth.service.social.SocialUserInfo;
 import com.dotshelf.domain.user.entity.User;
+import com.dotshelf.domain.user.entity.UserNotificationSetting;
+import com.dotshelf.domain.user.repository.UserNotificationSettingRepository;
 import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.common.IdResponse;
@@ -41,6 +43,7 @@ public class AuthService {
     private final AuthRefreshTokenRepository refreshTokenRepository;
     private final GuestMigrationImportRepository guestMigrationImportRepository;
     private final UserService userService;
+    private final UserNotificationSettingRepository notificationSettingRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final SocialTokenVerifierRegistry socialTokenVerifierRegistry;
 
@@ -125,6 +128,9 @@ public class AuthService {
                 .email(resolveEmail(socialUser.email()))
                 .nickname(nickname)
                 .profileImageUrl(socialUser.profileImageUrl())
+                .build());
+        notificationSettingRepository.save(UserNotificationSetting.builder()
+                .userId(user.getId())
                 .build());
         socialAccountRepository.save(UserSocialAccount.builder()
                 .userId(user.getId())

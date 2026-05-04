@@ -20,6 +20,11 @@ namespace BookshelfPorting.Runtime
         private long? currentSpaceId;
         private bool configured;
         private bool isRefreshing;
+        // Lifetime: per-controller instance. BE visit endpoint is not strictly
+        // idempotent (visit count) so we de-dupe at the FE level — re-entering
+        // the same other-user space within a single play session counts once.
+        // Resets when MainScene unloads (controller is destroyed with scene).
+        private readonly HashSet<long> visitedSpaceIds = new HashSet<long>();
 
         [Header("Bookshelf Skin Inventory Mapping")]
         [SerializeField] private long defaultBookshelfSkinInventoryId;
@@ -66,6 +71,12 @@ namespace BookshelfPorting.Runtime
                 space =>
                 {
                     currentSpaceId = space?.Id;
+                    // Forward to the visitor overlay so it can hide on own
+                    // space (the common case here — GetMySpace always returns
+                    // the local user's space). When a future "visit other
+                    // user's space" flow lands it should call SetCurrentSpace
+                    // directly with the GET /v1/spaces/{spaceId} response.
+                    SpaceVisitorOverlayController.Instance?.SetCurrentSpace(space);
                     if (!currentSpaceId.HasValue || currentSpaceId.Value <= 0)
                     {
                         FinishRefresh(false, "내 공간 정보를 찾을 수 없습니다.");
@@ -93,6 +104,106 @@ namespace BookshelfPorting.Runtime
                     }
 #endif
                     FinishRefresh(false, FormatError(error));
+                });
+        }
+
+        // External entry point for "visit another user's space" flows
+        // (search result click, dashboard, deep link, etc.). Caller must
+        // resolve the spaceId — this method does NOT take a hardcoded ID.
+        // Pipeline mirrors RefreshFromServer except it hits /v1/spaces/{id}
+        // instead of /v1/spaces/me, then routes the response through the
+        // same overlay forward + bookshelf load + visit record path.
+        //
+        // Own-space detection: SpaceResponse.OwnerUserId == AuthSession.UserId.
+        // For guests AuthSession.UserId is 0 — they will never own a visited
+        // space, so visit-record fires for every guest-visited space.
+        public void EnterSpaceById(long spaceId)
+        {
+            if (!IsConfigured || isRefreshing)
+            {
+                return;
+            }
+            if (spaceId <= 0)
+            {
+                Debug.LogWarning($"[BookshelfApiSync] EnterSpaceById ignored — invalid spaceId={spaceId}.");
+                return;
+            }
+
+            isRefreshing = true;
+            client.GetSpace(
+                spaceId,
+                space =>
+                {
+                    if (space == null || space.Id <= 0)
+                    {
+                        FinishRefresh(false, "공간 정보를 불러오지 못했습니다.");
+                        return;
+                    }
+
+                    currentSpaceId = space.Id;
+                    // Forward to overlay regardless of own/other — it
+                    // self-hides for own space and self-shows for other
+                    // user. Same hook BookshelfApiSyncController already
+                    // uses on /v1/spaces/me responses.
+                    SpaceVisitorOverlayController.Instance?.SetCurrentSpace(space);
+
+                    if (!IsOwnSpace(space.OwnerUserId))
+                    {
+                        // Visit record is "best-effort" — failure must not
+                        // block the user from seeing the space. The de-dupe
+                        // also moves to record-on-attempt to avoid retry
+                        // floods if BE is slow.
+                        RecordVisitOnce(space.Id);
+                    }
+
+                    client.GetBookshelves(
+                        space.Id,
+                        LoadBookshelfItems,
+                        error => FinishRefresh(false, FormatError(error)));
+                },
+                error =>
+                {
+                    Debug.LogWarning(
+                        $"[BookshelfApiSync] GetSpace({spaceId}) failed: code={error?.Code} message={error?.Message}");
+                    FinishRefresh(false, "공간 정보를 불러오지 못했습니다.");
+                });
+        }
+
+        private bool IsOwnSpace(long ownerUserId)
+        {
+            var myUserId = AuthSession.UserId;
+            // Guest (myUserId == 0) cannot own any space record on BE, so
+            // they always pass the not-own check and visits get recorded.
+            return myUserId != 0 && ownerUserId == myUserId;
+        }
+
+        private void RecordVisitOnce(long spaceId)
+        {
+            // BE SpaceService.recordVisit calls userService.requireUserId(),
+            // which rejects guest tokens. Skipping here also keeps the visited
+            // set untouched so a later login in the same session can still
+            // record the visit on re-entry.
+            if (AuthSession.IsGuestSession)
+            {
+                return;
+            }
+
+            // Mark BEFORE the call (record-on-attempt) so a slow BE round-trip
+            // cannot cause the user to navigate away and re-enter, racing two
+            // visit POSTs. Worst case: BE call fails and we never retry — that
+            // is preferable to inflating visit counts on a flaky network.
+            if (!visitedSpaceIds.Add(spaceId))
+            {
+                return;
+            }
+
+            client.RecordSpaceVisit(
+                spaceId,
+                _ => { /* fire-and-forget on success */ },
+                error =>
+                {
+                    Debug.LogWarning(
+                        $"[BookshelfApiSync] RecordSpaceVisit({spaceId}) failed: code={error?.Code} message={error?.Message}");
                 });
         }
 

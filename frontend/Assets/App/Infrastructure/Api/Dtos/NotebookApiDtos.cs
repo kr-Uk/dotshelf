@@ -404,6 +404,10 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("wished")]
         public bool Wished { get; set; }
+
+        // 전체 테마 자산에서만 의미 — false면 적용 후 카테고리 변경 시 자동 해제(themeReset).
+        [JsonProperty("allowsCustomization")]
+        public bool AllowsCustomization { get; set; } = true;
     }
 
     [Serializable]
@@ -491,6 +495,80 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("currentThemeInventoryId")]
         public long? CurrentThemeInventoryId { get; set; }
+
+        [JsonProperty("currentWallpaperInventoryId")]
+        public long? CurrentWallpaperInventoryId { get; set; }
+
+        [JsonProperty("currentFloorInventoryId")]
+        public long? CurrentFloorInventoryId { get; set; }
+
+        [JsonProperty("currentDeskInventoryId")]
+        public long? CurrentDeskInventoryId { get; set; }
+
+        [JsonProperty("currentDashboardInventoryId")]
+        public long? CurrentDashboardInventoryId { get; set; }
+
+        [JsonProperty("currentInteriorLightInventoryId")]
+        public long? CurrentInteriorLightInventoryId { get; set; }
+
+        [JsonProperty("currentExteriorLightInventoryId")]
+        public long? CurrentExteriorLightInventoryId { get; set; }
+    }
+
+    /// <summary>
+    /// 카테고리별 PATCH 6 endpoint 공통 body. inventoryId가 null이면 unset (기본 외형).
+    /// </summary>
+    [Serializable]
+    public sealed class CategoryInventoryRequestDto
+    {
+        [JsonProperty("inventoryId")]
+        public long? InventoryId { get; set; }
+    }
+
+    /// <summary>
+    /// 카테고리별 PATCH + theme apply 공통 응답. themeReset == true면 클라이언트가
+    /// 룸 전체 reload (커스터마이징 불가 테마 자동 해제).
+    /// </summary>
+    [Serializable]
+    public sealed class SpaceMutationResponseDto
+    {
+        [JsonProperty("space")]
+        public SpaceResponseDto Space { get; set; }
+
+        [JsonProperty("themeReset")]
+        public bool ThemeReset { get; set; }
+    }
+
+    /// <summary>
+    /// 전체 테마 자산이 묶고 있는 카테고리별 자식 자산 ID. compatibleTargets JSON에서 파싱됨.
+    /// 미설정 키는 null. API 명세서 "compatibleTargets JSON 스키마" 참조.
+    /// </summary>
+    [Serializable]
+    public sealed class ThemeContentsResponseDto
+    {
+        [JsonProperty("themeAssetId")]
+        public long ThemeAssetId { get; set; }
+
+        [JsonProperty("wallpaper")]
+        public long? Wallpaper { get; set; }
+
+        [JsonProperty("floor")]
+        public long? Floor { get; set; }
+
+        [JsonProperty("desk")]
+        public long? Desk { get; set; }
+
+        [JsonProperty("dashboard")]
+        public long? Dashboard { get; set; }
+
+        [JsonProperty("interiorLight")]
+        public long? InteriorLight { get; set; }
+
+        [JsonProperty("exteriorLight")]
+        public long? ExteriorLight { get; set; }
+
+        [JsonProperty("bookshelfSkinDefault")]
+        public long? BookshelfSkinDefault { get; set; }
     }
 
     [Serializable]
@@ -912,6 +990,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("notifyReadingRecordReaction")]
         public bool? NotifyReadingRecordReaction { get; set; }
 
+        [JsonProperty("notifyReadingRecordComment")]
+        public bool? NotifyReadingRecordComment { get; set; }
+
         [JsonProperty("notifyNewFollower")]
         public bool? NotifyNewFollower { get; set; }
 
@@ -930,6 +1011,9 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("notifyReadingRecordReaction")]
         public bool NotifyReadingRecordReaction { get; set; }
+
+        [JsonProperty("notifyReadingRecordComment")]
+        public bool NotifyReadingRecordComment { get; set; }
 
         [JsonProperty("notifyNewFollower")]
         public bool NotifyNewFollower { get; set; }

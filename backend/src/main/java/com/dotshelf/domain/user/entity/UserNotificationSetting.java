@@ -36,6 +36,9 @@ public class UserNotificationSetting extends BaseEntity {
     private boolean notifyReadingRecordReaction = true;
 
     @Column(nullable = false)
+    private boolean notifyReadingRecordComment = true;
+
+    @Column(nullable = false)
     private boolean notifyNewFollower = true;
 
     @Column(nullable = false)
@@ -47,8 +50,8 @@ public class UserNotificationSetting extends BaseEntity {
     }
 
     public void update(Boolean notifyNewGuestbook, Boolean notifyGuestbookReply,
-                       Boolean notifyReadingRecordReaction, Boolean notifyNewFollower,
-                       Boolean notifyBookAddedByOthers) {
+                       Boolean notifyReadingRecordReaction, Boolean notifyReadingRecordComment,
+                       Boolean notifyNewFollower, Boolean notifyBookAddedByOthers) {
         if (notifyNewGuestbook != null) {
             this.notifyNewGuestbook = notifyNewGuestbook;
         }
@@ -57,6 +60,9 @@ public class UserNotificationSetting extends BaseEntity {
         }
         if (notifyReadingRecordReaction != null) {
             this.notifyReadingRecordReaction = notifyReadingRecordReaction;
+        }
+        if (notifyReadingRecordComment != null) {
+            this.notifyReadingRecordComment = notifyReadingRecordComment;
         }
         if (notifyNewFollower != null) {
             this.notifyNewFollower = notifyNewFollower;

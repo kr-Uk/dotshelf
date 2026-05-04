@@ -48,7 +48,12 @@ public class AssetService {
     private final AssetPurchaseRepository assetPurchaseRepository;
     private final PageWalletRepository pageWalletRepository;
     private final UserService userService;
-    private final ObjectMapper objectMapper;
+
+    // ObjectMapper Bean 자동 등록이 prod profile에서 안 됐던 회귀 (MR #75 review #2 fix → dev 무한 restart).
+    // Spring Bean 주입 권고는 결을 따르지만 환경 의존이라 Hotfix로 static 인스턴스 사용. ObjectMapper는
+    // thread-safe + immutable 설정이라 static 사용 안전. 별도 정확한 fix(JacksonConfig 명시 등록 또는
+    // starter-json 의존성 확인)는 후속 PR.
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     public AssetListResponse getAssets(Long userId, String category, String sort, int limit) {
         Pageable pageable = PageRequest.of(0, Math.min(limit, 50), resolveSort(sort));
@@ -86,7 +91,7 @@ public class AssetService {
             return emptyThemeContents(theme.getId());
         }
         try {
-            JsonNode node = objectMapper.readTree(json);
+            JsonNode node = OBJECT_MAPPER.readTree(json);
             return new ThemeContentsResponse(
                     theme.getId(),
                     asLong(node.get("wallpaper")),

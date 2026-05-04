@@ -95,6 +95,7 @@ public final class UserDtos {
             Boolean notifyNewGuestbook,
             Boolean notifyGuestbookReply,
             Boolean notifyReadingRecordReaction,
+            Boolean notifyReadingRecordComment,
             Boolean notifyNewFollower,
             Boolean notifyBookAddedByOthers
     ) {
@@ -104,6 +105,7 @@ public final class UserDtos {
             boolean notifyNewGuestbook,
             boolean notifyGuestbookReply,
             boolean notifyReadingRecordReaction,
+            boolean notifyReadingRecordComment,
             boolean notifyNewFollower,
             boolean notifyBookAddedByOthers
     ) {
@@ -113,6 +115,7 @@ public final class UserDtos {
                     setting.isNotifyNewGuestbook(),
                     setting.isNotifyGuestbookReply(),
                     setting.isNotifyReadingRecordReaction(),
+                    setting.isNotifyReadingRecordComment(),
                     setting.isNotifyNewFollower(),
                     setting.isNotifyBookAddedByOthers()
             );

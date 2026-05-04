@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using App.Auth;
+using App.Infrastructure.Api;
+using App.Infrastructure.Api.Dtos;
 using BookshelfPorting.Runtime;
 using TMPro;
 using UnityEngine;
@@ -110,6 +113,30 @@ namespace App.Bootstrap
         private TMP_InputField profileFormPasswordInput;
         private TMP_InputField profileFormConfirmPasswordInput;
 
+        // ---- Account API wiring (logout / profile / visibility / withdrawal) ----
+        // Cached BE clients (lazy-initialized when the user opens Settings) and
+        // per-call in-flight flags so a slow round-trip cannot be fired twice
+        // by a fast double-click. cachedProfile holds the last GetMe response
+        // so the partial PATCH (nickname-only UI) can preserve introduction /
+        // profileImageUrl that the form does not surface — sending them blank
+        // would silently wipe BE state. suppressVisibilityRequest gates the
+        // BE call inside SelectPrivacyOption so applying a server-fetched
+        // value during initial load does not echo back as an update.
+        private NotebookApiClient settingsApiClient;
+        private bool isLogoutInFlight;
+        private bool isProfileLoadInFlight;
+        private bool isProfileSaveInFlight;
+        private bool isVisibilityUpdateInFlight;
+        private bool isWithdrawalInFlight;
+        private bool isNotificationUpdateInFlight;
+        private bool isNotificationLoadInFlight;
+        private UserProfileResponseDto cachedProfile;
+        private bool suppressVisibilityRequest;
+        // Suppresses the per-toggle PATCH while LoadCurrentNotificationSettings
+        // is applying the server response — otherwise SetIsOnWithoutNotify
+        // would fire onValueChanged → OnNotificationToggleChanged → echo PATCH.
+        private bool suppressNotificationToggleListener;
+
         private GameObject paymentMethodsTabContent;
         private GameObject purchaseHistoryTabContent;
         private Button paymentMethodsTabButton;
@@ -208,6 +235,11 @@ namespace App.Bootstrap
             InitializeIfNeeded();
             SetPanelVisible(true);
             ShowProfileEdit();
+            // Pull fresh profile from BE so the form reflects the current
+            // server-side nickname/introduction even if the user changed it
+            // from a different device or session.
+            LoadCurrentProfile();
+            LoadCurrentNotificationSettings();
         }
 
         public void CloseSettings()
@@ -918,11 +950,7 @@ namespace App.Bootstrap
 
             var logoutButton = CreateButton(view.transform, "LogoutButton", "로그아웃", PrimaryColor, Color.white, Vector2.zero, Vector2.zero, false, BorderColor);
             ConfigureLayoutHeight(logoutButton.gameObject, SecondaryControlHeight);
-            logoutButton.onClick.AddListener(() =>
-            {
-                Debug.Log("Logout clicked");
-                ShowNoticeToast("로그아웃 동작은 데모로 처리되었습니다.");
-            });
+            logoutButton.onClick.AddListener(OnLogoutButtonClicked);
 
             // 앱 종료. 에디터에서는 플레이 모드를 빠져나오고, 빌드에서는
             // Application.Quit()로 프로세스를 종료한다. 두 경로를 한 곳에
@@ -975,8 +1003,101 @@ namespace App.Bootstrap
 
             if (profilePrivacyHintLabel != null)
             {
-                profilePrivacyHintLabel.text = $"선택: {PrivacyOptionLabels[selectedPrivacyIndex]} (데모 화면에서만 적용)";
+                profilePrivacyHintLabel.text = $"선택: {PrivacyOptionLabels[selectedPrivacyIndex]}";
             }
+
+            SubmitVisibilityChange();
+        }
+
+        private void SubmitVisibilityChange()
+        {
+            // Skip BE while applying a server-fetched value (the initial load
+            // path also calls SelectPrivacyOption to sync the highlight; we
+            // don't want to echo that back as a PATCH).
+            if (suppressVisibilityRequest)
+            {
+                return;
+            }
+
+            if (isVisibilityUpdateInFlight)
+            {
+                return;
+            }
+
+            if (SessionState.IsGuest)
+            {
+                ShowNoticeToast("게스트 상태에서는 공개 범위를 변경할 수 없습니다. 로그인 후 다시 시도해주세요.");
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                return;
+            }
+#endif
+
+            var request = new VisibilityRequestDto
+            {
+                VisibilityScope = MapPrivacyIndexToScope(selectedPrivacyIndex)
+            };
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                ShowNoticeToast("공개 범위 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                return;
+            }
+
+            isVisibilityUpdateInFlight = true;
+            client.UpdateMySpaceVisibility(
+                request,
+                onSuccess: _ =>
+                {
+                    isVisibilityUpdateInFlight = false;
+                },
+                onError: error =>
+                {
+                    isVisibilityUpdateInFlight = false;
+                    ShowNoticeToast("공개 범위 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                    Debug.LogWarning($"[Settings] UpdateMySpaceVisibility failed: code={error?.Code} message={error?.Message}");
+                });
+        }
+
+        private static string MapPrivacyIndexToScope(int index)
+        {
+            // Mirror App.Domain.Dashboard.VisibilityScope as serialized by
+            // DashboardDtoMapper.FormatVisibility — keep the strings in sync
+            // if BE ever renames the enum. Caller is the radio handler, so
+            // index is bounded by PrivacyOptionLabels.Length, but we still
+            // guard explicitly: a silent default-to-PUBLIC for an out-of-band
+            // index would mis-apply the user's privacy preference, which is
+            // worse than failing loudly.
+            switch (index)
+            {
+                case 0: return "PUBLIC";
+                case 1: return "FOLLOWERS_ONLY";
+                case 2: return "PRIVATE";
+                default:
+                    Debug.LogWarning(
+                        $"[Settings] MapPrivacyIndexToScope received out-of-range index={index} — falling back to PUBLIC.");
+                    return "PUBLIC";
+            }
+        }
+
+        private static int MapScopeToPrivacyIndex(string scope)
+        {
+            if (string.IsNullOrWhiteSpace(scope))
+            {
+                return 0;
+            }
+            return scope.Trim().ToUpperInvariant() switch
+            {
+                "FOLLOWERS_ONLY" => 1,
+                "FOLLOWERS" => 1,
+                "PRIVATE" => 2,
+                _ => 0,
+            };
         }
 
         // ---------------------------------------------------------------------
@@ -1046,6 +1167,11 @@ namespace App.Bootstrap
 
         private void OnProfileEditFormSubmit()
         {
+            if (isProfileSaveInFlight)
+            {
+                return;
+            }
+
             var nickname = profileFormNicknameInput != null ? profileFormNicknameInput.text.Trim() : string.Empty;
             var password = profileFormPasswordInput != null ? profileFormPasswordInput.text : string.Empty;
             var confirmPassword = profileFormConfirmPasswordInput != null ? profileFormConfirmPasswordInput.text : string.Empty;
@@ -1056,14 +1182,67 @@ namespace App.Bootstrap
                 return;
             }
 
+            // BE has no password field on the social-login user record yet, so
+            // the password inputs stay client-only — we still validate the
+            // confirmation match for UX, but the value is never sent.
             if (!string.Equals(password, confirmPassword, StringComparison.Ordinal))
             {
                 SetMessage(profileEditFormMessageLabel, "비밀번호가 일치하지 않습니다.", ErrorColor);
                 return;
             }
 
-            SetMessage(profileEditFormMessageLabel, string.Empty, ErrorColor);
-            ShowProfileEdit();
+            if (SessionState.IsGuest)
+            {
+                SetMessage(profileEditFormMessageLabel, "게스트 상태에서는 프로필을 수정할 수 없습니다. 로그인 후 다시 시도해주세요.", ErrorColor);
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                SetMessage(profileEditFormMessageLabel, "[DEV] 변경사항이 로컬에만 적용되었습니다.", MutedTextColor);
+                ShowProfileEdit();
+                return;
+            }
+#endif
+
+            // Preserve introduction / profileImageUrl from the cached profile
+            // (the form does not expose them). If GetMe failed earlier the
+            // cache is null, so the PATCH may overwrite those fields with
+            // null — acceptable because BE is only @Size-validated, not
+            // @NotBlank, on those two columns.
+            var request = new UpdateProfileRequestDto
+            {
+                Nickname = nickname,
+                ProfileImageUrl = cachedProfile?.ProfileImageUrl,
+                Introduction = cachedProfile?.Introduction
+            };
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                SetMessage(profileEditFormMessageLabel, "프로필 저장에 실패했습니다. 다시 시도해주세요.", ErrorColor);
+                return;
+            }
+
+            isProfileSaveInFlight = true;
+            SetMessage(profileEditFormMessageLabel, "프로필을 저장하는 중입니다...", MutedTextColor);
+
+            client.UpdateMe(
+                request,
+                onSuccess: response =>
+                {
+                    isProfileSaveInFlight = false;
+                    cachedProfile = response;
+                    SetMessage(profileEditFormMessageLabel, "프로필이 저장되었습니다.", SuccessColor);
+                    ShowProfileEdit();
+                },
+                onError: error =>
+                {
+                    isProfileSaveInFlight = false;
+                    SetMessage(profileEditFormMessageLabel, "프로필 저장에 실패했습니다. 다시 시도해주세요.", ErrorColor);
+                    Debug.LogWarning($"[Settings] UpdateMe failed: code={error?.Code} message={error?.Message}");
+                });
         }
 
         private void ResetProfileEditForm()
@@ -1185,9 +1364,450 @@ namespace App.Bootstrap
 
         private void OnWithdrawalConfirmDone()
         {
-            Debug.Log("Withdrawal confirmed");
+            if (isWithdrawalInFlight)
+            {
+                return;
+            }
+
+            if (SessionState.IsGuest)
+            {
+                ShowNoticeToast("게스트 상태에서는 회원 탈퇴를 진행할 수 없습니다.");
+                HideWithdrawalConfirmPopup();
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                FinishAccountClearAndReturnToLogin();
+                return;
+            }
+#endif
+
+            var withdrawalClient = EnsureSettingsApiClient();
+            if (withdrawalClient == null)
+            {
+                ShowNoticeToast("회원 탈퇴에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                return;
+            }
+
+            isWithdrawalInFlight = true;
+            withdrawalClient.DeleteMe(
+                onSuccess: _ =>
+                {
+                    isWithdrawalInFlight = false;
+                    FinishAccountClearAndReturnToLogin();
+                },
+                onError: error =>
+                {
+                    isWithdrawalInFlight = false;
+                    ShowNoticeToast("회원 탈퇴에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                    Debug.LogWarning($"[Settings] DeleteMe failed: code={error?.Code} message={error?.Message}");
+                });
+        }
+
+        private void OnLogoutButtonClicked()
+        {
+            if (isLogoutInFlight)
+            {
+                return;
+            }
+            isLogoutInFlight = true;
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                FinishAccountClearAndReturnToLogin();
+                return;
+            }
+#endif
+
+            // Guest sessions hold no refresh token — there is nothing for BE
+            // to revoke, so skip the round-trip and clear locally. Same path
+            // used when the refresh token is missing for any other reason.
+            var refreshToken = AuthSession.RefreshToken;
+            if (SessionState.IsGuest || string.IsNullOrWhiteSpace(refreshToken))
+            {
+                FinishAccountClearAndReturnToLogin();
+                return;
+            }
+
+            // Switched from AuthApiClient.PostLogout (success/error both routed
+            // to onComplete) to NotebookApiClient.Logout so BE failures get an
+            // explicit warn log. Local-clear policy is unchanged: keeping a
+            // stale local session after a failed revoke is worse than the
+            // revoke failure itself, so both branches still fall through to
+            // FinishAccountClearAndReturnToLogin. BE-side revoke retry is
+            // out of scope here — surfacing the failure in logs is the goal.
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                FinishAccountClearAndReturnToLogin();
+                return;
+            }
+
+            var request = new LogoutRequestDto { RefreshToken = refreshToken };
+            client.Logout(
+                request,
+                onSuccess: _ => FinishAccountClearAndReturnToLogin(),
+                onError: error =>
+                {
+                    Debug.LogWarning(
+                        $"[Settings] Logout BE call failed (local session cleared anyway): code={error?.Code} message={error?.Message}");
+                    FinishAccountClearAndReturnToLogin();
+                });
+        }
+
+        private void FinishAccountClearAndReturnToLogin()
+        {
+            isLogoutInFlight = false;
+            isWithdrawalInFlight = false;
             HideWithdrawalConfirmPopup();
+            AuthSession.Clear();
+            SessionState.Clear();
+            if (APIManager.Instance != null)
+            {
+                APIManager.Instance.SetAccessToken(string.Empty);
+            }
             CloseSettings();
+            SceneFlowManager.GoToLogin();
+        }
+
+        private void LoadCurrentProfile()
+        {
+            if (isProfileLoadInFlight)
+            {
+                return;
+            }
+
+            if (SessionState.IsGuest)
+            {
+                // Guest has no /v1/users/me record on BE; the form stays
+                // whatever the inspector left it as.
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                return;
+            }
+#endif
+
+            var loadClient = EnsureSettingsApiClient();
+            if (loadClient == null)
+            {
+                // No toast — initial load failure is not user-driven, the
+                // EnsureSettingsApiClient warn log is enough trace.
+                return;
+            }
+
+            isProfileLoadInFlight = true;
+            // hasRetried lifts a single auto-retry through the closure: if
+            // the first GetMe gets a 401/403 and SessionRefresh succeeds,
+            // we re-issue the request once. Any further failure (real auth
+            // failure, refresh fail, second 401) takes the normal error
+            // path so the user does not loop indefinitely.
+            var hasRetried = false;
+            void DoLoadCurrentProfile(NotebookApiClient apiClient)
+            {
+                apiClient.GetMe(
+                    onSuccess: profile =>
+                    {
+                        isProfileLoadInFlight = false;
+                        cachedProfile = profile;
+                        ApplyProfileToUi(profile);
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoLoadCurrentProfile(apiClient),
+                                onAbort: () =>
+                                {
+                                    isProfileLoadInFlight = false;
+                                    // Refresh impossible (no refresh token /
+                                    // refresh failed). Surface the same
+                                    // load-failure UX; FinishAccountClear...
+                                    // is reserved for explicit logout/withdraw.
+                                    ShowNoticeToast("세션이 만료되었습니다. 다시 로그인해주세요.");
+                                });
+                            return;
+                        }
+                        isProfileLoadInFlight = false;
+                        ShowNoticeToast("프로필 정보를 불러오지 못했습니다.");
+                        Debug.LogWarning($"[Settings] GetMe failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoLoadCurrentProfile(loadClient);
+        }
+
+        private void ApplyProfileToUi(UserProfileResponseDto profile)
+        {
+            if (profile == null)
+            {
+                return;
+            }
+
+            if (profileFormNicknameInput != null)
+            {
+                profileFormNicknameInput.text = profile.Nickname ?? string.Empty;
+            }
+
+            // /v1/users/me does not carry the space visibility scope — that
+            // lives on /v1/spaces/me. Initial sync of the privacy radio with
+            // server state is left out of this PR; the user's selection still
+            // PATCHes via SubmitVisibilityChange. suppressVisibilityRequest /
+            // MapScopeToPrivacyIndex stay around as the obvious extension
+            // point for a follow-up that calls GetMySpace here.
+        }
+
+        // Returns null if APIManager.Instance is unavailable — callers must
+        // null-check before invoking. Mirrors the resilience pattern used in
+        // SpaceVisitorOverlayController and OnboardingScreenController so a
+        // missing AppRoot (e.g. settings opened during a scene transition,
+        // or a hot-reload race) cannot throw NRE out of the constructor.
+        // ---- Notification settings wiring ----
+        // Toggle index → BE field name (NotificationSettingRequestDto property).
+        // Index follows BuildNotificationView's CreateNotificationCheckboxRow
+        // call order:
+        //   0: 방명록 추가          → notifyNewGuestbook
+        //   1: 방명록 답글          → notifyGuestbookReply
+        //   2: 책 추가              → notifyBookAddedByOthers
+        //   3: 독서 기록 좋아요     → notifyReadingRecordReaction
+        //   4: 독서 기록 댓글       → notifyReadingRecordComment
+        // BE field notifyNewFollower exists (and gates would work) but there
+        // is no UserFollowed event publisher on the BE side yet, so adding a
+        // UI toggle here would be a setting that the server never acts on —
+        // intentionally out of scope for this PR.
+        private void OnNotificationToggleChanged(int index, bool value)
+        {
+            if (suppressNotificationToggleListener)
+            {
+                return;
+            }
+
+            if (isNotificationUpdateInFlight)
+            {
+                // Another PATCH is in flight — revert this toggle visually
+                // so the user sees that the click was rejected (we cannot
+                // reliably enqueue without complicating the rollback path).
+                RevertNotificationToggle(index, !value);
+                ShowNoticeToast("이전 변경 처리가 끝난 후 다시 시도해주세요.");
+                return;
+            }
+
+            if (SessionState.IsGuest)
+            {
+                RevertNotificationToggle(index, !value);
+                ShowNoticeToast("게스트 상태에서는 알림 설정을 변경할 수 없습니다.");
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                // Dev mode: optimistic only, no BE round-trip.
+                return;
+            }
+#endif
+
+            var request = BuildNotificationPartialRequest(index, value);
+            if (request == null)
+            {
+                // Defensive: BuildNotificationPartialRequest only returns null
+                // for indices outside the known range (currently 0..4). Keep
+                // the local UI change so the user is not stranded, but skip
+                // the network call — there is no field to PATCH.
+                Debug.LogWarning(
+                    $"[Settings] Unknown notification toggle index={index}; skipping PATCH.");
+                return;
+            }
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                RevertNotificationToggle(index, !value);
+                ShowNoticeToast("알림 설정 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                return;
+            }
+
+            isNotificationUpdateInFlight = true;
+            // Same single-retry-on-401 pattern as LoadCurrentProfile: if the
+            // PATCH races a session expiry, refresh once then re-issue. Any
+            // further failure takes the normal toast+revert path.
+            var hasRetried = false;
+            void DoUpdateNotificationSetting(NotebookApiClient apiClient, NotificationSettingRequestDto requestDto)
+            {
+                apiClient.UpdateNotificationSettings(
+                    requestDto,
+                    onSuccess: _ =>
+                    {
+                        isNotificationUpdateInFlight = false;
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoUpdateNotificationSetting(apiClient, requestDto),
+                                onAbort: () =>
+                                {
+                                    isNotificationUpdateInFlight = false;
+                                    RevertNotificationToggle(index, !value);
+                                    ShowNoticeToast("세션이 만료되었습니다. 다시 로그인해주세요.");
+                                });
+                            return;
+                        }
+                        isNotificationUpdateInFlight = false;
+                        RevertNotificationToggle(index, !value);
+                        ShowNoticeToast("알림 설정 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                        Debug.LogWarning(
+                            $"[Settings] UpdateMyNotificationSettings failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoUpdateNotificationSetting(client, request);
+        }
+
+        private static NotificationSettingRequestDto BuildNotificationPartialRequest(int index, bool value)
+        {
+            var request = new NotificationSettingRequestDto();
+            switch (index)
+            {
+                case 0: request.NotifyNewGuestbook = value; return request;
+                case 1: request.NotifyGuestbookReply = value; return request;
+                case 2: request.NotifyBookAddedByOthers = value; return request;
+                case 3: request.NotifyReadingRecordReaction = value; return request;
+                case 4: request.NotifyReadingRecordComment = value; return request;
+                default: return null;
+            }
+        }
+
+        private void RevertNotificationToggle(int index, bool toValue)
+        {
+            if (index < 0 || index >= dependentNotificationToggles.Count)
+            {
+                return;
+            }
+            var toggle = dependentNotificationToggles[index];
+            if (toggle == null)
+            {
+                return;
+            }
+            // SetIsOnWithoutNotify avoids retriggering OnNotificationToggleChanged
+            // which would otherwise loop on the rollback path.
+            toggle.SetIsOnWithoutNotify(toValue);
+        }
+
+        private void LoadCurrentNotificationSettings()
+        {
+            if (isNotificationLoadInFlight)
+            {
+                return;
+            }
+            if (SessionState.IsGuest)
+            {
+                return;
+            }
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                return;
+            }
+#endif
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                return;
+            }
+
+            isNotificationLoadInFlight = true;
+            // Same single-retry-on-401 pattern as LoadCurrentProfile. Background
+            // load — onAbort stays silent because LoadCurrentProfile fires on
+            // the same screen-open trigger and already surfaces the
+            // session-expired toast; duplicating here would stack toasts.
+            var hasRetried = false;
+            void DoLoadCurrentNotificationSettings(NotebookApiClient apiClient)
+            {
+                apiClient.GetNotificationSettings(
+                    onSuccess: response =>
+                    {
+                        isNotificationLoadInFlight = false;
+                        ApplyNotificationSettingsToUi(response);
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoLoadCurrentNotificationSettings(apiClient),
+                                onAbort: () =>
+                                {
+                                    isNotificationLoadInFlight = false;
+                                });
+                            return;
+                        }
+                        isNotificationLoadInFlight = false;
+                        Debug.LogWarning(
+                            $"[Settings] GetMyNotificationSettings failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoLoadCurrentNotificationSettings(client);
+        }
+
+        private void ApplyNotificationSettingsToUi(NotificationSettingResponseDto response)
+        {
+            if (response == null)
+            {
+                return;
+            }
+            // Suppress listener so SetIsOnWithoutNotify doesn't fan out into
+            // PATCH-back loops while we apply the server snapshot.
+            suppressNotificationToggleListener = true;
+            try
+            {
+                ApplyToggleAtIndex(0, response.NotifyNewGuestbook);
+                ApplyToggleAtIndex(1, response.NotifyGuestbookReply);
+                ApplyToggleAtIndex(2, response.NotifyBookAddedByOthers);
+                ApplyToggleAtIndex(3, response.NotifyReadingRecordReaction);
+                ApplyToggleAtIndex(4, response.NotifyReadingRecordComment);
+            }
+            finally
+            {
+                suppressNotificationToggleListener = false;
+            }
+        }
+
+        private void ApplyToggleAtIndex(int index, bool value)
+        {
+            if (index < 0 || index >= dependentNotificationToggles.Count)
+            {
+                return;
+            }
+            var toggle = dependentNotificationToggles[index];
+            if (toggle != null)
+            {
+                toggle.SetIsOnWithoutNotify(value);
+            }
+        }
+
+        private NotebookApiClient EnsureSettingsApiClient()
+        {
+            if (APIManager.Instance == null)
+            {
+                Debug.LogWarning("[Settings] APIManager.Instance is null — BE call skipped.");
+                return null;
+            }
+            if (settingsApiClient == null)
+            {
+                settingsApiClient = new NotebookApiClient(APIManager.Instance);
+            }
+            return settingsApiClient;
         }
 
         private void OnWithdrawalCancel()
@@ -1476,7 +2096,11 @@ namespace App.Bootstrap
             toggleRect.sizeDelta = new Vector2(64f, 50f);
             toggleRect.anchoredPosition = new Vector2(-20f, 0f);
             toggle.isOn = initialOn;
+            // Capture the index by-value so the closure points at this row's
+            // slot in dependentNotificationToggles regardless of later adds.
+            var capturedIndex = dependentNotificationToggles.Count;
             dependentNotificationToggles.Add(toggle);
+            toggle.onValueChanged.AddListener(value => OnNotificationToggleChanged(capturedIndex, value));
         }
 
         private void RefreshNotificationDependentEnabled()

@@ -292,6 +292,52 @@ namespace App.Infrastructure.Api
             return Patch<ThemeApplyRequestDto, SpaceResponseDto>("/v1/spaces/me/theme", request, onSuccess, onError);
         }
 
+        // 카테고리별 개별 적용 6 endpoint — backend SpaceController의 PATCH /me/{wallpaper,floor,...}
+        // body: {inventoryId: long?} (null이면 unset). response: SpaceMutationResponseDto.
+        public Coroutine ChangeMyWallpaper(CategoryInventoryRequestDto request, Action<SpaceMutationResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Patch<CategoryInventoryRequestDto, SpaceMutationResponseDto>("/v1/spaces/me/wallpaper", request, onSuccess, onError);
+        }
+
+        public Coroutine ChangeMyFloor(CategoryInventoryRequestDto request, Action<SpaceMutationResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Patch<CategoryInventoryRequestDto, SpaceMutationResponseDto>("/v1/spaces/me/floor", request, onSuccess, onError);
+        }
+
+        public Coroutine ChangeMyDesk(CategoryInventoryRequestDto request, Action<SpaceMutationResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Patch<CategoryInventoryRequestDto, SpaceMutationResponseDto>("/v1/spaces/me/desk", request, onSuccess, onError);
+        }
+
+        public Coroutine ChangeMyDashboard(CategoryInventoryRequestDto request, Action<SpaceMutationResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Patch<CategoryInventoryRequestDto, SpaceMutationResponseDto>("/v1/spaces/me/dashboard", request, onSuccess, onError);
+        }
+
+        public Coroutine ChangeMyInteriorLight(CategoryInventoryRequestDto request, Action<SpaceMutationResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Patch<CategoryInventoryRequestDto, SpaceMutationResponseDto>("/v1/spaces/me/interior-light", request, onSuccess, onError);
+        }
+
+        public Coroutine ChangeMyExteriorLight(CategoryInventoryRequestDto request, Action<SpaceMutationResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Patch<CategoryInventoryRequestDto, SpaceMutationResponseDto>("/v1/spaces/me/exterior-light", request, onSuccess, onError);
+        }
+
+        // 전체 테마 적용(모드 명시) — backend POST /me/theme/{inventoryId}/apply?mode=RESET|KEEP_BLOCKERS_ONLY
+        // mode 값은 UTF-8 string("RESET" / "KEEP_BLOCKERS_ONLY"). KEEP_BLOCKERS_ONLY는 현재 501 NOT_IMPLEMENTED 반환.
+        public Coroutine ApplyMySpaceThemeWithMode(long inventoryId, string mode, Action<SpaceMutationResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            var path = WithQuery($"/v1/spaces/me/theme/{inventoryId}/apply", Query("mode", mode));
+            return Post<SpaceMutationResponseDto>(path, onSuccess, onError);
+        }
+
+        // 테마 자산이 묶고 있는 카테고리별 자식 자산 ID 매핑 조회.
+        public Coroutine GetThemeContents(long assetId, Action<ThemeContentsResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<ThemeContentsResponseDto>($"/v1/assets/{assetId}/contents", onSuccess, onError);
+        }
+
         public Coroutine UpdateMySpaceVisibility(VisibilityRequestDto request, Action<SpaceResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Patch<VisibilityRequestDto, SpaceResponseDto>("/v1/spaces/me/visibility", request, onSuccess, onError);

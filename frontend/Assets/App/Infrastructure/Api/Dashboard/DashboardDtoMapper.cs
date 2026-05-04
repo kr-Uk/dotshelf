@@ -82,7 +82,13 @@ namespace App.Infrastructure.Api.Dashboard
                 likeCount: dto.LikeCount,
                 liked: dto.Liked,
                 layoutVersion: dto.LayoutVersion,
-                currentThemeInventoryId: dto.CurrentThemeInventoryId);
+                currentThemeInventoryId: dto.CurrentThemeInventoryId,
+                currentWallpaperInventoryId: dto.CurrentWallpaperInventoryId,
+                currentFloorInventoryId: dto.CurrentFloorInventoryId,
+                currentDeskInventoryId: dto.CurrentDeskInventoryId,
+                currentDashboardInventoryId: dto.CurrentDashboardInventoryId,
+                currentInteriorLightInventoryId: dto.CurrentInteriorLightInventoryId,
+                currentExteriorLightInventoryId: dto.CurrentExteriorLightInventoryId);
         }
 
         public static DashboardSnapshot MapSnapshot(DashboardResponseDto dto)
