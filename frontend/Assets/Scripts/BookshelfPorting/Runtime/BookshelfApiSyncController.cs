@@ -174,6 +174,15 @@ namespace BookshelfPorting.Runtime
 
         private void RecordVisitOnce(long spaceId)
         {
+            // BE SpaceService.recordVisit calls userService.requireUserId(),
+            // which rejects guest tokens. Skipping here also keeps the visited
+            // set untouched so a later login in the same session can still
+            // record the visit on re-entry.
+            if (AuthSession.IsGuestSession)
+            {
+                return;
+            }
+
             // Mark BEFORE the call (record-on-attempt) so a slow BE round-trip
             // cannot cause the user to navigate away and re-enter, racing two
             // visit POSTs. Worst case: BE call fails and we never retry — that

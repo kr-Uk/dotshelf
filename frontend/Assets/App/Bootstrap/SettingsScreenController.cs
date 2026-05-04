@@ -159,6 +159,11 @@ namespace App.Bootstrap
         private Toggle masterNotificationToggle;
         private readonly List<Toggle> dependentNotificationToggles = new List<Toggle>();
         private readonly List<TMP_Text> dependentNotificationLabels = new List<TMP_Text>();
+        // Toggle indices that exist in the UI but have no corresponding BE
+        // notification setting field. These stay disabled regardless of the
+        // master toggle so the user is not led to believe a hidden setting
+        // can be saved. RefreshNotificationDependentEnabled honors this.
+        private readonly HashSet<int> unmappedNotificationToggleIndices = new HashSet<int>();
 
         private bool isInitialized;
         private ViewKey currentView = ViewKey.None;
@@ -1635,20 +1640,41 @@ namespace App.Bootstrap
             }
 
             isNotificationUpdateInFlight = true;
-            client.UpdateNotificationSettings(
-                request,
-                onSuccess: _ =>
-                {
-                    isNotificationUpdateInFlight = false;
-                },
-                onError: error =>
-                {
-                    isNotificationUpdateInFlight = false;
-                    RevertNotificationToggle(index, !value);
-                    ShowNoticeToast("알림 설정 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
-                    Debug.LogWarning(
-                        $"[Settings] UpdateMyNotificationSettings failed: code={error?.Code} message={error?.Message}");
-                });
+            // Same single-retry-on-401 pattern as LoadCurrentProfile: if the
+            // PATCH races a session expiry, refresh once then re-issue. Any
+            // further failure takes the normal toast+revert path.
+            var hasRetried = false;
+            void DoUpdateNotificationSetting(NotebookApiClient apiClient, NotificationSettingRequestDto requestDto)
+            {
+                apiClient.UpdateNotificationSettings(
+                    requestDto,
+                    onSuccess: _ =>
+                    {
+                        isNotificationUpdateInFlight = false;
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoUpdateNotificationSetting(apiClient, requestDto),
+                                onAbort: () =>
+                                {
+                                    isNotificationUpdateInFlight = false;
+                                    RevertNotificationToggle(index, !value);
+                                    ShowNoticeToast("세션이 만료되었습니다. 다시 로그인해주세요.");
+                                });
+                            return;
+                        }
+                        isNotificationUpdateInFlight = false;
+                        RevertNotificationToggle(index, !value);
+                        ShowNoticeToast("알림 설정 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                        Debug.LogWarning(
+                            $"[Settings] UpdateMyNotificationSettings failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoUpdateNotificationSetting(client, request);
         }
 
         private static NotificationSettingRequestDto BuildNotificationPartialRequest(int index, bool value)
@@ -1704,18 +1730,38 @@ namespace App.Bootstrap
             }
 
             isNotificationLoadInFlight = true;
-            client.GetNotificationSettings(
-                onSuccess: response =>
-                {
-                    isNotificationLoadInFlight = false;
-                    ApplyNotificationSettingsToUi(response);
-                },
-                onError: error =>
-                {
-                    isNotificationLoadInFlight = false;
-                    Debug.LogWarning(
-                        $"[Settings] GetMyNotificationSettings failed: code={error?.Code} message={error?.Message}");
-                });
+            // Same single-retry-on-401 pattern as LoadCurrentProfile. Background
+            // load — onAbort stays silent because LoadCurrentProfile fires on
+            // the same screen-open trigger and already surfaces the
+            // session-expired toast; duplicating here would stack toasts.
+            var hasRetried = false;
+            void DoLoadCurrentNotificationSettings(NotebookApiClient apiClient)
+            {
+                apiClient.GetNotificationSettings(
+                    onSuccess: response =>
+                    {
+                        isNotificationLoadInFlight = false;
+                        ApplyNotificationSettingsToUi(response);
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoLoadCurrentNotificationSettings(apiClient),
+                                onAbort: () =>
+                                {
+                                    isNotificationLoadInFlight = false;
+                                });
+                            return;
+                        }
+                        isNotificationLoadInFlight = false;
+                        Debug.LogWarning(
+                            $"[Settings] GetMyNotificationSettings failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoLoadCurrentNotificationSettings(client);
         }
 
         private void ApplyNotificationSettingsToUi(NotificationSettingResponseDto response)
@@ -1976,6 +2022,7 @@ namespace App.Bootstrap
 
             dependentNotificationToggles.Clear();
             dependentNotificationLabels.Clear();
+            unmappedNotificationToggleIndices.Clear();
 
             var masterRow = CreateRectObject("MasterRow", view.transform);
             ConfigureLayoutHeight(masterRow, 80f);
@@ -2019,12 +2066,15 @@ namespace App.Bootstrap
             CreateSectionHeader(view.transform, "책 / 독서 기록");
             CreateNotificationCheckboxRow(view.transform, "책 추가", true);
             CreateNotificationCheckboxRow(view.transform, "독서 기록 좋아요", false);
-            CreateNotificationCheckboxRow(view.transform, "독서 기록 댓글", true);
+            // BE has no notifyReadingRecordComment field — surfaced as a locked
+            // row so the user does not silently lose changes (the previous
+            // behavior was a working-looking toggle that never PATCHed).
+            CreateNotificationCheckboxRow(view.transform, "독서 기록 댓글 (준비 중)", false, isMappedToBackend: false);
 
             return view;
         }
 
-        private void CreateNotificationCheckboxRow(Transform parent, string labelText, bool initialOn)
+        private void CreateNotificationCheckboxRow(Transform parent, string labelText, bool initialOn, bool isMappedToBackend = true)
         {
             var row = CreateRectObject($"NotificationRow_{labelText}", parent);
             ConfigureLayoutHeight(row, 64f);
@@ -2059,29 +2109,39 @@ namespace App.Bootstrap
             // slot in dependentNotificationToggles regardless of later adds.
             var capturedIndex = dependentNotificationToggles.Count;
             dependentNotificationToggles.Add(toggle);
+            if (!isMappedToBackend)
+            {
+                unmappedNotificationToggleIndices.Add(capturedIndex);
+                toggle.interactable = false;
+            }
             toggle.onValueChanged.AddListener(value => OnNotificationToggleChanged(capturedIndex, value));
         }
 
         private void RefreshNotificationDependentEnabled()
         {
-            var enabled = masterNotificationToggle == null || masterNotificationToggle.isOn;
+            var masterEnabled = masterNotificationToggle == null || masterNotificationToggle.isOn;
 
-            foreach (var toggle in dependentNotificationToggles)
+            for (int i = 0; i < dependentNotificationToggles.Count; i++)
             {
+                var toggle = dependentNotificationToggles[i];
                 if (toggle == null)
                 {
                     continue;
                 }
-                toggle.interactable = enabled;
+                // BE-unmapped toggles (e.g. 독서 기록 댓글) stay locked even
+                // when the master is on — there is no field to PATCH to.
+                toggle.interactable = masterEnabled && !unmappedNotificationToggleIndices.Contains(i);
             }
 
-            foreach (var label in dependentNotificationLabels)
+            for (int i = 0; i < dependentNotificationLabels.Count; i++)
             {
+                var label = dependentNotificationLabels[i];
                 if (label == null)
                 {
                     continue;
                 }
-                label.color = enabled ? TextColor : SubtleTextColor;
+                var labelEnabled = masterEnabled && !unmappedNotificationToggleIndices.Contains(i);
+                label.color = labelEnabled ? TextColor : SubtleTextColor;
             }
         }
 

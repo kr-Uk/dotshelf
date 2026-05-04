@@ -253,11 +253,6 @@ namespace App.Infrastructure.Api
             return Put<LayoutSaveRequestDto, LayoutSaveResponseDto>("/v1/spaces/me/layout", request, onSuccess, onError);
         }
 
-        public Coroutine GetMyInventory(Action<InventoryResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
-        {
-            return Get<InventoryResponseDto>("/v1/users/me/inventory", onSuccess, onError);
-        }
-
         public Coroutine ApplyMySpaceTheme(ThemeApplyRequestDto request, Action<SpaceResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Patch<ThemeApplyRequestDto, SpaceResponseDto>("/v1/spaces/me/theme", request, onSuccess, onError);
