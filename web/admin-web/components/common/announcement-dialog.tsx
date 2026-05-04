@@ -35,8 +35,8 @@ export type AnnouncementPayload = {
   title: string;
   body: string;
   audience: (typeof AUDIENCE_OPTIONS)[number]["value"];
-  startsAt: string;
-  endsAt: string;
+  startsAt: string | null;
+  endsAt: string | null;
   isUrgent: boolean;
 };
 
@@ -46,11 +46,11 @@ function todayIso(offsetDays = 0): string {
   return d.toISOString().slice(0, 10);
 }
 
-function dateInputValue(source: string | undefined, offsetDays = 0): string {
-  if (!source) return todayIso(offsetDays);
+function dateInputValue(source: string | null | undefined): string {
+  if (!source) return "";
   if (/^\d{4}-\d{2}-\d{2}$/u.test(source)) return source;
   const date = new Date(source);
-  return Number.isNaN(date.getTime()) ? todayIso(offsetDays) : date.toISOString().slice(0, 10);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
 }
 
 export function AnnouncementDialog({
@@ -76,11 +76,12 @@ export function AnnouncementDialog({
   // 다이얼로그가 열릴 때마다 form 초기화 — open prop 외부 변화에 반응해야 함.
   useEffect(() => {
     if (open) {
+      const editing = initialValue !== null && initialValue !== undefined;
       setTitle(initialValue?.title ?? "");
       setBody(initialValue?.body ?? "");
       setAudience(initialValue?.audience ?? "all_users");
-      setStartsAt(dateInputValue(initialValue?.startsAt));
-      setEndsAt(dateInputValue(initialValue?.endsAt, 7));
+      setStartsAt(editing ? dateInputValue(initialValue.startsAt) : todayIso());
+      setEndsAt(editing ? dateInputValue(initialValue.endsAt) : todayIso(7));
       setIsUrgent(initialValue?.isUrgent ?? false);
     }
   }, [initialValue, open]);
@@ -96,8 +97,8 @@ export function AnnouncementDialog({
         title: title.trim(),
         body: body.trim(),
         audience,
-        startsAt,
-        endsAt,
+        startsAt: startsAt || null,
+        endsAt: endsAt || null,
         isUrgent,
       });
       onOpenChange(false);

@@ -131,6 +131,11 @@ function dateValue(source: unknown, fallback = new Date().toISOString()): string
   return raw.length > 0 ? raw : fallback;
 }
 
+function nullableDateValue(source: unknown): string | null {
+  const raw = text(source);
+  return raw.length > 0 ? raw : null;
+}
+
 function dateInputToInstant(source: unknown, endOfDay = false): string | null {
   const raw = text(source);
   if (!raw) return null;
@@ -715,15 +720,16 @@ function mapAdminMember(source: unknown): AdminMember {
 }
 
 function mapAnnouncement(source: unknown): AnnouncementItem {
-  const startsAt = dateValue(value(source, "startsAt"), dateValue(value(source, "createdAt")));
+  const startsAt = nullableDateValue(value(source, "startsAt"));
+  const publishedAt = startsAt ?? dateValue(value(source, "createdAt"));
   return {
     id: text(value(source, "id")),
     title: text(value(source, "title")),
     body: text(value(source, "body")),
     audience: text(value(source, "audience"), "all_users") as AnnouncementItem["audience"],
     startsAt,
-    publishedAt: startsAt,
-    endsAt: dateValue(value(source, "endsAt")),
+    publishedAt,
+    endsAt: nullableDateValue(value(source, "endsAt")),
     isUrgent: booleanValue(value(source, "urgent") ?? value(source, "isUrgent")),
   };
 }

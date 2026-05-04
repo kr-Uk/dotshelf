@@ -1,14 +1,15 @@
 # 관리자 운영 콘솔 공지/모더레이션 개선
 
 - **브랜치**: `feat/be/permit`
-- **범위**: `9c164933..HEAD` (커밋 1개)
+- **범위**: `9c164933..HEAD`
 - **기간**: 2026-05-04 ~ 2026-05-04
-- **관련 커밋**: `110896fc`
+- **관련 커밋**: `origin/dev..HEAD` 범위의 관리자 운영 콘솔 변경 커밋
 
 ## TL;DR
 
 관리자 운영 콘솔에서 공지사항을 발행만 하던 흐름에 수정/삭제 기능을 추가했다.
-백엔드에는 `PATCH/DELETE /v1/admin/operations/announcements/{announcementId}`를 열고, 프론트에는 기존 공지 다이얼로그를 등록/수정 겸용으로 바꾸었다.
+백엔드에는 `PUT/DELETE /v1/admin/operations/announcements/{announcementId}`를 열고, 프론트에는 기존 공지 다이얼로그를 등록/수정 겸용으로 바꾸었다.
+공지 생성/수정/삭제 감사 로그에는 제목만이 아니라 공지 전체 스냅샷을 남긴다.
 모더레이션 큐에는 상태별 필터를 추가해 `PENDING`, `IN_REVIEW`, `RESOLVED`, `REJECTED` 상태를 화면에서 바로 걸러볼 수 있게 했다.
 admin-web의 MSW mock도 실제 API 요청 파라미터와 같은 방식으로 동작하도록 보강했다.
 
@@ -17,7 +18,7 @@ admin-web의 MSW mock도 실제 API 요청 파라미터와 같은 방식으로 �
 ### 1. 공지사항 수정/삭제
 
 - 사용자 관점 효과: 운영자가 잘못 발행한 공지의 제목, 본문, 대상, 기간, 긴급 여부를 다시 고치거나 삭제할 수 있다.
-- 시스템 관점 효과: 공지 변경과 삭제가 `AdminService` 트랜잭션 안에서 처리되고, `ANNOUNCEMENT_UPDATE`, `ANNOUNCEMENT_DELETE` 감사 로그가 남는다.
+- 시스템 관점 효과: 공지 변경과 삭제가 `AdminService` 트랜잭션 안에서 처리되고, `ANNOUNCEMENT_UPDATE`, `ANNOUNCEMENT_DELETE` 감사 로그에는 변경 전/후 전체 스냅샷이 남는다.
 - 주요 파일: `AdminController.java`, `AdminService.java`, `AdminAnnouncement.java`, `AdminDtos.java`
 
 ### 2. 공지 다이얼로그 재사용
@@ -56,7 +57,7 @@ public void update(String title, String body, String audience, Instant startsAt,
 }
 ```
 
-서비스는 `requireAdminUser(userId)`로 관리자 여부를 먼저 확인한 뒤 공지를 조회한다. 수정은 엔티티 메서드로 처리하고, 삭제는 `adminAnnouncementRepository.delete(announcement)`로 물리 삭제한다. 두 작업 모두 감사 로그에 이전/이후 값을 남긴다.
+서비스는 `requireAdminUser(userId)`로 관리자 여부를 먼저 확인한 뒤 공지를 조회한다. 수정은 전체 갱신 의미가 명확하도록 `PUT`으로 받고 엔티티 메서드로 처리한다. 삭제는 `adminAnnouncementRepository.delete(announcement)`로 물리 삭제하되, 삭제 전 전체 스냅샷을 감사 로그에 저장한다. 생성/수정/삭제 모두 감사 로그에 공지 제목, 본문, 대상, 기간, 긴급 여부, 작성자 id를 포함한다.
 
 핵심 포인트:
 - Controller는 DTO 검증과 Service 호출만 담당한다.
@@ -65,20 +66,21 @@ public void update(String title, String body, String audience, Instant startsAt,
 
 ### 공지 다이얼로그의 생성/수정 겸용화
 
-`AnnouncementDialog`에 `initialValue`를 추가해 기존 공지를 수정할 때 같은 폼에 값을 주입한다. 날짜 입력은 HTML `date` input이 기대하는 `YYYY-MM-DD` 형태로 변환한다.
+`AnnouncementDialog`에 `initialValue`를 추가해 기존 공지를 수정할 때 같은 폼에 값을 주입한다. 날짜 입력은 HTML `date` input이 기대하는 `YYYY-MM-DD` 형태로 변환하되, 기존 값이 `null`이면 빈 입력으로 보존한다.
 
 ```ts
-function dateInputValue(source: string | undefined, offsetDays = 0): string {
-  if (!source) return todayIso(offsetDays);
+function dateInputValue(source: string | null | undefined): string {
+  if (!source) return "";
   if (/^\d{4}-\d{2}-\d{2}$/u.test(source)) return source;
   const date = new Date(source);
-  return Number.isNaN(date.getTime()) ? todayIso(offsetDays) : date.toISOString().slice(0, 10);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
 }
 ```
 
 핵심 포인트:
 - 폼 컴포넌트는 생성/수정의 UI 중복을 줄인다.
-- 제출 처리는 부모 페이지가 `POST` 또는 `PATCH`를 선택한다.
+- 제출 처리는 부모 페이지가 `POST` 또는 `PUT`을 선택한다.
+- 기존 공지의 `startsAt`/`endsAt`가 `null`이면 빈 날짜 input으로 보존하고, 제출 시에도 `null`로 다시 보낸다.
 - 실패 시 toast를 띄우고 에러를 다시 던져 다이얼로그가 닫히지 않도록 했다.
 
 ### 모더레이션 상태 필터 매핑
@@ -118,11 +120,11 @@ const { data, isLoading } = useQuery({
 ## 더 공부할 것
 
 - [ ] 관리자 공지 삭제를 물리 삭제로 둘지, `deletedAt` 기반 soft delete로 바꿀지 판단 기준
-- [ ] `PATCH` 요청 DTO를 전체 수정으로 유지할지, nullable 필드 기반 부분 수정으로 바꿀지의 trade-off
+- [ ] 공지 수정 API를 `PUT` 전체 갱신으로 유지할지, 향후 nullable 필드 기반 `PATCH`를 별도로 추가할지의 trade-off
 - [ ] 모더레이션 상태 전이 모델을 enum으로 고정할지 문자열로 유지할지
 - [ ] React Query에서 리스트 액션 후 invalidate와 optimistic update 중 어떤 상황에 무엇이 더 적합한지
 
 ## 참고
 
-- 관련 커밋: `110896fc`
+- 관련 커밋: `origin/dev..HEAD` 범위의 관리자 운영 콘솔 변경 커밋
 - 검증: `backend ./gradlew.bat test`, `web/admin-web npm.cmd run lint`, `web/admin-web npm.cmd run build`

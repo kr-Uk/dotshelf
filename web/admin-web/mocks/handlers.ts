@@ -366,18 +366,19 @@ export const handlers = [
       title: string;
       body: string;
       audience: "all_users" | "internal";
-      startsAt: string;
-      endsAt: string;
+      startsAt: string | null;
+      endsAt: string | null;
       urgent?: boolean;
       isUrgent?: boolean;
     };
+    const publishedAt = body.startsAt ?? new Date().toISOString();
     const announcement = {
       id: "an_" + Date.now().toString(36),
       title: body.title,
       body: body.body,
       audience: body.audience,
       startsAt: body.startsAt,
-      publishedAt: body.startsAt,
+      publishedAt,
       endsAt: body.endsAt,
       isUrgent: body.urgent ?? body.isUrgent ?? false,
     };
@@ -391,8 +392,8 @@ export const handlers = [
       title: string;
       body: string;
       audience: "all_users" | "internal";
-      startsAt: string;
-      endsAt: string;
+      startsAt: string | null;
+      endsAt: string | null;
       urgent?: boolean;
       isUrgent?: boolean;
     };
@@ -406,7 +407,7 @@ export const handlers = [
       body: body.body,
       audience: body.audience,
       startsAt: body.startsAt,
-      publishedAt: body.startsAt,
+      publishedAt: body.startsAt ?? mockAnnouncements[index].publishedAt,
       endsAt: body.endsAt,
       isUrgent: body.urgent ?? body.isUrgent ?? false,
     };

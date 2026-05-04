@@ -509,9 +509,9 @@ export interface AnnouncementItem {
   title: string;
   body: string;
   audience: "all_users" | "internal";
-  startsAt: string;
+  startsAt: string | null;
   publishedAt: string;
-  endsAt: string;
+  endsAt: string | null;
   isUrgent: boolean;
 }
 

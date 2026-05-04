@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -99,6 +99,20 @@ export default function OperationsPage() {
   const announcements = annQ.data ?? [];
   const policies = polQ.data ?? [];
   const health = healthQ.data;
+  const announcementInitialValue = useMemo(
+    () =>
+      editingAnnouncement
+        ? {
+            title: editingAnnouncement.title,
+            body: editingAnnouncement.body,
+            audience: editingAnnouncement.audience,
+            startsAt: editingAnnouncement.startsAt,
+            endsAt: editingAnnouncement.endsAt,
+            isUrgent: editingAnnouncement.isUrgent,
+          }
+        : null,
+    [editingAnnouncement],
+  );
 
   const openCreateAnnouncement = () => {
     setEditingAnnouncement(null);
@@ -183,7 +197,8 @@ export default function OperationsPage() {
                     {a.body}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {formatDate(a.publishedAt)} ~ {formatDate(a.endsAt)} · 대상 {a.audience}
+                    {formatDate(a.startsAt ?? a.publishedAt)} ~{" "}
+                    {formatOptionalDate(a.endsAt)} · 대상 {a.audience}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -309,22 +324,15 @@ export default function OperationsPage() {
           setAnnounceOpen(open);
           if (!open) setEditingAnnouncement(null);
         }}
-        initialValue={
-          editingAnnouncement
-            ? {
-                title: editingAnnouncement.title,
-                body: editingAnnouncement.body,
-                audience: editingAnnouncement.audience,
-                startsAt: editingAnnouncement.startsAt,
-                endsAt: editingAnnouncement.endsAt,
-                isUrgent: editingAnnouncement.isUrgent,
-              }
-            : null
-        }
+        initialValue={announcementInitialValue}
         onSubmit={submitAnnouncement}
       />
     </div>
   );
+}
+
+function formatOptionalDate(iso: string | null): string {
+  return iso ? formatDate(iso) : "무기한";
 }
 
 function HealthRow({
