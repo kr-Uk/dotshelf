@@ -540,6 +540,20 @@ public final class AdminDtos {
     ) {
     }
 
+    public record UpdateAnnouncementRequest(
+            @NotBlank(message = "title은 필수입니다.")
+            @Size(max = 150, message = "title은 최대 150자입니다.")
+            String title,
+            @NotBlank(message = "body는 필수입니다.")
+            String body,
+            @NotBlank(message = "audience는 필수입니다.")
+            String audience,
+            Instant startsAt,
+            Instant endsAt,
+            boolean urgent
+    ) {
+    }
+
     public record PolicyVersionResponse(
             String id,
             String policyType,

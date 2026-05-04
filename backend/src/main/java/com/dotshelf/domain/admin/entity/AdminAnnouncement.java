@@ -55,4 +55,14 @@ public class AdminAnnouncement extends BaseEntity {
         this.isUrgent = isUrgent;
         this.createdByUserId = createdByUserId;
     }
+
+    public void update(String title, String body, String audience, Instant startsAt,
+                       Instant endsAt, boolean isUrgent) {
+        this.title = title;
+        this.body = body;
+        this.audience = audience;
+        this.startsAt = startsAt;
+        this.endsAt = endsAt;
+        this.isUrgent = isUrgent;
+    }
 }

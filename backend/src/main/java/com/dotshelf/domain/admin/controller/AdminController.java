@@ -3,6 +3,7 @@ package com.dotshelf.domain.admin.controller;
 import java.time.Instant;
 import java.time.LocalDate;
 
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -44,6 +45,7 @@ import com.dotshelf.domain.admin.dto.AdminDtos.SettlementWithdrawalResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.StatsKpiResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.StatsTimeseriesResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.SystemHealthResponse;
+import com.dotshelf.domain.admin.dto.AdminDtos.UpdateAnnouncementRequest;
 import com.dotshelf.domain.admin.dto.AdminDtos.UserActionRequest;
 import com.dotshelf.domain.admin.dto.AdminDtos.UserHistoryResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.UserListItemResponse;
@@ -327,6 +329,28 @@ public class AdminController {
             HttpServletRequest httpRequest
     ) {
         return ApiResponse.success(adminService.createAnnouncement(userId, request, clientIp(httpRequest)));
+    }
+
+    @Operation(summary = "공지 수정")
+    @PatchMapping("/operations/announcements/{announcementId}")
+    public ApiResponse<AnnouncementResponse> updateAnnouncement(
+            @CurrentUser Long userId,
+            @PathVariable Long announcementId,
+            @RequestBody @Valid UpdateAnnouncementRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        return ApiResponse.success(adminService.updateAnnouncement(userId, announcementId, request, clientIp(httpRequest)));
+    }
+
+    @Operation(summary = "공지 삭제")
+    @DeleteMapping("/operations/announcements/{announcementId}")
+    public ApiResponse<Void> deleteAnnouncement(
+            @CurrentUser Long userId,
+            @PathVariable Long announcementId,
+            HttpServletRequest httpRequest
+    ) {
+        adminService.deleteAnnouncement(userId, announcementId, clientIp(httpRequest));
+        return ApiResponse.success();
     }
 
     @Operation(summary = "정책 버전 목록")

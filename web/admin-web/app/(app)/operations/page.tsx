@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,10 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { AdminMembersTable } from "@/components/common/admin-members-table";
-import { AnnouncementDialog } from "@/components/common/announcement-dialog";
+import {
+  AnnouncementDialog,
+  type AnnouncementPayload,
+} from "@/components/common/announcement-dialog";
 import { PageHeader } from "@/components/common/page-header";
 import { PermissionMatrix } from "@/components/common/permission-matrix";
 import { RoleGate } from "@/components/common/role-gate";
@@ -55,6 +59,9 @@ const HEALTH_LABEL = {
 export default function OperationsPage() {
   const qc = useQueryClient();
   const [announceOpen, setAnnounceOpen] = useState(false);
+  const [editingAnnouncement, setEditingAnnouncement] =
+    useState<AnnouncementItem | null>(null);
+  const [deletingAnnouncementId, setDeletingAnnouncementId] = useState<string | null>(null);
 
   const [annQ, polQ, healthQ] = useQueries({
     queries: [
@@ -93,6 +100,54 @@ export default function OperationsPage() {
   const policies = polQ.data ?? [];
   const health = healthQ.data;
 
+  const openCreateAnnouncement = () => {
+    setEditingAnnouncement(null);
+    setAnnounceOpen(true);
+  };
+
+  const openEditAnnouncement = (announcement: AnnouncementItem) => {
+    setEditingAnnouncement(announcement);
+    setAnnounceOpen(true);
+  };
+
+  const submitAnnouncement = async (payload: AnnouncementPayload) => {
+    try {
+      if (editingAnnouncement) {
+        await api(`/operations/announcements/${editingAnnouncement.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        toast.success("공지 수정 완료");
+      } else {
+        await api("/operations/announcements", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        toast.success(`공지 발행 — ${payload.isUrgent ? "긴급" : "일반"} · ${payload.audience}`);
+      }
+      qc.invalidateQueries({ queryKey: ["announcements"] });
+    } catch (error) {
+      toast.error(editingAnnouncement ? "공지 수정에 실패했어요." : "공지 발행에 실패했어요.");
+      throw error;
+    }
+  };
+
+  const deleteAnnouncement = async (announcement: AnnouncementItem) => {
+    if (!window.confirm(`공지 "${announcement.title}"을 삭제할까요?`)) return;
+    setDeletingAnnouncementId(announcement.id);
+    try {
+      await api(`/operations/announcements/${announcement.id}`, {
+        method: "DELETE",
+      });
+      toast.success("공지 삭제 완료");
+      qc.invalidateQueries({ queryKey: ["announcements"] });
+    } catch {
+      toast.error("공지 삭제에 실패했어요.");
+    } finally {
+      setDeletingAnnouncementId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -106,7 +161,7 @@ export default function OperationsPage() {
             <div className="flex items-center justify-between">
               <CardTitle>공지 사항</CardTitle>
               <RoleGate action="ops.announce" fallback="disable">
-                <Button size="sm" onClick={() => setAnnounceOpen(true)}>
+                <Button size="sm" onClick={openCreateAnnouncement}>
                   새 공지…
                 </Button>
               </RoleGate>
@@ -119,13 +174,41 @@ export default function OperationsPage() {
                 key={a.id}
                 className="flex items-start justify-between gap-3 rounded-md border bg-card p-3 text-sm"
               >
-                <div>
-                  <div className="font-medium">{a.title}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="font-medium">{a.title}</div>
+                    {a.isUrgent && <Badge variant="destructive">긴급</Badge>}
+                  </div>
+                  <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                    {a.body}
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     {formatDate(a.publishedAt)} ~ {formatDate(a.endsAt)} · 대상 {a.audience}
                   </div>
                 </div>
-                {a.isUrgent && <Badge variant="destructive">긴급</Badge>}
+                <div className="flex shrink-0 items-center gap-1">
+                  <RoleGate action="ops.announce" fallback="disable">
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      title="공지 수정"
+                      onClick={() => openEditAnnouncement(a)}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                  </RoleGate>
+                  <RoleGate action="ops.announce" fallback="disable">
+                    <Button
+                      size="icon-sm"
+                      variant="destructive"
+                      title="공지 삭제"
+                      disabled={deletingAnnouncementId === a.id}
+                      onClick={() => deleteAnnouncement(a)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </RoleGate>
+                </div>
               </div>
             ))}
           </CardContent>
@@ -222,15 +305,23 @@ export default function OperationsPage() {
 
       <AnnouncementDialog
         open={announceOpen}
-        onOpenChange={setAnnounceOpen}
-        onSubmit={async (p) => {
-          await api("/operations/announcements", {
-            method: "POST",
-            body: JSON.stringify(p),
-          });
-          toast.success(`공지 발행 — ${p.isUrgent ? "긴급" : "일반"} · ${p.audience}`);
-          qc.invalidateQueries({ queryKey: ["announcements"] });
+        onOpenChange={(open) => {
+          setAnnounceOpen(open);
+          if (!open) setEditingAnnouncement(null);
         }}
+        initialValue={
+          editingAnnouncement
+            ? {
+                title: editingAnnouncement.title,
+                body: editingAnnouncement.body,
+                audience: editingAnnouncement.audience,
+                startsAt: editingAnnouncement.startsAt,
+                endsAt: editingAnnouncement.endsAt,
+                isUrgent: editingAnnouncement.isUrgent,
+              }
+            : null
+        }
+        onSubmit={submitAnnouncement}
       />
     </div>
   );

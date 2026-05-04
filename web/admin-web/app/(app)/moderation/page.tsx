@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -58,19 +58,68 @@ const TARGET_OPTIONS: ReportTargetType[] = [
   "content",
 ];
 
+type ReportStatusFilter = ReportStatus | "all";
+
+const STATUS_OPTIONS: ReportStatusFilter[] = [
+  "all",
+  "open",
+  "in_review",
+  "resolved",
+  "dismissed",
+];
+
+const REPORT_STATUS_QUERY: Record<ReportStatus, string> = {
+  open: "PENDING",
+  in_review: "IN_REVIEW",
+  resolved: "RESOLVED",
+  dismissed: "REJECTED",
+};
+
+const REPORT_TARGET_QUERY: Record<ReportTargetType, string> = {
+  reading_log: "READING_RECORD",
+  comment: "READING_RECORD_COMMENT",
+  guestbook: "GUESTBOOK",
+  profile: "USER",
+  space: "SPACE",
+  content: "CONTENT",
+};
+
+function statusLabel(status: ReportStatusFilter): string {
+  return status === "all" ? "전체 상태" : REPORT_STATUS_LABEL[status];
+}
+
+function reportsPath(targetType: ReportTargetType | "all", status: ReportStatusFilter): string {
+  const params = new URLSearchParams();
+  params.set("limit", "50");
+  if (targetType !== "all") {
+    params.set("targetType", REPORT_TARGET_QUERY[targetType]);
+  }
+  if (status !== "all") {
+    params.set("status", REPORT_STATUS_QUERY[status]);
+  }
+  return `/reports?${params.toString()}`;
+}
+
 export default function ModerationPage() {
+  const qc = useQueryClient();
   const [tab, setTab] = useState<ReportTargetType | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<ReportStatusFilter>("all");
+  const reportPath = useMemo(() => reportsPath(tab, statusFilter), [statusFilter, tab]);
   const { data, isLoading } = useQuery({
-    queryKey: ["reports"],
-    queryFn: () => api<ReportItem[]>("/reports"),
+    queryKey: ["reports", tab, statusFilter],
+    queryFn: () => api<ReportItem[]>(reportPath),
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [bulkIds, setBulkIds] = useState<string[]>([]);
 
   const filtered = useMemo(() => {
     const all = data ?? [];
-    return tab === "all" ? all : all.filter((r) => r.targetType === tab);
-  }, [data, tab]);
+    return all.filter((r) => {
+      const targetMatched = tab === "all" || r.targetType === tab;
+      const statusMatched = statusFilter === "all" || r.status === statusFilter;
+      return targetMatched && statusMatched;
+    });
+  }, [data, statusFilter, tab]);
 
   // SLA 임박 순으로 정렬해서 P1 먼저 보이게
   const sorted = useMemo(() => {
@@ -104,6 +153,7 @@ export default function ModerationPage() {
         body: JSON.stringify({ kind }),
       });
       toast.success(`신고 처리 — ${kind}`);
+      qc.invalidateQueries({ queryKey: ["reports"] });
     } catch {
       toast.error("처리에 실패했어요.");
     }
@@ -118,6 +168,7 @@ export default function ModerationPage() {
       });
       toast.success(`${bulkIds.length}건 일괄 ${kind}`);
       setBulkIds([]);
+      qc.invalidateQueries({ queryKey: ["reports"] });
     } catch {
       toast.error("일괄 처리에 실패했어요.");
     }
@@ -126,6 +177,18 @@ export default function ModerationPage() {
   const visibleIds = sorted.map((r) => r.id);
   const allChecked = visibleIds.length > 0 && bulkIds.length === visibleIds.length;
   const someChecked = bulkIds.length > 0 && !allChecked;
+
+  const changeTarget = (value: string) => {
+    setTab(value as typeof tab);
+    setSelectedId(null);
+    setBulkIds([]);
+  };
+
+  const changeStatus = (value: ReportStatusFilter) => {
+    setStatusFilter(value);
+    setSelectedId(null);
+    setBulkIds([]);
+  };
 
   // 동일 패턴 반복 신고 추천 — 같은 작성자에 대해 동일 키워드 연관된 신고 묶기
   const dupSuggestion = useMemo(() => {
@@ -165,7 +228,7 @@ export default function ModerationPage() {
         }
       />
 
-      <Tabs value={tab} onValueChange={(v) => { setTab(v as typeof tab); setSelectedId(null); setBulkIds([]); }}>
+      <Tabs value={tab} onValueChange={changeTarget}>
         <TabsList>
           <TabsTrigger value="all">전체</TabsTrigger>
           {TARGET_OPTIONS.map((t) => (
@@ -179,15 +242,27 @@ export default function ModerationPage() {
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <CardTitle>큐 ({sorted.length}건)</CardTitle>
                     <CardDescription className="flex items-center gap-1">
-                      <span>SLA 임박 순 자동 정렬 ·</span>
+                      <span>{statusLabel(statusFilter)} · SLA 임박 순 자동 정렬 ·</span>
                       <Kbd>J</Kbd>
                       <Kbd>K</Kbd>
                       <span>이동</span>
                     </CardDescription>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1 rounded-md border bg-muted/30 p-1">
+                    {STATUS_OPTIONS.map((status) => (
+                      <Button
+                        key={status}
+                        size="sm"
+                        variant={statusFilter === status ? "secondary" : "ghost"}
+                        onClick={() => changeStatus(status)}
+                      >
+                        {statusLabel(status)}
+                      </Button>
+                    ))}
                   </div>
                   {bulkIds.length > 0 && (
                     <RoleGate action="moderation.bulk" fallback="hide">
@@ -276,6 +351,13 @@ export default function ModerationPage() {
                         </TableRow>
                       );
                     })}
+                    {!isLoading && sorted.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="h-24 text-center text-sm text-muted-foreground">
+                          선택한 조건에 맞는 신고가 없습니다.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>

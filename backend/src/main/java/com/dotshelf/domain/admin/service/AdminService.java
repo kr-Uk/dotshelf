@@ -64,6 +64,7 @@ import com.dotshelf.domain.admin.dto.AdminDtos.SettlementWithdrawalResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.StatsKpiResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.StatsTimeseriesResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.SystemHealthResponse;
+import com.dotshelf.domain.admin.dto.AdminDtos.UpdateAnnouncementRequest;
 import com.dotshelf.domain.admin.dto.AdminDtos.UserActionRequest;
 import com.dotshelf.domain.admin.dto.AdminDtos.UserHistoryResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.UserListItemResponse;
@@ -583,6 +584,34 @@ public class AdminService {
         return AnnouncementResponse.from(announcement);
     }
 
+    @Transactional
+    public AnnouncementResponse updateAnnouncement(Long userId, Long announcementId,
+                                                   UpdateAnnouncementRequest request, String ipAddress) {
+        User admin = requireAdminUser(userId);
+        AdminAnnouncement announcement = getAnnouncement(announcementId);
+        String before = announcement.getTitle();
+        announcement.update(
+                request.title(),
+                request.body(),
+                request.audience(),
+                request.startsAt(),
+                request.endsAt(),
+                request.urgent()
+        );
+        writeAudit(admin, "ANNOUNCEMENT_UPDATE", "ANNOUNCEMENT", announcement.getId(),
+                before, announcement.getTitle(), null, ipAddress);
+        return AnnouncementResponse.from(announcement);
+    }
+
+    @Transactional
+    public void deleteAnnouncement(Long userId, Long announcementId, String ipAddress) {
+        User admin = requireAdminUser(userId);
+        AdminAnnouncement announcement = getAnnouncement(announcementId);
+        adminAnnouncementRepository.delete(announcement);
+        writeAudit(admin, "ANNOUNCEMENT_DELETE", "ANNOUNCEMENT", announcement.getId(),
+                announcement.getTitle(), null, null, ipAddress);
+    }
+
     public PageResponse<PolicyVersionResponse> getPolicies(Long userId, int limit) {
         requireAdminUser(userId);
         return page(policyVersionRepository.findAllByOrderByIdDesc(firstPageRequest(limit)),
@@ -831,6 +860,11 @@ public class AdminService {
 
     private Report getReportEntity(Long reportId) {
         return reportRepository.findById(reportId)
+                .orElseThrow(() -> new CustomException(ErrorCode.RESOURCE_NOT_FOUND));
+    }
+
+    private AdminAnnouncement getAnnouncement(Long announcementId) {
+        return adminAnnouncementRepository.findById(announcementId)
                 .orElseThrow(() -> new CustomException(ErrorCode.RESOURCE_NOT_FOUND));
     }
 
