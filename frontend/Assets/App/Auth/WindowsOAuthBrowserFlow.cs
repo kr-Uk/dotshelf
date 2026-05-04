@@ -31,8 +31,13 @@ namespace App.Auth
 
         public string clientId;
 
-        // Space-separated, e.g. "openid profile email".
-        public string scope = "openid profile email";
+        // Space-separated, e.g. "openid profile email". Default empty — provider scope는
+        // OAuthBrowserDefaults.CreateDefault(provider)에서만 채우도록 단일 책임.
+        // 클래스 필드 default가 non-empty면 신규 인스펙터 override(provider만 다른) 추가 시
+        // Unity가 필드 default를 직렬화하고 MergeWithDefaults가 그걸 user override로 간주 →
+        // 의도하지 않은 scope param이 authorize URL에 붙음 (예: Kakao provider override에
+        // 'openid profile email' 새어들어가 KOE205 재발). MR #96 review skh1205 [P3] 반영.
+        public string scope = string.Empty;
 
         public string responseType = "code";
 
@@ -83,12 +88,17 @@ namespace App.Auth
                     // LoginScreenController without an inspector entry still has
                     // a working Kakao login. Inspector value still wins via
                     // MergeWithDefaults if a per-environment key needs override.
+                    //
+                    // scope는 빈 값 — Kakao Developers 콘솔 동의항목 미설정 상태에서
+                    // 임의 scope 보내면 KOE205 ("설정하지 않은 동의 항목 ..."). BE는
+                    // email/nickname null 허용이라 동의항목 활성화 전까지 scope 비움.
+                    // 콘솔에서 동의항목 활성화 + 검수 통과 후 scope 추가는 follow-up.
                     return new OAuthBrowserProviderConfig
                     {
                         provider = SocialProvider.Kakao,
                         authorizeEndpoint = "https://kauth.kakao.com/oauth/authorize",
                         clientId = "d1b4d86b431150acd3ef6970ca2fa695",
-                        scope = "profile_nickname account_email",
+                        scope = string.Empty,
                         responseType = "code",
                         useNonce = false,
                         extraQuery = null
