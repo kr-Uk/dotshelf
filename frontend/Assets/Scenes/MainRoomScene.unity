@@ -152,6 +152,10 @@ MonoBehaviour:
   clearTokenBeforeRun: 0
   bodyLogMaxChars: 1500
   perRequestTimeoutSec: 12
+  testSpaceId: 1
+  testUserId: 1
+  testInventoryId: 1
+  testThemeMode: RESET
 --- !u!4 &38805629
 Transform:
   m_ObjectHideFlags: 0
