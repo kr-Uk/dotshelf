@@ -40,8 +40,8 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
     }
 
     @Override
-    public SocialUserInfo verify(String token, SocialTokenType tokenType, String redirectUri, String nonce) {
-        String accessToken = resolveAccessToken(token, tokenType, redirectUri);
+    public SocialUserInfo verify(String token, SocialTokenType tokenType, String redirectUri, String nonce, String codeVerifier) {
+        String accessToken = resolveAccessToken(token, tokenType, redirectUri, codeVerifier);
         Map<String, Object> response = requestUserInfo(accessToken);
         String providerUserId = stringValue(response.get("id"));
         if (providerUserId == null) {
@@ -70,23 +70,29 @@ public class KakaoTokenVerifier implements SocialTokenVerifier {
         );
     }
 
-    private String resolveAccessToken(String token, SocialTokenType tokenType, String redirectUri) {
+    private String resolveAccessToken(String token, SocialTokenType tokenType, String redirectUri, String codeVerifier) {
         if (tokenType == null) {
             return token;
         }
         return switch (tokenType) {
             case ACCESS_TOKEN -> token;
-            case AUTHORIZATION_CODE -> exchangeCodeForAccessToken(token, redirectUri);
+            case AUTHORIZATION_CODE -> exchangeCodeForAccessToken(token, redirectUri, codeVerifier);
             case ID_TOKEN -> throw new CustomException(ErrorCode.INVALID_INPUT, "KAKAO는 ID_TOKEN을 지원하지 않습니다.");
         };
     }
 
-    private String exchangeCodeForAccessToken(String code, String requestRedirectUri) {
+    private String exchangeCodeForAccessToken(String code, String requestRedirectUri, String codeVerifier) {
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         body.add("grant_type", "authorization_code");
         body.add("client_id", restApiKey());
         body.add("redirect_uri", redirectUri(requestRedirectUri));
         body.add("code", code);
+        // PKCE 흐름 (RFC 7636): codeVerifier 있으면 OAuth 제공자가 SHA256(code_verifier) == code_challenge 검증.
+        // Kakao는 PKCE + client_secret 동시 사용 가능 — defense in depth 차원에서 둘 다 보냄.
+        // codeVerifier 없으면 client_secret만 사용 (mobile SDK access_token 흐름은 이 메서드 안 거침).
+        if (codeVerifier != null && !codeVerifier.isBlank()) {
+            body.add("code_verifier", codeVerifier);
+        }
         String clientSecret = properties.kakao().clientSecret();
         if (clientSecret != null && !clientSecret.isBlank()) {
             body.add("client_secret", clientSecret);

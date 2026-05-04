@@ -87,7 +87,8 @@ namespace App.Auth
             string code,
             string redirectUri,
             string state,
-            string nonce = null)
+            string nonce = null,
+            string codeVerifier = null)
         {
             if (string.IsNullOrWhiteSpace(code))
             {
@@ -114,7 +115,8 @@ namespace App.Auth
                 Code = code,
                 RedirectUri = redirectUri,
                 State = state,
-                Nonce = nonce
+                Nonce = nonce,
+                CodeVerifier = codeVerifier
             };
 
             var tcs = new TaskCompletionSource<LoginResult>(TaskCreationOptions.RunContinuationsAsynchronously);

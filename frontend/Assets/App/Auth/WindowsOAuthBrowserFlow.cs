@@ -158,6 +158,10 @@ namespace App.Auth
         public string RedirectUri { get; }
         public string State { get; }
         public string Nonce { get; }
+        // PKCE code_verifier — authorize 시점에 생성되어 code_challenge=SHA256(code_verifier)로 OAuth 제공자에 전달됨.
+        // BE는 token 교환 호출에 이 verifier를 그대로 forward해서 제공자가 challenge 검증함 (RFC 7636).
+        // null이면 PKCE 미적용 (legacy fallback) — BE는 codeVerifier 없으면 client_secret 사용.
+        public string CodeVerifier { get; }
         public string ErrorCode { get; }
         public string ErrorMessage { get; }
 
@@ -167,6 +171,7 @@ namespace App.Auth
             string redirectUri,
             string state,
             string nonce,
+            string codeVerifier,
             string errorCode,
             string errorMessage)
         {
@@ -175,18 +180,19 @@ namespace App.Auth
             RedirectUri = redirectUri;
             State = state;
             Nonce = nonce;
+            CodeVerifier = codeVerifier;
             ErrorCode = errorCode;
             ErrorMessage = errorMessage;
         }
 
-        public static OAuthBrowserResult Success(string code, string redirectUri, string state, string nonce)
+        public static OAuthBrowserResult Success(string code, string redirectUri, string state, string nonce, string codeVerifier)
         {
-            return new OAuthBrowserResult(true, code, redirectUri, state, nonce, null, null);
+            return new OAuthBrowserResult(true, code, redirectUri, state, nonce, codeVerifier, null, null);
         }
 
         public static OAuthBrowserResult Failure(string errorCode, string errorMessage)
         {
-            return new OAuthBrowserResult(false, null, null, null, null, errorCode, errorMessage);
+            return new OAuthBrowserResult(false, null, null, null, null, null, errorCode, errorMessage);
         }
     }
 }
@@ -260,7 +266,12 @@ namespace App.Auth
             {
                 var state = GenerateRandomBase64Url(32);
                 var nonce = providerConfig.useNonce ? GenerateRandomBase64Url(32) : null;
-                var authorizeUrl = BuildAuthorizeUrl(providerConfig, redirectUri, state, nonce);
+                // PKCE (RFC 7636): authorize 시점에 random code_verifier 생성, SHA256 hash → code_challenge.
+                // 같은 code_verifier를 BE에 전달하면 BE가 token 교환 호출에 그대로 forward해서 OAuth 제공자가
+                // 검증함. client_secret 없이도 code interception 공격 방어 가능 (native app OAuth 표준).
+                var codeVerifier = GenerateRandomBase64Url(64);  // RFC 7636: 43~128 chars
+                var codeChallenge = ComputeCodeChallengeS256(codeVerifier);
+                var authorizeUrl = BuildAuthorizeUrl(providerConfig, redirectUri, state, nonce, codeChallenge);
 
                 Debug.Log($"[Auth] Opening browser for {providerConfig.provider} OAuth (redirect={redirectUri})");
                 // Fully-qualified — `App.Application` (UseCase layer) shadows
@@ -321,12 +332,25 @@ namespace App.Auth
                         "State 검증에 실패했습니다. 다시 시도해주세요.");
                 }
 
-                return OAuthBrowserResult.Success(code, redirectUri, state, nonce);
+                return OAuthBrowserResult.Success(code, redirectUri, state, nonce, codeVerifier);
             }
             finally
             {
                 try { listener.Stop(); } catch { /* listener may already be closed */ }
                 try { ((IDisposable)listener).Dispose(); } catch { }
+            }
+        }
+
+        // RFC 7636 §4.2: code_challenge = BASE64URL(SHA256(code_verifier)). S256 method.
+        private static string ComputeCodeChallengeS256(string codeVerifier)
+        {
+            using (var sha256 = SHA256.Create())
+            {
+                var hash = sha256.ComputeHash(Encoding.ASCII.GetBytes(codeVerifier));
+                return Convert.ToBase64String(hash)
+                    .TrimEnd('=')
+                    .Replace('+', '-')
+                    .Replace('/', '_');
             }
         }
 
@@ -377,7 +401,8 @@ namespace App.Auth
             OAuthBrowserProviderConfig providerConfig,
             string redirectUri,
             string state,
-            string nonce)
+            string nonce,
+            string codeChallenge)
         {
             var builder = new StringBuilder();
             builder.Append(providerConfig.authorizeEndpoint);
@@ -393,6 +418,12 @@ namespace App.Auth
             if (!string.IsNullOrEmpty(nonce))
             {
                 AppendQueryParam(builder, "nonce", nonce);
+            }
+            // PKCE — Google/Kakao 모두 S256 method 지원. 무시되는 환경에서도 무해 (extra query param).
+            if (!string.IsNullOrEmpty(codeChallenge))
+            {
+                AppendQueryParam(builder, "code_challenge", codeChallenge);
+                AppendQueryParam(builder, "code_challenge_method", "S256");
             }
 
             if (!string.IsNullOrWhiteSpace(providerConfig.extraQuery))

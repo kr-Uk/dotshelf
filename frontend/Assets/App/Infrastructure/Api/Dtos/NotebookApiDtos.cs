@@ -123,6 +123,12 @@ namespace App.Infrastructure.Api.Dtos
         // baked into the resulting id_token. BE re-validates against this.
         [JsonProperty("nonce")]
         public string Nonce { get; set; }
+
+        // PKCE code_verifier (RFC 7636) — authorize 시점에 SHA256 hash해서 code_challenge로 보낸 원본.
+        // BE는 이 값을 token 교환 호출에 그대로 forward해서 OAuth 제공자가 challenge 검증함.
+        // null이면 BE는 legacy server pair (client_secret) 흐름으로 fallback.
+        [JsonProperty("codeVerifier")]
+        public string CodeVerifier { get; set; }
     }
 
     [Serializable]

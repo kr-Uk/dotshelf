@@ -27,7 +27,8 @@ public class AppleTokenVerifier extends JwtSocialTokenVerifierSupport {
     }
 
     @Override
-    public SocialUserInfo verify(String token, SocialTokenType tokenType, String redirectUri, String nonce) {
+    public SocialUserInfo verify(String token, SocialTokenType tokenType, String redirectUri, String nonce, String codeVerifier) {
+        // Apple은 클라이언트 SDK가 직접 identityToken을 받아 BE로 전송 — code 교환 단계 없음 → PKCE 무관.
         if (tokenType != null && tokenType != SocialTokenType.ID_TOKEN) {
             throw new CustomException(ErrorCode.INVALID_INPUT, "APPLE은 ID_TOKEN만 지원합니다.");
         }

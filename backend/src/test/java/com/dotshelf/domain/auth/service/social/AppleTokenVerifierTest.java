@@ -78,7 +78,7 @@ class AppleTokenVerifierTest {
                 TEST_NONCE
         );
 
-        SocialUserInfo userInfo = verifier.verify(token, SocialTokenType.ID_TOKEN, null, TEST_NONCE);
+        SocialUserInfo userInfo = verifier.verify(token, SocialTokenType.ID_TOKEN, null, TEST_NONCE, null);
 
         assertThat(userInfo.provider()).isEqualTo(SocialProvider.APPLE);
         assertThat(userInfo.providerUserId()).isEqualTo("apple-user-1");
@@ -98,7 +98,7 @@ class AppleTokenVerifierTest {
                 TEST_NONCE
         );
 
-        SocialUserInfo userInfo = verifier.verify(token, null, null, TEST_NONCE);
+        SocialUserInfo userInfo = verifier.verify(token, null, null, TEST_NONCE, null);
 
         assertThat(userInfo.provider()).isEqualTo(SocialProvider.APPLE);
         assertThat(userInfo.providerUserId()).isEqualTo("apple-user-2");
@@ -116,7 +116,7 @@ class AppleTokenVerifierTest {
                 TEST_NONCE
         );
 
-        assertThatThrownBy(() -> verifier.verify(token, SocialTokenType.ID_TOKEN, null, null))
+        assertThatThrownBy(() -> verifier.verify(token, SocialTokenType.ID_TOKEN, null, null, null))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
@@ -133,7 +133,7 @@ class AppleTokenVerifierTest {
                 TEST_NONCE
         );
 
-        assertThatThrownBy(() -> verifier.verify(token, SocialTokenType.ID_TOKEN, null, "different-nonce"))
+        assertThatThrownBy(() -> verifier.verify(token, SocialTokenType.ID_TOKEN, null, "different-nonce", null))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_TOKEN);
@@ -144,7 +144,7 @@ class AppleTokenVerifierTest {
     void verify_withAccessToken_throwsInvalidInput() {
         AppleTokenVerifier verifier = new AppleTokenVerifier(properties(TEST_CLIENT_ID));
 
-        assertThatThrownBy(() -> verifier.verify("apple-access-token", SocialTokenType.ACCESS_TOKEN, null, TEST_NONCE))
+        assertThatThrownBy(() -> verifier.verify("apple-access-token", SocialTokenType.ACCESS_TOKEN, null, TEST_NONCE, null))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
