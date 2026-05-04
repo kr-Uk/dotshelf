@@ -472,7 +472,7 @@ MonoBehaviour:
     extraQuery: 
   - provider: 1
     authorizeEndpoint: https://kauth.kakao.com/oauth/authorize
-    clientId: eeabd73a76a6aa3fa5619b73836df269
+    clientId: d1b4d86b431150acd3ef6970ca2fa695
     scope: 
     responseType: 
     useNonce: 0
