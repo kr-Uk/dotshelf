@@ -159,11 +159,6 @@ namespace App.Bootstrap
         private Toggle masterNotificationToggle;
         private readonly List<Toggle> dependentNotificationToggles = new List<Toggle>();
         private readonly List<TMP_Text> dependentNotificationLabels = new List<TMP_Text>();
-        // Toggle indices that exist in the UI but have no corresponding BE
-        // notification setting field. These stay disabled regardless of the
-        // master toggle so the user is not led to believe a hidden setting
-        // can be saved. RefreshNotificationDependentEnabled honors this.
-        private readonly HashSet<int> unmappedNotificationToggleIndices = new HashSet<int>();
 
         private bool isInitialized;
         private ViewKey currentView = ViewKey.None;
@@ -1582,12 +1577,11 @@ namespace App.Bootstrap
         //   1: 방명록 답글          → notifyGuestbookReply
         //   2: 책 추가              → notifyBookAddedByOthers
         //   3: 독서 기록 좋아요     → notifyReadingRecordReaction
-        //   4: 독서 기록 댓글       → (BE 필드 없음) — 로컬 토글만 동작
-        // BE has notifyNewFollower with no matching UI toggle (UI 누락) and
-        // FE has 독서 기록 좋아요/댓글 split where BE has a single
-        // notifyReadingRecordReaction; both gaps are documented in the PR
-        // notes for follow-up. The 4번 토글은 PATCH 미발송이라 dirty bit가
-        // 서버에 반영되지 않음 — 사용자에게는 이 한계를 별도로 안내해야 함.
+        //   4: 독서 기록 댓글       → notifyReadingRecordComment
+        // BE field notifyNewFollower exists (and gates would work) but there
+        // is no UserFollowed event publisher on the BE side yet, so adding a
+        // UI toggle here would be a setting that the server never acts on —
+        // intentionally out of scope for this PR.
         private void OnNotificationToggleChanged(int index, bool value)
         {
             if (suppressNotificationToggleListener)
@@ -1686,6 +1680,7 @@ namespace App.Bootstrap
                 case 1: request.NotifyGuestbookReply = value; return request;
                 case 2: request.NotifyBookAddedByOthers = value; return request;
                 case 3: request.NotifyReadingRecordReaction = value; return request;
+                case 4: request.NotifyReadingRecordComment = value; return request;
                 default: return null;
             }
         }
@@ -1779,8 +1774,7 @@ namespace App.Bootstrap
                 ApplyToggleAtIndex(1, response.NotifyGuestbookReply);
                 ApplyToggleAtIndex(2, response.NotifyBookAddedByOthers);
                 ApplyToggleAtIndex(3, response.NotifyReadingRecordReaction);
-                // Index 4 (독서 기록 댓글) has no BE source — keep the
-                // user's local choice so a refresh does not flip it back.
+                ApplyToggleAtIndex(4, response.NotifyReadingRecordComment);
             }
             finally
             {
@@ -2022,7 +2016,6 @@ namespace App.Bootstrap
 
             dependentNotificationToggles.Clear();
             dependentNotificationLabels.Clear();
-            unmappedNotificationToggleIndices.Clear();
 
             var masterRow = CreateRectObject("MasterRow", view.transform);
             ConfigureLayoutHeight(masterRow, 80f);
@@ -2066,15 +2059,12 @@ namespace App.Bootstrap
             CreateSectionHeader(view.transform, "책 / 독서 기록");
             CreateNotificationCheckboxRow(view.transform, "책 추가", true);
             CreateNotificationCheckboxRow(view.transform, "독서 기록 좋아요", false);
-            // BE has no notifyReadingRecordComment field — surfaced as a locked
-            // row so the user does not silently lose changes (the previous
-            // behavior was a working-looking toggle that never PATCHed).
-            CreateNotificationCheckboxRow(view.transform, "독서 기록 댓글 (준비 중)", false, isMappedToBackend: false);
+            CreateNotificationCheckboxRow(view.transform, "독서 기록 댓글", true);
 
             return view;
         }
 
-        private void CreateNotificationCheckboxRow(Transform parent, string labelText, bool initialOn, bool isMappedToBackend = true)
+        private void CreateNotificationCheckboxRow(Transform parent, string labelText, bool initialOn)
         {
             var row = CreateRectObject($"NotificationRow_{labelText}", parent);
             ConfigureLayoutHeight(row, 64f);
@@ -2109,39 +2099,29 @@ namespace App.Bootstrap
             // slot in dependentNotificationToggles regardless of later adds.
             var capturedIndex = dependentNotificationToggles.Count;
             dependentNotificationToggles.Add(toggle);
-            if (!isMappedToBackend)
-            {
-                unmappedNotificationToggleIndices.Add(capturedIndex);
-                toggle.interactable = false;
-            }
             toggle.onValueChanged.AddListener(value => OnNotificationToggleChanged(capturedIndex, value));
         }
 
         private void RefreshNotificationDependentEnabled()
         {
-            var masterEnabled = masterNotificationToggle == null || masterNotificationToggle.isOn;
+            var enabled = masterNotificationToggle == null || masterNotificationToggle.isOn;
 
-            for (int i = 0; i < dependentNotificationToggles.Count; i++)
+            foreach (var toggle in dependentNotificationToggles)
             {
-                var toggle = dependentNotificationToggles[i];
                 if (toggle == null)
                 {
                     continue;
                 }
-                // BE-unmapped toggles (e.g. 독서 기록 댓글) stay locked even
-                // when the master is on — there is no field to PATCH to.
-                toggle.interactable = masterEnabled && !unmappedNotificationToggleIndices.Contains(i);
+                toggle.interactable = enabled;
             }
 
-            for (int i = 0; i < dependentNotificationLabels.Count; i++)
+            foreach (var label in dependentNotificationLabels)
             {
-                var label = dependentNotificationLabels[i];
                 if (label == null)
                 {
                     continue;
                 }
-                var labelEnabled = masterEnabled && !unmappedNotificationToggleIndices.Contains(i);
-                label.color = labelEnabled ? TextColor : SubtleTextColor;
+                label.color = enabled ? TextColor : SubtleTextColor;
             }
         }
 

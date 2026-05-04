@@ -937,6 +937,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("notifyReadingRecordReaction")]
         public bool? NotifyReadingRecordReaction { get; set; }
 
+        [JsonProperty("notifyReadingRecordComment")]
+        public bool? NotifyReadingRecordComment { get; set; }
+
         [JsonProperty("notifyNewFollower")]
         public bool? NotifyNewFollower { get; set; }
 
@@ -955,6 +958,9 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("notifyReadingRecordReaction")]
         public bool NotifyReadingRecordReaction { get; set; }
+
+        [JsonProperty("notifyReadingRecordComment")]
+        public bool NotifyReadingRecordComment { get; set; }
 
         [JsonProperty("notifyNewFollower")]
         public bool NotifyNewFollower { get; set; }
