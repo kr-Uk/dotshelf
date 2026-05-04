@@ -876,6 +876,12 @@ namespace App.Bootstrap
             nicknameChecked = false;
             SetStep1Feedback("확인 중...", MutedTextColor, false);
 
+            string fullUrl =
+                App.Domain.ApiEndpointDefaults.DefaultBaseUrl.TrimEnd('/') +
+                "/v1/users/nickname/check?nickname=" + Uri.EscapeDataString(requestedNickname);
+            Debug.Log(
+                $"[OnboardingDemo] nickname/check 요청 → GET {fullUrl} (nickname='{requestedNickname}')");
+
             client.CheckNickname(
                 requestedNickname,
                 onSuccess: response => HandleNicknameCheckSuccess(requestedNickname, response),
@@ -893,6 +899,11 @@ namespace App.Bootstrap
             {
                 return;
             }
+
+            Debug.Log(
+                $"[OnboardingDemo] nickname/check 응답 → STATUS=2xx (onSuccess) " +
+                $"BODY={{available={(response != null ? response.Available.ToString() : "null")}}} " +
+                $"nickname='{requestedNickname}'");
 
             if (response != null && response.Available)
             {
@@ -916,9 +927,10 @@ namespace App.Bootstrap
 
             nicknameChecked = false;
             SetStep1Feedback("닉네임 확인에 실패했습니다. 다시 시도해주세요.", ErrorColor, false);
-            // Don't echo the nickname in logs — keep diagnostic to error metadata.
             Debug.LogWarning(
-                $"[OnboardingDemo] Nickname check failed: code={error?.Code} message={error?.Message}");
+                $"[OnboardingDemo] nickname/check 실패 → STATUS={(error != null ? error.StatusCode.ToString() : "?")} " +
+                $"code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)} " +
+                $"nickname='{requestedNickname}'");
         }
 
         private bool IsCurrentNickname(string requestedNickname)
@@ -927,22 +939,20 @@ namespace App.Bootstrap
             return string.Equals(current, requestedNickname, StringComparison.Ordinal);
         }
 
-        // Returns null if APIManager.Instance is unavailable — callers must
-        // null-check before invoking. Matching the resilience pattern used
-        // in SpaceVisitorOverlayController and SettingsScreenController so
-        // that a missing AppRoot (e.g. an onboarding test scene loaded
-        // standalone, or a race during scene transition) cannot throw NRE
-        // out of the constructor.
+        // APIManager.Instance 가 null 인 진입 케이스(온보딩 단독 씬, 씬 전환 race, 부트스트랩
+        // 미경유) 에서도 닉네임 중복 체크가 진행될 수 있도록 ApiManagerProvider 의 fallback
+        // 체인을 사용한다. 패턴은 BookshelfSceneInstaller.cs:172-174 와 동일.
         private NotebookApiClient EnsureNicknameApiClient()
         {
-            if (APIManager.Instance == null)
+            APIManager api = ApiManagerProvider.EnsureInstance();
+            if (api == null)
             {
-                Debug.LogWarning("[OnboardingDemo] APIManager.Instance is null — BE call skipped.");
+                Debug.LogWarning("[OnboardingDemo] APIManager 확보 실패 — fallback 생성도 실패.");
                 return null;
             }
             if (nicknameApiClient == null)
             {
-                nicknameApiClient = new NotebookApiClient(APIManager.Instance);
+                nicknameApiClient = new NotebookApiClient(api);
             }
             return nicknameApiClient;
         }
