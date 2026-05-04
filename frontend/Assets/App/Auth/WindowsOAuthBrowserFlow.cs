@@ -83,12 +83,17 @@ namespace App.Auth
                     // LoginScreenController without an inspector entry still has
                     // a working Kakao login. Inspector value still wins via
                     // MergeWithDefaults if a per-environment key needs override.
+                    //
+                    // scope는 빈 값 — Kakao Developers 콘솔 동의항목 미설정 상태에서
+                    // 임의 scope 보내면 KOE205 ("설정하지 않은 동의 항목 ..."). BE는
+                    // email/nickname null 허용이라 동의항목 활성화 전까지 scope 비움.
+                    // 콘솔에서 동의항목 활성화 + 검수 통과 후 scope 추가는 follow-up.
                     return new OAuthBrowserProviderConfig
                     {
                         provider = SocialProvider.Kakao,
                         authorizeEndpoint = "https://kauth.kakao.com/oauth/authorize",
                         clientId = "d1b4d86b431150acd3ef6970ca2fa695",
-                        scope = "profile_nickname account_email",
+                        scope = string.Empty,
                         responseType = "code",
                         useNonce = false,
                         extraQuery = null
