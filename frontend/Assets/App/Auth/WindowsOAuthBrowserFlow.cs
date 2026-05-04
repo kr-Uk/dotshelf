@@ -64,10 +64,14 @@ namespace App.Auth
             switch (provider)
             {
                 case SocialProvider.Google:
+                    // Google Desktop Client ID hardcoded — public by design (server keeps client_secret).
+                    // 인스펙터 비워두면 이 값 그대로 동작. 환경별로 다른 clientId 쓰려면 인스펙터 override.
+                    // Source: SOCIAL_LOGIN_SETUP.md "Google Desktop Client ID".
                     return new OAuthBrowserProviderConfig
                     {
                         provider = SocialProvider.Google,
                         authorizeEndpoint = "https://accounts.google.com/o/oauth2/v2/auth",
+                        clientId = "502970247403-j8f8ctqsdk9h1kog2ahiu2n9g0usb9ha.apps.googleusercontent.com",
                         scope = "openid profile email",
                         responseType = "code",
                         useNonce = true,
@@ -202,6 +206,13 @@ namespace App.Auth
     {
         private const string LoopbackHost = "127.0.0.1";
         private const string CallbackPath = "/dotshelf/oauth/callback/";
+        // Kakao OAuth는 redirect URI를 콘솔 등록값과 정확 일치시켜야 함 (와일드카드 X). 임의 ephemeral port를
+        // 쓰면 등록 불가 → 고정 port range 5개를 사전 등록하고 차례로 시도. 18080~18084 선택 이유:
+        // - 18080/18081은 흔히 Tomcat/IDE에 점유. 5개 range로 회복 가능성 확보.
+        // - 1024 미만 reserved port 회피, 일반 사용자 PC에서 다른 앱과 충돌 가능성 낮은 대역.
+        // Google은 RFC 8252대로 loopback 모든 port 자동 허용이라 이 range 그대로 동작.
+        // 새 port 추가/제거 시 카카오 콘솔 redirect URI 등록도 동일하게 갱신해야 함 (SOCIAL_LOGIN_SETUP.md 참고).
+        private static readonly int[] PreferredCallbackPorts = { 18080, 18081, 18082, 18083, 18084 };
         private static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(5);
 
         public static bool IsSupported => true;
@@ -221,39 +232,28 @@ namespace App.Auth
                     $"{missingPiece}가 설정되어 있지 않습니다. LoginScreenController 의 'Desktop Browser OAuth Providers' 에 값을 입력해주세요.");
             }
 
-            int port;
-            try
-            {
-                port = ReserveFreeLoopbackPort();
-            }
-            catch (Exception ex)
-            {
-                return OAuthBrowserResult.Failure("PORT_RESERVATION_FAILED", $"콜백 포트를 확보하지 못했습니다: {ex.Message}");
-            }
-
-            var redirectUri = $"http://{LoopbackHost}:{port}{CallbackPath}";
-
             HttpListener listener;
+            string redirectUri;
             try
             {
-                listener = new HttpListener();
-                listener.Prefixes.Add(redirectUri);
-                listener.Start();
+                (listener, redirectUri) = StartListenerOnPreferredPort();
             }
-            catch (Exception ex)
+            catch (HttpListenerException ex) when (ex.ErrorCode == ErrorAccessDenied)
             {
-                // OS-level message (e.g. "Access is denied", "The process cannot
-                // access the file") leaks English text into the Korean UI and
-                // is rarely actionable for an end user. Keep the raw exception
-                // in the log for the developer, surface a friendly message in
-                // the UI. HttpListenerException tends to indicate Windows
-                // ACL / non-admin / domain-policy issues — call those out
-                // separately.
-                Debug.LogWarning($"[Auth] HttpListener start failed: {ex.GetType().Name}: {ex.Message}");
-                var userMessage = ex is HttpListenerException
-                    ? "운영체제 권한 문제로 로그인을 시작할 수 없습니다. 관리자 권한으로 실행하거나 관리자에게 문의해주세요."
-                    : "콜백 리스너를 시작하지 못했습니다. 잠시 후 다시 시도해주세요.";
-                return OAuthBrowserResult.Failure("LISTENER_START_FAILED", userMessage);
+                // Windows URL ACL 거부 — 일반 사용자에게 \"관리자 권한\" 안내가 정확.
+                Debug.LogWarning($"[Auth] HttpListener ACL denied: {ex.GetType().Name}: {ex.Message}");
+                return OAuthBrowserResult.Failure(
+                    "LISTENER_ACL_DENIED",
+                    "운영체제 권한 문제로 로그인을 시작할 수 없습니다. 관리자 권한으로 실행하거나 관리자에게 문의해주세요.");
+            }
+            catch (Exception ex) when (ex is HttpListenerException || ex is SocketException)
+            {
+                // 일반 사용자에게 18080~18084 같은 port 숫자는 actionable 안 되므로 단순 안내.
+                // 진단 정보는 LogWarning에만 남김.
+                Debug.LogWarning($"[Auth] HttpListener start failed (all preferred ports unavailable): {ex.GetType().Name}: {ex.Message}");
+                return OAuthBrowserResult.Failure(
+                    "LISTENER_START_FAILED",
+                    "로그인 콜백을 받을 수 없습니다. 앱을 재시작하거나 잠시 후 다시 시도해주세요.");
             }
 
             try
@@ -330,22 +330,47 @@ namespace App.Auth
             }
         }
 
-        private static int ReserveFreeLoopbackPort()
+        // PreferredCallbackPorts를 차례로 시도해서 비어있는 첫 port에 HttpListener를 시작.
+        // 예외 분류:
+        // - SocketException, HttpListenerException(ErrorCode != 5) — port 점유/race로 추정,
+        //   다음 port로 fall-through. 5개 모두 실패 시 마지막 예외 throw.
+        // - HttpListenerException(ErrorCode == 5, ERROR_ACCESS_DENIED) — Windows URL ACL
+        //   문제. 다음 port도 같은 ACL 정책에 막힐 가능성 매우 높음 → 즉시 break (사용자에게
+        //   관리자 권한 안내). 5번 시도 시간 + 방화벽 팝업 5번 회피.
+        // - 그 외 예외는 throw — OOM/StackOverflow 같은 critical 예외를 swallow하면 안 됨.
+        private const int ErrorAccessDenied = 5;
+        private static (HttpListener listener, string redirectUri) StartListenerOnPreferredPort()
         {
-            // Bind to port 0 — the OS hands back an unused ephemeral port.
-            // We immediately close the socket, then reuse the port for the
-            // HttpListener; there is a tiny race window but it is acceptable
-            // for a one-off interactive login flow.
-            var probe = new TcpListener(IPAddress.Loopback, 0);
-            probe.Start();
-            try
+            Exception lastException = null;
+            foreach (var port in PreferredCallbackPorts)
             {
-                return ((IPEndPoint)probe.LocalEndpoint).Port;
+                var redirectUri = $"http://{LoopbackHost}:{port}{CallbackPath}";
+                HttpListener listener = null;
+                try
+                {
+                    listener = new HttpListener();
+                    listener.Prefixes.Add(redirectUri);
+                    listener.Start();
+                    return (listener, redirectUri);
+                }
+                catch (HttpListenerException ex) when (ex.ErrorCode == ErrorAccessDenied)
+                {
+                    // ACL 권한 부족 — 다른 port도 같은 결과 → 즉시 escalate.
+                    try { ((IDisposable)listener)?.Dispose(); } catch { }
+                    throw;
+                }
+                catch (HttpListenerException ex)
+                {
+                    lastException = ex;
+                    try { ((IDisposable)listener)?.Dispose(); } catch { }
+                }
+                catch (SocketException ex)
+                {
+                    lastException = ex;
+                    try { ((IDisposable)listener)?.Dispose(); } catch { }
+                }
             }
-            finally
-            {
-                probe.Stop();
-            }
+            throw lastException ?? new InvalidOperationException("PreferredCallbackPorts 비어있음");
         }
 
         private static string BuildAuthorizeUrl(

@@ -214,9 +214,25 @@ namespace App.Auth
                 return baseUrl;
             }
 
-            return Uri.TryCreate(path, UriKind.Absolute, out _)
-                ? path
-                : $"{baseUrl}/{path.TrimStart('/')}";
+            // Mac/Linux Mono 버그 회피: Uri.TryCreate가 POSIX 절대 경로 "/v1/..."를 file:///v1/...
+            // 로 인식해 absolute로 통과시킴 → baseUrl prefix 없이 path만 반환 → UnityWebRequest가
+            // localhost로 fallback / 연결 실패. Windows .NET은 "/" 시작을 absolute로 안 봄.
+            // APIManager.BuildUrl과 동일 fix: HTTP 계열 known scheme만 absolute로 인정.
+            // 자세한 root cause는 MR #79 코멘트 참고.
+            if (Uri.TryCreate(path, UriKind.Absolute, out var parsed) && IsHttpLikeScheme(parsed.Scheme))
+            {
+                return path;
+            }
+
+            return $"{baseUrl}/{path.TrimStart('/')}";
+        }
+
+        private static bool IsHttpLikeScheme(string scheme)
+        {
+            return string.Equals(scheme, "http", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(scheme, "https", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(scheme, "ws", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(scheme, "wss", StringComparison.OrdinalIgnoreCase);
         }
 
         // Redact provider/access/refresh tokens and OIDC nonce from JSON bodies before
