@@ -59,6 +59,9 @@ social:
     # Desktop OAuth용 client_id (PKCE 흐름). FE가 authorize 시 사용한 값과 정확히 일치해야 함.
     # 미설정 시 PKCE 흐름은 server-client-id로 시도 (Google이 거절할 수 있음).
     desktop-client-id: ${GOOGLE_DESKTOP_CLIENT_ID:}
+    # Google Desktop app type client는 PKCE 사용해도 client_secret을 형식적으로 요구함
+    # (Google 정책 — 공개 secret이지만 token endpoint가 받음). 진짜 보안은 PKCE가 담당.
+    desktop-client-secret: ${GOOGLE_DESKTOP_CLIENT_SECRET:}
     issuers:
       - https://accounts.google.com
       - accounts.google.com

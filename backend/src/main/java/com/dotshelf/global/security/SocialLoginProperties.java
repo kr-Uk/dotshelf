@@ -12,7 +12,7 @@ public record SocialLoginProperties(
 ) {
 
     public SocialLoginProperties {
-        google = google == null ? new Google(null, null, null, null, null, null, null) : google;
+        google = google == null ? new Google(null, null, null, null, null, null, null, null) : google;
         kakao = kakao == null ? new Kakao(null, null, null, null, null) : kakao;
         apple = apple == null ? new Apple(null, null, null) : apple;
     }
@@ -24,10 +24,15 @@ public record SocialLoginProperties(
             String jwksUri,
             String clientSecret,
             String tokenUri,
-            // Desktop OAuth용 client_id. PKCE 흐름에서 사용 (client_secret 불필요).
-            // FE가 authorize 시 사용한 client_id와 정확히 일치해야 Google이 code 교환을 허용.
-            // 자동으로 clientIds(audience whitelist)에도 포함됨 — id_token aud 검증 통과.
-            String desktopClientId
+            // Desktop OAuth용 client_id. PKCE 흐름에서 FE authorize 시 사용한 값과 정확히 일치해야 함.
+            // 자동으로 clientIds(audience whitelist)에도 포함됨.
+            String desktopClientId,
+            // Google Desktop app type client는 binary에 박힌 "공개 secret"이지만 token endpoint가
+            // 형식적으로 요구함 (client_secret is missing 400 응답 회피). 진짜 보안은 PKCE가 담당.
+            // Google 공식 문서:
+            //   "For desktop apps, Google issues a client ID and a client secret. The client
+            //    secret is, of course, not really a secret."
+            String desktopClientSecret
     ) {
 
         public Google {
@@ -36,6 +41,9 @@ public record SocialLoginProperties(
             }
             if (desktopClientId != null && desktopClientId.isBlank()) {
                 desktopClientId = null;
+            }
+            if (desktopClientSecret != null && desktopClientSecret.isBlank()) {
+                desktopClientSecret = null;
             }
             clientIds = normalize(clientIds);
             if (serverClientId != null && !clientIds.contains(serverClientId)) {
