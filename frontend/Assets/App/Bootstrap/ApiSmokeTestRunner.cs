@@ -10,6 +10,7 @@ using App.Domain.Auth;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dtos;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 namespace App.Bootstrap
@@ -123,6 +124,12 @@ namespace App.Bootstrap
 
             LogTokenStatus(api);
 
+            // ID hint: testInventoryId/testSpaceId/testUserId 가 미입력일 때 사용자가 Inspector 에
+            // 채울 후보 값을 Console 로 안내. read-only 호출(GET /v1/users/me + GET /v1/spaces/me)
+            // 만 발사하므로 부작용 없음. 결과를 testXxxId 에 자동 대입하지는 않음 — 사용자가 의도한
+            // 대상(본인 vs 타인) 명시적으로 선택해야 함.
+            yield return PrintIdHints();
+
             // 1. GET /v1/assets/me/inventory
             yield return ProbeGet<InventoryResponseDto>(
                 "1 GET /v1/assets/me/inventory",
@@ -223,6 +230,124 @@ namespace App.Bootstrap
             }
 
             PrintSummary();
+        }
+
+        // RunAll 진입 시 Inspector 에 채울 ID 후보를 Console 로 노출.
+        // 사용자 요구 형식: 각 응답의 raw body 한 줄 + 파싱된 핵심 필드들을 평탄하게 한 줄씩.
+        // 자동 대입 없음 — 본 값 보고 사용자가 Inspector 직접 입력해야 함.
+        private IEnumerator PrintIdHints()
+        {
+            APIManager api = APIManager.Instance;
+            if (api == null)
+            {
+                Debug.LogWarning("[ApiSmokeTest][ID-HINT] APIManager.Instance null — hint 불가.");
+                yield break;
+            }
+
+            Debug.Log("[ApiSmokeTest][ID-HINT] ===== START =====");
+
+            JObject userMe = null;
+            yield return FetchRaw("/v1/users/me", x => userMe = x);
+
+            JObject spaceMe = null;
+            yield return FetchRaw("/v1/spaces/me", x => spaceMe = x);
+
+            // 각 응답 raw body 출력 (envelope 통째). Console 의 message 길이 제한 회피용으로
+            // 별도 Debug.Log 로 분리.
+            Debug.Log(
+                "[ApiSmokeTest][ID-HINT] /v1/users/me raw body:\n" +
+                (userMe != null
+                    ? ApiManagerProvider.TrimForLog(userMe.ToString(Formatting.None), bodyLogMaxChars)
+                    : "(null — 호출 실패 또는 빈 응답)"));
+
+            Debug.Log(
+                "[ApiSmokeTest][ID-HINT] /v1/spaces/me raw body:\n" +
+                (spaceMe != null
+                    ? ApiManagerProvider.TrimForLog(spaceMe.ToString(Formatting.None), bodyLogMaxChars)
+                    : "(null — 호출 실패 또는 빈 응답)"));
+
+            // 핵심 필드 직접 추출 + 사용자 요구 포맷 그대로 출력.
+            JToken userResult = userMe != null ? userMe["result"] : null;
+            JToken spaceResult = spaceMe != null ? spaceMe["result"] : null;
+
+            string myUserId = ReadScalar(userResult, "id");
+            string mySpaceId = ReadScalar(spaceResult, "id");
+            string ownerUserId = ReadScalar(spaceResult, "ownerUserId");
+
+            StringBuilder lines = new StringBuilder();
+            lines.AppendLine("[ApiSmokeTest][ID-HINT]");
+            lines.AppendLine($"myUserId={myUserId}");
+            lines.AppendLine($"mySpaceId={mySpaceId}");
+            lines.AppendLine($"spaceOwnerUserId={ownerUserId}");
+            lines.AppendLine("inventory candidates:");
+            lines.AppendLine($"  theme={ReadScalar(spaceResult, "currentThemeInventoryId")}");
+            lines.AppendLine($"  wallpaper={ReadScalar(spaceResult, "currentWallpaperInventoryId")}");
+            lines.AppendLine($"  floor={ReadScalar(spaceResult, "currentFloorInventoryId")}");
+            lines.AppendLine($"  desk={ReadScalar(spaceResult, "currentDeskInventoryId")}");
+            lines.AppendLine($"  dashboard={ReadScalar(spaceResult, "currentDashboardInventoryId")}");
+            lines.AppendLine($"  interiorLight={ReadScalar(spaceResult, "currentInteriorLightInventoryId")}");
+            lines.AppendLine($"  exteriorLight={ReadScalar(spaceResult, "currentExteriorLightInventoryId")}");
+            Debug.Log(lines.ToString());
+
+            // raw body 에서 핵심 키가 안 보이면 envelope/필드명 mismatch 진단 hint.
+            if (mySpaceId == "(missing)" && spaceResult is JObject so)
+            {
+                StringBuilder keys = new StringBuilder();
+                keys.Append("[ApiSmokeTest][ID-HINT] /v1/spaces/me result.id 가 'missing' — result 필드명 후보: ");
+                foreach (var kv in so)
+                {
+                    keys.Append(kv.Key).Append(", ");
+                }
+                Debug.LogWarning(keys.ToString());
+            }
+
+            Debug.Log(
+                "[ApiSmokeTest][ID-HINT] 가이드:\n" +
+                "  • testUserId 는 *다른 사용자* — myUserId 그대로 쓰면 BE 가 self-follow 차단.\n" +
+                "    GET /v1/spaces (popular) 의 ownerUserId, 또는 GET /v1/users/me/followers 에서 확보.\n" +
+                "  • testSpaceId 는 본인/타인 모두 가능. self-like 정책은 BE 응답으로 확인.\n" +
+                "  • testInventoryId 는 위 inventory candidates 중 null 아닌 값.\n" +
+                "[ApiSmokeTest][ID-HINT] ===== END =====");
+        }
+
+        // /path 를 GET 호출하여 응답 envelope 을 JObject 로 받아 sink 에 전달. APIManager.Get<JObject>
+        // 가 deserialize 해주므로 BE field 명/타입과 무관하게 트리 그대로 보존됨.
+        private IEnumerator FetchRaw(string path, Action<JObject> sink)
+        {
+            APIManager api = APIManager.Instance;
+            if (api == null)
+            {
+                sink(null);
+                yield break;
+            }
+
+            bool done = false;
+            JObject got = null;
+            api.Get<JObject>(
+                path,
+                obj => { done = true; got = obj; },
+                err =>
+                {
+                    done = true;
+                    Debug.LogWarning(
+                        $"[ApiSmokeTest][ID-HINT] {path} onError: status={(err != null ? err.StatusCode.ToString() : "?")} " +
+                        $"code={err?.Code} message={err?.Message} body={ApiManagerProvider.TrimForLog(err?.Body, bodyLogMaxChars)}");
+                });
+
+            yield return WaitForDone(() => done, "ID-HINT " + path);
+            sink(got);
+        }
+
+        // result JObject 에서 단일 스칼라 값을 안전하게 꺼냄. 키 부재 또는 result 자체 null 이면 명시적
+        // sentinel 반환해서 사용자가 어디서 끊겼는지 즉시 인지 가능.
+        private static string ReadScalar(JToken result, string key)
+        {
+            if (result == null) return "(no result)";
+            if (result.Type == JTokenType.Null) return "(result is null)";
+            JToken v = result[key];
+            if (v == null) return "(missing)";
+            if (v.Type == JTokenType.Null) return "null";
+            return v.ToString(Formatting.None);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -494,13 +619,31 @@ namespace App.Bootstrap
             else if (status == 401 || status == 403)
             {
                 statusStr = status.ToString();
-                verdict = "AUTH-FAIL";
+                verdict = "AUTH-FAIL — 권한 문제 (토큰 만료/누락/대상 리소스에 대한 권한 없음)";
                 authBlocked++;
+            }
+            else if (status == 400)
+            {
+                statusStr = "400";
+                verdict = "요청값 문제 — 요청 body/path 파라미터 형식 또는 validation 실패";
+                otherFail++;
+            }
+            else if (status == 404)
+            {
+                statusStr = "404";
+                verdict = "요청값 문제 — 대상 리소스 부재 (testSpaceId/testUserId/testInventoryId 잘못됨)";
+                otherFail++;
+            }
+            else if (status == 409)
+            {
+                statusStr = "409";
+                verdict = "충돌 — 이미 follow/like 되어 있거나, BE 가 self-action 차단";
+                otherFail++;
             }
             else if (status >= 400 && status < 500)
             {
                 statusStr = status.ToString();
-                verdict = $"4xx 클라이언트 에러 — 요청 파라미터/대상 리소스 점검 필요";
+                verdict = "4xx 기타 클라이언트 에러 — code/message 확인";
                 otherFail++;
             }
             else if (status >= 500)
