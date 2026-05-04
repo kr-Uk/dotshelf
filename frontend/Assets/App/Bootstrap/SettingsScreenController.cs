@@ -1617,11 +1617,12 @@ namespace App.Bootstrap
             var request = BuildNotificationPartialRequest(index, value);
             if (request == null)
             {
-                // BE-unmapped toggle (e.g. 독서 기록 댓글). Keep the local
-                // toggle change but skip the network call — see method
-                // header for the BE/FE matrix.
+                // Defensive: BuildNotificationPartialRequest only returns null
+                // for indices outside the known range (currently 0..4). Keep
+                // the local UI change so the user is not stranded, but skip
+                // the network call — there is no field to PATCH.
                 Debug.LogWarning(
-                    $"[Settings] Notification toggle index={index} has no BE field mapping — local only.");
+                    $"[Settings] Unknown notification toggle index={index}; skipping PATCH.");
                 return;
             }
 
