@@ -274,19 +274,57 @@ namespace App.Bootstrap
             string mySpaceId = ReadScalar(spaceResult, "id");
             string ownerUserId = ReadScalar(spaceResult, "ownerUserId");
 
+            // 카테고리별 inventoryId 한 번 추출. 첫 non-null 을 "추천" 으로 따로 표시해 사용자가
+            // Inspector testInventoryId 에 그대로 복사 가능하게 한다.
+            (string category, string value)[] invCandidates = new[]
+            {
+                ("theme", ReadScalar(spaceResult, "currentThemeInventoryId")),
+                ("wallpaper", ReadScalar(spaceResult, "currentWallpaperInventoryId")),
+                ("floor", ReadScalar(spaceResult, "currentFloorInventoryId")),
+                ("desk", ReadScalar(spaceResult, "currentDeskInventoryId")),
+                ("dashboard", ReadScalar(spaceResult, "currentDashboardInventoryId")),
+                ("interiorLight", ReadScalar(spaceResult, "currentInteriorLightInventoryId")),
+                ("exteriorLight", ReadScalar(spaceResult, "currentExteriorLightInventoryId")),
+            };
+
+            string recommendedId = null;
+            string recommendedCategory = null;
+            foreach (var (category, value) in invCandidates)
+            {
+                if (IsUsableInventoryId(value))
+                {
+                    recommendedId = value;
+                    recommendedCategory = category;
+                    break;
+                }
+            }
+
             StringBuilder lines = new StringBuilder();
             lines.AppendLine("[ApiSmokeTest][ID-HINT]");
             lines.AppendLine($"myUserId={myUserId}");
             lines.AppendLine($"mySpaceId={mySpaceId}");
             lines.AppendLine($"spaceOwnerUserId={ownerUserId}");
             lines.AppendLine("inventory candidates:");
-            lines.AppendLine($"  theme={ReadScalar(spaceResult, "currentThemeInventoryId")}");
-            lines.AppendLine($"  wallpaper={ReadScalar(spaceResult, "currentWallpaperInventoryId")}");
-            lines.AppendLine($"  floor={ReadScalar(spaceResult, "currentFloorInventoryId")}");
-            lines.AppendLine($"  desk={ReadScalar(spaceResult, "currentDeskInventoryId")}");
-            lines.AppendLine($"  dashboard={ReadScalar(spaceResult, "currentDashboardInventoryId")}");
-            lines.AppendLine($"  interiorLight={ReadScalar(spaceResult, "currentInteriorLightInventoryId")}");
-            lines.AppendLine($"  exteriorLight={ReadScalar(spaceResult, "currentExteriorLightInventoryId")}");
+            foreach (var (category, value) in invCandidates)
+            {
+                lines.AppendLine($"  {category}={value}");
+            }
+            lines.AppendLine();
+            if (recommendedId != null)
+            {
+                lines.AppendLine("──────────────────────────────────────────────");
+                lines.AppendLine($"✅ 추천 testInventoryId = {recommendedId}  (category={recommendedCategory})");
+                lines.AppendLine("   → Inspector 의 testInventoryId 필드에 이 값을 입력 후 'Run Smoke Test' 재실행하면");
+                lines.AppendLine($"     POST /v1/spaces/me/theme/{recommendedId}/apply?mode={(string.IsNullOrWhiteSpace(testThemeMode) ? "RESET" : testThemeMode)} 가 발사됨.");
+                lines.AppendLine("──────────────────────────────────────────────");
+            }
+            else
+            {
+                lines.AppendLine("──────────────────────────────────────────────");
+                lines.AppendLine("⚠ 사용 가능한 inventoryId 후보 없음 (모두 null/missing).");
+                lines.AppendLine("  → 본인 계정으로 wallpaper/floor 등 한 번 적용 후 재시도 또는 다른 계정 inventoryId 사용.");
+                lines.AppendLine("──────────────────────────────────────────────");
+            }
             Debug.Log(lines.ToString());
 
             // raw body 에서 핵심 키가 안 보이면 envelope/필드명 mismatch 진단 hint.
@@ -336,6 +374,15 @@ namespace App.Bootstrap
 
             yield return WaitForDone(() => done, "ID-HINT " + path);
             sink(got);
+        }
+
+        // ReadScalar 결과가 inventoryId 로 사용 가능한 양의 정수인지 판정.
+        // null / missing / no result / 0 등은 모두 false.
+        private static bool IsUsableInventoryId(string scalar)
+        {
+            if (string.IsNullOrEmpty(scalar)) return false;
+            if (scalar.StartsWith("(") || scalar == "null") return false;
+            return long.TryParse(scalar, out long v) && v > 0;
         }
 
         // result JObject 에서 단일 스칼라 값을 안전하게 꺼냄. 키 부재 또는 result 자체 null 이면 명시적
@@ -665,23 +712,18 @@ namespace App.Bootstrap
 
             string trimmedBody = ApiManagerProvider.TrimForLog(body, bodyLogMaxChars);
 
-            string line =
-                $"[ApiSmokeTest] {label}\n" +
-                $"  METHOD: {method}\n" +
-                $"  URL: {assumedUrl}\n" +
-                $"  AUTH: {authLine}\n" +
-                $"  STATUS: {statusStr}  → {verdict}\n" +
-                $"  BODY: {trimmedBody}\n" +
-                $"  PARSE: {envParse}";
+            // Unity Console 이 single multi-line Debug.Log 의 일부만 표시하는 케이스 회피.
+            // 각 라인을 개별 Debug.Log/LogWarning 으로 emit → 한 줄도 가려지지 않음.
+            // 사용자가 STATUS/BODY 만 따로 골라 보거나 grep 하기도 쉬워짐.
+            void Emit(string s) { if (success) Debug.Log(s); else Debug.LogWarning(s); }
 
-            if (success)
-            {
-                Debug.Log(line);
-            }
-            else
-            {
-                Debug.LogWarning(line);
-            }
+            Emit($"[ApiSmokeTest] {label}");
+            Emit($"  METHOD: {method}");
+            Emit($"  URL: {assumedUrl}");
+            Emit($"  AUTH: {authLine}");
+            Emit($"  STATUS: {statusStr}  → {verdict}");
+            Emit($"  BODY: {trimmedBody}");
+            Emit($"  PARSE: {envParse}");
         }
 
         private void PrintSummary()
