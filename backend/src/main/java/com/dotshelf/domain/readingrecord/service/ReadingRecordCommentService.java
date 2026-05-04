@@ -1,8 +1,11 @@
 package com.dotshelf.domain.readingrecord.service;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dotshelf.domain.notification.event.NotificationEvents.ReadingRecordCommentReplied;
+import com.dotshelf.domain.notification.event.NotificationEvents.ReadingRecordCommented;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.CommentListResponse;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.CommentRequest;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.CommentResponse;
@@ -27,6 +30,7 @@ public class ReadingRecordCommentService {
     private final ReadingRecordCommentLikeRepository likeRepository;
     private final ReadingRecordService readingRecordService;
     private final UserService userService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public CommentListResponse getComments(Long viewerUserId, Long readingRecordId) {
         readingRecordService.getReadableRecord(viewerUserId, readingRecordId);
@@ -40,8 +44,9 @@ public class ReadingRecordCommentService {
         Long currentUserId = userService.requireUserId(userId);
         ReadingRecord record = readingRecordService.getReadableRecord(currentUserId, readingRecordId);
         int depth = 0;
+        ReadingRecordComment parent = null;
         if (request.parentCommentId() != null) {
-            ReadingRecordComment parent = getActiveComment(request.parentCommentId());
+            parent = getActiveComment(request.parentCommentId());
             if (!parent.getReadingRecordId().equals(readingRecordId)) {
                 throw new CustomException(ErrorCode.INVALID_INPUT, "부모 댓글이 같은 독서기록에 속해야 합니다.");
             }
@@ -58,6 +63,11 @@ public class ReadingRecordCommentService {
                 .content(request.content())
                 .build());
         record.increaseCommentCount();
+        Long recordOwnerUserId = readingRecordService.getRecordOwnerUserId(record);
+        eventPublisher.publishEvent(new ReadingRecordCommented(recordOwnerUserId, currentUserId, comment.getId()));
+        if (parent != null && !parent.getUserId().equals(recordOwnerUserId)) {
+            eventPublisher.publishEvent(new ReadingRecordCommentReplied(parent.getUserId(), currentUserId, comment.getId()));
+        }
         return CommentResponse.from(comment);
     }
 

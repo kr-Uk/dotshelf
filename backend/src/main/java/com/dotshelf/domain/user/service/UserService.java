@@ -253,6 +253,7 @@ public class UserService {
                 request.notifyNewGuestbook(),
                 request.notifyGuestbookReply(),
                 request.notifyReadingRecordReaction(),
+                request.notifyReadingRecordComment(),
                 request.notifyNewFollower(),
                 request.notifyBookAddedByOthers()
         );

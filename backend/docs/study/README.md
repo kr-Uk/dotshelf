@@ -26,6 +26,7 @@ push 단위 변경분에 대한 한국어 학습 노트. 무엇을 / 왜 / 어�
 | 2026-04-30 | `feat/be/admin-web` | [`2026-04-30-feat-be-admin-web.md`](./2026-04-30-feat-be-admin-web.md) | admin-web 운영 범위 축소와 사용자 운영 API/세션 무효화/정산·운영 화면 실데이터 연결 |
 | 2026-05-03 | `feat/be/admin-web` | [`2026-05-03-feat-be-admin-web.md`](./2026-05-03-feat-be-admin-web.md) | Google OAuth authorization code 교환 시 redirect_uri 누락 수정 |
 | 2026-05-03 | `feat/be/admin-web` | [`2026-05-03-feat-be-admin-web-2.md`](./2026-05-03-feat-be-admin-web-2.md) | Kakao Desktop OAuth 고정 콜백과 redirectUri 전달 흐름 연동 |
+| 2026-05-04 | `feat/be/alert` | [`2026-05-04-feat-be-alert.md`](./2026-05-04-feat-be-alert.md) | 알림 설정 기반 Notification 발신 로직과 독서 기록 댓글 토글 추가 |
 
 ## 작성 규칙
 
