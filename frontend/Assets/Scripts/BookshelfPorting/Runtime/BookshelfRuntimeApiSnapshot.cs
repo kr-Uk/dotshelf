@@ -12,6 +12,8 @@ namespace BookshelfPorting.Runtime
         public int DisplayOrder { get; set; }
         public string BodyInventoryId { get; set; }
         public string SkinInventoryId { get; set; }
+        public bool HasThemeStyle { get; set; }
+        public BookshelfThemeStyle ThemeStyle { get; set; } = BookshelfThemeStyle.Default;
         public List<BookshelfRuntimeSectionSnapshot> Sections { get; } = new List<BookshelfRuntimeSectionSnapshot>();
         public List<BookshelfRuntimeBookSnapshot> Books { get; } = new List<BookshelfRuntimeBookSnapshot>();
     }
@@ -39,6 +41,10 @@ namespace BookshelfPorting.Runtime
         public string Publisher { get; set; }
         public string Description { get; set; }
         public string MemoPreview { get; set; }
+        public float AverageRating { get; set; }
+        public int TotalLikeCount { get; set; }
+        public int ReviewCount { get; set; }
+        public bool HasAggregateBookStats { get; set; }
         public float OwnerRating { get; set; }
         public ReadingStatus ReadingStatus { get; set; } = ReadingStatus.Unread;
         public bool IsLiked { get; set; }

@@ -440,6 +440,14 @@ namespace BookshelfPorting.Runtime
             }
             else if (state.IsViewingBook)
             {
+                if (!isTrackingViewedBookPointer)
+                {
+                    isManipulatingViewedBook = false;
+                    viewedBookPressStartedOnBook = false;
+                    viewedBookPointerTravel = 0f;
+                    return;
+                }
+
                 if (IsPointerOverUi(pointer))
                 {
                     isManipulatingViewedBook = false;

@@ -16,6 +16,12 @@ namespace BookshelfPorting.Runtime
         [Header("Visuals")]
         public MeshRenderer[] tintRenderers;
         public string bookId;
+        public string source;
+        public string isbn13;
+        public string isbn10;
+        public string publishedDate;
+        public string coverImageUrl;
+        public string sourceUrl;
         public string userBookId;
         public string bookshelfItemId;
         public string bookshelfId;
@@ -28,6 +34,10 @@ namespace BookshelfPorting.Runtime
         public string description;
         public string memoPreview;
         public int rating;
+        public float averageRating;
+        public int totalLikeCount;
+        public int reviewCount;
+        public bool hasAggregateBookStats;
         public float ownerRating;
         public ReadingStatus readingStatus = ReadingStatus.Unread;
         public bool isLiked;
@@ -39,6 +49,9 @@ namespace BookshelfPorting.Runtime
         public string reportTitle;
         public string reportBody;
         public string reportUpdatedLabel;
+        public bool reportLiked;
+        public int reportLikeCount;
+        public int reportCommentCount;
 
         public ShelfSection CurrentSection { get; private set; }
         public ShelfSection OriginalSection { get; private set; }
@@ -79,6 +92,10 @@ namespace BookshelfPorting.Runtime
                 author = book.Author;
                 publisher = book.Publisher;
                 description = book.Description;
+                averageRating = Mathf.Clamp((float)book.AverageRating, 0f, 5f);
+                totalLikeCount = Mathf.Max(0, (int)book.LikeCount);
+                reviewCount = Mathf.Max(0, book.RatingCount);
+                hasAggregateBookStats = true;
             }
 
             if (userBook == null)
@@ -88,7 +105,7 @@ namespace BookshelfPorting.Runtime
 
             userBookId = userBook.UserBookId;
             ownerRating = userBook.OwnerRating.HasValue ? (float)userBook.OwnerRating.Value : 0f;
-            rating = Mathf.RoundToInt(ownerRating);
+            rating = Mathf.RoundToInt(hasAggregateBookStats ? averageRating : ownerRating);
             readingStatus = userBook.ReadingStatus;
             isLiked = userBook.IsLiked;
             isRead = readingStatus == ReadingStatus.Read;
@@ -97,6 +114,8 @@ namespace BookshelfPorting.Runtime
             isPublic = reportVisibility == VisibilityScope.Public;
             reportTitle = readingRecord?.Title;
             reportBody = readingRecord?.Content;
+            reportLikeCount = readingRecord?.LikeCount ?? 0;
+            reportCommentCount = readingRecord?.CommentCount ?? 0;
             reportUpdatedLabel = readingRecord != null && readingRecord.UpdatedAt != DateTimeOffset.MinValue
                 ? readingRecord.UpdatedAt.ToString("yyyy.MM.dd")
                 : string.Empty;

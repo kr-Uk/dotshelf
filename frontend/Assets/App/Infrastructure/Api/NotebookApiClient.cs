@@ -158,6 +158,40 @@ namespace App.Infrastructure.Api
             return Get<UserBookListResponseDto>("/v1/user-books/archived", onSuccess, onError);
         }
 
+        public Coroutine GetUserBooks(
+            string storageStatus,
+            string readingStatus,
+            long? bookshelfId,
+            long? sectionId,
+            string cursor,
+            int limit,
+            Action<UserBookPlacementListResponseDto> onSuccess,
+            Action<ApiErrorResponseDto> onError = null)
+        {
+            var query = BuildCursorQuery(cursor, limit);
+            if (!string.IsNullOrWhiteSpace(storageStatus))
+            {
+                query["storageStatus"] = storageStatus;
+            }
+
+            if (!string.IsNullOrWhiteSpace(readingStatus))
+            {
+                query["readingStatus"] = readingStatus;
+            }
+
+            if (bookshelfId.HasValue && bookshelfId.Value > 0L)
+            {
+                query["bookshelfId"] = bookshelfId.Value.ToString();
+            }
+
+            if (sectionId.HasValue && sectionId.Value > 0L)
+            {
+                query["sectionId"] = sectionId.Value.ToString();
+            }
+
+            return Get<UserBookPlacementListResponseDto>(WithQuery("/v1/user-books", query), onSuccess, onError);
+        }
+
         public Coroutine LikeUserBook(long userBookId, Action<ToggleResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Post<ToggleResponseDto>($"/v1/user-books/{userBookId}/like", onSuccess, onError);

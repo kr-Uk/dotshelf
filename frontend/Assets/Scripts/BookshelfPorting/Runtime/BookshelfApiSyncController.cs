@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using App.Auth;
 #if UNITY_EDITOR
 using App.Bootstrap;
@@ -28,6 +29,10 @@ namespace BookshelfPorting.Runtime
 
         public bool IsConfigured => configured && client != null && generator != null;
 
+        private bool CanUseServerApi => IsConfigured && !IsLocalDevModeActive();
+
+        public bool IsServerSyncEnabled => CanUseServerApi;
+
         public void Configure(
             NotebookApiClient apiClient,
             BookshelfGenerator bookshelfGenerator,
@@ -42,6 +47,15 @@ namespace BookshelfPorting.Runtime
             {
                 StartCoroutine(RefreshAfterSceneSettles());
             }
+        }
+
+        private static bool IsLocalDevModeActive()
+        {
+#if UNITY_EDITOR
+            return DevMainSceneMode.IsActive;
+#else
+            return false;
+#endif
         }
 
         public void RefreshFromServer()
@@ -228,7 +242,7 @@ namespace BookshelfPorting.Runtime
 
         public void CreateBookshelf(string name)
         {
-            if (!IsConfigured)
+            if (!CanUseServerApi)
             {
                 return;
             }
@@ -258,7 +272,7 @@ namespace BookshelfPorting.Runtime
 
         public void UpdateBookshelf(int index)
         {
-            if (!IsConfigured || !TryParseId(generator.GetBookshelfServerId(index), out var bookshelfId))
+            if (!CanUseServerApi || !TryParseId(generator.GetBookshelfServerId(index), out var bookshelfId))
             {
                 return;
             }
@@ -268,28 +282,39 @@ namespace BookshelfPorting.Runtime
                 new UpdateBookshelfRequestDto
                 {
                     Name = generator.GetBookshelfName(index),
-                    VisibilityScope = ToApiVisibility(generator.GetBookshelfVisibility(index))
+                    VisibilityScope = ToApiVisibility(generator.GetBookshelfVisibility(index)),
+                    SkinInventoryId = BookshelfSkinResolver.ResolveInventoryId(generator.GetBookshelfDesignStyle(index))
                 },
                 _ => { },
                 error => Debug.LogWarning($"Bookshelf update failed: {FormatError(error)}"));
         }
 
-        public void DeleteBookshelf(string bookshelfServerId)
+        public bool DeleteBookshelf(string bookshelfServerId, Action onSucceeded = null, Action<string> onFailed = null)
         {
-            if (!IsConfigured || !TryParseId(bookshelfServerId, out var bookshelfId))
+            if (!CanUseServerApi || !TryParseId(bookshelfServerId, out var bookshelfId))
             {
-                return;
+                return false;
             }
 
             client.DeleteBookshelf(
                 bookshelfId,
-                _ => RefreshFromServer(),
-                error => Debug.LogWarning($"Bookshelf delete failed: {FormatError(error)}"));
+                _ =>
+                {
+                    onSucceeded?.Invoke();
+                    RefreshFromServer();
+                },
+                error =>
+                {
+                    var message = FormatUserFacingError(error);
+                    Debug.LogWarning($"Bookshelf delete failed: {FormatError(error)}");
+                    onFailed?.Invoke(message);
+                });
+            return true;
         }
 
         public void ReorderBookshelves()
         {
-            if (!IsConfigured)
+            if (!CanUseServerApi)
             {
                 return;
             }
@@ -317,7 +342,7 @@ namespace BookshelfPorting.Runtime
 
         public void SyncBookState(BookEntity book)
         {
-            if (!IsConfigured || book == null || !TryParseId(book.userBookId, out var userBookId))
+            if (!CanUseServerApi || book == null || !TryParseId(book.userBookId, out var userBookId))
             {
                 return;
             }
@@ -335,7 +360,7 @@ namespace BookshelfPorting.Runtime
 
         public void SyncBookLike(BookEntity book)
         {
-            if (!IsConfigured || book == null || !TryParseId(book.userBookId, out var userBookId))
+            if (!CanUseServerApi || book == null || !TryParseId(book.userBookId, out var userBookId))
             {
                 return;
             }
@@ -351,7 +376,7 @@ namespace BookshelfPorting.Runtime
 
         public void SyncBookPlacement(BookEntity book)
         {
-            if (!IsConfigured || book == null)
+            if (!CanUseServerApi || book == null)
             {
                 return;
             }
@@ -406,11 +431,227 @@ namespace BookshelfPorting.Runtime
             }
         }
 
-        public void AddBookToActiveShelf(BookEntity book)
+        public void SyncSectionAlignment(ShelfSection section)
         {
-            if (!IsConfigured || book == null)
+            if (!CanUseServerApi || section == null)
             {
                 return;
+            }
+
+            var bookshelfIdText = generator.GetActiveBookshelfServerId();
+            var sectionIdText = generator.GetSectionServerId(generator.ActiveBookshelfIndex, section.row, section.column);
+            if (!TryParseId(bookshelfIdText, out var bookshelfId) ||
+                !TryParseId(sectionIdText, out var sectionId))
+            {
+                return;
+            }
+
+            client.UpdateSectionAlignment(
+                bookshelfId,
+                sectionId,
+                new SectionAlignmentRequestDto { Alignment = ToApiAlignment(section.alignment) },
+                _ => { },
+                error => Debug.LogWarning($"Bookshelf section alignment update failed: {FormatError(error)}"));
+        }
+
+        public void FetchBookDetails(BookEntity book, Action<BookEntity> onUpdated = null)
+        {
+            if (!CanUseServerApi || book == null || !TryParseId(book.bookId, out var bookId))
+            {
+                return;
+            }
+
+            client.GetBook(
+                bookId,
+                response =>
+                {
+                    ApplyBookResponse(book, response);
+                    onUpdated?.Invoke(book);
+                },
+                error => Debug.LogWarning($"Book detail load failed: {FormatError(error)}"));
+        }
+
+        public bool FetchReadingRecord(BookEntity book, Action<BookEntity, bool> onCompleted = null)
+        {
+            if (!CanUseServerApi || book == null)
+            {
+                return false;
+            }
+
+            if (TryParseId(book.readingRecordId, out var recordId))
+            {
+                client.GetReadingRecord(
+                    recordId,
+                    response =>
+                    {
+                        ApplyReadingRecordResponse(book, response);
+                        onCompleted?.Invoke(book, response != null);
+                    },
+                    error =>
+                    {
+                        Debug.LogWarning($"Reading record load failed: {FormatError(error)}");
+                        onCompleted?.Invoke(book, false);
+                    });
+                return true;
+            }
+
+            if (TryParseId(book.userBookId, out var userBookId))
+            {
+                client.GetUserBookReadingRecord(
+                    userBookId,
+                    response =>
+                    {
+                        ApplyReadingRecordResponse(book, response);
+                        onCompleted?.Invoke(book, response != null);
+                    },
+                    error =>
+                    {
+                        onCompleted?.Invoke(book, false);
+                    });
+                return true;
+            }
+
+            return false;
+        }
+
+        public bool DeleteReadingRecord(BookEntity book, Action onSucceeded = null, Action<string> onFailed = null)
+        {
+            if (!CanUseServerApi || book == null || !TryParseId(book.readingRecordId, out var recordId))
+            {
+                return false;
+            }
+
+            client.DeleteReadingRecord(
+                recordId,
+                _ =>
+                {
+                    book.readingRecordId = null;
+                    book.reportTitle = string.Empty;
+                    book.reportBody = string.Empty;
+                    book.reportUpdatedLabel = string.Empty;
+                    book.memoPreview = book.description;
+                    onSucceeded?.Invoke();
+                },
+                error =>
+                {
+                    var message = FormatUserFacingError(error);
+                    Debug.LogWarning($"Reading record delete failed: {FormatError(error)}");
+                    onFailed?.Invoke(message);
+                });
+            return true;
+        }
+
+        public void ToggleReadingRecordLike(BookEntity book, bool liked, Action<BookEntity> onUpdated = null)
+        {
+            if (!CanUseServerApi || book == null || !TryParseId(book.readingRecordId, out var recordId))
+            {
+                return;
+            }
+
+            Action<ToggleResponseDto> success = response =>
+            {
+                if (response != null)
+                {
+                    book.reportLiked = response.Active;
+                    book.reportLikeCount = Mathf.Max(0, (int)response.Count);
+                }
+                else
+                {
+                    book.reportLiked = liked;
+                }
+
+                onUpdated?.Invoke(book);
+            };
+            Action<ApiErrorResponseDto> failure = error => Debug.LogWarning($"Reading record like update failed: {FormatError(error)}");
+            if (liked)
+            {
+                client.LikeReadingRecord(recordId, success, failure);
+            }
+            else
+            {
+                client.UnlikeReadingRecord(recordId, success, failure);
+            }
+        }
+
+        public void FetchReadingRecordComments(BookEntity book, Action<IReadOnlyList<CommentResponseDto>> onLoaded = null)
+        {
+            if (!CanUseServerApi || book == null || !TryParseId(book.readingRecordId, out var recordId))
+            {
+                return;
+            }
+
+            client.GetReadingRecordComments(
+                recordId,
+                response =>
+                {
+                    var comments = response?.Comments ?? new List<CommentResponseDto>();
+                    book.reportCommentCount = comments.Count;
+                    onLoaded?.Invoke(comments);
+                },
+                error => Debug.LogWarning($"Reading record comments load failed: {FormatError(error)}"));
+        }
+
+        public void CreateReadingRecordComment(BookEntity book, string content, Action<CommentResponseDto> onCreated = null)
+        {
+            if (!CanUseServerApi ||
+                book == null ||
+                string.IsNullOrWhiteSpace(content) ||
+                !TryParseId(book.readingRecordId, out var recordId))
+            {
+                return;
+            }
+
+            client.CreateReadingRecordComment(
+                recordId,
+                new CommentRequestDto { Content = content.Trim() },
+                response =>
+                {
+                    book.reportCommentCount = Mathf.Max(0, book.reportCommentCount + 1);
+                    onCreated?.Invoke(response);
+                },
+                error => Debug.LogWarning($"Reading record comment create failed: {FormatError(error)}"));
+        }
+
+        public void DeleteReadingRecordComment(long commentId, Action onDeleted = null)
+        {
+            if (!CanUseServerApi || commentId <= 0L)
+            {
+                return;
+            }
+
+            client.DeleteComment(
+                commentId,
+                _ => onDeleted?.Invoke(),
+                error => Debug.LogWarning($"Reading record comment delete failed: {FormatError(error)}"));
+        }
+
+        public void ToggleReadingRecordCommentLike(long commentId, bool liked, Action<ToggleResponseDto> onUpdated = null)
+        {
+            if (!CanUseServerApi || commentId <= 0L)
+            {
+                return;
+            }
+
+            Action<ToggleResponseDto> success = response => onUpdated?.Invoke(response);
+            Action<ApiErrorResponseDto> failure = error => Debug.LogWarning($"Reading record comment like update failed: {FormatError(error)}");
+            if (liked)
+            {
+                client.LikeComment(commentId, success, failure);
+            }
+            else
+            {
+                client.UnlikeComment(commentId, success, failure);
+            }
+        }
+
+        public bool AddBookToActiveShelf(
+            BookEntity book,
+            Action<BookEntity> onSucceeded = null,
+            Action<string> onFailed = null)
+        {
+            if (!CanUseServerApi || book == null)
+            {
+                return false;
             }
 
             var section = book.CurrentSection;
@@ -420,7 +661,7 @@ namespace BookshelfPorting.Runtime
             if (!TryParseId(generator.GetActiveBookshelfServerId(), out var bookshelfId) ||
                 !TryParseId(sectionIdText, out var sectionId))
             {
-                return;
+                return false;
             }
 
             var slotNo = generator.GetBookSlotNo(book);
@@ -447,9 +688,15 @@ namespace BookshelfPorting.Runtime
                         book.isRead = desiredReadingStatus == ReadingStatus.Read;
                         book.ownerRating = desiredOwnerRating;
                         SyncBookState(book);
+                        onSucceeded?.Invoke(book);
                     },
-                    error => Debug.LogWarning($"Book add failed: {FormatError(error)}"));
-                return;
+                    error =>
+                    {
+                        var message = FormatUserFacingError(error);
+                        Debug.LogWarning($"Book add failed: {FormatError(error)}");
+                        onFailed?.Invoke(message);
+                    });
+                return true;
             }
 
             client.AddKakaoBookToShelf(
@@ -459,7 +706,12 @@ namespace BookshelfPorting.Runtime
                     Title = book.title,
                     Author = book.author,
                     Publisher = book.publisher,
+                    Isbn13 = book.isbn13,
+                    Isbn10 = book.isbn10,
+                    PublishedDate = book.publishedDate,
                     Description = book.description,
+                    CoverImageUrl = book.coverImageUrl,
+                    SourceUrl = book.sourceUrl,
                     SectionId = sectionId,
                     SlotNo = slotNo,
                     FacingDirection = facingDirection,
@@ -473,38 +725,168 @@ namespace BookshelfPorting.Runtime
                     book.isRead = desiredReadingStatus == ReadingStatus.Read;
                     book.ownerRating = desiredOwnerRating;
                     SyncBookState(book);
+                    onSucceeded?.Invoke(book);
                 },
-                error => Debug.LogWarning($"Kakao/manual book add failed: {FormatError(error)}"));
+                error =>
+                {
+                    var message = FormatUserFacingError(error);
+                    Debug.LogWarning($"Kakao/manual book add failed: {FormatError(error)}");
+                    onFailed?.Invoke(message);
+                });
+            return true;
         }
 
-        public void RemoveBook(BookEntity book)
+        public bool RemoveBook(BookEntity book, Action onSucceeded = null, Action<string> onFailed = null)
         {
-            if (!IsConfigured || book == null)
+            if (!CanUseServerApi || book == null)
             {
-                return;
+                return false;
             }
 
             if (TryParseId(book.bookshelfItemId, out var itemId))
             {
                 client.RemoveBookshelfItem(
                     itemId,
-                    _ => { },
-                    error => Debug.LogWarning($"Bookshelf item remove failed: {FormatError(error)}"));
-                return;
+                    _ => onSucceeded?.Invoke(),
+                    error =>
+                    {
+                        var message = FormatUserFacingError(error);
+                        Debug.LogWarning($"Bookshelf item remove failed: {FormatError(error)}");
+                        onFailed?.Invoke(message);
+                    });
+                return true;
             }
 
             if (TryParseId(book.userBookId, out var userBookId))
             {
                 client.DeleteUserBook(
                     userBookId,
-                    _ => { },
-                    error => Debug.LogWarning($"User book delete failed: {FormatError(error)}"));
+                    _ => onSucceeded?.Invoke(),
+                    error =>
+                    {
+                        var message = FormatUserFacingError(error);
+                        Debug.LogWarning($"User book delete failed: {FormatError(error)}");
+                        onFailed?.Invoke(message);
+                    });
+                return true;
             }
+
+            return false;
+        }
+
+        public void ArchiveBook(BookEntity book)
+        {
+            if (!CanUseServerApi || book == null || !TryParseId(book.userBookId, out var userBookId))
+            {
+                return;
+            }
+
+            client.ArchiveUserBook(
+                userBookId,
+                response => ApplyUserBookResponse(book, response),
+                error => Debug.LogWarning($"User book archive failed: {FormatError(error)}"));
+        }
+
+        public void FetchArchivedUserBooks(Action<IReadOnlyList<UserBookResponseDto>> onLoaded = null)
+        {
+            if (!CanUseServerApi)
+            {
+                return;
+            }
+
+            client.GetArchivedUserBooks(
+                response =>
+                {
+                    IReadOnlyList<UserBookResponseDto> books = Array.Empty<UserBookResponseDto>();
+                    if (response?.Books != null)
+                    {
+                        books = response.Books;
+                    }
+
+                    onLoaded?.Invoke(books);
+                },
+                error => Debug.LogWarning($"Archived user books load failed: {FormatError(error)}"));
+        }
+
+        public void FetchUserBooks(
+            string storageStatus = null,
+            string readingStatus = null,
+            long? bookshelfId = null,
+            long? sectionId = null,
+            string cursor = null,
+            int limit = 50,
+            Action<UserBookPlacementListResponseDto> onLoaded = null)
+        {
+            if (!CanUseServerApi)
+            {
+                return;
+            }
+
+            client.GetUserBooks(
+                storageStatus,
+                readingStatus,
+                bookshelfId,
+                sectionId,
+                cursor,
+                limit,
+                onLoaded,
+                error => Debug.LogWarning($"User books load failed: {FormatError(error)}"));
+        }
+
+        public void FetchAssetInventory(Action<InventoryResponseDto> onLoaded = null)
+        {
+            if (!CanUseServerApi)
+            {
+                return;
+            }
+
+            client.GetAssetInventory(
+                onLoaded,
+                error => Debug.LogWarning($"Asset inventory load failed: {FormatError(error)}"));
+        }
+
+        public void AddInteriorObjectToActiveShelf(long assetInventoryId, ShelfSection section, int slotNo = 1)
+        {
+            if (section == null)
+            {
+                return;
+            }
+
+            AddInteriorObjectToActiveShelf(assetInventoryId, section.row, section.column, slotNo);
+        }
+
+        public void AddInteriorObjectToActiveShelf(long assetInventoryId, int row, int column, int slotNo = 1)
+        {
+            if (!CanUseServerApi || assetInventoryId <= 0L)
+            {
+                return;
+            }
+
+            var sectionIdText = generator.GetSectionServerId(generator.ActiveBookshelfIndex, row, column);
+            if (!TryParseId(generator.GetActiveBookshelfServerId(), out var bookshelfId) ||
+                !TryParseId(sectionIdText, out var sectionId))
+            {
+                Debug.LogWarning("Interior object add skipped: section id is required.");
+                return;
+            }
+
+            client.AddInteriorObject(
+                bookshelfId,
+                new InteriorObjectRequestDto
+                {
+                    AssetInventoryId = assetInventoryId,
+                    SectionId = sectionId,
+                    SlotNo = Mathf.Max(1, slotNo),
+                    FacingDirection = "FRONT",
+                    DisplayStyle = "SPINE"
+                },
+                _ => RefreshFromServer(),
+                error => Debug.LogWarning($"Interior object add failed: {FormatError(error)}"));
         }
 
         public void SaveReadingRecord(BookEntity book)
         {
-            if (!IsConfigured || book == null || !TryParseId(book.userBookId, out var userBookId))
+            if (!CanUseServerApi || book == null || !TryParseId(book.userBookId, out var userBookId))
             {
                 return;
             }
@@ -643,6 +1025,10 @@ namespace BookshelfPorting.Runtime
                     MemoPreview = item.ReadingRecord != null && !string.IsNullOrWhiteSpace(item.ReadingRecord.Content)
                         ? item.ReadingRecord.Content
                         : item.Book.Description,
+                    AverageRating = ResolveAverageRating(item.Book),
+                    TotalLikeCount = ResolveLikeCount(item.Book),
+                    ReviewCount = ResolveReviewCount(item.Book),
+                    HasAggregateBookStats = HasAggregateBookStats(item.Book),
                     OwnerRating = item.UserBook?.OwnerRating.HasValue == true ? (float)item.UserBook.OwnerRating.Value : 0f,
                     ReadingStatus = ParseReadingStatus(item.UserBook?.ReadingStatus),
                     IsLiked = item.UserBook?.Liked == true,
@@ -659,7 +1045,7 @@ namespace BookshelfPorting.Runtime
 
         private static BookshelfRuntimeApiSnapshot MapShelfOnly(BookshelfResponseDto shelf)
         {
-            return new BookshelfRuntimeApiSnapshot
+            var snapshot = new BookshelfRuntimeApiSnapshot
             {
                 BookshelfId = shelf?.Id.ToString(),
                 Name = shelf?.Name,
@@ -669,6 +1055,14 @@ namespace BookshelfPorting.Runtime
                 BodyInventoryId = shelf?.BodyInventoryId?.ToString(),
                 SkinInventoryId = shelf?.SkinInventoryId?.ToString()
             };
+
+            if (BookshelfSkinResolver.TryResolveThemeStyle(shelf?.SkinInventoryId, out var style))
+            {
+                snapshot.HasThemeStyle = true;
+                snapshot.ThemeStyle = style;
+            }
+
+            return snapshot;
         }
 
         private void FinishRefresh(bool success, string message)
@@ -700,6 +1094,79 @@ namespace BookshelfPorting.Runtime
             }
         }
 
+        private static void ApplyBookResponse(BookEntity book, BookResponseDto response)
+        {
+            if (book == null || response == null)
+            {
+                return;
+            }
+
+            book.bookId = ResolveBookId(response.BookId, response.Id, book.bookId);
+            book.source = response.Source;
+            book.isbn13 = response.Isbn13;
+            book.isbn10 = response.Isbn10;
+            book.publishedDate = response.PublishedDate;
+            book.coverImageUrl = response.CoverImageUrl;
+            book.sourceUrl = response.SourceUrl;
+            book.title = string.IsNullOrWhiteSpace(response.Title) ? book.title : response.Title;
+            book.author = string.IsNullOrWhiteSpace(response.Author) ? book.author : response.Author;
+            book.publisher = string.IsNullOrWhiteSpace(response.Publisher) ? book.publisher : response.Publisher;
+            book.description = string.IsNullOrWhiteSpace(response.Description) ? book.description : response.Description;
+            book.memoPreview = string.IsNullOrWhiteSpace(book.memoPreview) ? book.description : book.memoPreview;
+            book.isPaidCoverOwned = response.HasPaidCover;
+            book.averageRating = Mathf.Clamp((float)response.AvgRating, 0f, 5f);
+            book.totalLikeCount = Mathf.Max(0, response.LikeCount);
+            book.reviewCount = Mathf.Max(0, response.ReviewCount);
+            book.hasAggregateBookStats = true;
+            book.rating = Mathf.RoundToInt(Mathf.Clamp(book.averageRating, 0f, 5f));
+        }
+
+        private static string ResolveBookId(string responseBookId, long responseId, string fallback)
+        {
+            if (!string.IsNullOrWhiteSpace(responseBookId))
+            {
+                return responseBookId;
+            }
+
+            return responseId > 0L ? responseId.ToString() : fallback;
+        }
+
+        private static bool HasAggregateBookStats(BookSummaryResponseDto book)
+        {
+            return book != null &&
+                   (book.AvgRating.HasValue ||
+                    book.AverageRating.HasValue ||
+                    book.LikeCount.HasValue ||
+                    book.ReviewCount.HasValue ||
+                    book.RecordCount.HasValue);
+        }
+
+        private static float ResolveAverageRating(BookSummaryResponseDto book)
+        {
+            if (book == null)
+            {
+                return 0f;
+            }
+
+            var value = book.AverageRating ?? book.AvgRating ?? 0m;
+            return Mathf.Clamp((float)value, 0f, 5f);
+        }
+
+        private static int ResolveLikeCount(BookSummaryResponseDto book)
+        {
+            return book == null ? 0 : Mathf.Max(0, book.LikeCount ?? 0);
+        }
+
+        private static int ResolveReviewCount(BookSummaryResponseDto book)
+        {
+            if (book == null)
+            {
+                return 0;
+            }
+
+            return Mathf.Max(0, book.ReviewCount ?? book.RecordCount ?? 0);
+        }
+
         private static void ApplyBookshelfItemResponse(BookEntity book, BookshelfItemResponseDto response)
         {
             if (book == null || response == null)
@@ -724,6 +1191,8 @@ namespace BookshelfPorting.Runtime
             book.reportBody = response.Content;
             book.reportVisibility = ParseVisibility(response.VisibilityScope);
             book.reportUpdatedLabel = FormatApiDate(response.UpdatedAt);
+            book.reportLikeCount = response.LikeCount;
+            book.reportCommentCount = response.CommentCount;
             book.memoPreview = !string.IsNullOrWhiteSpace(response.Content) ? response.Content : book.memoPreview;
         }
 
@@ -780,6 +1249,19 @@ namespace BookshelfPorting.Runtime
             return string.Equals(value, "FOLLOWERS", StringComparison.OrdinalIgnoreCase)
                 ? VisibilityScope.Followers
                 : VisibilityScope.Public;
+        }
+
+        private static string ToApiAlignment(ShelfSectionAlignment alignment)
+        {
+            switch (alignment)
+            {
+                case ShelfSectionAlignment.Center:
+                    return "CENTER";
+                case ShelfSectionAlignment.Right:
+                    return "RIGHT";
+                default:
+                    return "LEFT";
+            }
         }
 
         private static string ToApiDisplayStyle(BookOrientation orientation)
@@ -841,6 +1323,193 @@ namespace BookshelfPorting.Runtime
             return string.IsNullOrWhiteSpace(error.Message)
                 ? error.Error
                 : error.Message;
+        }
+
+        private static string FormatUserFacingError(ApiErrorResponseDto error)
+        {
+            if (error == null)
+            {
+                return "네트워크 또는 서버 응답을 확인해 주세요.";
+            }
+
+            if (error.StatusCode == 401L || error.StatusCode == 403L)
+            {
+                return "권한이 없거나 로그인 정보가 만료되었습니다.";
+            }
+
+            if (error.StatusCode >= 500L)
+            {
+                return "서버가 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+            }
+
+            return "요청을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+        }
+    }
+
+    internal static class BookshelfSkinResolver
+    {
+        private const string CatalogResourcePath = "Catalogs/BookshelfSkinCatalog";
+        private static ScriptableObject cachedCatalog;
+        private static bool didLoadCatalog;
+        private static bool didWarnMissingCatalog;
+        private static bool didWarnMissingStyle;
+
+        public static long? ResolveInventoryId(BookshelfThemeStyle style)
+        {
+            var entry = FindEntry(style);
+            var assetId = ResolveEntryAssetId(entry);
+            if (assetId > 0L)
+            {
+                return assetId;
+            }
+
+            WarnMissingStyle(style);
+            return null;
+        }
+
+        public static bool TryResolveThemeStyle(long? skinInventoryId, out BookshelfThemeStyle style)
+        {
+            style = BookshelfThemeStyle.Default;
+            if (!skinInventoryId.HasValue || skinInventoryId.Value <= 0L)
+            {
+                return false;
+            }
+
+            var entries = GetCatalogEntries();
+            if (entries == null)
+            {
+                return false;
+            }
+
+            var index = 0;
+            foreach (var entry in entries)
+            {
+                if (entry != null && ResolveEntryAssetId(entry) == skinInventoryId.Value)
+                {
+                    style = ResolveStyleFromEntry(entry, index);
+                    return true;
+                }
+
+                index++;
+            }
+
+            return false;
+        }
+
+        private static object FindEntry(BookshelfThemeStyle style)
+        {
+            var entries = GetCatalogEntries();
+            if (entries == null)
+            {
+                return null;
+            }
+
+            var index = 0;
+            foreach (var entry in entries)
+            {
+                if (entry != null && ResolveStyleFromEntry(entry, index) == style)
+                {
+                    return entry;
+                }
+
+                index++;
+            }
+
+            return null;
+        }
+
+        private static ScriptableObject LoadCatalog()
+        {
+            if (didLoadCatalog)
+            {
+                return cachedCatalog;
+            }
+
+            didLoadCatalog = true;
+            cachedCatalog = Resources.Load<ScriptableObject>(CatalogResourcePath);
+            if (cachedCatalog == null && !didWarnMissingCatalog)
+            {
+                didWarnMissingCatalog = true;
+                Debug.LogWarning($"Bookshelf skin catalog not found at Resources/{CatalogResourcePath}. SkinInventoryId sync will be skipped.");
+            }
+
+            return cachedCatalog;
+        }
+
+        private static IEnumerable GetCatalogEntries()
+        {
+            var catalog = LoadCatalog();
+            if (catalog == null)
+            {
+                return null;
+            }
+
+            var field = catalog.GetType().GetField("entries", BindingFlags.Instance | BindingFlags.NonPublic);
+            return field != null ? field.GetValue(catalog) as IEnumerable : null;
+        }
+
+        private static long ResolveEntryAssetId(object entry)
+        {
+            if (entry == null)
+            {
+                return 0L;
+            }
+
+            var property = entry.GetType().GetProperty("AssetId", BindingFlags.Instance | BindingFlags.Public);
+            var value = property != null ? property.GetValue(entry) : null;
+            return value is long id ? id : 0L;
+        }
+
+        private static string ResolveEntryDisplayName(object entry)
+        {
+            if (entry == null)
+            {
+                return null;
+            }
+
+            var property = entry.GetType().GetProperty("DisplayName", BindingFlags.Instance | BindingFlags.Public);
+            return property != null ? property.GetValue(entry) as string : null;
+        }
+
+        private static BookshelfThemeStyle ResolveStyleFromEntry(object entry, int index)
+        {
+            var key = ResolveEntryDisplayName(entry);
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                key = key.Trim().ToLowerInvariant();
+                if (key.Contains("dark") || key.Contains("black") || key.Contains("night"))
+                {
+                    return BookshelfThemeStyle.Dark;
+                }
+
+                if (key.Contains("warm") || key.Contains("wood") || key.Contains("brown"))
+                {
+                    return BookshelfThemeStyle.Warm;
+                }
+
+                if (key.Contains("default") || key.Contains("basic"))
+                {
+                    return BookshelfThemeStyle.Default;
+                }
+            }
+
+            return index switch
+            {
+                1 => BookshelfThemeStyle.Warm,
+                2 => BookshelfThemeStyle.Dark,
+                _ => BookshelfThemeStyle.Default
+            };
+        }
+
+        private static void WarnMissingStyle(BookshelfThemeStyle style)
+        {
+            if (didWarnMissingStyle)
+            {
+                return;
+            }
+
+            didWarnMissingStyle = true;
+            Debug.LogWarning($"Bookshelf skin inventory id for style '{style}' could not be resolved. Add Resources/{CatalogResourcePath}.asset or keep the design change local-only.");
         }
     }
 }
