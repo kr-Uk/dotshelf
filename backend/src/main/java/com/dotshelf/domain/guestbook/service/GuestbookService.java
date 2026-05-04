@@ -138,7 +138,12 @@ public class GuestbookService {
                 .visibilityScope(request.visibilityScope())
                 .anonymous(request.anonymous())
                 .build());
-        eventPublisher.publishEvent(new GuestbookCreated(space.getOwnerUserId(), currentUserId, guestbook.getId()));
+        eventPublisher.publishEvent(new GuestbookCreated(
+                space.getOwnerUserId(),
+                currentUserId,
+                guestbook.getId(),
+                guestbook.isAnonymous()
+        ));
         return buildGuestbookResponses(List.of(guestbook), currentUserId).get(0);
     }
 

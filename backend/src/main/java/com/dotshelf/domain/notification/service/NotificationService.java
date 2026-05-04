@@ -75,19 +75,23 @@ public class NotificationService {
     }
 
     @Transactional
-    public void notifyGuestbookCreated(Long receiverUserId, Long senderUserId, Long guestbookId) {
+    public void notifyGuestbookCreated(Long receiverUserId, Long senderUserId, Long guestbookId, boolean anonymous) {
         if (isInvalidPair(receiverUserId, senderUserId)) {
             return;
         }
-        User sender = userService.getUser(senderUserId);
+        Long notificationSenderUserId = anonymous ? null : senderUserId;
+        String message = anonymous
+                ? "익명 사용자가 방명록을 남겼습니다."
+                : userService.getUser(senderUserId).getNickname() + "님이 방명록을 남겼습니다.";
         createIfEnabled(
                 receiverUserId,
                 senderUserId,
+                notificationSenderUserId,
                 UserNotificationSetting::isNotifyNewGuestbook,
                 TYPE_GUESTBOOK_CREATED,
                 TARGET_GUESTBOOK,
                 guestbookId,
-                sender.getNickname() + "님이 방명록을 남겼습니다."
+                message
         );
     }
 
@@ -190,6 +194,12 @@ public class NotificationService {
     private void createIfEnabled(Long receiverUserId, Long senderUserId,
                                  Predicate<UserNotificationSetting> enabled,
                                  String type, String targetType, Long targetId, String message) {
+        createIfEnabled(receiverUserId, senderUserId, senderUserId, enabled, type, targetType, targetId, message);
+    }
+
+    private void createIfEnabled(Long receiverUserId, Long senderUserId, Long notificationSenderUserId,
+                                 Predicate<UserNotificationSetting> enabled,
+                                 String type, String targetType, Long targetId, String message) {
         if (isInvalidPair(receiverUserId, senderUserId)) {
             return;
         }
@@ -199,17 +209,22 @@ public class NotificationService {
         if (!notificationEnabled) {
             return;
         }
-        create(receiverUserId, senderUserId, type, targetType, targetId, message);
+        create(receiverUserId, senderUserId, notificationSenderUserId, type, targetType, targetId, message);
     }
 
     private void create(Long receiverUserId, Long senderUserId,
+                        String type, String targetType, Long targetId, String message) {
+        create(receiverUserId, senderUserId, senderUserId, type, targetType, targetId, message);
+    }
+
+    private void create(Long receiverUserId, Long senderUserId, Long notificationSenderUserId,
                         String type, String targetType, Long targetId, String message) {
         if (isInvalidPair(receiverUserId, senderUserId)) {
             return;
         }
         notificationRepository.save(Notification.builder()
                 .receiverUserId(receiverUserId)
-                .senderUserId(senderUserId)
+                .senderUserId(notificationSenderUserId)
                 .type(type)
                 .targetType(targetType)
                 .targetId(targetId)

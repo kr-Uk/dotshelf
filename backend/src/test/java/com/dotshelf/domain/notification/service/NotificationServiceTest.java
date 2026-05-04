@@ -43,6 +43,28 @@ class NotificationServiceTest {
     private NotificationService notificationService;
 
     @Test
+    @DisplayName("익명 방명록 알림은 작성자 닉네임과 senderUserId를 노출하지 않는다")
+    void notifyGuestbookCreated_anonymous_masksSender() {
+        given(notificationSettingRepository.findByUserId(1L))
+                .willReturn(Optional.of(UserNotificationSetting.builder()
+                        .userId(1L)
+                        .build()));
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+
+        notificationService.notifyGuestbookCreated(1L, 2L, 30L, true);
+
+        then(notificationRepository).should().save(captor.capture());
+        Notification notification = captor.getValue();
+        assertThat(notification.getReceiverUserId()).isEqualTo(1L);
+        assertThat(notification.getSenderUserId()).isNull();
+        assertThat(notification.getType()).isEqualTo("GUESTBOOK_CREATED");
+        assertThat(notification.getTargetType()).isEqualTo("GUESTBOOK");
+        assertThat(notification.getTargetId()).isEqualTo(30L);
+        assertThat(notification.getMessage()).isEqualTo("익명 사용자가 방명록을 남겼습니다.");
+        then(userService).shouldHaveNoInteractions();
+    }
+
+    @Test
     @DisplayName("독서 기록 좋아요 알림 설정이 켜져 있으면 Notification을 저장한다")
     void notifyReadingRecordLiked_settingOn_savesNotification() {
         given(userService.getUser(2L)).willReturn(user("민수"));

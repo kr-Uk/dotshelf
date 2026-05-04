@@ -5,7 +5,7 @@ public final class NotificationEvents {
     private NotificationEvents() {
     }
 
-    public record GuestbookCreated(Long receiverUserId, Long senderUserId, Long guestbookId) {
+    public record GuestbookCreated(Long receiverUserId, Long senderUserId, Long guestbookId, boolean anonymous) {
     }
 
     public record GuestbookReplyCreated(Long receiverUserId, Long senderUserId, Long replyId) {

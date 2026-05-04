@@ -26,7 +26,8 @@ public class NotificationEventListener {
         notificationService.notifyGuestbookCreated(
                 event.receiverUserId(),
                 event.senderUserId(),
-                event.guestbookId()
+                event.guestbookId(),
+                event.anonymous()
         );
     }
 
