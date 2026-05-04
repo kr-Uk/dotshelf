@@ -48,9 +48,10 @@ https://dotshelf.digital/launcher/windows/
 - `DotShelf.Launcher.csproj` 의 `<Version>`, `<AssemblyVersion>`, `<FileVersion>` 갱신
 - `web/service-web/.../page.tsx` 의 `LAUNCHER_WIN_URL` 을 새 파일명으로
 
-후속 작업 (수동):
-- `dotnet publish` 재빌드
-- 새 파일명으로 SCP 업로드 (옛 파일은 살려두면 옛 다운로드 링크 누른 사람이 안전하게 옛 버전 받음 — 한 minor 정도 후 정리)
+후속 작업:
+- `master` 머지 시 `launcher:build` 가 `DotShelfLauncher-{launcherVersion}.exe` 를 publish 한다.
+- `launcher:publish` 가 exe, `latest.json`, `events.json`, Unity zip 을 `/opt/dotshelf/launcher/windows/` 에 업로드한다.
+- 옛 exe 는 살려두면 옛 다운로드 링크 누른 사람이 안전하게 옛 버전 받음 — 한 minor 정도 후 정리.
 
 ### Unity 본체 0.1.0 → 0.2.0 (Unity 프로젝트 변경)
 
@@ -63,17 +64,18 @@ https://dotshelf.digital/launcher/windows/
 - `launcher/manifests/dev/windows/latest.json` 의 `latestVersion`, `packageUrl` (zip 파일명 versioned) 갱신
 - `web/service-web/.../page.tsx` 의 `RELEASE.version`, `RELEASE.date` 갱신
 
-후속 작업 (수동):
+후속 작업:
 - Unity Editor 에서 빌드
 - zip 압축 → SHA-256 계산
 - `latest.json` 의 `sha256` 갱신
-- zip + 새 latest.json SCP 업로드
+- Unity zip 을 `LAUNCHER_UNITY_ZIP_URL` CI/CD 변수에서 받을 수 있는 위치에 업로드
+- `launcher:publish` 가 manifest 의 `sha256` 과 다운로드한 zip 을 검증한 뒤 운영 경로에 업로드
 
 ## minLauncherVersion 게이트
 
 `latest.json.minLauncherVersion` 은 "이 본체를 쓰려면 런처가 최소 이 버전 이상이어야 함" 의미. 호환성 깨질 때만 bump 한다 (예: launcher Core 의 `EventsManifest` 스키마 v2 도입). 평소엔 안 건드린다.
 
-현재 코드는 이 값을 표시만 하고 강제 차단 로직은 없다 (TODO).
+런처는 설치/업데이트 시작 전에 현재 AssemblyInformationalVersion 을 이 값과 비교한다. 현재 런처가 더 낮으면 설치를 막고 최신 런처 다운로드 경로를 안내한다.
 
 ## Git tag 컨벤션 (제안 — 미시행)
 

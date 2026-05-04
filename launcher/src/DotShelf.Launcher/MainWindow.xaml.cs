@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -15,6 +16,7 @@ public partial class MainWindow : Window
 {
     private const string DefaultManifestUrl = "https://dotshelf.digital/launcher/windows/latest.json";
     private const string DefaultEventsUrl = "https://dotshelf.digital/launcher/windows/events.json";
+    private const string LauncherDownloadUrl = "https://dotshelf.digital/download";
     private static readonly TimeSpan BannerRotationInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan BannerManualPauseDuration = TimeSpan.FromSeconds(10);
 
@@ -81,6 +83,13 @@ public partial class MainWindow : Window
         public double Width { get; init; }
         public double Height { get; init; }
         public double Speed { get; init; }
+    }
+
+    private sealed class LauncherVersionNotSupportedException(string currentVersion, string minVersion)
+        : InvalidOperationException($"Launcher {currentVersion} is lower than required version {minVersion}.")
+    {
+        public string CurrentVersion { get; } = currentVersion;
+        public string MinVersion { get; } = minVersion;
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -485,6 +494,7 @@ public partial class MainWindow : Window
         var completed = await RunActionAsync(async cancellationToken =>
         {
             var manifest = await EnsureLatestManifestAsync(cancellationToken);
+            EnsureLauncherVersionSupported(manifest);
             var actionName = packageInstaller.HasInstalledExecutable(installedState) ? "업데이트" : "설치";
 
             Log($"버전 {manifest.LatestVersion} {actionName}를 시작합니다.");
@@ -579,6 +589,7 @@ public partial class MainWindow : Window
             }
 
             var manifest = await EnsureLatestManifestAsync(CancellationToken.None);
+            EnsureLauncherVersionSupported(manifest);
             await UpdatePackageSizeTextAsync(manifest, CancellationToken.None);
             if (!hasLocalExecutable || installedState == null)
             {
@@ -598,6 +609,14 @@ public partial class MainWindow : Window
 
             StatusText.Text = $"설치됨 {installedState.InstalledVersion} · 최신 빌드 {manifest.LatestVersion}";
             ApplyUiState(LauncherUiState.UpdateAvailable);
+        }
+        catch (LauncherVersionNotSupportedException exception)
+        {
+            Log($"Launcher update required: current {exception.CurrentVersion}, minimum {exception.MinVersion}");
+            VersionText.Text = $"Launcher {exception.CurrentVersion}";
+            PackageSizeText.Text = "설치 파일 크기: 확인 불가";
+            StatusText.Text = $"런처를 먼저 업데이트해야 합니다. 최신 런처: {LauncherDownloadUrl}";
+            ApplyUiState(LauncherUiState.Error);
         }
         catch (Exception exception)
         {
@@ -637,6 +656,37 @@ public partial class MainWindow : Window
         return latestManifest;
     }
 
+    private static void EnsureLauncherVersionSupported(LauncherManifest manifest)
+    {
+        if (string.IsNullOrWhiteSpace(manifest.MinLauncherVersion))
+        {
+            return;
+        }
+
+        var currentVersion = GetCurrentLauncherVersion();
+        if (ReleaseVersionComparer.Compare(currentVersion, manifest.MinLauncherVersion) >= 0)
+        {
+            return;
+        }
+
+        throw new LauncherVersionNotSupportedException(currentVersion, manifest.MinLauncherVersion);
+    }
+
+    private static string GetCurrentLauncherVersion()
+    {
+        var assembly = typeof(MainWindow).Assembly;
+        var informationalVersion = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion;
+
+        if (!string.IsNullOrWhiteSpace(informationalVersion))
+        {
+            return informationalVersion;
+        }
+
+        return assembly.GetName().Version?.ToString() ?? "0.0.0";
+    }
+
     private async Task UpdatePackageSizeTextAsync(LauncherManifest manifest, CancellationToken cancellationToken)
     {
         try
@@ -661,6 +711,13 @@ public partial class MainWindow : Window
             using var cancellationTokenSource = new CancellationTokenSource();
             await action(cancellationTokenSource.Token);
             return true;
+        }
+        catch (LauncherVersionNotSupportedException exception)
+        {
+            StatusText.Text = $"런처 업데이트가 필요합니다. 최신 런처: {LauncherDownloadUrl}";
+            Log($"Current launcher {exception.CurrentVersion} is lower than required {exception.MinVersion}.");
+            ApplyUiState(LauncherUiState.Error);
+            return false;
         }
         catch (Exception exception)
         {
