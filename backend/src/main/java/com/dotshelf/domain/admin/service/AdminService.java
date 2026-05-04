@@ -64,6 +64,7 @@ import com.dotshelf.domain.admin.dto.AdminDtos.SettlementWithdrawalResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.StatsKpiResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.StatsTimeseriesResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.SystemHealthResponse;
+import com.dotshelf.domain.admin.dto.AdminDtos.UpdateAnnouncementRequest;
 import com.dotshelf.domain.admin.dto.AdminDtos.UserActionRequest;
 import com.dotshelf.domain.admin.dto.AdminDtos.UserHistoryResponse;
 import com.dotshelf.domain.admin.dto.AdminDtos.UserListItemResponse;
@@ -579,8 +580,38 @@ public class AdminService {
                 .createdByUserId(admin.getId())
                 .build());
         writeAudit(admin, "ANNOUNCEMENT_CREATE", "ANNOUNCEMENT", announcement.getId(), null,
-                announcement.getTitle(), null, ipAddress);
+                announcementSnapshot(announcement), null, ipAddress);
         return AnnouncementResponse.from(announcement);
+    }
+
+    @Transactional
+    public AnnouncementResponse updateAnnouncement(Long userId, Long announcementId,
+                                                   UpdateAnnouncementRequest request, String ipAddress) {
+        User admin = requireAdminUser(userId);
+        AdminAnnouncement announcement = getAnnouncement(announcementId);
+        String before = announcementSnapshot(announcement);
+        announcement.update(
+                request.title(),
+                request.body(),
+                request.audience(),
+                request.startsAt(),
+                request.endsAt(),
+                request.urgent()
+        );
+        String after = announcementSnapshot(announcement);
+        writeAudit(admin, "ANNOUNCEMENT_UPDATE", "ANNOUNCEMENT", announcement.getId(),
+                before, after, null, ipAddress);
+        return AnnouncementResponse.from(announcement);
+    }
+
+    @Transactional
+    public void deleteAnnouncement(Long userId, Long announcementId, String ipAddress) {
+        User admin = requireAdminUser(userId);
+        AdminAnnouncement announcement = getAnnouncement(announcementId);
+        String before = announcementSnapshot(announcement);
+        adminAnnouncementRepository.delete(announcement);
+        writeAudit(admin, "ANNOUNCEMENT_DELETE", "ANNOUNCEMENT", announcement.getId(),
+                before, null, null, ipAddress);
     }
 
     public PageResponse<PolicyVersionResponse> getPolicies(Long userId, int limit) {
@@ -831,6 +862,11 @@ public class AdminService {
 
     private Report getReportEntity(Long reportId) {
         return reportRepository.findById(reportId)
+                .orElseThrow(() -> new CustomException(ErrorCode.RESOURCE_NOT_FOUND));
+    }
+
+    private AdminAnnouncement getAnnouncement(Long announcementId) {
+        return adminAnnouncementRepository.findById(announcementId)
                 .orElseThrow(() -> new CustomException(ErrorCode.RESOURCE_NOT_FOUND));
     }
 
@@ -1113,6 +1149,65 @@ public class AdminService {
                 + ", profileImageUrl=" + user.getProfileImageUrl()
                 + ", introduction=" + user.getIntroduction()
                 + ", sessionInvalidatedAt=" + user.getSessionInvalidatedAt();
+    }
+
+    private String announcementSnapshot(AdminAnnouncement announcement) {
+        return "{"
+                + jsonField("id", announcement.getId()) + ","
+                + jsonField("title", announcement.getTitle()) + ","
+                + jsonField("body", announcement.getBody()) + ","
+                + jsonField("audience", announcement.getAudience()) + ","
+                + jsonField("startsAt", announcement.getStartsAt()) + ","
+                + jsonField("endsAt", announcement.getEndsAt()) + ","
+                + jsonField("urgent", announcement.isUrgent()) + ","
+                + jsonField("createdByUserId", announcement.getCreatedByUserId()) + ","
+                + jsonField("createdAt", announcement.getCreatedAt()) + ","
+                + jsonField("updatedAt", announcement.getUpdatedAt())
+                + "}";
+    }
+
+    private String jsonField(String name, Object value) {
+        return jsonString(name) + ":" + jsonValue(value);
+    }
+
+    private String jsonValue(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof Number || value instanceof Boolean) {
+            return value.toString();
+        }
+        return jsonString(value.toString());
+    }
+
+    private String jsonString(String value) {
+        return "\"" + escapeJson(value) + "\"";
+    }
+
+    private String escapeJson(String value) {
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            switch (character) {
+                case '"' -> escaped.append("\\\"");
+                case '\\' -> escaped.append("\\\\");
+                case '\b' -> escaped.append("\\b");
+                case '\f' -> escaped.append("\\f");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
+                default -> appendJsonCharacter(escaped, character);
+            }
+        }
+        return escaped.toString();
+    }
+
+    private void appendJsonCharacter(StringBuilder escaped, char character) {
+        if (character < 0x20) {
+            escaped.append(String.format("\\u%04x", (int) character));
+            return;
+        }
+        escaped.append(character);
     }
 
     private String severity(Report report) {

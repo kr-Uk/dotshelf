@@ -785,7 +785,9 @@ export const mockAnnouncements: AnnouncementItem[] = [
   {
     id: "an_001",
     title: "5/2(토) 03:00~04:00 정기 점검 안내",
+    body: "정기 점검 시간 동안 일부 서비스 이용이 제한될 수 있습니다.",
     audience: "all_users",
+    startsAt: "2026-04-25T05:00:00.000Z",
     publishedAt: "2026-04-25T05:00:00.000Z",
     endsAt: "2026-05-02T04:00:00.000Z",
     isUrgent: false,
@@ -793,7 +795,9 @@ export const mockAnnouncements: AnnouncementItem[] = [
   {
     id: "an_002",
     title: "광고 가드레일 정책 일부 개정",
+    body: "광고 심사 기준 일부가 개정되었습니다. 상세 내용은 정책 문서를 확인해주세요.",
     audience: "all_users",
+    startsAt: "2026-04-22T07:00:00.000Z",
     publishedAt: "2026-04-22T07:00:00.000Z",
     endsAt: "2026-05-22T07:00:00.000Z",
     isUrgent: false,

@@ -21,9 +21,12 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public final class AdminDtos {
+
+    private static final String ANNOUNCEMENT_AUDIENCE_PATTERN = "^(all_users|internal)$";
 
     private AdminDtos() {
     }
@@ -533,6 +536,22 @@ public final class AdminDtos {
             @NotBlank(message = "body는 필수입니다.")
             String body,
             @NotBlank(message = "audience는 필수입니다.")
+            @Pattern(regexp = ANNOUNCEMENT_AUDIENCE_PATTERN, message = "audience must be all_users or internal.")
+            String audience,
+            Instant startsAt,
+            Instant endsAt,
+            boolean urgent
+    ) {
+    }
+
+    public record UpdateAnnouncementRequest(
+            @NotBlank(message = "title은 필수입니다.")
+            @Size(max = 150, message = "title은 최대 150자입니다.")
+            String title,
+            @NotBlank(message = "body는 필수입니다.")
+            String body,
+            @NotBlank(message = "audience는 필수입니다.")
+            @Pattern(regexp = ANNOUNCEMENT_AUDIENCE_PATTERN, message = "audience must be all_users or internal.")
             String audience,
             Instant startsAt,
             Instant endsAt,

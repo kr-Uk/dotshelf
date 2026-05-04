@@ -31,6 +31,34 @@ import {
 const SSO_DELAY_MS = 600;
 const MFA_DELAY_MS = 400;
 
+function normalizeReportTarget(target: string | null): string | null {
+  if (!target) return null;
+  const normalized = target.trim().toUpperCase();
+  if (normalized === "READING_RECORD" || normalized === "READING_LOG") {
+    return "reading_log";
+  }
+  if (normalized === "READING_RECORD_COMMENT" || normalized === "COMMENT") {
+    return "comment";
+  }
+  if (normalized === "USER" || normalized === "PROFILE") {
+    return "profile";
+  }
+  if (normalized === "GUESTBOOK") return "guestbook";
+  if (normalized === "SPACE") return "space";
+  if (normalized === "CONTENT") return "content";
+  return target;
+}
+
+function normalizeReportStatus(status: string | null): string | null {
+  if (!status) return null;
+  const normalized = status.trim().toUpperCase();
+  if (normalized === "PENDING" || normalized === "OPEN") return "open";
+  if (normalized === "IN_REVIEW") return "in_review";
+  if (normalized === "RESOLVED" || normalized === "DONE") return "resolved";
+  if (normalized === "REJECTED" || normalized === "DISMISSED") return "dismissed";
+  return status;
+}
+
 export const handlers = [
   // --- Auth (SSO + MFA, 사내 IP 화이트리스트 가정) -------------------------
   http.post("/api/auth/sso/start", async () => {
@@ -126,11 +154,16 @@ export const handlers = [
   // --- Reports / Moderation ----------------------------------------------
   http.get("/api/reports", async ({ request }) => {
     const url = new URL(request.url);
-    const target = url.searchParams.get("target");
+    const target = url.searchParams.get("targetType") ?? url.searchParams.get("target");
+    const status = url.searchParams.get("status");
+    const normalizedTarget = normalizeReportTarget(target);
+    const normalizedStatus = normalizeReportStatus(status);
     await delay(180);
-    const items = target
-      ? mockReports.filter((r) => r.targetType === target)
-      : mockReports;
+    const items = mockReports.filter((r) => {
+      const targetMatched = normalizedTarget === null || r.targetType === normalizedTarget;
+      const statusMatched = normalizedStatus === null || r.status === normalizedStatus;
+      return targetMatched && statusMatched;
+    });
     return HttpResponse.json(items);
   }),
   http.post("/api/reports/:id/action", async () => {
@@ -327,9 +360,69 @@ export const handlers = [
     await delay(180);
     return HttpResponse.json(mockAnnouncements);
   }),
-  http.post("/api/operations/announcements", async () => {
+  http.post("/api/operations/announcements", async ({ request }) => {
     await delay(280);
-    return HttpResponse.json({ ok: true });
+    const body = (await request.json()) as {
+      title: string;
+      body: string;
+      audience: "all_users" | "internal";
+      startsAt: string | null;
+      endsAt: string | null;
+      urgent?: boolean;
+      isUrgent?: boolean;
+    };
+    const publishedAt = body.startsAt ?? new Date().toISOString();
+    const announcement = {
+      id: "an_" + Date.now().toString(36),
+      title: body.title,
+      body: body.body,
+      audience: body.audience,
+      startsAt: body.startsAt,
+      publishedAt,
+      endsAt: body.endsAt,
+      isUrgent: body.urgent ?? body.isUrgent ?? false,
+    };
+    mockAnnouncements.unshift(announcement);
+    return HttpResponse.json(announcement);
+  }),
+  http.put("/api/operations/announcements/:id", async ({ params, request }) => {
+    await delay(220);
+    const id = params.id as string;
+    const body = (await request.json()) as {
+      title: string;
+      body: string;
+      audience: "all_users" | "internal";
+      startsAt: string | null;
+      endsAt: string | null;
+      urgent?: boolean;
+      isUrgent?: boolean;
+    };
+    const index = mockAnnouncements.findIndex((a) => a.id === id);
+    if (index < 0) {
+      return HttpResponse.json({ message: "공지사항을 찾을 수 없습니다." }, { status: 404 });
+    }
+    const announcement = {
+      ...mockAnnouncements[index],
+      title: body.title,
+      body: body.body,
+      audience: body.audience,
+      startsAt: body.startsAt,
+      publishedAt: body.startsAt ?? mockAnnouncements[index].publishedAt,
+      endsAt: body.endsAt,
+      isUrgent: body.urgent ?? body.isUrgent ?? false,
+    };
+    mockAnnouncements[index] = announcement;
+    return HttpResponse.json(announcement);
+  }),
+  http.delete("/api/operations/announcements/:id", async ({ params }) => {
+    await delay(200);
+    const id = params.id as string;
+    const index = mockAnnouncements.findIndex((a) => a.id === id);
+    if (index < 0) {
+      return HttpResponse.json({ message: "공지사항을 찾을 수 없습니다." }, { status: 404 });
+    }
+    mockAnnouncements.splice(index, 1);
+    return new HttpResponse(null, { status: 204 });
   }),
   http.post("/api/operations/policies/publish", async () => {
     await delay(280);

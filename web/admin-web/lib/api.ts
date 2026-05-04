@@ -131,6 +131,11 @@ function dateValue(source: unknown, fallback = new Date().toISOString()): string
   return raw.length > 0 ? raw : fallback;
 }
 
+function nullableDateValue(source: unknown): string | null {
+  const raw = text(source);
+  return raw.length > 0 ? raw : null;
+}
+
 function dateInputToInstant(source: unknown, endOfDay = false): string | null {
   const raw = text(source);
   if (!raw) return null;
@@ -154,6 +159,17 @@ function parseJsonBody(init: RequestInit): JsonRecord {
 
 function withJsonBody(init: RequestInit, body: JsonRecord): RequestInit {
   return { ...init, body: JSON.stringify(body) };
+}
+
+function announcementRequestBody(body: JsonRecord): JsonRecord {
+  return {
+    title: text(body.title),
+    body: text(body.body),
+    audience: text(body.audience, "all_users"),
+    startsAt: dateInputToInstant(body.startsAt),
+    endsAt: dateInputToInstant(body.endsAt, true),
+    urgent: booleanValue(body.isUrgent ?? body.urgent),
+  };
 }
 
 function pageItems(payload: unknown): unknown[] {
@@ -340,14 +356,12 @@ function adaptRequest(path: string, init: RequestInit): { path: string; init: Re
 
   if (method === "POST" && pathname === "/operations/announcements") {
     const body = parseJsonBody(init);
-    nextInit = withJsonBody(init, {
-      title: text(body.title),
-      body: text(body.body),
-      audience: text(body.audience, "all_users"),
-      startsAt: dateInputToInstant(body.startsAt),
-      endsAt: dateInputToInstant(body.endsAt, true),
-      urgent: booleanValue(body.isUrgent ?? body.urgent),
-    });
+    nextInit = withJsonBody(init, announcementRequestBody(body));
+  }
+
+  if (method === "PUT" && /^\/operations\/announcements\/[^/]+$/u.test(pathname)) {
+    const body = parseJsonBody(init);
+    nextInit = withJsonBody(init, announcementRequestBody(body));
   }
 
   if (method === "POST" && pathname === "/operations/admins" && nextPath === path) {
@@ -706,12 +720,16 @@ function mapAdminMember(source: unknown): AdminMember {
 }
 
 function mapAnnouncement(source: unknown): AnnouncementItem {
+  const startsAt = nullableDateValue(value(source, "startsAt"));
+  const publishedAt = startsAt ?? dateValue(value(source, "createdAt"));
   return {
     id: text(value(source, "id")),
     title: text(value(source, "title")),
+    body: text(value(source, "body")),
     audience: text(value(source, "audience"), "all_users") as AnnouncementItem["audience"],
-    publishedAt: dateValue(value(source, "startsAt"), dateValue(value(source, "createdAt"))),
-    endsAt: dateValue(value(source, "endsAt")),
+    startsAt,
+    publishedAt,
+    endsAt: nullableDateValue(value(source, "endsAt")),
     isUrgent: booleanValue(value(source, "urgent") ?? value(source, "isUrgent")),
   };
 }
@@ -776,6 +794,7 @@ function adaptPayload(path: string, method: string, payload: unknown): unknown {
   if (method === "POST" && /^\/operations\/admins\/[^/]+\/role$/u.test(pathname)) return mapAdminMember(payload);
   if (method === "GET" && pathname === "/operations/announcements") return pageItems(payload).map(mapAnnouncement);
   if (method === "POST" && pathname === "/operations/announcements") return mapAnnouncement(payload);
+  if (method === "PUT" && /^\/operations\/announcements\/[^/]+$/u.test(pathname)) return mapAnnouncement(payload);
   if (method === "GET" && pathname === "/operations/policies") return pageItems(payload).map(mapPolicy);
   if (method === "GET" && pathname === "/audit") return pageItems(payload).map(mapAuditLog);
   if (method === "GET" && pathname === "/search") return pageItems(payload).map(mapSearchHit);

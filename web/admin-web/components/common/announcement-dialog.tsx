@@ -35,8 +35,8 @@ export type AnnouncementPayload = {
   title: string;
   body: string;
   audience: (typeof AUDIENCE_OPTIONS)[number]["value"];
-  startsAt: string;
-  endsAt: string;
+  startsAt: string | null;
+  endsAt: string | null;
   isUrgent: boolean;
 };
 
@@ -46,14 +46,23 @@ function todayIso(offsetDays = 0): string {
   return d.toISOString().slice(0, 10);
 }
 
+function dateInputValue(source: string | null | undefined): string {
+  if (!source) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/u.test(source)) return source;
+  const date = new Date(source);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
 export function AnnouncementDialog({
   open,
   onOpenChange,
   onSubmit,
+  initialValue,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (payload: AnnouncementPayload) => void | Promise<void>;
+  initialValue?: AnnouncementPayload | null;
 }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -67,16 +76,18 @@ export function AnnouncementDialog({
   // 다이얼로그가 열릴 때마다 form 초기화 — open prop 외부 변화에 반응해야 함.
   useEffect(() => {
     if (open) {
-      setTitle("");
-      setBody("");
-      setAudience("all_users");
-      setStartsAt(todayIso());
-      setEndsAt(todayIso(7));
-      setIsUrgent(false);
+      const editing = initialValue !== null && initialValue !== undefined;
+      setTitle(initialValue?.title ?? "");
+      setBody(initialValue?.body ?? "");
+      setAudience(initialValue?.audience ?? "all_users");
+      setStartsAt(editing ? dateInputValue(initialValue.startsAt) : todayIso());
+      setEndsAt(editing ? dateInputValue(initialValue.endsAt) : todayIso(7));
+      setIsUrgent(initialValue?.isUrgent ?? false);
     }
-  }, [open]);
+  }, [initialValue, open]);
 
   const canSubmit = !busy && title.trim().length > 0 && body.trim().length > 0;
+  const isEditing = initialValue !== null && initialValue !== undefined;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -86,8 +97,8 @@ export function AnnouncementDialog({
         title: title.trim(),
         body: body.trim(),
         audience,
-        startsAt,
-        endsAt,
+        startsAt: startsAt || null,
+        endsAt: endsAt || null,
         isUrgent,
       });
       onOpenChange(false);
@@ -100,9 +111,9 @@ export function AnnouncementDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>새 공지 작성</DialogTitle>
+          <DialogTitle>{isEditing ? "공지 수정" : "새 공지 작성"}</DialogTitle>
           <DialogDescription>
-            긴급 공지는 인앱 풀스크린 모달로 표시됩니다. 발행은 감사 로그에 기록.
+            긴급 공지는 인앱 풀스크린 모달로 표시됩니다. 변경 사항은 감사 로그에 기록.
           </DialogDescription>
         </DialogHeader>
 
@@ -180,7 +191,7 @@ export function AnnouncementDialog({
             취소
           </Button>
           <Button onClick={submit} disabled={!canSubmit}>
-            {busy ? "발행 중…" : "발행"}
+            {busy ? "저장 중…" : isEditing ? "저장" : "발행"}
           </Button>
         </DialogFooter>
       </DialogContent>

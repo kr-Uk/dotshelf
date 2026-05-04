@@ -507,9 +507,11 @@ export interface KpiSnapshot {
 export interface AnnouncementItem {
   id: string;
   title: string;
+  body: string;
   audience: "all_users" | "internal";
+  startsAt: string | null;
   publishedAt: string;
-  endsAt: string;
+  endsAt: string | null;
   isUrgent: boolean;
 }
 
