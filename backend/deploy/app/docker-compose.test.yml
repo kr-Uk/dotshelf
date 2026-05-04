@@ -64,6 +64,9 @@ services:
       # Desktop OAuth PKCE 흐름 (MR #90) — Desktop client_id가 FE authorize 시 사용한 값과
       # 정확히 일치해야 Google이 code 교환 허용. 미설정 시 BE가 명시적 INVALID_TOKEN throw.
       GOOGLE_DESKTOP_CLIENT_ID: ${GOOGLE_DESKTOP_CLIENT_ID:-}
+      # Google Desktop app type client의 secret. 형식적으로 token endpoint가 요구
+      # (binary에 박힌 공개 secret, 진짜 보안은 PKCE).
+      GOOGLE_DESKTOP_CLIENT_SECRET: ${GOOGLE_DESKTOP_CLIENT_SECRET:-}
       KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-dummy}
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-dummy}
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-http://localhost:18080/oauth/kakao/callback}

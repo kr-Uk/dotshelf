@@ -105,7 +105,12 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
                         "GOOGLE_DESKTOP_CLIENT_ID 설정이 필요합니다 (PKCE 흐름).");
             }
             clientId = desktopId;
-            clientSecret = null;
+            // Google Desktop app type은 PKCE 사용해도 client_secret 형식적으로 요구
+            // (안 보내면 invalid_request "client_secret is missing"). 공개 secret이라
+            // binary에 박혀도 OK — 진짜 보안은 code_verifier 검증이 담당.
+            // 미설정이면 null로 — Desktop app type이 secret 안 요구하는 환경 호환.
+            String desktopSecret = properties.google().desktopClientSecret();
+            clientSecret = (desktopSecret != null && !desktopSecret.isBlank()) ? desktopSecret : null;
         } else {
             clientId = serverClientId();
             clientSecret = properties.google().clientSecret();
