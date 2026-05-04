@@ -109,8 +109,12 @@ public class GoogleTokenVerifier extends JwtSocialTokenVerifierSupport {
             // (안 보내면 invalid_request "client_secret is missing"). 공개 secret이라
             // binary에 박혀도 OK — 진짜 보안은 code_verifier 검증이 담당.
             // 미설정이면 null로 — Desktop app type이 secret 안 요구하는 환경 호환.
-            String desktopSecret = properties.google().desktopClientSecret();
-            clientSecret = (desktopSecret != null && !desktopSecret.isBlank()) ? desktopSecret : null;
+            // Google record compact constructor에서 이미 isBlank() → null 정규화 처리됨.
+            clientSecret = properties.google().desktopClientSecret();
+            if (clientSecret == null) {
+                // 미설정 경고 — Google이 secret 요구하는 케이스에서 invalid_request 받기 전에 운영자가 인지 가능.
+                log.warn("GOOGLE_DESKTOP_CLIENT_SECRET 미설정. Google이 client_secret 요구하면 invalid_request 응답 가능.");
+            }
         } else {
             clientId = serverClientId();
             clientSecret = properties.google().clientSecret();
