@@ -3,6 +3,7 @@ using App.Application.Notebook;
 using App.Auth;
 using App.Bootstrap;
 using App.Config;
+using App.Domain;
 using App.Infrastructure.Api;
 using App.Infrastructure.Mock;
 using UnityEngine;
@@ -21,7 +22,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private bool installInEditMode = true;
         [SerializeField] private bool saveGeneratedContentInEditMode = true;
         [SerializeField] private AppApiConfig apiConfig;
-        private const string DefaultApiBaseUrl = "https://api.dotshelf.digital";
+        private const string DefaultApiBaseUrl = ApiEndpointDefaults.DefaultBaseUrl;
         private const int DefaultRequestTimeoutSeconds = 10;
 
         private void Awake()

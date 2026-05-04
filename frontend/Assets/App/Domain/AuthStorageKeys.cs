@@ -12,3 +12,14 @@ namespace App.Domain.Auth
         public const string GuestSessionId = "Dotshelf.Auth.GuestSessionId";
     }
 }
+
+namespace App.Domain
+{
+    public static class ApiEndpointDefaults
+    {
+        public const string DevBaseUrl = "https://dev-api.dotshelf.digital";
+        public const string ProdBaseUrl = "https://dev-api.dotshelf.digital";
+        public const string DefaultBaseUrl = DevBaseUrl;
+        public const string HealthCheckPath = "/health";
+    }
+}

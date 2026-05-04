@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Text;
 using System.Text.RegularExpressions;
+using App.Domain;
 using App.Infrastructure.Api.Dtos;
 using Newtonsoft.Json;
 using UnityEngine;
@@ -16,7 +17,7 @@ namespace App.Auth
     // MainScene.
     public sealed class AuthApiClient : MonoBehaviour
     {
-        public const string DefaultBaseUrl = "https://api.dotshelf.digital";
+        public const string DefaultBaseUrl = ApiEndpointDefaults.DefaultBaseUrl;
         public const int DefaultTimeoutSeconds = 10;
 
         private string baseUrl = DefaultBaseUrl;

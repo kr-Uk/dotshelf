@@ -759,7 +759,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dbf853c121dce4d47a9552d8cae790c2, type: 3}
   m_Name:
   m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Api.APIManager
-  baseUrl: https://api.dotshelf.digital
+  baseUrl: https://dev-api.dotshelf.digital
   accessToken:
   timeoutSeconds: 10
   enableVerboseLog: 0

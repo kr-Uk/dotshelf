@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
+using App.Domain;
 using App.Domain.Auth;
 using App.Infrastructure.Api.Dtos;
 using Newtonsoft.Json;
@@ -24,7 +25,7 @@ namespace App.Infrastructure.Api
 
     public sealed class APIManager : MonoBehaviour
     {
-        [SerializeField] private string baseUrl = "https://api.dotshelf.digital";
+        [SerializeField] private string baseUrl = ApiEndpointDefaults.DefaultBaseUrl;
         [SerializeField] private string accessToken;
         [SerializeField] private int timeoutSeconds = 10;
         [SerializeField] private bool enableVerboseLog;

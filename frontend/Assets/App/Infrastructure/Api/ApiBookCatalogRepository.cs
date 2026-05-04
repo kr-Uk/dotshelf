@@ -166,7 +166,7 @@ namespace App.Infrastructure.Api
         {
             if (string.IsNullOrWhiteSpace(value))
             {
-                return "https://api.dotshelf.digital";
+                return ApiEndpointDefaults.DefaultBaseUrl;
             }
 
             return value.Trim().TrimEnd('/');

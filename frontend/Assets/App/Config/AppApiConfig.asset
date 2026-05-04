@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   apiMode: 0
   devBaseUrl: https://dev-api.dotshelf.digital
-  prodBaseUrl: https://api.dotshelf.digital
+  prodBaseUrl: https://dev-api.dotshelf.digital
   healthCheckPath: /health
   requestTimeoutSeconds: 10
   enableVerboseLog: 1
