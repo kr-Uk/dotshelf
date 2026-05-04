@@ -120,8 +120,23 @@ namespace App.Infrastructure.Api.Dashboard
 
         public void ApplyThemeWithMode(long inventoryId, ThemeApplyMode mode, Action<bool> onSuccess, Action<DashboardApiError> onError)
         {
-            string modeStr = mode == ThemeApplyMode.Reset ? "RESET" : "KEEP_BLOCKERS_ONLY";
-            client.ApplyMySpaceThemeWithMode(inventoryId, modeStr,
+            // Short-circuit KEEP_BLOCKERS_ONLY on the FE: backend currently
+            // returns 501 NOT_IMPLEMENTED (Layout 도메인 통합 후 활성화 예정).
+            // Skipping the round-trip means callers see a stable error code
+            // regardless of when the BE gate flips, and we do not advertise a
+            // mode the server cannot fulfill. Remove this branch when BE
+            // implements KEEP_BLOCKERS_ONLY.
+            if (mode == ThemeApplyMode.KeepBlockersOnly)
+            {
+                onError?.Invoke(new DashboardApiError
+                {
+                    Code = "THEME_MODE_NOT_IMPLEMENTED",
+                    Message = "이 모드는 아직 지원되지 않습니다.",
+                    Error = "THEME_MODE_NOT_IMPLEMENTED"
+                });
+                return;
+            }
+            client.ApplyMySpaceThemeWithMode(inventoryId, "RESET",
                 onSuccess: dto => onSuccess?.Invoke(dto?.ThemeReset ?? false),
                 onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
         }
