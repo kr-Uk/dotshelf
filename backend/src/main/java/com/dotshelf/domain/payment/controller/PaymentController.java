@@ -56,8 +56,11 @@ public class PaymentController {
     }
 
     @GetMapping(value = "/inicis/request/{orderId}", produces = MediaType.TEXT_HTML_VALUE)
-    public String renderInicisPaymentPage(@PathVariable String orderId) {
-        return renderPaymentPage(paymentService.getInicisPaymentPage(orderId));
+    public String renderInicisPaymentPage(
+            @CurrentUser Long userId,
+            @PathVariable String orderId
+    ) {
+        return renderPaymentPage(paymentService.getInicisPaymentPage(userId, orderId));
     }
 
     @PostMapping(value = "/inicis/return",

@@ -16,6 +16,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dotshelf.domain.payment.dto.PaymentDtos.InicisAuthReturnRequest;
 import com.dotshelf.domain.payment.entity.PageTransaction;
 import com.dotshelf.domain.payment.entity.PageWallet;
 import com.dotshelf.domain.payment.entity.PaymentOrder;
@@ -37,6 +38,9 @@ class PaymentOrderCompletionServiceTest {
 
     @Mock
     private PageTransactionRepository pageTransactionRepository;
+
+    @Mock
+    private InicisPaymentProperties inicisPaymentProperties;
 
     @InjectMocks
     private PaymentOrderCompletionService completionService;
@@ -104,6 +108,36 @@ class PaymentOrderCompletionServiceTest {
         then(pageTransactionRepository).shouldHaveNoInteractions();
     }
 
+    @Test
+    @DisplayName("KG이니시스 returnUrl의 MID와 merchantData가 맞으면 비성공 콜백으로 주문을 실패 처리한다")
+    void authenticateInicisReturn_failureCallbackWithValidMetadata_failsOrder() {
+        PaymentOrder order = order();
+        InicisAuthReturnRequest request = returnRequest("V013", "order-1");
+        given(paymentOrderRepository.findByOrderIdForUpdate("order-1")).willReturn(Optional.of(order));
+        given(inicisPaymentProperties.mid()).willReturn("INIpayTest");
+
+        PaymentOrder response = completionService.authenticateInicisReturn(request);
+
+        assertThat(response.getStatus()).isEqualTo(PaymentOrder.STATUS_FAILED);
+        assertThat(response.getFailureCode()).isEqualTo("V013");
+    }
+
+    @Test
+    @DisplayName("KG이니시스 returnUrl의 merchantData가 주문과 다르면 상태를 바꾸지 않는다")
+    void authenticateInicisReturn_invalidMerchantData_throwsWithoutStateChange() {
+        PaymentOrder order = order();
+        InicisAuthReturnRequest request = returnRequest("V013", "other-order");
+        given(paymentOrderRepository.findByOrderIdForUpdate("order-1")).willReturn(Optional.of(order));
+        given(inicisPaymentProperties.mid()).willReturn("INIpayTest");
+
+        assertThatThrownBy(() -> completionService.authenticateInicisReturn(request))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.PAYMENT_AUTHENTICATION_FAILED);
+
+        assertThat(order.getStatus()).isEqualTo(PaymentOrder.STATUS_READY);
+    }
+
     private PaymentOrder order() {
         Instant now = Instant.now();
         return PaymentOrder.builder()
@@ -130,6 +164,21 @@ class PaymentOrderCompletionServiceTest {
                 amountKrw,
                 "Card",
                 Instant.now()
+        );
+    }
+
+    private InicisAuthReturnRequest returnRequest(String resultCode, String merchantData) {
+        return new InicisAuthReturnRequest(
+                resultCode,
+                "결제가 취소되었습니다.",
+                "INIpayTest",
+                "order-1",
+                null,
+                "stg",
+                null,
+                null,
+                "UTF-8",
+                merchantData
         );
     }
 }

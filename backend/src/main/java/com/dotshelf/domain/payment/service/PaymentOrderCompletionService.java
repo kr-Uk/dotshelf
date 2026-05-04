@@ -3,6 +3,7 @@ package com.dotshelf.domain.payment.service;
 import java.time.Instant;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dotshelf.domain.payment.dto.PaymentDtos.InicisAuthReturnRequest;
@@ -26,11 +27,12 @@ import lombok.RequiredArgsConstructor;
 @Transactional(readOnly = true)
 public class PaymentOrderCompletionService {
 
-    private static final String INICIS_SUCCESS_CODE = "0000";
+    private static final String NET_CANCEL_FAILED_CODE = "NET_CANCEL_FAILED";
 
     private final PaymentOrderRepository paymentOrderRepository;
     private final PageWalletRepository pageWalletRepository;
     private final PageTransactionRepository pageTransactionRepository;
+    private final InicisPaymentProperties inicisPaymentProperties;
 
     public PaymentOrderStatusResponse getOrderStatus(Long userId, String orderId) {
         PaymentOrder order = paymentOrderRepository.findByOrderId(orderId)
@@ -54,13 +56,14 @@ public class PaymentOrderCompletionService {
     public PaymentOrder authenticateInicisReturn(InicisAuthReturnRequest request) {
         PaymentOrder order = paymentOrderRepository.findByOrderIdForUpdate(request.orderId())
                 .orElseThrow(() -> new CustomException(ErrorCode.PAYMENT_ORDER_NOT_FOUND));
+        validateReturnMetadata(order, request);
         if (order.isDone()) {
             return order;
         }
         if (!order.isReady() && !order.isAuthenticated()) {
             throw new CustomException(ErrorCode.PAYMENT_ORDER_INVALID_STATE);
         }
-        if (!INICIS_SUCCESS_CODE.equals(request.resultCode())) {
+        if (!InicisPaymentConstants.SUCCESS_CODE.equals(request.resultCode())) {
             order.fail(request.resultCode(), request.resultMessage(), Instant.now());
             return order;
         }
@@ -116,6 +119,11 @@ public class PaymentOrderCompletionService {
     }
 
     @Transactional
+    public InicisReturnResponse failNetCancelOrder(String orderId, String resultMessage) {
+        return failInicisOrder(orderId, NET_CANCEL_FAILED_CODE, resultMessage);
+    }
+
+    @Transactional
     public void cancelInicisOrder(String orderId, String resultCode, String resultMessage) {
         PaymentOrder order = paymentOrderRepository.findByOrderIdForUpdate(orderId)
                 .orElseThrow(() -> new CustomException(ErrorCode.PAYMENT_ORDER_NOT_FOUND));
@@ -124,7 +132,7 @@ public class PaymentOrderCompletionService {
         }
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void failExpiredOrder(Long userId, String orderId) {
         PaymentOrder order = paymentOrderRepository.findByOrderIdForUpdate(orderId)
                 .orElseThrow(() -> new CustomException(ErrorCode.PAYMENT_ORDER_NOT_FOUND));
@@ -150,6 +158,22 @@ public class PaymentOrderCompletionService {
             order.fail("INICIS_TID_MISSING", "KG이니시스 거래번호가 없습니다.", Instant.now());
             throw new CustomException(ErrorCode.PAYMENT_APPROVAL_FAILED);
         }
+    }
+
+    private void validateReturnMetadata(PaymentOrder order, InicisAuthReturnRequest request) {
+        if (!requiredMid().equals(request.mid())) {
+            throw new CustomException(ErrorCode.PAYMENT_AUTHENTICATION_FAILED, "KG이니시스 MID가 일치하지 않습니다.");
+        }
+        if (!order.getOrderId().equals(request.merchantData())) {
+            throw new CustomException(ErrorCode.PAYMENT_AUTHENTICATION_FAILED, "KG이니시스 merchantData가 일치하지 않습니다.");
+        }
+    }
+
+    private String requiredMid() {
+        if (inicisPaymentProperties.mid() == null) {
+            throw new CustomException(ErrorCode.PAYMENT_CONFIGURATION_MISSING, "INICIS_MID 설정이 필요합니다.");
+        }
+        return inicisPaymentProperties.mid();
     }
 
     private PageWallet walletOrNull(Long userId) {

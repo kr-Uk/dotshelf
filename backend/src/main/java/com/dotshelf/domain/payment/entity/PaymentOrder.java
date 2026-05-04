@@ -27,6 +27,7 @@ public class PaymentOrder extends BaseEntity {
     public static final String STATUS_DONE = "DONE";
     public static final String STATUS_FAILED = "FAILED";
     public static final String STATUS_CANCELED = "CANCELED";
+    private static final String TRUNCATION_SUFFIX = "...(truncated)";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -184,6 +185,9 @@ public class PaymentOrder extends BaseEntity {
         if (text.length() <= maxLength) {
             return text;
         }
-        return text.substring(0, maxLength);
+        if (maxLength <= TRUNCATION_SUFFIX.length()) {
+            return text.substring(0, maxLength);
+        }
+        return text.substring(0, maxLength - TRUNCATION_SUFFIX.length()) + TRUNCATION_SUFFIX;
     }
 }

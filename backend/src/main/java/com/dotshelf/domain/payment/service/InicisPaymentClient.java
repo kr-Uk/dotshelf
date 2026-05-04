@@ -30,7 +30,6 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class InicisPaymentClient {
 
-    private static final String SUCCESS_CODE = "0000";
     private static final String CHARSET = "UTF-8";
     private static final String FORMAT_JSON = "JSON";
     private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
@@ -76,30 +75,38 @@ public class InicisPaymentClient {
         }
     }
 
-    public void netCancel(InicisAuthReturnRequest request, PaymentOrder order, String resultCode, String resultMessage) {
+    public boolean netCancel(InicisAuthReturnRequest request, PaymentOrder order, String resultCode, String resultMessage) {
         if (request.netCancelUrl() == null || request.netCancelUrl().isBlank()) {
-            return;
+            return false;
         }
-        validateProviderUrl(request.netCancelUrl(), request.idcName());
-        String timestamp = String.valueOf(Instant.now().toEpochMilli());
-        MultiValueMap<String, String> body = approvalBody(
-                request.authToken(),
-                timestamp,
-                order.getAmountKrw(),
-                request.charset()
-        );
-        body.add("resultCode", resultCode);
-        body.add("resultMsg", resultMessage);
         try {
-            restClientBuilder.build()
+            validateProviderUrl(request.netCancelUrl(), request.idcName());
+            String timestamp = String.valueOf(Instant.now().toEpochMilli());
+            MultiValueMap<String, String> body = approvalBody(
+                    request.authToken(),
+                    timestamp,
+                    order.getAmountKrw(),
+                    request.charset()
+            );
+            body.add("resultCode", resultCode);
+            body.add("resultMsg", resultMessage);
+            Map<String, Object> response = restClientBuilder.build()
                     .post()
                     .uri(request.netCancelUrl())
                     .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                     .body(body)
                     .retrieve()
-                    .toBodilessEntity();
-        } catch (RestClientException e) {
+                    .body(RESPONSE_TYPE);
+            boolean canceled = InicisPaymentConstants.SUCCESS_CODE.equals(responseCode(response));
+            if (!canceled) {
+                log.warn("KG Inicis payment net cancel rejected (orderId={}, resultCode={})",
+                        order.getOrderId(),
+                        responseCode(response));
+            }
+            return canceled;
+        } catch (CustomException | RestClientException e) {
             log.warn("KG Inicis payment net cancel failed (orderId={})", order.getOrderId(), e);
+            return false;
         }
     }
 
@@ -158,6 +165,14 @@ public class InicisPaymentClient {
         return value.trim();
     }
 
+    private String responseCode(Map<String, Object> response) {
+        if (response == null || response.get("resultCode") == null) {
+            return null;
+        }
+        String text = String.valueOf(response.get("resultCode")).trim();
+        return text.isBlank() ? null : text;
+    }
+
     public record InicisApprovalResult(
             String resultCode,
             String resultMessage,
@@ -170,7 +185,7 @@ public class InicisPaymentClient {
     ) {
 
         private boolean isSuccess() {
-            return SUCCESS_CODE.equals(resultCode);
+            return InicisPaymentConstants.SUCCESS_CODE.equals(resultCode);
         }
 
         public static InicisApprovalResult from(Map<String, Object> response) {

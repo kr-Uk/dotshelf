@@ -78,9 +78,13 @@ public class PaymentService {
         return PageChargeOrderResponse.from(order, paymentPageUrl(order.getOrderId()), form);
     }
 
-    public InicisPaymentPageResponse getInicisPaymentPage(String orderId) {
+    public InicisPaymentPageResponse getInicisPaymentPage(Long userId, String orderId) {
+        Long currentUserId = userService.requireUserId(userId);
         PaymentOrder order = paymentOrderRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new CustomException(ErrorCode.PAYMENT_ORDER_NOT_FOUND));
+        if (!order.belongsTo(currentUserId)) {
+            throw new CustomException(ErrorCode.PAYMENT_ORDER_NOT_FOUND);
+        }
         if (!order.isReady() && !order.isAuthenticated()) {
             throw new CustomException(ErrorCode.PAYMENT_ORDER_INVALID_STATE);
         }
@@ -95,7 +99,20 @@ public class PaymentService {
     public InicisReturnResponse handleInicisReturn(InicisAuthReturnRequest request) {
         validateInicisReturnRequest(request);
         PaymentOrder order = paymentOrderCompletionService.authenticateInicisReturn(request);
-        if (!"0000".equals(request.resultCode())) {
+        if (order.isDone()) {
+            PageChargeConfirmResponse confirmed = paymentOrderCompletionService.getCompletedOrder(
+                    order.getUserId(),
+                    order.getOrderId()
+            );
+            return new InicisReturnResponse(
+                    confirmed.orderId(),
+                    confirmed.status(),
+                    InicisPaymentConstants.SUCCESS_CODE,
+                    "이미 완료된 결제입니다.",
+                    confirmed.wallet()
+            );
+        }
+        if (!InicisPaymentConstants.SUCCESS_CODE.equals(request.resultCode())) {
             return InicisReturnResponse.from(order, request.resultCode(), request.resultMessage(), null);
         }
         InicisApprovalResult approvalResult = inicisPaymentClient.approve(request, order);
@@ -119,8 +136,17 @@ public class PaymentService {
                     confirmed.wallet()
             );
         } catch (RuntimeException e) {
-            inicisPaymentClient.netCancel(request, order, "DB_PROCESS_FAILED", "DotShelf payment completion failed");
-            paymentOrderCompletionService.cancelInicisOrder(order.getOrderId(), "DB_PROCESS_FAILED", e.getMessage());
+            boolean canceled = inicisPaymentClient.netCancel(
+                    request,
+                    order,
+                    "DB_PROCESS_FAILED",
+                    "DotShelf payment completion failed"
+            );
+            if (canceled) {
+                paymentOrderCompletionService.cancelInicisOrder(order.getOrderId(), "DB_PROCESS_FAILED", e.getMessage());
+            } else {
+                paymentOrderCompletionService.failNetCancelOrder(order.getOrderId(), e.getMessage());
+            }
             throw e;
         }
     }
@@ -161,13 +187,17 @@ public class PaymentService {
         if (request.orderId() == null) {
             throw new CustomException(ErrorCode.PAYMENT_ORDER_NOT_FOUND);
         }
-        if ("0000".equals(request.resultCode()) && (request.authToken() == null || request.authUrl() == null)) {
+        if (request.resultCode() == null) {
+            throw new CustomException(ErrorCode.PAYMENT_AUTHENTICATION_FAILED);
+        }
+        if (InicisPaymentConstants.SUCCESS_CODE.equals(request.resultCode())
+                && (request.authToken() == null || request.authUrl() == null)) {
             throw new CustomException(ErrorCode.PAYMENT_AUTHENTICATION_FAILED);
         }
     }
 
     private String generateOrderId() {
-        return "DS" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        return "DS" + UUID.randomUUID().toString().replace("-", "");
     }
 
     private String paymentPageUrl(String orderId) {
