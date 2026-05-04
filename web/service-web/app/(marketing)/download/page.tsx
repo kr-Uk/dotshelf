@@ -5,10 +5,10 @@ import { useState } from "react";
 import { Icon } from "@/components/marketing/icon";
 
 const RELEASE = {
-  version: "1.4.0",
-  date: "2026년 4월 22일",
-  size: "142 MB",
-  channel: "Stable",
+  version: "0.1.0",
+  date: "2026년 5월 4일",
+  size: "런처 약 69 MB · 본체 별도 다운로드",
+  channel: "Beta",
 };
 
 type Build = {
@@ -16,35 +16,21 @@ type Build = {
   sub: string;
   size: string;
   recommended: boolean;
+  href: string | null;
 };
 
+const LAUNCHER_WIN_URL: string | null =
+  "https://dotshelf.digital/launcher/windows/DotShelfLauncher-0.1.0.exe";
+
 const DOWNLOADS: Record<"mac" | "win", Build[]> = {
-  mac: [
-    {
-      label: "macOS · Apple Silicon",
-      sub: ".dmg · M1 / M2 / M3 / M4",
-      size: "142 MB",
-      recommended: true,
-    },
-    {
-      label: "macOS · Intel",
-      sub: ".dmg · macOS 13 이상",
-      size: "156 MB",
-      recommended: false,
-    },
-  ],
+  mac: [],
   win: [
     {
-      label: "Windows · Installer",
-      sub: ".exe · Windows 10/11",
-      size: "128 MB",
+      label: "Windows · DotShelf 런처",
+      sub: ".exe · Windows 10/11 (64-bit)",
+      size: "약 69 MB (.NET 8 런타임 포함)",
       recommended: true,
-    },
-    {
-      label: "Windows · MSI",
-      sub: ".msi · 기업 배포용",
-      size: "132 MB",
-      recommended: false,
+      href: LAUNCHER_WIN_URL,
     },
   ],
 };
@@ -79,9 +65,9 @@ const REQUIREMENTS = [
 const STEPS = [
   {
     n: "01",
-    title: "설치 파일 실행",
-    body: "다운로드한 .dmg 또는 .exe 파일을 실행하세요. macOS는 Applications 폴더로 드래그, Windows는 안내에 따라 다음을 누르면 됩니다.",
-    mono: "DotShelf-1.4.0-arm64.dmg",
+    title: "런처 실행",
+    body: "다운로드한 DotShelfLauncher.exe를 실행하면 본체 빌드를 자동으로 받고 설치합니다. 진행률·작업 기록·이벤트 배너가 한 화면에서 보입니다.",
+    mono: "DotShelfLauncher.exe",
   },
   {
     n: "02",
@@ -108,7 +94,7 @@ export default function DownloadPage() {
 }
 
 function DownloadHero() {
-  const [os, setOs] = useState<"mac" | "win">("mac");
+  const [os, setOs] = useState<"mac" | "win">("win");
   const items = DOWNLOADS[os];
 
   return (
@@ -150,7 +136,8 @@ function DownloadHero() {
                 active={os === "mac"}
                 onClick={() => setOs("mac")}
                 icon="apple"
-                label="macOS"
+                label="macOS (준비 중)"
+                disabled
               />
               <OSTabButton
                 active={os === "win"}
@@ -160,13 +147,17 @@ function DownloadHero() {
               />
             </div>
             <div className="space-y-3">
-              {items.map((it) => (
-                <DownloadCard
-                  key={it.label}
-                  item={it}
-                  icon={os === "mac" ? "apple" : "windows"}
-                />
-              ))}
+              {items.length === 0 ? (
+                <EmptyOsCard />
+              ) : (
+                items.map((it) => (
+                  <DownloadCard
+                    key={it.label}
+                    item={it}
+                    icon={os === "mac" ? "apple" : "windows"}
+                  />
+                ))
+              )}
             </div>
             <div className="mt-5 pt-5 border-t border-beige/70 text-[12px] text-paper-muted flex items-start gap-2">
               <Icon
@@ -175,7 +166,7 @@ function DownloadHero() {
                 className="text-wood mt-0.5 flex-shrink-0"
               />
               <span>
-                모든 빌드는 코드 사이닝되어 있으며, 자동 업데이트가 활성화됩니다.
+                런처가 본체 빌드 다운로드·SHA-256 검증·자동 업데이트까지 처리합니다.
               </span>
             </div>
           </div>
@@ -190,26 +181,37 @@ function OSTabButton({
   onClick,
   icon,
   label,
+  disabled = false,
 }: {
   active: boolean;
   onClick: () => void;
   icon: "apple" | "windows";
   label: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition border ${
-        active
-          ? "bg-charcoal text-cream border-charcoal"
-          : "bg-cream text-charcoal border-beige hover:border-wood/60"
+        disabled
+          ? "bg-cream/40 text-charcoal/40 border-beige/60 cursor-not-allowed"
+          : active
+            ? "bg-charcoal text-cream border-charcoal"
+            : "bg-cream text-charcoal border-beige hover:border-wood/60"
       }`}
     >
       <Icon
         name={icon}
         size={15}
-        className={active ? "text-cream" : "text-charcoal"}
+        className={
+          disabled
+            ? "text-charcoal/40"
+            : active
+              ? "text-cream"
+              : "text-charcoal"
+        }
       />
       {label}
     </button>
@@ -223,6 +225,7 @@ function DownloadCard({
   item: Build;
   icon: "apple" | "windows";
 }) {
+  const ready = !!item.href;
   return (
     <div
       className={`rounded-2xl border p-5 transition relative ${
@@ -253,14 +256,34 @@ function DownloadCard({
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          className="btn-primary inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-medium flex-shrink-0"
-        >
-          <Icon name="download" size={14} />
-          받기
-        </button>
+        {ready ? (
+          <a
+            href={item.href ?? undefined}
+            className="btn-primary inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-medium flex-shrink-0"
+          >
+            <Icon name="download" size={14} />
+            받기
+          </a>
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="btn-primary inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-medium flex-shrink-0 opacity-50 cursor-not-allowed"
+            title="배포 준비 중"
+          >
+            <Icon name="download" size={14} />
+            준비 중
+          </button>
+        )}
       </div>
+    </div>
+  );
+}
+
+function EmptyOsCard() {
+  return (
+    <div className="rounded-2xl border border-dashed border-beige bg-cream/40 p-6 text-center text-sm text-paper-muted">
+      해당 OS 빌드는 아직 준비 중입니다.
     </div>
   );
 }
@@ -273,20 +296,13 @@ function DetectedBanner() {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm text-charcoal">
-          현재 환경에 가장 잘 맞는 버전:{" "}
-          <strong className="serif text-[16px]">macOS · Apple Silicon</strong>
+          현재 베타 빌드:{" "}
+          <strong className="serif text-[16px]">Windows · DotShelf 런처</strong>
         </p>
         <p className="mono text-[11px] text-paper-muted mt-0.5">
-          자동 감지 · 다른 OS는 아래에서 선택할 수 있어요
+          macOS 빌드는 아직 준비 중입니다
         </p>
       </div>
-      <button
-        type="button"
-        className="btn-primary px-4 py-2 rounded-full text-[13px] font-medium hidden sm:inline-flex items-center gap-1.5"
-      >
-        <Icon name="download" size={14} />
-        바로 받기
-      </button>
     </div>
   );
 }
