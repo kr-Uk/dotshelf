@@ -174,13 +174,19 @@ namespace BookshelfPorting.Runtime
                 ?? systems.AddComponent<APIManager>();
             var notebookUiSceneLoader = GetOrAddComponent<NotebookUiSceneLoader>(systems);
 
-            var useServerBookshelf = usesHttpApi;
-
             apiManager.Configure(
                 apiBaseUrl,
                 apiAccessToken,
                 apiTimeoutSeconds,
                 apiConfig != null && apiConfig.EnableVerboseLog);
+
+            // Server bookshelf path needs a Bearer token. Without one, /v1/spaces/me
+            // 401s and the shelf would render empty — fall back to the local catalog
+            // path until the user logs in. Computed after Configure() so the token
+            // hydrated by Configure (env var / inspector / PlayerPrefs) is reflected.
+            // (MR #88 replaced the IsGuestSession gate.)
+            var useServerBookshelf = usesHttpApi && apiManager.HasAccessToken;
+
             var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(
                 apiMode,
                 apiBaseUrl,

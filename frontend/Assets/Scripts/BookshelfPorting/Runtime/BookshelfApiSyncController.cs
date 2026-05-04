@@ -65,6 +65,15 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            // /v1/spaces/me requires a Bearer token. Skip when anonymous
+            // (token wiped on logout, or never set on first launch) so we
+            // do not 401-spam BE and the local fallback catalog stays
+            // visible. Replaces the former IsGuestSession gate (MR #88).
+            if (APIManager.Instance == null || !APIManager.Instance.HasAccessToken)
+            {
+                return;
+            }
+
             isRefreshing = true;
             client.GetMySpace(
                 space =>
@@ -169,11 +178,25 @@ namespace BookshelfPorting.Runtime
         private bool IsOwnSpace(long ownerUserId)
         {
             var myUserId = AuthSession.UserId;
+            // Anonymous (pre-login) caller has myUserId == 0 from PlayerPrefs
+            // default. They cannot own any BE space record, so the not-own
+            // check passes — guarded callers should already short-circuit on
+            // !HasAccessToken before reaching here (see RecordVisitOnce).
             return myUserId != 0 && ownerUserId == myUserId;
         }
 
         private void RecordVisitOnce(long spaceId)
         {
+            // Visit recording requires a Bearer token: BE recordVisit calls
+            // userService.requireUserId(), which 401s on anonymous calls.
+            // Skipping here also keeps visitedSpaceIds untouched so a later
+            // login in the same play session can still record the visit on
+            // re-entry.
+            if (APIManager.Instance == null || !APIManager.Instance.HasAccessToken)
+            {
+                return;
+            }
+
             // Mark BEFORE the call (record-on-attempt) so a slow BE round-trip
             // cannot cause the user to navigate away and re-enter, racing two
             // visit POSTs. Worst case: BE call fails and we never retry — that

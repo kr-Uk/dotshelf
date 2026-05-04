@@ -162,6 +162,9 @@ namespace App.Bootstrap
             ResetFlowState();
             GetComponent<LoginScreenController>()?.SetCanvasVisible(false);
             SetCanvasVisible(true);
+            // Step2 navigation was conditional on the guest flow before MR #88;
+            // every onboarding session now shows "이전 단계" + "다음 단계". Re-applied
+            // on each StartOnboarding call so a re-entered flow resets stale state.
             if (step2PreviousButton != null)
             {
                 step2PreviousButton.gameObject.SetActive(true);

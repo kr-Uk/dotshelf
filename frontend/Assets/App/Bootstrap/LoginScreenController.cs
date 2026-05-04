@@ -502,10 +502,13 @@ namespace App.Bootstrap
             // message rather than the generic SDK-missing one.
             StartDesktopBrowserOAuth(provider);
 #else
-            // Mobile — SDK has not been wired up yet. Surface the SDK message.
+            // Mobile — native social SDKs are not wired up yet, so neither
+            // the social login flow nor the desktop browser-OAuth fallback
+            // can run. Until the SDK integration lands (별도 PR) the only
+            // working entry point is a desktop / editor build.
             SetMessage(
                 loginMessageLabel,
-                $"{ProviderDisplayName(provider)} 로그인 SDK 연동이 준비되지 않았습니다. SDK 연동 후 다시 시도해주세요.");
+                $"{ProviderDisplayName(provider)} 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요.");
 #endif
         }
 
@@ -1134,9 +1137,9 @@ namespace App.Bootstrap
                 "Apple 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
                 "Kakao 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
                 "Google 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
-                "Apple 로그인 SDK 연동이 준비되지 않았습니다. SDK 연동 후 다시 시도해주세요." +
-                "Kakao 로그인 SDK 연동이 준비되지 않았습니다. SDK 연동 후 다시 시도해주세요." +
-                "Google 로그인 SDK 연동이 준비되지 않았습니다. SDK 연동 후 다시 시도해주세요." +
+                "Apple 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요." +
+                "Kakao 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요." +
+                "Google 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요." +
                 "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요." +
                 "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요." +
                 "Apple 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요." +
