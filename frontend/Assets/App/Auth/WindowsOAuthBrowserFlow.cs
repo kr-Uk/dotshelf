@@ -77,7 +77,7 @@ namespace App.Auth
                         provider = SocialProvider.Google,
                         authorizeEndpoint = "https://accounts.google.com/o/oauth2/v2/auth",
                         clientId = "502970247403-j8f8ctqsdk9h1kog2ahiu2n9g0usb9ha.apps.googleusercontent.com",
-                        scope = "openid profile email",
+                        scope = "openid email",
                         responseType = "code",
                         useNonce = true,
                         extraQuery = "access_type=offline&prompt=consent"
@@ -89,16 +89,14 @@ namespace App.Auth
                     // a working Kakao login. Inspector value still wins via
                     // MergeWithDefaults if a per-environment key needs override.
                     //
-                    // scope는 빈 값 — Kakao Developers 콘솔 동의항목 미설정 상태에서
-                    // 임의 scope 보내면 KOE205 ("설정하지 않은 동의 항목 ..."). BE는
-                    // email/nickname null 허용이라 동의항목 활성화 전까지 scope 비움.
-                    // 콘솔에서 동의항목 활성화 + 검수 통과 후 scope 추가는 follow-up.
+                    // scope: account_email만. 닉네임은 앱 자체(Onboarding 입력)로 관리하므로
+                    // profile_nickname 동의 불필요. 이메일 거부 시 BE에서 null 처리 (User.email nullable).
                     return new OAuthBrowserProviderConfig
                     {
                         provider = SocialProvider.Kakao,
                         authorizeEndpoint = "https://kauth.kakao.com/oauth/authorize",
-                        clientId = "d1b4d86b431150acd3ef6970ca2fa695",
-                        scope = string.Empty,
+                        clientId = "d8c6ed5428758bd9a50e1f41a70d3d69",
+                        scope = "account_email",
                         responseType = "code",
                         useNonce = false,
                         extraQuery = null
