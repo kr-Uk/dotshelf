@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using App.Application.Dashboard;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dashboard;
+using App.Infrastructure.Api.Dtos;
 using App.Infrastructure.Catalogs;
 using BookshelfPorting.Runtime;
 using Dotshelf.Scripts.RoomTheme;
@@ -980,15 +981,68 @@ namespace App.Bootstrap
         }
 
         // 현재 적용 중인 카테고리 항목인지 검사.
-        // 1차 구현: 마지막 클릭한 카테고리 entry를 lastAppliedEntries에 저장 → 같은 assetId면 강조.
-        // 정확한 매핑(서버 Space.Current*InventoryId 기반)은 themeReset reload hook 추가 시점에 후속.
+        // 서버 Space 6 카테고리 ID 캐시. ReloadRoomState 응답 + 카테고리별 PATCH optimistic 갱신으로
+        // 동기화. IsCategoryEntryCurrent의 single source of truth — \"현재 사용 중\" highlight가
+        // 서버 상태와 일치 (다른 디바이스 변경, 새 로그인 등 시나리오에서도 정확).
+        private SpaceResponseDto lastServerSpace;
+
+        // 서버 응답 받기 전 (초기 진입 / GET 실패) fallback. lastServerSpace 있으면 그것 우선.
         private readonly System.Collections.Generic.Dictionary<CustomizationCategory, long> lastAppliedEntries
             = new System.Collections.Generic.Dictionary<CustomizationCategory, long>();
 
         private bool IsCategoryEntryCurrent(CustomizationCategory category, long assetId)
         {
             if (assetId <= 0) return false;
+            // 1) 서버 상태 우선: lastServerSpace의 카테고리 ID와 직접 비교.
+            //    serverId가 null이면 카테고리 미적용(기본 외형) — catalog의 첫 entry가 \"current\"로 표시.
+            if (lastServerSpace != null)
+            {
+                var serverId = GetCategoryIdFromSpace(category, lastServerSpace);
+                if (serverId.HasValue && serverId.Value > 0)
+                {
+                    return serverId.Value == assetId;
+                }
+                // 서버상 미적용 → catalog default(첫 entry)가 \"current\"
+                var catalog = LoadCategoryCatalog(category);
+                if (catalog?.Entries != null && catalog.Entries.Count > 0)
+                {
+                    var defaultEntry = catalog.Entries[0];
+                    return defaultEntry != null && defaultEntry.AssetId == assetId;
+                }
+                return false;
+            }
+            // 2) 서버 응답 받기 전 fallback — 클라이언트 클릭 캐시
             return lastAppliedEntries.TryGetValue(category, out var current) && current == assetId;
+        }
+
+        private static long? GetCategoryIdFromSpace(CustomizationCategory category, SpaceResponseDto space)
+        {
+            switch (category)
+            {
+                case CustomizationCategory.Wallpaper:     return space.CurrentWallpaperInventoryId;
+                case CustomizationCategory.Floor:         return space.CurrentFloorInventoryId;
+                case CustomizationCategory.Desk:          return space.CurrentDeskInventoryId;
+                case CustomizationCategory.DashboardSkin: return space.CurrentDashboardInventoryId;
+                case CustomizationCategory.InteriorLight: return space.CurrentInteriorLightInventoryId;
+                case CustomizationCategory.ExteriorLight: return space.CurrentExteriorLightInventoryId;
+                default: return null;
+            }
+        }
+
+        // PATCH onSuccess (themeReset=false 정상 변경) 후 lastServerSpace 한 카테고리만 optimistic 갱신.
+        // 매 PATCH마다 GET 추가 호출 회피. themeReset=true일 때만 ReloadRoomState로 풀 동기화.
+        private void OptimisticallyUpdateServerSpace(CustomizationCategory category, long? inventoryId)
+        {
+            if (lastServerSpace == null) return;
+            switch (category)
+            {
+                case CustomizationCategory.Wallpaper:     lastServerSpace.CurrentWallpaperInventoryId = inventoryId; break;
+                case CustomizationCategory.Floor:         lastServerSpace.CurrentFloorInventoryId = inventoryId; break;
+                case CustomizationCategory.Desk:          lastServerSpace.CurrentDeskInventoryId = inventoryId; break;
+                case CustomizationCategory.DashboardSkin: lastServerSpace.CurrentDashboardInventoryId = inventoryId; break;
+                case CustomizationCategory.InteriorLight: lastServerSpace.CurrentInteriorLightInventoryId = inventoryId; break;
+                case CustomizationCategory.ExteriorLight: lastServerSpace.CurrentExteriorLightInventoryId = inventoryId; break;
+            }
         }
 
         // 전체 테마 카테고리 — 데코 인벤토리 대신 RoomThemeCatalogAsset의 테마들을
@@ -1201,8 +1255,18 @@ namespace App.Bootstrap
                 Debug.Log($"[RoomEditModeController] PATCH /spaces/me/{category.ToString().ToLower()} OK → invId={invId}, themeReset={themeReset}.");
                 if (themeReset)
                 {
-                    Debug.LogWarning("[RoomEditModeController] 커스터마이징 불가 테마 자동 해제 — 룸 전체 reload 필요(TODO).");
-                    // TODO: Space 재로드 + RoomThemeApplier.Apply(default theme) + 모든 책장 skin 초기화 visual
+                    // 커스터마이징 불가 테마 자동 해제 → 서버에서 6 카테고리 ID 모두 null로 리셋됨.
+                    // GET /spaces/me 재호출해 catalog default visual로 동기화 (책장 skin / Layout
+                    // placement 재 spawn은 follow-up).
+                    Debug.Log("[RoomEditModeController] 커스터마이징 불가 테마 자동 해제 → 룸 visual reload.");
+                    ReloadRoomState();
+                }
+                else
+                {
+                    // 정상 카테고리 변경 — 서버 Space 캐시를 invId로 optimistic 갱신.
+                    // GET /spaces/me 추가 호출 회피 (round-trip 절감).
+                    OptimisticallyUpdateServerSpace(category, invId);
+                    RebuildInventorySlots();
                 }
             };
             Action<DashboardApiError> onError = error =>
@@ -1325,6 +1389,89 @@ namespace App.Bootstrap
                 Debug.LogError($"[RoomEditModeController] ApiSpaceSettingsRepository 생성 실패 ({ex.GetType().Name}).");
                 Debug.LogException(ex);
             }
+        }
+
+        // Server Space 상태로 룸 visual 재동기화. themeReset 응답 후 / 테마 적용 응답 후 호출.
+        // GET /v1/spaces/me → 6 카테고리 ID 읽기 → catalog에서 entry 찾아 visual 재적용 + lastAppliedEntries 갱신.
+        // 책장 skin / Layout placement 재 spawn은 follow-up (RoomThemeApplier 설치 spec list 합류 시점).
+        private void ReloadRoomState(Action onComplete = null)
+        {
+            var apiManager = APIManager.Instance;
+            if (apiManager == null)
+            {
+                Debug.LogWarning("[RoomEditModeController] APIManager.Instance == null — ReloadRoomState skip.");
+                onComplete?.Invoke();
+                return;
+            }
+
+            NotebookApiClient apiClient;
+            try
+            {
+                apiClient = new NotebookApiClient(apiManager);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[RoomEditModeController] NotebookApiClient 생성 실패 ({ex.GetType().Name}).");
+                Debug.LogException(ex);
+                onComplete?.Invoke();
+                return;
+            }
+
+            apiClient.GetMySpace(
+                space =>
+                {
+                    ApplySpaceVisualsToRoom(space);
+                    onComplete?.Invoke();
+                },
+                error =>
+                {
+                    Debug.LogWarning($"[RoomEditModeController] GET /spaces/me 실패 — reload skip ({error?.Code}/{error?.Message}).");
+                    onComplete?.Invoke();
+                });
+        }
+
+        // Space 응답의 6 카테고리 ID로 visual 재적용. catalog에 매칭 entry 없으면 default(첫 entry).
+        // null/0 ID는 \"카테고리별 미적용\" 의미 — default로 fallback (테마 reset 후 default 외형 복귀).
+        private void ApplySpaceVisualsToRoom(SpaceResponseDto space)
+        {
+            if (space == null) return;
+            lastServerSpace = space;  // IsCategoryEntryCurrent의 single source of truth 갱신
+            ApplyCategoryById(CustomizationCategory.Wallpaper, space.CurrentWallpaperInventoryId);
+            ApplyCategoryById(CustomizationCategory.Floor, space.CurrentFloorInventoryId);
+            ApplyCategoryById(CustomizationCategory.Desk, space.CurrentDeskInventoryId);
+            ApplyCategoryById(CustomizationCategory.DashboardSkin, space.CurrentDashboardInventoryId);
+            ApplyCategoryById(CustomizationCategory.InteriorLight, space.CurrentInteriorLightInventoryId);
+            ApplyCategoryById(CustomizationCategory.ExteriorLight, space.CurrentExteriorLightInventoryId);
+            RebuildInventorySlots();
+        }
+
+        private void ApplyCategoryById(CustomizationCategory category, long? inventoryId)
+        {
+            var catalog = LoadCategoryCatalog(category);
+            if (catalog == null || catalog.Entries == null || catalog.Entries.Count == 0) return;
+
+            CustomizationEntry entry = null;
+            if (inventoryId.HasValue && inventoryId.Value > 0)
+            {
+                for (int i = 0; i < catalog.Entries.Count; i++)
+                {
+                    var e = catalog.Entries[i];
+                    if (e != null && e.AssetId == inventoryId.Value)
+                    {
+                        entry = e;
+                        break;
+                    }
+                }
+            }
+            if (entry == null && catalog.Entries.Count > 0)
+            {
+                entry = catalog.Entries[0];
+            }
+            if (entry == null) return;
+
+            ApplyEntryVisual(category, entry);
+            if (entry.AssetId > 0) lastAppliedEntries[category] = entry.AssetId;
+            else lastAppliedEntries.Remove(category);
         }
 
         private void BuildInventorySlot(Transform parent, int slotIndex, InventoryEntry entry)
