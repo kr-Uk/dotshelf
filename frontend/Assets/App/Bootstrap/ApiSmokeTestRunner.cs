@@ -100,6 +100,28 @@ namespace App.Bootstrap
             StartCoroutine(RunLogout());
         }
 
+        [ContextMenu("Run Theme Apply Test")]
+        public void RunThemeApplyTestFromInspector()
+        {
+            if (!UnityEngine.Application.isPlaying)
+            {
+                Debug.LogWarning("[ApiSmokeTest] Editor Play 모드에서만 실행됩니다.");
+                return;
+            }
+            StartCoroutine(RunThemeApplyTest());
+        }
+
+        [ContextMenu("Run Layout Save Test")]
+        public void RunLayoutSaveTestFromInspector()
+        {
+            if (!UnityEngine.Application.isPlaying)
+            {
+                Debug.LogWarning("[ApiSmokeTest] Editor Play 모드에서만 실행됩니다.");
+                return;
+            }
+            StartCoroutine(RunLayoutSaveTest());
+        }
+
         // ─────────────────────────────────────────────────────────────────────
         // 일반 테스트 (토큰 비파괴)
         // ─────────────────────────────────────────────────────────────────────
@@ -462,6 +484,202 @@ namespace App.Bootstrap
         }
 
         // ─────────────────────────────────────────────────────────────────────
+        // Theme apply / Layout save 전용 흐름 (사용자 spec)
+        // ─────────────────────────────────────────────────────────────────────
+
+        // POST /v1/spaces/me/theme/{inventoryId}/apply?mode=RESET (body 없음)
+        // 흐름: GET /v1/assets/me/inventory → assetIds[0] 추출 → 해당 값을 path 의 inventoryId 로 그대로 사용 → POST 호출
+        // 추가 sub-test:
+        //   • inventoryId = -1 → 4xx 기대 (BE validation 미흡으로 현재는 500 반환되지만 로그만 남김)
+        //   • clearTokenBeforeRun=true 로 재실행하면 401 검증 (토큰 영향 작업 → 별도 토글)
+        private IEnumerator RunThemeApplyTest()
+        {
+            APIManager api = ApiManagerProvider.EnsureInstance();
+            if (api == null)
+            {
+                Debug.LogError("[ApiSmokeTest][theme-apply] APIManager 초기화 실패.");
+                yield break;
+            }
+            yield return null;
+
+            total = ok2xx = authBlocked = otherFail = skipped = 0;
+
+            if (clearTokenBeforeRun)
+            {
+                api.SetAccessToken(null);
+                Debug.Log("[ApiSmokeTest][theme-apply] clearTokenBeforeRun=true → in-memory accessToken cleared (401 검증 모드).");
+            }
+
+            LogTokenStatus(api);
+
+            string mode = string.IsNullOrWhiteSpace(testThemeMode) ? "RESET" : testThemeMode;
+
+            // (1) theme apply id 확보. Inspector testInventoryId 가 있으면 그 값을 path 의 inventoryId 로 사용.
+            // 없으면 GET /v1/assets/me/inventory 의 assetIds[0] 을 가져와 사용한다 — BE 정책상 assetId/inventoryId
+            // 를 동등 취급하므로 path variable 자리에 그대로 대입 가능.
+            long idForThemeApply = testInventoryId;
+            if (idForThemeApply <= 0)
+            {
+                Debug.Log("[ApiSmokeTest][theme-apply] testInventoryId 미입력 → GET /v1/assets/me/inventory 호출하여 assetIds[0] 사용.");
+                long fetched = 0;
+                yield return FetchFirstThemeAssetId(id => fetched = id);
+                if (fetched <= 0)
+                {
+                    Debug.LogWarning("[ApiSmokeTest][theme-apply] assetIds 배열이 비어 있음 — Theme Apply 본 호출 SKIP. bad-id sub-test 만 진행.");
+                }
+                else
+                {
+                    Debug.Log($"[ApiSmokeTest][theme-apply] assetIds[0]={fetched} 값을 현재 BE 정책상 inventoryId로 간주하여 path variable에 사용 (mode={mode})");
+                    idForThemeApply = fetched;
+                }
+            }
+            else
+            {
+                Debug.Log($"[ApiSmokeTest][theme-apply] Inspector testInventoryId 사용 → path inventoryId={idForThemeApply} (mode={mode})");
+            }
+
+            // (2) 정상 호출 — POST /v1/spaces/me/theme/{inventoryId}/apply?mode=RESET, body 없음.
+            //     path/query 가 BE 의 실제 endpoint shape. body 가 없으므로 ProbePost<TResponse>(path-only) 사용.
+            if (idForThemeApply > 0)
+            {
+                string okPath = $"/v1/spaces/me/theme/{idForThemeApply}/apply?mode={Uri.EscapeDataString(mode)}";
+                yield return ProbePost<SpaceMutationResponseDto>(
+                    $"THEME-APPLY POST {okPath} (no body)",
+                    okPath);
+            }
+
+            // (3) 잘못된 inventoryId sub-test — path variable 에 -1 을 박아 4xx 기대.
+            // 현재 dev-api 는 invalid id 에 500 을 돌려주는 BE 예외 처리 이슈가 있음. 본 러너는 로그만
+            // 남기고 fire & forget — fix 는 BE 측에서 별도 진행.
+            string badPath = $"/v1/spaces/me/theme/-1/apply?mode={Uri.EscapeDataString(mode)}";
+            yield return ProbePost<SpaceMutationResponseDto>(
+                $"THEME-APPLY[bad-id] POST {badPath} → 4xx 기대 (현재 BE 는 500 반환, 로그로만 확인)",
+                badPath);
+
+            PrintSummary();
+        }
+
+        // PUT /v1/spaces/me/layout body{layoutPayload, baseLayoutVersion}
+        // 흐름: 더미 layoutPayload(JSON 문자열) 생성 → PUT 호출
+        // 추가 sub-test:
+        //   • layoutPayload = null → 실패 기대
+        //   • layoutPayload = "" (빈 문자열) → 실패 기대
+        //   • clearTokenBeforeRun=true 로 재실행하면 401 검증
+        private IEnumerator RunLayoutSaveTest()
+        {
+            APIManager api = ApiManagerProvider.EnsureInstance();
+            if (api == null)
+            {
+                Debug.LogError("[ApiSmokeTest][layout-save] APIManager 초기화 실패.");
+                yield break;
+            }
+            yield return null;
+
+            total = ok2xx = authBlocked = otherFail = skipped = 0;
+
+            if (clearTokenBeforeRun)
+            {
+                api.SetAccessToken(null);
+                Debug.Log("[ApiSmokeTest][layout-save] clearTokenBeforeRun=true → in-memory accessToken cleared (401 검증 모드).");
+            }
+
+            LogTokenStatus(api);
+
+            // 더미 payload — 사용자 예시 그대로. JObject 로 조립 후 string 화 (수동 escape 회피).
+            JObject dummy = new JObject(
+                new JProperty("objects", new JArray(
+                    new JObject(
+                        new JProperty("id", "chair_1"),
+                        new JProperty("x", 0),
+                        new JProperty("z", 0),
+                        new JProperty("rot", 0)),
+                    new JObject(
+                        new JProperty("id", "lamp_1"),
+                        new JProperty("x", 1),
+                        new JProperty("z", 2),
+                        new JProperty("rot", 90)))));
+            string dummyPayload = dummy.ToString(Formatting.None);
+
+            Debug.Log($"[ApiSmokeTest][layout-save] dummy layoutPayload = {dummyPayload}");
+
+            // (1) 정상 payload 호출
+            LayoutSaveRequestDto request = new LayoutSaveRequestDto
+            {
+                LayoutPayload = dummyPayload,
+                BaseLayoutVersion = null
+            };
+            yield return ProbePut<LayoutSaveRequestDto, LayoutSaveResponseDto>(
+                "LAYOUT-SAVE PUT /v1/spaces/me/layout (dummy payload)",
+                "/v1/spaces/me/layout",
+                request);
+
+            // (2) null payload sub-test — 실패 기대.
+            LayoutSaveRequestDto nullRequest = new LayoutSaveRequestDto
+            {
+                LayoutPayload = null,
+                BaseLayoutVersion = null
+            };
+            yield return ProbePut<LayoutSaveRequestDto, LayoutSaveResponseDto>(
+                "LAYOUT-SAVE[null] PUT /v1/spaces/me/layout (layoutPayload=null) → 실패 기대",
+                "/v1/spaces/me/layout",
+                nullRequest);
+
+            // (3) 빈 string payload sub-test — 실패 기대.
+            LayoutSaveRequestDto emptyRequest = new LayoutSaveRequestDto
+            {
+                LayoutPayload = string.Empty,
+                BaseLayoutVersion = null
+            };
+            yield return ProbePut<LayoutSaveRequestDto, LayoutSaveResponseDto>(
+                "LAYOUT-SAVE[empty] PUT /v1/spaces/me/layout (layoutPayload=\"\") → 실패 기대",
+                "/v1/spaces/me/layout",
+                emptyRequest);
+
+            PrintSummary();
+        }
+
+        // GET /v1/assets/me/inventory → assetIds[0] 추출. 응답이 비어 있거나 호출 실패 시 0 반환.
+        // 현재 BE 정책상 assetId 가 inventoryId 로 그대로 통용되므로, 호출자는 이 값을
+        // POST /v1/spaces/me/theme body 의 inventoryId 필드에 그대로 대입하면 된다.
+        private IEnumerator FetchFirstThemeAssetId(Action<long> sink)
+        {
+            APIManager api = APIManager.Instance;
+            if (api == null)
+            {
+                sink(0);
+                yield break;
+            }
+
+            bool done = false;
+            long picked = 0;
+            api.Get<ApiEnvelopeDto<InventoryResponseDto>>(
+                "/v1/assets/me/inventory",
+                env =>
+                {
+                    done = true;
+                    if (env != null && env.Succeeded && env.Result != null && env.Result.AssetIds != null && env.Result.AssetIds.Count > 0)
+                    {
+                        picked = env.Result.AssetIds[0];
+                        Debug.Log($"[ApiSmokeTest][theme-apply] assetIds 배열에서 첫 번째 assetId를 theme apply id로 사용 → assetIds[0]={picked} (총 {env.Result.AssetIds.Count}개)");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[ApiSmokeTest][theme-apply] inventory envelope 성공이지만 assetIds 배열이 비어 있음.");
+                    }
+                },
+                err =>
+                {
+                    done = true;
+                    Debug.LogWarning(
+                        $"[ApiSmokeTest][theme-apply] GET /v1/assets/me/inventory 실패: status={(err != null ? err.StatusCode.ToString() : "?")} " +
+                        $"code={err?.Code} message={err?.Message} body={ApiManagerProvider.TrimForLog(err?.Body, bodyLogMaxChars)}");
+                });
+
+            yield return WaitForDone(() => done, "GET /v1/assets/me/inventory");
+            sink(picked);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
         // Probe helpers
         // ─────────────────────────────────────────────────────────────────────
 
@@ -535,6 +753,9 @@ namespace App.Bootstrap
             string body = null;
             string envParse = "(not attempted)";
 
+            // 요청 body 미리 로그 — LogResult 의 BODY 라인은 응답 body 라 따로 분리.
+            Debug.Log($"[ApiSmokeTest] {label}\n  REQUEST BODY: {ApiManagerProvider.TrimForLog(SafeSerialize(request), bodyLogMaxChars)}");
+
             api.Post<TRequest, ApiEnvelopeDto<TResponse>>(
                 path,
                 request,
@@ -554,6 +775,40 @@ namespace App.Bootstrap
 
             yield return WaitForDone(() => done, label);
             LogResult(label, "POST", path, authAttached, success, status, body, envParse);
+        }
+
+        private IEnumerator ProbePut<TRequest, TResponse>(string label, string path, TRequest request)
+        {
+            APIManager api = APIManager.Instance;
+            bool authAttached = api != null && api.HasAccessToken;
+            bool done = false;
+            bool success = false;
+            long status = 0;
+            string body = null;
+            string envParse = "(not attempted)";
+
+            // 요청 body 미리 로그 — LogResult 의 BODY 라인은 응답 body 라 따로 분리.
+            Debug.Log($"[ApiSmokeTest] {label}\n  REQUEST BODY: {ApiManagerProvider.TrimForLog(SafeSerialize(request), bodyLogMaxChars)}");
+
+            api.Put<TRequest, ApiEnvelopeDto<TResponse>>(
+                path,
+                request,
+                e =>
+                {
+                    done = true; success = true;
+                    body = SafeSerialize(e);
+                    envParse = ClassifyEnvelope(e);
+                },
+                err =>
+                {
+                    done = true;
+                    status = err != null ? err.StatusCode : 0;
+                    body = err != null ? err.Body : null;
+                    envParse = TryParseEnvelopeFromBody<TResponse>(body);
+                });
+
+            yield return WaitForDone(() => done, label);
+            LogResult(label, "PUT", path, authAttached, success, status, body, envParse);
         }
 
         private IEnumerator ProbePatch<TRequest, TResult>(string label, string path, TRequest request)
@@ -717,7 +972,9 @@ namespace App.Bootstrap
             // 사용자가 STATUS/BODY 만 따로 골라 보거나 grep 하기도 쉬워짐.
             void Emit(string s) { if (success) Debug.Log(s); else Debug.LogWarning(s); }
 
-            Emit($"[ApiSmokeTest] {label}");
+            // [OK] / [FAIL] 태그 — 사용자 spec. Console grep 으로 한 눈에 결과 분리 가능.
+            string tag = success ? "[OK]" : "[FAIL]";
+            Emit($"[ApiSmokeTest] {tag} {label}");
             Emit($"  METHOD: {method}");
             Emit($"  URL: {assumedUrl}");
             Emit($"  AUTH: {authLine}");
