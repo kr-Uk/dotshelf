@@ -25,7 +25,10 @@ public class User extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, length = 100)
+    // email은 metadata. Identity는 (provider, provider_user_id) — user_social_accounts 테이블.
+    // OAuth-only 인증이라 email 기반 로그인/재설정 없음. 같은 email이 다른 provider로 들어오면
+    // 별도 user로 인정 (V17 migration: NOT NULL + UNIQUE 둘 다 제거).
+    @Column(length = 100)
     private String email;
 
     @Column(nullable = false, length = 50)
