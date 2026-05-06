@@ -50,14 +50,25 @@ namespace App.Bootstrap
         [Tooltip("내 inventoryId. POST /v1/spaces/me/theme/{inventoryId}/apply 에 사용.")]
         [SerializeField] private long testInventoryId;
 
+        // BE 가 받는 mode 값. enum 으로 두면 Inspector dropdown 으로 typo 방지 + 새 값 추가 시 단일 지점 갱신.
+        public enum ThemeApplyMode
+        {
+            RESET,
+            KEEP_BLOCKERS_ONLY,
+        }
+
         [Tooltip("theme apply mode. 일반적으로 RESET. KEEP_BLOCKERS_ONLY 는 BE 가 501.")]
-        [SerializeField] private string testThemeMode = "RESET";
+        [SerializeField] private ThemeApplyMode testThemeMode = ThemeApplyMode.RESET;
 
         private int total;
         private int ok2xx;
         private int authBlocked;
         private int otherFail;
         private int skipped;
+
+        // PrintIdHints 가 채움. follow 8/9 에서 testUserId == myUserId 일 때 self-follow 차단 (BE 가 거절하는 시나리오 미리 컷).
+        // 0 이면 미확보 — 가드 미적용 (PrintIdHints 가 응답 실패한 상태이므로 테스트는 그냥 진행).
+        private long _myUserIdCache;
 
         private void Start()
         {
@@ -167,7 +178,7 @@ namespace App.Bootstrap
             {
                 string themePath =
                     $"/v1/spaces/me/theme/{testInventoryId}/apply" +
-                    $"?mode={Uri.EscapeDataString(string.IsNullOrWhiteSpace(testThemeMode) ? "RESET" : testThemeMode)}";
+                    $"?mode={Uri.EscapeDataString(testThemeMode.ToString())}";
                 yield return ProbePost<SpaceMutationResponseDto>(
                     $"2 POST {themePath}",
                     themePath);
@@ -227,10 +238,18 @@ namespace App.Bootstrap
                     $"/v1/spaces/{testSpaceId}/like");
             }
 
+            // 8/9. follow — self-follow 가드: testUserId == myUserId 면 BE 가 self-follow 차단 (의미 없는 4xx).
+            // PrintIdHints 가 myUserId 확보 못 했으면 (_myUserIdCache == 0) 가드 미적용 — 사용자 입력 신뢰.
+            bool selfFollowBlocked = _myUserIdCache > 0 && testUserId == _myUserIdCache;
+
             // 8. POST /v1/users/{userId}/follow
             if (testUserId <= 0)
             {
                 LogSkip("8 POST /v1/users/{userId}/follow", "testUserId 미입력");
+            }
+            else if (selfFollowBlocked)
+            {
+                LogSkip("8 POST /v1/users/{userId}/follow", $"testUserId({testUserId}) == myUserId — BE self-follow 차단으로 의미 없음");
             }
             else
             {
@@ -243,6 +262,10 @@ namespace App.Bootstrap
             if (testUserId <= 0)
             {
                 LogSkip("9 DELETE /v1/users/{userId}/follow", "testUserId 미입력");
+            }
+            else if (selfFollowBlocked)
+            {
+                LogSkip("9 DELETE /v1/users/{userId}/follow", $"testUserId({testUserId}) == myUserId — BE self-follow 차단으로 의미 없음");
             }
             else
             {
@@ -296,6 +319,9 @@ namespace App.Bootstrap
             string mySpaceId = ReadScalar(spaceResult, "id");
             string ownerUserId = ReadScalar(spaceResult, "ownerUserId");
 
+            // self-follow 가드용 캐시. parse 실패/sentinel 이면 0 유지 → guard 미적용.
+            _myUserIdCache = long.TryParse(myUserId, out long parsedMyUserId) ? parsedMyUserId : 0;
+
             // 카테고리별 inventoryId 한 번 추출. 첫 non-null 을 "추천" 으로 따로 표시해 사용자가
             // Inspector testInventoryId 에 그대로 복사 가능하게 한다.
             (string category, string value)[] invCandidates = new[]
@@ -337,7 +363,7 @@ namespace App.Bootstrap
                 lines.AppendLine("──────────────────────────────────────────────");
                 lines.AppendLine($"✅ 추천 testInventoryId = {recommendedId}  (category={recommendedCategory})");
                 lines.AppendLine("   → Inspector 의 testInventoryId 필드에 이 값을 입력 후 'Run Smoke Test' 재실행하면");
-                lines.AppendLine($"     POST /v1/spaces/me/theme/{recommendedId}/apply?mode={(string.IsNullOrWhiteSpace(testThemeMode) ? "RESET" : testThemeMode)} 가 발사됨.");
+                lines.AppendLine($"     POST /v1/spaces/me/theme/{recommendedId}/apply?mode={testThemeMode} 가 발사됨.");
                 lines.AppendLine("──────────────────────────────────────────────");
             }
             else
@@ -512,7 +538,7 @@ namespace App.Bootstrap
 
             LogTokenStatus(api);
 
-            string mode = string.IsNullOrWhiteSpace(testThemeMode) ? "RESET" : testThemeMode;
+            string mode = testThemeMode.ToString();
 
             // (1) theme apply id 확보. Inspector testInventoryId 가 있으면 그 값을 path 의 inventoryId 로 사용.
             // 없으면 GET /v1/assets/me/inventory 의 assetIds[0] 을 가져와 사용한다 — BE 정책상 assetId/inventoryId
