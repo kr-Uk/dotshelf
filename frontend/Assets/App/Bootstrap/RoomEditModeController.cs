@@ -3423,8 +3423,29 @@ namespace App.Bootstrap
             marker.CurrentWall = WallSide.Right;
             marker.AllowRotation = entry.AllowRotation;
 
+            // collider 보장 — Meshy GLB 는 import 시 collider 자동 생성 안 함.
+            // 없으면 mouse down raycast 가 deco mesh 를 hit 못 해 select/drag 진입 불가.
+            EnsureCollidersForWallDeco(go);
+
             // selection 으로 자동 잡아 사용자가 즉시 드래그 가능하게.
             SelectObject(go);
+        }
+
+        // wall deco 의 모든 mesh 자식에 MeshCollider 추가 (없으면). WallMaskQuad 는 stencil
+        // 전용이라 collider 추가 X — 사용자 raycast 가 그걸 hit 하면 안 되고 wall 까지 통과해야 함.
+        private static void EnsureCollidersForWallDeco(GameObject go)
+        {
+            var meshFilters = go.GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < meshFilters.Length; i++)
+            {
+                var mf = meshFilters[i];
+                if (mf == null || mf.sharedMesh == null) continue;
+                if (mf.gameObject.name == "WallMaskQuad") continue;
+                if (mf.GetComponent<Collider>() != null) continue;
+                var collider = mf.gameObject.AddComponent<MeshCollider>();
+                collider.sharedMesh = mf.sharedMesh;
+                collider.convex = false; // raycast 용도라 충돌 처리 불필요
+            }
         }
 
         // wall 의 안쪽 face (룸 내부 향하는 방향) 으로 deco 회전.
@@ -3628,8 +3649,25 @@ namespace App.Bootstrap
         // FrontWall 은 카메라 쪽 벽이라 hit 안 되는 게 일반적. Left/Right/Back 만 실질 후보.
         private void UpdateWallDrag(Camera camera, Vector2 pointer, WallDecoMarker marker)
         {
+            // 자기 자신 collider 임시 비활성화 — raycast 가 deco mesh 를 hit 하면 항상
+            // self 가 가장 가까워서 wall 까지 못 닿음. drag 가 wall 따라가야 하니 self skip.
+            var ownColliders = draggingObject.GetComponentsInChildren<Collider>(true);
+            var ownEnabledStates = new bool[ownColliders.Length];
+            for (int i = 0; i < ownColliders.Length; i++)
+            {
+                ownEnabledStates[i] = ownColliders[i].enabled;
+                ownColliders[i].enabled = false;
+            }
+
             var ray = camera.ScreenPointToRay(pointer);
-            if (!Physics.Raycast(ray, out var hit, 100f))
+            bool didHit = Physics.Raycast(ray, out var hit, 100f);
+
+            for (int i = 0; i < ownColliders.Length; i++)
+            {
+                ownColliders[i].enabled = ownEnabledStates[i];
+            }
+
+            if (!didHit)
             {
                 return;
             }
