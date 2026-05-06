@@ -40,6 +40,13 @@ namespace App.Infrastructure.Catalogs
         [SerializeField] private string displayName;
         [SerializeField, TextArea] private string description;
         [SerializeField] private Sprite previewSprite;
+        // 테마 태그 — 빈 문자열이면 무테마(공통) entry. 상단 메뉴 테마 필터(Editor/RoomEditThemeFilterMenu)
+        // 적용 시 빈 태그는 어떤 테마에서도 노출, 비빈 태그는 일치 시에만 노출.
+        [SerializeField] private string themeTag;
+        // local preview 전용 entry 표시 — 클릭 시 서버 PATCH 를 발사하지 않고 로컬 씬 visual swap 만 수행.
+        // placeholder 카탈로그가 생성한 entry 는 사용자 inventory 에 없어 PATCH 가 403 (S006) 으로 거부되므로,
+        // 이 플래그가 true 면 RoomEditModeController.OnCustomizationEntrySelected 가 PATCH 단계를 skip.
+        [SerializeField] private bool isLocalPreview;
 
         [Header("Materials (Wallpaper/Floor/Bookshelf/Dashboard/Desk)")]
         [SerializeField] private Material[] materials;
@@ -61,6 +68,8 @@ namespace App.Infrastructure.Catalogs
         public string DisplayName => displayName;
         public string Description => description;
         public Sprite PreviewSprite => previewSprite;
+        public string ThemeTag => themeTag;
+        public bool IsLocalPreview => isLocalPreview;
         public IReadOnlyList<Material> Materials => materials;
         public Material PrimaryMaterial => (materials != null && materials.Length > 0) ? materials[0] : null;
         public Color LightColor => lightColor;
