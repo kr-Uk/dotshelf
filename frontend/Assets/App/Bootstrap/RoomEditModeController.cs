@@ -1542,14 +1542,14 @@ namespace App.Bootstrap
             resetRect.anchoredPosition = new Vector2(-210f, 34f);
             resetButton.onClick.AddListener(() => ConfirmThemeApplyMode(ThemeApplyMode.Reset));
 
-            var keepButton = CreateButton(card.transform, "KeepButton", "현재 배치 유지",
-                SecondaryColor, TextColor, new Vector2(190f, 58f), true, BorderColor);
+            var keepButton = CreateButton(card.transform, "KeepButton", "배치 유지 준비 중",
+                SecondaryColor, MutedTextColor, new Vector2(190f, 58f), true, BorderColor);
             var keepRect = (RectTransform)keepButton.transform;
             keepRect.anchorMin = new Vector2(0.5f, 0f);
             keepRect.anchorMax = new Vector2(0.5f, 0f);
             keepRect.pivot = new Vector2(0.5f, 0f);
             keepRect.anchoredPosition = new Vector2(0f, 34f);
-            keepButton.onClick.AddListener(() => ConfirmThemeApplyMode(ThemeApplyMode.KeepBlockersOnly));
+            keepButton.interactable = false;
 
             var cancelButton = CreateButton(card.transform, "CancelButton", "취소",
                 CardColor, TextColor, new Vector2(140f, 58f), true, BorderColor);

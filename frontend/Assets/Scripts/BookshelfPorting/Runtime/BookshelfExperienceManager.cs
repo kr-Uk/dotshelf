@@ -50,6 +50,7 @@ namespace BookshelfPorting.Runtime
         private const int ShelfManageMaxRowCount = 24;
         private const float ShelfManageRowHeight = 50f;
         private const float ShelfManageViewportHeight = 220f;
+        private const int PendingMutationRetryLimit = 50;
         // Runtime HUD selector keeps one row of shelf chips readable without
         // turning the add/search overlays into full shelf-management screens.
         private const int BookshelfSelectorMaxButtons = 12;
@@ -277,6 +278,72 @@ namespace BookshelfPorting.Runtime
                 book.hasAggregateBookStats = HasAggregateBookStats;
                 book.isLiked = IsLiked;
                 book.rating = DisplayRating;
+            }
+
+            public bool Matches(BookEntity book, BookMetaData meta)
+            {
+                if (book == null)
+                {
+                    return false;
+                }
+
+                return book.readingStatus == ReadingStatus &&
+                       book.isRead == IsRead &&
+                       Mathf.Approximately(book.ownerRating, OwnerRating) &&
+                       Mathf.Approximately(book.averageRating, AverageRating) &&
+                       book.totalLikeCount == TotalLikeCount &&
+                       book.reviewCount == ReviewCount &&
+                       book.hasAggregateBookStats == HasAggregateBookStats &&
+                       book.isLiked == IsLiked &&
+                       (meta == null || MatchesMeta(meta));
+            }
+
+            private bool MatchesMeta(BookMetaData meta)
+            {
+                return meta.readingStatus == ReadingStatus &&
+                       meta.isRead == IsRead &&
+                       Mathf.Approximately(meta.ownerRating, OwnerRating) &&
+                       Mathf.Approximately(meta.averageRating, AverageRating) &&
+                       meta.totalLikeCount == TotalLikeCount &&
+                       meta.reviewCount == ReviewCount &&
+                       meta.hasAggregateBookStats == HasAggregateBookStats &&
+                       meta.isLiked == IsLiked;
+            }
+        }
+
+        private sealed class BookMutationIdentitySnapshot
+        {
+            public BookMutationIdentitySnapshot(BookEntity book)
+            {
+                UserBookId = Normalize(book != null ? book.userBookId : null);
+                BookshelfItemId = Normalize(book != null ? book.bookshelfItemId : null);
+                BookshelfId = Normalize(book != null ? book.bookshelfId : null);
+                BookshelfSectionId = Normalize(book != null ? book.bookshelfSectionId : null);
+            }
+
+            private string UserBookId { get; }
+            private string BookshelfItemId { get; }
+            private string BookshelfId { get; }
+            private string BookshelfSectionId { get; }
+
+            public bool Matches(BookEntity book)
+            {
+                return book != null &&
+                       MatchesValue(UserBookId, book.userBookId) &&
+                       MatchesValue(BookshelfItemId, book.bookshelfItemId) &&
+                       MatchesValue(BookshelfId, book.bookshelfId) &&
+                       MatchesValue(BookshelfSectionId, book.bookshelfSectionId);
+            }
+
+            private static string Normalize(string value)
+            {
+                return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+            }
+
+            private static bool MatchesValue(string expected, string actual)
+            {
+                return string.IsNullOrWhiteSpace(expected) ||
+                       string.Equals(expected, Normalize(actual), System.StringComparison.Ordinal);
             }
         }
 
@@ -528,7 +595,8 @@ namespace BookshelfPorting.Runtime
         private readonly Text[] bookshelfManageRowTexts = new Text[ShelfManageMaxRowCount];
         private readonly BookshelfManageDragHandle[] bookshelfManageDragHandles = new BookshelfManageDragHandle[ShelfManageMaxRowCount];
         private readonly Image[] bookshelfManageDragHandleImages = new Image[ShelfManageMaxRowCount];
-        private readonly List<PendingMutationRetry> pendingMutationRetries = new List<PendingMutationRetry>();
+        private readonly Dictionary<string, PendingMutationRetry> pendingMutationRetries = new Dictionary<string, PendingMutationRetry>();
+        private readonly List<string> pendingMutationRetryOrder = new List<string>();
         private Button shelfManageSortTitleButton;
         private Button shelfManageSortAuthorButton;
         private Button shelfManageSortStatusButton;
@@ -1801,6 +1869,10 @@ namespace BookshelfPorting.Runtime
             var book = ActiveDetailBook;
             var sourceSection = book.CurrentSection;
             var retryKey = BuildMutationRetryKey("책 삭제", book);
+            var retryAction = CreateBookRetryAction(
+                book,
+                "책 삭제",
+                () => RetryRemoveBook(book, sourceSection, false));
 
             pendingDeleteBook = null;
             var didStartDeleteSync = bookshelfApiSyncController != null &&
@@ -1815,7 +1887,7 @@ namespace BookshelfPorting.Runtime
                                           error => RefreshServerStateAfterMutationFailure(
                                               "책 삭제",
                                               error,
-                                              () => RetryRemoveBook(book, sourceSection, false),
+                                              retryAction,
                                               retryKey));
             if (didStartDeleteSync)
             {
@@ -1837,17 +1909,11 @@ namespace BookshelfPorting.Runtime
 
             if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
             {
-                ShowDeleteResultDialog(
-                    "책 삭제 실패",
-                    "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
-                    false,
-                    RegisterPendingMutationRetry(
-                        retryKey,
-                        "책 삭제",
-                        "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
-                        () => RetryRemoveBook(book, sourceSection, false)),
-                    "재시도");
-                RefreshHud();
+                RefreshServerStateAfterMutationFailure(
+                    "책 삭제",
+                    "서버 삭제 요청에 필요한 서버 식별자를 찾을 수 없습니다.",
+                    null,
+                    retryKey);
                 return;
             }
 
@@ -1874,6 +1940,10 @@ namespace BookshelfPorting.Runtime
             var book = ActiveDetailBook;
             var sourceSection = book.CurrentSection;
             var retryKey = BuildMutationRetryKey("책 삭제", book);
+            var retryAction = CreateBookRetryAction(
+                book,
+                "책 삭제",
+                () => RetryRemoveBook(book, sourceSection, true));
 
             pendingDeleteBook = null;
             pendingDeleteReportBook = null;
@@ -1889,7 +1959,7 @@ namespace BookshelfPorting.Runtime
                                           error => RefreshServerStateAfterMutationFailure(
                                               "책 삭제",
                                               error,
-                                              () => RetryRemoveBook(book, sourceSection, true),
+                                              retryAction,
                                               retryKey));
             if (didStartDeleteSync)
             {
@@ -1918,17 +1988,11 @@ namespace BookshelfPorting.Runtime
 
             if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
             {
-                ShowDeleteResultDialog(
-                    "책 삭제 실패",
-                    "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
-                    false,
-                    RegisterPendingMutationRetry(
-                        retryKey,
-                        "책 삭제",
-                        "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
-                        () => RetryRemoveBook(book, sourceSection, true)),
-                    "재시도");
-                RefreshHud();
+                RefreshServerStateAfterMutationFailure(
+                    "책 삭제",
+                    "서버 삭제 요청에 필요한 서버 식별자를 찾을 수 없습니다.",
+                    null,
+                    retryKey);
                 return;
             }
 
@@ -1953,6 +2017,10 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var retryAction = CreateBookRetryAction(
+                book,
+                "책 삭제",
+                () => RetryRemoveBook(book, sourceSection, closeReportPanels));
             var didStartDeleteSync = bookshelfApiSyncController.RemoveBook(
                 book,
                 () =>
@@ -1964,21 +2032,16 @@ namespace BookshelfPorting.Runtime
                 error => RefreshServerStateAfterMutationFailure(
                     "책 삭제",
                     error,
-                    () => RetryRemoveBook(book, sourceSection, closeReportPanels),
+                    retryAction,
                     retryKey));
 
             if (!didStartDeleteSync)
             {
-                ShowDeleteResultDialog(
-                    "책 삭제 실패",
-                    "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
-                    false,
-                    RegisterPendingMutationRetry(
-                        retryKey,
-                        "책 삭제",
-                        "서버 삭제 요청을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.",
-                        () => RetryRemoveBook(book, sourceSection, closeReportPanels)),
-                    "재시도");
+                RefreshServerStateAfterMutationFailure(
+                    "책 삭제",
+                    "서버 삭제 요청에 필요한 서버 식별자를 찾을 수 없습니다.",
+                    null,
+                    retryKey);
             }
         }
 
@@ -2080,14 +2143,23 @@ namespace BookshelfPorting.Runtime
                 ? BuildMutationRetryKey(operationName, null)
                 : retryKey.Trim();
             var message = NormalizeMutationErrorMessage(errorMessage);
-            var entry = pendingMutationRetries.Find(item => item.Key == key);
-            if (entry == null)
+            if (pendingMutationRetries.TryGetValue(key, out var entry))
             {
-                pendingMutationRetries.Add(new PendingMutationRetry(key, operationName, message, retryAction));
+                entry.Update(operationName, message, retryAction);
+                pendingMutationRetryOrder.Remove(key);
+                pendingMutationRetryOrder.Add(key);
             }
             else
             {
-                entry.Update(operationName, message, retryAction);
+                while (pendingMutationRetries.Count >= PendingMutationRetryLimit &&
+                       pendingMutationRetryOrder.Count > 0)
+                {
+                    RemovePendingMutationRetry(pendingMutationRetryOrder[0]);
+                }
+
+                entry = new PendingMutationRetry(key, operationName, message, retryAction);
+                pendingMutationRetries[key] = entry;
+                pendingMutationRetryOrder.Add(key);
             }
 
             return () => RunPendingMutationRetry(key);
@@ -2100,7 +2172,18 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            pendingMutationRetries.RemoveAll(entry => entry.Key == retryKey);
+            RemovePendingMutationRetry(retryKey.Trim());
+        }
+
+        private void RemovePendingMutationRetry(string retryKey)
+        {
+            if (string.IsNullOrWhiteSpace(retryKey))
+            {
+                return;
+            }
+
+            pendingMutationRetries.Remove(retryKey);
+            pendingMutationRetryOrder.Remove(retryKey);
         }
 
         private void RunPendingMutationRetry(string retryKey)
@@ -2110,15 +2193,14 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var index = pendingMutationRetries.FindIndex(entry => entry.Key == retryKey);
-            if (index < 0)
+            var key = retryKey.Trim();
+            if (!pendingMutationRetries.TryGetValue(key, out var retry))
             {
                 RefreshHud();
                 return;
             }
 
-            var retry = pendingMutationRetries[index];
-            pendingMutationRetries.RemoveAt(index);
+            RemovePendingMutationRetry(key);
             ShowBookshelfTransientStatus("재시도 중", $"{retry.OperationName} 요청을 다시 보냅니다.", false);
             InvokePendingMutationRetry(retry);
             RefreshHud();
@@ -2132,10 +2214,20 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var retries = pendingMutationRetries.ToArray();
+            var retries = new List<PendingMutationRetry>(pendingMutationRetries.Count);
+            for (var i = 0; i < pendingMutationRetryOrder.Count; i++)
+            {
+                var key = pendingMutationRetryOrder[i];
+                if (pendingMutationRetries.TryGetValue(key, out var retry))
+                {
+                    retries.Add(retry);
+                }
+            }
+
             pendingMutationRetries.Clear();
-            ShowBookshelfTransientStatus("재시도 중", $"{retries.Length}개 저장 요청을 다시 보냅니다.", false);
-            for (var i = 0; i < retries.Length; i++)
+            pendingMutationRetryOrder.Clear();
+            ShowBookshelfTransientStatus("재시도 중", $"{retries.Count}개 저장 요청을 다시 보냅니다.", false);
+            for (var i = 0; i < retries.Count; i++)
             {
                 InvokePendingMutationRetry(retries[i]);
             }
@@ -2176,7 +2268,20 @@ namespace BookshelfPorting.Runtime
                 return string.Empty;
             }
 
-            var latest = pendingMutationRetries[pendingMutationRetries.Count - 1];
+            PendingMutationRetry latest = null;
+            for (var i = pendingMutationRetryOrder.Count - 1; i >= 0; i--)
+            {
+                if (pendingMutationRetries.TryGetValue(pendingMutationRetryOrder[i], out latest))
+                {
+                    break;
+                }
+            }
+
+            if (latest == null)
+            {
+                return string.Empty;
+            }
+
             return pendingMutationRetries.Count == 1
                 ? $"{latest.OperationName} 요청이 아직 서버에 반영되지 않았습니다. {latest.Message}"
                 : $"{latest.OperationName} 외 {pendingMutationRetries.Count - 1}개 요청이 아직 서버에 반영되지 않았습니다. 전체 재시도할 수 있습니다.";
@@ -2189,7 +2294,14 @@ namespace BookshelfPorting.Runtime
             string retryKey = null)
         {
             Debug.LogWarning($"{operationName} failed on server. Refreshing bookshelf state. {errorMessage}");
-            var pendingRetryAction = RegisterPendingMutationRetry(retryKey, operationName, errorMessage, retryAction);
+            var pendingRetryAction = retryAction != null
+                ? RegisterPendingMutationRetry(retryKey, operationName, errorMessage, retryAction)
+                : null;
+            if (retryAction == null)
+            {
+                ClearPendingMutationRetry(retryKey);
+            }
+
             ShowBookshelfTransientStatus(
                 $"{operationName} 실패",
                 retryAction == null ? "최신 책장 상태를 다시 불러옵니다." : "재시도할 수 있습니다.",
@@ -2206,6 +2318,79 @@ namespace BookshelfPorting.Runtime
             {
                 bookshelfApiSyncController?.RefreshFromServer();
             }
+        }
+
+        private System.Action CreateBookRetryAction(BookEntity book, string operationName, System.Action syncAction)
+        {
+            var identity = new BookMutationIdentitySnapshot(book);
+            return () =>
+            {
+                if (!CanRunBookRetry(identity, book, operationName))
+                {
+                    return;
+                }
+
+                syncAction?.Invoke();
+            };
+        }
+
+        private System.Action CreateBookStateRetryAction(
+            BookEntity book,
+            BookStateMutationSnapshot expectedCurrent,
+            BookStateMutationSnapshot desired,
+            string operationName,
+            System.Action syncAction)
+        {
+            var identity = new BookMutationIdentitySnapshot(book);
+            return () =>
+            {
+                if (!CanRunBookRetry(identity, book, operationName))
+                {
+                    return;
+                }
+
+                var meta = book != null && dataStore != null ? dataStore.GetOrCreateBookMeta(book) : null;
+                if (!expectedCurrent.Matches(book, meta))
+                {
+                    ShowBookshelfTransientStatus($"{operationName} 재시도 보류", "이후 다른 변경이 있어 최신 상태를 다시 불러옵니다.", true);
+                    ShowDeleteResultDialog(
+                        $"{operationName} 재시도 보류",
+                        "이후 다른 변경이 있어 이전 저장 요청을 다시 보내지 않았습니다. 최신 책장 상태를 다시 불러옵니다.",
+                        false);
+                    bookshelfApiSyncController?.RefreshFromServer();
+                    RefreshHud();
+                    return;
+                }
+
+                RetryBookStateMutation(book, desired, syncAction);
+            };
+        }
+
+        private bool CanRunBookRetry(BookMutationIdentitySnapshot identity, BookEntity book, string operationName)
+        {
+            if (book == null || identity == null)
+            {
+                ShowDeleteResultDialog(
+                    $"{operationName} 재시도 보류",
+                    "대상 책을 찾을 수 없어 최신 책장 상태를 다시 불러옵니다.",
+                    false);
+                bookshelfApiSyncController?.RefreshFromServer();
+                RefreshHud();
+                return false;
+            }
+
+            if (!identity.Matches(book))
+            {
+                ShowDeleteResultDialog(
+                    $"{operationName} 재시도 보류",
+                    "책의 서버 식별자가 변경되어 이전 저장 요청을 다시 보내지 않았습니다. 최신 책장 상태를 다시 불러옵니다.",
+                    false);
+                bookshelfApiSyncController?.RefreshFromServer();
+                RefreshHud();
+                return false;
+            }
+
+            return true;
         }
 
         private void SyncBookshelfCreateOrRefresh(string name, string operationName)
@@ -2302,6 +2487,10 @@ namespace BookshelfPorting.Runtime
             }
 
             var retryKey = BuildMutationRetryKey(operationName, book);
+            var retryAction = CreateBookRetryAction(
+                book,
+                operationName,
+                () => SyncBookPlacementOrRefresh(book, operationName));
             if (!bookshelfApiSyncController.SyncBookPlacement(
                     book,
                     _ =>
@@ -2313,13 +2502,13 @@ namespace BookshelfPorting.Runtime
                     error => RefreshServerStateAfterMutationFailure(
                         operationName,
                         error,
-                        () => SyncBookPlacementOrRefresh(book, operationName),
+                        retryAction,
                         retryKey)))
             {
                 RefreshServerStateAfterMutationFailure(
                     operationName,
                     "책 배치 저장에 필요한 서버 식별자를 찾을 수 없습니다.",
-                    () => SyncBookPlacementOrRefresh(book, operationName),
+                    null,
                     retryKey);
             }
         }
@@ -2336,6 +2525,12 @@ namespace BookshelfPorting.Runtime
             }
 
             var retryKey = BuildMutationRetryKey(operationName, book);
+            var retryAction = CreateBookStateRetryAction(
+                book,
+                rollback,
+                desired,
+                operationName,
+                () => SyncBookStateOrRollback(book, rollback, desired, operationName));
             if (!bookshelfApiSyncController.SyncBookState(
                     book,
                     updatedBook =>
@@ -2351,7 +2546,7 @@ namespace BookshelfPorting.Runtime
                         rollback,
                         operationName,
                         error,
-                        () => RetryBookStateMutation(book, desired, () => SyncBookStateOrRollback(book, rollback, desired, operationName)),
+                        retryAction,
                         retryKey)))
             {
                 RollbackBookStateMutation(
@@ -2359,7 +2554,7 @@ namespace BookshelfPorting.Runtime
                     rollback,
                     operationName,
                     "책 상태 저장에 필요한 서버 식별자를 찾을 수 없습니다.",
-                    () => RetryBookStateMutation(book, desired, () => SyncBookStateOrRollback(book, rollback, desired, operationName)),
+                    null,
                     retryKey);
             }
         }
@@ -2376,6 +2571,12 @@ namespace BookshelfPorting.Runtime
             }
 
             var retryKey = BuildMutationRetryKey(operationName, book);
+            var retryAction = CreateBookStateRetryAction(
+                book,
+                rollback,
+                desired,
+                operationName,
+                () => SyncBookLikeOrRollback(book, rollback, desired, operationName));
             if (!bookshelfApiSyncController.SyncBookLike(
                     book,
                     updatedBook =>
@@ -2391,7 +2592,7 @@ namespace BookshelfPorting.Runtime
                         rollback,
                         operationName,
                         error,
-                        () => RetryBookStateMutation(book, desired, () => SyncBookLikeOrRollback(book, rollback, desired, operationName)),
+                        retryAction,
                         retryKey)))
             {
                 RollbackBookStateMutation(
@@ -2399,7 +2600,7 @@ namespace BookshelfPorting.Runtime
                     rollback,
                     operationName,
                     "좋아요 저장에 필요한 서버 식별자를 찾을 수 없습니다.",
-                    () => RetryBookStateMutation(book, desired, () => SyncBookLikeOrRollback(book, rollback, desired, operationName)),
+                    null,
                     retryKey);
             }
         }
@@ -2413,7 +2614,14 @@ namespace BookshelfPorting.Runtime
             string retryKey = null)
         {
             Debug.LogWarning($"{operationName} failed on server. Restoring local book state. {errorMessage}");
-            var pendingRetryAction = RegisterPendingMutationRetry(retryKey, operationName, errorMessage, retryAction);
+            var pendingRetryAction = retryAction != null
+                ? RegisterPendingMutationRetry(retryKey, operationName, errorMessage, retryAction)
+                : null;
+            if (retryAction == null)
+            {
+                ClearPendingMutationRetry(retryKey);
+            }
+
             ShowBookshelfTransientStatus(
                 $"{operationName} 실패",
                 retryAction == null ? "서버 요청을 완료하지 못해 변경 전 상태로 되돌렸습니다." : "변경 전 상태로 되돌렸습니다. 재시도할 수 있습니다.",
@@ -6523,7 +6731,8 @@ namespace BookshelfPorting.Runtime
                     ShowBookshelfTransientStatus("책 추가 저장 완료", $"{item.Title}이(가) 서버에 저장되었습니다.", false);
                     RefreshHud();
                 },
-                error => RollbackAddedBookAfterApiFailure(book, sourceSection, item.Title, error));
+                error => RollbackAddedBookAfterApiFailure(book, sourceSection, item.Title, error),
+                (updatedBook, error) => HandleAddedBookStateSyncFailure(updatedBook, item.Title, error));
             if (!didStartAddSync)
             {
                 RollbackAddedBookAfterApiFailure(
@@ -6532,6 +6741,41 @@ namespace BookshelfPorting.Runtime
                     item.Title,
                     "책장/섹션 서버 식별자를 찾을 수 없습니다.");
             }
+        }
+
+        private void HandleAddedBookStateSyncFailure(BookEntity book, string title, string errorMessage)
+        {
+            if (book == null)
+            {
+                RollbackAddedBookAfterApiFailure(book, null, title, errorMessage);
+                return;
+            }
+
+            ApplyBookEntityToMeta(book);
+            var meta = dataStore != null ? dataStore.GetOrCreateBookMeta(book) : null;
+            var desired = new BookStateMutationSnapshot(book, meta);
+            var retryKey = BuildMutationRetryKey("책 추가 상태 저장", book);
+            var retryAction = CreateBookStateRetryAction(
+                book,
+                desired,
+                desired,
+                "책 추가 상태 저장",
+                () => SyncBookStateOrRollback(book, desired, desired, "책 추가 상태 저장"));
+            var pendingRetryAction = RegisterPendingMutationRetry(
+                retryKey,
+                "책 추가 상태 저장",
+                errorMessage,
+                retryAction);
+
+            bookAddFeedbackMessage = $"{title} 추가 완료 · 상태 저장 대기";
+            ShowBookshelfTransientStatus("책 추가 완료 · 상태 저장 실패", "책은 추가됐고 독서 상태 저장만 재시도할 수 있습니다.", true);
+            ShowDeleteResultDialog(
+                "책 추가 완료 · 상태 저장 실패",
+                $"책은 서버에 추가됐지만 독서 상태/별점 저장을 완료하지 못했습니다.\n{NormalizeMutationErrorMessage(errorMessage)}",
+                false,
+                pendingRetryAction,
+                "재시도");
+            RefreshHud();
         }
 
         private void RollbackAddedBookAfterApiFailure(

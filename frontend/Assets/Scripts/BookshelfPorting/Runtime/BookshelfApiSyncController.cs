@@ -747,7 +747,8 @@ namespace BookshelfPorting.Runtime
             BookEntity book,
             int bookshelfIndex,
             Action<BookEntity> onSucceeded = null,
-            Action<string> onFailed = null)
+            Action<string> onFailed = null,
+            Action<BookEntity, string> onPostAddStateFailed = null)
         {
             if (!CanUseServerApi || book == null)
             {
@@ -768,6 +769,8 @@ namespace BookshelfPorting.Runtime
                 return false;
             }
 
+            var previousBookshelfId = book.bookshelfId;
+            var previousBookshelfSectionId = book.bookshelfSectionId;
             book.bookshelfId = bookshelfId.ToString();
             book.bookshelfSectionId = sectionId.ToString();
             var slotNo = generator.GetBookSlotNo(book);
@@ -790,10 +793,11 @@ namespace BookshelfPorting.Runtime
                     response =>
                     {
                         ApplyUserBookResponse(book, response);
-                        CompleteBookAddStateSync(book, desiredReadingStatus, desiredOwnerRating, onSucceeded, onFailed);
+                        CompleteBookAddStateSync(book, desiredReadingStatus, desiredOwnerRating, onSucceeded, onFailed, onPostAddStateFailed);
                     },
                     error =>
                     {
+                        RestoreBookAddPlacementIds(book, previousBookshelfId, previousBookshelfSectionId);
                         var message = FormatUserFacingError(error);
                         Debug.LogWarning($"Book add failed: {FormatError(error)}");
                         onFailed?.Invoke(message);
@@ -823,10 +827,11 @@ namespace BookshelfPorting.Runtime
                 {
                     book.bookId = response?.BookId > 0 ? response.BookId.ToString() : book.bookId;
                     ApplyUserBookResponse(book, response);
-                    CompleteBookAddStateSync(book, desiredReadingStatus, desiredOwnerRating, onSucceeded, onFailed);
+                    CompleteBookAddStateSync(book, desiredReadingStatus, desiredOwnerRating, onSucceeded, onFailed, onPostAddStateFailed);
                 },
                 error =>
                 {
+                    RestoreBookAddPlacementIds(book, previousBookshelfId, previousBookshelfSectionId);
                     var message = FormatUserFacingError(error);
                     Debug.LogWarning($"Kakao/manual book add failed: {FormatError(error)}");
                     onFailed?.Invoke(message);
@@ -839,7 +844,8 @@ namespace BookshelfPorting.Runtime
             ReadingStatus desiredReadingStatus,
             float desiredOwnerRating,
             Action<BookEntity> onSucceeded,
-            Action<string> onFailed)
+            Action<string> onFailed,
+            Action<BookEntity, string> onPostAddStateFailed)
         {
             if (book == null)
             {
@@ -861,10 +867,44 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (!SyncBookState(book, onSucceeded, onFailed))
+            if (!SyncBookState(
+                    book,
+                    onSucceeded,
+                    error => HandlePostAddStateSyncFailure(book, error, onFailed, onPostAddStateFailed)))
             {
-                onFailed?.Invoke("추가한 책의 독서 상태를 저장하는 데 필요한 서버 식별자를 찾을 수 없습니다.");
+                HandlePostAddStateSyncFailure(
+                    book,
+                    "추가한 책의 독서 상태를 저장하는 데 필요한 서버 식별자를 찾을 수 없습니다.",
+                    onFailed,
+                    onPostAddStateFailed);
             }
+        }
+
+        private static void HandlePostAddStateSyncFailure(
+            BookEntity book,
+            string errorMessage,
+            Action<string> onFailed,
+            Action<BookEntity, string> onPostAddStateFailed)
+        {
+            if (onPostAddStateFailed != null)
+            {
+                onPostAddStateFailed.Invoke(book, errorMessage);
+            }
+            else
+            {
+                onFailed?.Invoke(errorMessage);
+            }
+        }
+
+        private static void RestoreBookAddPlacementIds(BookEntity book, string bookshelfId, string bookshelfSectionId)
+        {
+            if (book == null)
+            {
+                return;
+            }
+
+            book.bookshelfId = bookshelfId;
+            book.bookshelfSectionId = bookshelfSectionId;
         }
 
         public bool RemoveBook(BookEntity book, Action onSucceeded = null, Action<string> onFailed = null)
