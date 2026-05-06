@@ -44,49 +44,25 @@ namespace Dotshelf.EditorTools
             EnsureDir(ThemesRoot);
             EnsureDir(ResourcesRoot);
 
-            // (interiorColor, interiorKelvin, interiorIntensity (=ambientIntensity),
-            //  exteriorColor, exteriorKelvin, exteriorIntensity)
-            var specs = new[]
-            {
-                ("Natural", "Natural",
-                    HexColor("#FFE4B5"), 4500f, 1.0f,
-                    HexColor("#FFF1D8"), 5200f, 1.6f),
-                ("Classic", "Classic",
-                    HexColor("#F5DEB3"), 3400f, 1.2f,
-                    HexColor("#FFE7B0"), 4200f, 0.9f),
-                ("Modern", "Modern",
-                    HexColor("#F0F8FF"), 6500f, 1.1f,
-                    HexColor("#E0EAFF"), 6800f, 1.2f),
-                ("Vintage", "Vintage",
-                    HexColor("#DEB887"), 3000f, 0.7f,
-                    HexColor("#E8C99B"), 3300f, 0.7f),
-                ("Pastel", "Pastel",
-                    HexColor("#FFE4F0"), 5800f, 1.3f,
-                    HexColor("#FFD4E5"), 5500f, 1.0f),
-            };
-
             var newThemes = new System.Collections.Generic.List<RoomThemeAsset>();
 
-            // '기본' 테마 — 카탈로그 첫 항목 보장. CreatePack(GoodVibes) 메뉴가 broken 이라 (RoomThemeAsset 의
-            // 옛 directionalLight* 필드명 mismatch) 기본 테마 자체가 없을 수 있음. 여기서 placeholder 로 보장.
-            var defaultTheme = CreateOrLoadLightPreviewTheme(
-                fileName: "RoomTheme_Default",
-                displayName: "기본",
-                description: "기본 제공 테마 (placeholder — 라이팅 중립).",
-                interiorColor: Color.white, interiorKelvin: 6500f, ambientIntensity: 1.0f,
-                exteriorColor: Color.white, exteriorKelvin: 6500f, exteriorIntensity: 1.0f);
+            // '기본' 테마 — 카탈로그 첫 항목 보장. CreatePack(GoodVibes 메뉴)이 이미 머티리얼 포함 Default 를
+            // 생성했으면 그 자산을 보존(load 만) — overwrite 안 함. 없으면 light-only placeholder 로 새로 생성.
+            const string defaultThemePath = ThemesRoot + "/RoomTheme_Default.asset";
+            var defaultTheme = AssetDatabase.LoadAssetAtPath<RoomThemeAsset>(defaultThemePath);
+            if (defaultTheme == null)
+            {
+                defaultTheme = CreateOrLoadLightPreviewTheme(
+                    fileName: "RoomTheme_Default",
+                    displayName: "기본",
+                    description: "기본 제공 테마 (placeholder — 라이팅 중립).",
+                    interiorColor: Color.white, interiorKelvin: 6500f, ambientIntensity: 1.0f,
+                    exteriorColor: Color.white, exteriorKelvin: 6500f, exteriorIntensity: 1.0f);
+            }
             newThemes.Add(defaultTheme);
 
-            foreach (var s in specs)
-            {
-                var theme = CreateOrLoadLightPreviewTheme(
-                    fileName: $"RoomTheme_{s.Item1}",
-                    displayName: s.Item2,
-                    description: $"{s.Item2} 라이트 프리뷰 (placeholder — 가구/벽지/바닥 미적용).",
-                    interiorColor: s.Item3, interiorKelvin: s.Item4, ambientIntensity: s.Item5,
-                    exteriorColor: s.Item6, exteriorKelvin: s.Item7, exteriorIntensity: s.Item8);
-                newThemes.Add(theme);
-            }
+            // 5 placeholder 테마 — CreatePack 과 동일 spec (helper 재사용).
+            newThemes.AddRange(BuildLightPreviewThemes());
 
             EnsureCatalogContainsThemes(newThemes);
 
@@ -223,10 +199,55 @@ namespace Dotshelf.EditorTools
             // 5) MainRoomScene에 RoomThemeApplier 추가 + reference 연결
             EnsureApplierInScene();
 
+            // 6) Natural / Classic / Modern / Vintage / Pastel placeholder 테마 보장.
+            //    이전엔 별도 메뉴(Create Or Refresh Light Preview Themes) 에서만 생성됐으나, 사용자가 GoodVibes
+            //    메뉴 한 번 클릭으로 7 테마(기본+산뜻+5) 가 모두 카탈로그에 반영되도록 통합. 가구/벽지/바닥 미적용
+            //    (머티리얼 null) + isLocalPreview=true → 클릭 시 RoomThemeApplier 라이팅만 영향, PATCH skip.
+            //    같은 메뉴 재실행 idempotent — 같은 fileName RoomThemeAsset 갱신 + EnsureCatalogContainsThemes dedupe.
+            var themedPreviews = BuildLightPreviewThemes();
+            EnsureCatalogContainsThemes(themedPreviews);
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log($"[ThemePackCreator] Pack ready. Catalog at {CatalogPath} (entries={catalog.Entries.Count}). " +
-                      $"MainRoomScene RoomThemeApplier wired. 'THEME_FULL' toolbar 카테고리에서 동작.");
+            // catalog.Entries.Count 는 reload 후 정확. 7 테마 (Default + GoodVibes + 5 placeholder) 가 표준.
+            var refreshedCatalog = AssetDatabase.LoadAssetAtPath<RoomThemeCatalogAsset>(CatalogPath);
+            Debug.Log($"[ThemePackCreator] Pack ready. Catalog at {CatalogPath} (entries={refreshedCatalog?.Entries?.Count ?? -1}). " +
+                      $"기본/산뜻/Natural/Classic/Modern/Vintage/Pastel 모두 등록. 'THEME_FULL' toolbar 카테고리에서 확인.");
+        }
+
+        // CreatePack + CreateLightPreviewPack 양쪽에서 재사용. Natural/Classic/Modern/Vintage/Pastel 5개 returns.
+        static System.Collections.Generic.List<RoomThemeAsset> BuildLightPreviewThemes()
+        {
+            EnsureDir(ThemesRoot);
+            var specs = new[]
+            {
+                ("Natural", "Natural",
+                    HexColor("#FFE4B5"), 4500f, 1.0f,
+                    HexColor("#FFF1D8"), 5200f, 1.6f),
+                ("Classic", "Classic",
+                    HexColor("#F5DEB3"), 3400f, 1.2f,
+                    HexColor("#FFE7B0"), 4200f, 0.9f),
+                ("Modern", "Modern",
+                    HexColor("#F0F8FF"), 6500f, 1.1f,
+                    HexColor("#E0EAFF"), 6800f, 1.2f),
+                ("Vintage", "Vintage",
+                    HexColor("#DEB887"), 3000f, 0.7f,
+                    HexColor("#E8C99B"), 3300f, 0.7f),
+                ("Pastel", "Pastel",
+                    HexColor("#FFE4F0"), 5800f, 1.3f,
+                    HexColor("#FFD4E5"), 5500f, 1.0f),
+            };
+            var list = new System.Collections.Generic.List<RoomThemeAsset>();
+            foreach (var s in specs)
+            {
+                list.Add(CreateOrLoadLightPreviewTheme(
+                    fileName: $"RoomTheme_{s.Item1}",
+                    displayName: s.Item2,
+                    description: $"{s.Item2} 라이트 프리뷰 (placeholder — 가구/벽지/바닥 미적용).",
+                    interiorColor: s.Item3, interiorKelvin: s.Item4, ambientIntensity: s.Item5,
+                    exteriorColor: s.Item6, exteriorKelvin: s.Item7, exteriorIntensity: s.Item8));
+            }
+            return list;
         }
 
         static void EnsureDir(string path)
@@ -289,8 +310,10 @@ namespace Dotshelf.EditorTools
             so.FindProperty("bookshelfMaterial").objectReferenceValue = bookshelf;
             so.FindProperty("furnitureMaterial").objectReferenceValue = furniture;
             so.FindProperty("accentMaterial").objectReferenceValue = accent;
-            so.FindProperty("directionalLightColor").colorValue = lightColor;
-            so.FindProperty("directionalLightKelvin").floatValue = kelvin;
+            // RoomThemeAsset 의 실제 SerializeField 명. 옛 'directionalLight*' 는 getter 만 alias 로 남아있어
+            // SerializedObject 로는 접근 불가 → 실제 필드명 사용. 이 줄이 직접적으로 CreatePack 메뉴의 NRE 를 막음.
+            so.FindProperty("exteriorLightColor").colorValue = lightColor;
+            so.FindProperty("exteriorLightKelvin").floatValue = kelvin;
             so.FindProperty("ambientTint").colorValue = ambient;
             so.FindProperty("ambientIntensity").floatValue = ambientIntensity;
             so.FindProperty("accentPrimary").colorValue = accentPrimary;

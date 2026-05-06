@@ -152,9 +152,17 @@ namespace Dotshelf.EditorTools
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+
+            // 전체 테마 placeholder 도 같은 메뉴 한 번에 생성. ThemePackCreatorUtility 가 idempotent 보장 —
+            // RoomTheme_Default 이 CreatePack 에서 이미 만들어져 있으면 보존, 없으면 placeholder 로 생성.
+            // RoomThemeCatalog 에 Default + Natural/Classic/Modern/Vintage/Pastel 5 가 dedupe append.
+            // 사용자가 별도 'Dotshelf > Theme > ...' 메뉴를 따로 클릭할 필요 없음.
+            ThemePackCreatorUtility.CreateLightPreviewPack();
+
             Debug.Log("[DesignPreviewPack] Placeholder catalogs generated. " +
                       "Resources/Catalogs/{Wallpaper,InteriorLight,ExteriorLight}Catalog.asset 확인. " +
-                      "Play → 꾸미기 → 벽지/내부조명/외부조명 탭에서 그리드 + visual swap 테스트.");
+                      "RoomThemeCatalog 에도 placeholder 테마 (Default+Natural/Classic/Modern/Vintage/Pastel) 추가됨. " +
+                      "Play → 꾸미기 → 벽지/내부조명/외부조명/전체 테마 탭에서 그리드 + visual swap 테스트.");
         }
 
         [MenuItem("Dotshelf/Design Preview/Cleanup Placeholder Catalogs")]
@@ -173,9 +181,24 @@ namespace Dotshelf.EditorTools
                     AssetDatabase.DeleteAsset(path);
                 }
             }
+
+            // placeholder 테마 자산 정리 — Generate Placeholder Catalogs 가 만든 5 신규 테마만 제거.
+            // RoomTheme_Default / RoomTheme_GoodVibes 는 CreatePack(GoodVibes 메뉴) 산출물 — 보존.
+            // Catalog (Resources/RoomThemeCatalog.asset) 도 보존 — 다음 Generate 때 dedupe append 로 정상화.
+            const string ThemesRoot = "Assets/App/Composition/Configs/RoomThemes";
+            foreach (var name in new[] { "Natural", "Classic", "Modern", "Vintage", "Pastel" })
+            {
+                var path = $"{ThemesRoot}/RoomTheme_{name}.asset";
+                if (AssetDatabase.LoadAssetAtPath<Object>(path) != null)
+                {
+                    AssetDatabase.DeleteAsset(path);
+                }
+            }
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("[DesignPreviewPack] Placeholder catalogs cleaned up.");
+            Debug.Log("[DesignPreviewPack] Placeholder catalogs + 5 placeholder 테마 (Natural/Classic/Modern/Vintage/Pastel) 삭제. " +
+                      "RoomTheme_Default / RoomTheme_GoodVibes 는 보존 (별도 메뉴 산출물).");
         }
 
         static Material CreateOrUpdateMaterial(string name, Color color, float smoothness)
