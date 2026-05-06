@@ -2,7 +2,7 @@
   "latestVersion": "0.1.0",
   "mandatory": false,
   "packageUrl": "https://dotshelf.digital/launcher/windows/Dotshelf-0.1.0.zip",
-  "sha256": "C9C6F6F8AA407EF69C2E73591818BF9800B76F51859D4AF4EBC5DF087758E406",
+  "sha256": "4E6CFDEA45738E2CF38FDA4EA71AE64A96E4456CEC62466D8D16532EE135833A",
   "entrypoint": "Dotshelf.exe",
   "minLauncherVersion": "0.1.0",
   "releaseNotes": [
