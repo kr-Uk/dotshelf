@@ -418,7 +418,7 @@ MonoBehaviour:
   stylesheet: {fileID: 7433441132597879392, guid: 5427efbd60cb46bc9d34dbd7245dacc8, type: 3}
   postItCatalog: {fileID: 0}
   viewMode: 1
-  visitedSpaceId: 1
+  visitedSpaceId: 0
   useMockRepositories: 1
 --- !u!114 &1572123412
 MonoBehaviour:

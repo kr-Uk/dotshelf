@@ -74,7 +74,7 @@ MonoBehaviour:
   postItCatalog: {fileID: 0}
   overridePanelSettings: {fileID: 0}
   viewMode: 1
-  visitedSpaceId: 1
+  visitedSpaceId: 0
   useMockRepositories: 1
 --- !u!114 &3910612650708001484
 MonoBehaviour:
