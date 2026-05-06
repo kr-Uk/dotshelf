@@ -30,3 +30,14 @@ MonoBehaviour:
   accentPrimary: {r: 1, g: 0.84313726, b: 0.4509804, a: 1}
   accentSecondary: {r: 1, g: 0.75686276, b: 0.7058824, a: 1}
   accentTertiary: {r: 0.65882355, g: 0.8352941, b: 0.63529414, a: 1}
+  bookshelfDecoSpecs: []
+  floorDecoSpecs: []
+  wallDecoSpecs: []
+  windowSpec:
+    assetId: 0
+    prefab: {fileID: 1000000000, guid: d4e5f67890123456789abcdef0123456, type: 3}
+    wallSide: 2
+    localPosition: {x: 0, y: 0, z: 0}
+    localRotation: {x: 0, y: 0, z: 0}
+    localScale: {x: 1, y: 1, z: 1}
+    anchorTag: ""
