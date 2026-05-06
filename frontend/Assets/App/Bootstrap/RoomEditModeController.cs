@@ -198,6 +198,15 @@ namespace App.Bootstrap
             ("SHOP", "샵"),
         };
 
+        // FURNITURE 탭 선택 시 노출되는 sub-tab. CustomizationCategory의 외형형 가구 3종.
+        // (의자는 Desk = '노트북 & 책상 세트'에 묶여있어 별도 sub-tab 불필요.)
+        private static readonly (string Key, string Label)[] FurnitureSubItems =
+        {
+            ("DESK", "책상"),
+            ("BOOKSHELF_SKIN", "책장"),
+            ("DASHBOARD_SKIN", "대시보드"),
+        };
+
         private struct InventoryEntry
         {
             public string DisplayName;
@@ -232,6 +241,13 @@ namespace App.Bootstrap
         private string selectedToolbarKey = "ALL";
         private readonly Dictionary<string, Image> toolbarBackgrounds = new Dictionary<string, Image>();
         private readonly Dictionary<string, TMP_Text> toolbarLabels = new Dictionary<string, TMP_Text>();
+
+        // FURNITURE sub-tab. selectedToolbarKey == "FURNITURE" 일 때만 의미 있음.
+        private string selectedFurnitureSubKey = "DESK";
+        private GameObject furnitureSubToolbarRoot;
+        private GameObject inventoryTitleObject;
+        private readonly Dictionary<string, Image> furnitureSubBackgrounds = new Dictionary<string, Image>();
+        private readonly Dictionary<string, TMP_Text> furnitureSubLabels = new Dictionary<string, TMP_Text>();
 
         private RoomThemeCatalogAsset themeCatalog;
         private RoomThemeApplier themeApplier;
@@ -758,6 +774,114 @@ namespace App.Bootstrap
             toolbarLabels[key] = labelText;
         }
 
+        // InventoryListContainer 내부 title 영역 위에 가로 strip으로 sub-tab 3개.
+        // FURNITURE 선택 시만 활성화 (UpdateFurnitureSubToolbarVisibility). 단일 row,
+        // title과 anchor 영역 거의 동일 (top, height 28) — title은 그 시점에 SetActive(false).
+        private void BuildFurnitureSubToolbar(Transform parent)
+        {
+            furnitureSubToolbarRoot = CreateRectObject("FurnitureSubToolbar", parent);
+            var rect = (RectTransform)furnitureSubToolbarRoot.transform;
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.sizeDelta = new Vector2(-48f, 36f);
+            rect.anchoredPosition = new Vector2(0f, -8f);
+
+            var layout = furnitureSubToolbarRoot.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 8f;
+            layout.childAlignment = TextAnchor.MiddleLeft;
+            layout.childControlWidth = false;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+
+            for (var i = 0; i < FurnitureSubItems.Length; i++)
+            {
+                BuildFurnitureSubButton(furnitureSubToolbarRoot.transform, FurnitureSubItems[i].Key, FurnitureSubItems[i].Label);
+            }
+
+            ApplyFurnitureSubSelectionVisuals();
+            furnitureSubToolbarRoot.SetActive(false);
+        }
+
+        private void BuildFurnitureSubButton(Transform parent, string key, string label)
+        {
+            var background = CreateImage(parent, $"FurnitureSub_{key}", SecondaryColor);
+            background.sprite = roundedRectSprite;
+            background.type = Image.Type.Sliced;
+            var rect = background.rectTransform;
+            rect.sizeDelta = new Vector2(96f, 32f);
+
+            var layoutElement = background.gameObject.AddComponent<LayoutElement>();
+            layoutElement.minWidth = rect.sizeDelta.x;
+            layoutElement.preferredWidth = rect.sizeDelta.x;
+            layoutElement.minHeight = rect.sizeDelta.y;
+            layoutElement.preferredHeight = rect.sizeDelta.y;
+
+            var outline = background.gameObject.AddComponent<Outline>();
+            outline.effectColor = WithAlpha(BorderColor, 0.85f);
+            outline.effectDistance = new Vector2(1f, -1f);
+
+            var labelText = CreateText(background.transform, "Label", label, 14f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
+            labelText.overflowMode = TextOverflowModes.Ellipsis;
+            StretchToParent(labelText.rectTransform);
+
+            var button = background.gameObject.AddComponent<Button>();
+            button.targetGraphic = background;
+            button.transition = Selectable.Transition.None;
+            button.onClick.AddListener(() => OnFurnitureSubClicked(key));
+
+            furnitureSubBackgrounds[key] = background;
+            furnitureSubLabels[key] = labelText;
+        }
+
+        private void OnFurnitureSubClicked(string key)
+        {
+            if (selectedFurnitureSubKey == key) return;
+            selectedFurnitureSubKey = key;
+            ApplyFurnitureSubSelectionVisuals();
+            RebuildInventorySlots();
+        }
+
+        private void ApplyFurnitureSubSelectionVisuals()
+        {
+            foreach (var pair in furnitureSubBackgrounds)
+            {
+                var isSelected = pair.Key == selectedFurnitureSubKey;
+                pair.Value.color = isSelected ? PrimaryColor : SecondaryColor;
+                if (furnitureSubLabels.TryGetValue(pair.Key, out var label) && label != null)
+                {
+                    label.color = isSelected ? Color.white : TextColor;
+                }
+            }
+        }
+
+        private void UpdateFurnitureSubToolbarVisibility()
+        {
+            bool showSub = selectedToolbarKey == "FURNITURE";
+            if (furnitureSubToolbarRoot != null && furnitureSubToolbarRoot.activeSelf != showSub)
+            {
+                furnitureSubToolbarRoot.SetActive(showSub);
+            }
+            if (inventoryTitleObject != null && inventoryTitleObject.activeSelf == showSub)
+            {
+                inventoryTitleObject.SetActive(!showSub);
+            }
+        }
+
+        // toolbar sub-key → CustomizationCategory 매핑.
+        private static bool TryResolveFurnitureSubCategory(string subKey, out CustomizationCategory category)
+        {
+            switch (subKey)
+            {
+                case "DESK":            category = CustomizationCategory.Desk;          return true;
+                case "BOOKSHELF_SKIN":  category = CustomizationCategory.BookshelfSkin; return true;
+                case "DASHBOARD_SKIN":  category = CustomizationCategory.DashboardSkin; return true;
+                default:                category = default;                              return false;
+            }
+        }
+
         // Inventory list occupies the rest of the bottom menu panel beneath the
         // toolbar strip. Background is intentionally transparent so the panel reads
         // as one continuous beige surface.
@@ -778,6 +902,10 @@ namespace App.Bootstrap
             titleRect.pivot = new Vector2(0f, 1f);
             titleRect.sizeDelta = new Vector2(-48f, 28f);
             titleRect.anchoredPosition = new Vector2(28f, -12f);
+            inventoryTitleObject = title.gameObject;
+
+            // FURNITURE 탭 선택 시 title 자리에 sub-toolbar 노출 — 책상/책장/대시보드.
+            BuildFurnitureSubToolbar(listContainer.transform);
 
             var scrollRect = listContainer.AddComponent<ScrollRect>();
             scrollRect.horizontal = true;
@@ -848,7 +976,16 @@ namespace App.Bootstrap
             }
 
             // v1.0 customization — 1:1 카테고리 매핑이 명확한 toolbar 키는 CustomizationCatalog로 처리.
-            // 묶음 탭(FURNITURE/OBJECT_SKIN)은 후속 PR에서 sub-탭화.
+            // FURNITURE는 sub-tab(책상/책장스킨/대시보드스킨)으로 분기. OBJECT_SKIN은 후속 PR에서 sub-탭화.
+            if (selectedToolbarKey == "FURNITURE")
+            {
+                if (TryResolveFurnitureSubCategory(selectedFurnitureSubKey, out var furnitureCategory))
+                {
+                    BuildCustomizationSlots(inventoryContentRoot.transform, furnitureCategory);
+                    return;
+                }
+            }
+
             if (TryResolveCustomizationCategory(selectedToolbarKey, out var category))
             {
                 BuildCustomizationSlots(inventoryContentRoot.transform, category);
@@ -2327,6 +2464,7 @@ namespace App.Bootstrap
             }
             selectedToolbarKey = key;
             ApplyToolbarSelectionVisuals();
+            UpdateFurnitureSubToolbarVisibility();
             RebuildInventorySlots();
         }
 
