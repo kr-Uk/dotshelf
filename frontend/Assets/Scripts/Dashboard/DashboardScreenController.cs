@@ -33,7 +33,9 @@ namespace Dotshelf.Scripts.Dashboard
 
         [Header("Mode")]
         [SerializeField] private ViewMode viewMode = ViewMode.Mine;
-        [SerializeField] private long visitedSpaceId = 1L;
+        // Default 0 (미정). 옛 default 1L 은 dev DB 에 spaceId=1 이 없어 GET /v1/spaces/1/dashboard 호출 시 404/500 유발.
+        // 이제 외부에서 visitedSpaceId 를 명시 set 하지 않으면 LoadInitialData/카드 클릭 콜백이 dashboard 호출 자체를 skip.
+        [SerializeField] private long visitedSpaceId;
         [SerializeField] private bool useMockRepositories = true;
 
         private UIDocument document;
@@ -639,11 +641,20 @@ namespace Dotshelf.Scripts.Dashboard
 
             if (viewMode == ViewMode.Mine)
             {
+                // 본인 공간 — GET /v1/spaces/me 응답의 id 를 사용 (Repository 가 처리). source of truth = BE.
                 loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
+            }
+            else if (visitedSpaceId > 0)
+            {
+                Debug.Log($"[Dashboard] Loading visited space dashboard. spaceId={visitedSpaceId}");
+                loadDashboardUseCase.Execute(visitedSpaceId, OnDashboardLoaded, OnError);
             }
             else
             {
-                loadDashboardUseCase.Execute(visitedSpaceId, OnDashboardLoaded, OnError);
+                // visitedSpaceId 미설정 — 외부 caller (Search 등) 가 set 하기 전에는 호출 자체를 skip.
+                // 이전에는 SerializeField default 1L 이 그대로 전파돼 GET /v1/spaces/1/dashboard 가 호출됨.
+                Debug.LogWarning("[Dashboard] visitedSpaceId 미설정 (viewMode=Other) — dashboard 호출 skip. " +
+                                 "공간 카드 클릭 등으로 spaceId 가 set 된 후 LoadInitialData 가 다시 호출되어야 함.");
             }
         }
 
@@ -1569,9 +1580,15 @@ namespace Dotshelf.Scripts.Dashboard
             {
                 return;
             }
+            if (targetSpaceId <= 0)
+            {
+                Debug.LogWarning($"[Dashboard] OnVisitUser — invalid targetSpaceId={targetSpaceId} (user.Id 미설정). dashboard 호출 skip.");
+                return;
+            }
             viewMode = ViewMode.Visitor;
             visitedSpaceId = targetSpaceId;
             ApplyViewMode();
+            Debug.Log($"[Dashboard] Visitor view → spaceId={targetSpaceId}");
             loadDashboardUseCase.Execute(targetSpaceId, OnDashboardLoaded, OnError);
         }
 
