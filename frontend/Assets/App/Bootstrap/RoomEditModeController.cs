@@ -1678,13 +1678,30 @@ namespace App.Bootstrap
         private const string PreviewInternalLightName = "Preview_InternalLight";
         private const string PreviewExternalLightName = "Preview_ExternalLight";
 
+        // RoomLighting 루트 cache — ApplyLocalLightingPreview 가 매 클릭마다 GameObject.Find(전체 씬 scan)
+        // 호출하지 않도록. 씬 reload / 외부 destroy 로 transform null 이 되면 재해결.
+        // (MR 109 review — simonjiho #4 / 0w0n2x #2)
+        private Transform cachedPreviewLightingRoot;
+
+        private Transform ResolveOrCreatePreviewLightingRoot()
+        {
+            if (cachedPreviewLightingRoot != null)
+            {
+                return cachedPreviewLightingRoot;
+            }
+            var existing = GameObject.Find(PreviewLightingRootName);
+            if (existing == null)
+            {
+                existing = new GameObject(PreviewLightingRootName);
+            }
+            cachedPreviewLightingRoot = existing.transform;
+            return cachedPreviewLightingRoot;
+        }
+
         private void ApplyLocalLightingPreview(CustomizationCategory category, CustomizationEntry entry)
         {
-            var rootGo = GameObject.Find(PreviewLightingRootName);
-            if (rootGo == null)
-            {
-                rootGo = new GameObject(PreviewLightingRootName);
-            }
+            var rootTransform = ResolveOrCreatePreviewLightingRoot();
+            var rootGo = rootTransform.gameObject;
 
             string childName;
             bool isInterior;

@@ -19,6 +19,9 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private Vector2 floorBaseMapTiling = new Vector2(3f, 3f);
         [SerializeField] private float bookshelfSmoothness = 0.42f;
         [SerializeField] private float floorSmoothness = 0.28f;
+        // 천장 smoothness — 거의 무광 기본값 0.05. 디자이너가 Inspector 에서 조정 가능.
+        // (MR 109 review — simonjiho #6: magic number → SerializeField)
+        [SerializeField, Range(0f, 1f)] private float ceilingSmoothness = 0.05f;
 
         [Header("Flat Colors")]
         [SerializeField] private Color wallColor = new Color(0.93f, 0.90f, 0.84f);
@@ -122,7 +125,7 @@ namespace BookshelfPorting.Runtime
         {
             if (ceilingMaterial == null)
             {
-                ceilingMaterial = CreateLitMaterial("Ceiling", null, null, ceilingColor, 0.05f, false);
+                ceilingMaterial = CreateLitMaterial("Ceiling", null, null, ceilingColor, ceilingSmoothness, false);
             }
 
             return ceilingMaterial;
