@@ -95,8 +95,14 @@ namespace App.Infrastructure.Catalogs
         [SerializeField] private RoomThemeDecoSpec[] bookshelfDecoSpecs;
         [Tooltip("바닥 배치 deco. 빈 list면 spawn 안 함.")]
         [SerializeField] private RoomThemeDecoSpec[] floorDecoSpecs;
-        [Tooltip("벽 배치 deco (창문 포함). 빈 list면 spawn 안 함.")]
+        [Tooltip("벽 배치 deco. 빈 list면 spawn 안 함. 창문은 windowSpec 으로 별도 분리.")]
         [SerializeField] private RoomThemeDecoSpec[] wallDecoSpecs;
+
+        [Header("Window (특수 벽 deco)")]
+        [Tooltip("창문 prefab. WallDecoSpecs 와 별개 — 외부조명(ExteriorLight, 별도 directionalLight 컴포넌트)을 " +
+                 "cutout shader로 통과시키는 mesh 만 표현. 빛 자체는 창문 유무와 무관하게 항시 동작. " +
+                 "Prefab 미설정 시 이 테마는 창문 없는 룸. WallSide 로 어느 벽에 붙는지 명시.")]
+        [SerializeField] private RoomThemeDecoSpec windowSpec;
 
         public long AssetId => assetId;
         public string DisplayName => displayName;
@@ -132,6 +138,7 @@ namespace App.Infrastructure.Catalogs
         public IReadOnlyList<RoomThemeDecoSpec> BookshelfDecoSpecs => bookshelfDecoSpecs;
         public IReadOnlyList<RoomThemeDecoSpec> FloorDecoSpecs => floorDecoSpecs;
         public IReadOnlyList<RoomThemeDecoSpec> WallDecoSpecs => wallDecoSpecs;
+        public RoomThemeDecoSpec WindowSpec => windowSpec;
 
         // legacy alias — DirectionalLight* 이름으로 외부조명을 가리키던 기존 RoomThemeApplier 호환.
         // 새 코드는 ExteriorLight*를 사용할 것.
