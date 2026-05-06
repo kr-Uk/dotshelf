@@ -227,6 +227,10 @@ namespace App.Bootstrap
         private GameObject returnButtonRoot;
         private GameObject readyModalRoot;
         private GameObject themeApplyModeModalRoot;
+        private GameObject customizationLockedModalRoot;
+        private TMP_Text customizationLockedBodyText;
+        private CustomizationCategory pendingCustomizationCategory;
+        private CustomizationEntry pendingCustomizationEntry;
         private GameObject selectionPanelRoot;
 
         private string selectedToolbarKey = "ALL";
@@ -356,12 +360,14 @@ namespace App.Bootstrap
             BuildEditOverlay();
             BuildReadyModal();
             BuildThemeApplyModeModal();
+            BuildCustomizationLockedModal();
             BuildSelectionPanel();
 
             CloseDecorationPopupInternal();
             ExitEditModeInternal();
             HideReadyModal();
             HideThemeApplyModeModal();
+            HideCustomizationLockedModal();
         }
 
         // Resolve the persisted EditableDecorationCatalog (built by the Tools menu in
@@ -1254,6 +1260,21 @@ namespace App.Bootstrap
         {
             if (entry == null) return;
 
+            // 현재 적용 테마가 customization-disabled면 사전 확인 모달.
+            // 사용자가 "계속" 클릭 시 ProceedCustomizationEntry로 정상 흐름 재진입.
+            // 이 경로에서는 PATCH 응답 themeReset=true를 거쳐 자연스럽게 테마가 해제되고,
+            // 다음 클릭부터는 CurrentTheme.AllowsCustomization=true가 되어 모달 미발동.
+            if (IsCurrentThemeCustomizationLocked())
+            {
+                ShowCustomizationLockedModal(category, entry);
+                return;
+            }
+
+            ProceedCustomizationEntry(category, entry);
+        }
+
+        private void ProceedCustomizationEntry(CustomizationCategory category, CustomizationEntry entry)
+        {
             // visual swap — 카테고리별로 적용 + 강조 상태 갱신
             ApplyEntryVisual(category, entry);
             if (entry.AssetId > 0) lastAppliedEntries[category] = entry.AssetId;
@@ -1490,6 +1511,22 @@ namespace App.Bootstrap
         {
             if (space == null) return;
             lastServerSpace = space;  // IsCategoryEntryCurrent의 single source of truth 갱신
+
+            // [Review #104 P2] server에 저장된 테마 inventory ID로 RoomThemeApplier.CurrentTheme도
+            // 동기화. 동기화 안 하면 이전 세션에서 customization-disabled 테마를 적용해둔 사용자가
+            // 다시 입장해도 RoomThemeApplier.CurrentTheme=null이라 IsCurrentThemeCustomizationLocked
+            // 가 항상 false → 사전 확인 모달 미발동 → 사용자는 themeReset=true 응답을 받고서야 테마
+            // 해제를 인지하게 됨.
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            if (themeApplier != null && themeCatalog != null)
+            {
+                var resolvedTheme = themeCatalog.Resolve(space.CurrentThemeInventoryId);
+                if (resolvedTheme != null && resolvedTheme != themeApplier.CurrentTheme)
+                {
+                    themeApplier.Apply(resolvedTheme);
+                }
+            }
+
             ApplyCategoryById(CustomizationCategory.Wallpaper, space.CurrentWallpaperInventoryId);
             ApplyCategoryById(CustomizationCategory.Floor, space.CurrentFloorInventoryId);
             ApplyCategoryById(CustomizationCategory.Desk, space.CurrentDeskInventoryId);
@@ -1726,6 +1763,77 @@ namespace App.Bootstrap
             cancelRect.pivot = new Vector2(0.5f, 0f);
             cancelRect.anchoredPosition = new Vector2(195f, 34f);
             cancelButton.onClick.AddListener(HideThemeApplyModeModal);
+        }
+
+        // 커스터마이징 불가 테마(AllowsCustomization=false)가 적용된 상태에서 카테고리를 변경하면
+        // 백엔드가 themeReset=true 응답으로 테마를 자동 해제. 사용자에게 그 결과를 미리 알리고
+        // 의사결정 기회를 주기 위한 사전 확인 모달.
+        private void BuildCustomizationLockedModal()
+        {
+            customizationLockedModalRoot = CreateRectObject("CustomizationLockedModal", canvas.transform);
+            var rect = (RectTransform)customizationLockedModalRoot.transform;
+            StretchToParent(rect);
+
+            var dim = CreateImage(customizationLockedModalRoot.transform, "Dim", DimColor);
+            StretchToParent(dim.rectTransform);
+            var dimButton = dim.gameObject.AddComponent<Button>();
+            dimButton.transition = Selectable.Transition.None;
+            dimButton.onClick.AddListener(HideCustomizationLockedModal);
+
+            var card = CreateImage(customizationLockedModalRoot.transform, "Card", CardColor);
+            card.sprite = roundedRectSprite;
+            card.type = Image.Type.Sliced;
+            var cardRect = card.rectTransform;
+            cardRect.anchorMin = new Vector2(0.5f, 0.5f);
+            cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+            cardRect.pivot = new Vector2(0.5f, 0.5f);
+            cardRect.sizeDelta = new Vector2(660f, 290f);
+            cardRect.anchoredPosition = Vector2.zero;
+            var cardOutline = card.gameObject.AddComponent<Outline>();
+            cardOutline.effectColor = WithAlpha(BorderColor, 0.95f);
+            cardOutline.effectDistance = new Vector2(1f, -1f);
+
+            var title = CreateText(card.transform, "Title", "테마 해제 안내", 26f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
+            var titleRect = title.rectTransform;
+            titleRect.anchorMin = new Vector2(0f, 1f);
+            titleRect.anchorMax = new Vector2(1f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.offsetMin = new Vector2(32f, -78f);
+            titleRect.offsetMax = new Vector2(-32f, -28f);
+
+            customizationLockedBodyText = CreateText(
+                card.transform,
+                "Body",
+                string.Empty,
+                18f,
+                FontStyles.Normal,
+                MutedTextColor,
+                TextAlignmentOptions.Center);
+            var bodyRect = customizationLockedBodyText.rectTransform;
+            bodyRect.anchorMin = new Vector2(0f, 0.32f);
+            bodyRect.anchorMax = new Vector2(1f, 0.78f);
+            bodyRect.pivot = new Vector2(0.5f, 0.5f);
+            bodyRect.offsetMin = new Vector2(48f, 0f);
+            bodyRect.offsetMax = new Vector2(-48f, 0f);
+            customizationLockedBodyText.enableWordWrapping = true;
+
+            var proceedButton = CreateButton(card.transform, "ProceedButton", "계속",
+                PrimaryColor, Color.white, new Vector2(180f, 58f), false, BorderColor);
+            var proceedRect = (RectTransform)proceedButton.transform;
+            proceedRect.anchorMin = new Vector2(0.5f, 0f);
+            proceedRect.anchorMax = new Vector2(0.5f, 0f);
+            proceedRect.pivot = new Vector2(0.5f, 0f);
+            proceedRect.anchoredPosition = new Vector2(-100f, 34f);
+            proceedButton.onClick.AddListener(ConfirmCustomizationLockedProceed);
+
+            var cancelLockedButton = CreateButton(card.transform, "CancelButton", "취소",
+                CardColor, TextColor, new Vector2(140f, 58f), true, BorderColor);
+            var cancelLockedRect = (RectTransform)cancelLockedButton.transform;
+            cancelLockedRect.anchorMin = new Vector2(0.5f, 0f);
+            cancelLockedRect.anchorMax = new Vector2(0.5f, 0f);
+            cancelLockedRect.pivot = new Vector2(0.5f, 0f);
+            cancelLockedRect.anchoredPosition = new Vector2(100f, 34f);
+            cancelLockedButton.onClick.AddListener(HideCustomizationLockedModal);
         }
 
         private void BuildSelectionPanel()
@@ -2394,6 +2502,89 @@ namespace App.Bootstrap
             var theme = pendingThemeApply;
             HideThemeApplyModeModal();
             ApplyThemeSelected(theme, mode);
+        }
+
+        private bool IsCurrentThemeCustomizationLocked()
+        {
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+            var current = themeApplier?.CurrentTheme;
+            return current != null && !current.AllowsCustomization;
+        }
+
+        private void ShowCustomizationLockedModal(CustomizationCategory category, CustomizationEntry entry)
+        {
+            pendingCustomizationCategory = category;
+            pendingCustomizationEntry = entry;
+
+            if (customizationLockedModalRoot == null)
+            {
+                ProceedCustomizationEntry(category, entry);
+                return;
+            }
+
+            if (customizationLockedBodyText != null)
+            {
+                var current = themeApplier?.CurrentTheme;
+                string themeName = current != null && !string.IsNullOrEmpty(current.DisplayName)
+                    ? current.DisplayName
+                    : "현재";
+                customizationLockedBodyText.text =
+                    $"'{themeName}' 테마는 커스터마이징을 허용하지 않습니다.\n진행하면 테마가 해제되고 적용된 커스터마이징이 초기화됩니다.";
+            }
+
+            customizationLockedModalRoot.transform.SetAsLastSibling();
+            customizationLockedModalRoot.SetActive(true);
+        }
+
+        private void HideCustomizationLockedModal()
+        {
+            pendingCustomizationCategory = default;
+            pendingCustomizationEntry = null;
+            if (customizationLockedModalRoot != null)
+            {
+                customizationLockedModalRoot.SetActive(false);
+            }
+        }
+
+        private void ConfirmCustomizationLockedProceed()
+        {
+            var category = pendingCustomizationCategory;
+            var entry = pendingCustomizationEntry;
+            HideCustomizationLockedModal();
+            if (entry == null)
+            {
+                return;
+            }
+
+            // [Review #104 P1] visual swap 전에 클라이언트 테마 상태를 unlocked default로 reset.
+            // 이렇게 안 하면 PATCH 스킵(spaceSettingsRepo == null) / 네트워크 실패 / 서버가
+            // themeReset=false 반환 등의 경로에서 'locked CurrentTheme + 새 customization visual'
+            // 혼합 상태가 남아 다음 카테고리 클릭에서 모달이 또 노출됨.
+            //
+            // 사용자는 모달의 '계속'으로 '테마가 해제된다'에 이미 동의했으므로 클라이언트는 즉시
+            // 그 약속한 상태로 전환. PATCH 성공 시 themeReset=true → ReloadRoomState가 서버 권위
+            // 상태로 다시 동기화. PATCH 실패 시 클라이언트는 unlocked 상태로 남고 다음 reload에서
+            // 서버 상태에 따라 정정됨.
+            ResetThemeToDefaultLocally();
+            ApplyThemeResetVisualFallback();
+
+            ProceedCustomizationEntry(category, entry);
+        }
+
+        // 테마 카탈로그의 DefaultTheme(있으면)을 즉시 RoomThemeApplier에 Apply. 클라이언트 측
+        // CurrentTheme/AllowsCustomization 상태만 갱신 — 서버 PATCH는 별개 흐름.
+        private void ResetThemeToDefaultLocally()
+        {
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            if (themeApplier == null || themeCatalog == null) return;
+            var defaultTheme = themeCatalog.DefaultTheme;
+            if (defaultTheme != null && defaultTheme != themeApplier.CurrentTheme)
+            {
+                themeApplier.Apply(defaultTheme);
+            }
         }
 
         // Inventory placement ------------------------------------------------------
