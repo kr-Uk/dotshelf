@@ -805,13 +805,22 @@ namespace App.Bootstrap
             furnitureSubToolbarRoot.SetActive(false);
         }
 
+        // 책장 스킨은 BE PATCH 경로 미지원 (ISpaceSettingsRepository.ChangeBookshelfSkin 없음 +
+        // SpaceResponseDto.CurrentBookshelfSkinInventoryId 없음 + GetCategoryIdFromSpace/
+        // OptimisticallyUpdateServerSpace 미지원). 클릭 가능하면 visual만 바뀌고 PATCH는 안 나가
+        // 다음 reload 에서 선택이 사라짐 — '저장 안 되는 UI'가 됨.
+        // 후속 PR에서 BE 경로 + DTO 필드 + repository 연결까지 묶어서 활성화 예정.
+        private static bool IsFurnitureSubDisabled(string key) => key == "BOOKSHELF_SKIN";
+
         private void BuildFurnitureSubButton(Transform parent, string key, string label)
         {
-            var background = CreateImage(parent, $"FurnitureSub_{key}", SecondaryColor);
+            bool disabled = IsFurnitureSubDisabled(key);
+
+            var background = CreateImage(parent, $"FurnitureSub_{key}", disabled ? CardColor : SecondaryColor);
             background.sprite = roundedRectSprite;
             background.type = Image.Type.Sliced;
             var rect = background.rectTransform;
-            rect.sizeDelta = new Vector2(96f, 32f);
+            rect.sizeDelta = new Vector2(disabled ? 132f : 96f, 32f);
 
             var layoutElement = background.gameObject.AddComponent<LayoutElement>();
             layoutElement.minWidth = rect.sizeDelta.x;
@@ -823,14 +832,20 @@ namespace App.Bootstrap
             outline.effectColor = WithAlpha(BorderColor, 0.85f);
             outline.effectDistance = new Vector2(1f, -1f);
 
-            var labelText = CreateText(background.transform, "Label", label, 14f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
+            string displayLabel = disabled ? $"{label} 준비 중" : label;
+            var labelText = CreateText(background.transform, "Label", displayLabel, 14f, FontStyles.Bold,
+                disabled ? MutedTextColor : TextColor, TextAlignmentOptions.Center);
             labelText.overflowMode = TextOverflowModes.Ellipsis;
             StretchToParent(labelText.rectTransform);
 
             var button = background.gameObject.AddComponent<Button>();
             button.targetGraphic = background;
             button.transition = Selectable.Transition.None;
-            button.onClick.AddListener(() => OnFurnitureSubClicked(key));
+            button.interactable = !disabled;
+            if (!disabled)
+            {
+                button.onClick.AddListener(() => OnFurnitureSubClicked(key));
+            }
 
             furnitureSubBackgrounds[key] = background;
             furnitureSubLabels[key] = labelText;
@@ -848,12 +863,17 @@ namespace App.Bootstrap
         {
             foreach (var pair in furnitureSubBackgrounds)
             {
+                furnitureSubLabels.TryGetValue(pair.Key, out var label);
+                if (IsFurnitureSubDisabled(pair.Key))
+                {
+                    // disabled 키는 항상 disabled 색상 유지 — 사용자 클릭 불가지만 방어적.
+                    pair.Value.color = CardColor;
+                    if (label != null) label.color = MutedTextColor;
+                    continue;
+                }
                 var isSelected = pair.Key == selectedFurnitureSubKey;
                 pair.Value.color = isSelected ? PrimaryColor : SecondaryColor;
-                if (furnitureSubLabels.TryGetValue(pair.Key, out var label) && label != null)
-                {
-                    label.color = isSelected ? Color.white : TextColor;
-                }
+                if (label != null) label.color = isSelected ? Color.white : TextColor;
             }
         }
 
