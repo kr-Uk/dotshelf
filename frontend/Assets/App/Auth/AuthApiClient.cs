@@ -72,6 +72,9 @@ namespace App.Auth
             Action<AuthTokenResponseDto> onSuccess,
             Action<ApiErrorResponseDto> onError)
         {
+            // Editor/Build 의 baseUrl 일관성 확인용 — code/state 등 민감 정보 노출 안 함
+            // (SendJson 내부 Redact 가 이미 다룸).
+            Debug.Log($"[Auth] POST /v1/auth/social-login baseUrl={baseUrl}");
             return StartCoroutine(SendJson("/v1/auth/social-login", request, onSuccess, onError));
         }
 

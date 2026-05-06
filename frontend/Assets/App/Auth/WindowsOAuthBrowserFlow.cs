@@ -236,11 +236,23 @@ namespace App.Auth
             TimeSpan? timeout = null,
             CancellationToken cancellationToken = default)
         {
+            // Editor/Build 차이 진단 가능하도록 stage 별 로그. 토큰/code/state 값 자체는 절대 안 남김
+            // (presence/length/validity 만). AuthApiClient.Redact 와 동일 정책.
+            var providerName = providerConfig != null ? providerConfig.provider.ToString() : "(null)";
+            bool clientIdPresent = providerConfig != null && !string.IsNullOrWhiteSpace(providerConfig.clientId);
+            bool authorizeEndpointPresent = providerConfig != null && !string.IsNullOrWhiteSpace(providerConfig.authorizeEndpoint);
+            Debug.Log(
+                $"[OAuth] ExecuteAsync provider={providerName} " +
+                $"clientIdPresent={clientIdPresent} authorizeEndpointPresent={authorizeEndpointPresent}");
+
             if (providerConfig == null || !providerConfig.IsConfigured)
             {
                 var missingPiece = providerConfig == null || string.IsNullOrWhiteSpace(providerConfig.clientId)
                     ? "OAuth 클라이언트 ID"
                     : "Authorize 엔드포인트";
+                Debug.LogWarning(
+                    $"[OAuth] Config missing — provider={providerName} clientIdPresent={clientIdPresent} " +
+                    $"authorizeEndpointPresent={authorizeEndpointPresent}");
                 return OAuthBrowserResult.Failure(
                     "OAUTH_CONFIG_MISSING",
                     $"{missingPiece}가 설정되어 있지 않습니다. LoginScreenController 의 'Desktop Browser OAuth Providers' 에 값을 입력해주세요.");
@@ -251,6 +263,7 @@ namespace App.Auth
             try
             {
                 (listener, redirectUri) = StartListenerOnPreferredPort();
+                Debug.Log($"[OAuth] Listener started. prefix={redirectUri}");
             }
             catch (HttpListenerException ex) when (ex.ErrorCode == ErrorAccessDenied)
             {
@@ -281,11 +294,23 @@ namespace App.Auth
                 var codeChallenge = ComputeCodeChallengeS256(codeVerifier);
                 var authorizeUrl = BuildAuthorizeUrl(providerConfig, redirectUri, state, nonce, codeChallenge);
 
-                Debug.Log($"[Auth] Opening browser for {providerConfig.provider} OAuth (redirect={redirectUri})");
+                Debug.Log($"[OAuth] Opening browser for {providerConfig.provider} (redirect={redirectUri})");
                 // Fully-qualified — `App.Application` (UseCase layer) shadows
                 // UnityEngine.Application here because both namespaces are in
                 // scope, so `Application.OpenURL(...)` resolves to the wrong type.
-                UnityEngine.Application.OpenURL(authorizeUrl);
+                // try/catch — Build 환경에서 platform default browser 미설치/launcher 실패 시 침묵 회피.
+                try
+                {
+                    UnityEngine.Application.OpenURL(authorizeUrl);
+                    Debug.Log("[OAuth] Browser opened.");
+                }
+                catch (Exception openEx)
+                {
+                    Debug.LogWarning($"[OAuth] Browser open failed: {openEx.GetType().Name}: {openEx.Message}");
+                    return OAuthBrowserResult.Failure(
+                        "BROWSER_OPEN_FAILED",
+                        "기본 브라우저를 실행할 수 없습니다. 브라우저 설치 상태를 확인하고 다시 시도해주세요.");
+                }
 
                 var contextTask = listener.GetContextAsync();
                 var effectiveTimeout = timeout ?? DefaultTimeout;
@@ -313,6 +338,12 @@ namespace App.Auth
                 var query = ParseQueryString(context.Request.Url?.Query);
 
                 var hadError = query.TryGetValue("error", out var errorCode);
+                bool codePresent = query.TryGetValue("code", out var code) && !string.IsNullOrWhiteSpace(code);
+                bool receivedStatePresent = query.TryGetValue("state", out var receivedState) && !string.IsNullOrWhiteSpace(receivedState);
+                bool stateValid = receivedStatePresent && FixedTimeEquals(receivedState, state);
+                Debug.Log(
+                    $"[OAuth] Callback received. codePresent={codePresent} stateValid={stateValid} errorPresent={hadError}");
+
                 WriteHtmlResponse(context.Response, hadError);
 
                 if (hadError)
@@ -325,15 +356,14 @@ namespace App.Auth
                             : errorDescription);
                 }
 
-                if (!query.TryGetValue("code", out var code) || string.IsNullOrWhiteSpace(code))
+                if (!codePresent)
                 {
                     return OAuthBrowserResult.Failure(
                         "NO_CODE",
                         "Authorization code 가 응답에 포함되지 않았습니다.");
                 }
 
-                if (!query.TryGetValue("state", out var receivedState) ||
-                    !FixedTimeEquals(receivedState, state))
+                if (!stateValid)
                 {
                     return OAuthBrowserResult.Failure(
                         "STATE_MISMATCH",

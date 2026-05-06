@@ -313,6 +313,11 @@ namespace App.Bootstrap
                 return;
             }
 
+            // 진단 로그 — code/state 자체는 노출 안 함, presence 만.
+            Debug.Log(
+                $"[Auth] SubmitSocialLoginCode provider={provider} codePresent={!string.IsNullOrWhiteSpace(code)} " +
+                $"redirectUri='{redirectUri}' codeVerifierPresent={!string.IsNullOrWhiteSpace(codeVerifier)}");
+
             EnsureAuthService();
             isLoginInFlight = true;
             SetInteractable(false);
@@ -346,9 +351,14 @@ namespace App.Bootstrap
         {
             if (!result.IsSuccess)
             {
+                Debug.LogWarning(
+                    $"[Auth] social-login failed code={result.ErrorCode ?? "(null)"} " +
+                    $"message={result.ErrorMessage ?? "(null)"}");
                 SetMessage(loginMessageLabel, result.ErrorMessage);
                 return;
             }
+
+            Debug.Log($"[Auth] social-login success userId={result.UserId} newUser={result.NewUser} onboarded={result.Onboarded}");
 
             AuthSession.SaveTokens(
                 result.UserId,
@@ -418,6 +428,14 @@ namespace App.Bootstrap
                 overrideBaseUrl = apiConfig.ResolveBaseUrl();
                 overrideTimeoutSeconds = apiConfig.RequestTimeoutSeconds;
             }
+
+            // baseUrl 결정 출처 로그 — Editor 와 Build 의 baseUrl 일관성 가시화.
+            // (AppApiConfig 미발견 시 AuthApiClient 가 ApiEndpointDefaults.DefaultBaseUrl 사용 — Build mode 의존.)
+            string source = apiConfig != null ? "AppApiConfig.ResolveBaseUrl" : "ApiEndpointDefaults.DefaultBaseUrl";
+            string effective = !string.IsNullOrWhiteSpace(overrideBaseUrl)
+                ? overrideBaseUrl
+                : App.Domain.ApiEndpointDefaults.DefaultBaseUrl;
+            Debug.Log($"[Auth] AuthApiClient baseUrl='{effective}' source={source}");
 
             var client = AuthApiClient.EnsureInstance(overrideBaseUrl, overrideTimeoutSeconds);
             authService = new BackendAuthService(client);
@@ -514,6 +532,13 @@ namespace App.Bootstrap
 #if UNITY_STANDALONE || UNITY_EDITOR
         private void StartDesktopBrowserOAuth(SocialProvider provider)
         {
+            // Editor/Build 차이 진단용 — 런타임 AddComponent 시 Inspector 값 누락 가능성 가시화.
+            bool inspectorOverridePresent = ResolveBrowserOAuthConfig(provider) != null;
+            Debug.Log(
+                $"[OAuth] Starting desktop browser OAuth. provider={provider} " +
+                $"enableDesktopBrowserOAuth={enableDesktopBrowserOAuth} " +
+                $"inspectorOverride={(inspectorOverridePresent ? "present" : "missing — fallback to built-in defaults")}");
+
             if (!enableDesktopBrowserOAuth)
             {
                 SetMessage(
