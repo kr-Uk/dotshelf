@@ -1120,6 +1120,26 @@ namespace BookshelfPorting.Runtime
             }
 
             var shelf = shelves[index];
+
+            // 진단 — items API path 의 id 자리에 spaceId 가 잘못 들어가는지 가시화. 정상 응답은 spaceId != id.
+            // BE 버그 / DTO 매핑 실수 의심 케이스 (id == 0 또는 spaceId == id) 는 명시적으로 경고 + 호출 skip.
+            if (shelf.Id <= 0)
+            {
+                Debug.LogWarning(
+                    $"[Bookshelf] shelf.Id 비유효 (id={shelf.Id}, spaceId={shelf.SpaceId}) — items API skip + 빈 snapshot fallback. " +
+                    "BE 응답의 'id' 필드 누락/0 값 의심.");
+                snapshots.Add(MapShelfOnly(shelf));
+                LoadBookshelfItemAt(shelves, snapshots, index + 1);
+                return;
+            }
+            if (shelf.SpaceId > 0 && shelf.SpaceId == shelf.Id)
+            {
+                Debug.LogWarning(
+                    $"[Bookshelf] shelf.SpaceId == shelf.Id ({shelf.Id}) — BE 가 같은 값을 반환 중. " +
+                    "/v1/bookshelves/{id}/items 가 spaceId 로 호출되는 것처럼 보일 수 있음. BE 측 점검 필요.");
+            }
+            Debug.Log($"[Bookshelf] GET /v1/bookshelves/{shelf.Id}/items (spaceId={shelf.SpaceId}, displayOrder={shelf.DisplayOrder})");
+
             client.GetBookshelfItems(
                 shelf.Id,
                 render =>
@@ -1129,7 +1149,8 @@ namespace BookshelfPorting.Runtime
                 },
                 error =>
                 {
-                    Debug.LogWarning($"Bookshelf items load failed: {FormatError(error)}");
+                    // 500 / 4xx 발생해도 메인씬 진입 유지 — 빈 책장 fallback 으로 다음 shelf 진행.
+                    Debug.LogWarning($"[Bookshelf] items load failed (bookshelfId={shelf.Id}, spaceId={shelf.SpaceId}): {FormatError(error)} — 빈 snapshot 으로 진행.");
                     snapshots.Add(MapShelfOnly(shelf));
                     LoadBookshelfItemAt(shelves, snapshots, index + 1);
                 });

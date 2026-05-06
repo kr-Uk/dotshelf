@@ -173,6 +173,14 @@ namespace App.Infrastructure.Api
                                 return;
                             }
 
+                            // 진단 — items API path 자리에 spaceId 가 들어가는지 가시화 + BE 버그 의심 케이스 경고.
+                            if (bookshelf.SpaceId > 0 && bookshelf.SpaceId == bookshelf.Id)
+                            {
+                                Debug.LogWarning(
+                                    $"[Bookshelf] shelf.SpaceId == shelf.Id ({bookshelf.Id}) — BE 가 같은 값 반환 중. items 500 가능성.");
+                            }
+                            Debug.Log($"[Bookshelf] GET /v1/bookshelves/{bookshelf.Id}/items (spaceId={bookshelf.SpaceId})");
+
                             client.GetBookshelfItems(
                                 bookshelf.Id,
                                 render => ResolveShelfTarget(bookshelf.Id, render, onSuccess, onError),
