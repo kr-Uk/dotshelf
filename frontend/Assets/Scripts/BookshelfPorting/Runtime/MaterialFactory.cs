@@ -22,6 +22,8 @@ namespace BookshelfPorting.Runtime
 
         [Header("Flat Colors")]
         [SerializeField] private Color wallColor = new Color(0.93f, 0.90f, 0.84f);
+        // 천장은 테마 무관 공통 머티리얼. 벽보다 살짝 밝은 중립 off-white — 실내 상부가 어둡게 깔리는 인상 회피.
+        [SerializeField] private Color ceilingColor = new Color(0.96f, 0.95f, 0.93f);
         [SerializeField] private Color whiteboardFrameColor = new Color(0.34f, 0.26f, 0.18f);
         [SerializeField] private Color whiteboardSurfaceColor = new Color(0.96f, 0.97f, 0.95f);
         [SerializeField] private Color ghostColor = new Color(0.25f, 0.85f, 1f, 0.25f);
@@ -31,6 +33,7 @@ namespace BookshelfPorting.Runtime
         private Material furnitureWoodMaterial;
         private Material floorMaterial;
         private Material wallMaterial;
+        private Material ceilingMaterial;
         private Material whiteboardFrameMaterial;
         private Material whiteboardSurfaceMaterial;
         private Material ghostMaterial;
@@ -111,6 +114,18 @@ namespace BookshelfPorting.Runtime
             }
 
             return wallMaterial;
+        }
+
+        // 천장 전용 머티리얼. 테마 변경에도 영향받지 않는 공통 자원.
+        // smoothness 0.05 — 거의 무광. URP Lit 에서 IBL/직사광 반사가 과해 면이 번뜩이는 현상 회피.
+        public Material GetCeilingMaterial()
+        {
+            if (ceilingMaterial == null)
+            {
+                ceilingMaterial = CreateLitMaterial("Ceiling", null, null, ceilingColor, 0.05f, false);
+            }
+
+            return ceilingMaterial;
         }
 
         public Material GetWhiteboardFrameMaterial()

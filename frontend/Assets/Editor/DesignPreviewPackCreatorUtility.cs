@@ -50,13 +50,58 @@ namespace Dotshelf.EditorTools
             ("Evening 3500K", HexColor("#FFCC99"),  3500f, 0.9f),
         };
 
+        // 5 테마별 샘플 placeholder. 상단 메뉴 'Dotshelf > Theme > Filter Inventory By > {Theme}' 와
+        // RoomEditThemeFilter 의 ActiveTheme 값과 일치하는 ThemeTag 로 entry 에 박힌다.
+        // 각 테마당 카테고리별 1 entry 생성 — 무테마(legacy) entry 와 별개로 누적되며,
+        // 같은 assetId 면 idempotent 로 갱신.
+        static readonly string[] ThemeNames = { "Natural", "Classic", "Modern", "Vintage", "Pastel" };
+
+        static readonly Color[] ThemeWallColors =
+        {
+            HexColor("#E5DCC5"),  // Natural — warm sand
+            HexColor("#C9B79A"),  // Classic — mahogany cream
+            HexColor("#ECECEC"),  // Modern — cool grey
+            HexColor("#C9B099"),  // Vintage — sepia
+            HexColor("#FCE4EC"),  // Pastel — pink
+        };
+
+        // 테마별 내부조명 spec — 요구사항 #3 분위기에 맞춰 color/kelvin/intensity 차별화.
+        //   Natural   : 따뜻하고 부드러운 자연광 (warm cream 4500K, 표준 강도)
+        //   Classic   : 따뜻한 샹들리에 (wheat 3400K, 살짝 강함)
+        //   Modern    : 깔끔하고 약간 차가운 백색광 (cool white 6500K, 표준 강도)
+        //   Vintage   : 주황빛 낮은 조도 (burlywood 3000K, 약함)
+        //   Pastel    : 밝고 부드러운 확산광 (rose 5800K, 강함)
+        static readonly (Color color, float kelvin, float intensity)[] ThemeInteriorLights =
+        {
+            (HexColor("#FFE4B5"), 4500f, 1.0f),  // Natural
+            (HexColor("#F5DEB3"), 3400f, 1.2f),  // Classic — chandelier
+            (HexColor("#F0F8FF"), 6500f, 1.1f),  // Modern
+            (HexColor("#DEB887"), 3000f, 0.7f),  // Vintage — low orange
+            (HexColor("#FFE4F0"), 5800f, 1.3f),  // Pastel — bright soft
+        };
+
+        // 테마별 외부조명 spec — Natural 은 외부광 영향 강함 (요구사항 #2/#3).
+        //   Natural   : 1.6 (강함), 5200K
+        //   Classic   : 0.9, 4200K (gold hour)
+        //   Modern    : 1.2, 6800K (overcast cool)
+        //   Vintage   : 0.7 (약함), 3300K
+        //   Pastel    : 1.0, 5500K
+        static readonly (Color color, float kelvin, float intensity)[] ThemeExteriorLights =
+        {
+            (HexColor("#FFF1D8"), 5200f, 1.6f),  // Natural — strong exterior
+            (HexColor("#FFE7B0"), 4200f, 0.9f),  // Classic
+            (HexColor("#E0EAFF"), 6800f, 1.2f),  // Modern
+            (HexColor("#E8C99B"), 3300f, 0.7f),  // Vintage
+            (HexColor("#FFD4E5"), 5500f, 1.0f),  // Pastel
+        };
+
         [MenuItem("Dotshelf/Design Preview/Generate Placeholder Catalogs")]
         public static void GeneratePlaceholders()
         {
             EnsureDir(MaterialsRoot);
             EnsureDir(CatalogsRoot);
 
-            // Wallpaper 카탈로그 — 머티리얼 5색
+            // Wallpaper 카탈로그 — 머티리얼 5색 (무테마 — 기존 호환)
             var wallpaperEntries = new List<CustomizationEntry>();
             int idCounter = 100001;
             foreach (var (name, color) in PlaceholderSpecs[0].swatches)
@@ -64,23 +109,44 @@ namespace Dotshelf.EditorTools
                 var mat = CreateOrUpdateMaterial($"Wallpaper_{name}", color, 0.08f);
                 wallpaperEntries.Add(BuildMaterialEntry(idCounter++, $"벽지 {name}", mat));
             }
+            // 5 테마별 wallpaper sample 추가. assetId range 200001-200005, ThemeTag 박힘.
+            for (int t = 0; t < ThemeNames.Length; t++)
+            {
+                var themeName = ThemeNames[t];
+                var mat = CreateOrUpdateMaterial($"Wallpaper_{themeName}", ThemeWallColors[t], 0.08f);
+                wallpaperEntries.Add(BuildMaterialEntry(200001 + t, $"{themeName} 벽지", mat, themeTag: themeName));
+            }
             CreateOrUpdateCategoryCatalog(CustomizationCategory.Wallpaper, wallpaperEntries);
 
-            // InteriorLight — color/kelvin/intensity 프리셋 3종 (머티리얼 없음)
+            // InteriorLight — color/kelvin/intensity 프리셋 3종 (무테마)
             var interiorEntries = new List<CustomizationEntry>();
             idCounter = 100021;
             foreach (var swatch in InteriorLightSwatches)
             {
                 interiorEntries.Add(BuildLightEntry(idCounter++, $"내부조명 {swatch.name}", swatch.color, swatch.kelvin, swatch.intensity));
             }
+            // 5 테마별 internal light sample. assetId 200011-200015. local preview 전용 (PATCH skip).
+            for (int t = 0; t < ThemeNames.Length; t++)
+            {
+                var themeName = ThemeNames[t];
+                var spec = ThemeInteriorLights[t];
+                interiorEntries.Add(BuildLightEntry(200011 + t, $"{themeName} 내부조명", spec.color, spec.kelvin, spec.intensity, themeTag: themeName));
+            }
             CreateOrUpdateCategoryCatalog(CustomizationCategory.InteriorLight, interiorEntries);
 
-            // ExteriorLight — 시간대 프리셋 3종
+            // ExteriorLight — 시간대 프리셋 3종 (무테마)
             var exteriorEntries = new List<CustomizationEntry>();
             idCounter = 100031;
             foreach (var swatch in ExteriorLightSwatches)
             {
                 exteriorEntries.Add(BuildLightEntry(idCounter++, $"외부조명 {swatch.name}", swatch.color, swatch.kelvin, swatch.intensity));
+            }
+            // 5 테마별 external light sample. assetId 200021-200025. Natural 은 외부광 영향 강함.
+            for (int t = 0; t < ThemeNames.Length; t++)
+            {
+                var themeName = ThemeNames[t];
+                var spec = ThemeExteriorLights[t];
+                exteriorEntries.Add(BuildLightEntry(200021 + t, $"{themeName} 외부조명", spec.color, spec.kelvin, spec.intensity, themeTag: themeName));
             }
             CreateOrUpdateCategoryCatalog(CustomizationCategory.ExteriorLight, exteriorEntries);
 
@@ -134,7 +200,7 @@ namespace Dotshelf.EditorTools
             return mat;
         }
 
-        static CustomizationEntry BuildMaterialEntry(long assetId, string displayName, Material material)
+        static CustomizationEntry BuildMaterialEntry(long assetId, string displayName, Material material, string themeTag = null)
         {
             var entry = new CustomizationEntry();
             var so = new SerializedObject(ScriptableObject.CreateInstance<CustomizationCatalogAsset>());
@@ -143,10 +209,16 @@ namespace Dotshelf.EditorTools
             SetPrivate(entry, "assetId", assetId);
             SetPrivate(entry, "displayName", displayName);
             SetPrivate(entry, "materials", new[] { material });
+            if (!string.IsNullOrEmpty(themeTag))
+            {
+                SetPrivate(entry, "themeTag", themeTag);
+            }
+            // 이 utility 가 만드는 모든 entry 는 사용자 inventory 에 없는 placeholder — PATCH 시 403 회피용.
+            SetPrivate(entry, "isLocalPreview", true);
             return entry;
         }
 
-        static CustomizationEntry BuildLightEntry(long assetId, string displayName, Color color, float kelvin, float intensity)
+        static CustomizationEntry BuildLightEntry(long assetId, string displayName, Color color, float kelvin, float intensity, string themeTag = null)
         {
             var entry = new CustomizationEntry();
             SetPrivate(entry, "assetId", assetId);
@@ -154,6 +226,11 @@ namespace Dotshelf.EditorTools
             SetPrivate(entry, "lightColor", color);
             SetPrivate(entry, "colorTemperatureKelvin", kelvin);
             SetPrivate(entry, "lightIntensity", intensity);
+            if (!string.IsNullOrEmpty(themeTag))
+            {
+                SetPrivate(entry, "themeTag", themeTag);
+            }
+            SetPrivate(entry, "isLocalPreview", true);
             return entry;
         }
 

@@ -601,10 +601,44 @@ namespace BookshelfPorting.Runtime
             BuildBackWallAlcove();
             CreateBox("LeftWall", roomRoot, new Vector3(-RoomWidth * 0.5f + 0.05f, RoomHeight * 0.5f, 0f), new Vector3(0.08f, RoomHeight, RoomDepth), materialFactory.GetWallMaterial());
             CreateBox("RightWall", roomRoot, new Vector3(RoomWidth * 0.5f - 0.05f, RoomHeight * 0.5f, 0f), new Vector3(0.08f, RoomHeight, RoomDepth), materialFactory.GetWallMaterial());
+            EnsureCeiling();
 
             BuildGuestbookBoard();
             BuildNotebookStation();
             EnsureRoomDecorations();
+        }
+
+        private const float CeilingThickness = 0.08f;
+
+        // 천장은 테마와 무관한 공통 구조물. 다음 두 메커니즘으로 Generate() 재실행에서도 보존된다:
+        //   1) generatedGeometry 에 의도적으로 등록하지 않음 → ClearGenerated() 의 강제 destroy 대상에서 제외.
+        //   2) PreservedRoomChildNames 에 "Ceiling" 등록됨 → ClearRoomChildren() 가 자식 destroy 시 skip.
+        //
+        // roomRoot.Find("Ceiling") 으로 idempotent: 이미 있으면 새로 만들지 않음 (중복 차단).
+        // 추후 천장 조명/장식은 이 Ceiling 의 자식으로 추가 (예: Ceiling/Lights, Ceiling/Decor) — 조명 parent
+        // 가 분리되도록 구조 확장 가능.
+        private void EnsureCeiling()
+        {
+            if (roomRoot == null)
+            {
+                return;
+            }
+
+            if (roomRoot.Find("Ceiling") != null)
+            {
+                return;
+            }
+
+            var ceiling = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            ceiling.name = "Ceiling";
+            ceiling.transform.SetParent(roomRoot, false);
+            // 벽 top y == RoomHeight, 천장 bottom y == RoomHeight 로 정렬해 틈/겹침 차단.
+            ceiling.transform.localPosition = new Vector3(0f, RoomHeight + CeilingThickness * 0.5f, 0f);
+            // floor 와 동일한 footprint — 시각적으로 닫힌 방.
+            ceiling.transform.localScale = new Vector3(RoomWidth, CeilingThickness, RoomDepth);
+            ceiling.GetComponent<MeshRenderer>().sharedMaterial = materialFactory.GetCeilingMaterial();
+            DestroyImmediate(ceiling.GetComponent<Collider>());
+            // generatedGeometry 등록 안 함 — 의도적. ClearGenerated() 가 강제 destroy 하지 않도록.
         }
 
         private static readonly Vector3 LampFloorLocalPosition = new Vector3(-1.05f, 0f, 1.05f);

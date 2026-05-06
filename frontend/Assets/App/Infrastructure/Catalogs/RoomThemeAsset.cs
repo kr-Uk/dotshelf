@@ -40,6 +40,10 @@ namespace App.Infrastructure.Catalogs
         [Header("Customization 권한 — 전체 테마 자산일 때만 의미")]
         [SerializeField] private bool allowsCustomization = true;
 
+        // local preview 전용 — 클릭 시 RoomThemeApplier 만 호출하고 백엔드 POST /spaces/me/theme/.../apply 는 skip.
+        // 가구/벽지/바닥 미제작 단계의 placeholder 테마(Natural/Classic/...) 가 사용자 inventory 에 없어 403 으로 거부되는 것을 회피.
+        [SerializeField] private bool isLocalPreview;
+
         [Header("Accent palette (UI/decoration tint)")]
         [SerializeField] private Color accentPrimary = Color.white;
         [SerializeField] private Color accentSecondary = Color.white;
@@ -71,6 +75,7 @@ namespace App.Infrastructure.Catalogs
         public float ExteriorLightIntensity => exteriorLightIntensity;
 
         public bool AllowsCustomization => allowsCustomization;
+        public bool IsLocalPreview => isLocalPreview;
 
         public Color AccentPrimary => accentPrimary;
         public Color AccentSecondary => accentSecondary;
