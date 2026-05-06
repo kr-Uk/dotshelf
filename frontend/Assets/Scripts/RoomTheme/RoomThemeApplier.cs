@@ -15,6 +15,11 @@ namespace Dotshelf.Scripts.RoomTheme
         [Tooltip("테마별 색온도/색을 적용할 메인 라이트.")]
         [SerializeField] private Light directionalLight;
 
+        [Header("Theme deco")]
+        [Tooltip("테마 적용 시 spawn된 deco의 부모. 비워두면 Apply 첫 호출 시 자식 'ThemeDecoRoot' 자동 생성. " +
+                 "user-placed deco(RoomEditModeController.placedItemsRoot)와 분리되어 테마 교체 시 안전하게 정리.")]
+        [SerializeField] private Transform themeDecoRoot;
+
         [Header("State")]
         [SerializeField] private RoomThemeAsset currentTheme;
 
@@ -31,6 +36,7 @@ namespace Dotshelf.Scripts.RoomTheme
             currentTheme = theme;
             ApplyMaterials(theme);
             ApplyLighting(theme);
+            ApplyDecoSpecs(theme);
 
             Debug.Log($"[RoomThemeApplier] Applied theme '{theme.DisplayName}' (assetId={theme.AssetId}).");
         }
@@ -116,6 +122,72 @@ namespace Dotshelf.Scripts.RoomTheme
                     Debug.LogWarning($"[RoomThemeApplier] bookshelfStyleIndex={theme.BookshelfStyleIndex}는 BookshelfThemeStyle enum 범위 밖 — 책장 tint 적용 skip.");
                 }
             }
+        }
+
+        // 테마 자산의 deco spec(bookshelf/floor/wall) 따라 prefab 자동 spawn.
+        // 모든 spec 합산 0개면 silent skip — 자산이 spec 안 채운 일반 테마는 이 단계 no-op.
+        // spec 있으면 themeDecoRoot 자식 모두 destroy 후 새로 spawn (테마 교체 시 누적 방지).
+        private void ApplyDecoSpecs(RoomThemeAsset theme)
+        {
+            int specCount = (theme.BookshelfDecoSpecs?.Count ?? 0)
+                          + (theme.FloorDecoSpecs?.Count ?? 0)
+                          + (theme.WallDecoSpecs?.Count ?? 0);
+
+            // 이전 테마가 deco 가졌을 가능성 — root가 이미 있고 자식이 있으면 무조건 정리.
+            if (themeDecoRoot != null && themeDecoRoot.childCount > 0)
+            {
+                ClearThemeDecoChildren();
+            }
+
+            if (specCount == 0)
+            {
+                return;
+            }
+
+            var root = EnsureThemeDecoRoot();
+            int spawned = 0;
+            spawned += SpawnDecoSpecs(theme.BookshelfDecoSpecs, root);
+            spawned += SpawnDecoSpecs(theme.FloorDecoSpecs, root);
+            spawned += SpawnDecoSpecs(theme.WallDecoSpecs, root);
+
+            Debug.Log($"[RoomThemeApplier] Theme deco spawn — total {spawned}/{specCount} (bookshelf={theme.BookshelfDecoSpecs?.Count ?? 0}, floor={theme.FloorDecoSpecs?.Count ?? 0}, wall={theme.WallDecoSpecs?.Count ?? 0}).");
+        }
+
+        // themeDecoRoot가 미설정이면 자식 GameObject "ThemeDecoRoot" 자동 생성. inspector wiring 없이도 동작.
+        private Transform EnsureThemeDecoRoot()
+        {
+            if (themeDecoRoot != null) return themeDecoRoot;
+            var go = new GameObject("ThemeDecoRoot");
+            go.transform.SetParent(transform, false);
+            themeDecoRoot = go.transform;
+            return themeDecoRoot;
+        }
+
+        private void ClearThemeDecoChildren()
+        {
+            for (int i = themeDecoRoot.childCount - 1; i >= 0; i--)
+            {
+                var child = themeDecoRoot.GetChild(i).gameObject;
+                if (Application.isPlaying) Destroy(child);
+                else DestroyImmediate(child);
+            }
+        }
+
+        private int SpawnDecoSpecs(System.Collections.Generic.IReadOnlyList<RoomThemeDecoSpec> specs, Transform parent)
+        {
+            if (specs == null) return 0;
+            int spawned = 0;
+            for (int i = 0; i < specs.Count; i++)
+            {
+                var spec = specs[i];
+                if (spec == null || spec.Prefab == null) continue;
+                var go = Instantiate(spec.Prefab, parent);
+                go.transform.localPosition = spec.LocalPosition;
+                go.transform.localEulerAngles = spec.LocalRotation;
+                go.transform.localScale = spec.LocalScale;
+                spawned++;
+            }
+            return spawned;
         }
 
         private void ApplyLighting(RoomThemeAsset theme)
