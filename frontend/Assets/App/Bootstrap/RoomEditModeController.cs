@@ -212,6 +212,13 @@ namespace App.Bootstrap
             public string DisplayName;
             public GameObject Prefab;
             public string SourceAssetPath;
+            // 설치 카테고리 — placement 분기에 사용 (BookshelfDeco/FloorDeco/WallDeco).
+            // default(0)=Wallpaper 인데 호환성 위해 명시적으로 unset 표현하려면 BookshelfDeco
+            // 같은 placement 카테고리 default 채택. 현재 LoadInventoryEntries 는 floor 위
+            // placement 만 만들어와서 default = FloorDeco 가 맞다.
+            public CustomizationCategory PlacementCategory;
+            // 회전 허용 여부. default true. 창문처럼 회전 비활성 entry 는 false.
+            public bool AllowRotation;
         }
 
         // Public state ------------------------------------------------------------
@@ -263,6 +270,10 @@ namespace App.Bootstrap
         private int themeRequestVersion;
 
         private GameObject placedItemsRoot;
+
+        // Wall placement obstruction registry — RightWall/LeftWall/BackWall surface 의
+        // 책장/대시보드 점유 영역 추적. EnsureWallObstructionRegistry 가 lazy 빌드.
+        private WallObstructionRegistry wallObstructionRegistry;
         private GameObject selectedObject;
         private readonly List<RendererTint> selectedRendererTints = new List<RendererTint>();
 
@@ -409,6 +420,8 @@ namespace App.Bootstrap
                         DisplayName = string.IsNullOrWhiteSpace(entry.DisplayName) ? entry.Prefab.name : entry.DisplayName,
                         Prefab = entry.Prefab,
                         SourceAssetPath = entry.SourceAssetPath ?? string.Empty,
+                        PlacementCategory = CustomizationCategory.FloorDeco,
+                        AllowRotation = true,
                     });
                 }
             }
@@ -452,6 +465,8 @@ namespace App.Bootstrap
                     DisplayName = ToDisplayName(System.IO.Path.GetFileNameWithoutExtension(path)),
                     Prefab = prefab,
                     SourceAssetPath = path,
+                    PlacementCategory = CustomizationCategory.FloorDeco,
+                    AllowRotation = true,
                 });
             }
 
@@ -2758,6 +2773,19 @@ namespace App.Bootstrap
                 return;
             }
 
+            // placement category 분기. WallDeco 는 wall surface 부착 placement 로 별도 흐름.
+            // BookshelfDeco 는 후속 (책장 섹션 anchoring 시스템 합류 시점). 그 외 (FloorDeco/
+            // 미지정 default) 는 기존 floor placement 유지.
+            switch (entry.PlacementCategory)
+            {
+                case CustomizationCategory.WallDeco:
+                    PlaceWallDecoEntry(entry);
+                    return;
+                case CustomizationCategory.BookshelfDeco:
+                    Debug.LogWarning($"[RoomEditModeController] BookshelfDeco placement 미지원 — '{entry.DisplayName}' skip. 후속 PR.");
+                    return;
+            }
+
             EnsurePlacedItemsRoot();
 
             var go = Instantiate(entry.Prefab);
@@ -3278,6 +3306,84 @@ namespace App.Bootstrap
             }
             placedItemsRoot = new GameObject("PlacedDecorations");
             SceneManager.MoveGameObjectToScene(placedItemsRoot, gameObject.scene);
+        }
+
+        // Wall placement --------------------------------------------------------
+
+        // 룸의 책장(BackWall)/대시보드(LeftWall) bounds 를 측정해 wall obstruction 등록.
+        // 룸 GameObject 가 BookshelfGenerator 에 의해 만들어진 후에 호출. 매번 재측정해
+        // 책장/대시보드 위치 변경에도 자동 정합 (e.g. theme 이 다른 prefab 사용 시).
+        private WallObstructionRegistry EnsureWallObstructionRegistry()
+        {
+            if (wallObstructionRegistry == null)
+            {
+                wallObstructionRegistry = new WallObstructionRegistry();
+            }
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+            var roomRoot = themeApplier?.RoomRoot;
+            if (roomRoot != null)
+            {
+                wallObstructionRegistry.Build(roomRoot);
+            }
+            return wallObstructionRegistry;
+        }
+
+        // Wall deco placement — RightWall 가운데 spawn (default). 사용자는 spawn 후
+        // 드래그로 wall surface 따라 이동 (drag clamp + obstruction check 은 후속 commit).
+        // 회전 비활성 entry (allowRotation=false) 는 Selection panel 의 rotate 버튼 disable
+        // (후속 commit).
+        //
+        // 후속 commit roadmap:
+        // - drag wall surface clamp (raycast 로 hit wall 의 surface YZ 또는 XY 평면 따라 이동)
+        // - obstruction check 실패 시 invalid feedback (붉은 tint)
+        // - hit wall 변경 (RightWall → LeftWall 등 사용자 드래그로 wall 전환)
+        private void PlaceWallDecoEntry(InventoryEntry entry)
+        {
+            if (entry.Prefab == null) return;
+
+            EnsurePlacedItemsRoot();
+            EnsureWallObstructionRegistry();
+
+            var go = Instantiate(entry.Prefab);
+            go.name = $"WallDeco_{SanitizeName(entry.DisplayName)}_{System.Guid.NewGuid():N}";
+            go.transform.SetParent(placedItemsRoot.transform, true);
+
+            // default placement — RightWall 표면 가운데. RightWall x = +RoomWidth/2 - 0.05.
+            // RoomWidth/Height 상수는 BookshelfGenerator private 이라 정확값 query 불가 →
+            // themeApplier.RoomRoot 의 RightWall transform 으로 위치 산출.
+            Transform rightWall = null;
+            var roomRoot = themeApplier?.RoomRoot;
+            if (roomRoot != null)
+            {
+                var transforms = roomRoot.GetComponentsInChildren<Transform>(true);
+                for (int i = 0; i < transforms.Length; i++)
+                {
+                    if (transforms[i].gameObject.name == "RightWall")
+                    {
+                        rightWall = transforms[i];
+                        break;
+                    }
+                }
+            }
+
+            if (rightWall != null)
+            {
+                // wall 표면 약간 안쪽 (wall thickness 0.08 의 절반 + 표면 offset).
+                // wall 의 +X 방향 surface 에서 -X 으로 살짝 띄움 (룸 안쪽 face).
+                go.transform.position = new Vector3(rightWall.position.x - 0.05f, rightWall.position.y, rightWall.position.z);
+                go.transform.rotation = Quaternion.Euler(0f, -90f, 0f); // RightWall 안쪽 face 향하게
+            }
+            else
+            {
+                Debug.LogWarning("[RoomEditModeController] RightWall transform not found — wall deco spawn 위치 불확실. RoomThemeApplier.RoomRoot wiring 확인.");
+                go.transform.position = Vector3.zero;
+            }
+
+            // selection 으로 자동 잡아 사용자가 즉시 드래그 가능하게.
+            SelectObject(go);
         }
 
         // Edit-mode click → selection ---------------------------------------------
