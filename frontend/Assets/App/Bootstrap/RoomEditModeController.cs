@@ -3407,9 +3407,11 @@ namespace App.Bootstrap
 
             if (rightWall != null)
             {
-                // wall 표면 약간 안쪽 (wall thickness 0.08 의 절반 + 표면 offset).
-                // wall 의 +X 방향 surface 에서 -X 으로 살짝 띄움 (룸 안쪽 face).
-                go.transform.position = new Vector3(rightWall.position.x - 0.05f, rightWall.position.y, rightWall.position.z);
+                // RightWall inner face = wall.position.x - WallHalfThickness(0.04).
+                // wall 표면에 정확히 위로 spawn. mesh 두께가 wall 안으로 박히는 부분은
+                // prefab 안에서 GLB instance 의 localZ 을 살짝 양수 (회전 후 -X = 룸 안쪽)
+                // 으로 띄워 사용자가 fitting.
+                go.transform.position = new Vector3(rightWall.position.x - 0.04f, rightWall.position.y, rightWall.position.z);
                 go.transform.rotation = WallFacingRotation(WallSide.Right);
             }
             else
@@ -3422,6 +3424,11 @@ namespace App.Bootstrap
             var marker = go.AddComponent<WallDecoMarker>();
             marker.CurrentWall = WallSide.Right;
             marker.AllowRotation = entry.AllowRotation;
+
+            // DecorationItemMarker 도 추가 — BeginEditModePointerPress 가 mouse down 시
+            // 이 컴포넌트 검사해 select+drag 시작. 없으면 사용자 클릭 무시됨.
+            // floor placement (PlaceInventoryEntry) 와 동일 마커 시스템 공유.
+            go.AddComponent<DecorationItemMarker>();
 
             // collider 보장 — Meshy GLB 는 import 시 collider 자동 생성 안 함.
             // 없으면 mouse down raycast 가 deco mesh 를 hit 못 해 select/drag 진입 불가.
@@ -3446,6 +3453,61 @@ namespace App.Bootstrap
                 collider.sharedMesh = mf.sharedMesh;
                 collider.convex = false; // raycast 용도라 충돌 처리 불필요
             }
+        }
+
+        // ray 와 4 wall 의 inner face plane 교차 → 가장 가까운 wall 의 hit 위치 반환.
+        // wall transform 은 BookshelfGenerator.CreateBox 가 만든 cube — collider 는 없지만
+        // position/scale 으로 plane 정의 가능. wall thickness 0.08 가정 (= half 0.04).
+        // BookshelfGenerator 의 다른 wall thickness 가 도입되면 그 값으로 수정 필요.
+        private bool TryRaycastWallSurface(Ray ray, out WallSide hitWall, out Vector3 hitPoint)
+        {
+            hitWall = WallSide.None;
+            hitPoint = Vector3.zero;
+            const float WallHalfThickness = 0.04f;
+
+            var roomRoot = themeApplier?.RoomRoot;
+            if (roomRoot == null) return false;
+
+            float closestDistance = float.MaxValue;
+            var transforms = roomRoot.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                var t = transforms[i];
+                var wall = WallNameToSide(t.gameObject.name);
+                if (wall == WallSide.None) continue;
+
+                Vector3 planePoint;
+                Vector3 planeNormal;
+                switch (wall)
+                {
+                    case WallSide.Left:
+                        planePoint = new Vector3(t.position.x + WallHalfThickness, t.position.y, t.position.z);
+                        planeNormal = Vector3.right; break;
+                    case WallSide.Right:
+                        planePoint = new Vector3(t.position.x - WallHalfThickness, t.position.y, t.position.z);
+                        planeNormal = Vector3.left; break;
+                    case WallSide.Back:
+                        planePoint = new Vector3(t.position.x, t.position.y, t.position.z - WallHalfThickness);
+                        planeNormal = Vector3.back; break;
+                    case WallSide.Front:
+                        planePoint = new Vector3(t.position.x, t.position.y, t.position.z + WallHalfThickness);
+                        planeNormal = Vector3.forward; break;
+                    default: continue;
+                }
+
+                float denom = Vector3.Dot(ray.direction, planeNormal);
+                if (Mathf.Abs(denom) < 0.0001f) continue; // ray parallel to plane
+                float distance = Vector3.Dot(planePoint - ray.origin, planeNormal) / denom;
+                if (distance < 0f) continue; // 뒤쪽
+
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    hitWall = wall;
+                    hitPoint = ray.origin + ray.direction * distance;
+                }
+            }
+            return hitWall != WallSide.None;
         }
 
         // wall 의 안쪽 face (룸 내부 향하는 방향) 으로 deco 회전.
@@ -3649,41 +3711,18 @@ namespace App.Bootstrap
         // FrontWall 은 카메라 쪽 벽이라 hit 안 되는 게 일반적. Left/Right/Back 만 실질 후보.
         private void UpdateWallDrag(Camera camera, Vector2 pointer, WallDecoMarker marker)
         {
-            // 자기 자신 collider 임시 비활성화 — raycast 가 deco mesh 를 hit 하면 항상
-            // self 가 가장 가까워서 wall 까지 못 닿음. drag 가 wall 따라가야 하니 self skip.
-            var ownColliders = draggingObject.GetComponentsInChildren<Collider>(true);
-            var ownEnabledStates = new bool[ownColliders.Length];
-            for (int i = 0; i < ownColliders.Length; i++)
-            {
-                ownEnabledStates[i] = ownColliders[i].enabled;
-                ownColliders[i].enabled = false;
-            }
-
-            var ray = camera.ScreenPointToRay(pointer);
-            bool didHit = Physics.Raycast(ray, out var hit, 100f);
-
-            for (int i = 0; i < ownColliders.Length; i++)
-            {
-                ownColliders[i].enabled = ownEnabledStates[i];
-            }
-
-            if (!didHit)
+            // BookshelfGenerator.CreateBox 가 wall collider 명시 제거 → Physics.Raycast 로
+            // wall hit 못 함. 대신 wall 의 inner face plane 과 ray 의 수학적 교차 — collider
+            // 의존성 없음 + self-raycast 회피 자동 (plane 만 본다).
+            if (!TryRaycastWallSurface(camera.ScreenPointToRay(pointer), out var newWall, out var hitPoint))
             {
                 return;
             }
 
-            var hitName = hit.collider.gameObject.name;
-            var newWall = WallNameToSide(hitName);
-            if (newWall == WallSide.None)
-            {
-                // wall 외 hit (가구 등) — 이동 skip. 사용자가 wall 위로 마우스 옮길 때까지 freeze.
-                return;
-            }
-
-            draggingObject.transform.position = hit.point;
+            draggingObject.transform.position = hitPoint;
             draggingObject.transform.rotation = WallFacingRotation(newWall);
             marker.CurrentWall = newWall;
-            dragLastValidPosition = hit.point;
+            dragLastValidPosition = hitPoint;
 
             // obstruction check — bounds 를 wall surface rect 로 projection 후 registry 비교.
             // invalid 면 붉은 tint + valid 면 원래 색 복원.
