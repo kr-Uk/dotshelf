@@ -626,7 +626,7 @@ namespace Dotshelf.EditorTools
             {
                 var normalized = string.IsNullOrWhiteSpace(keyword) ? string.Empty : keyword.Trim();
                 var result = spaces
-                    .Where(space => string.IsNullOrEmpty(normalized) || Contains(space.SpaceName, normalized) || Contains(space.OwnerName, normalized))
+                    .Where(space => string.IsNullOrEmpty(normalized) || Contains(space.OwnerName, normalized))
                     .Take(Math.Max(1, limit))
                     .Select(CloneSpace)
                     .ToArray();

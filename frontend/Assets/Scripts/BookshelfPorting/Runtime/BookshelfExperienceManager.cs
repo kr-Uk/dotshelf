@@ -12560,7 +12560,12 @@ namespace BookshelfPorting.Runtime
 
         private void ConfigureNotebookScreen()
         {
-            if (notebookUiSceneLoader != null && !notebookUiSceneLoader.OwnsController(notebookScreenController))
+            var roomNotebookScreenController = FindRoomNotebookScreenController();
+            if (roomNotebookScreenController != null)
+            {
+                notebookScreenController = roomNotebookScreenController;
+            }
+            else if (notebookUiSceneLoader != null && !notebookUiSceneLoader.OwnsController(notebookScreenController))
             {
                 notebookScreenController = notebookUiSceneLoader.RefreshController();
             }
@@ -12589,6 +12594,26 @@ namespace BookshelfPorting.Runtime
                 notebookRuntimeUseCase);
             AttachNotebookApiCallbacks();
             notebookUiSceneLoader?.MeasureCanvasActivationCost(notebookScreenController);
+        }
+
+        private NotebookScreenController FindRoomNotebookScreenController()
+        {
+            var controllers = FindObjectsByType<NotebookScreenController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            if (controllers == null || controllers.Length == 0)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < controllers.Length; i++)
+            {
+                var controller = controllers[i];
+                if (controller != null && (notebookUiSceneLoader == null || !notebookUiSceneLoader.OwnsController(controller)))
+                {
+                    return controller;
+                }
+            }
+
+            return null;
         }
 
         private void AttachNotebookApiCallbacks()
