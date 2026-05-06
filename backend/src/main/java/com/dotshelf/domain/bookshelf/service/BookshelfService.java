@@ -81,7 +81,9 @@ public class BookshelfService {
     public BookshelfRenderResponse getItems(Long userId, Long bookshelfId) {
         // 진단 로그 — 500 발생 시 어느 단계에서 끊겼는지 GlobalExceptionHandler 의 stack trace 와 함께 식별 가능.
         // 단계별 size 출력으로 데이터 깨짐(orphan FK) / 빈 결과 vs 예외 구분.
-        log.info("getItems userId={} bookshelfId={}", userId, bookshelfId);
+        // log.debug — getItems 는 메인/책장 동기화에서 빈도 높은 read endpoint 라 info 면 운영 로그 폭주 + userId
+        // 식별자 누적. 의심 케이스(orphan FK)만 warn 으로 emit. (MR 113 review skh1205 [P3])
+        log.debug("getItems userId={} bookshelfId={}", userId, bookshelfId);
         Bookshelf bookshelf = getBookshelf(bookshelfId);
         requireReadable(userId, bookshelf);
         List<BookshelfSection> sections = sectionRepository.findByBookshelfIdOrderByRowNoAscColumnNoAsc(bookshelfId);
