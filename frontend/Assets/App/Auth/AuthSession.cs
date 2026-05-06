@@ -56,6 +56,15 @@ namespace App.Auth
             bool? newUser = null,
             bool? onboarded = null)
         {
+            // 새 토큰 저장 전 옛 token / userId / 만료 값을 명시적으로 지움. SetString 으로 덮어쓰기 만으로
+            // 충분해 보이지만, 호출자가 부분 응답 (refreshToken null 등) 만 set 하면 stale 값 잔류 가능.
+            // 모든 키를 한 번 비운 뒤 재저장 → 새 세션 = 옛 세션 흔적 0 보장.
+            PlayerPrefs.DeleteKey(AuthStorageKeys.AccessToken);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.RefreshToken);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.UserId);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.ExpiresInSeconds);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.AccessTokenExpiresAt);
+
             PlayerPrefs.SetString(AuthStorageKeys.UserId, userId.ToString());
             PlayerPrefs.SetString(AuthStorageKeys.AccessToken, accessToken ?? string.Empty);
             PlayerPrefs.SetString(AuthStorageKeys.RefreshToken, refreshToken ?? string.Empty);
