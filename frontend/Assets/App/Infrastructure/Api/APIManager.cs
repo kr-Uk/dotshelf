@@ -46,6 +46,21 @@ namespace App.Infrastructure.Api
 
             Instance = this;
             DontDestroyOnLoad(gameObject);
+
+            // 빌드 모드 기준 baseUrl 강제 정렬 — prefab 의 SerializeField 값(예: RuntimeSystems.prefab 의 prod URL)
+            // 이 ApiEndpointDefaults.DefaultBaseUrl 와 다르면 build mode 정의에 맞춰 덮어씀.
+            // 이전 증상: editor/Dev build 에서 AuthApiClient 는 dev-api 로 로그인해 dev 토큰을 받지만,
+            // APIManager 는 prefab 의 prod URL 을 그대로 사용 → dev 토큰을 prod 서버로 PATCH → 401 (A003).
+            // BookshelfSceneInstaller.Configure 가 정렬해주는 경로도 있지만 씬/race 에 따라 시점이 어긋날 수
+            // 있어 Awake 단계에서 한 번 더 가드 — 모든 client 가 동일 baseUrl 을 보장 받도록.
+            if (!string.Equals(baseUrl, ApiEndpointDefaults.DefaultBaseUrl, StringComparison.Ordinal))
+            {
+                Debug.LogWarning(
+                    $"[APIManager] Awake: prefab baseUrl='{baseUrl}' != build default='{ApiEndpointDefaults.DefaultBaseUrl}'. " +
+                    "build mode 기준으로 강제 정렬 (dev/prod 혼재 가드).");
+                baseUrl = ApiEndpointDefaults.DefaultBaseUrl;
+            }
+
             HydrateAccessTokenFromAuthSession();
         }
 
@@ -210,6 +225,18 @@ namespace App.Infrastructure.Api
                     var error = CreateError(request, request.error);
                     var message = string.IsNullOrWhiteSpace(error.Message) ? error.Error : error.Message;
                     Debug.LogError($"API {request.method} {request.url} failed: {error.StatusCode} {message}");
+                    // 401 진단 — token / baseUrl mismatch 디버깅용. 전체 토큰은 로그에 절대 안 남김 (8자 prefix 만).
+                    if (request.responseCode == 401)
+                    {
+                        bool hasToken = !string.IsNullOrWhiteSpace(accessToken);
+                        string tokenPrefix = hasToken && accessToken.Length >= 8
+                            ? accessToken.Substring(0, 8) + "...(len=" + accessToken.Length + ")"
+                            : (hasToken ? "(short)" : "(none)");
+                        Debug.LogWarning(
+                            $"[APIManager] 401 진단: baseUrl='{baseUrl}' method='{request.method}' " +
+                            $"url='{request.url}' tokenPresent={hasToken} tokenPrefix={tokenPrefix} " +
+                            $"errorCode={error.Code}.");
+                    }
                     onError?.Invoke(error);
                     yield break;
                 }
