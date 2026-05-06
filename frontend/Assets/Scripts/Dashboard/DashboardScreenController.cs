@@ -33,7 +33,9 @@ namespace Dotshelf.Scripts.Dashboard
 
         [Header("Mode")]
         [SerializeField] private ViewMode viewMode = ViewMode.Mine;
-        [SerializeField] private long visitedSpaceId = 1L;
+        // Default 0 (미정). 옛 default 1L 은 dev DB 에 spaceId=1 이 없어 GET /v1/spaces/1/dashboard 호출 시 404/500 유발.
+        // 이제 외부에서 visitedSpaceId 를 명시 set 하지 않으면 LoadInitialData/카드 클릭 콜백이 dashboard 호출 자체를 skip.
+        [SerializeField] private long visitedSpaceId;
         [SerializeField] private bool useMockRepositories = true;
 
         private UIDocument document;
@@ -639,11 +641,21 @@ namespace Dotshelf.Scripts.Dashboard
 
             if (viewMode == ViewMode.Mine)
             {
+                // 본인 공간 — GET /v1/spaces/me 응답의 id 를 사용 (Repository 가 처리). source of truth = BE.
                 loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
+            }
+            else if (visitedSpaceId > 0)
+            {
+                Debug.Log($"[Dashboard] Loading visited space dashboard. spaceId={visitedSpaceId}");
+                loadDashboardUseCase.Execute(visitedSpaceId, OnDashboardLoaded, OnError);
             }
             else
             {
-                loadDashboardUseCase.Execute(visitedSpaceId, OnDashboardLoaded, OnError);
+                // visitedSpaceId 미설정 — 외부 caller (Search 등) 가 set 하기 전에는 호출 자체를 skip.
+                // 이전에는 SerializeField default 1L 이 그대로 전파돼 GET /v1/spaces/1/dashboard 가 호출됨.
+                Debug.LogWarning(
+                    $"[Dashboard] visitedSpaceId 미설정 (viewMode={viewMode}) — dashboard 호출 skip. " +
+                    "공간 카드 클릭으로 spaceId 가 set 된 후 OnVisitUser → loadDashboardUseCase.Execute 경로로 호출됩니다.");
             }
         }
 
@@ -1563,15 +1575,32 @@ namespace Dotshelf.Scripts.Dashboard
         private void OnVisitUser(UserSummary user)
         {
             CloseUserListModal();
-            // Mock 가정: user.Id == spaceId. Api 합류 시 user-to-space 매핑 따로 조회.
-            long targetSpaceId = user.Id;
+            // Mock 가정: user.Id == spaceId. Api 모드에선 user/space 도메인 분리되어 다른 값 가능.
+            // (MR 114 review skh1205 [P2]) UserSummary.Id 는 follower/following API 의 사용자 ID — spaceId 보장 X.
+            // UserSummary 에 spaceId 합류 또는 GET /v1/users/{id}/space 매핑 endpoint 추가 전까지 임시 방어:
+            //   - mock 모드: 기존대로 user.Id == spaceId 가정 진행 (테스트 데이터 호환)
+            //   - real API 모드: visit skip + 사용자 메시지 (spaceId 알 수 없으므로 잘못된 dashboard 호출 차단)
             if (currentSnapshot != null && user.Id == currentSnapshot.Space.OwnerUserId)
             {
+                return;
+            }
+            if (!useMockRepositories)
+            {
+                Debug.LogWarning(
+                    $"[Dashboard] OnVisitUser — real API 모드에서 user.Id({user.Id}) 를 spaceId 로 가정 불가. " +
+                    "UserSummary 에 spaceId 합류 또는 user→space 매핑 API 가 필요합니다. visit skip.");
+                return;
+            }
+            long targetSpaceId = user.Id;
+            if (targetSpaceId <= 0)
+            {
+                Debug.LogWarning($"[Dashboard] OnVisitUser — invalid targetSpaceId={targetSpaceId} (user.Id 미설정). dashboard 호출 skip.");
                 return;
             }
             viewMode = ViewMode.Visitor;
             visitedSpaceId = targetSpaceId;
             ApplyViewMode();
+            Debug.Log($"[Dashboard] Visitor view (mock) → spaceId={targetSpaceId}");
             loadDashboardUseCase.Execute(targetSpaceId, OnDashboardLoaded, OnError);
         }
 
