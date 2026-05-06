@@ -48,7 +48,9 @@ import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -77,10 +79,14 @@ public class BookshelfService {
     }
 
     public BookshelfRenderResponse getItems(Long userId, Long bookshelfId) {
+        // 진단 로그 — 500 발생 시 어느 단계에서 끊겼는지 GlobalExceptionHandler 의 stack trace 와 함께 식별 가능.
+        // 단계별 size 출력으로 데이터 깨짐(orphan FK) / 빈 결과 vs 예외 구분.
+        log.info("getItems userId={} bookshelfId={}", userId, bookshelfId);
         Bookshelf bookshelf = getBookshelf(bookshelfId);
         requireReadable(userId, bookshelf);
         List<BookshelfSection> sections = sectionRepository.findByBookshelfIdOrderByRowNoAscColumnNoAsc(bookshelfId);
         List<BookshelfItem> items = bookshelfItemRepository.findByBookshelfIdAndStatusOrderByBookshelfSectionIdAscSlotNoAsc(bookshelfId, "ACTIVE");
+        log.debug("getItems bookshelfId={} sections={} items={}", bookshelfId, sections.size(), items.size());
         Map<Long, BookshelfSection> sectionsById = sections.stream()
                 .collect(Collectors.toMap(BookshelfSection::getId, Function.identity()));
         Map<Long, UserBook> userBooks = userBooksById(items);
@@ -88,6 +94,8 @@ public class BookshelfService {
         Map<Long, ReadingRecord> readingRecords = readingRecordsByUserBookId(userBooks);
         Map<Long, UserAssetInventory> inventories = inventoriesById(items);
         Map<Long, Asset> assets = assetsById(inventories);
+        log.debug("getItems bookshelfId={} userBooks={} books={} readingRecords={} inventories={} assets={}",
+                bookshelfId, userBooks.size(), books.size(), readingRecords.size(), inventories.size(), assets.size());
         return new BookshelfRenderResponse(
                 BookshelfResponse.from(bookshelf),
                 sections.stream()
@@ -327,7 +335,16 @@ public class BookshelfService {
                 .collect(Collectors.toMap(
                         ReadingRecord::getUserBookId,
                         Function.identity(),
-                        (left, right) -> left.getUpdatedAt().isAfter(right.getUpdatedAt()) ? left : right
+                        // 같은 user_book 에 ACTIVE record 가 둘 이상이면 더 최근 것 채택. updatedAt 이 null 인 케이스
+                        // (직접 INSERT 시드 데이터 등) 에서 isAfter 가 NPE 던지지 않도록 null-safe 비교.
+                        (left, right) -> {
+                            java.time.Instant l = left.getUpdatedAt();
+                            java.time.Instant r = right.getUpdatedAt();
+                            if (l == null && r == null) return left;
+                            if (l == null) return right;
+                            if (r == null) return left;
+                            return l.isAfter(r) ? left : right;
+                        }
                 ));
     }
 
@@ -372,6 +389,27 @@ public class BookshelfService {
         ReadingRecord record = userBook == null ? null : visibleReadingRecord(viewerUserId, userBook, readingRecords.get(userBook.getId()));
         UserAssetInventory inventory = inventories.get(item.getAssetInventoryId());
         Asset asset = inventory == null ? null : assets.get(inventory.getAssetId());
+        // Orphan FK 진단 — 깨진 참조 데이터를 운영자가 식별할 수 있도록 warn 로그 (NPE 자체는 위 null 가드가 막음).
+        // userBookId/sectionId/inventoryId 가 not null 인데 매핑된 entity 가 없으면 FK 무결성 깨짐 의심.
+        if (item.getUserBookId() != null && userBook == null) {
+            log.warn("orphan userBook itemId={} userBookId={} bookshelfId={}",
+                    item.getId(), item.getUserBookId(), item.getBookshelfId());
+        }
+        if (userBook != null && userBook.getBookId() != null && book == null) {
+            log.warn("orphan book itemId={} userBookId={} bookId={}",
+                    item.getId(), userBook.getId(), userBook.getBookId());
+        }
+        if (item.getBookshelfSectionId() != null && section == null) {
+            log.warn("orphan section itemId={} sectionId={} bookshelfId={}",
+                    item.getId(), item.getBookshelfSectionId(), item.getBookshelfId());
+        }
+        if (item.getAssetInventoryId() != null && inventory == null) {
+            log.warn("orphan inventory itemId={} inventoryId={}", item.getId(), item.getAssetInventoryId());
+        }
+        if (inventory != null && inventory.getAssetId() != null && asset == null) {
+            log.warn("orphan asset itemId={} inventoryId={} assetId={}",
+                    item.getId(), inventory.getId(), inventory.getAssetId());
+        }
         return new BookshelfRenderItemResponse(
                 item.getId(),
                 item.getItemType(),
