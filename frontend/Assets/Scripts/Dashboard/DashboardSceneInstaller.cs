@@ -1,4 +1,6 @@
 using App.Application.Dashboard;
+using App.Bootstrap;
+using App.Config;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dashboard;
 using App.Infrastructure.Mock.Dashboard;
@@ -22,6 +24,7 @@ namespace Dotshelf.Scripts.Dashboard
 
         [SerializeField] private DashboardScreenController controller;
         [SerializeField] private RepositoryMode mode = RepositoryMode.Api;
+        [SerializeField] private AppApiConfig apiConfig;
 
         [Tooltip("Api 모드일 때 사용할 APIManager. 비워두면 APIManager.Instance(scene 안 다른 곳에 attach된 것)를 사용한다.")]
         [SerializeField] private APIManager apiManager;
@@ -41,9 +44,14 @@ namespace Dotshelf.Scripts.Dashboard
                 return;
             }
 
+            var resolvedApiConfig = ResolveApiConfig();
+            var effectiveMode = resolvedApiConfig != null && resolvedApiConfig.ApiMode == AppApiMode.LocalMock
+                ? RepositoryMode.Mock
+                : mode;
+
             if (logChosenMode)
             {
-                Debug.Log($"[DashboardSceneInstaller] Mode = {mode}");
+                Debug.Log($"[DashboardSceneInstaller] Mode = {effectiveMode} (configured={mode}, apiMode={resolvedApiConfig?.ApiMode.ToString() ?? "unset"})");
             }
 
             IDashboardRepository dashboardRepo;
@@ -52,7 +60,7 @@ namespace Dotshelf.Scripts.Dashboard
             IFollowRepository followRepo;
             ILibraryViewRepository libraryRepo;
 
-            if (mode == RepositoryMode.Mock)
+            if (effectiveMode == RepositoryMode.Mock)
             {
                 dashboardRepo = new MockDashboardRepository();
                 guestbookRepo = new MockGuestbookRepository();
@@ -65,8 +73,13 @@ namespace Dotshelf.Scripts.Dashboard
                 APIManager resolvedApiManager = apiManager != null ? apiManager : APIManager.Instance;
                 if (resolvedApiManager == null)
                 {
-                    Debug.LogError("[DashboardSceneInstaller] Api 모드인데 APIManager Instance를 찾을 수 없음. " +
-                            "scene에 APIManager GameObject가 있는지 확인하거나 SerializeField로 명시 주입.");
+                    Debug.LogWarning("[DashboardSceneInstaller] Api mode has no APIManager. Falling back to mock repositories so the dashboard stays usable.");
+                    dashboardRepo = new MockDashboardRepository();
+                    guestbookRepo = new MockGuestbookRepository();
+                    spaceSettingsRepo = new MockSpaceSettingsRepository();
+                    followRepo = new MockFollowRepository();
+                    libraryRepo = new MockLibraryViewRepository();
+                    controller.Configure(dashboardRepo, guestbookRepo, spaceSettingsRepo, followRepo, libraryRepo);
                     return;
                 }
                 NotebookApiClient client = new NotebookApiClient(resolvedApiManager);
@@ -78,6 +91,23 @@ namespace Dotshelf.Scripts.Dashboard
             }
 
             controller.Configure(dashboardRepo, guestbookRepo, spaceSettingsRepo, followRepo, libraryRepo);
+        }
+
+        private AppApiConfig ResolveApiConfig()
+        {
+            if (apiConfig != null)
+            {
+                return apiConfig;
+            }
+
+            var appRoot = FindFirstObjectByType<AppRoot>();
+            if (appRoot != null && appRoot.ApiConfig != null)
+            {
+                return appRoot.ApiConfig;
+            }
+
+            var configLoader = FindFirstObjectByType<ConfigLoader>();
+            return configLoader != null ? configLoader.ApiConfig : null;
         }
     }
 }

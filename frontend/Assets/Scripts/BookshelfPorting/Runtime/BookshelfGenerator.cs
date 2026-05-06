@@ -80,6 +80,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private GameObject lampAsset = null;
         [SerializeField] private GameObject tableNaturalAsset = null;
         [SerializeField] private GameObject clockHamhamAsset = null;
+        [SerializeField] private GameObject notebookStationAsset = null;
         [SerializeField] private Texture2D qaBooksBaseMap = null;
         [SerializeField] private Texture2D qaBooksNormalMap = null;
         [SerializeField] private Texture2D qaBooksMaskMap = null;
@@ -3755,11 +3756,25 @@ namespace BookshelfPorting.Runtime
         {
             var guestbook = roomRoot != null ? roomRoot.Find("GuestbookBoard") : null;
             var stationParent = guestbook != null ? guestbook : roomRoot;
-            var notebookStation = new GameObject("NotebookStation");
-            notebookStation.transform.SetParent(stationParent, false);
-            notebookStation.transform.localPosition = guestbook != null
+            var stationPosition = guestbook != null
                 ? MainSceneNotebookStationLocalPosition
                 : FallbackNotebookStationLocalPosition;
+
+            if (notebookStationAsset != null)
+            {
+                var stationInstance = Instantiate(notebookStationAsset, stationParent, false);
+                stationInstance.name = "NotebookStation";
+                stationInstance.transform.localPosition = stationPosition;
+                stationInstance.transform.localRotation = Quaternion.identity;
+                stationInstance.transform.localScale = Vector3.one;
+                ApplyNotebookStationFallbackMaterials(stationInstance);
+                generatedGeometry.Add(stationInstance);
+                return;
+            }
+
+            var notebookStation = new GameObject("NotebookStation");
+            notebookStation.transform.SetParent(stationParent, false);
+            notebookStation.transform.localPosition = stationPosition;
             notebookStation.transform.localRotation = Quaternion.identity;
             generatedGeometry.Add(notebookStation);
 
@@ -3817,6 +3832,96 @@ namespace BookshelfPorting.Runtime
             generatedGeometry.Add(hitArea);
 
             notebook.AddComponent<NotebookScreenController>();
+        }
+
+        private void ApplyNotebookStationFallbackMaterials(GameObject stationInstance)
+        {
+            if (stationInstance == null || materialFactory == null)
+            {
+                return;
+            }
+
+            var aluminum = materialFactory.CreateBookMaterial(new Color(0.72f, 0.73f, 0.71f));
+            var brightAluminum = materialFactory.CreateBookMaterial(new Color(0.82f, 0.83f, 0.80f));
+            var darkGlass = materialFactory.CreateBookMaterial(new Color(0.015f, 0.018f, 0.022f));
+            var screenGlow = materialFactory.CreateBookMaterial(new Color(0.10f, 0.16f, 0.24f));
+            var keyboardTone = materialFactory.CreateBookMaterial(new Color(0.035f, 0.038f, 0.043f));
+            var keyLetterTone = materialFactory.CreateBookMaterial(new Color(0.12f, 0.125f, 0.13f));
+            var trackpadTone = materialFactory.CreateBookMaterial(new Color(0.60f, 0.61f, 0.59f));
+            var trackpadInsetTone = materialFactory.CreateBookMaterial(new Color(0.68f, 0.69f, 0.67f));
+
+            var renderers = stationInstance.GetComponentsInChildren<MeshRenderer>(true);
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                var material = ResolveNotebookPartMaterial(
+                    renderer.gameObject.name,
+                    aluminum,
+                    brightAluminum,
+                    darkGlass,
+                    screenGlow,
+                    keyboardTone,
+                    keyLetterTone,
+                    trackpadTone,
+                    trackpadInsetTone);
+
+                if (material != null)
+                {
+                    renderer.sharedMaterial = material;
+                }
+            }
+        }
+
+        private static Material ResolveNotebookPartMaterial(
+            string name,
+            Material aluminum,
+            Material brightAluminum,
+            Material darkGlass,
+            Material screenGlow,
+            Material keyboardTone,
+            Material keyLetterTone,
+            Material trackpadTone,
+            Material trackpadInsetTone)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+
+            if (name.StartsWith("Key"))
+            {
+                return keyLetterTone;
+            }
+
+            switch (name)
+            {
+                case "UnibodyBase":
+                case "HingeBar":
+                case "LowerBezelLip":
+                case "ScreenLid":
+                    return aluminum;
+                case "FrontChamfer":
+                    return brightAluminum;
+                case "KeyboardWell":
+                case "HingeShadowGap":
+                    return keyboardTone;
+                case "Trackpad":
+                    return trackpadTone;
+                case "TrackpadInset":
+                    return trackpadInsetTone;
+                case "BlackBezel":
+                case "CameraDot":
+                    return darkGlass;
+                case "DisplayPanel":
+                    return screenGlow;
+                default:
+                    return null;
+            }
         }
 
         private float BuildDeskSurface(Transform deskRoot)
