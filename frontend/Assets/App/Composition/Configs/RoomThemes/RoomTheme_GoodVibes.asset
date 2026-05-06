@@ -33,11 +33,3 @@ MonoBehaviour:
   bookshelfDecoSpecs: []
   floorDecoSpecs: []
   wallDecoSpecs: []
-  windowSpec:
-    assetId: 0
-    prefab: {fileID: 1000000000, guid: d4e5f67890123456789abcdef0123456, type: 3}
-    wallSide: 2
-    localPosition: {x: 0, y: 0, z: 0}
-    localRotation: {x: 0, y: 0, z: 0}
-    localScale: {x: 1, y: 1, z: 1}
-    anchorTag: ""

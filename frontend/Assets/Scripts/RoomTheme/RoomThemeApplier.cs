@@ -138,8 +138,7 @@ namespace Dotshelf.Scripts.RoomTheme
         {
             int specCount = (theme.BookshelfDecoSpecs?.Count ?? 0)
                           + (theme.FloorDecoSpecs?.Count ?? 0)
-                          + (theme.WallDecoSpecs?.Count ?? 0)
-                          + (theme.WindowSpec != null && theme.WindowSpec.Prefab != null ? 1 : 0);
+                          + (theme.WallDecoSpecs?.Count ?? 0);
 
             // 이전 테마가 spawn한 deco 정리. spawnedThemeDecos만 destroy — 다른 자식(외부에서
             // 추가했거나 inspector-wired root에 미리 있던 GameObject)은 건드리지 않음.
@@ -155,19 +154,8 @@ namespace Dotshelf.Scripts.RoomTheme
             spawned += SpawnDecoSpecs(theme.BookshelfDecoSpecs, root);
             spawned += SpawnDecoSpecs(theme.FloorDecoSpecs, root);
             spawned += SpawnWallDecoSpecs(theme.WallDecoSpecs, root);
-            spawned += SpawnWindowSpec(theme.WindowSpec, root);
 
-            Debug.Log($"[RoomThemeApplier] Theme deco spawn — total {spawned}/{specCount} (bookshelf={theme.BookshelfDecoSpecs?.Count ?? 0}, floor={theme.FloorDecoSpecs?.Count ?? 0}, wall={theme.WallDecoSpecs?.Count ?? 0}, window={(theme.WindowSpec?.Prefab != null ? 1 : 0)}).");
-        }
-
-        // window prefab 은 외부조명(directionalLight)을 cutout shader 로 통과시키는 mesh.
-        // 빛 자체는 ApplyLighting 의 directionalLight 가 항시 처리 — 창문 없어도 외부조명은 동작.
-        // wallSide 매칭 transform 자식으로 spawn (없으면 fallbackParent — themeDecoRoot).
-        private int SpawnWindowSpec(RoomThemeDecoSpec spec, Transform fallbackParent)
-        {
-            if (spec == null || spec.Prefab == null) return 0;
-            var wallParent = ResolveWallTransform(spec.WallSide) ?? fallbackParent;
-            return SpawnSingleSpec(spec, wallParent);
+            Debug.Log($"[RoomThemeApplier] Theme deco spawn — total {spawned}/{specCount} (bookshelf={theme.BookshelfDecoSpecs?.Count ?? 0}, floor={theme.FloorDecoSpecs?.Count ?? 0}, wall={theme.WallDecoSpecs?.Count ?? 0}).");
         }
 
         // themeDecoRoot 가 미설정이면 자동 생성. 부모는 roomRoot 우선 (theme deco spec 의 local
@@ -260,7 +248,7 @@ namespace Dotshelf.Scripts.RoomTheme
 
         private void ApplyLighting(RoomThemeAsset theme)
         {
-            // 외부조명 = 씬의 Directional Light. 항시 동작 — 창문(theme.WindowSpec) 유무와 무관.
+            // 외부조명 = 씬의 Directional Light. 항시 동작 — 창문 유무와 무관.
             // 창문 prefab 은 cutout shader 로 이 빛을 mesh 로 시각화할 뿐이고, 빛 자체는 별도 컴포넌트.
             // 즉 창문 없는 테마도 자연광은 들어오고, 창문 있는 테마는 cutout 으로 빛이 통과되어 보임.
             // RoomThemeAsset의 ExteriorLight* 값이 적용된다. (Legacy DirectionalLight* 프로퍼티는

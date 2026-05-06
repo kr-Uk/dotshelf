@@ -248,6 +248,7 @@ namespace App.Bootstrap
         private CustomizationCategory pendingCustomizationCategory;
         private CustomizationEntry pendingCustomizationEntry;
         private GameObject selectionPanelRoot;
+        private Button selectionRotateButton;
 
         private string selectedToolbarKey = "ALL";
         private readonly Dictionary<string, Image> toolbarBackgrounds = new Dictionary<string, Image>();
@@ -416,13 +417,18 @@ namespace App.Bootstrap
                 {
                     var entry = catalog.Entries[i];
                     if (entry == null || entry.Prefab == null) continue;
+                    // catalog Entry 의 PlacementCategory 가 Wallpaper(=enum 0, unset 의미)
+                    // 면 FloorDeco 로 fallback — 기존 catalog 자산 호환.
+                    var placement = entry.PlacementCategory == CustomizationCategory.Wallpaper
+                        ? CustomizationCategory.FloorDeco
+                        : entry.PlacementCategory;
                     inventoryEntries.Add(new InventoryEntry
                     {
                         DisplayName = string.IsNullOrWhiteSpace(entry.DisplayName) ? entry.Prefab.name : entry.DisplayName,
                         Prefab = entry.Prefab,
                         SourceAssetPath = entry.SourceAssetPath ?? string.Empty,
-                        PlacementCategory = CustomizationCategory.FloorDeco,
-                        AllowRotation = true,
+                        PlacementCategory = placement,
+                        AllowRotation = entry.AllowRotation,
                     });
                 }
             }
@@ -2038,6 +2044,7 @@ namespace App.Bootstrap
             rotateRect.pivot = new Vector2(0f, 0.5f);
             rotateRect.anchoredPosition = new Vector2(16f, 0f);
             rotateButton.onClick.AddListener(RotateSelectedObject);
+            selectionRotateButton = rotateButton;
 
             var deleteButton = CreateButton(selectionPanelRoot.transform, "DeleteButton", "삭제",
                 Hex("#C14E4E"), Color.white, new Vector2(112f, 60f), false, BorderColor);
@@ -2106,6 +2113,21 @@ namespace App.Bootstrap
             if (selectionPanelRoot != null && selectionPanelRoot.activeSelf != shouldShow)
             {
                 selectionPanelRoot.SetActive(shouldShow);
+            }
+
+            // 회전 비활성 entry — wall deco marker.AllowRotation == false 면 회전 버튼 disabled.
+            if (selectionRotateButton != null)
+            {
+                bool allowRotation = true;
+                if (selectedObject != null)
+                {
+                    var marker = selectedObject.GetComponent<WallDecoMarker>();
+                    if (marker != null && !marker.AllowRotation) allowRotation = false;
+                }
+                if (selectionRotateButton.interactable != allowRotation)
+                {
+                    selectionRotateButton.interactable = allowRotation;
+                }
             }
         }
 
@@ -4118,6 +4140,14 @@ namespace App.Bootstrap
         private void RotateSelectedObject()
         {
             if (selectedObject == null) return;
+            // entry-level allowRotation flag — 창문처럼 fixed orientation 이어야 하는
+            // wall deco 는 회전 무시. UpdateSelectionPanel 에서 버튼도 disabled 상태이지만
+            // 키보드/외부 트리거 가능성 방어.
+            var marker = selectedObject.GetComponent<WallDecoMarker>();
+            if (marker != null && !marker.AllowRotation)
+            {
+                return;
+            }
             // Don't rotate mid-drag — would invalidate the bounds-based placement
             // check until the next move tick. Forces drag to commit first.
             if (draggingObject != null)

@@ -11,7 +11,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ce40c28c0d00d4f48a4ce5e2a3dfb4cc, type: 3}
   m_Name: EditableDecorationCatalog
-  m_EditorClassIdentifier:
+  m_EditorClassIdentifier: 
   entries:
   - DisplayName: Book Stack
     Prefab: {fileID: -8098169881513260187, guid: c762a71677879be41a5a565fdad2dc71, type: 3}
@@ -25,6 +25,11 @@ MonoBehaviour:
   - DisplayName: Doll Hamham
     Prefab: {fileID: -8098169881513260187, guid: 4f9ca772872790543895cc1371706137, type: 3}
     SourceAssetPath: Assets/Arts/Models/Props/doll_hamham.glb
+  - DisplayName: Goodvibes Window
+    Prefab: {fileID: -8098169881513260187, guid: 8cf9f41845bae4aa1a85afdf0405e751, type: 3}
+    SourceAssetPath: Assets/Arts/Models/Window/GoodVibes_Window.glb
+    PlacementCategory: 9
+    AllowRotation: 0
   - DisplayName: Lamp Floor
     Prefab: {fileID: -8098169881513260187, guid: 6386ddd70e8d2e7439c1961311c3bb2f, type: 3}
     SourceAssetPath: Assets/Arts/Models/Furniture/lamp_floor.glb
