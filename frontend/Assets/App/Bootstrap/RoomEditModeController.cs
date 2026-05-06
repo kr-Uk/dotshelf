@@ -1511,6 +1511,22 @@ namespace App.Bootstrap
         {
             if (space == null) return;
             lastServerSpace = space;  // IsCategoryEntryCurrent의 single source of truth 갱신
+
+            // [Review #104 P2] server에 저장된 테마 inventory ID로 RoomThemeApplier.CurrentTheme도
+            // 동기화. 동기화 안 하면 이전 세션에서 customization-disabled 테마를 적용해둔 사용자가
+            // 다시 입장해도 RoomThemeApplier.CurrentTheme=null이라 IsCurrentThemeCustomizationLocked
+            // 가 항상 false → 사전 확인 모달 미발동 → 사용자는 themeReset=true 응답을 받고서야 테마
+            // 해제를 인지하게 됨.
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            if (themeApplier != null && themeCatalog != null)
+            {
+                var resolvedTheme = themeCatalog.Resolve(space.CurrentThemeInventoryId);
+                if (resolvedTheme != null && resolvedTheme != themeApplier.CurrentTheme)
+                {
+                    themeApplier.Apply(resolvedTheme);
+                }
+            }
+
             ApplyCategoryById(CustomizationCategory.Wallpaper, space.CurrentWallpaperInventoryId);
             ApplyCategoryById(CustomizationCategory.Floor, space.CurrentFloorInventoryId);
             ApplyCategoryById(CustomizationCategory.Desk, space.CurrentDeskInventoryId);
@@ -2542,7 +2558,33 @@ namespace App.Bootstrap
             {
                 return;
             }
+
+            // [Review #104 P1] visual swap 전에 클라이언트 테마 상태를 unlocked default로 reset.
+            // 이렇게 안 하면 PATCH 스킵(spaceSettingsRepo == null) / 네트워크 실패 / 서버가
+            // themeReset=false 반환 등의 경로에서 'locked CurrentTheme + 새 customization visual'
+            // 혼합 상태가 남아 다음 카테고리 클릭에서 모달이 또 노출됨.
+            //
+            // 사용자는 모달의 '계속'으로 '테마가 해제된다'에 이미 동의했으므로 클라이언트는 즉시
+            // 그 약속한 상태로 전환. PATCH 성공 시 themeReset=true → ReloadRoomState가 서버 권위
+            // 상태로 다시 동기화. PATCH 실패 시 클라이언트는 unlocked 상태로 남고 다음 reload에서
+            // 서버 상태에 따라 정정됨.
+            ResetThemeToDefaultLocally();
+            ApplyThemeResetVisualFallback();
+
             ProceedCustomizationEntry(category, entry);
+        }
+
+        // 테마 카탈로그의 DefaultTheme(있으면)을 즉시 RoomThemeApplier에 Apply. 클라이언트 측
+        // CurrentTheme/AllowsCustomization 상태만 갱신 — 서버 PATCH는 별개 흐름.
+        private void ResetThemeToDefaultLocally()
+        {
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            if (themeApplier == null || themeCatalog == null) return;
+            var defaultTheme = themeCatalog.DefaultTheme;
+            if (defaultTheme != null && defaultTheme != themeApplier.CurrentTheme)
+            {
+                themeApplier.Apply(defaultTheme);
+            }
         }
 
         // Inventory placement ------------------------------------------------------
