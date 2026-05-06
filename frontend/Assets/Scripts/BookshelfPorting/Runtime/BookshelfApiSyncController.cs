@@ -3,9 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using App.Auth;
-#if UNITY_EDITOR
 using App.Bootstrap;
-#endif
 using App.Domain;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dtos;
@@ -240,11 +238,11 @@ namespace BookshelfPorting.Runtime
         }
 #endif
 
-        public void CreateBookshelf(string name)
+        public bool CreateBookshelf(string name, Action onSucceeded = null, Action<string> onFailed = null)
         {
             if (!CanUseServerApi)
             {
-                return;
+                return false;
             }
 
             if (!currentSpaceId.HasValue)
@@ -253,10 +251,21 @@ namespace BookshelfPorting.Runtime
                     space =>
                     {
                         currentSpaceId = space?.Id;
-                        CreateBookshelf(name);
+                        if (!currentSpaceId.HasValue || currentSpaceId.Value <= 0)
+                        {
+                            onFailed?.Invoke("책장을 추가할 공간 정보를 찾을 수 없습니다.");
+                            return;
+                        }
+
+                        CreateBookshelf(name, onSucceeded, onFailed);
                     },
-                    error => Debug.LogWarning($"Bookshelf create skipped: {FormatError(error)}"));
-                return;
+                    error =>
+                    {
+                        var message = FormatUserFacingError(error);
+                        Debug.LogWarning($"Bookshelf create skipped: {FormatError(error)}");
+                        onFailed?.Invoke(message);
+                    });
+                return true;
             }
 
             client.CreateBookshelf(
@@ -266,15 +275,25 @@ namespace BookshelfPorting.Runtime
                     Name = string.IsNullOrWhiteSpace(name) ? "새 책장" : name,
                     VisibilityScope = "PUBLIC"
                 },
-                _ => RefreshFromServer(),
-                error => Debug.LogWarning($"Bookshelf create failed: {FormatError(error)}"));
+                _ =>
+                {
+                    onSucceeded?.Invoke();
+                    RefreshFromServer();
+                },
+                error =>
+                {
+                    var message = FormatUserFacingError(error);
+                    Debug.LogWarning($"Bookshelf create failed: {FormatError(error)}");
+                    onFailed?.Invoke(message);
+                });
+            return true;
         }
 
-        public void UpdateBookshelf(int index)
+        public bool UpdateBookshelf(int index, Action onSucceeded = null, Action<string> onFailed = null)
         {
             if (!CanUseServerApi || !TryParseId(generator.GetBookshelfServerId(index), out var bookshelfId))
             {
-                return;
+                return false;
             }
 
             client.UpdateBookshelf(
@@ -285,8 +304,14 @@ namespace BookshelfPorting.Runtime
                     VisibilityScope = ToApiVisibility(generator.GetBookshelfVisibility(index)),
                     SkinInventoryId = BookshelfSkinResolver.ResolveInventoryId(generator.GetBookshelfDesignStyle(index))
                 },
-                _ => { },
-                error => Debug.LogWarning($"Bookshelf update failed: {FormatError(error)}"));
+                _ => onSucceeded?.Invoke(),
+                error =>
+                {
+                    var message = FormatUserFacingError(error);
+                    Debug.LogWarning($"Bookshelf update failed: {FormatError(error)}");
+                    onFailed?.Invoke(message);
+                });
+            return true;
         }
 
         public bool DeleteBookshelf(string bookshelfServerId, Action onSucceeded = null, Action<string> onFailed = null)
@@ -312,11 +337,11 @@ namespace BookshelfPorting.Runtime
             return true;
         }
 
-        public void ReorderBookshelves()
+        public bool ReorderBookshelves(Action onSucceeded = null, Action<string> onFailed = null)
         {
             if (!CanUseServerApi)
             {
-                return;
+                return false;
             }
 
             var rawIds = generator.GetBookshelfServerIdsInDisplayOrder();
@@ -329,22 +354,31 @@ namespace BookshelfPorting.Runtime
                 }
             }
 
-            if (ids.Count <= 1)
+            if (ids.Count <= 1 || ids.Count != rawIds.Count)
             {
-                return;
+                return false;
             }
 
             client.ReorderBookshelves(
                 new ReorderBookshelvesRequestDto { BookshelfIds = ids },
-                _ => { },
-                error => Debug.LogWarning($"Bookshelf reorder failed: {FormatError(error)}"));
+                _ => onSucceeded?.Invoke(),
+                error =>
+                {
+                    var message = FormatUserFacingError(error);
+                    Debug.LogWarning($"Bookshelf reorder failed: {FormatError(error)}");
+                    onFailed?.Invoke(message);
+                });
+            return true;
         }
 
-        public void SyncBookState(BookEntity book)
+        public bool SyncBookState(
+            BookEntity book,
+            Action<BookEntity> onSucceeded = null,
+            Action<string> onFailed = null)
         {
             if (!CanUseServerApi || book == null || !TryParseId(book.userBookId, out var userBookId))
             {
-                return;
+                return false;
             }
 
             client.UpdateUserBook(
@@ -354,31 +388,67 @@ namespace BookshelfPorting.Runtime
                     ReadingStatus = ToApiReadingStatus(book.readingStatus),
                     OwnerRating = book.ownerRating > 0f ? (decimal?)Math.Round((decimal)book.ownerRating, 1) : null
                 },
-                response => ApplyUserBookResponse(book, response),
-                error => Debug.LogWarning($"User book update failed: {FormatError(error)}"));
+                response =>
+                {
+                    ApplyUserBookResponse(book, response);
+                    onSucceeded?.Invoke(book);
+                },
+                error =>
+                {
+                    var message = FormatUserFacingError(error);
+                    Debug.LogWarning($"User book update failed: {FormatError(error)}");
+                    onFailed?.Invoke(message);
+                });
+            return true;
         }
 
-        public void SyncBookLike(BookEntity book)
+        public bool SyncBookLike(
+            BookEntity book,
+            Action<BookEntity> onSucceeded = null,
+            Action<string> onFailed = null)
         {
             if (!CanUseServerApi || book == null || !TryParseId(book.userBookId, out var userBookId))
             {
-                return;
+                return false;
             }
+
+            var desiredLiked = book.isLiked;
+            Action<ToggleResponseDto> success = response =>
+            {
+                book.isLiked = response != null ? response.Active : desiredLiked;
+                if (response != null)
+                {
+                    book.totalLikeCount = Mathf.Max(0, (int)response.Count);
+                    book.hasAggregateBookStats = true;
+                }
+
+                onSucceeded?.Invoke(book);
+            };
+            Action<ApiErrorResponseDto> failure = error =>
+            {
+                var message = FormatUserFacingError(error);
+                Debug.LogWarning($"User book like update failed: {FormatError(error)}");
+                onFailed?.Invoke(message);
+            };
 
             if (book.isLiked)
             {
-                client.LikeUserBook(userBookId, _ => { }, error => Debug.LogWarning($"User book like failed: {FormatError(error)}"));
-                return;
+                client.LikeUserBook(userBookId, success, failure);
+                return true;
             }
 
-            client.UnlikeUserBook(userBookId, _ => { }, error => Debug.LogWarning($"User book unlike failed: {FormatError(error)}"));
+            client.UnlikeUserBook(userBookId, success, failure);
+            return true;
         }
 
-        public void SyncBookPlacement(BookEntity book)
+        public bool SyncBookPlacement(
+            BookEntity book,
+            Action<BookEntity> onSucceeded = null,
+            Action<string> onFailed = null)
         {
             if (!CanUseServerApi || book == null)
             {
-                return;
+                return false;
             }
 
             var bookshelfIdText = string.IsNullOrWhiteSpace(book.bookshelfId)
@@ -392,7 +462,7 @@ namespace BookshelfPorting.Runtime
             if (!TryParseId(bookshelfIdText, out var bookshelfId) ||
                 !TryParseId(sectionIdText, out var sectionId))
             {
-                return;
+                return false;
             }
 
             var request = new BookshelfItemRequestDto
@@ -409,9 +479,18 @@ namespace BookshelfPorting.Runtime
                 client.MoveBookshelfItem(
                     itemId,
                     request,
-                    response => ApplyBookshelfItemResponse(book, response),
-                    error => Debug.LogWarning($"Bookshelf item move failed: {FormatError(error)}"));
-                return;
+                    response =>
+                    {
+                        ApplyBookshelfItemResponse(book, response);
+                        onSucceeded?.Invoke(book);
+                    },
+                    error =>
+                    {
+                        var message = FormatUserFacingError(error);
+                        Debug.LogWarning($"Bookshelf item move failed: {FormatError(error)}");
+                        onFailed?.Invoke(message);
+                    });
+                return true;
             }
 
             if (TryParseId(book.userBookId, out var userBookId))
@@ -426,9 +505,21 @@ namespace BookshelfPorting.Runtime
                         FacingDirection = request.FacingDirection,
                         DisplayStyle = request.DisplayStyle
                     },
-                    response => ApplyUserBookResponse(book, response),
-                    error => Debug.LogWarning($"User book move failed: {FormatError(error)}"));
+                    response =>
+                    {
+                        ApplyUserBookResponse(book, response);
+                        onSucceeded?.Invoke(book);
+                    },
+                    error =>
+                    {
+                        var message = FormatUserFacingError(error);
+                        Debug.LogWarning($"User book move failed: {FormatError(error)}");
+                        onFailed?.Invoke(message);
+                    });
+                return true;
             }
+
+            return false;
         }
 
         public void SyncSectionAlignment(ShelfSection section)
@@ -649,21 +740,39 @@ namespace BookshelfPorting.Runtime
             Action<BookEntity> onSucceeded = null,
             Action<string> onFailed = null)
         {
+            return AddBookToShelf(book, generator != null ? generator.ActiveBookshelfIndex : -1, onSucceeded, onFailed);
+        }
+
+        public bool AddBookToShelf(
+            BookEntity book,
+            int bookshelfIndex,
+            Action<BookEntity> onSucceeded = null,
+            Action<string> onFailed = null,
+            Action<BookEntity, string> onPostAddStateFailed = null)
+        {
             if (!CanUseServerApi || book == null)
             {
                 return false;
             }
 
+            var targetBookshelfIndex = bookshelfIndex >= 0 ? bookshelfIndex : generator.ActiveBookshelfIndex;
             var section = book.CurrentSection;
             var sectionIdText = section != null
-                ? generator.GetSectionServerId(generator.ActiveBookshelfIndex, section.row, section.column)
+                ? generator.GetSectionServerId(targetBookshelfIndex, section.row, section.column)
                 : book.bookshelfSectionId;
-            if (!TryParseId(generator.GetActiveBookshelfServerId(), out var bookshelfId) ||
+            var bookshelfIdText = string.IsNullOrWhiteSpace(book.bookshelfId)
+                ? generator.GetBookshelfServerId(targetBookshelfIndex)
+                : book.bookshelfId;
+            if (!TryParseId(bookshelfIdText, out var bookshelfId) ||
                 !TryParseId(sectionIdText, out var sectionId))
             {
                 return false;
             }
 
+            var previousBookshelfId = book.bookshelfId;
+            var previousBookshelfSectionId = book.bookshelfSectionId;
+            book.bookshelfId = bookshelfId.ToString();
+            book.bookshelfSectionId = sectionId.ToString();
             var slotNo = generator.GetBookSlotNo(book);
             var displayStyle = ToApiDisplayStyle(book.orientation);
             var facingDirection = "FRONT";
@@ -684,14 +793,11 @@ namespace BookshelfPorting.Runtime
                     response =>
                     {
                         ApplyUserBookResponse(book, response);
-                        book.readingStatus = desiredReadingStatus;
-                        book.isRead = desiredReadingStatus == ReadingStatus.Read;
-                        book.ownerRating = desiredOwnerRating;
-                        SyncBookState(book);
-                        onSucceeded?.Invoke(book);
+                        CompleteBookAddStateSync(book, desiredReadingStatus, desiredOwnerRating, onSucceeded, onFailed, onPostAddStateFailed);
                     },
                     error =>
                     {
+                        RestoreBookAddPlacementIds(book, previousBookshelfId, previousBookshelfSectionId);
                         var message = FormatUserFacingError(error);
                         Debug.LogWarning($"Book add failed: {FormatError(error)}");
                         onFailed?.Invoke(message);
@@ -721,19 +827,84 @@ namespace BookshelfPorting.Runtime
                 {
                     book.bookId = response?.BookId > 0 ? response.BookId.ToString() : book.bookId;
                     ApplyUserBookResponse(book, response);
-                    book.readingStatus = desiredReadingStatus;
-                    book.isRead = desiredReadingStatus == ReadingStatus.Read;
-                    book.ownerRating = desiredOwnerRating;
-                    SyncBookState(book);
-                    onSucceeded?.Invoke(book);
+                    CompleteBookAddStateSync(book, desiredReadingStatus, desiredOwnerRating, onSucceeded, onFailed, onPostAddStateFailed);
                 },
                 error =>
                 {
+                    RestoreBookAddPlacementIds(book, previousBookshelfId, previousBookshelfSectionId);
                     var message = FormatUserFacingError(error);
                     Debug.LogWarning($"Kakao/manual book add failed: {FormatError(error)}");
                     onFailed?.Invoke(message);
                 });
             return true;
+        }
+
+        private void CompleteBookAddStateSync(
+            BookEntity book,
+            ReadingStatus desiredReadingStatus,
+            float desiredOwnerRating,
+            Action<BookEntity> onSucceeded,
+            Action<string> onFailed,
+            Action<BookEntity, string> onPostAddStateFailed)
+        {
+            if (book == null)
+            {
+                onFailed?.Invoke("추가한 책 정보를 찾을 수 없습니다.");
+                return;
+            }
+
+            var responseReadingStatus = book.readingStatus;
+            var responseOwnerRating = book.ownerRating;
+            book.readingStatus = desiredReadingStatus;
+            book.isRead = desiredReadingStatus == ReadingStatus.Read;
+            book.ownerRating = desiredOwnerRating;
+
+            var needsStateSync = responseReadingStatus != desiredReadingStatus ||
+                                 !Mathf.Approximately(responseOwnerRating, desiredOwnerRating);
+            if (!needsStateSync)
+            {
+                onSucceeded?.Invoke(book);
+                return;
+            }
+
+            if (!SyncBookState(
+                    book,
+                    onSucceeded,
+                    error => HandlePostAddStateSyncFailure(book, error, onFailed, onPostAddStateFailed)))
+            {
+                HandlePostAddStateSyncFailure(
+                    book,
+                    "추가한 책의 독서 상태를 저장하는 데 필요한 서버 식별자를 찾을 수 없습니다.",
+                    onFailed,
+                    onPostAddStateFailed);
+            }
+        }
+
+        private static void HandlePostAddStateSyncFailure(
+            BookEntity book,
+            string errorMessage,
+            Action<string> onFailed,
+            Action<BookEntity, string> onPostAddStateFailed)
+        {
+            if (onPostAddStateFailed != null)
+            {
+                onPostAddStateFailed.Invoke(book, errorMessage);
+            }
+            else
+            {
+                onFailed?.Invoke(errorMessage);
+            }
+        }
+
+        private static void RestoreBookAddPlacementIds(BookEntity book, string bookshelfId, string bookshelfSectionId)
+        {
+            if (book == null)
+            {
+                return;
+            }
+
+            book.bookshelfId = bookshelfId;
+            book.bookshelfSectionId = bookshelfSectionId;
         }
 
         public bool RemoveBook(BookEntity book, Action onSucceeded = null, Action<string> onFailed = null)

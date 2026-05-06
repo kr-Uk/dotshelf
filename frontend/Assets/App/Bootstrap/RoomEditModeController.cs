@@ -225,6 +225,7 @@ namespace App.Bootstrap
         private GameObject inventoryContentRoot;
         private GameObject returnButtonRoot;
         private GameObject readyModalRoot;
+        private GameObject themeApplyModeModalRoot;
         private GameObject selectionPanelRoot;
 
         private string selectedToolbarKey = "ALL";
@@ -233,8 +234,9 @@ namespace App.Bootstrap
 
         private RoomThemeCatalogAsset themeCatalog;
         private RoomThemeApplier themeApplier;
-        private UpdateSpaceThemeUseCase themeUseCase;
+        private ApplyThemeWithModeUseCase themeUseCase;
         private RoomThemeAsset previousAppliedTheme;
+        private RoomThemeAsset pendingThemeApply;
         // 빠른 테마 연타 시 stale callback 무시. 매 클릭마다 ++해서 onSuccess/onError에
         // 캡쳐된 version과 현재 version이 다르면 응답 무시. (MR 72의 walletDetailRequestVersion 동일 패턴)
         private int themeRequestVersion;
@@ -352,11 +354,13 @@ namespace App.Bootstrap
             BuildDecorationPopup();
             BuildEditOverlay();
             BuildReadyModal();
+            BuildThemeApplyModeModal();
             BuildSelectionPanel();
 
             CloseDecorationPopupInternal();
             ExitEditModeInternal();
             HideReadyModal();
+            HideThemeApplyModeModal();
         }
 
         // Resolve the persisted EditableDecorationCatalog (built by the Tools menu in
@@ -1086,6 +1090,12 @@ namespace App.Bootstrap
         private void OnThemeSelected(RoomThemeAsset theme)
         {
             if (theme == null) return;
+            ShowThemeApplyModeModal(theme);
+        }
+
+        private void ApplyThemeSelected(RoomThemeAsset theme, ThemeApplyMode mode)
+        {
+            if (theme == null) return;
             if (themeApplier == null)
             {
                 themeApplier = FindFirstObjectByType<RoomThemeApplier>();
@@ -1104,23 +1114,34 @@ namespace App.Bootstrap
             EnsureThemeUseCase();
             if (themeUseCase == null)
             {
-                Debug.LogWarning("[RoomEditModeController] ISpaceSettingsRepository 미주입 — 백엔드 PATCH skip (visual만 적용).");
+                Debug.LogWarning("[RoomEditModeController] ISpaceSettingsRepository 미주입 — 백엔드 theme apply skip (visual만 적용).");
                 return;
             }
 
-            long? inventoryId = theme.AssetId > 0 ? (long?)theme.AssetId : null;
+            if (theme.AssetId <= 0)
+            {
+                Debug.LogWarning("[RoomEditModeController] theme AssetId가 없어 백엔드 theme apply skip (visual만 적용).");
+                return;
+            }
+
+            long inventoryId = theme.AssetId;
             // 연타 시 stale callback 무시: 캡쳐된 version과 현재 version이 다르면 이번 요청은
             // 이미 다음 요청에 의해 덮였으므로 응답 무시. (rollback도, success log도 안 함)
             int requestVersion = ++themeRequestVersion;
             themeUseCase.Execute(
                 inventoryId,
-                onSuccess: () =>
+                mode,
+                onSuccess: themeReset =>
                 {
                     if (requestVersion != themeRequestVersion)
                     {
                         return;
                     }
-                    Debug.Log($"[RoomEditModeController] PATCH /spaces/me/theme OK → inventoryId={inventoryId}.");
+                    Debug.Log($"[RoomEditModeController] POST /spaces/me/theme/{inventoryId}/apply OK → mode={mode}, themeReset={themeReset}.");
+                    if (themeReset || mode == ThemeApplyMode.Reset)
+                    {
+                        ApplyThemeResetVisualFallback();
+                    }
                 },
                 onError: error =>
                 {
@@ -1137,7 +1158,7 @@ namespace App.Bootstrap
                         return;
                     }
 
-                    Debug.LogWarning($"[RoomEditModeController] PATCH 실패 ({error.Code}/{error.Message}) — 이전 테마로 롤백.");
+                    Debug.LogWarning($"[RoomEditModeController] theme apply 실패 ({error.Code}/{error.Message}) — 이전 테마로 롤백.");
                     if (previousAppliedTheme != null && previousAppliedTheme != theme)
                     {
                         themeApplier.Apply(previousAppliedTheme);
@@ -1159,13 +1180,13 @@ namespace App.Bootstrap
             {
                 var apiClient = new NotebookApiClient(apiManager);
                 var repo = new ApiSpaceSettingsRepository(apiClient);
-                themeUseCase = new UpdateSpaceThemeUseCase(repo);
+                themeUseCase = new ApplyThemeWithModeUseCase(repo);
             }
             catch (Exception ex)
             {
                 // 어느 단계(NotebookApiClient ctor / Repository ctor / UseCase ctor)에서 깨졌는지
                 // stack까지 같이 출력해야 디버깅 가능.
-                Debug.LogError($"[RoomEditModeController] UpdateSpaceThemeUseCase 생성 실패 ({ex.GetType().Name}).");
+                Debug.LogError($"[RoomEditModeController] ApplyThemeWithModeUseCase 생성 실패 ({ex.GetType().Name}).");
                 Debug.LogException(ex);
             }
         }
@@ -1201,8 +1222,8 @@ namespace App.Bootstrap
                 Debug.Log($"[RoomEditModeController] PATCH /spaces/me/{category.ToString().ToLower()} OK → invId={invId}, themeReset={themeReset}.");
                 if (themeReset)
                 {
-                    Debug.LogWarning("[RoomEditModeController] 커스터마이징 불가 테마 자동 해제 — 룸 전체 reload 필요(TODO).");
-                    // TODO: Space 재로드 + RoomThemeApplier.Apply(default theme) + 모든 책장 skin 초기화 visual
+                    Debug.LogWarning("[RoomEditModeController] 커스터마이징 불가 테마 자동 해제 — 런타임 표시 상태를 기본값으로 정리합니다.");
+                    ApplyThemeResetVisualFallback();
                 }
             };
             Action<DashboardApiError> onError = error =>
@@ -1236,6 +1257,19 @@ namespace App.Bootstrap
                     Debug.LogWarning($"[RoomEditModeController] {category}는 카테고리별 PATCH 미지원 (책장/벽/바닥 데코는 별도 endpoint).");
                     break;
             }
+        }
+
+        private void ApplyThemeResetVisualFallback()
+        {
+            lastAppliedEntries.Clear();
+
+            var generator = FindFirstObjectByType<BookshelfGenerator>();
+            if (generator != null)
+            {
+                generator.ResetAllBookshelfDesignStyles();
+            }
+
+            RebuildInventorySlots();
         }
 
         // 카테고리별 visual swap. RoomThemeApplier의 RoomRoot/DirectionalLight reference를
@@ -1448,6 +1482,83 @@ namespace App.Bootstrap
             confirmRect.pivot = new Vector2(0.5f, 0f);
             confirmRect.anchoredPosition = new Vector2(0f, 32f);
             confirm.onClick.AddListener(HideReadyModal);
+        }
+
+        private void BuildThemeApplyModeModal()
+        {
+            themeApplyModeModalRoot = CreateRectObject("ThemeApplyModeModal", canvas.transform);
+            var rect = (RectTransform)themeApplyModeModalRoot.transform;
+            StretchToParent(rect);
+
+            var dim = CreateImage(themeApplyModeModalRoot.transform, "Dim", DimColor);
+            StretchToParent(dim.rectTransform);
+            var dimButton = dim.gameObject.AddComponent<Button>();
+            dimButton.transition = Selectable.Transition.None;
+            dimButton.onClick.AddListener(HideThemeApplyModeModal);
+
+            var card = CreateImage(themeApplyModeModalRoot.transform, "Card", CardColor);
+            card.sprite = roundedRectSprite;
+            card.type = Image.Type.Sliced;
+            var cardRect = card.rectTransform;
+            cardRect.anchorMin = new Vector2(0.5f, 0.5f);
+            cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+            cardRect.pivot = new Vector2(0.5f, 0.5f);
+            cardRect.sizeDelta = new Vector2(700f, 330f);
+            cardRect.anchoredPosition = Vector2.zero;
+            var cardOutline = card.gameObject.AddComponent<Outline>();
+            cardOutline.effectColor = WithAlpha(BorderColor, 0.95f);
+            cardOutline.effectDistance = new Vector2(1f, -1f);
+
+            var title = CreateText(card.transform, "Title", "테마 적용 방식", 26f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
+            var titleRect = title.rectTransform;
+            titleRect.anchorMin = new Vector2(0f, 1f);
+            titleRect.anchorMax = new Vector2(1f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.offsetMin = new Vector2(32f, -78f);
+            titleRect.offsetMax = new Vector2(-32f, -28f);
+
+            var body = CreateText(
+                card.transform,
+                "Body",
+                "전체 초기화는 현재 커스터마이징과 책장 스킨을 기본값으로 정리한 뒤 테마를 적용합니다.\n현재 배치 유지는 배치 구조를 유지한 상태에서 테마만 적용합니다.",
+                18f,
+                FontStyles.Normal,
+                MutedTextColor,
+                TextAlignmentOptions.Center);
+            var bodyRect = body.rectTransform;
+            bodyRect.anchorMin = new Vector2(0f, 0.34f);
+            bodyRect.anchorMax = new Vector2(1f, 0.78f);
+            bodyRect.pivot = new Vector2(0.5f, 0.5f);
+            bodyRect.offsetMin = new Vector2(48f, 0f);
+            bodyRect.offsetMax = new Vector2(-48f, 0f);
+            body.enableWordWrapping = true;
+
+            var resetButton = CreateButton(card.transform, "ResetButton", "전체 초기화",
+                PrimaryColor, Color.white, new Vector2(180f, 58f), false, BorderColor);
+            var resetRect = (RectTransform)resetButton.transform;
+            resetRect.anchorMin = new Vector2(0.5f, 0f);
+            resetRect.anchorMax = new Vector2(0.5f, 0f);
+            resetRect.pivot = new Vector2(0.5f, 0f);
+            resetRect.anchoredPosition = new Vector2(-210f, 34f);
+            resetButton.onClick.AddListener(() => ConfirmThemeApplyMode(ThemeApplyMode.Reset));
+
+            var keepButton = CreateButton(card.transform, "KeepButton", "배치 유지 준비 중",
+                SecondaryColor, MutedTextColor, new Vector2(190f, 58f), true, BorderColor);
+            var keepRect = (RectTransform)keepButton.transform;
+            keepRect.anchorMin = new Vector2(0.5f, 0f);
+            keepRect.anchorMax = new Vector2(0.5f, 0f);
+            keepRect.pivot = new Vector2(0.5f, 0f);
+            keepRect.anchoredPosition = new Vector2(0f, 34f);
+            keepButton.interactable = false;
+
+            var cancelButton = CreateButton(card.transform, "CancelButton", "취소",
+                CardColor, TextColor, new Vector2(140f, 58f), true, BorderColor);
+            var cancelRect = (RectTransform)cancelButton.transform;
+            cancelRect.anchorMin = new Vector2(0.5f, 0f);
+            cancelRect.anchorMax = new Vector2(0.5f, 0f);
+            cancelRect.pivot = new Vector2(0.5f, 0f);
+            cancelRect.anchoredPosition = new Vector2(195f, 34f);
+            cancelButton.onClick.AddListener(HideThemeApplyModeModal);
         }
 
         private void BuildSelectionPanel()
@@ -2075,6 +2186,40 @@ namespace App.Bootstrap
             {
                 readyModalRoot.SetActive(false);
             }
+        }
+
+        private void ShowThemeApplyModeModal(RoomThemeAsset theme)
+        {
+            if (theme == null)
+            {
+                return;
+            }
+
+            pendingThemeApply = theme;
+            if (themeApplyModeModalRoot == null)
+            {
+                ApplyThemeSelected(theme, ThemeApplyMode.Reset);
+                return;
+            }
+
+            themeApplyModeModalRoot.transform.SetAsLastSibling();
+            themeApplyModeModalRoot.SetActive(true);
+        }
+
+        private void HideThemeApplyModeModal()
+        {
+            pendingThemeApply = null;
+            if (themeApplyModeModalRoot != null)
+            {
+                themeApplyModeModalRoot.SetActive(false);
+            }
+        }
+
+        private void ConfirmThemeApplyMode(ThemeApplyMode mode)
+        {
+            var theme = pendingThemeApply;
+            HideThemeApplyModeModal();
+            ApplyThemeSelected(theme, mode);
         }
 
         // Inventory placement ------------------------------------------------------
