@@ -5,20 +5,42 @@ using UnityEngine;
 namespace App.Infrastructure.Catalogs
 {
     /// <summary>
+    /// 룸의 4벽 식별자. WallDecoSpec에서 어느 벽에 붙는 deco 인지 명시.
+    /// RoomGameObjectPatterns.Wall ('LeftWall'/'RightWall'/'BackWall'/'FrontWall')과 1:1.
+    /// None은 wallSide 무관 (BookshelfDecoSpec/FloorDecoSpec 용).
+    /// </summary>
+    public enum WallSide
+    {
+        None,
+        Left,
+        Right,
+        Back,
+        Front,
+    }
+
+    /// <summary>
     /// 테마 적용 시 RoomThemeApplier가 자동 spawn할 deco 1개.
-    /// prefab을 themeDecoRoot 자식으로 instantiate하고 local 트랜스폼 적용.
-    /// AnchorTag는 BookshelfDeco 책장 섹션별 anchoring용 (옵션, follow-up에서 사용).
+    /// prefab을 themeDecoRoot(또는 wallSide 매칭 wall transform) 자식으로 instantiate하고
+    /// local 트랜스폼 적용.
+    ///
+    /// AssetId — catalog/BE 참조용 메타. 0이면 카탈로그 무관(prefab만 사용).
+    /// WallSide — WallDecoSpec 전용. 어느 벽에 붙는지 명시. 그 외 spec list는 None 유지.
+    /// AnchorTag — BookshelfDeco 책장 섹션별 anchoring용 (옵션, follow-up).
     /// </summary>
     [Serializable]
     public sealed class RoomThemeDecoSpec
     {
+        [SerializeField] private long assetId;
         [SerializeField] private GameObject prefab;
+        [SerializeField] private WallSide wallSide = WallSide.None;
         [SerializeField] private Vector3 localPosition;
         [SerializeField] private Vector3 localRotation;
         [SerializeField] private Vector3 localScale = Vector3.one;
         [SerializeField] private string anchorTag;
 
+        public long AssetId => assetId;
         public GameObject Prefab => prefab;
+        public WallSide WallSide => wallSide;
         public Vector3 LocalPosition => localPosition;
         public Vector3 LocalRotation => localRotation;
         public Vector3 LocalScale => localScale;

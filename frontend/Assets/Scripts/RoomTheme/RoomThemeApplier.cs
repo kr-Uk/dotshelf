@@ -153,7 +153,7 @@ namespace Dotshelf.Scripts.RoomTheme
             int spawned = 0;
             spawned += SpawnDecoSpecs(theme.BookshelfDecoSpecs, root);
             spawned += SpawnDecoSpecs(theme.FloorDecoSpecs, root);
-            spawned += SpawnDecoSpecs(theme.WallDecoSpecs, root);
+            spawned += SpawnWallDecoSpecs(theme.WallDecoSpecs, root);
 
             Debug.Log($"[RoomThemeApplier] Theme deco spawn — total {spawned}/{specCount} (bookshelf={theme.BookshelfDecoSpecs?.Count ?? 0}, floor={theme.FloorDecoSpecs?.Count ?? 0}, wall={theme.WallDecoSpecs?.Count ?? 0}).");
         }
@@ -191,16 +191,59 @@ namespace Dotshelf.Scripts.RoomTheme
             int spawned = 0;
             for (int i = 0; i < specs.Count; i++)
             {
-                var spec = specs[i];
-                if (spec == null || spec.Prefab == null) continue;
-                var go = Instantiate(spec.Prefab, parent);
-                go.transform.localPosition = spec.LocalPosition;
-                go.transform.localEulerAngles = spec.LocalRotation;
-                go.transform.localScale = spec.LocalScale;
-                spawnedThemeDecos.Add(go);
-                spawned++;
+                spawned += SpawnSingleSpec(specs[i], parent);
             }
             return spawned;
+        }
+
+        // wall deco 는 spec.WallSide 가 명시한 wall transform 자식으로 spawn — local 좌표계가
+        // 그 벽 기준이 되어 spec authoring 시 '왼쪽 벽 가운데 (0, 1.5, 0)' 같은 위치 표기 가능.
+        // wallSide==None 또는 매칭 wall 못 찾으면 fallback parent (themeDecoRoot) 자식으로 spawn.
+        private int SpawnWallDecoSpecs(IReadOnlyList<RoomThemeDecoSpec> specs, Transform fallbackParent)
+        {
+            if (specs == null) return 0;
+            int spawned = 0;
+            for (int i = 0; i < specs.Count; i++)
+            {
+                var spec = specs[i];
+                if (spec == null || spec.Prefab == null) continue;
+                var wallParent = ResolveWallTransform(spec.WallSide) ?? fallbackParent;
+                spawned += SpawnSingleSpec(spec, wallParent);
+            }
+            return spawned;
+        }
+
+        private int SpawnSingleSpec(RoomThemeDecoSpec spec, Transform parent)
+        {
+            if (spec == null || spec.Prefab == null) return 0;
+            var go = Instantiate(spec.Prefab, parent);
+            go.transform.localPosition = spec.LocalPosition;
+            go.transform.localEulerAngles = spec.LocalRotation;
+            go.transform.localScale = spec.LocalScale;
+            spawnedThemeDecos.Add(go);
+            return 1;
+        }
+
+        // WallSide → 룸의 wall GameObject transform. RoomGameObjectPatterns.Wall과 1:1 매핑.
+        // roomRoot 미설정이거나 매칭 wall GameObject 없으면 null. 호출부는 fallback 처리.
+        private Transform ResolveWallTransform(WallSide side)
+        {
+            if (side == WallSide.None || roomRoot == null) return null;
+            string wallName;
+            switch (side)
+            {
+                case WallSide.Left:  wallName = "LeftWall";  break;
+                case WallSide.Right: wallName = "RightWall"; break;
+                case WallSide.Back:  wallName = "BackWall";  break;
+                case WallSide.Front: wallName = "FrontWall"; break;
+                default: return null;
+            }
+            var transforms = roomRoot.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                if (transforms[i].gameObject.name == wallName) return transforms[i];
+            }
+            return null;
         }
 
         private void ApplyLighting(RoomThemeAsset theme)
