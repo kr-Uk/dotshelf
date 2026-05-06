@@ -165,6 +165,9 @@ namespace BookshelfPorting.Runtime
         public int DisplayBookshelfIndex => IsBookshelfSwitching && pendingBookshelfIndex >= 0 ? pendingBookshelfIndex : activeBookshelfIndex;
         public string DisplayBookshelfName => GetBookshelfName(DisplayBookshelfIndex);
         public int ActiveBookshelfBookCount => CountBooks(bookshelfSections);
+        public int ActiveBookshelfSectionCount => bookshelfSections.Count;
+        public int ActiveBookshelfOccupiedSectionCount => CountOccupiedSections(bookshelfSections);
+        public int ActiveBookshelfEmptySectionCount => Mathf.Max(0, ActiveBookshelfSectionCount - ActiveBookshelfOccupiedSectionCount);
         public BookshelfThemeStyle ActiveBookshelfDesignStyle => GetBookshelfDesignStyle(DisplayBookshelfIndex);
         public VisibilityScope ActiveBookshelfVisibility => GetBookshelfVisibility(DisplayBookshelfIndex);
         public IReadOnlyList<BookCatalogItem> BookCatalogItems
@@ -1962,6 +1965,27 @@ namespace BookshelfPorting.Runtime
             return true;
         }
 
+        public bool ResetAllBookshelfDesignStyles()
+        {
+            if (IsBookshelfSwitching ||
+                booksRoot == null ||
+                bookshelfSections.Count == 0)
+            {
+                return false;
+            }
+
+            if (bookshelfDesignStyles.Count == 0)
+            {
+                return true;
+            }
+
+            SaveActiveBookshelfLayoutSnapshot();
+            bookshelfDesignStyles.Clear();
+            RebuildActiveBookshelfVariant(GetWrappedBookshelfIndex(activeBookshelfIndex));
+            BookshelfSwitchStateChanged?.Invoke();
+            return true;
+        }
+
         public VisibilityScope GetBookshelfVisibility(int index)
         {
             var wrapped = GetWrappedBookshelfIndex(index);
@@ -3558,6 +3582,35 @@ namespace BookshelfPorting.Runtime
                     if (section.books[j] != null)
                     {
                         count++;
+                    }
+                }
+            }
+
+            return count;
+        }
+
+        private static int CountOccupiedSections(List<ShelfSection> sections)
+        {
+            if (sections == null)
+            {
+                return 0;
+            }
+
+            var count = 0;
+            for (var i = 0; i < sections.Count; i++)
+            {
+                var section = sections[i];
+                if (section == null)
+                {
+                    continue;
+                }
+
+                for (var j = 0; j < section.books.Count; j++)
+                {
+                    if (section.books[j] != null)
+                    {
+                        count++;
+                        break;
                     }
                 }
             }

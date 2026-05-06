@@ -12,7 +12,7 @@ namespace BookshelfPorting.Runtime
     {
         private const int DragVelocitySampleLimit = 5;
         private const float DragPreviewPitchDegrees = 15f;
-        private const float DefaultBookHoverHintDelaySeconds = 0.7f;
+        private const float DefaultBookHoverHintDelaySeconds = 0.2f;
 
         private enum InvalidDropBehavior
         {
@@ -1214,6 +1214,9 @@ namespace BookshelfPorting.Runtime
                                   out targetLocalPosition,
                                   out targetLocalRotation,
                                   out targetLocalScale);
+            var didPlacementChange = isValidDrop &&
+                                     (returnSection != destination ||
+                                      returnIndex != destination.books.IndexOf(movedBook));
 
             if (ghostPreview != null)
             {
@@ -1241,7 +1244,7 @@ namespace BookshelfPorting.Runtime
                 }
 
                 state.LayoutSectionExcept(destination, this, true, movedBook);
-                StartCoroutine(AnimateValidDrop(movedBook, targetLocalPosition, targetLocalRotation, targetLocalScale));
+                StartCoroutine(AnimateValidDrop(movedBook, targetLocalPosition, targetLocalRotation, targetLocalScale, didPlacementChange));
 
                 return;
             }
@@ -1260,7 +1263,8 @@ namespace BookshelfPorting.Runtime
             BookEntity book,
             Vector3 targetLocalPosition,
             Quaternion targetLocalRotation,
-            Vector3 targetLocalScale)
+            Vector3 targetLocalScale,
+            bool syncPlacement)
         {
             if (book == null)
             {
@@ -1294,6 +1298,10 @@ namespace BookshelfPorting.Runtime
             target.localRotation = targetLocalRotation;
             target.localScale = targetLocalScale;
             ReleaseActiveDraggedBook(book);
+            if (syncPlacement)
+            {
+                experienceManager?.NotifyBookPlacementCommitted(book);
+            }
         }
 
         private void HandleInvalidDrop(BookEntity book, ShelfSection returnSection, int returnIndex)

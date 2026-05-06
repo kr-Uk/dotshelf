@@ -3,9 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using App.Auth;
 using App.Config;
-#if UNITY_EDITOR
 using App.Infrastructure.Api;
-#endif
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
