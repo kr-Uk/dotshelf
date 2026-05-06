@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using App.Infrastructure.Catalogs;
 using BookshelfPorting.Runtime;
 using UnityEngine;
@@ -15,6 +16,11 @@ namespace Dotshelf.Scripts.RoomTheme
         [Tooltip("테마별 색온도/색을 적용할 메인 라이트.")]
         [SerializeField] private Light directionalLight;
 
+        [Header("Theme deco")]
+        [Tooltip("테마 적용 시 spawn된 deco의 부모. 비워두면 Apply 첫 호출 시 자식 'ThemeDecoRoot' 자동 생성. " +
+                 "user-placed deco(RoomEditModeController.placedItemsRoot)와 분리되어 테마 교체 시 안전하게 정리.")]
+        [SerializeField] private Transform themeDecoRoot;
+
         [Header("State")]
         [SerializeField] private RoomThemeAsset currentTheme;
 
@@ -31,6 +37,7 @@ namespace Dotshelf.Scripts.RoomTheme
             currentTheme = theme;
             ApplyMaterials(theme);
             ApplyLighting(theme);
+            ApplyDecoSpecs(theme);
 
             Debug.Log($"[RoomThemeApplier] Applied theme '{theme.DisplayName}' (assetId={theme.AssetId}).");
         }
@@ -116,6 +123,84 @@ namespace Dotshelf.Scripts.RoomTheme
                     Debug.LogWarning($"[RoomThemeApplier] bookshelfStyleIndex={theme.BookshelfStyleIndex}는 BookshelfThemeStyle enum 범위 밖 — 책장 tint 적용 skip.");
                 }
             }
+        }
+
+        // applier 가 spawn한 deco만 명시적으로 추적. childCount 기반 정리는 Destroy 지연 race
+        // 발생 가능 — 같은 프레임에 Apply 가 두 번 들어오면 첫 호출의 destroy 예약된 자식이
+        // 두번째 호출 시점에 여전히 root.childCount 에 남아 있어, 두번째 ClearThemeDecoChildren
+        // 가 새로 spawn된 deco 까지 destroy 예약하는 상황이 생김. 이 리스트는 spawn/clear 모두
+        // 명시 관리해 race 회피.
+        private readonly List<GameObject> spawnedThemeDecos = new List<GameObject>();
+
+        // 테마 자산의 deco spec(bookshelf/floor/wall) 따라 prefab 자동 spawn.
+        // 모든 spec 합산 0개면 spawn은 skip되지만 이전 테마가 남긴 deco는 정리됨.
+        private void ApplyDecoSpecs(RoomThemeAsset theme)
+        {
+            int specCount = (theme.BookshelfDecoSpecs?.Count ?? 0)
+                          + (theme.FloorDecoSpecs?.Count ?? 0)
+                          + (theme.WallDecoSpecs?.Count ?? 0);
+
+            // 이전 테마가 spawn한 deco 정리. spawnedThemeDecos만 destroy — 다른 자식(외부에서
+            // 추가했거나 inspector-wired root에 미리 있던 GameObject)은 건드리지 않음.
+            ClearSpawnedThemeDecos();
+
+            if (specCount == 0)
+            {
+                return;
+            }
+
+            var root = EnsureThemeDecoRoot();
+            int spawned = 0;
+            spawned += SpawnDecoSpecs(theme.BookshelfDecoSpecs, root);
+            spawned += SpawnDecoSpecs(theme.FloorDecoSpecs, root);
+            spawned += SpawnDecoSpecs(theme.WallDecoSpecs, root);
+
+            Debug.Log($"[RoomThemeApplier] Theme deco spawn — total {spawned}/{specCount} (bookshelf={theme.BookshelfDecoSpecs?.Count ?? 0}, floor={theme.FloorDecoSpecs?.Count ?? 0}, wall={theme.WallDecoSpecs?.Count ?? 0}).");
+        }
+
+        // themeDecoRoot 가 미설정이면 자동 생성. 부모는 roomRoot 우선 (theme deco spec 의 local
+        // 좌표계가 룸 좌표 기준이라는 작성자 기대를 만족). roomRoot 도 없으면 applier transform fallback.
+        private Transform EnsureThemeDecoRoot()
+        {
+            if (themeDecoRoot != null) return themeDecoRoot;
+            var parent = roomRoot != null ? roomRoot : transform;
+            var go = new GameObject("ThemeDecoRoot");
+            go.transform.SetParent(parent, false);
+            themeDecoRoot = go.transform;
+            return themeDecoRoot;
+        }
+
+        private void ClearSpawnedThemeDecos()
+        {
+            for (int i = spawnedThemeDecos.Count - 1; i >= 0; i--)
+            {
+                var child = spawnedThemeDecos[i];
+                if (child == null) continue;
+                // Destroy 지연 race 회피 — destroy 예약 즉시 비활성화해서 한 프레임 동안
+                // 이전 deco 가 보이지 않게 + 다음 Apply 가 동일 프레임에 들어와도 영향 없음.
+                child.SetActive(false);
+                if (Application.isPlaying) Destroy(child);
+                else DestroyImmediate(child);
+            }
+            spawnedThemeDecos.Clear();
+        }
+
+        private int SpawnDecoSpecs(IReadOnlyList<RoomThemeDecoSpec> specs, Transform parent)
+        {
+            if (specs == null) return 0;
+            int spawned = 0;
+            for (int i = 0; i < specs.Count; i++)
+            {
+                var spec = specs[i];
+                if (spec == null || spec.Prefab == null) continue;
+                var go = Instantiate(spec.Prefab, parent);
+                go.transform.localPosition = spec.LocalPosition;
+                go.transform.localEulerAngles = spec.LocalRotation;
+                go.transform.localScale = spec.LocalScale;
+                spawnedThemeDecos.Add(go);
+                spawned++;
+            }
+            return spawned;
         }
 
         private void ApplyLighting(RoomThemeAsset theme)

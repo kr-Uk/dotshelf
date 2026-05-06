@@ -1,7 +1,30 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace App.Infrastructure.Catalogs
 {
+    /// <summary>
+    /// 테마 적용 시 RoomThemeApplier가 자동 spawn할 deco 1개.
+    /// prefab을 themeDecoRoot 자식으로 instantiate하고 local 트랜스폼 적용.
+    /// AnchorTag는 BookshelfDeco 책장 섹션별 anchoring용 (옵션, follow-up에서 사용).
+    /// </summary>
+    [Serializable]
+    public sealed class RoomThemeDecoSpec
+    {
+        [SerializeField] private GameObject prefab;
+        [SerializeField] private Vector3 localPosition;
+        [SerializeField] private Vector3 localRotation;
+        [SerializeField] private Vector3 localScale = Vector3.one;
+        [SerializeField] private string anchorTag;
+
+        public GameObject Prefab => prefab;
+        public Vector3 LocalPosition => localPosition;
+        public Vector3 LocalRotation => localRotation;
+        public Vector3 LocalScale => localScale;
+        public string AnchorTag => anchorTag;
+    }
+
     [CreateAssetMenu(menuName = "Dotshelf/Room Theme", fileName = "RoomTheme")]
     public sealed class RoomThemeAsset : ScriptableObject
     {
@@ -45,6 +68,14 @@ namespace App.Infrastructure.Catalogs
         [SerializeField] private Color accentSecondary = Color.white;
         [SerializeField] private Color accentTertiary = Color.white;
 
+        [Header("Theme deco placement (RoomThemeApplier 자동 spawn)")]
+        [Tooltip("책장 섹션 내부 배치 deco. 빈 list면 spawn 안 함.")]
+        [SerializeField] private RoomThemeDecoSpec[] bookshelfDecoSpecs;
+        [Tooltip("바닥 배치 deco. 빈 list면 spawn 안 함.")]
+        [SerializeField] private RoomThemeDecoSpec[] floorDecoSpecs;
+        [Tooltip("벽 배치 deco (창문 포함). 빈 list면 spawn 안 함.")]
+        [SerializeField] private RoomThemeDecoSpec[] wallDecoSpecs;
+
         public long AssetId => assetId;
         public string DisplayName => displayName;
         public string Description => description;
@@ -75,6 +106,10 @@ namespace App.Infrastructure.Catalogs
         public Color AccentPrimary => accentPrimary;
         public Color AccentSecondary => accentSecondary;
         public Color AccentTertiary => accentTertiary;
+
+        public IReadOnlyList<RoomThemeDecoSpec> BookshelfDecoSpecs => bookshelfDecoSpecs;
+        public IReadOnlyList<RoomThemeDecoSpec> FloorDecoSpecs => floorDecoSpecs;
+        public IReadOnlyList<RoomThemeDecoSpec> WallDecoSpecs => wallDecoSpecs;
 
         // legacy alias — DirectionalLight* 이름으로 외부조명을 가리키던 기존 RoomThemeApplier 호환.
         // 새 코드는 ExteriorLight*를 사용할 것.
