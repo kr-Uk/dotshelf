@@ -1258,6 +1258,12 @@ namespace App.Bootstrap
                     // 커스터마이징 불가 테마 자동 해제 → 서버에서 6 카테고리 ID 모두 null로 리셋됨.
                     // GET /spaces/me 재호출해 catalog default visual로 동기화 (책장 skin / Layout
                     // placement 재 spawn은 follow-up).
+                    //
+                    // race window: ReloadRoomState 응답 도착 전까지 lastServerSpace는 옛날(reset 전)
+                    // 값. 그 사이 사용자가 카테고리 entry 클릭하면 IsCategoryEntryCurrent가 stale
+                    // highlight 표시 → 즉시 invalidate해서 응답 올 때까지 lastAppliedEntries fallback
+                    // 동작하도록.
+                    lastServerSpace = null;
                     Debug.Log("[RoomEditModeController] 커스터마이징 불가 테마 자동 해제 → 룸 visual reload.");
                     ReloadRoomState();
                 }
@@ -1779,6 +1785,13 @@ namespace App.Bootstrap
             }
 
             IsEditModeActive = true;
+
+            // Edit 모드 진입 시 서버 Space 상태 비동기 동기화 — IsCategoryEntryCurrent /
+            // OptimisticallyUpdateServerSpace의 single source of truth(`lastServerSpace`)
+            // 가 null인 채로 첫 PATCH 받으면 optimistic 갱신이 silent skip → single
+            // source of truth 의도 무력화. 진입 시점에 한 번 GET /spaces/me 호출해
+            // 캐시 채움. 응답 도착 전까지 lastAppliedEntries fallback이 동작.
+            ReloadRoomState();
 
             // Order matters: canonical-scale existing decorations FIRST so
             // their renderer bounds reflect the final size, THEN fit blocker
