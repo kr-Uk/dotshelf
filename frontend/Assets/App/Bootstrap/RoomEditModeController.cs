@@ -3496,7 +3496,13 @@ namespace App.Bootstrap
                 }
 
                 float denom = Vector3.Dot(ray.direction, planeNormal);
-                if (Mathf.Abs(denom) < 0.0001f) continue; // ray parallel to plane
+                // denom >= 0 인 plane 은 ray 가 wall 의 inner face 를 사용자가 보는 시점
+                // 이 아님 (ray 가 wall outer 방향이 아니라 wall inner 방향에서 나가는 시점).
+                // 즉 카메라에서 보이지 않는 wall 면. 자연스러운 wall 전환을 위해 사용자가
+                // 보는 wall (denom < 0) 만 후보. 이로써 RightWall 에 있는 deco 를 좌측
+                // 마우스 이동 시 LeftWall 로 자연스럽게 옮겨감 — 같은 RightWall plane 의
+                // 반대편 hit 이 잘못 우세하지 않음.
+                if (denom >= -0.0001f) continue;
                 float distance = Vector3.Dot(planePoint - ray.origin, planeNormal) / denom;
                 if (distance < 0f) continue; // 뒤쪽
 
