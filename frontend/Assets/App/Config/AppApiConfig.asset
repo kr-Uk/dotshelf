@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: aabe67210a5d4b02b30355a29261af59, type: 3}
   m_Name: AppApiConfig
   m_EditorClassIdentifier:
-  apiMode: 1
+  apiMode: 0
   devBaseUrl: https://dev-api.dotshelf.digital
   prodBaseUrl: https://api.dotshelf.digital
   healthCheckPath: /health
