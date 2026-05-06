@@ -3496,13 +3496,11 @@ namespace App.Bootstrap
                 }
 
                 float denom = Vector3.Dot(ray.direction, planeNormal);
-                // 사용자가 wall 의 inner face 를 보는 시점 = ray.direction · planeNormal > 0.
-                // camera 는 룸 외부 (예: BackWall 의 +Z 쪽), ray.direction 은 룸 안쪽 (-Z).
-                // BackWall planeNormal = -Z. dot = (-Z)·(-Z) = +. 즉 양수일 때 사용자가
-                // 보고 있는 face. 음수면 ray 가 wall 의 보이지 않는 뒷면을 향하므로 reject.
-                // 룸 외부에 있는 카메라 가정 — Front/Back/Left/Right 4 wall 중 카메라
-                // 시점에서 보이는 3 wall 만 hit 후보가 됨 (FrontWall 보통 카메라 뒤편).
-                if (denom <= 0.0001f) continue;
+                // dotshelf camera 는 룸 앞쪽 (z=-2.45) 위치, ray 가 +Z 방향으로 룸 안쪽 향함.
+                // BackWall planeNormal = -Z. ray.direction · normal = (+) · (-) = -. 즉 사용자가
+                // 보는 wall inner face 시점은 denom < 0. (camera 가 룸 안쪽으로 ray 발사하면
+                // wall 의 inner face normal 방향과 반대.) 양수면 wall 뒷면 시점 reject.
+                if (denom >= -0.0001f) continue;
                 float distance = Vector3.Dot(planePoint - ray.origin, planeNormal) / denom;
                 if (distance < 0f) continue; // 뒤쪽
 
@@ -3536,9 +3534,16 @@ namespace App.Bootstrap
             {
                 case "LeftWall":  return WallSide.Left;
                 case "RightWall": return WallSide.Right;
-                case "BackWall":  return WallSide.Back;
                 case "FrontWall": return WallSide.Front;
-                default:          return WallSide.None;
+                // BackWall 자체는 BookshelfGenerator.BuildBackWallAlcove 가 alcove 때문에
+                // 통째 wall 안 만들고 strip 3개 (LeftStrip/RightStrip/TopStrip) 로 분할 생성.
+                // 모든 strip 의 z 좌표는 동일 (BackWallZ const) 이라 plane 으로 동치 — 어떤
+                // strip 이 매칭돼도 같은 BackWall 로 취급.
+                case "BackWall":
+                case "BackWall_LeftStrip":
+                case "BackWall_RightStrip":
+                case "BackWall_TopStrip":  return WallSide.Back;
+                default:                   return WallSide.None;
             }
         }
 
