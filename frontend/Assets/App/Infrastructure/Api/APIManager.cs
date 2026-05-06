@@ -47,17 +47,19 @@ namespace App.Infrastructure.Api
             Instance = this;
             DontDestroyOnLoad(gameObject);
 
-            // 빌드 모드 기준 baseUrl 강제 정렬 — prefab 의 SerializeField 값(예: RuntimeSystems.prefab 의 prod URL)
-            // 이 ApiEndpointDefaults.DefaultBaseUrl 와 다르면 build mode 정의에 맞춰 덮어씀.
-            // 이전 증상: editor/Dev build 에서 AuthApiClient 는 dev-api 로 로그인해 dev 토큰을 받지만,
-            // APIManager 는 prefab 의 prod URL 을 그대로 사용 → dev 토큰을 prod 서버로 PATCH → 401 (A003).
-            // BookshelfSceneInstaller.Configure 가 정렬해주는 경로도 있지만 씬/race 에 따라 시점이 어긋날 수
-            // 있어 Awake 단계에서 한 번 더 가드 — 모든 client 가 동일 baseUrl 을 보장 받도록.
-            if (!string.Equals(baseUrl, ApiEndpointDefaults.DefaultBaseUrl, StringComparison.Ordinal))
+            // dev/prod 혼재만 교정 — prefab 의 SerializeField 가 빌드 모드와 정반대인 known endpoint 일 때만 덮어씀.
+            // 의도: editor/Dev build 인데 prefab 에 ProdBaseUrl 이 박혀 있으면 (이번 버그 케이스) → DevBaseUrl 로 교정.
+            //       Release build 인데 prefab 에 DevBaseUrl 이 박혀 있으면 → ProdBaseUrl 로 교정.
+            // 보존: localhost / staging / 개인 터널 / 임시 QA 서버 등 known endpoint 외 값은 그대로 둬서 수동 테스트 경로 유지.
+            // (MR 111 review — skh1205 #2: 모든 mismatch 강제 덮어쓰면 로컬/스테이징 테스트 깨짐)
+            string oppositeBaseUrl = string.Equals(ApiEndpointDefaults.DefaultBaseUrl, ApiEndpointDefaults.DevBaseUrl, StringComparison.Ordinal)
+                ? ApiEndpointDefaults.ProdBaseUrl
+                : ApiEndpointDefaults.DevBaseUrl;
+            if (string.Equals(baseUrl, oppositeBaseUrl, StringComparison.Ordinal))
             {
                 Debug.LogWarning(
-                    $"[APIManager] Awake: prefab baseUrl='{baseUrl}' != build default='{ApiEndpointDefaults.DefaultBaseUrl}'. " +
-                    "build mode 기준으로 강제 정렬 (dev/prod 혼재 가드).");
+                    $"[APIManager] Awake: prefab baseUrl='{baseUrl}' (build mode 와 정반대 endpoint). " +
+                    $"build default='{ApiEndpointDefaults.DefaultBaseUrl}' 로 강제 정렬 (dev/prod 혼재 가드).");
                 baseUrl = ApiEndpointDefaults.DefaultBaseUrl;
             }
 
@@ -225,17 +227,16 @@ namespace App.Infrastructure.Api
                     var error = CreateError(request, request.error);
                     var message = string.IsNullOrWhiteSpace(error.Message) ? error.Error : error.Message;
                     Debug.LogError($"API {request.method} {request.url} failed: {error.StatusCode} {message}");
-                    // 401 진단 — token / baseUrl mismatch 디버깅용. 전체 토큰은 로그에 절대 안 남김 (8자 prefix 만).
+                    // 401 진단 — baseUrl mismatch 디버깅용. 토큰 자체 (prefix/length 포함) 는 절대 노출 안 함:
+                    // Unity 로그는 device logcat / CI batchmode / crash report 등으로 퍼져 외부에 누출 가능
+                    // (AuthApiClient.Redact 와 동일 정책). tokenPresent / baseUrl / errorCode 만으로 충분.
+                    // (MR 111 review — skh1205 #1)
                     if (request.responseCode == 401)
                     {
                         bool hasToken = !string.IsNullOrWhiteSpace(accessToken);
-                        string tokenPrefix = hasToken && accessToken.Length >= 8
-                            ? accessToken.Substring(0, 8) + "...(len=" + accessToken.Length + ")"
-                            : (hasToken ? "(short)" : "(none)");
                         Debug.LogWarning(
                             $"[APIManager] 401 진단: baseUrl='{baseUrl}' method='{request.method}' " +
-                            $"url='{request.url}' tokenPresent={hasToken} tokenPrefix={tokenPrefix} " +
-                            $"errorCode={error.Code}.");
+                            $"url='{request.url}' tokenPresent={hasToken} errorCode={error.Code}.");
                     }
                     onError?.Invoke(error);
                     yield break;
