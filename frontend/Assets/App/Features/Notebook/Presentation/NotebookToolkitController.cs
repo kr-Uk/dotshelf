@@ -6752,10 +6752,6 @@ namespace App.Features.Notebook.Presentation
             return searchIconTexture;
         }
 
-
-
-
-
         private static void PaintIconCircle(Texture2D texture, int centerX, int centerY, int radius, Color32 color)
         {
             var inner = (radius - 1) * (radius - 1);
