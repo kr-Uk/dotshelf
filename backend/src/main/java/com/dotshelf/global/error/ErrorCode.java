@@ -55,6 +55,16 @@ public enum ErrorCode {
     ASSET_ALREADY_OWNED(HttpStatus.CONFLICT, "AS002", "이미 보유한 에셋입니다."),
     INSUFFICIENT_PAGES(HttpStatus.UNPROCESSABLE_ENTITY, "AS003", "페이지 잔액이 부족합니다."),
 
+    // Payment
+    PAYMENT_ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "P001", "결제 주문을 찾을 수 없습니다."),
+    PAYMENT_AMOUNT_MISMATCH(HttpStatus.BAD_REQUEST, "P002", "결제 금액이 일치하지 않습니다."),
+    PAYMENT_ORDER_INVALID_STATE(HttpStatus.CONFLICT, "P003", "처리할 수 없는 결제 주문 상태입니다."),
+    PAYMENT_PROVIDER_UNAVAILABLE(HttpStatus.BAD_GATEWAY, "P004", "결제 서비스를 사용할 수 없습니다."),
+    PAYMENT_APPROVAL_FAILED(HttpStatus.BAD_GATEWAY, "P005", "결제 승인에 실패했습니다."),
+    PAYMENT_DIRECT_CHARGE_DISABLED(HttpStatus.BAD_REQUEST, "P006", "직접 페이지 충전은 지원하지 않습니다."),
+    PAYMENT_CONFIGURATION_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, "P007", "결제 설정이 누락되었습니다."),
+    PAYMENT_AUTHENTICATION_FAILED(HttpStatus.BAD_REQUEST, "P008", "결제 인증에 실패했습니다."),
+
     // Guestbook
     GUESTBOOK_NOT_FOUND(HttpStatus.NOT_FOUND, "G001", "방명록을 찾을 수 없습니다."),
     GUESTBOOK_REPLY_NOT_FOUND(HttpStatus.NOT_FOUND, "G002", "방명록 답장을 찾을 수 없습니다."),

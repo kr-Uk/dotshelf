@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "banners": [
+    {
+      "id": "v0.2-release",
+      "type": "update",
+      "title": "v0.2 출시 — 새 책장 테마 3종 추가",
+      "linkUrl": "https://dotshelf.digital/changelog/0.2.0"
+    },
+    {
+      "id": "spring-2026",
+      "type": "event",
+      "title": "봄맞이 책장 꾸미기 챌린지 — 한정 테마 지급",
+      "linkUrl": "https://dotshelf.digital/events/spring-2026",
+      "displayFrom": "2026-04-15T00:00:00+09:00",
+      "displayTo": "2026-06-30T23:59:59+09:00"
+    },
+    {
+      "id": "expired-sample",
+      "type": "event",
+      "title": "[필터되어야 함] 작년 이벤트",
+      "linkUrl": "https://dotshelf.digital/events/old",
+      "displayTo": "2025-01-01T00:00:00+09:00"
+    }
+  ]
+}

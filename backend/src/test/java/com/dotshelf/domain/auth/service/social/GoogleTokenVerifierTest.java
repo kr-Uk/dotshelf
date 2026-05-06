@@ -144,7 +144,8 @@ class GoogleTokenVerifierTest {
                         "http://127.0.0.1:1/keys",
                         CLIENT_SECRET,
                         tokenUri,
-                        desktopClientId
+                        desktopClientId,
+                        null  // desktopClientSecret — PKCE 단독 테스트
                 ),
                 null,
                 null

@@ -1216,12 +1216,19 @@ namespace App.Bootstrap
             isProfileSaveInFlight = true;
             SetMessage(profileEditFormMessageLabel, "프로필을 저장하는 중입니다...", MutedTextColor);
 
+            string fullUrl = App.Domain.ApiEndpointDefaults.DefaultBaseUrl.TrimEnd('/') + "/v1/users/me";
+            Debug.Log(
+                $"[Settings] PATCH /v1/users/me 요청 → {fullUrl} payload={{nickname='{request.Nickname}',hasIntro={request.Introduction != null},hasProfileImg={request.ProfileImageUrl != null}}}");
+
             client.UpdateMe(
                 request,
                 onSuccess: response =>
                 {
                     isProfileSaveInFlight = false;
                     cachedProfile = response;
+                    Debug.Log(
+                        $"[Settings] PATCH /v1/users/me 응답 → STATUS=2xx (onSuccess) " +
+                        $"BODY={{id={response?.Id},nickname='{response?.Nickname}',onboarded={response?.Onboarded}}}");
                     SetMessage(profileEditFormMessageLabel, "프로필이 저장되었습니다.", SuccessColor);
                     ShowProfileEdit();
                 },
@@ -1229,7 +1236,9 @@ namespace App.Bootstrap
                 {
                     isProfileSaveInFlight = false;
                     SetMessage(profileEditFormMessageLabel, "프로필 저장에 실패했습니다. 다시 시도해주세요.", ErrorColor);
-                    Debug.LogWarning($"[Settings] UpdateMe failed: code={error?.Code} message={error?.Message}");
+                    Debug.LogWarning(
+                        $"[Settings] PATCH /v1/users/me 실패 → STATUS={(error != null ? error.StatusCode.ToString() : "?")} " +
+                        $"code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)}");
                 });
         }
 
@@ -1482,13 +1491,18 @@ namespace App.Bootstrap
             // failure, refresh fail, second 401) takes the normal error
             // path so the user does not loop indefinitely.
             var hasRetried = false;
+            string getMeUrl = App.Domain.ApiEndpointDefaults.DefaultBaseUrl.TrimEnd('/') + "/v1/users/me";
             void DoLoadCurrentProfile(NotebookApiClient apiClient)
             {
+                Debug.Log($"[Settings] GET /v1/users/me 요청 → {getMeUrl}");
                 apiClient.GetMe(
                     onSuccess: profile =>
                     {
                         isProfileLoadInFlight = false;
                         cachedProfile = profile;
+                        Debug.Log(
+                            $"[Settings] GET /v1/users/me 응답 → STATUS=2xx (onSuccess) " +
+                            $"BODY={{id={profile?.Id},nickname='{profile?.Nickname}',onboarded={profile?.Onboarded}}}");
                         ApplyProfileToUi(profile);
                     },
                     onError: error =>
@@ -1511,7 +1525,9 @@ namespace App.Bootstrap
                         }
                         isProfileLoadInFlight = false;
                         ShowNoticeToast("프로필 정보를 불러오지 못했습니다.");
-                        Debug.LogWarning($"[Settings] GetMe failed: code={error?.Code} message={error?.Message}");
+                        Debug.LogWarning(
+                            $"[Settings] GET /v1/users/me 실패 → STATUS={(error != null ? error.StatusCode.ToString() : "?")} " +
+                            $"code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)}");
                     });
             }
             DoLoadCurrentProfile(loadClient);
@@ -1758,16 +1774,21 @@ namespace App.Bootstrap
             }
         }
 
+        // 부트스트랩 미경유 진입(예: 단독 씬 테스트, 씬 전환 race) 에서도 Settings BE 호출이
+        // skip 되지 않도록 ApiManagerProvider fallback 체인을 통해 확보. 종전엔
+        // APIManager.Instance==null 이면 LogWarning 만 찍고 return null 이라 PATCH/GET 자체가
+        // 안 나갔던 문제를 해소한다 (OnboardingScreenController 와 동일 정책).
         private NotebookApiClient EnsureSettingsApiClient()
         {
-            if (APIManager.Instance == null)
+            APIManager api = ApiManagerProvider.EnsureInstance();
+            if (api == null)
             {
-                Debug.LogWarning("[Settings] APIManager.Instance is null — BE call skipped.");
+                Debug.LogWarning("[Settings] APIManager 확보 실패 — fallback 생성도 실패.");
                 return null;
             }
             if (settingsApiClient == null)
             {
-                settingsApiClient = new NotebookApiClient(APIManager.Instance);
+                settingsApiClient = new NotebookApiClient(api);
             }
             return settingsApiClient;
         }
