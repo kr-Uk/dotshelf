@@ -231,7 +231,6 @@ namespace App.Features.Notebook.Presentation
         private static readonly Color Gold = Hex(0xF4C95D);
         private static Texture2D closeIconTexture;
         private static Texture2D searchIconTexture;
-        private static Texture2D pointerCursorTexture;
         private static readonly string[] SuggestedSearches = { "소설", "에세이", "심리", "베스트셀러", "SF", "자기계발", "인문" };
 
         private static readonly string[] HeaderTabs = { "책 시장", "다른 공간", "꾸미기 시장" };
@@ -1060,7 +1059,6 @@ namespace App.Features.Notebook.Presentation
             wallet.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.72f);
             Round(wallet, 20);
             Border(wallet, Line);
-            UsePointerCursor(wallet);
             wallet.RegisterCallback<ClickEvent>(evt =>
             {
                 evt.StopPropagation();
@@ -2221,7 +2219,6 @@ namespace App.Features.Notebook.Presentation
             card.style.overflow = Overflow.Hidden;
             Round(card, 18);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.10f));
-            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => ShowToast($"공간 상세로 이동 · {space.Title}"));
 
             var thumbnail = new VisualElement { name = "space-thumbnail" };
@@ -2496,7 +2493,6 @@ namespace App.Features.Notebook.Presentation
             card.style.overflow = Overflow.Hidden;
             Round(card, 18);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.10f));
-            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => ShowToast($"오브젝트 상세 화면 · {item.Name}"));
 
             var preview = new VisualElement { name = "object-preview" };
@@ -5086,7 +5082,6 @@ namespace App.Features.Notebook.Presentation
             card.style.backgroundColor = index % 2 == 0 ? Rgba(0xFF, 0xFF, 0xFF, 0.94f) : Rgba(0xF4, 0xFB, 0xFF, 0.92f);
             Round(card, 14);
             Border(card, index == 0 ? Rgba(0x58, 0xB9, 0xFF, 0.36f) : Rgba(0x0E, 0x1D, 0x2A, 0.08f));
-            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => SelectBook(book));
 
             var coverStage = new VisualElement { name = "search-result-cover-stage" };
@@ -5235,7 +5230,6 @@ namespace App.Features.Notebook.Presentation
             card.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.72f);
             Round(card, 14);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.08f));
-            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => SelectBook(book));
 
             var cover = CreateBookCover(book, 138, 200, true);
@@ -5307,7 +5301,6 @@ namespace App.Features.Notebook.Presentation
             card.style.backgroundColor = rank <= 3 ? Rgba(0xFF, 0xF7, 0xE8, 0.94f) : Rgba(0xFF, 0xFF, 0xFF, 0.84f);
             Round(card, 14);
             Border(card, rank <= 3 ? Rgba(0x58, 0xB9, 0xFF, 0.32f) : Rgba(0x0E, 0x1D, 0x2A, 0.10f));
-            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => SelectBook(book));
 
             var rankLabel = Text(rank.ToString("00"), rank <= 3 ? 22 : 18, rank <= 3 ? AccentDeep : Ink, FontStyle.Bold);
@@ -6496,19 +6489,6 @@ namespace App.Features.Notebook.Presentation
             };
         }
 
-        private static void UsePointerCursor(VisualElement element)
-        {
-            if (element == null)
-            {
-                return;
-            }
-
-            element.style.cursor = new StyleCursor(new UnityEngine.UIElements.Cursor
-            {
-                texture = GetPointerCursorTexture(),
-                hotspot = new Vector2(9, 1)
-            });
-        }
 
         private Button TextButton(string text, bool primary)
         {
@@ -6536,7 +6516,6 @@ namespace App.Features.Notebook.Presentation
             button.style.borderBottomWidth = 0;
             button.style.borderLeftWidth = 0;
             Round(button, 10);
-            UsePointerCursor(button);
             return button;
         }
 
@@ -6771,108 +6750,6 @@ namespace App.Features.Notebook.Presentation
             DrawIconLine(searchIconTexture, 20, 20, 27, 27, color);
             searchIconTexture.Apply(false, true);
             return searchIconTexture;
-        }
-
-        private static Texture2D GetPointerCursorTexture()
-        {
-            if (pointerCursorTexture != null)
-            {
-                return pointerCursorTexture;
-            }
-
-            const int size = 24;
-            pointerCursorTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave,
-                filterMode = FilterMode.Point,
-                wrapMode = TextureWrapMode.Clamp
-            };
-
-            var pixels = new Color32[size * size];
-            var clear = new Color32(0, 0, 0, 0);
-            for (var i = 0; i < pixels.Length; i++)
-            {
-                pixels[i] = clear;
-            }
-
-            pointerCursorTexture.SetPixels32(pixels);
-
-            var fill = new bool[size, size];
-            FillCursorRect(fill, 8, 1, 3, 12);
-            FillCursorRect(fill, 11, 7, 3, 9);
-            FillCursorRect(fill, 14, 8, 3, 8);
-            FillCursorRect(fill, 17, 9, 3, 7);
-            FillCursorRect(fill, 4, 11, 16, 8);
-            FillCursorRect(fill, 5, 18, 13, 2);
-            FillCursorRect(fill, 7, 20, 9, 2);
-
-            var outline = new Color32(14, 29, 42, 255);
-            var white = new Color32(255, 255, 255, 255);
-            for (var y = 0; y < size; y++)
-            {
-                for (var x = 0; x < size; x++)
-                {
-                    if (fill[x, y])
-                    {
-                        PaintCursorPixel(pointerCursorTexture, x, y, white);
-                    }
-                    else if (HasCursorNeighbor(fill, x, y))
-                    {
-                        PaintCursorPixel(pointerCursorTexture, x, y, outline);
-                    }
-                }
-            }
-
-            // Runtime UI Toolkit cursor textures must remain CPU-readable.
-            pointerCursorTexture.Apply(false, false);
-            return pointerCursorTexture;
-        }
-
-        private static void FillCursorRect(bool[,] fill, int left, int top, int width, int height)
-        {
-            var maxX = fill.GetLength(0);
-            var maxY = fill.GetLength(1);
-            for (var y = top; y < top + height; y++)
-            {
-                for (var x = left; x < left + width; x++)
-                {
-                    if (x >= 0 && y >= 0 && x < maxX && y < maxY)
-                    {
-                        fill[x, y] = true;
-                    }
-                }
-            }
-        }
-
-        private static bool HasCursorNeighbor(bool[,] fill, int x, int y)
-        {
-            for (var yy = y - 1; yy <= y + 1; yy++)
-            {
-                for (var xx = x - 1; xx <= x + 1; xx++)
-                {
-                    if (xx == x && yy == y)
-                    {
-                        continue;
-                    }
-
-                    if (xx >= 0 && yy >= 0 && xx < fill.GetLength(0) && yy < fill.GetLength(1) && fill[xx, yy])
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        private static void PaintCursorPixel(Texture2D texture, int x, int topY, Color32 color)
-        {
-            if (x < 0 || topY < 0 || x >= texture.width || topY >= texture.height)
-            {
-                return;
-            }
-
-            texture.SetPixel(x, texture.height - 1 - topY, color);
         }
 
         private static void PaintIconCircle(Texture2D texture, int centerX, int centerY, int radius, Color32 color)
