@@ -16,7 +16,7 @@ namespace App.Config
     {
         [Header("Environment")]
         [FormerlySerializedAs("useMockApi")]
-        [Tooltip("RealApi: production/dev server, LocalMock: local mock/no-op repositories without HTTP")]
+        [Tooltip("RealApi: production/dev server, LocalMock: in-memory mock repositories without HTTP")]
         [SerializeField] private AppApiMode apiMode = AppApiMode.RealApi;
         [SerializeField] private string devBaseUrl = ApiEndpointDefaults.DevBaseUrl;
         [SerializeField] private string prodBaseUrl = ApiEndpointDefaults.ProdBaseUrl;

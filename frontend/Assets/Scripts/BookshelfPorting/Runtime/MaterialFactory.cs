@@ -204,7 +204,9 @@ namespace BookshelfPorting.Runtime
 
         private static Material CreateLitMaterial(string name, Texture2D baseMap, Texture2D normalMap, Color color, float smoothness, bool transparent)
         {
-            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            var shader = Shader.Find("Universal Render Pipeline/Lit") ??
+                         Shader.Find("Standard") ??
+                         Shader.Find("Diffuse");
             var material = new Material(shader) { name = name };
             material.SetColor("_BaseColor", color);
             material.color = color;

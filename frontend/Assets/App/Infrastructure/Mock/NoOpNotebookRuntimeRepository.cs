@@ -7,20 +7,25 @@ namespace App.Infrastructure.Mock
 {
     public sealed class NoOpNotebookRuntimeRepository : INotebookRuntimeRepository
     {
-        private const string DisabledCode = "NOTEBOOK_API_DISABLED";
-        private const string DisabledMessage = "Notebook runtime API repository is disabled.";
         // Demo seed for LocalMock: user initially follows 201/204 and liked spaces 3001/3003.
         private static readonly long[] DemoSeedFollowedUserIds = { 201L, 204L };
         private static readonly long[] DemoSeedLikedSpaceIds = { 3001L, 3003L };
         private readonly HashSet<long> followedUserIds = new HashSet<long>(DemoSeedFollowedUserIds);
         private readonly HashSet<long> likedSpaceIds = new HashSet<long>(DemoSeedLikedSpaceIds);
+        private readonly HashSet<long> wishedAssetIds = new HashSet<long> { 7002L };
+        private readonly HashSet<long> ownedAssetIds = new HashSet<long> { 7001L };
         private readonly List<NotebookSpaceItem> spaces;
+        private readonly List<NotebookAssetItem> assets;
+        private readonly Dictionary<long, List<NotebookReviewItem>> reviewsByBook = new Dictionary<long, List<NotebookReviewItem>>();
         private readonly Dictionary<long, List<NotebookUserItem>> followersByUser = new Dictionary<long, List<NotebookUserItem>>();
         private readonly Dictionary<long, List<NotebookUserItem>> followingsByUser = new Dictionary<long, List<NotebookUserItem>>();
+        private int walletBalancePages = 4820;
+        private long nextReviewId = 50000L;
 
         public NoOpNotebookRuntimeRepository()
         {
             spaces = BuildSpaces();
+            assets = BuildAssets();
             foreach (var space in spaces)
             {
                 followersByUser[space.OwnerUserId] = BuildUsers(space.OwnerUserId, "팔로워", 18, 4);
@@ -30,37 +35,100 @@ namespace App.Infrastructure.Mock
 
         public void LoadWallet(Action<NotebookWalletResult> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(CreateDisabledError());
+            onSuccess?.Invoke(new NotebookWalletResult { BalancePages = walletBalancePages });
         }
 
         public void ChargePages(int pagesAmount, Action<NotebookWalletResult> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(CreateDisabledError());
+            walletBalancePages += Math.Max(1, pagesAmount);
+            onSuccess?.Invoke(new NotebookWalletResult { BalancePages = walletBalancePages });
         }
 
         public void LoadPurchaseHistory(Action<NotebookPurchaseHistoryResult> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(CreateDisabledError());
+            var purchases = ownedAssetIds
+                .Select((assetId, index) =>
+                {
+                    var asset = assets.FirstOrDefault(item => item.Id == assetId);
+                    return new NotebookPurchaseHistoryItem
+                    {
+                        Id = 8000L + index,
+                        AssetId = assetId,
+                        PricePages = asset?.PricePages ?? 0,
+                        Status = "PAID"
+                    };
+                })
+                .ToArray();
+            onSuccess?.Invoke(new NotebookPurchaseHistoryResult(purchases));
         }
 
         public void LoadPaymentMethods(Action<NotebookPaymentMethodResult> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(CreateDisabledError());
+            onSuccess?.Invoke(new NotebookPaymentMethodResult(new[] { "LocalMock Pages", "Test Card" }));
         }
 
         public void LoadAssets(string category, string sort, int limit, Action<NotebookAssetListResult> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(CreateDisabledError());
+            var normalizedCategory = string.IsNullOrWhiteSpace(category) ? string.Empty : category.Trim();
+            var normalizedSort = string.IsNullOrWhiteSpace(sort) ? "popular" : sort.Trim().ToLowerInvariant();
+            IEnumerable<NotebookAssetItem> source = assets;
+            if (!string.IsNullOrEmpty(normalizedCategory) && !string.Equals(normalizedCategory, "ALL", StringComparison.OrdinalIgnoreCase))
+            {
+                source = source.Where(asset =>
+                    string.Equals(asset.Category, normalizedCategory, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(asset.CategoryCode, normalizedCategory, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(asset.AssetType, normalizedCategory, StringComparison.OrdinalIgnoreCase));
+            }
+
+            source = normalizedSort == "price"
+                ? source.OrderBy(asset => asset.PricePages).ThenBy(asset => asset.Name)
+                : normalizedSort == "latest" || normalizedSort == "recent"
+                    ? source.OrderByDescending(asset => asset.Id)
+                    : source.OrderByDescending(asset => asset.Popularity).ThenBy(asset => asset.Name);
+
+            var result = source
+                .Take(Math.Max(1, limit))
+                .Select(CloneAsset)
+                .ToArray();
+
+            onSuccess?.Invoke(new NotebookAssetListResult(result));
         }
 
         public void WishAsset(long assetId, bool wished, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(CreateDisabledError());
+            if (wished)
+            {
+                wishedAssetIds.Add(assetId);
+            }
+            else
+            {
+                wishedAssetIds.Remove(assetId);
+            }
+
+            onSuccess?.Invoke(new NotebookToggleResult { Active = wished, Count = wishedAssetIds.Count });
         }
 
         public void PurchaseAsset(long assetId, Action<NotebookAssetPurchaseResult> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(CreateDisabledError());
+            var asset = assets.FirstOrDefault(item => item.Id == assetId);
+            if (asset == null)
+            {
+                onError?.Invoke(new NotebookApiError { Code = "NOTEBOOK_ASSET_NOT_FOUND", Message = "Mock asset was not found." });
+                return;
+            }
+
+            if (!ownedAssetIds.Contains(assetId))
+            {
+                walletBalancePages = Math.Max(0, walletBalancePages - Math.Max(0, asset.PricePages));
+                ownedAssetIds.Add(assetId);
+            }
+
+            onSuccess?.Invoke(new NotebookAssetPurchaseResult
+            {
+                AssetId = assetId,
+                InventoryId = assetId + 10000L,
+                PricePages = asset.PricePages
+            });
         }
 
         public void LoadSpaces(int limit, Action<NotebookSpaceListResult> onSuccess, Action<NotebookApiError> onError)
@@ -73,9 +141,7 @@ namespace App.Infrastructure.Mock
             var normalized = string.IsNullOrWhiteSpace(keyword) ? string.Empty : keyword.Trim();
             var filtered = spaces
                 .Where(space => string.IsNullOrEmpty(normalized) ||
-                                Contains(space.SpaceName, normalized) ||
-                                Contains(space.OwnerName, normalized) ||
-                                Contains(space.Description, normalized))
+                                Contains(space.OwnerName, normalized))
                 .OrderByDescending(space => space.LikeCount)
                 .ThenByDescending(space => space.VisitCount)
                 .Take(Math.Max(1, limit))
@@ -93,7 +159,12 @@ namespace App.Infrastructure.Mock
 
         public void LoadDefaultShelfTarget(Action<NotebookShelfTarget> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(CreateDisabledError());
+            onSuccess?.Invoke(new NotebookShelfTarget
+            {
+                BookshelfId = 1L,
+                SectionId = 1L,
+                SlotNo = 1
+            });
         }
 
         public void LikeSpace(long spaceId, bool liked, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
@@ -139,26 +210,99 @@ namespace App.Infrastructure.Mock
 
         public void LoadBookReviews(long bookId, Action<NotebookReviewListResult> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(CreateDisabledError());
+            onSuccess?.Invoke(new NotebookReviewListResult(GetBookReviews(bookId).ToArray()));
         }
 
         public void CreateBookReview(long bookId, float rating, string content, Action<NotebookReviewItem> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(CreateDisabledError());
+            var review = new NotebookReviewItem
+            {
+                Id = ++nextReviewId,
+                Author = "LocalMock",
+                Rating = Math.Max(0.5f, Math.Min(5f, rating)),
+                Content = string.IsNullOrWhiteSpace(content) ? "리뷰 내용 없음" : content.Trim()
+            };
+            GetBookReviews(bookId).Insert(0, review);
+            onSuccess?.Invoke(review);
         }
 
         public void SetUserBookFavorite(long userBookId, bool favorite, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
-            onError?.Invoke(CreateDisabledError());
+            onSuccess?.Invoke(new NotebookToggleResult { Active = favorite, Count = favorite ? 1 : 0 });
         }
 
-        private static NotebookApiError CreateDisabledError()
+        private NotebookAssetItem CloneAsset(NotebookAssetItem source)
         {
-            return new NotebookApiError
+            return new NotebookAssetItem
             {
-                Code = DisabledCode,
-                Message = DisabledMessage,
-                Error = DisabledMessage
+                Id = source.Id,
+                Code = source.Code,
+                Name = source.Name,
+                Category = source.Category,
+                CategoryCode = source.CategoryCode,
+                Tier = source.Tier,
+                AssetType = source.AssetType,
+                PreviewImageUrl = source.PreviewImageUrl,
+                PricePages = source.PricePages,
+                Popularity = source.Popularity,
+                Owned = ownedAssetIds.Contains(source.Id) || source.Owned,
+                Wished = wishedAssetIds.Contains(source.Id) || source.Wished
+            };
+        }
+
+        private List<NotebookReviewItem> GetBookReviews(long bookId)
+        {
+            if (!reviewsByBook.TryGetValue(bookId, out var reviews))
+            {
+                reviews = new List<NotebookReviewItem>
+                {
+                    new NotebookReviewItem { Id = bookId * 10 + 1, Author = "민서", Rating = 4.8f, Content = "책장에 올려두고 다시 펼치고 싶은 문장이 많았어요." },
+                    new NotebookReviewItem { Id = bookId * 10 + 2, Author = "하린", Rating = 4.6f, Content = "분위기가 차분해서 노트북 화면에서도 잘 어울립니다." },
+                    new NotebookReviewItem { Id = bookId * 10 + 3, Author = "지우", Rating = 4.4f, Content = "짧게 읽기 좋고 리뷰 작성 흐름 확인용으로도 충분합니다." }
+                };
+                reviewsByBook[bookId] = reviews;
+            }
+
+            return reviews;
+        }
+
+        private static List<NotebookAssetItem> BuildAssets()
+        {
+            return new List<NotebookAssetItem>
+            {
+                Asset(7001L, "warm-wood-shelf", "따뜻한 원목 책장", "BOOKSHELF", "BOOKSHELF", "PREMIUM", "BOOKSHELF", 0, 920, true),
+                Asset(7002L, "blue-desk-lamp", "블루 데스크 램프", "INTERIOR", "INTERIOR", "RARE", "LIGHTING", 900, 780, false),
+                Asset(7003L, "mint-wallpaper", "민트 벽지", "THEME", "THEME", "BASIC", "WALLPAPER", 600, 720, false),
+                Asset(7004L, "reading-chair", "독서 의자", "INTERIOR", "INTERIOR", "PREMIUM", "FURNITURE", 1300, 690, false),
+                Asset(7005L, "night-sky-theme", "밤하늘 테마", "THEME", "THEME", "RARE", "THEME", 1500, 640, false),
+                Asset(7006L, "small-plant", "책상 위 작은 화분", "INTERIOR", "INTERIOR", "BASIC", "DECOR", 350, 610, false)
+            };
+        }
+
+        private static NotebookAssetItem Asset(
+            long id,
+            string code,
+            string name,
+            string category,
+            string categoryCode,
+            string tier,
+            string assetType,
+            int pricePages,
+            int popularity,
+            bool owned)
+        {
+            return new NotebookAssetItem
+            {
+                Id = id,
+                Code = code,
+                Name = name,
+                Category = category,
+                CategoryCode = categoryCode,
+                Tier = tier,
+                AssetType = assetType,
+                PricePages = pricePages,
+                Popularity = popularity,
+                Owned = owned
             };
         }
 

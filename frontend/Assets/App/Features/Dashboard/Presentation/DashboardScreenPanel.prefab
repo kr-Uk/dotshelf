@@ -90,5 +90,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Dotshelf.Scripts.Dashboard.DashboardSceneInstaller
   controller: {fileID: 8680900342760567451}
   mode: 1
+  apiConfig: {fileID: 11400000, guid: 2af40e306b4c4e21907fdd409c117be8, type: 2}
   apiManager: {fileID: 0}
   logChosenMode: 1

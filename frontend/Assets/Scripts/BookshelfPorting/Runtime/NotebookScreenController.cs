@@ -93,11 +93,16 @@ namespace BookshelfPorting.Runtime
             public bool IsFollowing { get; set; }
         }
 
-        private const float CanvasScale = 0.00044f;
+        private const float CanvasScale = 0.000542f;
         private const float TransitionDuration = 0.22f;
         private const float HiddenScaleMultiplier = 0.96f;
         private static readonly Vector2 ScreenSaverCanvasSize = new(850f, 480f);
         private static readonly Vector2 DashboardCanvasSize = new(850f, 480f);
+        private static readonly string[] AdvertisedBookTitles =
+        {
+            "내가 원하는 삶은 내가 만드는 것이다",
+            "너는 충분히 빛나는 아이야"
+        };
         private static Font cachedUiFont;
         private static Sprite roundedPanelSprite;
         private static Sprite roundedPillSprite;
@@ -204,6 +209,8 @@ namespace BookshelfPorting.Runtime
         private string selectedTab = "Books";
         private NotebookUiState currentState = NotebookUiState.ScreenSaver;
         private bool openDashboardOnShow;
+        private bool openAdvertisedBookOnDashboard;
+        private int selectedAdIndex;
         private NotebookToolkitController toolkitController;
         private NotebookToolkitController subscribedToolkitController;
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
@@ -597,7 +604,7 @@ namespace BookshelfPorting.Runtime
             adImageObject.transform.SetParent(parent, false);
             screenSaverImage = adImageObject.AddComponent<Image>();
             screenSaverImageRect = screenSaverImage.rectTransform;
-            screenSaverImage.preserveAspect = true;
+            screenSaverImage.preserveAspect = false;
             screenSaverImage.color = Color.white;
             screenSaverImage.raycastTarget = true;
             StretchToFill(screenSaverImageRect);
@@ -614,6 +621,7 @@ namespace BookshelfPorting.Runtime
             openButton.colors = colors;
             openButton.onClick.AddListener(() =>
             {
+                openAdvertisedBookOnDashboard = true;
                 if (onOpenScreenSaver != null)
                 {
                     onOpenScreenSaver.Invoke();
@@ -738,7 +746,7 @@ namespace BookshelfPorting.Runtime
 
             if (screenSaverImageRect != null)
             {
-                StretchWithOffsets(screenSaverImageRect, 28f, 28f, 28f, 28f);
+                StretchToFill(screenSaverImageRect);
             }
         }
 
@@ -921,6 +929,41 @@ namespace BookshelfPorting.Runtime
             {
                 activeGroup.alpha = state == NotebookUiState.Dashboard || toolkitShown ? 0f : 1f;
             }
+
+            if (state == NotebookUiState.Dashboard)
+            {
+                OpenPendingAdvertisedBookDetail();
+            }
+        }
+
+        private void OpenPendingAdvertisedBookDetail()
+        {
+            if (!openAdvertisedBookOnDashboard)
+            {
+                return;
+            }
+
+            if (toolkitController != null)
+            {
+                if (toolkitController.OpenAdvertisedBookDetail(GetSelectedAdvertisedBookTitle()))
+                {
+                    openAdvertisedBookOnDashboard = false;
+                }
+
+                return;
+            }
+
+            openAdvertisedBookOnDashboard = false;
+            selectedTab = "Books";
+            SelectBook(0);
+            Refresh();
+        }
+
+        private string GetSelectedAdvertisedBookTitle()
+        {
+            return selectedAdIndex >= 0 && selectedAdIndex < AdvertisedBookTitles.Length
+                ? AdvertisedBookTitles[selectedAdIndex]
+                : string.Empty;
         }
 
         private void SelectTab(string tab)
@@ -1878,8 +1921,9 @@ namespace BookshelfPorting.Runtime
             {
                 screenSaverImage.sprite = GetFallbackAdSprite();
                 screenSaverImage.color = Color.white;
-                screenSaverImage.preserveAspect = true;
+                screenSaverImage.preserveAspect = false;
                 screenSaverImage.raycastTarget = true;
+                selectedAdIndex = 0;
                 StretchToFill(screenSaverImage.rectTransform);
                 WarnIfAdsMissing();
                 return;
@@ -1891,8 +1935,9 @@ namespace BookshelfPorting.Runtime
 
             screenSaverImage.sprite = adImages[selectedIndex];
             screenSaverImage.color = Color.white;
-            screenSaverImage.preserveAspect = true;
+            screenSaverImage.preserveAspect = false;
             screenSaverImage.raycastTarget = true;
+            selectedAdIndex = selectedIndex;
             StretchToFill(screenSaverImage.rectTransform);
         }
 

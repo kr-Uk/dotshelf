@@ -229,9 +229,7 @@ namespace App.Features.Notebook.Presentation
         private static readonly Color Coral = Hex(0xFF8A65);
         private static readonly Color Violet = Hex(0x6E5BFF);
         private static readonly Color Gold = Hex(0xF4C95D);
-        private static Texture2D closeIconTexture;
         private static Texture2D searchIconTexture;
-        private static Texture2D pointerCursorTexture;
         private static readonly string[] SuggestedSearches = { "소설", "에세이", "심리", "베스트셀러", "SF", "자기계발", "인문" };
 
         private static readonly string[] HeaderTabs = { "책 시장", "다른 공간", "꾸미기 시장" };
@@ -407,6 +405,8 @@ namespace App.Features.Notebook.Presentation
         private bool walletDetailsLoading;
         private bool shelfTargetLoading;
         private BookViewModel selectedBookOverride;
+        private bool pendingAdvertisedBookOpen;
+        private string pendingAdvertisedBookTitle = string.Empty;
         private float selectedReviewRating = 5f;
 
         public bool IsReady
@@ -538,6 +538,20 @@ namespace App.Features.Notebook.Presentation
 
             StartDashboardInitializationRetry(showVersion);
             return false;
+        }
+
+        public bool OpenAdvertisedBookDetail(string preferredTitle = null)
+        {
+            ResolveDocument();
+            if (document == null)
+            {
+                return false;
+            }
+
+            pendingAdvertisedBookOpen = true;
+            pendingAdvertisedBookTitle = preferredTitle ?? string.Empty;
+            EnsureInitialized();
+            return TryOpenPendingAdvertisedBookDetail(true);
         }
 
         public void HideDashboard()
@@ -1060,7 +1074,6 @@ namespace App.Features.Notebook.Presentation
             wallet.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.72f);
             Round(wallet, 20);
             Border(wallet, Line);
-            UsePointerCursor(wallet);
             wallet.RegisterCallback<ClickEvent>(evt =>
             {
                 evt.StopPropagation();
@@ -1680,16 +1693,6 @@ namespace App.Features.Notebook.Presentation
             Border(panel, Rgba(0x0E, 0x1D, 0x2A, 0.14f));
             bookDetailContent.Add(panel);
 
-            var close = CloseIconButton("닫기");
-            close.style.position = Position.Absolute;
-            close.style.right = 14;
-            close.style.top = 14;
-            close.style.width = 36;
-            close.style.height = 36;
-            close.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.82f);
-            close.clicked += CloseBookDetail;
-            panel.Add(close);
-
             var top = Row("book-detail-top");
             top.style.width = Length.Percent(100);
             top.style.height = Length.Percent(100);
@@ -2022,6 +2025,20 @@ namespace App.Features.Notebook.Presentation
                 SubmitBookReview();
             };
             form.Add(submit);
+
+            var topLayerClose = CloseIconButton("닫기");
+            topLayerClose.style.position = Position.Absolute;
+            topLayerClose.style.right = 12;
+            topLayerClose.style.top = 12;
+            topLayerClose.style.width = 44;
+            topLayerClose.style.height = 44;
+            topLayerClose.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.74f);
+            topLayerClose.style.borderTopWidth = 0;
+            topLayerClose.style.borderRightWidth = 0;
+            topLayerClose.style.borderBottomWidth = 0;
+            topLayerClose.style.borderLeftWidth = 0;
+            topLayerClose.clicked += CloseBookDetail;
+            panel.Add(topLayerClose);
         }
 
         private VisualElement CreateInputFrame(float height)
@@ -2055,7 +2072,7 @@ namespace App.Features.Notebook.Presentation
                 parent,
                 "OTHER SPACES · COMMUNITY",
                 "다른 공간",
-                "공간을 검색하고, 마음에 드는 서재 주인을 팔로우해보세요.");
+                "유저 닉네임으로 서재 주인을 찾고, 마음에 드는 공간을 팔로우해보세요.");
 
             var searchPanel = new VisualElement { name = "other-spaces-search-panel" };
             searchPanel.style.flexDirection = FlexDirection.Column;
@@ -2085,7 +2102,7 @@ namespace App.Features.Notebook.Presentation
             inputFrame.style.alignItems = Align.Center;
             searchRow.Add(inputFrame);
 
-            var inputHint = Text("공간 이름으로 검색", 11, FaintInk, FontStyle.Normal);
+            var inputHint = Text("닉네임", 11, FaintInk, FontStyle.Normal);
             inputHint.style.marginRight = 10;
             inputHint.style.flexShrink = 0;
             inputFrame.Add(inputHint);
@@ -2118,17 +2135,6 @@ namespace App.Features.Notebook.Presentation
             };
             searchRow.Add(searchButton);
 
-            var resetButton = TextButton("초기화", false);
-            resetButton.style.width = 78;
-            resetButton.style.height = 38;
-            resetButton.style.marginBottom = 6;
-            resetButton.clicked += () =>
-            {
-                PulseElement(resetButton);
-                ClearOtherSpacesSearch();
-            };
-            searchRow.Add(resetButton);
-
             otherSpacesStatusLabel = Text(GetOtherSpacesStatusText(), 11, FaintInk, FontStyle.Normal);
             otherSpacesStatusLabel.style.whiteSpace = WhiteSpace.Normal;
             otherSpacesStatusLabel.style.marginTop = 4;
@@ -2157,14 +2163,6 @@ namespace App.Features.Notebook.Presentation
             RequestSpaces(otherSpacesQuery);
         }
 
-        private void ClearOtherSpacesSearch()
-        {
-            otherSpacesQuery = string.Empty;
-            appliedOtherSpacesQuery = string.Empty;
-            otherSpacesSearchField?.SetValueWithoutNotify(string.Empty);
-            RequestSpaces(string.Empty);
-        }
-
         private string GetOtherSpacesStatusText()
         {
             if (otherSpacesLoading)
@@ -2184,8 +2182,8 @@ namespace App.Features.Notebook.Presentation
             }
 
             return count > 0
-                ? $"'{appliedOtherSpacesQuery}' 검색 결과 {count:N0}개"
-                : $"'{appliedOtherSpacesQuery}' 검색 결과가 없습니다.";
+                ? $"닉네임 '{appliedOtherSpacesQuery}' 검색 결과 {count:N0}개"
+                : $"닉네임 '{appliedOtherSpacesQuery}' 검색 결과가 없습니다.";
         }
 
         private string GetOtherSpacesEmptyText()
@@ -2202,7 +2200,7 @@ namespace App.Features.Notebook.Presentation
 
             return string.IsNullOrWhiteSpace(appliedOtherSpacesQuery)
                 ? "표시할 공간 데이터가 없습니다."
-                : "검색된 공간이 없습니다. 다른 검색어를 입력해보세요.";
+                : "검색된 유저의 공간이 없습니다. 다른 닉네임을 입력해보세요.";
         }
 
         private VisualElement CreateSpaceCard(SpaceViewModel space)
@@ -2221,7 +2219,6 @@ namespace App.Features.Notebook.Presentation
             card.style.overflow = Overflow.Hidden;
             Round(card, 18);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.10f));
-            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => ShowToast($"공간 상세로 이동 · {space.Title}"));
 
             var thumbnail = new VisualElement { name = "space-thumbnail" };
@@ -2496,7 +2493,6 @@ namespace App.Features.Notebook.Presentation
             card.style.overflow = Overflow.Hidden;
             Round(card, 18);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.10f));
-            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => ShowToast($"오브젝트 상세 화면 · {item.Name}"));
 
             var preview = new VisualElement { name = "object-preview" };
@@ -3246,6 +3242,7 @@ namespace App.Features.Notebook.Presentation
             RefreshLists();
             RefreshObjectMarket();
             RefreshBookDetailPage(GetSelectedBook());
+            TryOpenPendingAdvertisedBookDetail(false);
         }
 
         private void RefreshWallet()
@@ -5086,7 +5083,6 @@ namespace App.Features.Notebook.Presentation
             card.style.backgroundColor = index % 2 == 0 ? Rgba(0xFF, 0xFF, 0xFF, 0.94f) : Rgba(0xF4, 0xFB, 0xFF, 0.92f);
             Round(card, 14);
             Border(card, index == 0 ? Rgba(0x58, 0xB9, 0xFF, 0.36f) : Rgba(0x0E, 0x1D, 0x2A, 0.08f));
-            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => SelectBook(book));
 
             var coverStage = new VisualElement { name = "search-result-cover-stage" };
@@ -5235,7 +5231,6 @@ namespace App.Features.Notebook.Presentation
             card.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.72f);
             Round(card, 14);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.08f));
-            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => SelectBook(book));
 
             var cover = CreateBookCover(book, 138, 200, true);
@@ -5307,7 +5302,6 @@ namespace App.Features.Notebook.Presentation
             card.style.backgroundColor = rank <= 3 ? Rgba(0xFF, 0xF7, 0xE8, 0.94f) : Rgba(0xFF, 0xFF, 0xFF, 0.84f);
             Round(card, 14);
             Border(card, rank <= 3 ? Rgba(0x58, 0xB9, 0xFF, 0.32f) : Rgba(0x0E, 0x1D, 0x2A, 0.10f));
-            UsePointerCursor(card);
             card.RegisterCallback<ClickEvent>(_ => SelectBook(book));
 
             var rankLabel = Text(rank.ToString("00"), rank <= 3 ? 22 : 18, rank <= 3 ? AccentDeep : Ink, FontStyle.Bold);
@@ -5551,6 +5545,72 @@ namespace App.Features.Notebook.Presentation
             selectedBookIndex = index;
             selectedBookOverride = null;
             OpenBookDetailModal(book);
+        }
+
+        private bool TryOpenPendingAdvertisedBookDetail(bool showLoadingToast)
+        {
+            if (!pendingAdvertisedBookOpen || !visible || !initialized)
+            {
+                return pendingAdvertisedBookOpen;
+            }
+
+            var book = ResolveAdvertisedBook(pendingAdvertisedBookTitle);
+            if (book == null)
+            {
+                EnsureMarketBooksRequested();
+                if (showLoadingToast)
+                {
+                    ShowToast("광고 도서를 불러오는 중입니다.");
+                }
+
+                return true;
+            }
+
+            pendingAdvertisedBookOpen = false;
+            pendingAdvertisedBookTitle = string.Empty;
+            activeHeaderTab = HeaderTabs[0];
+            activeSubTab = "전체 탐색";
+            searchPageOpen = false;
+            pageIndex = 0;
+            SetBookReviewsOpen(false, false);
+            SelectBook(book);
+            return true;
+        }
+
+        private BookViewModel ResolveAdvertisedBook(string preferredTitle)
+        {
+            var normalizedTitle = NormalizeText(preferredTitle);
+            var candidates = recommendedBooks
+                .Concat(marketBooks)
+                .Concat(searchResults)
+                .Where(book => book != null)
+                .ToArray();
+
+            if (candidates.Length == 0)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrEmpty(normalizedTitle))
+            {
+                var exact = candidates.FirstOrDefault(book => NormalizeText(book.Title) == normalizedTitle);
+                if (exact != null)
+                {
+                    return exact;
+                }
+
+                var contains = candidates.FirstOrDefault(book =>
+                    NormalizeText(book.Title).Contains(normalizedTitle) ||
+                    normalizedTitle.Contains(NormalizeText(book.Title)));
+                if (contains != null)
+                {
+                    return contains;
+                }
+            }
+
+            return recommendedBooks.FirstOrDefault(book => book != null) ??
+                   marketBooks.FirstOrDefault(book => book != null) ??
+                   searchResults.FirstOrDefault(book => book != null);
         }
 
         private void ChangePage(int delta)
@@ -6374,6 +6434,13 @@ namespace App.Features.Notebook.Presentation
                    source.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static string NormalizeText(string value)
+        {
+            return string.IsNullOrWhiteSpace(value)
+                ? string.Empty
+                : value.Trim().Replace(" ", string.Empty).ToLowerInvariant();
+        }
+
         private static string FirstText(params string[] values)
         {
             if (values == null)
@@ -6496,20 +6563,6 @@ namespace App.Features.Notebook.Presentation
             };
         }
 
-        private static void UsePointerCursor(VisualElement element)
-        {
-            if (element == null)
-            {
-                return;
-            }
-
-            element.style.cursor = new StyleCursor(new UnityEngine.UIElements.Cursor
-            {
-                texture = GetPointerCursorTexture(),
-                hotspot = new Vector2(9, 1)
-            });
-        }
-
         private Button TextButton(string text, bool primary)
         {
             var button = new Button { text = text };
@@ -6536,7 +6589,6 @@ namespace App.Features.Notebook.Presentation
             button.style.borderBottomWidth = 0;
             button.style.borderLeftWidth = 0;
             Round(button, 10);
-            UsePointerCursor(button);
             return button;
         }
 
@@ -6557,7 +6609,7 @@ namespace App.Features.Notebook.Presentation
 
         private Button CloseIconButton(string tooltip)
         {
-            var button = TextButton(string.Empty, false);
+            var button = TextButton("X", false);
             button.tooltip = tooltip;
             button.style.width = 38;
             button.style.height = 38;
@@ -6566,8 +6618,9 @@ namespace App.Features.Notebook.Presentation
             button.style.alignItems = Align.Center;
             button.style.justifyContent = Justify.Center;
             button.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.66f);
-            button.style.backgroundImage = new StyleBackground(GetCloseIconTexture());
             button.style.color = Ink;
+            button.style.fontSize = 16;
+            button.style.unityFontStyleAndWeight = FontStyle.Normal;
             Border(button, Line);
             return button;
         }
@@ -6713,36 +6766,6 @@ namespace App.Features.Notebook.Presentation
             AddRoomRect(parent, "room-pin-card-b", left + 10, top + 33, width - 20, 14, Rgba(0xFF, 0xFF, 0xFF, 0.30f), 5);
         }
 
-        private static Texture2D GetCloseIconTexture()
-        {
-            if (closeIconTexture != null)
-            {
-                return closeIconTexture;
-            }
-
-            const int size = 38;
-            closeIconTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave,
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp
-            };
-
-            var clear = new Color32(0, 0, 0, 0);
-            var pixels = new Color32[size * size];
-            for (var i = 0; i < pixels.Length; i++)
-            {
-                pixels[i] = clear;
-            }
-
-            closeIconTexture.SetPixels32(pixels);
-            var ink = new Color32(14, 29, 42, 255);
-            DrawIconLine(closeIconTexture, 13, 13, 25, 25, ink);
-            DrawIconLine(closeIconTexture, 25, 13, 13, 25, ink);
-            closeIconTexture.Apply(false, true);
-            return closeIconTexture;
-        }
-
         private static Texture2D GetSearchIconTexture()
         {
             if (searchIconTexture != null)
@@ -6771,108 +6794,6 @@ namespace App.Features.Notebook.Presentation
             DrawIconLine(searchIconTexture, 20, 20, 27, 27, color);
             searchIconTexture.Apply(false, true);
             return searchIconTexture;
-        }
-
-        private static Texture2D GetPointerCursorTexture()
-        {
-            if (pointerCursorTexture != null)
-            {
-                return pointerCursorTexture;
-            }
-
-            const int size = 24;
-            pointerCursorTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave,
-                filterMode = FilterMode.Point,
-                wrapMode = TextureWrapMode.Clamp
-            };
-
-            var pixels = new Color32[size * size];
-            var clear = new Color32(0, 0, 0, 0);
-            for (var i = 0; i < pixels.Length; i++)
-            {
-                pixels[i] = clear;
-            }
-
-            pointerCursorTexture.SetPixels32(pixels);
-
-            var fill = new bool[size, size];
-            FillCursorRect(fill, 8, 1, 3, 12);
-            FillCursorRect(fill, 11, 7, 3, 9);
-            FillCursorRect(fill, 14, 8, 3, 8);
-            FillCursorRect(fill, 17, 9, 3, 7);
-            FillCursorRect(fill, 4, 11, 16, 8);
-            FillCursorRect(fill, 5, 18, 13, 2);
-            FillCursorRect(fill, 7, 20, 9, 2);
-
-            var outline = new Color32(14, 29, 42, 255);
-            var white = new Color32(255, 255, 255, 255);
-            for (var y = 0; y < size; y++)
-            {
-                for (var x = 0; x < size; x++)
-                {
-                    if (fill[x, y])
-                    {
-                        PaintCursorPixel(pointerCursorTexture, x, y, white);
-                    }
-                    else if (HasCursorNeighbor(fill, x, y))
-                    {
-                        PaintCursorPixel(pointerCursorTexture, x, y, outline);
-                    }
-                }
-            }
-
-            // Runtime UI Toolkit cursor textures must remain CPU-readable.
-            pointerCursorTexture.Apply(false, false);
-            return pointerCursorTexture;
-        }
-
-        private static void FillCursorRect(bool[,] fill, int left, int top, int width, int height)
-        {
-            var maxX = fill.GetLength(0);
-            var maxY = fill.GetLength(1);
-            for (var y = top; y < top + height; y++)
-            {
-                for (var x = left; x < left + width; x++)
-                {
-                    if (x >= 0 && y >= 0 && x < maxX && y < maxY)
-                    {
-                        fill[x, y] = true;
-                    }
-                }
-            }
-        }
-
-        private static bool HasCursorNeighbor(bool[,] fill, int x, int y)
-        {
-            for (var yy = y - 1; yy <= y + 1; yy++)
-            {
-                for (var xx = x - 1; xx <= x + 1; xx++)
-                {
-                    if (xx == x && yy == y)
-                    {
-                        continue;
-                    }
-
-                    if (xx >= 0 && yy >= 0 && xx < fill.GetLength(0) && yy < fill.GetLength(1) && fill[xx, yy])
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        private static void PaintCursorPixel(Texture2D texture, int x, int topY, Color32 color)
-        {
-            if (x < 0 || topY < 0 || x >= texture.width || topY >= texture.height)
-            {
-                return;
-            }
-
-            texture.SetPixel(x, texture.height - 1 - topY, color);
         }
 
         private static void PaintIconCircle(Texture2D texture, int centerX, int centerY, int radius, Color32 color)

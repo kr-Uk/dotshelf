@@ -198,6 +198,15 @@ namespace App.Bootstrap
             ("SHOP", "샵"),
         };
 
+        // FURNITURE 탭 선택 시 노출되는 sub-tab. CustomizationCategory의 외형형 가구 3종.
+        // (의자는 Desk = '노트북 & 책상 세트'에 묶여있어 별도 sub-tab 불필요.)
+        private static readonly (string Key, string Label)[] FurnitureSubItems =
+        {
+            ("DESK", "책상"),
+            ("BOOKSHELF_SKIN", "책장"),
+            ("DASHBOARD_SKIN", "대시보드"),
+        };
+
         private struct InventoryEntry
         {
             public string DisplayName;
@@ -227,11 +236,22 @@ namespace App.Bootstrap
         private GameObject returnButtonRoot;
         private GameObject readyModalRoot;
         private GameObject themeApplyModeModalRoot;
+        private GameObject customizationLockedModalRoot;
+        private TMP_Text customizationLockedBodyText;
+        private CustomizationCategory pendingCustomizationCategory;
+        private CustomizationEntry pendingCustomizationEntry;
         private GameObject selectionPanelRoot;
 
         private string selectedToolbarKey = "ALL";
         private readonly Dictionary<string, Image> toolbarBackgrounds = new Dictionary<string, Image>();
         private readonly Dictionary<string, TMP_Text> toolbarLabels = new Dictionary<string, TMP_Text>();
+
+        // FURNITURE sub-tab. selectedToolbarKey == "FURNITURE" 일 때만 의미 있음.
+        private string selectedFurnitureSubKey = "DESK";
+        private GameObject furnitureSubToolbarRoot;
+        private GameObject inventoryTitleObject;
+        private readonly Dictionary<string, Image> furnitureSubBackgrounds = new Dictionary<string, Image>();
+        private readonly Dictionary<string, TMP_Text> furnitureSubLabels = new Dictionary<string, TMP_Text>();
 
         private RoomThemeCatalogAsset themeCatalog;
         private RoomThemeApplier themeApplier;
@@ -366,12 +386,14 @@ namespace App.Bootstrap
             BuildEditOverlay();
             BuildReadyModal();
             BuildThemeApplyModeModal();
+            BuildCustomizationLockedModal();
             BuildSelectionPanel();
 
             CloseDecorationPopupInternal();
             ExitEditModeInternal();
             HideReadyModal();
             HideThemeApplyModeModal();
+            HideCustomizationLockedModal();
         }
 
         // Resolve the persisted EditableDecorationCatalog (built by the Tools menu in
@@ -768,6 +790,134 @@ namespace App.Bootstrap
             toolbarLabels[key] = labelText;
         }
 
+        // InventoryListContainer 내부 title 영역 위에 가로 strip으로 sub-tab 3개.
+        // FURNITURE 선택 시만 활성화 (UpdateFurnitureSubToolbarVisibility). 단일 row,
+        // title과 anchor 영역 거의 동일 (top, height 28) — title은 그 시점에 SetActive(false).
+        private void BuildFurnitureSubToolbar(Transform parent)
+        {
+            furnitureSubToolbarRoot = CreateRectObject("FurnitureSubToolbar", parent);
+            var rect = (RectTransform)furnitureSubToolbarRoot.transform;
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.sizeDelta = new Vector2(-48f, 36f);
+            rect.anchoredPosition = new Vector2(0f, -8f);
+
+            var layout = furnitureSubToolbarRoot.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 8f;
+            layout.childAlignment = TextAnchor.MiddleLeft;
+            layout.childControlWidth = false;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+
+            for (var i = 0; i < FurnitureSubItems.Length; i++)
+            {
+                BuildFurnitureSubButton(furnitureSubToolbarRoot.transform, FurnitureSubItems[i].Key, FurnitureSubItems[i].Label);
+            }
+
+            ApplyFurnitureSubSelectionVisuals();
+            furnitureSubToolbarRoot.SetActive(false);
+        }
+
+        // 책장 스킨은 BE PATCH 경로 미지원 (ISpaceSettingsRepository.ChangeBookshelfSkin 없음 +
+        // SpaceResponseDto.CurrentBookshelfSkinInventoryId 없음 + GetCategoryIdFromSpace/
+        // OptimisticallyUpdateServerSpace 미지원). 클릭 가능하면 visual만 바뀌고 PATCH는 안 나가
+        // 다음 reload 에서 선택이 사라짐 — '저장 안 되는 UI'가 됨.
+        // 후속 PR에서 BE 경로 + DTO 필드 + repository 연결까지 묶어서 활성화 예정.
+        private static bool IsFurnitureSubDisabled(string key) => key == "BOOKSHELF_SKIN";
+
+        private void BuildFurnitureSubButton(Transform parent, string key, string label)
+        {
+            bool disabled = IsFurnitureSubDisabled(key);
+
+            var background = CreateImage(parent, $"FurnitureSub_{key}", disabled ? CardColor : SecondaryColor);
+            background.sprite = roundedRectSprite;
+            background.type = Image.Type.Sliced;
+            var rect = background.rectTransform;
+            rect.sizeDelta = new Vector2(disabled ? 132f : 96f, 32f);
+
+            var layoutElement = background.gameObject.AddComponent<LayoutElement>();
+            layoutElement.minWidth = rect.sizeDelta.x;
+            layoutElement.preferredWidth = rect.sizeDelta.x;
+            layoutElement.minHeight = rect.sizeDelta.y;
+            layoutElement.preferredHeight = rect.sizeDelta.y;
+
+            var outline = background.gameObject.AddComponent<Outline>();
+            outline.effectColor = WithAlpha(BorderColor, 0.85f);
+            outline.effectDistance = new Vector2(1f, -1f);
+
+            string displayLabel = disabled ? $"{label} 준비 중" : label;
+            var labelText = CreateText(background.transform, "Label", displayLabel, 14f, FontStyles.Bold,
+                disabled ? MutedTextColor : TextColor, TextAlignmentOptions.Center);
+            labelText.overflowMode = TextOverflowModes.Ellipsis;
+            StretchToParent(labelText.rectTransform);
+
+            var button = background.gameObject.AddComponent<Button>();
+            button.targetGraphic = background;
+            button.transition = Selectable.Transition.None;
+            button.interactable = !disabled;
+            if (!disabled)
+            {
+                button.onClick.AddListener(() => OnFurnitureSubClicked(key));
+            }
+
+            furnitureSubBackgrounds[key] = background;
+            furnitureSubLabels[key] = labelText;
+        }
+
+        private void OnFurnitureSubClicked(string key)
+        {
+            if (selectedFurnitureSubKey == key) return;
+            selectedFurnitureSubKey = key;
+            ApplyFurnitureSubSelectionVisuals();
+            RebuildInventorySlots();
+        }
+
+        private void ApplyFurnitureSubSelectionVisuals()
+        {
+            foreach (var pair in furnitureSubBackgrounds)
+            {
+                furnitureSubLabels.TryGetValue(pair.Key, out var label);
+                if (IsFurnitureSubDisabled(pair.Key))
+                {
+                    // disabled 키는 항상 disabled 색상 유지 — 사용자 클릭 불가지만 방어적.
+                    pair.Value.color = CardColor;
+                    if (label != null) label.color = MutedTextColor;
+                    continue;
+                }
+                var isSelected = pair.Key == selectedFurnitureSubKey;
+                pair.Value.color = isSelected ? PrimaryColor : SecondaryColor;
+                if (label != null) label.color = isSelected ? Color.white : TextColor;
+            }
+        }
+
+        private void UpdateFurnitureSubToolbarVisibility()
+        {
+            bool showSub = selectedToolbarKey == "FURNITURE";
+            if (furnitureSubToolbarRoot != null && furnitureSubToolbarRoot.activeSelf != showSub)
+            {
+                furnitureSubToolbarRoot.SetActive(showSub);
+            }
+            if (inventoryTitleObject != null && inventoryTitleObject.activeSelf == showSub)
+            {
+                inventoryTitleObject.SetActive(!showSub);
+            }
+        }
+
+        // toolbar sub-key → CustomizationCategory 매핑.
+        private static bool TryResolveFurnitureSubCategory(string subKey, out CustomizationCategory category)
+        {
+            switch (subKey)
+            {
+                case "DESK":            category = CustomizationCategory.Desk;          return true;
+                case "BOOKSHELF_SKIN":  category = CustomizationCategory.BookshelfSkin; return true;
+                case "DASHBOARD_SKIN":  category = CustomizationCategory.DashboardSkin; return true;
+                default:                category = default;                              return false;
+            }
+        }
+
         // Inventory list occupies the rest of the bottom menu panel beneath the
         // toolbar strip. Background is intentionally transparent so the panel reads
         // as one continuous beige surface.
@@ -788,6 +938,10 @@ namespace App.Bootstrap
             titleRect.pivot = new Vector2(0f, 1f);
             titleRect.sizeDelta = new Vector2(-48f, 28f);
             titleRect.anchoredPosition = new Vector2(28f, -12f);
+            inventoryTitleObject = title.gameObject;
+
+            // FURNITURE 탭 선택 시 title 자리에 sub-toolbar 노출 — 책상/책장/대시보드.
+            BuildFurnitureSubToolbar(listContainer.transform);
 
             var scrollRect = listContainer.AddComponent<ScrollRect>();
             scrollRect.horizontal = true;
@@ -888,7 +1042,16 @@ namespace App.Bootstrap
             }
 
             // v1.0 customization — 1:1 카테고리 매핑이 명확한 toolbar 키는 CustomizationCatalog로 처리.
-            // 묶음 탭(FURNITURE/OBJECT_SKIN)은 후속 PR에서 sub-탭화.
+            // FURNITURE는 sub-tab(책상/책장스킨/대시보드스킨)으로 분기. OBJECT_SKIN은 후속 PR에서 sub-탭화.
+            if (selectedToolbarKey == "FURNITURE")
+            {
+                if (TryResolveFurnitureSubCategory(selectedFurnitureSubKey, out var furnitureCategory))
+                {
+                    BuildCustomizationSlots(inventoryContentRoot.transform, furnitureCategory);
+                    return;
+                }
+            }
+
             if (TryResolveCustomizationCategory(selectedToolbarKey, out var category))
             {
                 BuildCustomizationSlots(inventoryContentRoot.transform, category);
@@ -1307,6 +1470,21 @@ namespace App.Bootstrap
         {
             if (entry == null) return;
 
+            // 현재 적용 테마가 customization-disabled면 사전 확인 모달.
+            // 사용자가 "계속" 클릭 시 ProceedCustomizationEntry로 정상 흐름 재진입.
+            // 이 경로에서는 PATCH 응답 themeReset=true를 거쳐 자연스럽게 테마가 해제되고,
+            // 다음 클릭부터는 CurrentTheme.AllowsCustomization=true가 되어 모달 미발동.
+            if (IsCurrentThemeCustomizationLocked())
+            {
+                ShowCustomizationLockedModal(category, entry);
+                return;
+            }
+
+            ProceedCustomizationEntry(category, entry);
+        }
+
+        private void ProceedCustomizationEntry(CustomizationCategory category, CustomizationEntry entry)
+        {
             // visual swap — 카테고리별로 적용 + 강조 상태 갱신
             ApplyEntryVisual(category, entry);
             if (entry.AssetId > 0) lastAppliedEntries[category] = entry.AssetId;
@@ -1653,6 +1831,22 @@ namespace App.Bootstrap
         {
             if (space == null) return;
             lastServerSpace = space;  // IsCategoryEntryCurrent의 single source of truth 갱신
+
+            // [Review #104 P2] server에 저장된 테마 inventory ID로 RoomThemeApplier.CurrentTheme도
+            // 동기화. 동기화 안 하면 이전 세션에서 customization-disabled 테마를 적용해둔 사용자가
+            // 다시 입장해도 RoomThemeApplier.CurrentTheme=null이라 IsCurrentThemeCustomizationLocked
+            // 가 항상 false → 사전 확인 모달 미발동 → 사용자는 themeReset=true 응답을 받고서야 테마
+            // 해제를 인지하게 됨.
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            if (themeApplier != null && themeCatalog != null)
+            {
+                var resolvedTheme = themeCatalog.Resolve(space.CurrentThemeInventoryId);
+                if (resolvedTheme != null && resolvedTheme != themeApplier.CurrentTheme)
+                {
+                    themeApplier.Apply(resolvedTheme);
+                }
+            }
+
             ApplyCategoryById(CustomizationCategory.Wallpaper, space.CurrentWallpaperInventoryId);
             ApplyCategoryById(CustomizationCategory.Floor, space.CurrentFloorInventoryId);
             ApplyCategoryById(CustomizationCategory.Desk, space.CurrentDeskInventoryId);
@@ -1889,6 +2083,77 @@ namespace App.Bootstrap
             cancelRect.pivot = new Vector2(0.5f, 0f);
             cancelRect.anchoredPosition = new Vector2(195f, 34f);
             cancelButton.onClick.AddListener(HideThemeApplyModeModal);
+        }
+
+        // 커스터마이징 불가 테마(AllowsCustomization=false)가 적용된 상태에서 카테고리를 변경하면
+        // 백엔드가 themeReset=true 응답으로 테마를 자동 해제. 사용자에게 그 결과를 미리 알리고
+        // 의사결정 기회를 주기 위한 사전 확인 모달.
+        private void BuildCustomizationLockedModal()
+        {
+            customizationLockedModalRoot = CreateRectObject("CustomizationLockedModal", canvas.transform);
+            var rect = (RectTransform)customizationLockedModalRoot.transform;
+            StretchToParent(rect);
+
+            var dim = CreateImage(customizationLockedModalRoot.transform, "Dim", DimColor);
+            StretchToParent(dim.rectTransform);
+            var dimButton = dim.gameObject.AddComponent<Button>();
+            dimButton.transition = Selectable.Transition.None;
+            dimButton.onClick.AddListener(HideCustomizationLockedModal);
+
+            var card = CreateImage(customizationLockedModalRoot.transform, "Card", CardColor);
+            card.sprite = roundedRectSprite;
+            card.type = Image.Type.Sliced;
+            var cardRect = card.rectTransform;
+            cardRect.anchorMin = new Vector2(0.5f, 0.5f);
+            cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+            cardRect.pivot = new Vector2(0.5f, 0.5f);
+            cardRect.sizeDelta = new Vector2(660f, 290f);
+            cardRect.anchoredPosition = Vector2.zero;
+            var cardOutline = card.gameObject.AddComponent<Outline>();
+            cardOutline.effectColor = WithAlpha(BorderColor, 0.95f);
+            cardOutline.effectDistance = new Vector2(1f, -1f);
+
+            var title = CreateText(card.transform, "Title", "테마 해제 안내", 26f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
+            var titleRect = title.rectTransform;
+            titleRect.anchorMin = new Vector2(0f, 1f);
+            titleRect.anchorMax = new Vector2(1f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.offsetMin = new Vector2(32f, -78f);
+            titleRect.offsetMax = new Vector2(-32f, -28f);
+
+            customizationLockedBodyText = CreateText(
+                card.transform,
+                "Body",
+                string.Empty,
+                18f,
+                FontStyles.Normal,
+                MutedTextColor,
+                TextAlignmentOptions.Center);
+            var bodyRect = customizationLockedBodyText.rectTransform;
+            bodyRect.anchorMin = new Vector2(0f, 0.32f);
+            bodyRect.anchorMax = new Vector2(1f, 0.78f);
+            bodyRect.pivot = new Vector2(0.5f, 0.5f);
+            bodyRect.offsetMin = new Vector2(48f, 0f);
+            bodyRect.offsetMax = new Vector2(-48f, 0f);
+            customizationLockedBodyText.enableWordWrapping = true;
+
+            var proceedButton = CreateButton(card.transform, "ProceedButton", "계속",
+                PrimaryColor, Color.white, new Vector2(180f, 58f), false, BorderColor);
+            var proceedRect = (RectTransform)proceedButton.transform;
+            proceedRect.anchorMin = new Vector2(0.5f, 0f);
+            proceedRect.anchorMax = new Vector2(0.5f, 0f);
+            proceedRect.pivot = new Vector2(0.5f, 0f);
+            proceedRect.anchoredPosition = new Vector2(-100f, 34f);
+            proceedButton.onClick.AddListener(ConfirmCustomizationLockedProceed);
+
+            var cancelLockedButton = CreateButton(card.transform, "CancelButton", "취소",
+                CardColor, TextColor, new Vector2(140f, 58f), true, BorderColor);
+            var cancelLockedRect = (RectTransform)cancelLockedButton.transform;
+            cancelLockedRect.anchorMin = new Vector2(0.5f, 0f);
+            cancelLockedRect.anchorMax = new Vector2(0.5f, 0f);
+            cancelLockedRect.pivot = new Vector2(0.5f, 0f);
+            cancelLockedRect.anchoredPosition = new Vector2(100f, 34f);
+            cancelLockedButton.onClick.AddListener(HideCustomizationLockedModal);
         }
 
         private void BuildSelectionPanel()
@@ -2491,6 +2756,7 @@ namespace App.Bootstrap
             }
             selectedToolbarKey = key;
             ApplyToolbarSelectionVisuals();
+            UpdateFurnitureSubToolbarVisibility();
             RebuildInventorySlots();
         }
 
@@ -2558,6 +2824,89 @@ namespace App.Bootstrap
             var theme = pendingThemeApply;
             HideThemeApplyModeModal();
             ApplyThemeSelected(theme, mode);
+        }
+
+        private bool IsCurrentThemeCustomizationLocked()
+        {
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+            var current = themeApplier?.CurrentTheme;
+            return current != null && !current.AllowsCustomization;
+        }
+
+        private void ShowCustomizationLockedModal(CustomizationCategory category, CustomizationEntry entry)
+        {
+            pendingCustomizationCategory = category;
+            pendingCustomizationEntry = entry;
+
+            if (customizationLockedModalRoot == null)
+            {
+                ProceedCustomizationEntry(category, entry);
+                return;
+            }
+
+            if (customizationLockedBodyText != null)
+            {
+                var current = themeApplier?.CurrentTheme;
+                string themeName = current != null && !string.IsNullOrEmpty(current.DisplayName)
+                    ? current.DisplayName
+                    : "현재";
+                customizationLockedBodyText.text =
+                    $"'{themeName}' 테마는 커스터마이징을 허용하지 않습니다.\n진행하면 테마가 해제되고 적용된 커스터마이징이 초기화됩니다.";
+            }
+
+            customizationLockedModalRoot.transform.SetAsLastSibling();
+            customizationLockedModalRoot.SetActive(true);
+        }
+
+        private void HideCustomizationLockedModal()
+        {
+            pendingCustomizationCategory = default;
+            pendingCustomizationEntry = null;
+            if (customizationLockedModalRoot != null)
+            {
+                customizationLockedModalRoot.SetActive(false);
+            }
+        }
+
+        private void ConfirmCustomizationLockedProceed()
+        {
+            var category = pendingCustomizationCategory;
+            var entry = pendingCustomizationEntry;
+            HideCustomizationLockedModal();
+            if (entry == null)
+            {
+                return;
+            }
+
+            // [Review #104 P1] visual swap 전에 클라이언트 테마 상태를 unlocked default로 reset.
+            // 이렇게 안 하면 PATCH 스킵(spaceSettingsRepo == null) / 네트워크 실패 / 서버가
+            // themeReset=false 반환 등의 경로에서 'locked CurrentTheme + 새 customization visual'
+            // 혼합 상태가 남아 다음 카테고리 클릭에서 모달이 또 노출됨.
+            //
+            // 사용자는 모달의 '계속'으로 '테마가 해제된다'에 이미 동의했으므로 클라이언트는 즉시
+            // 그 약속한 상태로 전환. PATCH 성공 시 themeReset=true → ReloadRoomState가 서버 권위
+            // 상태로 다시 동기화. PATCH 실패 시 클라이언트는 unlocked 상태로 남고 다음 reload에서
+            // 서버 상태에 따라 정정됨.
+            ResetThemeToDefaultLocally();
+            ApplyThemeResetVisualFallback();
+
+            ProceedCustomizationEntry(category, entry);
+        }
+
+        // 테마 카탈로그의 DefaultTheme(있으면)을 즉시 RoomThemeApplier에 Apply. 클라이언트 측
+        // CurrentTheme/AllowsCustomization 상태만 갱신 — 서버 PATCH는 별개 흐름.
+        private void ResetThemeToDefaultLocally()
+        {
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            if (themeApplier == null || themeCatalog == null) return;
+            var defaultTheme = themeCatalog.DefaultTheme;
+            if (defaultTheme != null && defaultTheme != themeApplier.CurrentTheme)
+            {
+                themeApplier.Apply(defaultTheme);
+            }
         }
 
         // Inventory placement ------------------------------------------------------

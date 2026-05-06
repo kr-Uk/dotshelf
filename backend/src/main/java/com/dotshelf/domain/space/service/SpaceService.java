@@ -110,16 +110,18 @@ public class SpaceService {
     public SpaceListResponse getSpaces(Long userId, String keyword, String sort, int limit) {
         int validLimit = validateListLimit(limit);
         String normalizedKeyword = keyword == null ? null : keyword.trim().toLowerCase();
-        List<Space> spaces = spaceRepository.findAll().stream()
+        List<Space> candidates = spaceRepository.findAll().stream()
                 .filter(space -> space.getDeletedAt() == null)
                 .filter(space -> "PUBLIC".equalsIgnoreCase(space.getVisibilityScope()))
+                .toList();
+        Map<Long, User> owners = ownersById(candidates);
+        List<Space> spaces = candidates.stream()
                 .filter(space -> normalizedKeyword == null
                         || normalizedKeyword.isBlank()
-                        || space.getSpaceName().toLowerCase().contains(normalizedKeyword))
+                        || ownerNicknameContains(owners.get(space.getOwnerUserId()), normalizedKeyword))
                 .sorted(spaceComparator(sort))
                 .limit(validLimit)
                 .toList();
-        Map<Long, User> owners = ownersById(spaces);
         return new SpaceListResponse(spaces.stream()
                 .map(space -> toListItem(space, owners.get(space.getOwnerUserId()), userId))
                 .toList(), null);
@@ -450,6 +452,12 @@ public class SpaceService {
         }
         return userRepository.findAllById(ownerIds).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
+    }
+
+    private boolean ownerNicknameContains(User owner, String normalizedKeyword) {
+        return owner != null
+                && owner.getNickname() != null
+                && owner.getNickname().toLowerCase().contains(normalizedKeyword);
     }
 
     private SpaceListItemResponse toListItem(Space space, User owner, Long currentUserId) {
