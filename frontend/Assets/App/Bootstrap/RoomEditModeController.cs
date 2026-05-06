@@ -274,6 +274,7 @@ namespace App.Bootstrap
         // Wall placement obstruction registry — RightWall/LeftWall/BackWall surface 의
         // 책장/대시보드 점유 영역 추적. EnsureWallObstructionRegistry 가 lazy 빌드.
         private WallObstructionRegistry wallObstructionRegistry;
+        private bool wallObstructionRegistryBuilt;
         private GameObject selectedObject;
         private readonly List<RendererTint> selectedRendererTints = new List<RendererTint>();
 
@@ -3319,16 +3320,29 @@ namespace App.Bootstrap
             {
                 wallObstructionRegistry = new WallObstructionRegistry();
             }
-            if (themeApplier == null)
+            // 첫 호출 시만 build — 이후 캐싱. 매 프레임 build 하면 GetComponentsInChildren
+            // 중복 호출로 GC pressure. 룸 재생성 시 InvalidateWallObstructionRegistry()
+            // 호출 (현재 호출처 없음 — 룸이 한 번만 만들어진다고 가정).
+            if (!wallObstructionRegistryBuilt)
             {
-                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
-            }
-            var roomRoot = themeApplier?.RoomRoot;
-            if (roomRoot != null)
-            {
-                wallObstructionRegistry.Build(roomRoot);
+                if (themeApplier == null)
+                {
+                    themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+                }
+                var roomRoot = themeApplier?.RoomRoot;
+                if (roomRoot != null)
+                {
+                    wallObstructionRegistry.Build(roomRoot);
+                    wallObstructionRegistryBuilt = true;
+                }
             }
             return wallObstructionRegistry;
+        }
+
+        // 룸 재생성/씬 reload 후 호출 — 다음 EnsureWallObstructionRegistry 가 다시 Build.
+        private void InvalidateWallObstructionRegistry()
+        {
+            wallObstructionRegistryBuilt = false;
         }
 
         // Wall deco placement — RightWall 가운데 spawn (default). 사용자는 spawn 후
@@ -3374,7 +3388,7 @@ namespace App.Bootstrap
                 // wall 표면 약간 안쪽 (wall thickness 0.08 의 절반 + 표면 offset).
                 // wall 의 +X 방향 surface 에서 -X 으로 살짝 띄움 (룸 안쪽 face).
                 go.transform.position = new Vector3(rightWall.position.x - 0.05f, rightWall.position.y, rightWall.position.z);
-                go.transform.rotation = Quaternion.Euler(0f, -90f, 0f); // RightWall 안쪽 face 향하게
+                go.transform.rotation = WallFacingRotation(WallSide.Right);
             }
             else
             {
@@ -3382,8 +3396,39 @@ namespace App.Bootstrap
                 go.transform.position = Vector3.zero;
             }
 
+            // marker 추가 — UpdateDrag 가 wall placement 드래그로 분기하기 위함.
+            var marker = go.AddComponent<WallDecoMarker>();
+            marker.CurrentWall = WallSide.Right;
+            marker.AllowRotation = entry.AllowRotation;
+
             // selection 으로 자동 잡아 사용자가 즉시 드래그 가능하게.
             SelectObject(go);
+        }
+
+        // wall 의 안쪽 face (룸 내부 향하는 방향) 으로 deco 회전.
+        // 좌표계: +Z 가 default forward, wall 별로 deco 가 룸 안쪽 향하게 Y 축 회전.
+        private static Quaternion WallFacingRotation(WallSide wall)
+        {
+            switch (wall)
+            {
+                case WallSide.Left:  return Quaternion.Euler(0f, 90f, 0f);   // +X 향함
+                case WallSide.Right: return Quaternion.Euler(0f, -90f, 0f);  // -X 향함
+                case WallSide.Back:  return Quaternion.Euler(0f, 180f, 0f);  // -Z 향함
+                case WallSide.Front: return Quaternion.identity;             // +Z 향함
+                default:             return Quaternion.identity;
+            }
+        }
+
+        private static WallSide WallNameToSide(string name)
+        {
+            switch (name)
+            {
+                case "LeftWall":  return WallSide.Left;
+                case "RightWall": return WallSide.Right;
+                case "BackWall":  return WallSide.Back;
+                case "FrontWall": return WallSide.Front;
+                default:          return WallSide.None;
+            }
         }
 
         // Edit-mode click → selection ---------------------------------------------
@@ -3513,6 +3558,15 @@ namespace App.Bootstrap
                 return;
             }
 
+            // wall deco 면 wall surface 따라 별도 흐름으로 라우트. floor placement 드래그
+            // 와 시스템이 다름 — raycast 로 hit wall 의 표면 위치 + obstruction check.
+            var wallMarker = draggingObject.GetComponent<WallDecoMarker>();
+            if (wallMarker != null)
+            {
+                UpdateWallDrag(camera, pointer, wallMarker);
+                return;
+            }
+
             var ray = camera.ScreenPointToRay(pointer);
             if (!TryRaycastFloorPlane(ray, out var floorHit))
             {
@@ -3544,6 +3598,89 @@ namespace App.Bootstrap
 
             draggingObject.transform.position = candidate;
             dragLastValidPosition = candidate;
+        }
+
+        // Wall deco 드래그 — 마우스 raycast 로 hit 한 wall 의 surface 위치로 이동 + 회전.
+        // 다른 wall 로 hit 옮겨가면 자동으로 wall 전환 (deco 회전도 새 wall 안쪽 면 향하게).
+        // obstruction check — registry 와 비교해 invalid 영역이면 붉은 tint feedback.
+        // FrontWall 은 카메라 쪽 벽이라 hit 안 되는 게 일반적. Left/Right/Back 만 실질 후보.
+        private void UpdateWallDrag(Camera camera, Vector2 pointer, WallDecoMarker marker)
+        {
+            var ray = camera.ScreenPointToRay(pointer);
+            if (!Physics.Raycast(ray, out var hit, 100f))
+            {
+                return;
+            }
+
+            var hitName = hit.collider.gameObject.name;
+            var newWall = WallNameToSide(hitName);
+            if (newWall == WallSide.None)
+            {
+                // wall 외 hit (가구 등) — 이동 skip. 사용자가 wall 위로 마우스 옮길 때까지 freeze.
+                return;
+            }
+
+            draggingObject.transform.position = hit.point;
+            draggingObject.transform.rotation = WallFacingRotation(newWall);
+            marker.CurrentWall = newWall;
+            dragLastValidPosition = hit.point;
+
+            // obstruction check — bounds 를 wall surface rect 로 projection 후 registry 비교.
+            // invalid 면 붉은 tint + valid 면 원래 색 복원.
+            var bounds = ComputeRendererBounds(draggingObject);
+            if (bounds.HasValue)
+            {
+                var rect = ProjectBoundsToWallRect(bounds.Value, newWall);
+                var registry = EnsureWallObstructionRegistry();
+                bool isFree = registry.IsRectFreeOnWall(newWall, rect);
+                ApplyWallDecoValidityFeedback(draggingObject, isFree);
+            }
+        }
+
+        // World AABB → wall surface (u, v) Rect — WallObstructionRegistry 와 동일 좌표계.
+        private static Rect ProjectBoundsToWallRect(Bounds worldBounds, WallSide wall)
+        {
+            float vMin = worldBounds.min.y;
+            float vMax = worldBounds.max.y;
+            float uMin, uMax;
+            switch (wall)
+            {
+                case WallSide.Back:
+                case WallSide.Front:
+                    uMin = worldBounds.min.x;
+                    uMax = worldBounds.max.x;
+                    break;
+                case WallSide.Left:
+                case WallSide.Right:
+                    uMin = worldBounds.min.z;
+                    uMax = worldBounds.max.z;
+                    break;
+                default:
+                    return Rect.zero;
+            }
+            return new Rect(uMin, vMin, uMax - uMin, vMax - vMin);
+        }
+
+        // valid: 원래 색 / invalid: 붉은 tint. material instance 사용 — 원본 protect.
+        // 단순 tint 누적 회피를 위해 _BaseColor 직접 set (multiply 아님).
+        // 단점: 원래 material 의 _BaseColor 를 모름 — 일단 white(valid) / soft red(invalid) 하드.
+        // follow-up 에서 원래 색 캐싱 + 정확 복원 (또는 별도 outline 시각).
+        private void ApplyWallDecoValidityFeedback(GameObject deco, bool isValid)
+        {
+            var renderers = deco.GetComponentsInChildren<Renderer>(true);
+            var tint = isValid ? Color.white : new Color(1f, 0.55f, 0.55f, 1f);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var mat = renderers[i].material;
+                if (mat.HasProperty("_BaseColor"))
+                {
+                    mat.SetColor("_BaseColor", tint);
+                }
+                else if (mat.HasProperty("_Color"))
+                {
+                    mat.SetColor("_Color", tint);
+                }
+            }
         }
 
         private void FinishDrag()
