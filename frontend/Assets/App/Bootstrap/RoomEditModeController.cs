@@ -1436,6 +1436,11 @@ namespace App.Bootstrap
         // Server Space 상태로 룸 visual 재동기화. themeReset 응답 후 / 테마 적용 응답 후 호출.
         // GET /v1/spaces/me → 6 카테고리 ID 읽기 → catalog에서 entry 찾아 visual 재적용 + lastAppliedEntries 갱신.
         // 책장 skin / Layout placement 재 spawn은 follow-up (RoomThemeApplier 설치 spec list 합류 시점).
+        //
+        // race fix: GET이 비동기라 응답 도착 전에 사용자가 다른 카테고리 PATCH를 시작할 수 있음.
+        // 그 경우 늦게 도착한 GET 응답이 사용자의 새 선택을 stale 상태로 덮으면 안 됨. 호출 시점의
+        // categoryRequestVersion을 캡처하고, 응답 시 카운터가 증가했으면 (PATCH가 그 사이 발생)
+        // GET 결과 무시 + lastServerSpace는 다음 PATCH의 OptimisticallyUpdateServerSpace에 의존.
         private void ReloadRoomState(Action onComplete = null)
         {
             var apiManager = APIManager.Instance;
@@ -1459,9 +1464,16 @@ namespace App.Bootstrap
                 return;
             }
 
+            int capturedCategoryVersion = categoryRequestVersion;
             apiClient.GetMySpace(
                 space =>
                 {
+                    if (categoryRequestVersion != capturedCategoryVersion)
+                    {
+                        Debug.Log("[RoomEditModeController] stale GET /spaces/me 응답 — 이후 PATCH 발생으로 무시.");
+                        onComplete?.Invoke();
+                        return;
+                    }
                     ApplySpaceVisualsToRoom(space);
                     onComplete?.Invoke();
                 },
