@@ -311,41 +311,76 @@ namespace App.Bootstrap
         private Rect savedCameraRect;
         private bool savedCameraRectValid;
 
-        // 동물의 숲 스타일 편집 전용 시점 프리셋. 자유 카메라가 아니라 정해진 5개 시점을
-        // 순환하면서 바닥/벽면/깊이/겹침을 직관적으로 확인하게 한다. 진입 시 0(Default)
-        // 으로 리셋되고, "시점 변경" 버튼이 다음으로 cycle.
+        // 동물의 숲 해피홈 계열 편집 UX — 자유 orbit + 미니 큐브 UI 조합.
+        //
+        // 이전 버전의 "preset cycle" 모델 (Default + 4개 시점 순환) 은 제거하고, orbit 상태
+        // (yaw/pitch/distance) 를 직접 조작하는 자유 회전 + W/S/스크롤 줌 + 큐브 면 클릭으로
+        // 즉시 점프하는 모델로 전환. CameraPreset enum 자체는 wall fade 카테고리 식별용으로
+        // 여전히 사용 (큐브 면 클릭 / 기본 시점 / A·D 회전 결과 분류).
         private enum CameraPreset
         {
-            Default,    // 메인뷰와 유사한 사선 시점 (편집 진입 시 SnapToMainView 로 잡힌 pose 그대로)
-            TopDown,    // 천장 → 바닥 직각 내려보기
-            Front,      // 책장/벽면 정면
-            LeftAngle,  // 좌측 사선
-            RightAngle, // 우측 사선
+            Default,    // 기본 편집뷰 (orbit 기본값 — 방을 자연스럽게 내려다보는 사선)
+            TopDown,    // 큐브 상면 — 위에서 직각 내려보기
+            Front,      // 큐브 전면 — 카메라 -Z 방향 outside, +Z 향함 (책장 뒷벽 시점)
+            Back,       // 큐브 후면 — 카메라 +Z 방향 outside, -Z 향함 (열린 면 시점)
+            LeftAngle,  // 큐브 좌면 — 카메라 -X outside, +X 향함
+            RightAngle, // 큐브 우면 — 카메라 +X outside, -X 향함
         }
-        private static readonly CameraPreset[] CameraPresetCycle =
-        {
-            CameraPreset.Default, CameraPreset.TopDown, CameraPreset.Front, CameraPreset.LeftAngle, CameraPreset.RightAngle,
-        };
         private static readonly Dictionary<CameraPreset, string> CameraPresetLabels = new Dictionary<CameraPreset, string>
         {
             { CameraPreset.Default,    "기본 편집뷰" },
             { CameraPreset.TopDown,    "탑다운 뷰" },
             { CameraPreset.Front,      "정면 뷰" },
-            { CameraPreset.LeftAngle,  "좌측 사선" },
-            { CameraPreset.RightAngle, "우측 사선" },
+            { CameraPreset.Back,       "후면 뷰" },
+            { CameraPreset.LeftAngle,  "좌측 뷰" },
+            { CameraPreset.RightAngle, "우측 뷰" },
         };
+
+        // ---- Orbit camera state ----
+        // 카메라 pose = (orbitCenter, orbitYaw, orbitPitch, orbitDistance) — selectedObject 무관.
+        // orbitCenter 는 카메라가 회전하는 기준점:
+        //   - 기본 시점 / TopDown: roomCenter (방 중앙)
+        //   - 벽면 포커스(전/좌/우/후): 해당 벽 중앙 midpoint → distance 가 그대로 "카메라-벽 거리"
+        //     가 되어 벽면을 가까이 볼 수 있음.
+        // yaw 0° = -Z 쪽 (orbitCenter 의 전면), 90° = +X (orbitCenter 의 우측),
+        // 180° = +Z (orbitCenter 의 후면), 270° = -X (orbitCenter 의 좌측).
+        // pitch 0° = 수평, 90° = 직각 위에서 내려봄. distance = orbitCenter 에서의 반경.
+        private Vector3 orbitCenter;
+        private float orbitYaw;
+        private float orbitPitch;
+        private float orbitDistance;
+
+        // 기본값 (Default 뷰 진입 시 사용)
+        private const float DefaultOrbitYaw = 25f;
+        private const float DefaultOrbitPitch = 18f;
+        private const float DefaultOrbitDistance = 4.2f;
+        // 클램프 — 벽면 포커스 close-up (0.5m, 거의 벽에 붙은 상태) 부터 룸 전체 overview (8m) 까지.
+        // 이전 Min=2.0 은 벽면 포커스 distance=1.5 가 clamp 에 막혀 broad view 가 되던 회귀 원인.
+        private const float MinOrbitDistance = 0.5f;
+        private const float MaxOrbitDistance = 8.0f;
+        private const float OrbitMinPitch = 5f;
+        private const float OrbitMaxPitch = 89f;
+        // A/D 회전 속도 (deg/sec), W/S 줌 속도 (m/sec), 스크롤 줌 감도 (m/scroll-tick).
+        private const float OrbitYawSpeed = 90f;
+        private const float ZoomKeySpeed = 3.0f;
+        private const float ZoomScrollSensitivity = 0.6f;
+
         // 한 프레임 내에서 99% 도달하는 시간(초). 작을수록 빠른 추격, 클수록 부드러움.
         private const float CameraPresetLerpTimeConstant = 0.18f;
-        private int currentCameraPresetIndex;
+        // 현재 활성 wall-fade 카테고리. 큐브 면 클릭/Default/A·D 회전 결과로 갱신.
+        private CameraPreset currentCameraPreset = CameraPreset.Default;
+        // 직전에 wall fade 가 적용된 카테고리 — A/D 연속 회전 중 quadrant 가 바뀔 때만 ApplyWallVisibility 재호출.
+        private CameraPreset lastAppliedFadePreset = CameraPreset.Default;
+        // "기본 시점" 모드인지 — 진입/Default 버튼 클릭 시 true. 자유 회전/줌/큐브 클릭 시 false.
+        // wall fade 정책: true 면 항상 fade=none (Default 정책), false 면 ClassifyByOrbit 결과 사용.
+        private bool isInDefaultView = true;
         private Vector3 cameraPresetTargetPosition;
         private Quaternion cameraPresetTargetRotation;
         private bool cameraPresetTargetActive;
-        // 진입 시점의 카메라 pose — Default 프리셋의 target 이자 ExitEditMode 의 복구 기준점.
+        // 진입 시점의 카메라 pose — ExitEditMode 의 복구 기준점.
         private Vector3 savedCameraPosition;
         private Quaternion savedCameraRotation;
         private bool savedCameraPoseValid;
-        // "시점 변경" 버튼 라벨 (현재 프리셋 표시용 — 사용자가 어느 시점인지 알 수 있게).
-        private TMP_Text cameraViewToggleLabel;
 
         // 편집 모드 전용 벽 occlusion 처리 — 동물의 숲/심즈류 가구 배치 UX 처럼 카메라 시야를
         // 가리는 벽을 임시로 alpha fade. 벽 GameObject 자체는 건드리지 않고 (Collider 유지 →
@@ -677,29 +712,89 @@ namespace App.Bootstrap
             BuildBottomMenu(editOverlayRoot.transform);
             BuildPillarboxFills(editOverlayRoot.transform);
             BuildReturnButton(editOverlayRoot.transform);
-            BuildCameraViewToggleButton(editOverlayRoot.transform);
+            BuildMiniCubeUI(editOverlayRoot.transform);
+            BuildDefaultViewButton(editOverlayRoot.transform);
         }
 
-        // 동물의 숲 스타일 시점 전환 버튼. SelectionPanel(중앙 하단)과 겹치지 않도록 BottomMenu
-        // 윗변의 좌측 모서리에 띄운다. 오브젝트 선택 여부와 무관하게 항상 노출(편집 모드 동안).
-        // 클릭 시 CameraPresetCycle 의 다음 프리셋으로 순환.
-        private void BuildCameraViewToggleButton(Transform parent)
+        // 좌측 상단 미니 큐브 UI — 동물의 숲 해피홈 식 "방향 선택 도구". 5개 면(상/전/후/좌/우)을
+        // 클릭하면 해당 시점으로 카메라 점프. 바닥은 클릭 대상에서 제외(요구사항). 큐브 형태를
+        // 단순 cross/T 레이아웃으로 표현 — 실제 3D 큐브 렌더보다 클릭 영역이 명확하고 모바일 터치
+        // 친화적. 면 라벨은 한국어로 표기 (위/전/후/좌/우).
+        private void BuildMiniCubeUI(Transform parent)
         {
-            var root = CreateRectObject("CameraViewToggle", parent);
+            var root = CreateRectObject("MiniCubeUI", parent);
+            var rect = (RectTransform)root.transform;
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 1f);
+            rect.sizeDelta = new Vector2(132f, 132f);
+            rect.anchoredPosition = new Vector2(16f, -16f);
+
+            // 옅은 카드 배경 — 큐브 박스 느낌을 주기 위한 outline + shadow.
+            var bg = CreateImage(root.transform, "Background", WithAlpha(CardColor, 0.92f));
+            bg.sprite = roundedRectSprite;
+            bg.type = Image.Type.Sliced;
+            StretchToParent(bg.rectTransform);
+            var bgOutline = bg.gameObject.AddComponent<Outline>();
+            bgOutline.effectColor = WithAlpha(BorderColor, 0.9f);
+            bgOutline.effectDistance = new Vector2(1f, -1f);
+
+            // cross 레이아웃 — 가운데 행에 좌/전/우, 위에 상, 아래에 후. 각 셀 38×38 + 2 px gap.
+            //   .  [위]  .
+            //   [좌][전][우]
+            //   .  [후]  .
+            const float cellSize = 38f;
+            const float gap = 2f;
+            const float margin = 8f;
+
+            // (col, row) 좌표를 panel 내 anchoredPosition 으로. row=0 이 panel top, col=0 이 panel left.
+            void AddFaceButton(string name, string label, int col, int row, CameraPreset preset)
+            {
+                var btn = CreateButton(root.transform, name, label,
+                    SecondaryColor, TextColor, new Vector2(cellSize, cellSize), true, BorderColor);
+                var br = (RectTransform)btn.transform;
+                br.anchorMin = new Vector2(0f, 1f);
+                br.anchorMax = new Vector2(0f, 1f);
+                br.pivot = new Vector2(0f, 1f);
+                br.sizeDelta = new Vector2(cellSize, cellSize);
+                float x = margin + col * (cellSize + gap);
+                float y = -(margin + row * (cellSize + gap));
+                br.anchoredPosition = new Vector2(x, y);
+                btn.onClick.AddListener(() => OnCubeFaceClicked(preset));
+            }
+
+            // 레이아웃: "전" 을 윗변(top center) 에, "위" 를 가운데(middle center) 에 배치.
+            // 사용자 요구사항: 방 배치 도식에서 "전면 벽" 이 cube 윗면처럼 가장 prominent 위치에
+            // 보여야 직관적. "위(탑다운)" 는 cube 정중앙에서 전체를 내려보는 의미로 가운데.
+            //   .  [전]  .
+            //   [좌][위][우]
+            //   .  [후]  .
+            AddFaceButton("Front", "전", 1, 0, CameraPreset.Front);
+            AddFaceButton("Left",  "좌", 0, 1, CameraPreset.LeftAngle);
+            AddFaceButton("Top",   "위", 1, 1, CameraPreset.TopDown);
+            AddFaceButton("Right", "우", 2, 1, CameraPreset.RightAngle);
+            AddFaceButton("Back",  "후", 1, 2, CameraPreset.Back);
+        }
+
+        // "기본 시점" 버튼 — 어느 cycle 시점에서든 1클릭으로 Default 프리셋 복귀.
+        // "시점 변경" 버튼 옆 (16 + 140 + 8 = 164 px 오프셋) 에 같은 줄에 배치 — SelectionPanel
+        // (중앙 하단, 360 px 폭) 과 겹치지 않게 좌측 모서리에 모음. 편집 모드 동안 항상 노출.
+        private void BuildDefaultViewButton(Transform parent)
+        {
+            var root = CreateRectObject("DefaultViewButton", parent);
             var rect = (RectTransform)root.transform;
             rect.anchorMin = new Vector2(0f, BottomMenuFraction);
             rect.anchorMax = new Vector2(0f, BottomMenuFraction);
             rect.pivot = new Vector2(0f, 0f);
             rect.sizeDelta = new Vector2(140f, 60f);
+            // 기존 "시점 변경" cycle 버튼이 (16, 16) 에 있어서 옆으로 빗겨 놨었지만 cycle 버튼을 제거했으므로
+            // 이제 (16, 16) 좌측 하단 모서리에 단독 배치. SelectionPanel(중앙) / MiniCube(좌상단)와 충돌 없음.
             rect.anchoredPosition = new Vector2(16f, 16f);
 
-            var button = CreateButton(root.transform, "Button", CameraPresetLabels[CameraPreset.Default],
-                SecondaryColor, TextColor, new Vector2(140f, 60f), true, BorderColor);
+            var button = CreateButton(root.transform, "Button", "기본 시점",
+                PrimaryColor, Color.white, new Vector2(140f, 60f), false, BorderColor);
             StretchToParent((RectTransform)button.transform);
-            button.onClick.AddListener(OnCameraViewToggleClicked);
-
-            // 라벨을 잡아둬서 프리셋 변경 시 텍스트만 갱신 (TMP_Text 는 CreateButton 이 자식으로 만든다).
-            cameraViewToggleLabel = button.GetComponentInChildren<TMP_Text>(includeInactive: true);
+            button.onClick.AddListener(OnDefaultViewClicked);
         }
 
         // Two beige rectangles flanking the camera viewport. Anchored in canvas
@@ -1440,7 +1535,7 @@ namespace App.Bootstrap
             // 거기서 RefreshWallVisibilityAfterMaterialMutation 가 호출됨.
             Debug.Log(
                 $"[RoomEdit][Theme][click] '{theme.DisplayName}' editMode={IsEditModeActive} " +
-                $"preset={(IsEditModeActive ? CameraPresetCycle[currentCameraPresetIndex].ToString() : "n/a")} " +
+                $"preset={(IsEditModeActive ? currentCameraPreset.ToString() : "n/a")} " +
                 $"wallVisibilityCollected={wallVisibilityCollected}");
             ShowThemeApplyModeModal(theme);
         }
@@ -1460,7 +1555,7 @@ namespace App.Bootstrap
 
             // D9(i) 낙관적 적용: 즉시 visual swap → 백엔드 PATCH → 실패 시 rollback.
             previousAppliedTheme = themeApplier.CurrentTheme;
-            Debug.Log($"[RoomEdit][Theme] ApplyThemeSelected '{theme.DisplayName}' editMode={IsEditModeActive} preset={(IsEditModeActive ? CameraPresetCycle[currentCameraPresetIndex].ToString() : "n/a")}");
+            Debug.Log($"[RoomEdit][Theme] ApplyThemeSelected '{theme.DisplayName}' editMode={IsEditModeActive} preset={(IsEditModeActive ? currentCameraPreset.ToString() : "n/a")}");
             themeApplier.Apply(theme);
             // 벽 sharedMaterial 이 swap 됐으므로 편집 모드 중이면 fade 즉시 재적용 (탑다운/사선에서 occlusion 복귀 방지).
             RefreshWallVisibilityAfterMaterialMutation("ApplyThemeSelected");
@@ -2444,12 +2539,117 @@ namespace App.Bootstrap
 
             if (IsEditModeActive)
             {
+                HandleEditCameraInput();
                 HandleEditModeInput();
             }
             else if (IsDecorationPopupOpen)
             {
                 HandleDecorationPopupOutsideClick();
             }
+        }
+
+        // 편집 카메라 키/스크롤 입력 — A/D 회전, W/S 줌, 마우스 스크롤 줌. 텍스트 입력 포커스 중이거나
+        // 오브젝트 드래그 중에는 skip 해서 의도치 않은 카메라 이동 방지. orbit 상태가 변하면
+        // cameraPresetTargetActive=true 로 lerp 활성, classification 변경 시 wall fade 갱신.
+        private void HandleEditCameraInput()
+        {
+            if (IsTextInputFocused()) return;
+            if (draggingObject != null) return;
+
+            float dt = Time.unscaledDeltaTime;
+            bool changed = false;
+
+            // A/D — yaw 좌우 회전 (방 중심 orbit). +A 좌측, +D 우측.
+            float yawInput = 0f;
+            var kb = Keyboard.current;
+            if (kb != null)
+            {
+                if (kb.aKey.isPressed) yawInput -= 1f;
+                if (kb.dKey.isPressed) yawInput += 1f;
+            }
+            if (Mathf.Abs(yawInput) > 0.001f)
+            {
+                orbitYaw += yawInput * OrbitYawSpeed * dt;
+                changed = true;
+            }
+
+            // W/S — zoom (W=확대=distance 줄임, S=축소=distance 늘림).
+            float zoomInput = 0f;
+            if (kb != null)
+            {
+                if (kb.wKey.isPressed) zoomInput -= 1f;
+                if (kb.sKey.isPressed) zoomInput += 1f;
+            }
+            if (Mathf.Abs(zoomInput) > 0.001f)
+            {
+                orbitDistance += zoomInput * ZoomKeySpeed * dt;
+                changed = true;
+            }
+
+            // 마우스 스크롤 — distance 단위 점프. y>0 = 스크롤 업 = 확대.
+            var mouse = Mouse.current;
+            if (mouse != null)
+            {
+                float scrollY = mouse.scroll.ReadValue().y;
+                // Unity 의 raw scroll 값은 OS 마다 스케일이 다름. 절댓값 ≥120(Win) 또는 ≥1(macOS line-step) 보정.
+                if (Mathf.Abs(scrollY) > 0.01f)
+                {
+                    float normalized = Mathf.Clamp(scrollY / 120f, -1f, 1f);
+                    if (Mathf.Abs(scrollY) < 1.5f && Mathf.Abs(scrollY) > 0.01f)
+                    {
+                        // line-step 환경 fallback.
+                        normalized = Mathf.Sign(scrollY);
+                    }
+                    orbitDistance -= normalized * ZoomScrollSensitivity;
+                    changed = true;
+                }
+            }
+
+            if (!changed) return;
+
+            // Default 모드에서 첫 orbit 입력 — 현재 saved pose 기준으로 yaw/pitch/distance 를
+            // 역산해서 점프 없이 이어가도록. 이게 없으면 Default(메인뷰 pose) → orbit 기본값(25°,18°,4.2m)
+            // 으로 갑자기 점프하는 것처럼 lerp 됨.
+            if (isInDefaultView)
+            {
+                DeriveOrbitFromSavedPose();
+                // 위에서 누적된 입력 delta 도 다시 적용 — DeriveOrbitFromSavedPose 가 yaw 등을 덮어썼으므로.
+                if (Mathf.Abs(yawInput) > 0.001f) orbitYaw += yawInput * OrbitYawSpeed * dt;
+                if (Mathf.Abs(zoomInput) > 0.001f) orbitDistance += zoomInput * ZoomKeySpeed * dt;
+            }
+
+            // 클램프 + 변경 후처리.
+            orbitDistance = Mathf.Clamp(orbitDistance, MinOrbitDistance, MaxOrbitDistance);
+            orbitPitch = Mathf.Clamp(orbitPitch, OrbitMinPitch, OrbitMaxPitch);
+            isInDefaultView = false;
+            cameraPresetTargetActive = true;
+
+            // wall fade 카테고리 갱신 — quadrant 가 바뀐 경우만 ApplyWallVisibilityForPreset 호출.
+            currentCameraPreset = ClassifyByOrbit();
+            ApplyWallVisibilityForCurrentView("OrbitInput");
+
+            if (Mathf.Abs(yawInput) > 0.001f)
+            {
+                Debug.Log($"[RoomEdit][Camera] orbit 회전 yaw={orbitYaw:0.#}° pitch={orbitPitch:0.#}° preset={currentCameraPreset}");
+            }
+            if (Mathf.Abs(zoomInput) > 0.001f || (mouse != null && Mathf.Abs(mouse.scroll.ReadValue().y) > 0.01f))
+            {
+                Debug.Log($"[RoomEdit][Camera] orbit 줌 distance={orbitDistance:0.##}m");
+            }
+        }
+
+        // EventSystem 의 currentSelectedGameObject 가 InputField/TMP_InputField 컴포넌트를 가지면
+        // 사용자가 텍스트 입력 중이라고 판단 — W/S/A/D 카메라 입력 무시.
+        private static bool IsTextInputFocused()
+        {
+            var es = EventSystem.current;
+            if (es == null) return false;
+            var go = es.currentSelectedGameObject;
+            if (go == null) return false;
+            // TMP_InputField 와 legacy InputField 둘 다 검사.
+            if (go.GetComponent<TMP_InputField>() != null) return true;
+            if (go.GetComponent<UnityEngine.UI.InputField>() != null) return true;
+            return false;
         }
 
         private void UpdateButtonVisibility()
@@ -2619,9 +2819,9 @@ namespace App.Bootstrap
             RebuildPlacedByInventoryKeyFromScene();
 
             // 동물의 숲 스타일 — 시점 전환에서 벽이 시야를 가리지 않게 fade 시스템 활성화.
-            // 진입 시 0(Default) 프리셋으로 시작하므로 fade=none 으로 시작 (메인뷰 그대로).
+            // 진입 시 Default 프리셋으로 시작하므로 fade=none 으로 시작 (메인뷰 그대로).
             CollectWallRenderers();
-            ApplyWallVisibilityForPreset(CameraPresetCycle[currentCameraPresetIndex]);
+            ApplyWallVisibilityForPreset(currentCameraPreset);
 
             // Block bookshelf / notebook / guestbook focus and the F1–F4 shortcuts
             // while edit mode is owning the scene. The edit overlay's own click
@@ -2956,9 +3156,14 @@ namespace App.Bootstrap
             savedCameraPosition = camera.transform.position;
             savedCameraRotation = camera.transform.rotation;
             savedCameraPoseValid = true;
-            currentCameraPresetIndex = 0;
-            cameraPresetTargetActive = false;
-            UpdateCameraViewToggleLabel();
+            // 진입 시 = SnapToMainView 직후의 카메라 pose 가 곧 "기본 편집뷰". target=savedCameraPose 로
+            // 두면 LateUpdate 가 그 자리에서 lerp 결과 = 정지 (이미 그 위치). cameraPresetTargetActive=true
+            // 로 두는 이유는 사용자가 즉시 큐브/A·D 입력 시 lerp loop 가 작동하도록.
+            ApplyDefaultViewState();
+            cameraPresetTargetActive = true;
+            Debug.Log(
+                "[RoomEdit][Camera] 편집 모드 진입 — 기본 편집뷰 = MainView (SnapToMainView 진입 pose) " +
+                $"position={savedCameraPosition} rotation={savedCameraRotation.eulerAngles} fov={camera.fieldOfView:0.#}");
         }
 
         private void ApplyEditModeCameraRect()
@@ -3015,134 +3220,359 @@ namespace App.Bootstrap
             RoomEditThemeFilter.Changed -= HandleThemeFilterChanged;
         }
 
-        // ---------- Animal Crossing-style camera presets ----------
+        // ---------- Animal Crossing 해피홈식 자유 orbit 카메라 ----------
         //
-        // 자유 카메라가 아니라 5개 고정 시점만 cycle 하는 방식. 한 프레임에 99% 도달하는
-        // exponential lerp(time-constant 기반) 로 부드러운 전환을 보장 — 순간이동 X.
-        //
-        // **고정 시점 semantics**: 모든 프리셋은 playableMin/Max 룸 footprint 만으로 결정된
-        // 결정적(deterministic) pose 다. selectedObject / draggingObject / 배치 프리뷰 등
-        // 어떤 편집 런타임 상태도 카메라 좌표에 영향을 주지 않는다 — 사용자가 어떤 객체를
-        // 잡고 이동 중이어도 "시점 변경" 결과는 항상 동일한 정면/탑다운/사선 시점.
-        //
-        // 요구사항 매핑:
-        //   - 5개 프리셋 (Default/TopDown/Front/LeftAngle/RightAngle): CameraPresetCycle
-        //   - 부드러운 보간: LateUpdate 의 Vector3.Lerp + Quaternion.Slerp (target은 불변)
-        //   - 모든 프리셋은 방 전체 기준 — selectedObject 가 있어도 카메라 보정 X
-        //   - 기존 Move/Rotate/Delete 흐름 보존: 카메라 transform 만 만지고 입력/선택 로직 미변경
-        //   - 책장/노트북/화이트보드 focus 모드: 편집 모드와 분리됨 (experienceManager.AreSceneInteractionsSuppressed=true 로 차단)
-        private void OnCameraViewToggleClicked()
+        // pose = (orbitYaw, orbitPitch, orbitDistance) 로만 결정 — selectedObject 무참조
+        // (오브젝트 이동/드래그 중에도 카메라 follow X). 입력 종류:
+        //   - 큐브 면 클릭: 해당 면 고정값으로 orbit 점프
+        //   - "기본 시점" 버튼: 기본 orbit 값 으로 점프
+        //   - A/D: yaw 연속 회전. W/S: distance 줄임/늘림. 스크롤: distance 단위 점프
+        // LateUpdate 가 매 프레임 ComputeOrbitPose 로 target 을 재계산하지만 결과는 orbit 만
+        // 의존하므로 객체 이동에 영향받지 않음.
+
+        // 큐브 면 클릭 — 해당 면을 향하는 고정 시점으로 즉시 점프. lerp 는 LateUpdate 가 처리.
+        private void OnCubeFaceClicked(CameraPreset face)
         {
             if (!IsEditModeActive) return;
 
-            currentCameraPresetIndex = (currentCameraPresetIndex + 1) % CameraPresetCycle.Length;
+            switch (face)
+            {
+                case CameraPreset.TopDown:
+                {
+                    // 정면뷰 축 정렬 — yaw 0° 로 고정. orbit 중심은 방 중앙. pitch 89° (직각 위, 90°는 짐벌락).
+                    orbitCenter = GetRoomCenter();
+                    orbitYaw = 0f;
+                    orbitPitch = 89f;
+                    var roomSpan = Mathf.Max(playableMaxX - playableMinX, playableMaxZ - playableMinZ);
+                    orbitDistance = Mathf.Clamp(roomSpan * 1.1f, MinOrbitDistance, MaxOrbitDistance);
+                    break;
+                }
+                case CameraPreset.Front:
+                case CameraPreset.Back:
+                case CameraPreset.LeftAngle:
+                case CameraPreset.RightAngle:
+                {
+                    // 벽면 포커스 — orbit 중심을 해당 벽 중앙으로. distance 는 ComputeWallFocusDistance
+                    // 로 자동 산정 (벽 width/height + FOV + aspect 기반) → 벽 전체가 화면에 들어오면서
+                    // 편집 가능한 크기로 보임. 이전 1.5m 하드코딩은 벽 일부만 보이는 과확대 회귀.
+                    orbitCenter = GetWallFocusCenter(face);
+                    orbitPitch = 4f;
+                    orbitDistance = ComputeWallFocusDistance(face);
+                    orbitYaw = face switch
+                    {
+                        CameraPreset.Front      => 0f,    // 책장(+Z 벽) 의 -Z 쪽 → 벽 정면
+                        CameraPreset.Back       => 180f,  // 가상 정면 (-Z) 의 +Z 쪽
+                        CameraPreset.LeftAngle  => 90f,   // 좌측 벽(-X) 의 +X 쪽 → 벽 정면
+                        CameraPreset.RightAngle => 270f,  // 우측 벽(+X) 의 -X 쪽
+                        _ => 0f,
+                    };
+                    break;
+                }
+                default:
+                    return;
+            }
+            orbitDistance = Mathf.Clamp(orbitDistance, MinOrbitDistance, MaxOrbitDistance);
+            orbitPitch = Mathf.Clamp(orbitPitch, OrbitMinPitch, OrbitMaxPitch);
+
+            isInDefaultView = false;
+            currentCameraPreset = face;
+            cameraPresetTargetActive = true;
+            ApplyWallVisibilityForCurrentView("CubeFace");
+
+            // 진단 로그 — 카메라 pose, target, 벽 bounds, framing 거리, FOV 모두 노출.
+            ComputeOrbitPose(out var camPos, out var camRot);
+            float fov = editModeCamera != null ? editModeCamera.fieldOfView : -1f;
+            float aspect = editModeCamera != null ? editModeCamera.aspect : -1f;
+            string targetWallName = face switch
+            {
+                CameraPreset.Front      => "BackWall (책장)",
+                CameraPreset.Back       => "FrontWall (가상, open 측)",
+                CameraPreset.LeftAngle  => "LeftWall",
+                CameraPreset.RightAngle => "RightWall",
+                CameraPreset.TopDown    => "(없음 — 탑다운)",
+                _ => "?",
+            };
+            bool isWallFocus = face == CameraPreset.Front || face == CameraPreset.Back ||
+                               face == CameraPreset.LeftAngle || face == CameraPreset.RightAngle;
+            if (isWallFocus)
+            {
+                var dims = GetWallDimensions(face);
+                // vertical-fit / horizontal-fit 둘 다 distance 보다 작으면 벽 전체가 화면 안에 들어옴.
+                float halfFovY = fov * 0.5f * Mathf.Deg2Rad;
+                float tanHalf = Mathf.Tan(halfFovY);
+                float verticalNeed  = (dims.y * WallFocusFramingPadding) / (2f * tanHalf);
+                float horizontalNeed = (dims.x * WallFocusFramingPadding) / (2f * tanHalf * Mathf.Max(aspect, 0.001f));
+                bool wallFitsInView = orbitDistance >= verticalNeed && orbitDistance >= horizontalNeed;
+                Debug.Log(
+                    $"[RoomEdit][Camera] 큐브 면 클릭 → {face} ({CameraPresetLabels[face]}) " +
+                    $"target-wall={targetWallName} wall-bounds={dims.x:0.##}m×{dims.y:0.##}m " +
+                    $"computed-distance={orbitDistance:0.##}m (vertical-fit={verticalNeed:0.##}m, horizontal-fit={horizontalNeed:0.##}m, padding={WallFocusFramingPadding:0.00}) " +
+                    $"wall-fits-in-view={wallFitsInView} " +
+                    $"orbitCenter={orbitCenter} camera-pos={camPos} camera-target={orbitCenter} fov={fov:0.#} aspect={aspect:0.##} " +
+                    $"yaw={orbitYaw:0.#}° pitch={orbitPitch:0.#}° " +
+                    "selectedObject-기준-focus=NO");
+            }
+            else
+            {
+                Debug.Log(
+                    $"[RoomEdit][Camera] 큐브 면 클릭 → {face} ({CameraPresetLabels[face]}) " +
+                    $"orbitCenter={orbitCenter} camera-pos={camPos} fov={fov:0.#} " +
+                    $"yaw={orbitYaw:0.#}° pitch={orbitPitch:0.#}° distance={orbitDistance:0.##}m " +
+                    "탑다운 (yaw=0° 정렬) — 모든 벽+천장 fade selectedObject-기준-focus=NO");
+            }
+        }
+
+        // "기본 시점" 버튼 — 메인씬에서 사용자가 보던 기본 카메라 시점으로 복귀.
+        //
+        // **중요**: 이전 구현은 orbit 기본값 (yaw=25°/pitch=18°/distance=4.2m) 을 적용했는데,
+        // 이는 우측 사선 비슷한 시점이었음. MR !120 review beshu [P1]: 사용자 기대는 "메인씬에서
+        // 보던 기본 시점" 이라는 명시. EnterEditMode 가 진입 직후 BookshelfExperienceManager.SnapToMainView()
+        // 를 호출하고 그 직후의 카메라 transform 을 savedCameraPosition/Rotation 에 저장하므로,
+        // 그 값이 곧 "메인씬 기본 카메라 pose". 이것을 그대로 target 으로 사용 → 메인씬과 동일.
+        // savedCameraPoseValid=false 인 비정상 경로 (뷰포트 begin 미수행) 면 orbit 기본값 fallback.
+        // selectedObject 를 절대 참조하지 않으므로 객체 follow / focus 없음.
+        private void OnDefaultViewClicked()
+        {
+            if (!IsEditModeActive) return;
+
+            // 이전 view 저장 — 로그/디버깅 용 + TopDown→Default 전환 case 식별.
+            var previousPreset = currentCameraPreset;
+            bool wasTopDown = previousPreset == CameraPreset.TopDown;
+
+            ApplyDefaultViewState();
             cameraPresetTargetActive = true;
 
-            var preset = CameraPresetCycle[currentCameraPresetIndex];
-            UpdateCameraViewToggleLabel();
+            // **명시 reset (#3 회귀 방어)**: change-detection (ApplyWallVisibilityForCurrentView) 우회.
+            // ApplyDefaultViewState 가 lastAppliedFadePreset=Default 로 설정해서 ApplyWallVisibilityForCurrentView
+            // 가 target==lastAppliedFadePreset 으로 보고 skip 하던 회귀 — 모든 벽이 TopDown fade 상태로
+            // 남던 #3 버그. 여기서 직접 Apply 호출 + lastAppliedFadePreset 동기화로 강제 복구.
+            ApplyWallVisibilityForPreset(CameraPreset.Default);
+            lastAppliedFadePreset = CameraPreset.Default;
+            int fadedAfterReset = CountFadedWalls();
 
-            // 클릭 시점 1회 스냅샷 — 이후 LateUpdate 가 이 target 으로만 lerp. 오브젝트가
-            // 드래그/회전/이동되어도 cameraPresetTargetPosition 은 갱신되지 않으므로
-            // 카메라가 객체를 따라가지 않는다 (동물의 숲식 고정 시점).
-            //
-            // ComputeCameraPresetPose 는 selectedObject 를 참조하지 않으므로 어떤 객체가 선택돼
-            // 있어도 같은 preset 은 항상 같은 target 을 반환 → 결과 결정적.
-            ComputeCameraPresetPose(preset, out cameraPresetTargetPosition, out cameraPresetTargetRotation);
-
-            // 시야를 가리는 벽 fade — 카메라가 lerp 로 도착하기 전에 즉시 적용해서
-            // 전환 동안 occlusion 이 없는 상태로 보이게 한다.
-            ApplyWallVisibilityForPreset(preset);
-
-            Debug.Log(
-                $"[RoomEdit][Camera] preset 변경 → {preset} ({CameraPresetLabels[preset]}) " +
-                $"target-pos={cameraPresetTargetPosition} (room-fixed, selectedObject 무관) " +
-                $"selected-at-click={(selectedObject != null ? selectedObject.name : "<none>")}");
+            if (savedCameraPoseValid)
+            {
+                float fov = editModeCamera != null ? editModeCamera.fieldOfView : -1f;
+                Debug.Log(
+                    "[RoomEdit][Camera] 기본 시점 복귀 — preset=MainView (SnapToMainView 진입 pose) " +
+                    $"이전 view={previousPreset} (TopDown 여부={wasTopDown}) → wall fade reset 후 잔여 faded={fadedAfterReset}/{wallRendererCaches.Count} " +
+                    $"position={savedCameraPosition} rotation={savedCameraRotation.eulerAngles} fov={fov:0.#} " +
+                    $"selectedObject-기준-focus=NO selected={(selectedObject != null ? selectedObject.name : "<none>")}");
+            }
+            else
+            {
+                Debug.LogWarning(
+                    "[RoomEdit][Camera] 기본 시점 복귀 — savedCameraPose 무효 → orbit 기본값 fallback. " +
+                    $"이전 view={previousPreset} 잔여 faded={fadedAfterReset}");
+            }
         }
 
-        private void UpdateCameraViewToggleLabel()
+        // 현재 fade 적용된 벽(InstanceMaterial != null) 개수 — 디버그 로그 / 회귀 검증용.
+        private int CountFadedWalls()
         {
-            if (cameraViewToggleLabel == null) return;
-            var preset = CameraPresetCycle[currentCameraPresetIndex];
-            cameraViewToggleLabel.text = CameraPresetLabels[preset];
+            int n = 0;
+            for (int i = 0; i < wallRendererCaches.Count; i++)
+            {
+                if (wallRendererCaches[i].InstanceMaterial != null) n++;
+            }
+            return n;
         }
 
-        // 매 프레임 호출 — 클릭 시점에 한 번 캡처된 target 으로 부드럽게 도달만 한다.
-        // 의도적으로 ComputeCameraPresetPose 를 매 프레임 다시 부르지 않음 — 동물의 숲식
-        // "고정 시점" UX 보장 (오브젝트가 이동해도 카메라는 따라가지 않음).
+        // savedCameraPosition 을 기준으로 orbit (yaw/pitch/distance) 역산. Default → orbit 전환 시
+        // 카메라 점프 없이 자연스러운 추격을 위해 사용. 좌표계: ComputeOrbitPose 의 역연산.
+        //   horizontal·sin(yaw) = offset.x, vertical = offset.y, -horizontal·cos(yaw) = offset.z
+        //   → yaw = atan2(offset.x, -offset.z),  pitch = asin(offset.y / distance)
+        private void DeriveOrbitFromSavedPose()
+        {
+            if (!savedCameraPoseValid) return;
+            // saved pose 는 메인뷰 → orbit 중심도 방 중앙으로 reset.
+            orbitCenter = GetRoomCenter();
+            var offset = savedCameraPosition - orbitCenter;
+            float dist = offset.magnitude;
+            if (dist < 0.01f) return; // 이상치 방어
+
+            orbitDistance = Mathf.Clamp(dist, MinOrbitDistance, MaxOrbitDistance);
+            orbitPitch = Mathf.Clamp(
+                Mathf.Asin(Mathf.Clamp(offset.y / dist, -1f, 1f)) * Mathf.Rad2Deg,
+                OrbitMinPitch, OrbitMaxPitch);
+            orbitYaw = Mathf.Atan2(offset.x, -offset.z) * Mathf.Rad2Deg;
+        }
+
+        // Default 모드 활성화 — orbit 값도 기본값으로 동기화해서 다음 A/D 첫 입력 시 자연스럽게
+        // orbit 진입 (DeriveOrbitFromSavedPose 가 saved pose 기준으로 다시 보정함).
+        // **lastAppliedFadePreset 은 손대지 않음 (#3 회귀 방어)**: ApplyWallVisibilityForCurrentView 의
+        // change-detection 이 잘못 skip 되어 TopDown→Default 전환 시 fade 가 풀리지 않는 버그 발생.
+        // 호출자(OnDefaultViewClicked / EnterEditMode 후속 ApplyWallVisibilityForPreset)가 wall fade 를
+        // 명시 적용한 후 lastAppliedFadePreset 을 직접 갱신.
+        private void ApplyDefaultViewState()
+        {
+            // orbit 중심을 방 중앙으로 — Default → orbit 자유회전(A/D) 시 방 전체 기준으로 도는게 자연스러움.
+            // 벽면 포커스 후 Default 클릭하면 orbitCenter 가 wall midpoint 로 남아있을 수 있어 명시 reset.
+            orbitCenter = GetRoomCenter();
+            orbitYaw = DefaultOrbitYaw;
+            orbitPitch = DefaultOrbitPitch;
+            orbitDistance = DefaultOrbitDistance;
+            isInDefaultView = true;
+            currentCameraPreset = CameraPreset.Default;
+        }
+
+        // 매 프레임 호출 — Default 모드면 saved main view pose, 그 외에는 orbit 상태 재계산.
+        // 둘 다 selectedObject 절대 무참조 → 객체 follow X.
         private void LateUpdate()
         {
             if (!IsEditModeActive) return;
             if (editModeCamera == null) return;
             if (!cameraPresetTargetActive) return;
 
+            if (isInDefaultView && savedCameraPoseValid)
+            {
+                // 메인씬 기본 시점 그대로 — orbit 계산 무시.
+                cameraPresetTargetPosition = savedCameraPosition;
+                cameraPresetTargetRotation = savedCameraRotation;
+            }
+            else
+            {
+                ComputeOrbitPose(out cameraPresetTargetPosition, out cameraPresetTargetRotation);
+            }
+
             // exponential smoothing: 99% 도달까지 ~CameraPresetLerpTimeConstant×4.6 초.
-            // dt 변동에 무관하게 같은 부드러움을 유지.
             var t = 1f - Mathf.Exp(-Time.unscaledDeltaTime / Mathf.Max(0.0001f, CameraPresetLerpTimeConstant));
             var tr = editModeCamera.transform;
             tr.position = Vector3.Lerp(tr.position, cameraPresetTargetPosition, t);
             tr.rotation = Quaternion.Slerp(tr.rotation, cameraPresetTargetRotation, t);
         }
 
-        // 프리셋별 카메라 pose 계산 — **방 전체 기준 고정 시점**. selectedObject / draggingObject /
-        // 배치 프리뷰 등 어떤 런타임 상태도 참조하지 않는다 (의도). 카메라 위치/회전은 playableMin/Max
-        // 룸 footprint 만으로 결정되므로 프리셋 결과는 반복 호출에 대해 동일성이 보장됨 — 사용자가
-        // 오브젝트 편집 중에 "시점 변경" 을 눌러도 항상 같은 정면/탑다운/사선 시점으로 이동한다.
-        // FOV 는 호출되지 않음(=원래 카메라 FOV 유지).
-        private void ComputeCameraPresetPose(CameraPreset preset, out Vector3 position, out Quaternion rotation)
+        // orbit (yaw/pitch/distance) → world (position/rotation). orbitCenter (방 중앙 또는 벽 중앙)
+        // 기준점으로 구면좌표계 → 직교좌표 변환. 카메라는 항상 orbitCenter 를 lookAt.
+        // yaw 0° = -Z 측, 90° = +X, 180° = +Z, 270° = -X. pitch 0° = 수평, 89° ≈ 직각 위에서.
+        private void ComputeOrbitPose(out Vector3 position, out Quaternion rotation)
         {
-            if (preset == CameraPreset.Default && savedCameraPoseValid)
+            float yawRad = orbitYaw * Mathf.Deg2Rad;
+            float pitchRad = orbitPitch * Mathf.Deg2Rad;
+            float horizontal = orbitDistance * Mathf.Cos(pitchRad);
+            float vertical   = orbitDistance * Mathf.Sin(pitchRad);
+
+            var offset = new Vector3(
+                horizontal * Mathf.Sin(yawRad),
+                vertical,
+                -horizontal * Mathf.Cos(yawRad));
+
+            position = orbitCenter + offset;
+            rotation = Quaternion.LookRotation(orbitCenter - position, Vector3.up);
+        }
+
+        // 방 중앙 — Default / TopDown 의 orbit 중심.
+        private Vector3 GetRoomCenter()
+        {
+            return new Vector3(
+                (playableMinX + playableMaxX) * 0.5f,
+                1.0f,
+                (playableMinZ + playableMaxZ) * 0.5f);
+        }
+
+        // 벽면 포커스 view 의 orbit 중심 — 해당 벽의 안쪽 면 중앙. distance 가 곧 카메라-벽 거리가 됨.
+        // y=1.4m: 룸 천장 ~2.8m 의 절반 (벽 중앙 높이). x/z 는 벽 위치.
+        private Vector3 GetWallFocusCenter(CameraPreset face)
+        {
+            const float wallMidY = WallFocusHeight;
+            float centerX = (playableMinX + playableMaxX) * 0.5f;
+            float centerZ = (playableMinZ + playableMaxZ) * 0.5f;
+            switch (face)
             {
-                position = savedCameraPosition;
-                rotation = savedCameraRotation;
-                return;
+                case CameraPreset.Front:      return new Vector3(centerX, wallMidY, playableMaxZ);  // 책장 뒷벽
+                case CameraPreset.Back:       return new Vector3(centerX, wallMidY, playableMinZ);  // 정면 open 측 (가상 벽)
+                case CameraPreset.LeftAngle:  return new Vector3(playableMinX, wallMidY, centerZ);  // 좌측 벽
+                case CameraPreset.RightAngle: return new Vector3(playableMaxX, wallMidY, centerZ);  // 우측 벽
+                default:                      return GetRoomCenter();
             }
+        }
 
-            var centerX = (playableMinX + playableMaxX) * 0.5f;
-            var centerZ = (playableMinZ + playableMaxZ) * 0.5f;
-            var roomCenter = new Vector3(centerX, 1.0f, centerZ);
+        // 벽 dimensions (width × height) — wall focus framing 계산용.
+        // BookshelfGenerator 가 만든 룸 높이 (~2.8m) 와 playable footprint span 으로 계산.
+        // 향후 RoomThemeApplier.RoomRoot 에서 wall renderer.bounds 직접 query 도 가능하지만 일단 footprint 기반.
+        private const float RoomCeilingHeight = 2.8f;
+        private const float WallFocusHeight = RoomCeilingHeight * 0.5f;
+        // 벽이 화면 가장자리 살짝 안쪽에 위치하도록 — 너무 1.0 (꽉 차게) 이면 잘릴 수 있고,
+        // 1.10 (10% 여유) 정도면 편집 시 손가락 잘림 없이 자연스러움.
+        private const float WallFocusFramingPadding = 1.10f;
 
-            switch (preset)
+        private Vector2 GetWallDimensions(CameraPreset face)
+        {
+            switch (face)
             {
-                case CameraPreset.TopDown:
-                {
-                    // 항상 방 중앙 위에서 직각 내려보기. 높이는 방 footprint 의 긴 변 + 여유로 산정
-                    // (좁은 방은 가깝게, 넓은 방은 멀리). 선택 오브젝트 위치 무관 → 결과 결정적.
-                    var roomSpan = Mathf.Max(playableMaxX - playableMinX, playableMaxZ - playableMinZ);
-                    var topY = Mathf.Clamp(roomSpan * 1.05f, 3.5f, 6.5f);
-                    position = new Vector3(centerX, topY, centerZ);
-                    rotation = Quaternion.Euler(90f, 0f, 0f);
-                    return;
-                }
                 case CameraPreset.Front:
-                {
-                    // 방 정면(open side, 작은 Z)에 서서 책장이 있는 뒷벽 정중앙을 본다.
-                    // lookAt target 은 뒷벽 중앙 — 어느 오브젝트가 선택돼 있어도 동일 시점.
-                    position = new Vector3(centerX, 1.55f, playableMinZ - 1.0f);
-                    var frontTarget = new Vector3(centerX, 1.0f, playableMaxZ - 0.4f);
-                    rotation = Quaternion.LookRotation(frontTarget - position, Vector3.up);
-                    return;
-                }
+                case CameraPreset.Back:
+                    return new Vector2(playableMaxX - playableMinX, RoomCeilingHeight);
                 case CameraPreset.LeftAngle:
-                {
-                    // 좌측 외부에서 사선으로 방 중앙을 본다 — selectedObject 무관.
-                    position = new Vector3(playableMinX - 1.4f, 2.4f, playableMinZ - 0.4f);
-                    rotation = Quaternion.LookRotation(roomCenter - position, Vector3.up);
-                    return;
-                }
                 case CameraPreset.RightAngle:
-                {
-                    // 우측 외부에서 사선으로 방 중앙을 본다 — selectedObject 무관.
-                    position = new Vector3(playableMaxX + 1.4f, 2.4f, playableMinZ - 0.4f);
-                    rotation = Quaternion.LookRotation(roomCenter - position, Vector3.up);
-                    return;
-                }
+                    return new Vector2(playableMaxZ - playableMinZ, RoomCeilingHeight);
                 default:
-                {
-                    position = savedCameraPoseValid ? savedCameraPosition : roomCenter;
-                    rotation = savedCameraPoseValid ? savedCameraRotation : Quaternion.identity;
-                    return;
-                }
+                    return new Vector2(0f, 0f);
             }
+        }
+
+        // 벽 bounds + camera FOV + aspect ratio 로 "벽 전체가 화면에 들어오는" 거리 계산.
+        // vertical-fit: d ≥ H * pad / (2·tan(FOV_y/2))
+        // horizontal-fit: d ≥ W * pad / (2·tan(FOV_y/2)·aspect)
+        // → 두 distance 의 max 를 사용해야 좌우/상하 둘 다 잘리지 않음. 결과는 [Min, Max]OrbitDistance 로 클램프.
+        private float ComputeWallFocusDistance(CameraPreset face)
+        {
+            var dims = GetWallDimensions(face);
+            float wallWidth = dims.x;
+            float wallHeight = dims.y;
+            if (wallWidth <= 0f || wallHeight <= 0f)
+            {
+                return Mathf.Clamp(2.5f, MinOrbitDistance, MaxOrbitDistance);
+            }
+
+            // FOV/aspect — 카메라 미초기화 (BeginCameraViewportEdit 전 호출 등) 케이스 fallback.
+            float fovY = (editModeCamera != null && editModeCamera.fieldOfView > 0f)
+                ? editModeCamera.fieldOfView
+                : 52f;
+            float aspect = (editModeCamera != null && editModeCamera.aspect > 0f)
+                ? editModeCamera.aspect
+                : (16f / 9f);
+
+            float halfFovY = fovY * 0.5f * Mathf.Deg2Rad;
+            float tanHalf = Mathf.Tan(halfFovY);
+            if (tanHalf < 1e-4f)
+            {
+                return Mathf.Clamp(2.5f, MinOrbitDistance, MaxOrbitDistance);
+            }
+
+            float distVertical = (wallHeight * WallFocusFramingPadding) / (2f * tanHalf);
+            float distHorizontal = (wallWidth * WallFocusFramingPadding) / (2f * tanHalf * aspect);
+            float chosen = Mathf.Max(distVertical, distHorizontal);
+            return Mathf.Clamp(chosen, MinOrbitDistance, MaxOrbitDistance);
+        }
+
+        // orbit yaw/pitch → wall fade 카테고리. pitch ≥ 65° 면 TopDown,
+        // 그 외에는 yaw quadrant 로 분류 (45°/135°/225°/315° 경계).
+        // 매핑: 카메라 위치 yaw → 사용자가 보는 쪽 = preset 의미.
+        //   yaw 0° (-Z 측) → Front (앞 벽 focus, fade Front)
+        //   yaw 90° (+X 측, 좌측 벽을 봄) → LeftAngle (= "좌" 의미, fade Right)
+        //   yaw 180° (+Z 측) → Back (fade Back)
+        //   yaw 270° (-X 측, 우측 벽을 봄) → RightAngle (= "우" 의미, fade Left)
+        private CameraPreset ClassifyByOrbit()
+        {
+            if (orbitPitch >= 65f) return CameraPreset.TopDown;
+            float yawNorm = ((orbitYaw % 360f) + 360f) % 360f;
+            if (yawNorm < 45f || yawNorm >= 315f) return CameraPreset.Front;
+            if (yawNorm < 135f) return CameraPreset.LeftAngle;   // +X 측 → 좌측 벽 focus
+            if (yawNorm < 225f) return CameraPreset.Back;
+            return CameraPreset.RightAngle;                       // -X 측 → 우측 벽 focus
+        }
+
+        // 현재 view 상태 → wall fade 적용. isInDefaultView=true 면 무조건 Default(=fade 없음).
+        // A/D 회전 중에는 ClassifyByOrbit 로 quadrant 가 바뀔 때만 ApplyWallVisibilityForPreset 재호출
+        // (불필요한 Material instance 재생성 회피).
+        private void ApplyWallVisibilityForCurrentView(string contextTag)
+        {
+            var target = isInDefaultView ? CameraPreset.Default : currentCameraPreset;
+            if (target == lastAppliedFadePreset) return;
+            ApplyWallVisibilityForPreset(target);
+            lastAppliedFadePreset = target;
+            Debug.Log($"[RoomEdit][WallFade] view 갱신 (context={contextTag}) → {target}");
         }
 
         // ---------- Edit-mode wall occlusion fade ----------
@@ -3224,18 +3654,17 @@ namespace App.Bootstrap
             switch (preset)
             {
                 case CameraPreset.Default:
-                    return false; // 메인뷰 사선 시점 — 카메라가 방 안쪽을 보므로 occlusion 없음.
+                    return false; // 메인뷰 사선 시점 — fade 없음.
                 case CameraPreset.TopDown:
-                    return true;  // 모든 벽 + 천장 fade — 위에서 내려보면 둘 다 시야 차단 가능.
+                    return true;  // 모든 벽 + 천장 fade — 위에서 내려보면 둘 다 시야 차단.
                 case CameraPreset.Front:
-                    // 카메라가 방 정면(open side)에 서서 책장(뒷벽)을 본다. 카메라와 방 사이에
-                    // FrontWall(있으면) 만 가린다. Ceiling/Left/Right/Back 은 카메라 frustum 측면/뒤.
-                    return group == WallGroup.Front;
+                case CameraPreset.Back:
                 case CameraPreset.LeftAngle:
-                    // 카메라가 방 좌측 외부에서 사선으로 본다. LeftWall + FrontWall(있으면) 가림.
-                    return group == WallGroup.Left || group == WallGroup.Front;
                 case CameraPreset.RightAngle:
-                    return group == WallGroup.Right || group == WallGroup.Front;
+                    // 큐브 면 클릭 = 카메라가 방 안쪽에서 해당 벽을 본다 (inside view). 다른 벽들은
+                    // 카메라 frustum 측면/뒤에 있으므로 occlusion 없음 → fade 불필요. 타깃 벽도 opaque
+                    // 유지해야 사용자가 "벽면 배치 오브젝트" 를 인식 가능.
+                    return false;
                 default:
                     return false;
             }
@@ -3466,9 +3895,12 @@ namespace App.Bootstrap
                         $"외부 swap 감지 {externalSwapDetected}, fade 유지 {fadeKept} / total {wallRendererCaches.Count}");
                 }
             }
-            var preset = CameraPresetCycle[currentCameraPresetIndex];
-            ApplyWallVisibilityForPreset(preset);
-            Debug.Log($"[RoomEdit][WallFade] preset 재적용 (context={contextTag}) — preset={preset}");
+            // theme/customization swap 직후 — 같은 preset 이라도 새 sharedMaterial 기준으로 fade
+            // 다시 만들어야 하므로 ApplyWallVisibilityForCurrentView 의 변경 감지 건너뛰고 직접 호출.
+            var fadeTarget = isInDefaultView ? CameraPreset.Default : currentCameraPreset;
+            ApplyWallVisibilityForPreset(fadeTarget);
+            lastAppliedFadePreset = fadeTarget;
+            Debug.Log($"[RoomEdit][WallFade] preset 재적용 (context={contextTag}) — preset={fadeTarget}");
         }
 
         // Toolbar ------------------------------------------------------------------
