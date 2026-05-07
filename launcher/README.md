@@ -11,8 +11,10 @@ Windows launcher for installing, updating, and starting the Dotshelf Unity app.
 ## Local Build
 
 ```powershell
-dotnet build .\DotShelfLauncher.slnx
+dotnet build .\src\DotShelf.Launcher\DotShelf.Launcher.csproj
 ```
+
+> `.slnx` solution file은 .NET SDK 8.x에서 직접 `dotnet build` 대상이 되지 않습니다. 메인 WPF 프로젝트를 직접 빌드하세요.
 
 ## Update Model
 
