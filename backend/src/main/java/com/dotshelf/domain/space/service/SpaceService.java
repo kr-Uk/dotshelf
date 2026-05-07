@@ -434,6 +434,11 @@ public class SpaceService {
     }
 
     @Transactional
+    public void ensureDefaultSpace(Long userId) {
+        findOrCreateMySpace(userId);
+    }
+
+    @Transactional
     public Space findOrCreateMySpace(Long userId) {
         return spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(userId)
                 .orElseGet(() -> spaceRepository.save(Space.builder()

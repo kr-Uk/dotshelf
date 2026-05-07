@@ -26,6 +26,7 @@ import com.dotshelf.domain.payment.service.PaymentService;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
 
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class PaymentController {
     private final PaymentService paymentService;
 
     @Deprecated
+    @Operation(summary = "페이지 충전 즉시 처리", description = "테스트 또는 레거시 용도로 페이지 잔액을 즉시 충전합니다. 신규 결제 흐름에서는 주문 생성 API를 사용합니다.")
     @PostMapping("/page-charge")
     public ApiResponse<WalletResponse> charge(
             @CurrentUser Long userId,
@@ -47,6 +49,7 @@ public class PaymentController {
         return ApiResponse.success(paymentService.charge(userId, request));
     }
 
+    @Operation(summary = "페이지 충전 주문 생성", description = "INICIS 결제를 시작하기 위한 페이지 충전 주문을 생성합니다.")
     @PostMapping("/page-charge/orders")
     public ApiResponse<PageChargeOrderResponse> createPageChargeOrder(
             @CurrentUser Long userId,
@@ -55,6 +58,7 @@ public class PaymentController {
         return ApiResponse.success(paymentService.createPageChargeOrder(userId, request));
     }
 
+    @Operation(summary = "INICIS 결제 페이지 렌더링", description = "생성된 주문 ID로 INICIS 표준 결제창을 호출하는 HTML 페이지를 반환합니다.")
     @GetMapping(value = "/inicis/request/{orderId}", produces = MediaType.TEXT_HTML_VALUE)
     public String renderInicisPaymentPage(
             @CurrentUser Long userId,
@@ -63,6 +67,7 @@ public class PaymentController {
         return renderPaymentPage(paymentService.getInicisPaymentPage(userId, orderId));
     }
 
+    @Operation(summary = "INICIS 인증 결과 수신", description = "INICIS 표준 결제창에서 전달한 인증 결과를 받아 승인 처리 후 결과 HTML을 반환합니다.")
     @PostMapping(value = "/inicis/return",
             consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
             produces = MediaType.TEXT_HTML_VALUE)
@@ -71,6 +76,7 @@ public class PaymentController {
         return renderReturnPage(response);
     }
 
+    @Operation(summary = "INICIS 결제창 닫힘 처리", description = "사용자가 INICIS 결제창을 닫았을 때 표시할 종료 HTML을 반환합니다.")
     @GetMapping(value = "/inicis/close", produces = MediaType.TEXT_HTML_VALUE)
     public String closeInicisPaymentPage() {
         return """
@@ -82,6 +88,7 @@ public class PaymentController {
                 """;
     }
 
+    @Operation(summary = "결제 주문 상태 조회", description = "주문 ID 기준으로 페이지 충전 주문의 현재 결제 상태를 조회합니다.")
     @GetMapping("/orders/{orderId}")
     public ApiResponse<PaymentOrderStatusResponse> getOrderStatus(
             @CurrentUser Long userId,
@@ -90,16 +97,19 @@ public class PaymentController {
         return ApiResponse.success(paymentService.getOrderStatus(userId, orderId));
     }
 
+    @Operation(summary = "구매 내역 조회", description = "현재 사용자의 에셋 구매 및 결제 내역을 조회합니다.")
     @GetMapping("/purchases")
     public ApiResponse<PurchaseHistoryListResponse> getPurchases(@CurrentUser Long userId) {
         return ApiResponse.success(paymentService.getPurchases(userId));
     }
 
+    @Operation(summary = "지갑 조회", description = "현재 사용자의 페이지 잔액과 지갑 정보를 조회합니다.")
     @GetMapping("/wallet")
     public ApiResponse<WalletResponse> getWallet(@CurrentUser Long userId) {
         return ApiResponse.success(paymentService.getWallet(userId));
     }
 
+    @Operation(summary = "결제 수단 조회", description = "현재 사용자가 사용할 수 있는 결제 수단 목록을 조회합니다.")
     @GetMapping("/methods")
     public ApiResponse<PaymentMethodListResponse> getMethods(@CurrentUser Long userId) {
         return ApiResponse.success(paymentService.getMethods(userId));
