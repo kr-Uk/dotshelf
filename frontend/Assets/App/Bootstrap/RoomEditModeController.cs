@@ -311,6 +311,60 @@ namespace App.Bootstrap
         private Rect savedCameraRect;
         private bool savedCameraRectValid;
 
+        // 동물의 숲 스타일 편집 전용 시점 프리셋. 자유 카메라가 아니라 정해진 5개 시점을
+        // 순환하면서 바닥/벽면/깊이/겹침을 직관적으로 확인하게 한다. 진입 시 0(Default)
+        // 으로 리셋되고, "시점 변경" 버튼이 다음으로 cycle.
+        private enum CameraPreset
+        {
+            Default,    // 메인뷰와 유사한 사선 시점 (편집 진입 시 SnapToMainView 로 잡힌 pose 그대로)
+            TopDown,    // 천장 → 바닥 직각 내려보기
+            Front,      // 책장/벽면 정면
+            LeftAngle,  // 좌측 사선
+            RightAngle, // 우측 사선
+        }
+        private static readonly CameraPreset[] CameraPresetCycle =
+        {
+            CameraPreset.Default, CameraPreset.TopDown, CameraPreset.Front, CameraPreset.LeftAngle, CameraPreset.RightAngle,
+        };
+        private static readonly Dictionary<CameraPreset, string> CameraPresetLabels = new Dictionary<CameraPreset, string>
+        {
+            { CameraPreset.Default,    "기본 편집뷰" },
+            { CameraPreset.TopDown,    "탑다운 뷰" },
+            { CameraPreset.Front,      "정면 뷰" },
+            { CameraPreset.LeftAngle,  "좌측 사선" },
+            { CameraPreset.RightAngle, "우측 사선" },
+        };
+        // 한 프레임 내에서 99% 도달하는 시간(초). 작을수록 빠른 추격, 클수록 부드러움.
+        private const float CameraPresetLerpTimeConstant = 0.18f;
+        private int currentCameraPresetIndex;
+        private Vector3 cameraPresetTargetPosition;
+        private Quaternion cameraPresetTargetRotation;
+        private bool cameraPresetTargetActive;
+        // 진입 시점의 카메라 pose — Default 프리셋의 target 이자 ExitEditMode 의 복구 기준점.
+        private Vector3 savedCameraPosition;
+        private Quaternion savedCameraRotation;
+        private bool savedCameraPoseValid;
+        // "시점 변경" 버튼 라벨 (현재 프리셋 표시용 — 사용자가 어느 시점인지 알 수 있게).
+        private TMP_Text cameraViewToggleLabel;
+
+        // 편집 모드 전용 벽 occlusion 처리 — 동물의 숲/심즈류 가구 배치 UX 처럼 카메라 시야를
+        // 가리는 벽을 임시로 alpha fade. 벽 GameObject 자체는 건드리지 않고 (Collider 유지 →
+        // 충돌/배치 검증 그대로 동작) Renderer 의 material instance 만 transparent 로 swap.
+        // 종료 시 sharedMaterial 원본 reference 로 되돌리고 instance material 은 Destroy.
+        private enum WallGroup { Left, Right, Back, Front, Ceiling }
+        private sealed class WallRendererCache
+        {
+            public Renderer Renderer;
+            public Material InstanceMaterial;   // 우리가 만든 instance — Destroy 책임 있음.
+            public Material SharedOriginal;     // 진입 시 sharedMaterial 스냅샷.
+            public bool RendererWasEnabled;
+            public WallGroup Group;
+        }
+        private readonly List<WallRendererCache> wallRendererCaches = new List<WallRendererCache>();
+        private bool wallVisibilityCollected;
+        // 0.18 → 내부가 충분히 보이면서도 벽 윤곽선은 살짝 인지되는 정도.
+        private const float WallFadeAlpha = 0.18f;
+
         // Decoration catalog loaded from Resources (built by the editor menu item).
         private readonly List<InventoryEntry> inventoryEntries = new List<InventoryEntry>();
 
@@ -623,6 +677,29 @@ namespace App.Bootstrap
             BuildBottomMenu(editOverlayRoot.transform);
             BuildPillarboxFills(editOverlayRoot.transform);
             BuildReturnButton(editOverlayRoot.transform);
+            BuildCameraViewToggleButton(editOverlayRoot.transform);
+        }
+
+        // 동물의 숲 스타일 시점 전환 버튼. SelectionPanel(중앙 하단)과 겹치지 않도록 BottomMenu
+        // 윗변의 좌측 모서리에 띄운다. 오브젝트 선택 여부와 무관하게 항상 노출(편집 모드 동안).
+        // 클릭 시 CameraPresetCycle 의 다음 프리셋으로 순환.
+        private void BuildCameraViewToggleButton(Transform parent)
+        {
+            var root = CreateRectObject("CameraViewToggle", parent);
+            var rect = (RectTransform)root.transform;
+            rect.anchorMin = new Vector2(0f, BottomMenuFraction);
+            rect.anchorMax = new Vector2(0f, BottomMenuFraction);
+            rect.pivot = new Vector2(0f, 0f);
+            rect.sizeDelta = new Vector2(140f, 60f);
+            rect.anchoredPosition = new Vector2(16f, 16f);
+
+            var button = CreateButton(root.transform, "Button", CameraPresetLabels[CameraPreset.Default],
+                SecondaryColor, TextColor, new Vector2(140f, 60f), true, BorderColor);
+            StretchToParent((RectTransform)button.transform);
+            button.onClick.AddListener(OnCameraViewToggleClicked);
+
+            // 라벨을 잡아둬서 프리셋 변경 시 텍스트만 갱신 (TMP_Text 는 CreateButton 이 자식으로 만든다).
+            cameraViewToggleLabel = button.GetComponentInChildren<TMP_Text>(includeInactive: true);
         }
 
         // Two beige rectangles flanking the camera viewport. Anchored in canvas
@@ -1358,6 +1435,13 @@ namespace App.Bootstrap
         private void OnThemeSelected(RoomThemeAsset theme)
         {
             if (theme == null) return;
+            // 진단 로그 — "전체 테마" 클릭이 편집 모드/현재 카메라 프리셋과 어떻게 상호작용했는지
+            // 이번 wall fade 회귀 버그의 핵심 단서. 적용 흐름은 ShowThemeApplyModeModal → ApplyThemeSelected
+            // 거기서 RefreshWallVisibilityAfterMaterialMutation 가 호출됨.
+            Debug.Log(
+                $"[RoomEdit][Theme][click] '{theme.DisplayName}' editMode={IsEditModeActive} " +
+                $"preset={(IsEditModeActive ? CameraPresetCycle[currentCameraPresetIndex].ToString() : "n/a")} " +
+                $"wallVisibilityCollected={wallVisibilityCollected}");
             ShowThemeApplyModeModal(theme);
         }
 
@@ -1376,7 +1460,10 @@ namespace App.Bootstrap
 
             // D9(i) 낙관적 적용: 즉시 visual swap → 백엔드 PATCH → 실패 시 rollback.
             previousAppliedTheme = themeApplier.CurrentTheme;
+            Debug.Log($"[RoomEdit][Theme] ApplyThemeSelected '{theme.DisplayName}' editMode={IsEditModeActive} preset={(IsEditModeActive ? CameraPresetCycle[currentCameraPresetIndex].ToString() : "n/a")}");
             themeApplier.Apply(theme);
+            // 벽 sharedMaterial 이 swap 됐으므로 편집 모드 중이면 fade 즉시 재적용 (탑다운/사선에서 occlusion 복귀 방지).
+            RefreshWallVisibilityAfterMaterialMutation("ApplyThemeSelected");
             RebuildInventorySlots();
 
             // local preview 전용 테마 — placeholder (가구/벽지/바닥 미제작). 명시 플래그 + assetId<=0 fallback.
@@ -1438,6 +1525,7 @@ namespace App.Bootstrap
                     if (previousAppliedTheme != null && previousAppliedTheme != theme)
                     {
                         themeApplier.Apply(previousAppliedTheme);
+                        RefreshWallVisibilityAfterMaterialMutation("ApplyThemeSelected/rollback");
                         RebuildInventorySlots();
                     }
                 });
@@ -1592,6 +1680,10 @@ namespace App.Bootstrap
                 generator.ResetAllBookshelfDesignStyles();
             }
 
+            // ResetAllBookshelfDesignStyles 가 벽 renderer 까지 건드릴 가능성에 대한 방어적 refresh.
+            // IsEditModeActive=false 면 noop — 일반 메인뷰에서는 부담 없음.
+            RefreshWallVisibilityAfterMaterialMutation("ApplyThemeResetVisualFallback");
+
             RebuildInventorySlots();
         }
 
@@ -1649,6 +1741,9 @@ namespace App.Bootstrap
             {
                 Debug.LogWarning($"[RoomEditModeController] {category} 매칭 0개 (entry={entry.DisplayName}).");
             }
+            // 벽지(Wallpaper) / 바닥 등 카테고리는 벽 renderer 의 sharedMaterial 을 swap 해서
+            // 편집 모드의 wall fade instance 를 풀어버린다 → 즉시 재적용.
+            RefreshWallVisibilityAfterMaterialMutation($"ApplyEntryVisual/{category}");
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -1867,6 +1962,7 @@ namespace App.Bootstrap
                 if (resolvedTheme != null && resolvedTheme != themeApplier.CurrentTheme)
                 {
                     themeApplier.Apply(resolvedTheme);
+                    RefreshWallVisibilityAfterMaterialMutation("ReloadRoomState");
                 }
             }
 
@@ -2474,6 +2570,11 @@ namespace App.Bootstrap
             }
             BeginCameraViewportEdit();
 
+            // 동물의 숲 스타일 — 시점 전환에서 벽이 시야를 가리지 않게 fade 시스템 활성화.
+            // 진입 시 0(Default) 프리셋으로 시작하므로 fade=none 으로 시작 (메인뷰 그대로).
+            CollectWallRenderers();
+            ApplyWallVisibilityForPreset(CameraPresetCycle[currentCameraPresetIndex]);
+
             // Block bookshelf / notebook / guestbook focus and the F1–F4 shortcuts
             // while edit mode is owning the scene. The edit overlay's own click
             // handler (decoration select / rotate / delete) keeps working because
@@ -2761,6 +2862,9 @@ namespace App.Bootstrap
             CloseDecorationPopupInternal();
             HideReadyModal();
             HideGrid();
+            // 벽 alpha/Renderer 상태를 원본으로 복구 — Camera transform 복구보다 먼저 해서
+            // 메인뷰 카메라 컨트롤러가 다음 프레임에 보는 씬이 정상 상태이도록.
+            RestoreWallVisibility("ExitEditModeInternal");
             EndCameraViewportEdit();
             if (editOverlayRoot != null)
             {
@@ -2798,6 +2902,15 @@ namespace App.Bootstrap
             savedCameraRect = camera.rect;
             savedCameraRectValid = true;
             ApplyEditModeCameraRect();
+
+            // EnterEditMode 가 직전에 SnapToMainView 를 호출했으므로 여기 pose 가 메인뷰 기준
+            // 좌표 — Default 프리셋 target 이자 Exit 시 복구점. 프리셋 인덱스는 0 으로 리셋.
+            savedCameraPosition = camera.transform.position;
+            savedCameraRotation = camera.transform.rotation;
+            savedCameraPoseValid = true;
+            currentCameraPresetIndex = 0;
+            cameraPresetTargetActive = false;
+            UpdateCameraViewToggleLabel();
         }
 
         private void ApplyEditModeCameraRect()
@@ -2824,21 +2937,422 @@ namespace App.Bootstrap
 
         private void EndCameraViewportEdit()
         {
-            if (editModeCamera != null && savedCameraRectValid)
+            if (editModeCamera != null)
             {
-                editModeCamera.rect = savedCameraRect;
+                if (savedCameraRectValid)
+                {
+                    editModeCamera.rect = savedCameraRect;
+                }
+                // 프리셋으로 옮겨진 transform 도 진입 시 메인뷰 pose 로 즉시 복구. 이후 메인뷰
+                // 컨트롤러(BookshelfExperienceManager) 가 다시 카메라 주도권을 가져간다.
+                if (savedCameraPoseValid)
+                {
+                    editModeCamera.transform.SetPositionAndRotation(savedCameraPosition, savedCameraRotation);
+                }
             }
             editModeCamera = null;
             savedCameraRectValid = false;
+            savedCameraPoseValid = false;
+            cameraPresetTargetActive = false;
         }
 
         private void OnDestroy()
         {
             // Defensive: if the controller is torn down while edit mode is active,
             // restore the camera viewport so a re-loaded scene doesn't inherit a
-            // partial rect.
+            // partial rect. 벽 alpha/Renderer 도 같이 원복 — 안 그러면 다음 진입 시 invalid
+            // sharedMaterial reference + leaked instance material 이 남는다.
+            RestoreWallVisibility("OnDestroy");
             EndCameraViewportEdit();
             RoomEditThemeFilter.Changed -= HandleThemeFilterChanged;
+        }
+
+        // ---------- Animal Crossing-style camera presets ----------
+        //
+        // 자유 카메라가 아니라 5개 고정 시점만 cycle 하는 방식. 한 프레임에 99% 도달하는
+        // exponential lerp(time-constant 기반) 로 부드러운 전환을 보장 — 순간이동 X.
+        //
+        // **고정 시점 semantics**: 모든 프리셋은 playableMin/Max 룸 footprint 만으로 결정된
+        // 결정적(deterministic) pose 다. selectedObject / draggingObject / 배치 프리뷰 등
+        // 어떤 편집 런타임 상태도 카메라 좌표에 영향을 주지 않는다 — 사용자가 어떤 객체를
+        // 잡고 이동 중이어도 "시점 변경" 결과는 항상 동일한 정면/탑다운/사선 시점.
+        //
+        // 요구사항 매핑:
+        //   - 5개 프리셋 (Default/TopDown/Front/LeftAngle/RightAngle): CameraPresetCycle
+        //   - 부드러운 보간: LateUpdate 의 Vector3.Lerp + Quaternion.Slerp (target은 불변)
+        //   - 모든 프리셋은 방 전체 기준 — selectedObject 가 있어도 카메라 보정 X
+        //   - 기존 Move/Rotate/Delete 흐름 보존: 카메라 transform 만 만지고 입력/선택 로직 미변경
+        //   - 책장/노트북/화이트보드 focus 모드: 편집 모드와 분리됨 (experienceManager.AreSceneInteractionsSuppressed=true 로 차단)
+        private void OnCameraViewToggleClicked()
+        {
+            if (!IsEditModeActive) return;
+
+            currentCameraPresetIndex = (currentCameraPresetIndex + 1) % CameraPresetCycle.Length;
+            cameraPresetTargetActive = true;
+
+            var preset = CameraPresetCycle[currentCameraPresetIndex];
+            UpdateCameraViewToggleLabel();
+
+            // 클릭 시점 1회 스냅샷 — 이후 LateUpdate 가 이 target 으로만 lerp. 오브젝트가
+            // 드래그/회전/이동되어도 cameraPresetTargetPosition 은 갱신되지 않으므로
+            // 카메라가 객체를 따라가지 않는다 (동물의 숲식 고정 시점).
+            //
+            // ComputeCameraPresetPose 는 selectedObject 를 참조하지 않으므로 어떤 객체가 선택돼
+            // 있어도 같은 preset 은 항상 같은 target 을 반환 → 결과 결정적.
+            ComputeCameraPresetPose(preset, out cameraPresetTargetPosition, out cameraPresetTargetRotation);
+
+            // 시야를 가리는 벽 fade — 카메라가 lerp 로 도착하기 전에 즉시 적용해서
+            // 전환 동안 occlusion 이 없는 상태로 보이게 한다.
+            ApplyWallVisibilityForPreset(preset);
+
+            Debug.Log(
+                $"[RoomEdit][Camera] preset 변경 → {preset} ({CameraPresetLabels[preset]}) " +
+                $"target-pos={cameraPresetTargetPosition} (room-fixed, selectedObject 무관) " +
+                $"selected-at-click={(selectedObject != null ? selectedObject.name : "<none>")}");
+        }
+
+        private void UpdateCameraViewToggleLabel()
+        {
+            if (cameraViewToggleLabel == null) return;
+            var preset = CameraPresetCycle[currentCameraPresetIndex];
+            cameraViewToggleLabel.text = CameraPresetLabels[preset];
+        }
+
+        // 매 프레임 호출 — 클릭 시점에 한 번 캡처된 target 으로 부드럽게 도달만 한다.
+        // 의도적으로 ComputeCameraPresetPose 를 매 프레임 다시 부르지 않음 — 동물의 숲식
+        // "고정 시점" UX 보장 (오브젝트가 이동해도 카메라는 따라가지 않음).
+        private void LateUpdate()
+        {
+            if (!IsEditModeActive) return;
+            if (editModeCamera == null) return;
+            if (!cameraPresetTargetActive) return;
+
+            // exponential smoothing: 99% 도달까지 ~CameraPresetLerpTimeConstant×4.6 초.
+            // dt 변동에 무관하게 같은 부드러움을 유지.
+            var t = 1f - Mathf.Exp(-Time.unscaledDeltaTime / Mathf.Max(0.0001f, CameraPresetLerpTimeConstant));
+            var tr = editModeCamera.transform;
+            tr.position = Vector3.Lerp(tr.position, cameraPresetTargetPosition, t);
+            tr.rotation = Quaternion.Slerp(tr.rotation, cameraPresetTargetRotation, t);
+        }
+
+        // 프리셋별 카메라 pose 계산 — **방 전체 기준 고정 시점**. selectedObject / draggingObject /
+        // 배치 프리뷰 등 어떤 런타임 상태도 참조하지 않는다 (의도). 카메라 위치/회전은 playableMin/Max
+        // 룸 footprint 만으로 결정되므로 프리셋 결과는 반복 호출에 대해 동일성이 보장됨 — 사용자가
+        // 오브젝트 편집 중에 "시점 변경" 을 눌러도 항상 같은 정면/탑다운/사선 시점으로 이동한다.
+        // FOV 는 호출되지 않음(=원래 카메라 FOV 유지).
+        private void ComputeCameraPresetPose(CameraPreset preset, out Vector3 position, out Quaternion rotation)
+        {
+            if (preset == CameraPreset.Default && savedCameraPoseValid)
+            {
+                position = savedCameraPosition;
+                rotation = savedCameraRotation;
+                return;
+            }
+
+            var centerX = (playableMinX + playableMaxX) * 0.5f;
+            var centerZ = (playableMinZ + playableMaxZ) * 0.5f;
+            var roomCenter = new Vector3(centerX, 1.0f, centerZ);
+
+            switch (preset)
+            {
+                case CameraPreset.TopDown:
+                {
+                    // 항상 방 중앙 위에서 직각 내려보기. 높이는 방 footprint 의 긴 변 + 여유로 산정
+                    // (좁은 방은 가깝게, 넓은 방은 멀리). 선택 오브젝트 위치 무관 → 결과 결정적.
+                    var roomSpan = Mathf.Max(playableMaxX - playableMinX, playableMaxZ - playableMinZ);
+                    var topY = Mathf.Clamp(roomSpan * 1.05f, 3.5f, 6.5f);
+                    position = new Vector3(centerX, topY, centerZ);
+                    rotation = Quaternion.Euler(90f, 0f, 0f);
+                    return;
+                }
+                case CameraPreset.Front:
+                {
+                    // 방 정면(open side, 작은 Z)에 서서 책장이 있는 뒷벽 정중앙을 본다.
+                    // lookAt target 은 뒷벽 중앙 — 어느 오브젝트가 선택돼 있어도 동일 시점.
+                    position = new Vector3(centerX, 1.55f, playableMinZ - 1.0f);
+                    var frontTarget = new Vector3(centerX, 1.0f, playableMaxZ - 0.4f);
+                    rotation = Quaternion.LookRotation(frontTarget - position, Vector3.up);
+                    return;
+                }
+                case CameraPreset.LeftAngle:
+                {
+                    // 좌측 외부에서 사선으로 방 중앙을 본다 — selectedObject 무관.
+                    position = new Vector3(playableMinX - 1.4f, 2.4f, playableMinZ - 0.4f);
+                    rotation = Quaternion.LookRotation(roomCenter - position, Vector3.up);
+                    return;
+                }
+                case CameraPreset.RightAngle:
+                {
+                    // 우측 외부에서 사선으로 방 중앙을 본다 — selectedObject 무관.
+                    position = new Vector3(playableMaxX + 1.4f, 2.4f, playableMinZ - 0.4f);
+                    rotation = Quaternion.LookRotation(roomCenter - position, Vector3.up);
+                    return;
+                }
+                default:
+                {
+                    position = savedCameraPoseValid ? savedCameraPosition : roomCenter;
+                    rotation = savedCameraPoseValid ? savedCameraRotation : Quaternion.identity;
+                    return;
+                }
+            }
+        }
+
+        // ---------- Edit-mode wall occlusion fade ----------
+        //
+        // 진입 시 한 번 collect, 프리셋 바뀔 때마다 ApplyWallVisibilityForPreset, 종료 시
+        // RestoreWallVisibility. Material 은 instance(.material) 로 변경하고 종료 시
+        // sharedMaterial 원본 reference 로 되돌리면서 instance 는 Destroy → 메모리 누수 방지.
+        // Collider 는 절대 건드리지 않음 → 기존 충돌/배치 검증 영향 없음.
+        private void CollectWallRenderers()
+        {
+            if (wallVisibilityCollected) return;
+            wallRendererCaches.Clear();
+
+            // RoomThemeApplier 가 가진 RoomRoot 를 우선 사용 — 절차적으로 빌드된 룸의
+            // 정확한 부모. 못 찾으면 활성 씬 전체 root scan 으로 fallback.
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            Transform roomRoot = themeApplier != null ? themeApplier.RoomRoot : null;
+
+            Renderer[] renderers;
+            if (roomRoot != null)
+            {
+                renderers = roomRoot.GetComponentsInChildren<Renderer>(true);
+            }
+            else
+            {
+                var roots = SceneManager.GetActiveScene().GetRootGameObjects();
+                var list = new List<Renderer>();
+                for (int i = 0; i < roots.Length; i++)
+                {
+                    list.AddRange(roots[i].GetComponentsInChildren<Renderer>(true));
+                }
+                renderers = list.ToArray();
+            }
+
+            int wallCount = 0, ceilingCount = 0;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null) continue;
+                if (!TryClassifyWallName(r.gameObject.name, out var group)) continue;
+
+                wallRendererCaches.Add(new WallRendererCache
+                {
+                    Renderer = r,
+                    InstanceMaterial = null,
+                    SharedOriginal = r.sharedMaterial,
+                    RendererWasEnabled = r.enabled,
+                    Group = group,
+                });
+                if (group == WallGroup.Ceiling) ceilingCount++;
+                else wallCount++;
+            }
+            wallVisibilityCollected = true;
+
+            Debug.Log($"[RoomEdit][WallFade] 수집 완료 — wall={wallCount} ceiling={ceilingCount} total={wallRendererCaches.Count} (roomRoot={(roomRoot != null ? roomRoot.name : "<scene-scan>")})");
+        }
+
+        private static bool TryClassifyWallName(string name, out WallGroup group)
+        {
+            group = default;
+            if (string.IsNullOrEmpty(name)) return false;
+            if (name.Equals("LeftWall", StringComparison.OrdinalIgnoreCase)) { group = WallGroup.Left; return true; }
+            if (name.Equals("RightWall", StringComparison.OrdinalIgnoreCase)) { group = WallGroup.Right; return true; }
+            if (name.StartsWith("BackWall", StringComparison.OrdinalIgnoreCase)) { group = WallGroup.Back; return true; }
+            if (name.Equals("FrontWall", StringComparison.OrdinalIgnoreCase)) { group = WallGroup.Front; return true; }
+            if (name.Equals("Ceiling", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("AlcoveCeiling", StringComparison.OrdinalIgnoreCase))
+            {
+                group = WallGroup.Ceiling;
+                return true;
+            }
+            return false;
+        }
+
+        // 프리셋별 어떤 벽 그룹을 fade 시킬지 — hard-coded 매핑이 dot-product 동적 결정보다
+        // 예측 가능하고 디버깅하기 쉬워서 의도적으로 단순화. preset 추가 시 여기만 손대면 됨.
+        private static bool ShouldFadeWall(WallGroup group, CameraPreset preset)
+        {
+            switch (preset)
+            {
+                case CameraPreset.Default:
+                    return false; // 메인뷰 사선 시점 — 카메라가 방 안쪽을 보므로 occlusion 없음.
+                case CameraPreset.TopDown:
+                    return true;  // 모든 벽 + 천장 fade — 위에서 내려보면 둘 다 시야 차단 가능.
+                case CameraPreset.Front:
+                    // 카메라가 방 정면(open side)에 서서 책장(뒷벽)을 본다. 카메라와 방 사이에
+                    // FrontWall(있으면) 만 가린다. Ceiling/Left/Right/Back 은 카메라 frustum 측면/뒤.
+                    return group == WallGroup.Front;
+                case CameraPreset.LeftAngle:
+                    // 카메라가 방 좌측 외부에서 사선으로 본다. LeftWall + FrontWall(있으면) 가림.
+                    return group == WallGroup.Left || group == WallGroup.Front;
+                case CameraPreset.RightAngle:
+                    return group == WallGroup.Right || group == WallGroup.Front;
+                default:
+                    return false;
+            }
+        }
+
+        private void ApplyWallVisibilityForPreset(CameraPreset preset)
+        {
+            if (!wallVisibilityCollected) return;
+
+            int faded = 0, restored = 0;
+            for (int i = 0; i < wallRendererCaches.Count; i++)
+            {
+                var cache = wallRendererCaches[i];
+                if (cache.Renderer == null) continue;
+                bool shouldFade = ShouldFadeWall(cache.Group, preset);
+                ApplyWallFadeState(cache, shouldFade);
+                if (shouldFade) faded++; else restored++;
+            }
+            Debug.Log($"[RoomEdit][WallFade] preset={preset} faded={faded} kept-opaque={restored} alpha={WallFadeAlpha:0.00}");
+        }
+
+        // shouldFade=true 면 instance material 만들어서 transparent + alpha 적용,
+        // false 면 sharedMaterial 원본으로 되돌리고 instance 정리.
+        private void ApplyWallFadeState(WallRendererCache cache, bool shouldFade)
+        {
+            if (cache.Renderer == null) return;
+
+            if (!shouldFade)
+            {
+                if (cache.InstanceMaterial != null)
+                {
+                    cache.Renderer.sharedMaterial = cache.SharedOriginal;
+                    Destroy(cache.InstanceMaterial);
+                    cache.InstanceMaterial = null;
+                }
+                if (cache.Renderer.enabled != cache.RendererWasEnabled)
+                {
+                    cache.Renderer.enabled = cache.RendererWasEnabled;
+                }
+                return;
+            }
+
+            // Renderer 가 OFF 상태였으면 일단 켜야 fade 가 보임.
+            if (!cache.Renderer.enabled)
+            {
+                cache.Renderer.enabled = true;
+            }
+
+            if (cache.InstanceMaterial == null)
+            {
+                // .material 접근 시 Unity 가 자동으로 instance 생성 + assign. 이걸 우리가 쥐고 있다가
+                // 종료 시 Destroy 한다.
+                cache.InstanceMaterial = cache.Renderer.material;
+                ConfigureMaterialAsTransparent(cache.InstanceMaterial);
+            }
+
+            // _BaseColor (URP) 우선, 없으면 _Color (Standard) 로 fallback.
+            if (cache.InstanceMaterial.HasProperty("_BaseColor"))
+            {
+                var c = cache.InstanceMaterial.GetColor("_BaseColor");
+                c.a = WallFadeAlpha;
+                cache.InstanceMaterial.SetColor("_BaseColor", c);
+            }
+            else if (cache.InstanceMaterial.HasProperty("_Color"))
+            {
+                var c = cache.InstanceMaterial.GetColor("_Color");
+                c.a = WallFadeAlpha;
+                cache.InstanceMaterial.SetColor("_Color", c);
+            }
+        }
+
+        // URP Lit/Standard 호환 — opaque material 의 surface mode 와 blend state 를 transparent
+        // 로 전환. Shader 의 _Surface keyword 가 _SURFACE_TYPE_TRANSPARENT 일 때만 알파가 보이므로
+        // keyword 토글이 핵심. 이 작업은 instance material 에만 적용 → shared 원본 보존.
+        private static void ConfigureMaterialAsTransparent(Material material)
+        {
+            if (material == null) return;
+            if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 1f);
+            if (material.HasProperty("_Blend")) material.SetFloat("_Blend", 0f);
+            if (material.HasProperty("_SrcBlend")) material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (material.HasProperty("_DstBlend")) material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (material.HasProperty("_ZWrite")) material.SetFloat("_ZWrite", 0f);
+            material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.DisableKeyword("_ALPHATEST_ON");
+        }
+
+        private void RestoreWallVisibility(string contextTag = "exit")
+        {
+            if (!wallVisibilityCollected) return;
+
+            // 편집 모드가 아직 활성인 상태에서 호출되면 사용자가 곧장 시야를 잃는다 (이번 버그의 핵심).
+            // exit/destroy 외 경로에서 호출되면 즉시 알 수 있게 warning. context tag 로 caller 식별.
+            // ExitEditModeInternal 은 호출 직전에 IsEditModeActive=false 로 내리므로 정상 경로는 warning 안 나옴.
+            if (IsEditModeActive && contextTag != "OnDestroy")
+            {
+                Debug.LogWarning(
+                    $"[RoomEdit][WallFade] ⚠ RestoreWallVisibility 가 편집 모드 도중 호출됨 (context={contextTag}) — 의도된 호출이 아니라면 wall fade 가 풀려서 occlusion 이 돌아옴. " +
+                    "Theme/customization 적용 직후라면 RefreshWallVisibilityAfterMaterialMutation 으로 대체할 것.");
+            }
+
+            int restored = 0, destroyed = 0;
+            for (int i = 0; i < wallRendererCaches.Count; i++)
+            {
+                var cache = wallRendererCaches[i];
+                if (cache.Renderer != null)
+                {
+                    if (cache.InstanceMaterial != null)
+                    {
+                        cache.Renderer.sharedMaterial = cache.SharedOriginal;
+                    }
+                    cache.Renderer.enabled = cache.RendererWasEnabled;
+                    restored++;
+                }
+                if (cache.InstanceMaterial != null)
+                {
+                    Destroy(cache.InstanceMaterial);
+                    cache.InstanceMaterial = null;
+                    destroyed++;
+                }
+            }
+            Debug.Log($"[RoomEdit][WallFade] 복구 완료 (context={contextTag}) — restored={restored}/{wallRendererCaches.Count} destroyed-instances={destroyed}");
+            wallRendererCaches.Clear();
+            wallVisibilityCollected = false;
+        }
+
+        // 테마 / customization 적용으로 외부에서 renderer.sharedMaterial 이 swap 된 직후 호출.
+        // - 우리가 만든 instance material 은 renderer 에서 분리되어 orphan 상태 → Destroy
+        // - 새 sharedMaterial 을 SharedOriginal 로 재스냅샷 → 종료 시 사용자의 새 테마/벽지 선택이 보존
+        // - 현재 카메라 프리셋 기준으로 fade 재적용 → 탑다운/사선 뷰에서 occlusion 이 돌아오지 않음
+        //
+        // 편집 모드가 아니거나 아직 collect 가 안 된 상태면 noop. RestoreWallVisibility() 와 달리
+        // cache 자체는 유지하면서 SharedOriginal/InstanceMaterial 만 갱신하는 점이 핵심.
+        private void RefreshWallVisibilityAfterMaterialMutation(string contextTag)
+        {
+            if (!IsEditModeActive)
+            {
+                return;
+            }
+            if (!wallVisibilityCollected)
+            {
+                CollectWallRenderers();
+            }
+            else
+            {
+                int refreshed = 0;
+                for (int i = 0; i < wallRendererCaches.Count; i++)
+                {
+                    var cache = wallRendererCaches[i];
+                    if (cache.Renderer == null) continue;
+
+                    if (cache.InstanceMaterial != null)
+                    {
+                        Destroy(cache.InstanceMaterial);
+                        cache.InstanceMaterial = null;
+                    }
+                    cache.SharedOriginal = cache.Renderer.sharedMaterial;
+                    cache.RendererWasEnabled = cache.Renderer.enabled;
+                    refreshed++;
+                }
+                Debug.Log($"[RoomEdit][WallFade] cache 재스냅샷 (context={contextTag}) — {refreshed}/{wallRendererCaches.Count}");
+            }
+            var preset = CameraPresetCycle[currentCameraPresetIndex];
+            ApplyWallVisibilityForPreset(preset);
+            Debug.Log($"[RoomEdit][WallFade] preset 재적용 (context={contextTag}) — preset={preset}");
         }
 
         // Toolbar ------------------------------------------------------------------
@@ -3002,6 +3516,7 @@ namespace App.Bootstrap
             if (defaultTheme != null && defaultTheme != themeApplier.CurrentTheme)
             {
                 themeApplier.Apply(defaultTheme);
+                RefreshWallVisibilityAfterMaterialMutation("ResetThemeToDefaultLocally");
             }
         }
 
