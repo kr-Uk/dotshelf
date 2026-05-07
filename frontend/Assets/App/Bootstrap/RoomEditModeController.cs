@@ -1722,14 +1722,30 @@ namespace App.Bootstrap
         {
             if (spec == null || spec.Prefab == null) return;
             EnsurePlacedItemsRoot();
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
 
-            // spec 의 LocalPosition/Rotation 을 world 로 직접 해석 — 사용자가 Unity scene 에서
-            // 캡처한 transform 값을 그대로 spec 에 박을 수 있어 fitting cycle 단순.
-            // spec.WallSide 는 wall 인식 metadata (drag 시 wall 매칭 + obstruction check) 에만 사용.
+            // wall surface anchor 변환 복구 — spec.LocalPosition 은 wall surface frame 기준
+            // local. wall placement 시스템 (drag 매칭 + obstruction) 일관성 유지. 사용자가 캡처한
+            // world 좌표를 spec 에 박을 때는 anchor frame 으로 변환 필요 (helper: anchor 의 inverse
+            // rotation × (worldPos - anchor.position)).
+            Vector3 worldPos;
+            Quaternion worldRot;
+            if (themeApplier != null && themeApplier.TryGetWallSurfaceAnchor(spec.WallSide, out var anchorPos, out var anchorRot))
+            {
+                worldPos = anchorPos + anchorRot * spec.LocalPosition;
+                worldRot = anchorRot * Quaternion.Euler(spec.LocalRotation);
+            }
+            else
+            {
+                Debug.LogWarning($"[RoomEditModeController] WallDecoSpec WallSide={spec.WallSide} anchor 못 찾음 — localPosition 을 world fallback.");
+                worldPos = spec.LocalPosition;
+                worldRot = Quaternion.Euler(spec.LocalRotation);
+            }
+
             var go = Instantiate(spec.Prefab);
             go.name = $"ThemeDeco_Wall_{SanitizeName(spec.Prefab.name)}";
             go.transform.SetParent(placedItemsRoot.transform, true);
-            go.transform.SetPositionAndRotation(spec.LocalPosition, Quaternion.Euler(spec.LocalRotation));
+            go.transform.SetPositionAndRotation(worldPos, worldRot);
             go.transform.localScale = spec.LocalScale;
 
             var marker = go.AddComponent<WallDecoMarker>();
@@ -1926,8 +1942,10 @@ namespace App.Bootstrap
                 notebookStation.localScale = nativeNotebookStationLocalScale.Value;
                 return;
             }
-            // override — entry 값을 world 로 직접 적용
-            notebookStation.SetPositionAndRotation(entry.NotebookStationPosition, Quaternion.Euler(entry.NotebookStationRotation));
+            // override — entry 값을 NotebookStation 의 부모 (GuestbookBoard) 기준 local 로 적용.
+            // Inspector 의 Transform 은 default Local 이므로 사용자 캡처값 그대로 박힘.
+            notebookStation.localPosition = entry.NotebookStationPosition;
+            notebookStation.localRotation = Quaternion.Euler(entry.NotebookStationRotation);
             notebookStation.localScale = entry.NotebookStationScale != Vector3.zero ? entry.NotebookStationScale : Vector3.one;
         }
 
