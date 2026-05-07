@@ -271,12 +271,13 @@ namespace App.Infrastructure.Api
                 return;
             }
 
+            var normalizedContent = string.IsNullOrWhiteSpace(content) ? string.Empty : content.Trim();
             client.CreateBookReview(
                 bookId,
                 new BookReviewRequestDto
                 {
                     Rating = Convert.ToDecimal(Mathf.Clamp(rating, 0.5f, 5f)),
-                    Content = content
+                    Content = normalizedContent
                 },
                 response =>
                 {
