@@ -59,22 +59,22 @@ MonoBehaviour:
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: e5f6a7b8c9d0123456789012abcdef05, type: 3}
     wallSide: 0
-    localPosition: {x: 1.2, y: 0.6, z: 0.7}
+    localPosition: {x: -1.013, y: 0.189, z: 1.258}
     localRotation: {x: 0, y: 0, z: 0}
-    localScale: {x: 0.5, y: 0.5, z: 0.5}
+    localScale: {x: 0.2, y: 0.2, z: 0.2}
     anchorTag: "toastPillow"
   wallDecoSpecs:
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: e4f5a6b7c8d9012345678901abcdef04, type: 3}
-    wallSide: 1
-    localPosition: {x: 0, y: 0.5, z: 0.05}
-    localRotation: {x: 0, y: 0, z: 0}
-    localScale: {x: 0.6, y: 0.6, z: 0.6}
+    wallSide: 3
+    localPosition: {x: 1.4675, y: 0, z: -0.04}
+    localRotation: {x: 0, y: 180, z: 0}
+    localScale: {x: 1.265, y: 2.8, z: 0.08}
     anchorTag: "neonSign"
   - assetId: 0
     prefab: {fileID: 1000000000, guid: d4e5f67890123456789abcdef0123456, type: 3}
     wallSide: 2
-    localPosition: {x: 0, y: 1.18, z: 0.13}
-    localRotation: {x: 0, y: 0, z: 0}
-    localScale: {x: 1, y: 1, z: 1}
+    localPosition: {x: 0, y: -2.87, z: 2.01}
+    localRotation: {x: 0, y: -90, z: 0}
+    localScale: {x: 0.6, y: 0.6, z: 0.6}
     anchorTag: "window"
