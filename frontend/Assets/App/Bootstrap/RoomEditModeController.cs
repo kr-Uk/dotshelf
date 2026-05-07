@@ -1722,26 +1722,14 @@ namespace App.Bootstrap
         {
             if (spec == null || spec.Prefab == null) return;
             EnsurePlacedItemsRoot();
-            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
 
-            Vector3 worldPos;
-            Quaternion worldRot;
-            if (themeApplier != null && themeApplier.TryGetWallSurfaceAnchor(spec.WallSide, out var anchorPos, out var anchorRot))
-            {
-                worldPos = anchorPos + anchorRot * spec.LocalPosition;
-                worldRot = anchorRot * Quaternion.Euler(spec.LocalRotation);
-            }
-            else
-            {
-                Debug.LogWarning($"[RoomEditModeController] WallDecoSpec WallSide={spec.WallSide} anchor 못 찾음 — localPosition 을 world 로 fallback.");
-                worldPos = spec.LocalPosition;
-                worldRot = Quaternion.Euler(spec.LocalRotation);
-            }
-
+            // spec 의 LocalPosition/Rotation 을 world 로 직접 해석 — 사용자가 Unity scene 에서
+            // 캡처한 transform 값을 그대로 spec 에 박을 수 있어 fitting cycle 단순.
+            // spec.WallSide 는 wall 인식 metadata (drag 시 wall 매칭 + obstruction check) 에만 사용.
             var go = Instantiate(spec.Prefab);
             go.name = $"ThemeDeco_Wall_{SanitizeName(spec.Prefab.name)}";
             go.transform.SetParent(placedItemsRoot.transform, true);
-            go.transform.SetPositionAndRotation(worldPos, worldRot);
+            go.transform.SetPositionAndRotation(spec.LocalPosition, Quaternion.Euler(spec.LocalRotation));
             go.transform.localScale = spec.LocalScale;
 
             var marker = go.AddComponent<WallDecoMarker>();
@@ -1898,38 +1886,49 @@ namespace App.Bootstrap
                 return;
             }
 
-            // 4) prefab spawn — anchor world pos/rot 에 entry 의 placement offset/rotation
-            // 추가 적용. localScale 은 entry.PlacementScale 사용 (Vector3.one default).
-            // 사용자가 catalog Inspector 에서 책상별로 placement 값 직접 fit 가능.
+            // 4) prefab spawn — entry.PlacementAnchor/Rotation/Scale 을 world 로 직접 해석.
+            // 사용자가 Unity scene 에서 시각으로 잡은 transform 값을 catalog Inspector 에 그대로
+            // 입력 가능. native anchor 위치 무시 — 책상별 크기/높이 자유 fit.
             var go = Instantiate(entry.Prefab, roomRoot);
             go.name = swapName;
-            var worldPos = anchor.position + anchor.rotation * entry.PlacementAnchor;
-            var worldRot = anchor.rotation * Quaternion.Euler(entry.PlacementRotation);
-            go.transform.SetPositionAndRotation(worldPos, worldRot);
+            go.transform.SetPositionAndRotation(entry.PlacementAnchor, Quaternion.Euler(entry.PlacementRotation));
             go.transform.localScale = entry.PlacementScale != Vector3.zero ? entry.PlacementScale : Vector3.one;
 
-            // 5) Desk 카테고리 — NotebookStation 위치 fit. 새 책상 mesh 의 모니터 위치에 맞게
-            // 모니터 화면 (NotebookStation transform) 도 이동 — 클릭 인터랙션 지점도 함께 이동.
-            // 원래 위치를 nativeNotebookStationLocalPos 에 한 번 저장해 RestoreCategoryNativeMesh
-            // 시 복원.
+            // 5) Desk 카테고리 — NotebookStation override (모니터 진입 위치/스케일 fit).
+            //    OverrideNotebookStation=true 면 entry 의 NotebookStation* 값 적용. false 면 native.
             if (category == CustomizationCategory.Desk)
             {
-                ApplyNotebookStationOffset(roomRoot, entry.NotebookStationOffset);
+                ApplyNotebookStationPlacement(roomRoot, entry);
             }
         }
 
-        // NotebookStation 의 원래 localPosition 보존용 — 첫 swap 호출 시 저장, restore 시 복원.
+        // NotebookStation 의 원래 transform 보존용 — 첫 swap 호출 시 저장, restore 시 복원.
         private Vector3? nativeNotebookStationLocalPos;
+        private Quaternion? nativeNotebookStationLocalRot;
+        private Vector3? nativeNotebookStationLocalScale;
 
-        private void ApplyNotebookStationOffset(Transform roomRoot, Vector3 offset)
+        private void ApplyNotebookStationPlacement(Transform roomRoot, CustomizationEntry entry)
         {
             var notebookStation = FindChildByName(roomRoot, "NotebookStation");
             if (notebookStation == null) return;
+            // 첫 호출 시 native 보존
             if (!nativeNotebookStationLocalPos.HasValue)
             {
                 nativeNotebookStationLocalPos = notebookStation.localPosition;
+                nativeNotebookStationLocalRot = notebookStation.localRotation;
+                nativeNotebookStationLocalScale = notebookStation.localScale;
             }
-            notebookStation.localPosition = nativeNotebookStationLocalPos.Value + offset;
+            if (!entry.OverrideNotebookStation)
+            {
+                // override 안 함 → native 복원
+                notebookStation.localPosition = nativeNotebookStationLocalPos.Value;
+                notebookStation.localRotation = nativeNotebookStationLocalRot.Value;
+                notebookStation.localScale = nativeNotebookStationLocalScale.Value;
+                return;
+            }
+            // override — entry 값을 world 로 직접 적용
+            notebookStation.SetPositionAndRotation(entry.NotebookStationPosition, Quaternion.Euler(entry.NotebookStationRotation));
+            notebookStation.localScale = entry.NotebookStationScale != Vector3.zero ? entry.NotebookStationScale : Vector3.one;
         }
 
         private void RestoreNotebookStationPosition(Transform roomRoot)
@@ -1938,6 +1937,8 @@ namespace App.Bootstrap
             var notebookStation = FindChildByName(roomRoot, "NotebookStation");
             if (notebookStation == null) return;
             notebookStation.localPosition = nativeNotebookStationLocalPos.Value;
+            notebookStation.localRotation = nativeNotebookStationLocalRot ?? Quaternion.identity;
+            notebookStation.localScale = nativeNotebookStationLocalScale ?? Vector3.one;
         }
 
         private static Transform FindChildByName(Transform root, string name)

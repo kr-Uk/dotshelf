@@ -67,11 +67,16 @@ namespace App.Infrastructure.Catalogs
         [Tooltip("spawn 된 prefab 의 transform.localScale. Vector3.one 기본.")]
         [SerializeField] private Vector3 placementScale = Vector3.one;
 
-        [Header("Desk 전용 — NotebookStation 위치 fit")]
-        [Tooltip("Desk entry 일 때 NotebookStation 의 localPosition 을 (원래 위치 + 이 offset) 으로 set. " +
-                 "다른 책상 모델로 swap 시 모니터 화면 / 클릭 인터랙션 위치를 새 mesh 의 모니터 위치에 맞춤. " +
-                 "Vector3.zero 면 변경 없음.")]
-        [SerializeField] private Vector3 notebookStationOffset;
+        [Header("Desk 전용 — NotebookStation override (모니터 진입 위치 fit)")]
+        [Tooltip("true 면 Desk swap 시 NotebookStation 의 transform 을 아래 값들로 override. " +
+                 "false 면 native 그대로. 다른 책상 모델 적용 시 모니터 화면/클릭 인터랙션 위치 fit.")]
+        [SerializeField] private bool overrideNotebookStation;
+        [Tooltip("NotebookStation 의 world position. Inspector 에서 직접 입력.")]
+        [SerializeField] private Vector3 notebookStationPosition;
+        [Tooltip("NotebookStation 의 world rotation (Euler).")]
+        [SerializeField] private Vector3 notebookStationRotation;
+        [Tooltip("NotebookStation 의 localScale.")]
+        [SerializeField] private Vector3 notebookStationScale = Vector3.one;
 
         public long AssetId => assetId;
         public string DisplayName => displayName;
@@ -88,7 +93,10 @@ namespace App.Infrastructure.Catalogs
         public Vector3 PlacementAnchor => placementAnchor;
         public Vector3 PlacementRotation => placementRotation;
         public Vector3 PlacementScale => placementScale;
-        public Vector3 NotebookStationOffset => notebookStationOffset;
+        public bool OverrideNotebookStation => overrideNotebookStation;
+        public Vector3 NotebookStationPosition => notebookStationPosition;
+        public Vector3 NotebookStationRotation => notebookStationRotation;
+        public Vector3 NotebookStationScale => notebookStationScale;
     }
 
     /// <summary>
