@@ -214,6 +214,12 @@ namespace App.Bootstrap
             public string SourceAssetPath;
         }
 
+        // 인벤토리 동일 자산 1회 배치 제한용 캐시. Key 는 BuildInventoryKey 가 만든 stable
+        // identity (SourceAssetPath → DisplayName → Prefab.name 순). value 는 씬에 살아있는
+        // GameObject reference — Destroy 후 dangling 이 되면 PruneInvalidPlacedEntries 가 정리.
+        // 서버 인벤토리(assetId/inventoryId) 도입 시 BuildInventoryKey 만 교체하면 그대로 호환.
+        private readonly Dictionary<string, GameObject> placedByInventoryKey = new Dictionary<string, GameObject>();
+
         // Public state ------------------------------------------------------------
 
         public bool IsEditModeActive { get; private set; }
@@ -1951,6 +1957,69 @@ namespace App.Bootstrap
             button.targetGraphic = slot;
             var capturedEntry = entry;
             button.onClick.AddListener(() => PlaceInventoryEntry(capturedEntry));
+
+            // 동일 inventoryKey 가 이미 배치되어 있으면 슬롯 자체를 비활성 + "배치됨" 오버레이로 가린다.
+            // 삭제하면 RebuildInventorySlots 가 다시 돌면서 자동 복구된다.
+            var key = BuildInventoryKey(entry);
+            if (IsInventoryKeyPlaced(key))
+            {
+                button.interactable = false;
+                slot.color = WithAlpha(CardColor, 0.55f);
+                thumb.color = WithAlpha(thumb.color, 0.55f);
+                glyph.color = WithAlpha(MutedTextColor, 0.55f);
+                labelText.color = WithAlpha(TextColor, 0.55f);
+
+                var placedTag = CreateImage(slot.transform, "PlacedTag", Hex("#3A3A3A"));
+                placedTag.sprite = roundedRectSprite;
+                placedTag.type = Image.Type.Sliced;
+                var tagRect = placedTag.rectTransform;
+                tagRect.anchorMin = new Vector2(0.5f, 1f);
+                tagRect.anchorMax = new Vector2(0.5f, 1f);
+                tagRect.pivot = new Vector2(0.5f, 1f);
+                tagRect.sizeDelta = new Vector2(64f, 22f);
+                tagRect.anchoredPosition = new Vector2(0f, -4f);
+
+                var tagLabel = CreateText(placedTag.transform, "Label", "배치됨", 11f, FontStyles.Bold, Color.white, TextAlignmentOptions.Center);
+                StretchToParent(tagLabel.rectTransform);
+            }
+        }
+
+        // 인벤토리 자산 식별 키. EditableDecorationCatalog 의 Entry 는 inventoryId/assetId 를
+        // 직접 들고 있지 않아서 SourceAssetPath (예: Assets/Arts/Models/Furniture/Bookshelf.fbx)
+        // 를 stable key 로 사용한다 — 카탈로그 안에서 자산당 고유. 비어있는 경우만 fallback 으로
+        // DisplayName / Prefab.name 을 사용. 서버 인벤토리(assetId/inventoryId) 가 들어오면
+        // 이 메서드만 교체하면 된다 (호출부 변경 불필요).
+        private static string BuildInventoryKey(InventoryEntry entry)
+        {
+            if (!string.IsNullOrEmpty(entry.SourceAssetPath))
+            {
+                return entry.SourceAssetPath;
+            }
+            if (!string.IsNullOrEmpty(entry.DisplayName))
+            {
+                return "name:" + entry.DisplayName;
+            }
+            if (entry.Prefab != null && !string.IsNullOrEmpty(entry.Prefab.name))
+            {
+                return "prefab:" + entry.Prefab.name;
+            }
+            return null;
+        }
+
+        // 캐시에 키가 있고 GameObject 가 살아있으면 true. 죽은 reference 는 lazy-clean.
+        private bool IsInventoryKeyPlaced(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return false;
+            if (!placedByInventoryKey.TryGetValue(key, out var existing))
+            {
+                return false;
+            }
+            if (existing == null)
+            {
+                placedByInventoryKey.Remove(key);
+                return false;
+            }
+            return true;
         }
 
         private static string ResolveSlotInitial(string displayName)
@@ -2183,7 +2252,8 @@ namespace App.Bootstrap
             rect.anchorMin = new Vector2(0.5f, BottomMenuFraction);
             rect.anchorMax = new Vector2(0.5f, BottomMenuFraction);
             rect.pivot = new Vector2(0.5f, 0f);
-            rect.sizeDelta = new Vector2(280f, 84f);
+            // 너비 280 → 360: 좌회전/우회전/삭제 3버튼이 16px 마진 + 8px 간격으로 들어가는 폭.
+            rect.sizeDelta = new Vector2(360f, 84f);
             rect.anchoredPosition = new Vector2(0f, 16f);
 
             var bg = CreateImage(selectionPanelRoot.transform, "Background", WithAlpha(CardColor, 0.97f));
@@ -2194,17 +2264,26 @@ namespace App.Bootstrap
             outline.effectColor = WithAlpha(BorderColor, 0.95f);
             outline.effectDistance = new Vector2(1f, -1f);
 
-            var rotateButton = CreateButton(selectionPanelRoot.transform, "RotateButton", "회전",
-                SecondaryColor, TextColor, new Vector2(112f, 60f), true, BorderColor);
-            var rotateRect = (RectTransform)rotateButton.transform;
-            rotateRect.anchorMin = new Vector2(0f, 0.5f);
-            rotateRect.anchorMax = new Vector2(0f, 0.5f);
-            rotateRect.pivot = new Vector2(0f, 0.5f);
-            rotateRect.anchoredPosition = new Vector2(16f, 0f);
-            rotateButton.onClick.AddListener(RotateSelectedObject);
+            var rotateLeftButton = CreateButton(selectionPanelRoot.transform, "RotateLeftButton", "↺ 좌",
+                SecondaryColor, TextColor, new Vector2(96f, 60f), true, BorderColor);
+            var rotateLeftRect = (RectTransform)rotateLeftButton.transform;
+            rotateLeftRect.anchorMin = new Vector2(0f, 0.5f);
+            rotateLeftRect.anchorMax = new Vector2(0f, 0.5f);
+            rotateLeftRect.pivot = new Vector2(0f, 0.5f);
+            rotateLeftRect.anchoredPosition = new Vector2(16f, 0f);
+            rotateLeftButton.onClick.AddListener(RotateSelectedCounterClockwise);
+
+            var rotateRightButton = CreateButton(selectionPanelRoot.transform, "RotateRightButton", "↻ 우",
+                SecondaryColor, TextColor, new Vector2(96f, 60f), true, BorderColor);
+            var rotateRightRect = (RectTransform)rotateRightButton.transform;
+            rotateRightRect.anchorMin = new Vector2(0.5f, 0.5f);
+            rotateRightRect.anchorMax = new Vector2(0.5f, 0.5f);
+            rotateRightRect.pivot = new Vector2(0.5f, 0.5f);
+            rotateRightRect.anchoredPosition = new Vector2(0f, 0f);
+            rotateRightButton.onClick.AddListener(RotateSelectedClockwise);
 
             var deleteButton = CreateButton(selectionPanelRoot.transform, "DeleteButton", "삭제",
-                Hex("#C14E4E"), Color.white, new Vector2(112f, 60f), false, BorderColor);
+                Hex("#C14E4E"), Color.white, new Vector2(96f, 60f), false, BorderColor);
             var deleteRect = (RectTransform)deleteButton.transform;
             deleteRect.anchorMin = new Vector2(1f, 0.5f);
             deleteRect.anchorMax = new Vector2(1f, 0.5f);
@@ -2939,6 +3018,15 @@ namespace App.Bootstrap
                 return;
             }
 
+            // 1회 배치 제한 — 동일 자산이 이미 씬에 살아있으면 새로 만들지 않는다.
+            // 슬롯은 이미 disabled 처리되지만 race(첫 클릭 ~ Rebuild 사이) 방어로 여기서도 한 번 더 차단.
+            var inventoryKey = BuildInventoryKey(entry);
+            if (IsInventoryKeyPlaced(inventoryKey))
+            {
+                Debug.Log($"[RoomEdit][Inventory] 배치 차단 — '{entry.DisplayName}' (key={inventoryKey}) 는 이미 씬에 1개 배치되어 있습니다.");
+                return;
+            }
+
             EnsurePlacedItemsRoot();
 
             var go = Instantiate(entry.Prefab);
@@ -3016,7 +3104,17 @@ namespace App.Bootstrap
                 collider.size = new Vector3(Mathf.Abs(localSize.x), Mathf.Abs(localSize.y), Mathf.Abs(localSize.z));
             }
 
-            go.AddComponent<DecorationItemMarker>();
+            var marker = go.AddComponent<DecorationItemMarker>();
+            marker.InventoryKey = inventoryKey;
+
+            if (!string.IsNullOrEmpty(inventoryKey))
+            {
+                placedByInventoryKey[inventoryKey] = go;
+                Debug.Log($"[RoomEdit][Inventory] 배치 — '{entry.DisplayName}' key={inventoryKey} pos={go.transform.position}");
+            }
+
+            // 인벤토리 슬롯이 비활성화된 상태로 즉시 보이도록 슬롯 다시 빌드.
+            RebuildInventorySlots();
         }
 
         // Search outward from `desiredPosition` in MinorGridStep rings for a
@@ -4053,16 +4151,74 @@ namespace App.Bootstrap
             selectedObject = null;
         }
 
-        private void RotateSelectedObject()
+        // 좌회전(반시계방향) 45° — 버튼 핸들러용.
+        private void RotateSelectedCounterClockwise()
+        {
+            RotateSelectedBy(-SelectionRotateStepDegrees);
+        }
+
+        // 우회전(시계방향) 45° — 버튼 핸들러용. Unity 의 Vector3.up 을 축으로 한 양수 각도는
+        // 위에서 내려본 시점에서 시계방향 회전이다 (left-handed Y-up).
+        private void RotateSelectedClockwise()
+        {
+            RotateSelectedBy(SelectionRotateStepDegrees);
+        }
+
+        // 부호 있는 각도(±45°) 로 Y축 회전 후 충돌/방 범위 검증. 실패 시 회전 전 quaternion 으로
+        // 즉시 복구. 검증은 PlaceInventoryEntry / UpdateDrag 가 쓰는 ComputeRendererBounds +
+        // ClampToFloorBounds + IsSpawnPositionBlockedAt 를 그대로 재사용해서 "배치 검증 = 회전
+        // 검증" 으로 일관성을 맞춘다 — 회전 후 AABB 가 방 footprint 를 벗어나거나, 다른 blocker
+        // (벽/책장/노트북/기존 배치) 와 겹치면 reverted.
+        private void RotateSelectedBy(float signedDegrees)
         {
             if (selectedObject == null) return;
+
             // Don't rotate mid-drag — would invalidate the bounds-based placement
             // check until the next move tick. Forces drag to commit first.
             if (draggingObject != null)
             {
                 FinishDrag();
             }
-            selectedObject.transform.Rotate(Vector3.up, SelectionRotateStepDegrees, Space.World);
+
+            var direction = signedDegrees >= 0f ? "CW" : "CCW";
+            var prevRotation = selectedObject.transform.rotation;
+            var prevYaw = prevRotation.eulerAngles.y;
+
+            selectedObject.transform.Rotate(Vector3.up, signedDegrees, Space.World);
+            var newYaw = selectedObject.transform.rotation.eulerAngles.y;
+
+            string revertReason = null;
+            var rotatedBounds = ComputeRendererBounds(selectedObject);
+            if (rotatedBounds.HasValue)
+            {
+                var bounds = rotatedBounds.Value;
+                var pos = selectedObject.transform.position;
+
+                // 방 범위 밖으로 나갔는지 — ClampToFloorBounds 가 위치를 옮겨오면 회전으로 인해
+                // AABB 가 footprint 밖으로 삐져나간 케이스. 위치는 유지하고 회전만 되돌린다.
+                var clamped = ClampToFloorBounds(pos, pos, bounds);
+                if (Vector3.Distance(clamped, pos) > 1e-4f)
+                {
+                    revertReason = "out-of-room";
+                }
+                else if (IsSpawnPositionBlockedAt(selectedObject, bounds, pos))
+                {
+                    revertReason = "blocker-overlap";
+                }
+            }
+
+            if (revertReason != null)
+            {
+                selectedObject.transform.rotation = prevRotation;
+                Debug.Log(
+                    $"[RoomEdit][Rotate] dir={direction} delta={signedDegrees:+#0;-#0;0}° from={prevYaw:0.#}° to={newYaw:0.#}° " +
+                    $"result=reverted reason={revertReason} obj={selectedObject.name}");
+                return;
+            }
+
+            Debug.Log(
+                $"[RoomEdit][Rotate] dir={direction} delta={signedDegrees:+#0;-#0;0}° from={prevYaw:0.#}° to={newYaw:0.#}° " +
+                $"result=ok obj={selectedObject.name}");
         }
 
         private void DeleteSelectedObject()
@@ -4076,8 +4232,22 @@ namespace App.Bootstrap
                 HideGrid();
             }
             var toDestroy = selectedObject;
+
+            // 인벤토리 1회 배치 제한 캐시에서도 제거 — 안 하면 같은 슬롯이 영구 disabled 로 남는다.
+            // marker 가 없는 case (사전에 부착 실패 등) 도 방어.
+            var marker = toDestroy != null ? toDestroy.GetComponent<DecorationItemMarker>() : null;
+            var deletedKey = marker != null ? marker.InventoryKey : null;
+            if (!string.IsNullOrEmpty(deletedKey) && placedByInventoryKey.TryGetValue(deletedKey, out var tracked) && tracked == toDestroy)
+            {
+                placedByInventoryKey.Remove(deletedKey);
+                Debug.Log($"[RoomEdit][Inventory] 삭제 — key={deletedKey} 인벤토리 재활성화.");
+            }
+
             DeselectCurrentObject();
             Destroy(toDestroy);
+
+            // 슬롯의 disabled/배치됨 표시 해제. 같은 자산을 다시 클릭해서 배치 가능하게 됨.
+            RebuildInventorySlots();
         }
 
         // Helpers ------------------------------------------------------------------
