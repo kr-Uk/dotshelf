@@ -1813,7 +1813,7 @@ namespace App.Bootstrap
             // material-only swap 과 공존 — prefab 우선, 없으면 material swap.
             if (entry.Prefab != null && IsMeshSwapCategory(category))
             {
-                ApplyCategoryMeshSwap(category, entry.Prefab, roomRootTransform);
+                ApplyCategoryMeshSwap(category, entry, roomRootTransform);
                 return;
             }
             // entry.Prefab 가 null 이지만 이전에 mesh swap 됐으면 복원. (다른 entry 선택 시
@@ -1854,7 +1854,10 @@ namespace App.Bootstrap
         // category 매칭 native renderer 들 disable + prefab 을 첫 매칭 anchor 자식으로 spawn.
         // NotebookStation 같은 자식 transform 은 native 그대로 → 인터랙션 보존.
         // 이전 swap spawn 한 prefab 있으면 destroy 후 새로.
-        private void ApplyCategoryMeshSwap(CustomizationCategory category, GameObject prefab, Transform roomRoot)
+        // entry 단위로 받음 — entry.Prefab + entry.PlacementAnchor/Rotation/Scale + entry.NotebookStationOffset
+        // 모두 활용. 사용자가 catalog Inspector 에서 mesh swap 시 fitting (위치/회전/스케일/모니터 위치)
+        // 직접 지정 가능.
+        private void ApplyCategoryMeshSwap(CustomizationCategory category, CustomizationEntry entry, Transform roomRoot)
         {
             // 1) 이전 mesh swap 된 GameObject 정리 (이름 prefix 로 식별)
             string swapName = $"MeshSwap_{category}";
@@ -1895,16 +1898,56 @@ namespace App.Bootstrap
                 return;
             }
 
-            // 4) prefab 을 roomRoot 자식으로 spawn — anchor 의 world position/rotation 적용.
-            // 직접 anchor 자식이 아닌 이유: anchor 가 wall 처럼 non-uniform scale 을 가질 수
-            // 있어 prefab 이 찌그러질 수 있음. roomRoot (보통 scale 1) 자식 + anchor world
-            // 좌표 적용으로 wall mesh scale propagation [P1] 회피.
-            // 노트북/책상 같은 항시 카테고리는 anchor 가 native DeskRoot 라 GLB prefab spawn
-            // 위치가 native 와 동일 — 사용자 요구 "위치/방향 항상 유지" 충족.
-            var go = Instantiate(prefab, roomRoot);
+            // 4) prefab spawn — anchor world pos/rot 에 entry 의 placement offset/rotation
+            // 추가 적용. localScale 은 entry.PlacementScale 사용 (Vector3.one default).
+            // 사용자가 catalog Inspector 에서 책상별로 placement 값 직접 fit 가능.
+            var go = Instantiate(entry.Prefab, roomRoot);
             go.name = swapName;
-            go.transform.SetPositionAndRotation(anchor.position, anchor.rotation);
-            go.transform.localScale = Vector3.one;
+            var worldPos = anchor.position + anchor.rotation * entry.PlacementAnchor;
+            var worldRot = anchor.rotation * Quaternion.Euler(entry.PlacementRotation);
+            go.transform.SetPositionAndRotation(worldPos, worldRot);
+            go.transform.localScale = entry.PlacementScale != Vector3.zero ? entry.PlacementScale : Vector3.one;
+
+            // 5) Desk 카테고리 — NotebookStation 위치 fit. 새 책상 mesh 의 모니터 위치에 맞게
+            // 모니터 화면 (NotebookStation transform) 도 이동 — 클릭 인터랙션 지점도 함께 이동.
+            // 원래 위치를 nativeNotebookStationLocalPos 에 한 번 저장해 RestoreCategoryNativeMesh
+            // 시 복원.
+            if (category == CustomizationCategory.Desk)
+            {
+                ApplyNotebookStationOffset(roomRoot, entry.NotebookStationOffset);
+            }
+        }
+
+        // NotebookStation 의 원래 localPosition 보존용 — 첫 swap 호출 시 저장, restore 시 복원.
+        private Vector3? nativeNotebookStationLocalPos;
+
+        private void ApplyNotebookStationOffset(Transform roomRoot, Vector3 offset)
+        {
+            var notebookStation = FindChildByName(roomRoot, "NotebookStation");
+            if (notebookStation == null) return;
+            if (!nativeNotebookStationLocalPos.HasValue)
+            {
+                nativeNotebookStationLocalPos = notebookStation.localPosition;
+            }
+            notebookStation.localPosition = nativeNotebookStationLocalPos.Value + offset;
+        }
+
+        private void RestoreNotebookStationPosition(Transform roomRoot)
+        {
+            if (!nativeNotebookStationLocalPos.HasValue) return;
+            var notebookStation = FindChildByName(roomRoot, "NotebookStation");
+            if (notebookStation == null) return;
+            notebookStation.localPosition = nativeNotebookStationLocalPos.Value;
+        }
+
+        private static Transform FindChildByName(Transform root, string name)
+        {
+            var allTransforms = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < allTransforms.Length; i++)
+            {
+                if (allTransforms[i].gameObject.name == name) return allTransforms[i];
+            }
+            return null;
         }
 
         // 카테고리별 primary anchor — native 룸의 root transform. mesh swap 시 이 위치/회전을
@@ -1927,9 +1970,14 @@ namespace App.Bootstrap
             return null;
         }
 
-        // mesh swap 복원 — native renderer 들 enable + spawned mesh swap 정리.
+        // mesh swap 복원 — native renderer 들 enable + spawned mesh swap 정리 + Desk 의 경우
+        // NotebookStation localPosition 도 native 로 복원.
         private void RestoreCategoryNativeMesh(CustomizationCategory category, Transform roomRoot)
         {
+            if (category == CustomizationCategory.Desk)
+            {
+                RestoreNotebookStationPosition(roomRoot);
+            }
             string swapName = $"MeshSwap_{category}";
             for (int i = roomRoot.childCount - 1; i >= 0; i--)
             {

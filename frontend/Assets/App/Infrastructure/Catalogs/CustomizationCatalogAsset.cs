@@ -59,10 +59,19 @@ namespace App.Infrastructure.Catalogs
         [Header("Prefab (Light fixture / Deco mesh)")]
         [SerializeField] private GameObject prefab;
 
-        [Header("Placement (Deco)")]
+        [Header("Placement (Deco / Desk mesh swap)")]
+        [Tooltip("mesh swap 시 native anchor (예: DeskRoot) 의 world position 에 더할 offset.")]
         [SerializeField] private Vector3 placementAnchor;
+        [Tooltip("mesh swap 시 native anchor rotation 위에 추가로 적용할 회전 (Euler).")]
         [SerializeField] private Vector3 placementRotation;
+        [Tooltip("spawn 된 prefab 의 transform.localScale. Vector3.one 기본.")]
         [SerializeField] private Vector3 placementScale = Vector3.one;
+
+        [Header("Desk 전용 — NotebookStation 위치 fit")]
+        [Tooltip("Desk entry 일 때 NotebookStation 의 localPosition 을 (원래 위치 + 이 offset) 으로 set. " +
+                 "다른 책상 모델로 swap 시 모니터 화면 / 클릭 인터랙션 위치를 새 mesh 의 모니터 위치에 맞춤. " +
+                 "Vector3.zero 면 변경 없음.")]
+        [SerializeField] private Vector3 notebookStationOffset;
 
         public long AssetId => assetId;
         public string DisplayName => displayName;
@@ -79,6 +88,7 @@ namespace App.Infrastructure.Catalogs
         public Vector3 PlacementAnchor => placementAnchor;
         public Vector3 PlacementRotation => placementRotation;
         public Vector3 PlacementScale => placementScale;
+        public Vector3 NotebookStationOffset => notebookStationOffset;
     }
 
     /// <summary>
