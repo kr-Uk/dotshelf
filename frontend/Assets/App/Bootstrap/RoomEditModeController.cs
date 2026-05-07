@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
 using App.Application.Dashboard;
+using App.Application.Decoration;
+using App.Auth;
+using App.Domain.Decoration;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dashboard;
 using App.Infrastructure.Api.Dtos;
 using App.Infrastructure.Catalogs;
+using App.Infrastructure.Decoration;
 using BookshelfPorting.Runtime;
 using Dotshelf.Scripts.RoomTheme;
 using TMPro;
@@ -221,6 +225,12 @@ namespace App.Bootstrap
             public bool AllowRotation;
         }
 
+        // 인벤토리 동일 자산 1회 배치 제한용 캐시. Key 는 BuildInventoryKey 가 만든 stable
+        // identity (SourceAssetPath → DisplayName → Prefab.name 순). value 는 씬에 살아있는
+        // GameObject reference — Destroy 후 dangling 이 되면 PruneInvalidPlacedEntries 가 정리.
+        // 서버 인벤토리(assetId/inventoryId) 도입 시 BuildInventoryKey 만 교체하면 그대로 호환.
+        private readonly Dictionary<string, GameObject> placedByInventoryKey = new Dictionary<string, GameObject>();
+
         // Public state ------------------------------------------------------------
 
         public bool IsEditModeActive { get; private set; }
@@ -241,6 +251,16 @@ namespace App.Bootstrap
         private GameObject bottomMenuRoot;
         private GameObject inventoryContentRoot;
         private GameObject returnButtonRoot;
+        private GameObject saveButtonRoot;
+        private GameObject unsavedChangesModalRoot;
+        // 미저장 모달이 떠 있는 동안 selection action UI(좌/우 회전·삭제 패널)를 숨기고
+        // 편집 입력(드래그/회전/삭제/카메라 orbit)을 무시하기 위한 플래그. 모달이 닫히면
+        // 다음 Update 의 UpdateSelectionPanel 이 selectedObject 가 살아있는 경우에 한해
+        // 패널을 다시 노출한다.
+        private bool isUnsavedChangesModalOpen;
+        private GameObject saveStatusToastRoot;
+        private TMP_Text saveStatusToastText;
+        private float saveStatusToastHideTime;
         private GameObject readyModalRoot;
         private GameObject themeApplyModeModalRoot;
         private GameObject customizationLockedModalRoot;
@@ -248,7 +268,10 @@ namespace App.Bootstrap
         private CustomizationCategory pendingCustomizationCategory;
         private CustomizationEntry pendingCustomizationEntry;
         private GameObject selectionPanelRoot;
-        private Button selectionRotateButton;
+        // origin/dev 합류 — WallDecoMarker.AllowRotation==false 면 두 버튼 모두 disabled.
+        // 좌/우 회전 분리(이번 브랜치) 와 양립시키기 위해 단일 → 좌/우 두 필드로 확장.
+        private Button selectionRotateLeftButton;
+        private Button selectionRotateRightButton;
 
         private string selectedToolbarKey = "ALL";
         private readonly Dictionary<string, Image> toolbarBackgrounds = new Dictionary<string, Image>();
@@ -286,6 +309,10 @@ namespace App.Bootstrap
         private GameObject draggingObject;
         private Vector3 dragLastValidPosition;
         private Vector3 dragGrabOffset;             // pointer-floor-hit minus object world XZ at drag start
+        // 드래그 시작 시점 position — FinishDrag 에서 epsilon 비교용. 사용자가 단순 선택/확인 클릭 시
+        // 좌표가 변하지 않았는데 dirty 가 켜져서 "미저장 변경사항" 모달이 뜨는 회귀 가드.
+        // MR #120 skh1205 리뷰 #3 반영.
+        private Vector3 dragStartPosition;
         private bool gridSnapEnabled = true;
         private GameObject gridDisplayRoot;
 
@@ -317,6 +344,122 @@ namespace App.Bootstrap
         private Camera editModeCamera;
         private Rect savedCameraRect;
         private bool savedCameraRectValid;
+
+        // 동물의 숲 해피홈 계열 편집 UX — 자유 orbit + 미니 큐브 UI 조합.
+        //
+        // 이전 버전의 "preset cycle" 모델 (Default + 4개 시점 순환) 은 제거하고, orbit 상태
+        // (yaw/pitch/distance) 를 직접 조작하는 자유 회전 + W/S/스크롤 줌 + 큐브 면 클릭으로
+        // 즉시 점프하는 모델로 전환. CameraPreset enum 자체는 wall fade 카테고리 식별용으로
+        // 여전히 사용 (큐브 면 클릭 / 기본 시점 / A·D 회전 결과 분류).
+        private enum CameraPreset
+        {
+            Default,    // 기본 편집뷰 (orbit 기본값 — 방을 자연스럽게 내려다보는 사선)
+            TopDown,    // 큐브 상면 — 위에서 직각 내려보기
+            Front,      // 큐브 전면 — 카메라 -Z 방향 outside, +Z 향함 (책장 뒷벽 시점)
+            Back,       // 큐브 후면 — 카메라 +Z 방향 outside, -Z 향함 (열린 면 시점)
+            LeftAngle,  // 큐브 좌면 — 카메라 -X outside, +X 향함
+            RightAngle, // 큐브 우면 — 카메라 +X outside, -X 향함
+        }
+        private static readonly Dictionary<CameraPreset, string> CameraPresetLabels = new Dictionary<CameraPreset, string>
+        {
+            { CameraPreset.Default,    "기본 편집뷰" },
+            { CameraPreset.TopDown,    "탑다운 뷰" },
+            { CameraPreset.Front,      "정면 뷰" },
+            { CameraPreset.Back,       "후면 뷰" },
+            { CameraPreset.LeftAngle,  "좌측 뷰" },
+            { CameraPreset.RightAngle, "우측 뷰" },
+        };
+
+        // ---- Orbit camera state ----
+        // 카메라 pose = (orbitCenter, orbitYaw, orbitPitch, orbitDistance) — selectedObject 무관.
+        // orbitCenter 는 카메라가 회전하는 기준점:
+        //   - 기본 시점 / TopDown: roomCenter (방 중앙)
+        //   - 벽면 포커스(전/좌/우/후): 해당 벽 중앙 midpoint → distance 가 그대로 "카메라-벽 거리"
+        //     가 되어 벽면을 가까이 볼 수 있음.
+        // yaw 0° = -Z 쪽 (orbitCenter 의 전면), 90° = +X (orbitCenter 의 우측),
+        // 180° = +Z (orbitCenter 의 후면), 270° = -X (orbitCenter 의 좌측).
+        // pitch 0° = 수평, 90° = 직각 위에서 내려봄. distance = orbitCenter 에서의 반경.
+        private Vector3 orbitCenter;
+        private float orbitYaw;
+        private float orbitPitch;
+        private float orbitDistance;
+
+        // 기본값 (Default 뷰 진입 시 사용)
+        private const float DefaultOrbitYaw = 25f;
+        private const float DefaultOrbitPitch = 18f;
+        private const float DefaultOrbitDistance = 4.2f;
+        // 클램프 — 벽면 포커스 close-up (0.5m, 거의 벽에 붙은 상태) 부터 룸 전체 overview (8m) 까지.
+        // 이전 Min=2.0 은 벽면 포커스 distance=1.5 가 clamp 에 막혀 broad view 가 되던 회귀 원인.
+        private const float MinOrbitDistance = 0.5f;
+        private const float MaxOrbitDistance = 8.0f;
+        private const float OrbitMinPitch = 5f;
+        private const float OrbitMaxPitch = 89f;
+        // A/D 회전 속도 (deg/sec), W/S 줌 속도 (m/sec), 스크롤 줌 감도 (m/scroll-tick).
+        private const float OrbitYawSpeed = 90f;
+        private const float ZoomKeySpeed = 3.0f;
+        private const float ZoomScrollSensitivity = 0.6f;
+
+        // 한 프레임 내에서 99% 도달하는 시간(초). 작을수록 빠른 추격, 클수록 부드러움.
+        private const float CameraPresetLerpTimeConstant = 0.18f;
+        // 현재 활성 wall-fade 카테고리. 큐브 면 클릭/Default/A·D 회전 결과로 갱신.
+        private CameraPreset currentCameraPreset = CameraPreset.Default;
+        // 직전에 wall fade 가 적용된 카테고리 — A/D 연속 회전 중 quadrant 가 바뀔 때만 ApplyWallVisibility 재호출.
+        private CameraPreset lastAppliedFadePreset = CameraPreset.Default;
+        // "기본 시점" 모드인지 — 진입/Default 버튼 클릭 시 true. 자유 회전/줌/큐브 클릭 시 false.
+        // wall fade 정책: true 면 항상 fade=none (Default 정책), false 면 ClassifyByOrbit 결과 사용.
+        private bool isInDefaultView = true;
+        private Vector3 cameraPresetTargetPosition;
+        private Quaternion cameraPresetTargetRotation;
+        private bool cameraPresetTargetActive;
+        // 진입 시점의 카메라 pose — ExitEditMode 의 복구 기준점.
+        private Vector3 savedCameraPosition;
+        private Quaternion savedCameraRotation;
+        private bool savedCameraPoseValid;
+
+        // 편집 모드 전용 벽 occlusion 처리 — 동물의 숲/심즈류 가구 배치 UX 처럼 카메라 시야를
+        // 가리는 벽을 임시로 alpha fade. 벽 GameObject 자체는 건드리지 않고 (Collider 유지 →
+        // 충돌/배치 검증 그대로 동작) Renderer 의 material instance 만 transparent 로 swap.
+        // 종료 시 sharedMaterial 원본 reference 로 되돌리고 instance material 은 Destroy.
+        private enum WallGroup { Left, Right, Back, Front, Ceiling }
+        private sealed class WallRendererCache
+        {
+            public Renderer Renderer;
+            public Material InstanceMaterial;   // 우리가 만든 instance — Destroy 책임 있음.
+            public Material SharedOriginal;     // 진입 시 sharedMaterial 스냅샷.
+            public bool RendererWasEnabled;
+            public WallGroup Group;
+        }
+        private readonly List<WallRendererCache> wallRendererCaches = new List<WallRendererCache>();
+        private bool wallVisibilityCollected;
+        // 0.18 → 내부가 충분히 보이면서도 벽 윤곽선은 살짝 인지되는 정도. 디자이너가 인스펙터에서
+        // 바로 튜닝할 수 있도록 SerializeField 노출 — MR #120 simonjiho 리뷰 #5 반영.
+        // [0..1] 클램프는 ApplyWallFadeState 에서 매 적용 시 보장.
+        [SerializeField, Range(0f, 1f)] private float wallFadeAlpha = 0.18f;
+
+        // ---- Decoration save / dirty state ----
+        // 명시적 "저장" 버튼 흐름. PlaceInventoryEntry / FinishDrag / RotateSelectedBy /
+        // DeleteSelectedObject 직후 SetDirty 만 호출하고, 실제 영속화는 OnSaveButtonClicked 에서만.
+        // 네트워크 부담 + 의도치 않은 부분 저장 방지.
+        private bool isDirty;
+        private SaveDecorationsUseCase saveDecorationsUseCase;
+        private LoadDecorationsUseCase loadDecorationsUseCase;
+        private IDecorationRepository decorationRepository;
+
+        // 편집 진입 시점 marker 스냅샷 — "저장하지 않고 나가기" 롤백 기준점.
+        // InstanceAtEntry 는 Unity 의 destroyed-pattern 으로 살아있는지 판별. 살아있으면 transform 만
+        // 복원, destroy 됐으면 SourcePrefab 으로 재생성. SourcePrefab 이 null 이면 복원 불가 (scene-baked
+        // marker 등 inventoryEntries 에 없는 케이스 — 진단 로그 후 skip).
+        private struct DecorationSnapshot
+        {
+            public string InventoryKey;
+            public GameObject SourcePrefab;
+            public string DisplayName;
+            public GameObject InstanceAtEntry;
+            public Vector3 Position;
+            public Quaternion Rotation;
+            public Vector3 LocalScale;
+        }
+        private readonly List<DecorationSnapshot> editEntrySnapshot = new List<DecorationSnapshot>();
 
         // Decoration catalog loaded from Resources (built by the editor menu item).
         private readonly List<InventoryEntry> inventoryEntries = new List<InventoryEntry>();
@@ -639,6 +782,212 @@ namespace App.Bootstrap
             BuildBottomMenu(editOverlayRoot.transform);
             BuildPillarboxFills(editOverlayRoot.transform);
             BuildReturnButton(editOverlayRoot.transform);
+            BuildSaveButton(editOverlayRoot.transform);
+            BuildMiniCubeUI(editOverlayRoot.transform);
+            BuildDefaultViewButton(editOverlayRoot.transform);
+            BuildUnsavedChangesModal(editOverlayRoot.transform);
+            BuildSaveStatusToast(editOverlayRoot.transform);
+        }
+
+        // "저장" 버튼 — Return 버튼 바로 아래 (top-right column). 편집 모드 동안만 노출 (editOverlayRoot
+        // 자식이라 자동). 클릭 시 현재 배치 markers → SaveDecorationsUseCase 호출.
+        private void BuildSaveButton(Transform parent)
+        {
+            saveButtonRoot = CreateRectObject("SaveButtonRoot", parent);
+            var rect = (RectTransform)saveButtonRoot.transform;
+            rect.anchorMin = new Vector2(1f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(1f, 1f);
+            rect.sizeDelta = new Vector2(ButtonWidth, ButtonHeight);
+            // Return 버튼 바로 아래 — Return 은 (-Margin, -Margin), Save 는 그 아래 ButtonStackGap.
+            rect.anchoredPosition = new Vector2(-ButtonMargin, -ButtonMargin - ButtonHeight - ButtonStackGap);
+
+            var button = CreateButton(
+                saveButtonRoot.transform, "SaveButton", "저장",
+                PrimaryColor, Color.white, new Vector2(ButtonWidth, ButtonHeight),
+                false, BorderColor);
+            StretchToParent((RectTransform)button.transform);
+            button.onClick.AddListener(OnSaveButtonClicked);
+        }
+
+        // 미저장 변경사항 안내 모달 — 돌아가기 버튼 클릭 시 isDirty 면 노출. 3개 액션 버튼.
+        private void BuildUnsavedChangesModal(Transform parent)
+        {
+            unsavedChangesModalRoot = CreateRectObject("UnsavedChangesModal", parent);
+            var modalRect = (RectTransform)unsavedChangesModalRoot.transform;
+            StretchToParent(modalRect);
+
+            // 반투명 배경 — 클릭이 뒤로 통과하지 않도록 raycastTarget=true.
+            var dim = CreateImage(unsavedChangesModalRoot.transform, "Dim", new Color(0f, 0f, 0f, 0.45f));
+            StretchToParent(dim.rectTransform);
+
+            // 카드.
+            var card = CreateImage(unsavedChangesModalRoot.transform, "Card", CardColor);
+            card.sprite = roundedRectSprite;
+            card.type = Image.Type.Sliced;
+            var cardRect = card.rectTransform;
+            cardRect.anchorMin = new Vector2(0.5f, 0.5f);
+            cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+            cardRect.pivot = new Vector2(0.5f, 0.5f);
+            cardRect.sizeDelta = new Vector2(680f, 280f);
+            cardRect.anchoredPosition = Vector2.zero;
+            var cardOutline = card.gameObject.AddComponent<Outline>();
+            cardOutline.effectColor = WithAlpha(BorderColor, 0.95f);
+            cardOutline.effectDistance = new Vector2(1f, -1f);
+
+            var title = CreateText(card.transform, "Title", "저장하지 않은 변경사항", 24f,
+                FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
+            var titleRect = title.rectTransform;
+            titleRect.anchorMin = new Vector2(0f, 1f);
+            titleRect.anchorMax = new Vector2(1f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.offsetMin = new Vector2(32f, -76f);
+            titleRect.offsetMax = new Vector2(-32f, -28f);
+
+            var body = CreateText(card.transform, "Body",
+                "저장하지 않은 변경사항이 있습니다.\n저장하지 않고 나가시겠습니까?",
+                17f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Center);
+            var bodyRect = body.rectTransform;
+            bodyRect.anchorMin = new Vector2(0f, 0.34f);
+            bodyRect.anchorMax = new Vector2(1f, 0.74f);
+            bodyRect.pivot = new Vector2(0.5f, 0.5f);
+            bodyRect.offsetMin = new Vector2(32f, 0f);
+            bodyRect.offsetMax = new Vector2(-32f, 0f);
+
+            // 3 버튼 — 가로 배치. 좌: 저장하고 나가기 (primary), 가운데: 저장하지 않고 나가기 (danger),
+            // 우: 취소 (secondary).
+            var saveExitButton = CreateButton(card.transform, "SaveAndExitButton", "저장하고 나가기",
+                PrimaryColor, Color.white, new Vector2(196f, 56f), false, BorderColor);
+            var saveExitRect = (RectTransform)saveExitButton.transform;
+            saveExitRect.anchorMin = new Vector2(0.5f, 0f);
+            saveExitRect.anchorMax = new Vector2(0.5f, 0f);
+            saveExitRect.pivot = new Vector2(0.5f, 0f);
+            saveExitRect.anchoredPosition = new Vector2(-208f, 28f);
+            saveExitButton.onClick.AddListener(OnSaveAndExitClicked);
+
+            var discardExitButton = CreateButton(card.transform, "DiscardAndExitButton", "저장하지 않고 나가기",
+                Hex("#C14E4E"), Color.white, new Vector2(196f, 56f), false, BorderColor);
+            var discardExitRect = (RectTransform)discardExitButton.transform;
+            discardExitRect.anchorMin = new Vector2(0.5f, 0f);
+            discardExitRect.anchorMax = new Vector2(0.5f, 0f);
+            discardExitRect.pivot = new Vector2(0.5f, 0f);
+            discardExitRect.anchoredPosition = new Vector2(0f, 28f);
+            discardExitButton.onClick.AddListener(OnDiscardAndExitClicked);
+
+            var cancelButton = CreateButton(card.transform, "CancelButton", "취소",
+                CardColor, TextColor, new Vector2(140f, 56f), true, BorderColor);
+            var cancelRect = (RectTransform)cancelButton.transform;
+            cancelRect.anchorMin = new Vector2(0.5f, 0f);
+            cancelRect.anchorMax = new Vector2(0.5f, 0f);
+            cancelRect.pivot = new Vector2(0.5f, 0f);
+            cancelRect.anchoredPosition = new Vector2(180f, 28f);
+            cancelButton.onClick.AddListener(OnCancelExitClicked);
+
+            unsavedChangesModalRoot.SetActive(false);
+        }
+
+        // 짧은 안내 토스트 — 저장 성공/실패 시 ~2초 표시 후 자동 사라짐.
+        private void BuildSaveStatusToast(Transform parent)
+        {
+            saveStatusToastRoot = CreateRectObject("SaveStatusToast", parent);
+            var rootRect = (RectTransform)saveStatusToastRoot.transform;
+            rootRect.anchorMin = new Vector2(0.5f, 1f);
+            rootRect.anchorMax = new Vector2(0.5f, 1f);
+            rootRect.pivot = new Vector2(0.5f, 1f);
+            rootRect.sizeDelta = new Vector2(360f, 56f);
+            rootRect.anchoredPosition = new Vector2(0f, -24f);
+
+            var bg = CreateImage(saveStatusToastRoot.transform, "Background", WithAlpha(TextColor, 0.85f));
+            bg.sprite = roundedRectSprite;
+            bg.type = Image.Type.Sliced;
+            StretchToParent(bg.rectTransform);
+
+            saveStatusToastText = CreateText(saveStatusToastRoot.transform, "Text", "저장되었습니다",
+                15f, FontStyles.Bold, Color.white, TextAlignmentOptions.Center);
+            StretchToParent(saveStatusToastText.rectTransform);
+
+            saveStatusToastRoot.SetActive(false);
+        }
+
+        // 좌측 상단 미니 큐브 UI — 동물의 숲 해피홈 식 "방향 선택 도구". 5개 면(상/전/후/좌/우)을
+        // 클릭하면 해당 시점으로 카메라 점프. 바닥은 클릭 대상에서 제외(요구사항). 큐브 형태를
+        // 단순 cross/T 레이아웃으로 표현 — 실제 3D 큐브 렌더보다 클릭 영역이 명확하고 모바일 터치
+        // 친화적. 면 라벨은 한국어로 표기 (위/전/후/좌/우).
+        private void BuildMiniCubeUI(Transform parent)
+        {
+            var root = CreateRectObject("MiniCubeUI", parent);
+            var rect = (RectTransform)root.transform;
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 1f);
+            rect.sizeDelta = new Vector2(132f, 132f);
+            rect.anchoredPosition = new Vector2(16f, -16f);
+
+            // 옅은 카드 배경 — 큐브 박스 느낌을 주기 위한 outline + shadow.
+            var bg = CreateImage(root.transform, "Background", WithAlpha(CardColor, 0.92f));
+            bg.sprite = roundedRectSprite;
+            bg.type = Image.Type.Sliced;
+            StretchToParent(bg.rectTransform);
+            var bgOutline = bg.gameObject.AddComponent<Outline>();
+            bgOutline.effectColor = WithAlpha(BorderColor, 0.9f);
+            bgOutline.effectDistance = new Vector2(1f, -1f);
+
+            // cross 레이아웃 — 가운데 행에 좌/전/우, 위에 상, 아래에 후. 각 셀 38×38 + 2 px gap.
+            //   .  [위]  .
+            //   [좌][전][우]
+            //   .  [후]  .
+            const float cellSize = 38f;
+            const float gap = 2f;
+            const float margin = 8f;
+
+            // (col, row) 좌표를 panel 내 anchoredPosition 으로. row=0 이 panel top, col=0 이 panel left.
+            void AddFaceButton(string name, string label, int col, int row, CameraPreset preset)
+            {
+                var btn = CreateButton(root.transform, name, label,
+                    SecondaryColor, TextColor, new Vector2(cellSize, cellSize), true, BorderColor);
+                var br = (RectTransform)btn.transform;
+                br.anchorMin = new Vector2(0f, 1f);
+                br.anchorMax = new Vector2(0f, 1f);
+                br.pivot = new Vector2(0f, 1f);
+                br.sizeDelta = new Vector2(cellSize, cellSize);
+                float x = margin + col * (cellSize + gap);
+                float y = -(margin + row * (cellSize + gap));
+                br.anchoredPosition = new Vector2(x, y);
+                btn.onClick.AddListener(() => OnCubeFaceClicked(preset));
+            }
+
+            // 레이아웃: "전" 을 윗변(top center) 에, "위" 를 가운데(middle center) 에 배치.
+            // 사용자 요구사항: 방 배치 도식에서 "전면 벽" 이 cube 윗면처럼 가장 prominent 위치에
+            // 보여야 직관적. "위(탑다운)" 는 cube 정중앙에서 전체를 내려보는 의미로 가운데.
+            //   .  [전]  .
+            //   [좌][위][우]
+            //   .  [후]  .
+            AddFaceButton("Front", "전", 1, 0, CameraPreset.Front);
+            AddFaceButton("Left",  "좌", 0, 1, CameraPreset.LeftAngle);
+            AddFaceButton("Top",   "위", 1, 1, CameraPreset.TopDown);
+            AddFaceButton("Right", "우", 2, 1, CameraPreset.RightAngle);
+            AddFaceButton("Back",  "후", 1, 2, CameraPreset.Back);
+        }
+
+        // "기본 시점" 버튼 — 어느 cycle 시점에서든 1클릭으로 Default 프리셋 복귀.
+        // "시점 변경" 버튼 옆 (16 + 140 + 8 = 164 px 오프셋) 에 같은 줄에 배치 — SelectionPanel
+        // (중앙 하단, 360 px 폭) 과 겹치지 않게 좌측 모서리에 모음. 편집 모드 동안 항상 노출.
+        private void BuildDefaultViewButton(Transform parent)
+        {
+            var root = CreateRectObject("DefaultViewButton", parent);
+            var rect = (RectTransform)root.transform;
+            rect.anchorMin = new Vector2(0f, BottomMenuFraction);
+            rect.anchorMax = new Vector2(0f, BottomMenuFraction);
+            rect.pivot = new Vector2(0f, 0f);
+            rect.sizeDelta = new Vector2(140f, 60f);
+            // 기존 "시점 변경" cycle 버튼이 (16, 16) 에 있어서 옆으로 빗겨 놨었지만 cycle 버튼을 제거했으므로
+            // 이제 (16, 16) 좌측 하단 모서리에 단독 배치. SelectionPanel(중앙) / MiniCube(좌상단)와 충돌 없음.
+            rect.anchoredPosition = new Vector2(16f, 16f);
+
+            var button = CreateButton(root.transform, "Button", "기본 시점",
+                PrimaryColor, Color.white, new Vector2(140f, 60f), false, BorderColor);
+            StretchToParent((RectTransform)button.transform);
+            button.onClick.AddListener(OnDefaultViewClicked);
         }
 
         // Two beige rectangles flanking the camera viewport. Anchored in canvas
@@ -1374,6 +1723,13 @@ namespace App.Bootstrap
         private void OnThemeSelected(RoomThemeAsset theme)
         {
             if (theme == null) return;
+            // 진단 로그 — "전체 테마" 클릭이 편집 모드/현재 카메라 프리셋과 어떻게 상호작용했는지
+            // 이번 wall fade 회귀 버그의 핵심 단서. 적용 흐름은 ShowThemeApplyModeModal → ApplyThemeSelected
+            // 거기서 RefreshWallVisibilityAfterMaterialMutation 가 호출됨.
+            Debug.Log(
+                $"[RoomEdit][Theme][click] '{theme.DisplayName}' editMode={IsEditModeActive} " +
+                $"preset={(IsEditModeActive ? currentCameraPreset.ToString() : "n/a")} " +
+                $"wallVisibilityCollected={wallVisibilityCollected}");
             ShowThemeApplyModeModal(theme);
         }
 
@@ -1392,7 +1748,10 @@ namespace App.Bootstrap
 
             // D9(i) 낙관적 적용: 즉시 visual swap → 백엔드 PATCH → 실패 시 rollback.
             previousAppliedTheme = themeApplier.CurrentTheme;
+            Debug.Log($"[RoomEdit][Theme] ApplyThemeSelected '{theme.DisplayName}' editMode={IsEditModeActive} preset={(IsEditModeActive ? currentCameraPreset.ToString() : "n/a")}");
             themeApplier.Apply(theme);
+            // 벽 sharedMaterial 이 swap 됐으므로 편집 모드 중이면 fade 즉시 재적용 (탑다운/사선에서 occlusion 복귀 방지).
+            RefreshWallVisibilityAfterMaterialMutation("ApplyThemeSelected");
             RebuildInventorySlots();
 
             // local preview 전용 테마 — placeholder (가구/벽지/바닥 미제작). 명시 플래그 + assetId<=0 fallback.
@@ -1454,6 +1813,7 @@ namespace App.Bootstrap
                     if (previousAppliedTheme != null && previousAppliedTheme != theme)
                     {
                         themeApplier.Apply(previousAppliedTheme);
+                        RefreshWallVisibilityAfterMaterialMutation("ApplyThemeSelected/rollback");
                         RebuildInventorySlots();
                     }
                 });
@@ -1608,6 +1968,10 @@ namespace App.Bootstrap
                 generator.ResetAllBookshelfDesignStyles();
             }
 
+            // ResetAllBookshelfDesignStyles 가 벽 renderer 까지 건드릴 가능성에 대한 방어적 refresh.
+            // IsEditModeActive=false 면 noop — 일반 메인뷰에서는 부담 없음.
+            RefreshWallVisibilityAfterMaterialMutation("ApplyThemeResetVisualFallback");
+
             RebuildInventorySlots();
         }
 
@@ -1665,6 +2029,9 @@ namespace App.Bootstrap
             {
                 Debug.LogWarning($"[RoomEditModeController] {category} 매칭 0개 (entry={entry.DisplayName}).");
             }
+            // 벽지(Wallpaper) / 바닥 등 카테고리는 벽 renderer 의 sharedMaterial 을 swap 해서
+            // 편집 모드의 wall fade instance 를 풀어버린다 → 즉시 재적용.
+            RefreshWallVisibilityAfterMaterialMutation($"ApplyEntryVisual/{category}");
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -1883,6 +2250,7 @@ namespace App.Bootstrap
                 if (resolvedTheme != null && resolvedTheme != themeApplier.CurrentTheme)
                 {
                     themeApplier.Apply(resolvedTheme);
+                    RefreshWallVisibilityAfterMaterialMutation("ReloadRoomState");
                 }
             }
 
@@ -1973,6 +2341,111 @@ namespace App.Bootstrap
             button.targetGraphic = slot;
             var capturedEntry = entry;
             button.onClick.AddListener(() => PlaceInventoryEntry(capturedEntry));
+
+            // 동일 inventoryKey 가 이미 배치되어 있으면 슬롯 자체를 비활성 + "배치됨" 오버레이로 가린다.
+            // 삭제하면 RebuildInventorySlots 가 다시 돌면서 자동 복구된다.
+            var key = BuildInventoryKey(entry);
+            if (IsInventoryKeyPlaced(key))
+            {
+                button.interactable = false;
+                slot.color = WithAlpha(CardColor, 0.55f);
+                thumb.color = WithAlpha(thumb.color, 0.55f);
+                glyph.color = WithAlpha(MutedTextColor, 0.55f);
+                labelText.color = WithAlpha(TextColor, 0.55f);
+
+                var placedTag = CreateImage(slot.transform, "PlacedTag", Hex("#3A3A3A"));
+                placedTag.sprite = roundedRectSprite;
+                placedTag.type = Image.Type.Sliced;
+                var tagRect = placedTag.rectTransform;
+                tagRect.anchorMin = new Vector2(0.5f, 1f);
+                tagRect.anchorMax = new Vector2(0.5f, 1f);
+                tagRect.pivot = new Vector2(0.5f, 1f);
+                tagRect.sizeDelta = new Vector2(64f, 22f);
+                tagRect.anchoredPosition = new Vector2(0f, -4f);
+
+                var tagLabel = CreateText(placedTag.transform, "Label", "배치됨", 11f, FontStyles.Bold, Color.white, TextAlignmentOptions.Center);
+                StretchToParent(tagLabel.rectTransform);
+            }
+        }
+
+        // 인벤토리 자산 식별 키.
+        //
+        // TODO(server-inventory): EditableDecorationCatalog 에 inventoryId / assetId 가 추가되면
+        // "asset:{AssetId}" / "inv:{InventoryId}" 가 정식 키. 그 시점에는 fallback 들을 dev-only
+        // assertion 으로 좁히고 prod 에서는 서버 ID 만 신뢰. PR !120 review #2 (beshu) 참조.
+        //
+        // 현재 우선순위 (안정성 큰 순):
+        //   1. SourceAssetPath: 카탈로그 asset path — 자산이 이동/리네이밍되지 않는 한 고유.
+        //      "path:" prefix 로 다른 fallback 키와 절대 충돌하지 않게 namespace 분리.
+        //   2. Prefab.GetInstanceID(): asset GUID 기반 런타임 InstanceID. 한 세션 내에선 자산당 고유 →
+        //      DisplayName 충돌(동명 자산) 보다 안전. 단 세션 간 안정성은 없음.
+        //   3. DisplayName: 마지막 fallback. 동명 자산 위험 인지 후 사용.
+        // 호출부(BuildInventorySlot / PlaceInventoryEntry / DeleteSelectedObject / DecorationItemMarker.InventoryKey
+        //  scene scan) 모두 같은 메서드를 거치므로 여기서 prefix 만 일관되면 양쪽 매칭이 자동.
+        private static string BuildInventoryKey(InventoryEntry entry)
+        {
+            if (!string.IsNullOrEmpty(entry.SourceAssetPath))
+            {
+                return "path:" + entry.SourceAssetPath;
+            }
+            if (entry.Prefab != null)
+            {
+                return "prefab-iid:" + entry.Prefab.GetInstanceID();
+            }
+            if (!string.IsNullOrEmpty(entry.DisplayName))
+            {
+                return "name:" + entry.DisplayName;
+            }
+            return null;
+        }
+
+        // 캐시에 키가 있고 GameObject 가 살아있으면 true. 죽은 reference 는 lazy-clean.
+        private bool IsInventoryKeyPlaced(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return false;
+            if (!placedByInventoryKey.TryGetValue(key, out var existing))
+            {
+                return false;
+            }
+            if (existing == null)
+            {
+                placedByInventoryKey.Remove(key);
+                return false;
+            }
+            return true;
+        }
+
+        // [#5 P1] EnterEditMode 시 scene 전체의 DecorationItemMarker 를 훑어 placedByInventoryKey 를
+        // 재구성. controller-local cache 만 가지면 다음 케이스에서 슬롯이 재활성화됨:
+        //   - 저장 데이터에서 복원된 배치 오브젝트
+        //   - 씬에 미리 박혀있는 marker
+        //   - controller reload 등으로 dict 만 초기화된 케이스
+        // "씬에 1개만 배치" 가 요구사항이므로 placedItemsRoot 하위가 아닌 scene 전체 스캔.
+        private void RebuildPlacedByInventoryKeyFromScene()
+        {
+            placedByInventoryKey.Clear();
+            var markers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            int restored = 0, skippedNoKey = 0, dupes = 0;
+            for (int i = 0; i < markers.Length; i++)
+            {
+                var m = markers[i];
+                if (m == null) continue;
+                if (string.IsNullOrEmpty(m.InventoryKey))
+                {
+                    skippedNoKey++;
+                    continue;
+                }
+                if (placedByInventoryKey.ContainsKey(m.InventoryKey))
+                {
+                    // 같은 key 중복 — 이미 위반 상태지만 여기서 추가 처리하지 않음 (사용자가 삭제로 정리).
+                    dupes++;
+                    continue;
+                }
+                placedByInventoryKey[m.InventoryKey] = m.gameObject;
+                restored++;
+            }
+            Debug.Log(
+                $"[RoomEdit][Inventory] 진입 시 scene 스캔 — 등록 {restored}, 키 없음 skip {skippedNoKey}, 중복 skip {dupes} / total marker {markers.Length}");
         }
 
         private static string ResolveSlotInitial(string displayName)
@@ -2205,7 +2678,8 @@ namespace App.Bootstrap
             rect.anchorMin = new Vector2(0.5f, BottomMenuFraction);
             rect.anchorMax = new Vector2(0.5f, BottomMenuFraction);
             rect.pivot = new Vector2(0.5f, 0f);
-            rect.sizeDelta = new Vector2(280f, 84f);
+            // 너비 280 → 360: 좌회전/우회전/삭제 3버튼이 16px 마진 + 8px 간격으로 들어가는 폭.
+            rect.sizeDelta = new Vector2(360f, 84f);
             rect.anchoredPosition = new Vector2(0f, 16f);
 
             var bg = CreateImage(selectionPanelRoot.transform, "Background", WithAlpha(CardColor, 0.97f));
@@ -2216,18 +2690,31 @@ namespace App.Bootstrap
             outline.effectColor = WithAlpha(BorderColor, 0.95f);
             outline.effectDistance = new Vector2(1f, -1f);
 
-            var rotateButton = CreateButton(selectionPanelRoot.transform, "RotateButton", "회전",
-                SecondaryColor, TextColor, new Vector2(112f, 60f), true, BorderColor);
-            var rotateRect = (RectTransform)rotateButton.transform;
-            rotateRect.anchorMin = new Vector2(0f, 0.5f);
-            rotateRect.anchorMax = new Vector2(0f, 0.5f);
-            rotateRect.pivot = new Vector2(0f, 0.5f);
-            rotateRect.anchoredPosition = new Vector2(16f, 0f);
-            rotateButton.onClick.AddListener(RotateSelectedObject);
-            selectionRotateButton = rotateButton;
+            // 좌/우 회전 분리 (이번 브랜치 핵심 변경) + WallDecoMarker.AllowRotation 가드 (origin/dev 합류).
+            // 두 버튼 모두 selectionRotateLeftButton / selectionRotateRightButton 으로 보관해서
+            // UpdateSelectionPanel 의 AllowRotation 체크가 동시 토글.
+            var rotateLeftButton = CreateButton(selectionPanelRoot.transform, "RotateLeftButton", "↺ 좌",
+                SecondaryColor, TextColor, new Vector2(96f, 60f), true, BorderColor);
+            var rotateLeftRect = (RectTransform)rotateLeftButton.transform;
+            rotateLeftRect.anchorMin = new Vector2(0f, 0.5f);
+            rotateLeftRect.anchorMax = new Vector2(0f, 0.5f);
+            rotateLeftRect.pivot = new Vector2(0f, 0.5f);
+            rotateLeftRect.anchoredPosition = new Vector2(16f, 0f);
+            rotateLeftButton.onClick.AddListener(RotateSelectedCounterClockwise);
+            selectionRotateLeftButton = rotateLeftButton;
+
+            var rotateRightButton = CreateButton(selectionPanelRoot.transform, "RotateRightButton", "↻ 우",
+                SecondaryColor, TextColor, new Vector2(96f, 60f), true, BorderColor);
+            var rotateRightRect = (RectTransform)rotateRightButton.transform;
+            rotateRightRect.anchorMin = new Vector2(0.5f, 0.5f);
+            rotateRightRect.anchorMax = new Vector2(0.5f, 0.5f);
+            rotateRightRect.pivot = new Vector2(0.5f, 0.5f);
+            rotateRightRect.anchoredPosition = new Vector2(0f, 0f);
+            rotateRightButton.onClick.AddListener(RotateSelectedClockwise);
+            selectionRotateRightButton = rotateRightButton;
 
             var deleteButton = CreateButton(selectionPanelRoot.transform, "DeleteButton", "삭제",
-                Hex("#C14E4E"), Color.white, new Vector2(112f, 60f), false, BorderColor);
+                Hex("#C14E4E"), Color.white, new Vector2(96f, 60f), false, BorderColor);
             var deleteRect = (RectTransform)deleteButton.transform;
             deleteRect.anchorMin = new Vector2(1f, 0.5f);
             deleteRect.anchorMax = new Vector2(1f, 0.5f);
@@ -2247,15 +2734,127 @@ namespace App.Bootstrap
 
             UpdateButtonVisibility();
             UpdateSelectionPanel();
+            UpdateSaveStatusToast();
 
             if (IsEditModeActive)
             {
-                HandleEditModeInput();
+                // 미저장 모달이 떠 있는 동안에는 카메라 orbit/객체 선택·드래그 입력을 모두 차단.
+                // 모달 Dim 이 raycast 를 가로채긴 하지만, 키보드(A/D/W/S) orbit 입력은 EventSystem
+                // 우회로 들어오므로 별도 가드 필요.
+                if (!isUnsavedChangesModalOpen)
+                {
+                    HandleEditCameraInput();
+                    HandleEditModeInput();
+                }
             }
             else if (IsDecorationPopupOpen)
             {
                 HandleDecorationPopupOutsideClick();
             }
+        }
+
+        // 편집 카메라 키/스크롤 입력 — A/D 회전, W/S 줌, 마우스 스크롤 줌. 텍스트 입력 포커스 중이거나
+        // 오브젝트 드래그 중에는 skip 해서 의도치 않은 카메라 이동 방지. orbit 상태가 변하면
+        // cameraPresetTargetActive=true 로 lerp 활성, classification 변경 시 wall fade 갱신.
+        private void HandleEditCameraInput()
+        {
+            if (IsTextInputFocused()) return;
+            if (draggingObject != null) return;
+
+            float dt = Time.unscaledDeltaTime;
+            bool changed = false;
+
+            // A/D — yaw 좌우 회전 (방 중심 orbit). +A 좌측, +D 우측.
+            float yawInput = 0f;
+            var kb = Keyboard.current;
+            if (kb != null)
+            {
+                if (kb.aKey.isPressed) yawInput -= 1f;
+                if (kb.dKey.isPressed) yawInput += 1f;
+            }
+            if (Mathf.Abs(yawInput) > 0.001f)
+            {
+                orbitYaw += yawInput * OrbitYawSpeed * dt;
+                changed = true;
+            }
+
+            // W/S — zoom (W=확대=distance 줄임, S=축소=distance 늘림).
+            float zoomInput = 0f;
+            if (kb != null)
+            {
+                if (kb.wKey.isPressed) zoomInput -= 1f;
+                if (kb.sKey.isPressed) zoomInput += 1f;
+            }
+            if (Mathf.Abs(zoomInput) > 0.001f)
+            {
+                orbitDistance += zoomInput * ZoomKeySpeed * dt;
+                changed = true;
+            }
+
+            // 마우스 스크롤 — distance 단위 점프. y>0 = 스크롤 업 = 확대.
+            var mouse = Mouse.current;
+            if (mouse != null)
+            {
+                float scrollY = mouse.scroll.ReadValue().y;
+                // Unity 의 raw scroll 값은 OS 마다 스케일이 다름. 절댓값 ≥120(Win) 또는 ≥1(macOS line-step) 보정.
+                if (Mathf.Abs(scrollY) > 0.01f)
+                {
+                    float normalized = Mathf.Clamp(scrollY / 120f, -1f, 1f);
+                    if (Mathf.Abs(scrollY) < 1.5f && Mathf.Abs(scrollY) > 0.01f)
+                    {
+                        // line-step 환경 fallback.
+                        normalized = Mathf.Sign(scrollY);
+                    }
+                    orbitDistance -= normalized * ZoomScrollSensitivity;
+                    changed = true;
+                }
+            }
+
+            if (!changed) return;
+
+            // Default 모드에서 첫 orbit 입력 — 현재 saved pose 기준으로 yaw/pitch/distance 를
+            // 역산해서 점프 없이 이어가도록. 이게 없으면 Default(메인뷰 pose) → orbit 기본값(25°,18°,4.2m)
+            // 으로 갑자기 점프하는 것처럼 lerp 됨.
+            if (isInDefaultView)
+            {
+                DeriveOrbitFromSavedPose();
+                // 위에서 누적된 입력 delta 도 다시 적용 — DeriveOrbitFromSavedPose 가 yaw 등을 덮어썼으므로.
+                if (Mathf.Abs(yawInput) > 0.001f) orbitYaw += yawInput * OrbitYawSpeed * dt;
+                if (Mathf.Abs(zoomInput) > 0.001f) orbitDistance += zoomInput * ZoomKeySpeed * dt;
+            }
+
+            // 클램프 + 변경 후처리.
+            orbitDistance = Mathf.Clamp(orbitDistance, MinOrbitDistance, MaxOrbitDistance);
+            orbitPitch = Mathf.Clamp(orbitPitch, OrbitMinPitch, OrbitMaxPitch);
+            isInDefaultView = false;
+            cameraPresetTargetActive = true;
+
+            // wall fade 카테고리 갱신 — quadrant 가 바뀐 경우만 ApplyWallVisibilityForPreset 호출.
+            currentCameraPreset = ClassifyByOrbit();
+            ApplyWallVisibilityForCurrentView("OrbitInput");
+
+            if (Mathf.Abs(yawInput) > 0.001f)
+            {
+                Debug.Log($"[RoomEdit][Camera] orbit 회전 yaw={orbitYaw:0.#}° pitch={orbitPitch:0.#}° preset={currentCameraPreset}");
+            }
+            if (Mathf.Abs(zoomInput) > 0.001f || (mouse != null && Mathf.Abs(mouse.scroll.ReadValue().y) > 0.01f))
+            {
+                Debug.Log($"[RoomEdit][Camera] orbit 줌 distance={orbitDistance:0.##}m");
+            }
+        }
+
+        // EventSystem 의 currentSelectedGameObject 가 InputField/TMP_InputField 컴포넌트를 가지면
+        // 사용자가 텍스트 입력 중이라고 판단 — W/S/A/D 카메라 입력 무시.
+        private static bool IsTextInputFocused()
+        {
+            var es = EventSystem.current;
+            if (es == null) return false;
+            var go = es.currentSelectedGameObject;
+            if (go == null) return false;
+            // TMP_InputField 와 legacy InputField 둘 다 검사.
+            if (go.GetComponent<TMP_InputField>() != null) return true;
+            if (go.GetComponent<UnityEngine.UI.InputField>() != null) return true;
+            return false;
         }
 
         private void UpdateButtonVisibility()
@@ -2289,25 +2888,40 @@ namespace App.Bootstrap
 
         private void UpdateSelectionPanel()
         {
-            var shouldShow = IsEditModeActive && selectedObject != null;
+            // 미저장 모달이 떠 있는 동안에는 selection action UI(좌/우 회전·삭제) 를
+            // 숨겨서 모달과 시각적으로 겹치지 않게 한다. 취소 시 selectedObject 가 그대로
+            // 살아있으면 모달 닫힌 다음 Update 에서 자동 복귀.
+            var shouldShow = IsEditModeActive && selectedObject != null && !isUnsavedChangesModalOpen;
             if (selectionPanelRoot != null && selectionPanelRoot.activeSelf != shouldShow)
             {
                 selectionPanelRoot.SetActive(shouldShow);
             }
 
-            // 회전 비활성 entry — wall deco marker.AllowRotation == false 면 회전 버튼 disabled.
-            if (selectionRotateButton != null)
+            // 회전 비활성 entry — wall deco marker.AllowRotation == false 면 좌/우 회전 버튼 모두 disabled.
+            // 좌/우 분리 (이번 브랜치) + AllowRotation 게이트 (origin/dev) 양립.
+            bool allowRotation = true;
+            if (selectedObject != null)
             {
-                bool allowRotation = true;
-                if (selectedObject != null)
-                {
-                    var marker = selectedObject.GetComponent<WallDecoMarker>();
-                    if (marker != null && !marker.AllowRotation) allowRotation = false;
-                }
-                if (selectionRotateButton.interactable != allowRotation)
-                {
-                    selectionRotateButton.interactable = allowRotation;
-                }
+                var marker = selectedObject.GetComponent<WallDecoMarker>();
+                if (marker != null && !marker.AllowRotation) allowRotation = false;
+            }
+            if (selectionRotateLeftButton != null && selectionRotateLeftButton.interactable != allowRotation)
+            {
+                selectionRotateLeftButton.interactable = allowRotation;
+            }
+            if (selectionRotateRightButton != null && selectionRotateRightButton.interactable != allowRotation)
+            {
+                selectionRotateRightButton.interactable = allowRotation;
+            }
+        }
+
+        // 토스트 자동 숨김 — saveStatusToastHideTime 까지만 노출.
+        private void UpdateSaveStatusToast()
+        {
+            if (saveStatusToastRoot == null || !saveStatusToastRoot.activeSelf) return;
+            if (Time.unscaledTime >= saveStatusToastHideTime)
+            {
+                saveStatusToastRoot.SetActive(false);
             }
         }
 
@@ -2432,6 +3046,25 @@ namespace App.Bootstrap
                 experienceManager.SnapToMainView();
             }
             BeginCameraViewportEdit();
+
+            // [#5 P1] 진입 시 scene 전체에서 DecorationItemMarker 를 스캔해 placedByInventoryKey 를
+            // 재구성. controller-local cache 만 의존하면 (a) 저장에서 복원된 오브젝트, (b) scene
+            // 에 미리 배치된 marker, (c) 다른 코드가 만든 marker 가 누락되어 슬롯이 다시 활성
+            // 상태로 보이는 경우 발생. "씬에 1개만" 이라는 요구사항을 만족시키려면 scene 전체 스캔.
+            RebuildPlacedByInventoryKeyFromScene();
+
+            // 진입 시 dirty 초기화 (이전 세션의 dirty 가 남아있으면 즉시 모달이 뜨는 회귀 방지).
+            isDirty = false;
+            // 저장된 layout 복원 시도 (현재 부분 구현 — 기존 marker transform 만 갱신).
+            TryRestoreSavedDecorations();
+            // 진입 시점 marker 스냅샷 — "저장하지 않고 나가기" 롤백 기준점. load 후 캡처 순서가 중요:
+            // 사용자가 진입 화면에서 본 상태가 곧 롤백 목표 상태가 되도록.
+            TakeEditEntrySnapshot();
+
+            // 동물의 숲 스타일 — 시점 전환에서 벽이 시야를 가리지 않게 fade 시스템 활성화.
+            // 진입 시 Default 프리셋으로 시작하므로 fade=none 으로 시작 (메인뷰 그대로).
+            CollectWallRenderers();
+            ApplyWallVisibilityForPreset(currentCameraPreset);
 
             // Block bookshelf / notebook / guestbook focus and the F1–F4 shortcuts
             // while edit mode is owning the scene. The edit overlay's own click
@@ -2704,7 +3337,80 @@ namespace App.Bootstrap
 
         public void ExitEditMode()
         {
+            // 미저장 변경사항이 있으면 모달로 사용자 확인. 없으면 기존처럼 즉시 종료.
+            if (isDirty)
+            {
+                Debug.Log("[RoomEdit][Save] 돌아가기 클릭 — dirty=true → 미저장 모달 표시");
+                ShowUnsavedChangesModal();
+                return;
+            }
+            Debug.Log("[RoomEdit][Save] 돌아가기 클릭 — dirty=false → 즉시 편집 종료");
             ExitEditModeInternal();
+        }
+
+        private void ShowUnsavedChangesModal()
+        {
+            if (unsavedChangesModalRoot == null) return;
+            unsavedChangesModalRoot.transform.SetAsLastSibling();
+            unsavedChangesModalRoot.SetActive(true);
+            // 플래그 set 즉시 다음 UpdateSelectionPanel 이 selection action UI 를 숨긴다.
+            // 또한 HandleEditModeInput / HandleEditCameraInput / Rotate / Delete 입력도 차단.
+            isUnsavedChangesModalOpen = true;
+            // 같은 프레임 내 입력 leak 방지 — 모달 표시 직전 selection 패널이 떠 있을 수 있으므로
+            // 즉시 비활성화. 이후 닫힐 때 selectedObject 가 살아있으면 다음 Update 에서 자동 복귀.
+            if (selectionPanelRoot != null && selectionPanelRoot.activeSelf)
+            {
+                selectionPanelRoot.SetActive(false);
+            }
+        }
+
+        private void HideUnsavedChangesModal()
+        {
+            if (unsavedChangesModalRoot != null)
+            {
+                unsavedChangesModalRoot.SetActive(false);
+            }
+            // 모달 닫는 모든 경로(취소/저장하고 나가기/저장하지 않고 나가기) 에서 flag clear.
+            // 취소 시: UpdateSelectionPanel 이 selectedObject 살아있으면 패널 재표시.
+            // 저장/폐기 시: ExitEditModeInternal 의 DeselectCurrentObject 가 selectedObject=null
+            // 로 만들어 패널은 계속 숨김.
+            isUnsavedChangesModalOpen = false;
+        }
+
+        private void OnSaveAndExitClicked()
+        {
+            Debug.Log("[RoomEdit][Save] 미저장 모달: '저장하고 나가기' 선택");
+            HideUnsavedChangesModal();
+            // 저장 성공 시 종료, 실패 시 편집 모드 유지 + dirty 유지 + 모달 다시 표시.
+            PerformSave(
+                onSuccess: () =>
+                {
+                    Debug.Log("[RoomEdit][Save] 저장 성공 후 편집 종료");
+                    ExitEditModeInternal();
+                },
+                onError: msg =>
+                {
+                    Debug.LogError($"[RoomEdit][Save] 저장 실패 → 편집 모드 유지. 에러: {msg}");
+                    // dirty 는 PerformSave 내부에서 그대로 유지됨 (성공 시에만 ClearDirty).
+                    ShowSaveStatusToast($"저장 실패: {msg}", isError: true, durationSec: 4f);
+                });
+        }
+
+        private void OnDiscardAndExitClicked()
+        {
+            Debug.Log("[RoomEdit][Save] 미저장 모달: '저장하지 않고 나가기' 선택 — 변경사항 폐기 + 씬 롤백");
+            HideUnsavedChangesModal();
+            // 핵심: 저장만 skip 하면 메인뷰에 편집 중 변경사항이 그대로 남는 회귀 — 진입 시점 스냅샷으로
+            // 씬 자체를 되돌려야 함. (배치한 객체 destroy / 이동한 객체 transform 복원 / 삭제한 객체 재생성)
+            RollbackToEditEntrySnapshot();
+            ClearDirty("discard via modal");
+            ExitEditModeInternal();
+        }
+
+        private void OnCancelExitClicked()
+        {
+            Debug.Log("[RoomEdit][Save] 미저장 모달: '취소' 선택 — 편집 모드 유지");
+            HideUnsavedChangesModal();
         }
 
         private void ExitEditModeInternal()
@@ -2720,6 +3426,9 @@ namespace App.Bootstrap
             CloseDecorationPopupInternal();
             HideReadyModal();
             HideGrid();
+            // 벽 alpha/Renderer 상태를 원본으로 복구 — Camera transform 복구보다 먼저 해서
+            // 메인뷰 카메라 컨트롤러가 다음 프레임에 보는 씬이 정상 상태이도록.
+            RestoreWallVisibility("ExitEditModeInternal");
             EndCameraViewportEdit();
             if (editOverlayRoot != null)
             {
@@ -2737,6 +3446,10 @@ namespace App.Bootstrap
             {
                 experienceManager.AreSceneInteractionsSuppressed = false;
             }
+
+            // Snapshot 의 GameObject reference 해제 — 다음 진입 시 stale reference 들고 있지 않도록.
+            // 다음 EnterEditMode 가 TakeEditEntrySnapshot 으로 다시 캡처하므로 여기서 비워도 안전.
+            editEntrySnapshot.Clear();
         }
 
         // Shrink the main camera's viewport rect so it renders only into the area
@@ -2757,6 +3470,20 @@ namespace App.Bootstrap
             savedCameraRect = camera.rect;
             savedCameraRectValid = true;
             ApplyEditModeCameraRect();
+
+            // EnterEditMode 가 직전에 SnapToMainView 를 호출했으므로 여기 pose 가 메인뷰 기준
+            // 좌표 — Default 프리셋 target 이자 Exit 시 복구점. 프리셋 인덱스는 0 으로 리셋.
+            savedCameraPosition = camera.transform.position;
+            savedCameraRotation = camera.transform.rotation;
+            savedCameraPoseValid = true;
+            // 진입 시 = SnapToMainView 직후의 카메라 pose 가 곧 "기본 편집뷰". target=savedCameraPose 로
+            // 두면 LateUpdate 가 그 자리에서 lerp 결과 = 정지 (이미 그 위치). cameraPresetTargetActive=true
+            // 로 두는 이유는 사용자가 즉시 큐브/A·D 입력 시 lerp loop 가 작동하도록.
+            ApplyDefaultViewState();
+            cameraPresetTargetActive = true;
+            Debug.Log(
+                "[RoomEdit][Camera] 편집 모드 진입 — 기본 편집뷰 = MainView (SnapToMainView 진입 pose) " +
+                $"position={savedCameraPosition} rotation={savedCameraRotation.eulerAngles} fov={camera.fieldOfView:0.#}");
         }
 
         private void ApplyEditModeCameraRect()
@@ -2783,21 +3510,1162 @@ namespace App.Bootstrap
 
         private void EndCameraViewportEdit()
         {
-            if (editModeCamera != null && savedCameraRectValid)
+            if (editModeCamera != null)
             {
-                editModeCamera.rect = savedCameraRect;
+                if (savedCameraRectValid)
+                {
+                    editModeCamera.rect = savedCameraRect;
+                }
+                // 프리셋으로 옮겨진 transform 도 진입 시 메인뷰 pose 로 즉시 복구. 이후 메인뷰
+                // 컨트롤러(BookshelfExperienceManager) 가 다시 카메라 주도권을 가져간다.
+                if (savedCameraPoseValid)
+                {
+                    editModeCamera.transform.SetPositionAndRotation(savedCameraPosition, savedCameraRotation);
+                }
             }
             editModeCamera = null;
             savedCameraRectValid = false;
+            savedCameraPoseValid = false;
+            cameraPresetTargetActive = false;
         }
 
         private void OnDestroy()
         {
             // Defensive: if the controller is torn down while edit mode is active,
             // restore the camera viewport so a re-loaded scene doesn't inherit a
-            // partial rect.
+            // partial rect. 벽 alpha/Renderer 도 같이 원복 — 안 그러면 다음 진입 시 invalid
+            // sharedMaterial reference + leaked instance material 이 남는다.
+            RestoreWallVisibility("OnDestroy");
             EndCameraViewportEdit();
             RoomEditThemeFilter.Changed -= HandleThemeFilterChanged;
+        }
+
+        // MR #120 simonjiho 리뷰 #6 반영 — 비정상 종료(scene unload, GameObject SetActive(false),
+        // domain reload 직전) 경로에서도 instance material leak / sharedMaterial 미복구 회귀를 막는
+        // defensive fallback. ExitEditMode 정상 흐름은 RestoreWallVisibility 를 이미 호출하므로 여기서는
+        // wallVisibilityCollected==true 인 경우(=fade instance 가 아직 살아있는 경우) 만 추가로 정리.
+        private void OnDisable()
+        {
+            if (!wallVisibilityCollected) return;
+            RestoreWallVisibility("OnDisable");
+        }
+
+        // ---------- Animal Crossing 해피홈식 자유 orbit 카메라 ----------
+        //
+        // pose = (orbitYaw, orbitPitch, orbitDistance) 로만 결정 — selectedObject 무참조
+        // (오브젝트 이동/드래그 중에도 카메라 follow X). 입력 종류:
+        //   - 큐브 면 클릭: 해당 면 고정값으로 orbit 점프
+        //   - "기본 시점" 버튼: 기본 orbit 값 으로 점프
+        //   - A/D: yaw 연속 회전. W/S: distance 줄임/늘림. 스크롤: distance 단위 점프
+        // LateUpdate 가 매 프레임 ComputeOrbitPose 로 target 을 재계산하지만 결과는 orbit 만
+        // 의존하므로 객체 이동에 영향받지 않음.
+
+        // 큐브 면 클릭 — 해당 면을 향하는 고정 시점으로 즉시 점프. lerp 는 LateUpdate 가 처리.
+        private void OnCubeFaceClicked(CameraPreset face)
+        {
+            if (!IsEditModeActive) return;
+
+            switch (face)
+            {
+                case CameraPreset.TopDown:
+                {
+                    // 정면뷰 축 정렬 — yaw 0° 로 고정. orbit 중심은 방 중앙. pitch 89° (직각 위, 90°는 짐벌락).
+                    orbitCenter = GetRoomCenter();
+                    orbitYaw = 0f;
+                    orbitPitch = 89f;
+                    var roomSpan = Mathf.Max(playableMaxX - playableMinX, playableMaxZ - playableMinZ);
+                    orbitDistance = Mathf.Clamp(roomSpan * 1.1f, MinOrbitDistance, MaxOrbitDistance);
+                    break;
+                }
+                case CameraPreset.Front:
+                case CameraPreset.Back:
+                case CameraPreset.LeftAngle:
+                case CameraPreset.RightAngle:
+                {
+                    // 벽면 포커스 — orbit 중심을 해당 벽 중앙으로. distance 는 ComputeWallFocusDistance
+                    // 로 자동 산정 (벽 width/height + FOV + aspect 기반) → 벽 전체가 화면에 들어오면서
+                    // 편집 가능한 크기로 보임. 이전 1.5m 하드코딩은 벽 일부만 보이는 과확대 회귀.
+                    orbitCenter = GetWallFocusCenter(face);
+                    orbitPitch = 4f;
+                    orbitDistance = ComputeWallFocusDistance(face);
+                    orbitYaw = face switch
+                    {
+                        CameraPreset.Front      => 0f,    // 책장(+Z 벽) 의 -Z 쪽 → 벽 정면
+                        CameraPreset.Back       => 180f,  // 가상 정면 (-Z) 의 +Z 쪽
+                        CameraPreset.LeftAngle  => 90f,   // 좌측 벽(-X) 의 +X 쪽 → 벽 정면
+                        CameraPreset.RightAngle => 270f,  // 우측 벽(+X) 의 -X 쪽
+                        _ => 0f,
+                    };
+                    break;
+                }
+                default:
+                    return;
+            }
+            orbitDistance = Mathf.Clamp(orbitDistance, MinOrbitDistance, MaxOrbitDistance);
+            orbitPitch = Mathf.Clamp(orbitPitch, OrbitMinPitch, OrbitMaxPitch);
+
+            isInDefaultView = false;
+            currentCameraPreset = face;
+            cameraPresetTargetActive = true;
+            ApplyWallVisibilityForCurrentView("CubeFace");
+
+            // 진단 로그 — 카메라 pose, target, 벽 bounds, framing 거리, FOV 모두 노출.
+            ComputeOrbitPose(out var camPos, out var camRot);
+            float fov = editModeCamera != null ? editModeCamera.fieldOfView : -1f;
+            float aspect = editModeCamera != null ? editModeCamera.aspect : -1f;
+            string targetWallName = face switch
+            {
+                CameraPreset.Front      => "BackWall (책장)",
+                CameraPreset.Back       => "FrontWall (가상, open 측)",
+                CameraPreset.LeftAngle  => "LeftWall",
+                CameraPreset.RightAngle => "RightWall",
+                CameraPreset.TopDown    => "(없음 — 탑다운)",
+                _ => "?",
+            };
+            bool isWallFocus = face == CameraPreset.Front || face == CameraPreset.Back ||
+                               face == CameraPreset.LeftAngle || face == CameraPreset.RightAngle;
+            if (isWallFocus)
+            {
+                var dims = GetWallDimensions(face);
+                // vertical-fit / horizontal-fit 둘 다 distance 보다 작으면 벽 전체가 화면 안에 들어옴.
+                float halfFovY = fov * 0.5f * Mathf.Deg2Rad;
+                float tanHalf = Mathf.Tan(halfFovY);
+                float verticalNeed  = (dims.y * WallFocusFramingPadding) / (2f * tanHalf);
+                float horizontalNeed = (dims.x * WallFocusFramingPadding) / (2f * tanHalf * Mathf.Max(aspect, 0.001f));
+                bool wallFitsInView = orbitDistance >= verticalNeed && orbitDistance >= horizontalNeed;
+                Debug.Log(
+                    $"[RoomEdit][Camera] 큐브 면 클릭 → {face} ({CameraPresetLabels[face]}) " +
+                    $"target-wall={targetWallName} wall-bounds={dims.x:0.##}m×{dims.y:0.##}m " +
+                    $"computed-distance={orbitDistance:0.##}m (vertical-fit={verticalNeed:0.##}m, horizontal-fit={horizontalNeed:0.##}m, padding={WallFocusFramingPadding:0.00}) " +
+                    $"wall-fits-in-view={wallFitsInView} " +
+                    $"orbitCenter={orbitCenter} camera-pos={camPos} camera-target={orbitCenter} fov={fov:0.#} aspect={aspect:0.##} " +
+                    $"yaw={orbitYaw:0.#}° pitch={orbitPitch:0.#}° " +
+                    "selectedObject-기준-focus=NO");
+            }
+            else
+            {
+                Debug.Log(
+                    $"[RoomEdit][Camera] 큐브 면 클릭 → {face} ({CameraPresetLabels[face]}) " +
+                    $"orbitCenter={orbitCenter} camera-pos={camPos} fov={fov:0.#} " +
+                    $"yaw={orbitYaw:0.#}° pitch={orbitPitch:0.#}° distance={orbitDistance:0.##}m " +
+                    "탑다운 (yaw=0° 정렬) — 모든 벽+천장 fade selectedObject-기준-focus=NO");
+            }
+        }
+
+        // "기본 시점" 버튼 — 메인씬에서 사용자가 보던 기본 카메라 시점으로 복귀.
+        //
+        // **중요**: 이전 구현은 orbit 기본값 (yaw=25°/pitch=18°/distance=4.2m) 을 적용했는데,
+        // 이는 우측 사선 비슷한 시점이었음. MR !120 review beshu [P1]: 사용자 기대는 "메인씬에서
+        // 보던 기본 시점" 이라는 명시. EnterEditMode 가 진입 직후 BookshelfExperienceManager.SnapToMainView()
+        // 를 호출하고 그 직후의 카메라 transform 을 savedCameraPosition/Rotation 에 저장하므로,
+        // 그 값이 곧 "메인씬 기본 카메라 pose". 이것을 그대로 target 으로 사용 → 메인씬과 동일.
+        // savedCameraPoseValid=false 인 비정상 경로 (뷰포트 begin 미수행) 면 orbit 기본값 fallback.
+        // selectedObject 를 절대 참조하지 않으므로 객체 follow / focus 없음.
+        private void OnDefaultViewClicked()
+        {
+            if (!IsEditModeActive) return;
+
+            // 이전 view 저장 — 로그/디버깅 용 + TopDown→Default 전환 case 식별.
+            var previousPreset = currentCameraPreset;
+            bool wasTopDown = previousPreset == CameraPreset.TopDown;
+
+            ApplyDefaultViewState();
+            cameraPresetTargetActive = true;
+
+            // **명시 reset (#3 회귀 방어)**: change-detection (ApplyWallVisibilityForCurrentView) 우회.
+            // ApplyDefaultViewState 가 lastAppliedFadePreset=Default 로 설정해서 ApplyWallVisibilityForCurrentView
+            // 가 target==lastAppliedFadePreset 으로 보고 skip 하던 회귀 — 모든 벽이 TopDown fade 상태로
+            // 남던 #3 버그. 여기서 직접 Apply 호출 + lastAppliedFadePreset 동기화로 강제 복구.
+            ApplyWallVisibilityForPreset(CameraPreset.Default);
+            lastAppliedFadePreset = CameraPreset.Default;
+            int fadedAfterReset = CountFadedWalls();
+
+            if (savedCameraPoseValid)
+            {
+                float fov = editModeCamera != null ? editModeCamera.fieldOfView : -1f;
+                Debug.Log(
+                    "[RoomEdit][Camera] 기본 시점 복귀 — preset=MainView (SnapToMainView 진입 pose) " +
+                    $"이전 view={previousPreset} (TopDown 여부={wasTopDown}) → wall fade reset 후 잔여 faded={fadedAfterReset}/{wallRendererCaches.Count} " +
+                    $"position={savedCameraPosition} rotation={savedCameraRotation.eulerAngles} fov={fov:0.#} " +
+                    $"selectedObject-기준-focus=NO selected={(selectedObject != null ? selectedObject.name : "<none>")}");
+            }
+            else
+            {
+                Debug.LogWarning(
+                    "[RoomEdit][Camera] 기본 시점 복귀 — savedCameraPose 무효 → orbit 기본값 fallback. " +
+                    $"이전 view={previousPreset} 잔여 faded={fadedAfterReset}");
+            }
+        }
+
+        // ---------- Decoration 저장 / 로드 / dirty 추적 ----------
+
+        // 명시적 "저장" 버튼 핸들러. 현재 씬의 DecorationItemMarker 들을 DecorationLayoutItem 으로
+        // 직렬화 후 SaveDecorationsUseCase 로 영속화. 성공 시 ClearDirty + 토스트.
+        private void OnSaveButtonClicked()
+        {
+            if (!IsEditModeActive) return;
+            Debug.Log("[RoomEdit][Save] 저장 버튼 클릭");
+            PerformSave(
+                onSuccess: () => ShowSaveStatusToast("저장되었습니다", isError: false, durationSec: 2.0f),
+                onError: msg => ShowSaveStatusToast($"저장 실패: {msg}", isError: true, durationSec: 4f));
+        }
+
+        // 저장 핵심 — UseCase 보장 + 마커 수집 + 진단 로그 + 콜백.
+        private void PerformSave(Action onSuccess, Action<string> onError)
+        {
+            EnsureDecorationUseCases();
+            if (saveDecorationsUseCase == null)
+            {
+                Debug.LogError("[RoomEdit][Save] SaveDecorationsUseCase 생성 실패 — 저장 불가");
+                onError?.Invoke("저장 시스템 초기화 실패");
+                return;
+            }
+
+            var items = CollectDecorationLayoutItems();
+            Debug.Log($"[RoomEdit][Save] 저장 대상 데코레이션 {items.Count}개");
+            for (int i = 0; i < items.Count; i++)
+            {
+                var it = items[i];
+                Debug.Log(
+                    $"  [{i}] assetId={it.AssetId} pos=({it.PositionX:0.##},{it.PositionY:0.##},{it.PositionZ:0.##}) " +
+                    $"rotY={it.RotationY:0.#}° scale=({it.ScaleX:0.##},{it.ScaleY:0.##},{it.ScaleZ:0.##})");
+            }
+
+            saveDecorationsUseCase.Execute(items,
+                onSuccess: () =>
+                {
+                    Debug.Log($"[RoomEdit][Save] 저장 성공 — {items.Count}개 영속화 완료");
+                    ClearDirty("save success");
+                    onSuccess?.Invoke();
+                },
+                onError: msg =>
+                {
+                    Debug.LogError($"[RoomEdit][Save] 저장 실패 — {msg}");
+                    // dirty 유지 — 사용자가 다시 저장 시도하거나 discard 선택할 때까지.
+                    onError?.Invoke(msg);
+                });
+        }
+
+        // 씬의 DecorationItemMarker 들을 DecorationLayoutItem 으로 변환. InventoryKey 가 비어있거나
+        // 세션 간 안정적이지 않은 fallback (prefab-iid:) 인 경우 식별 불가 → skip + 경고 로그.
+        // MR #120 skh1205 리뷰 #4 반영 — Prefab.GetInstanceID() 는 한 세션 내에서만 유효한
+        // 런타임 ID 라 저장 파일에 들어가는 순간 다음 실행에서 매칭이 깨진다.
+        private List<DecorationLayoutItem> CollectDecorationLayoutItems()
+        {
+            var list = new List<DecorationLayoutItem>();
+            var markers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            int skipped = 0, unstable = 0;
+            for (int i = 0; i < markers.Length; i++)
+            {
+                var m = markers[i];
+                if (m == null) continue;
+                if (string.IsNullOrEmpty(m.InventoryKey))
+                {
+                    skipped++;
+                    Debug.LogWarning($"[RoomEdit][Save] '{m.gameObject.name}' InventoryKey 비어있음 — 저장 skip");
+                    continue;
+                }
+                if (!IsPersistableInventoryKey(m.InventoryKey))
+                {
+                    unstable++;
+                    Debug.LogWarning(
+                        $"[RoomEdit][Save] '{m.gameObject.name}' key='{m.InventoryKey}' — 세션 간 안정적이지 않은 식별자 (prefab-iid). " +
+                        "다음 실행에서 매칭이 깨지므로 저장에서 제외. catalog 의 SourceAssetPath 를 채워야 함.");
+                    continue;
+                }
+                var t = m.transform;
+                list.Add(new DecorationLayoutItem
+                {
+                    AssetId = m.InventoryKey,
+                    PositionX = t.position.x,
+                    PositionY = t.position.y,
+                    PositionZ = t.position.z,
+                    RotationY = t.rotation.eulerAngles.y,
+                    ScaleX = t.localScale.x,
+                    ScaleY = t.localScale.y,
+                    ScaleZ = t.localScale.z,
+                });
+            }
+            if (skipped > 0 || unstable > 0)
+            {
+                Debug.LogWarning(
+                    $"[RoomEdit][Save] 저장 제외 — InventoryKey 누락 {skipped}개, prefab-iid (불안정) {unstable}개");
+            }
+            return list;
+        }
+
+        // 세션 간 안정적인 영속화 키만 true. BuildInventoryKey 가 발행하는 prefix:
+        //   - "path:..."     → 자산 경로 기반. SourceAssetPath 가 바뀌지 않는 한 안정. 저장 OK.
+        //   - "asset:..."    → 서버 inventory assetId. 미래 도입 예정. 저장 OK.
+        //   - "inv:..."      → 서버 inventory inventoryId. 미래 도입 예정. 저장 OK.
+        //   - "name:..."     → DisplayName fallback. 동명 자산 충돌 위험은 있지만 빌드 간 동일하므로 허용.
+        //   - "prefab-iid:..." → Prefab.GetInstanceID() 런타임 ID. 세션 간 안정성 X. 저장 NO.
+        private static bool IsPersistableInventoryKey(string key)
+        {
+            return !string.IsNullOrEmpty(key) && !key.StartsWith("prefab-iid:", StringComparison.Ordinal);
+        }
+
+        // UseCase / Repository 지연 초기화 — InitializeOnce 시점에 호출.
+        // TODO(server-decoration-api): 백엔드 데코레이션 API 추가 시 LocalFileDecorationRepository 를
+        // ApiDecorationRepository 로 교체하면 됨 (interface 동일).
+        private void EnsureDecorationUseCases()
+        {
+            if (saveDecorationsUseCase != null && loadDecorationsUseCase != null) return;
+            try
+            {
+                if (decorationRepository == null)
+                {
+                    // user/space scope — 같은 기기에 다른 계정으로 로그인해도 layout 이 섞이지 않게
+                    // userId 를 파일명에 포함. AuthSession.UserId 가 0 이면 anon fallback (대부분 dev 경로).
+                    // MR #120 skh1205 리뷰 #2 반영.
+                    decorationRepository = new LocalFileDecorationRepository(AuthSession.UserId);
+                }
+                if (saveDecorationsUseCase == null)
+                {
+                    saveDecorationsUseCase = new SaveDecorationsUseCase(decorationRepository);
+                }
+                if (loadDecorationsUseCase == null)
+                {
+                    loadDecorationsUseCase = new LoadDecorationsUseCase(decorationRepository);
+                }
+                Debug.Log($"[RoomEdit][Save] decoration use cases ready (repo={decorationRepository.GetType().Name})");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[RoomEdit][Save] EnsureDecorationUseCases 실패: {ex.GetType().Name} {ex.Message}");
+            }
+        }
+
+        // dirty 상태 마킹 — 인벤토리 배치/이동/회전/삭제 직후 호출. 저장 성공/모달 discard 시 ClearDirty.
+        private void SetDirty(string reason)
+        {
+            if (isDirty) return;
+            isDirty = true;
+            Debug.Log($"[RoomEdit][Save] dirty=true (reason={reason})");
+        }
+
+        private void ClearDirty(string reason)
+        {
+            if (!isDirty) return;
+            isDirty = false;
+            Debug.Log($"[RoomEdit][Save] dirty=false (reason={reason})");
+        }
+
+        // 편집 진입 시점의 marker 상태를 스냅샷. "저장하지 않고 나가기" 롤백의 기준점.
+        // 호출 순서: RebuildPlacedByInventoryKeyFromScene → TryRestoreSavedDecorations → TakeEditEntrySnapshot
+        // (저장본 load 까지 끝난 직후 캡처해야 사용자가 본 진입 화면과 정확히 동일한 상태 보존).
+        private void TakeEditEntrySnapshot()
+        {
+            editEntrySnapshot.Clear();
+            var markers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            int unmatched = 0;
+            for (int i = 0; i < markers.Length; i++)
+            {
+                var m = markers[i];
+                if (m == null) continue;
+                var snap = new DecorationSnapshot
+                {
+                    InventoryKey = m.InventoryKey,
+                    InstanceAtEntry = m.gameObject,
+                    Position = m.transform.position,
+                    Rotation = m.transform.rotation,
+                    LocalScale = m.transform.localScale,
+                };
+                if (TryFindInventoryEntryByKey(m.InventoryKey, out var entry))
+                {
+                    snap.SourcePrefab = entry.Prefab;
+                    snap.DisplayName = entry.DisplayName;
+                }
+                else
+                {
+                    unmatched++;
+                    snap.SourcePrefab = null;
+                    snap.DisplayName = m.gameObject.name;
+                }
+                editEntrySnapshot.Add(snap);
+            }
+            Debug.Log(
+                $"[RoomEdit][Snapshot] entry 시점 marker {editEntrySnapshot.Count}개 캡처 " +
+                $"(인벤토리 매칭 실패 {unmatched}개 — 편집 중 삭제 시 복원 불가).");
+        }
+
+        // InventoryKey 로 inventoryEntries 에서 매칭. BuildInventoryKey 가 일관된 prefix 를 발행하므로
+        // 단순 string 비교로 충분.
+        private bool TryFindInventoryEntryByKey(string key, out InventoryEntry entry)
+        {
+            if (!string.IsNullOrEmpty(key))
+            {
+                for (int i = 0; i < inventoryEntries.Count; i++)
+                {
+                    if (BuildInventoryKey(inventoryEntries[i]) == key)
+                    {
+                        entry = inventoryEntries[i];
+                        return true;
+                    }
+                }
+            }
+            entry = default;
+            return false;
+        }
+
+        // "저장하지 않고 나가기" 롤백 — 진입 시점 스냅샷 기준으로 씬 상태 복원.
+        // 동작:
+        //   1) 진행 중 드래그/선택 정리 (다음 destroy 가 dangling 참조를 만들지 않게).
+        //   2) snapshot 에 살아있는 marker 들의 reference set 구축.
+        //   3) 현재 marker 중 set 에 없는 것 (= 편집 중 새로 배치된 것) Destroy.
+        //   4) snapshot 항목별:
+        //        - InstanceAtEntry 살아있음 → transform/scale 복원 (이동/회전 되돌림).
+        //        - InstanceAtEntry 죽음 + SourcePrefab 있음 → 재생성 (삭제 되돌림).
+        //        - SourcePrefab 도 없음 → 복원 불가 (warning 로그, drop).
+        //   5) placedByInventoryKey 재구성 + 인벤토리 슬롯 갱신.
+        private void RollbackToEditEntrySnapshot()
+        {
+            Debug.Log($"[RoomEdit][Rollback] 시작 — 스냅샷 {editEntrySnapshot.Count}개 기준으로 씬 복원");
+
+            // 1) drag/select 정리.
+            if (draggingObject != null) FinishDrag();
+            DeselectCurrentObject();
+
+            // 2) snapshot 의 살아있는 instance set.
+            var aliveAtSnapshot = new HashSet<GameObject>();
+            for (int i = 0; i < editEntrySnapshot.Count; i++)
+            {
+                var inst = editEntrySnapshot[i].InstanceAtEntry;
+                if (inst != null) aliveAtSnapshot.Add(inst);
+            }
+
+            // 3) 편집 중 새로 배치된 marker destroy.
+            var currentMarkers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            int newlyDestroyed = 0;
+            for (int i = 0; i < currentMarkers.Length; i++)
+            {
+                var m = currentMarkers[i];
+                if (m == null) continue;
+                if (!aliveAtSnapshot.Contains(m.gameObject))
+                {
+                    Destroy(m.gameObject);
+                    newlyDestroyed++;
+                }
+            }
+
+            // 4) snapshot 항목 처리.
+            int transformRestored = 0, recreated = 0, lost = 0;
+            for (int i = 0; i < editEntrySnapshot.Count; i++)
+            {
+                var snap = editEntrySnapshot[i];
+                if (snap.InstanceAtEntry != null)
+                {
+                    var t = snap.InstanceAtEntry.transform;
+                    t.SetPositionAndRotation(snap.Position, snap.Rotation);
+                    t.localScale = snap.LocalScale;
+                    transformRestored++;
+                }
+                else if (snap.SourcePrefab != null)
+                {
+                    RecreateMarkerFromSnapshot(snap);
+                    recreated++;
+                }
+                else
+                {
+                    lost++;
+                    Debug.LogWarning(
+                        $"[RoomEdit][Rollback] '{snap.InventoryKey}' prefab 없음 — 복원 skip " +
+                        "(snapshot 시점 inventoryEntries 매칭 실패한 marker. scene-baked 또는 catalog 변경).");
+                }
+            }
+
+            // 5) dictionary + 인벤토리 슬롯 재구성.
+            placedByInventoryKey.Clear();
+            RebuildPlacedByInventoryKeyFromScene();
+            RebuildInventorySlots();
+
+            Debug.Log(
+                $"[RoomEdit][Rollback] 완료 — 새로 추가분 destroy={newlyDestroyed}, " +
+                $"transform 복원={transformRestored}, 재생성={recreated}, 복원 불가={lost}");
+        }
+
+        // PlaceInventoryEntry 의 GameObject 생성/collider/marker 부분만 추출 — 롤백 전용.
+        // ring search / bounds clamp 는 skip (snapshot 의 transform 은 이미 valid 한 placement 였음).
+        private void RecreateMarkerFromSnapshot(DecorationSnapshot snap)
+        {
+            if (snap.SourcePrefab == null) return;
+            EnsurePlacedItemsRoot();
+
+            var go = Instantiate(snap.SourcePrefab);
+            go.name = $"Decoration_{SanitizeName(snap.DisplayName)}_{System.Guid.NewGuid():N}";
+            go.transform.SetParent(placedItemsRoot.transform, true);
+            go.transform.SetPositionAndRotation(snap.Position, snap.Rotation);
+            go.transform.localScale = snap.LocalScale;
+
+            // collider 합성 (없으면) — PlaceInventoryEntry 와 동일 패턴, raycast selection 위해 필요.
+            var rendererBounds = ComputeRendererBounds(go);
+            if (rendererBounds.HasValue && go.GetComponentInChildren<Collider>() == null)
+            {
+                var bounds = rendererBounds.Value;
+                var collider = go.AddComponent<BoxCollider>();
+                var localCenter = go.transform.InverseTransformPoint(bounds.center);
+                var localSize = go.transform.InverseTransformVector(bounds.size);
+                collider.center = localCenter;
+                collider.size = new Vector3(Mathf.Abs(localSize.x), Mathf.Abs(localSize.y), Mathf.Abs(localSize.z));
+            }
+
+            var marker = go.AddComponent<DecorationItemMarker>();
+            marker.InventoryKey = snap.InventoryKey;
+        }
+
+        // 진입 시 저장된 layout 복원.
+        //   - 씬에 marker 가 이미 있으면 transform 만 갱신 (e.g. scene-baked 자산).
+        //   - 씬에 marker 가 없으면 inventoryEntries 에서 prefab 매칭해 Instantiate (앱 재시작 후 복원 경로).
+        //   - prefab 매칭 실패하면 lost 로 집계 + 경고 (catalog 누락 / 이름 변경).
+        // MR #120 skh1205 리뷰 #1 반영 — 이전에는 unmatched 가 그냥 drop 되어 fresh scene 에서
+        // 사용자가 저장 토스트는 봤는데 방은 비어있는 회귀가 있었다.
+        private void TryRestoreSavedDecorations()
+        {
+            EnsureDecorationUseCases();
+            if (loadDecorationsUseCase == null) return;
+            loadDecorationsUseCase.Execute(
+                onSuccess: items =>
+                {
+                    if (items == null || items.Count == 0)
+                    {
+                        Debug.Log("[RoomEdit][Load] 저장된 데코레이션 없음 (빈 리스트)");
+                        return;
+                    }
+                    int matched = 0, recreated = 0, lost = 0;
+                    for (int i = 0; i < items.Count; i++)
+                    {
+                        var it = items[i];
+                        if (placedByInventoryKey.TryGetValue(it.AssetId, out var existing) && existing != null)
+                        {
+                            existing.transform.position = new Vector3(it.PositionX, it.PositionY, it.PositionZ);
+                            existing.transform.rotation = Quaternion.Euler(0f, it.RotationY, 0f);
+                            existing.transform.localScale = new Vector3(it.ScaleX, it.ScaleY, it.ScaleZ);
+                            matched++;
+                            continue;
+                        }
+
+                        if (TryInstantiateSavedItem(it))
+                        {
+                            recreated++;
+                        }
+                        else
+                        {
+                            lost++;
+                        }
+                    }
+                    if (recreated > 0)
+                    {
+                        // 슬롯 disabled/배치됨 표시를 새로 생성된 인스턴스에 맞춰 갱신.
+                        RebuildInventorySlots();
+                    }
+                    Debug.Log(
+                        $"[RoomEdit][Load] 복원 완료 — 기존 marker 매칭 갱신 {matched}개, prefab 재생성 {recreated}개, 복원 불가 {lost}개");
+                },
+                onError: msg => Debug.LogWarning($"[RoomEdit][Load] 저장 데이터 로드 실패: {msg}"));
+        }
+
+        // 저장된 layout item 1개를 prefab Instantiate 해서 씬에 복원. 성공 시 placedByInventoryKey 등록.
+        // PlaceInventoryEntry 의 ring-search/bounds-clamp 는 건너뛴다 — 저장 시점에 valid 한 좌표였고
+        // 같은 placement 를 그대로 되살리는 게 의도. 충돌은 사용자가 다음 편집 모드에서 직접 정리.
+        private bool TryInstantiateSavedItem(DecorationLayoutItem it)
+        {
+            if (it == null || string.IsNullOrEmpty(it.AssetId))
+            {
+                Debug.LogWarning("[RoomEdit][Load] AssetId 비어있는 item — skip");
+                return false;
+            }
+            if (!TryFindInventoryEntryByKey(it.AssetId, out var entry) || entry.Prefab == null)
+            {
+                Debug.LogWarning(
+                    $"[RoomEdit][Load] '{it.AssetId}' prefab 매칭 실패 — 카탈로그 누락 또는 path 변경. 복원 skip.");
+                return false;
+            }
+
+            EnsurePlacedItemsRoot();
+            var go = Instantiate(entry.Prefab);
+            go.name = $"Decoration_{SanitizeName(entry.DisplayName)}_{System.Guid.NewGuid():N}";
+            go.transform.SetParent(placedItemsRoot.transform, true);
+            go.transform.SetPositionAndRotation(
+                new Vector3(it.PositionX, it.PositionY, it.PositionZ),
+                Quaternion.Euler(0f, it.RotationY, 0f));
+            // 저장 시점의 scale 그대로 — NormalizeSpawnedScale 의 등방성 가정과 어긋나도
+            // 사용자가 본 그대로 복원하는 invariant 우선.
+            go.transform.localScale = new Vector3(it.ScaleX, it.ScaleY, it.ScaleZ);
+
+            // collider 합성 (없으면) — RecreateMarkerFromSnapshot/PlaceInventoryEntry 와 동일 패턴.
+            var rendererBounds = ComputeRendererBounds(go);
+            if (rendererBounds.HasValue && go.GetComponentInChildren<Collider>() == null)
+            {
+                var bounds = rendererBounds.Value;
+                var collider = go.AddComponent<BoxCollider>();
+                var localCenter = go.transform.InverseTransformPoint(bounds.center);
+                var localSize = go.transform.InverseTransformVector(bounds.size);
+                collider.center = localCenter;
+                collider.size = new Vector3(Mathf.Abs(localSize.x), Mathf.Abs(localSize.y), Mathf.Abs(localSize.z));
+            }
+
+            var marker = go.AddComponent<DecorationItemMarker>();
+            marker.InventoryKey = it.AssetId;
+
+            // 1회 배치 제한 캐시 등록 — 안 하면 사용자가 인벤토리에서 같은 자산 재배치 시도 시
+            // disabled 표시가 안 떠서 이중 배치 가능.
+            placedByInventoryKey[it.AssetId] = go;
+            return true;
+        }
+
+        // 토스트 — 짧은 안내 메시지. 색상은 success/error 구분.
+        private void ShowSaveStatusToast(string message, bool isError, float durationSec)
+        {
+            if (saveStatusToastRoot == null || saveStatusToastText == null) return;
+            saveStatusToastText.text = message;
+            saveStatusToastText.color = Color.white;
+            var bg = saveStatusToastRoot.GetComponentInChildren<Image>();
+            if (bg != null)
+            {
+                bg.color = isError ? new Color(0.76f, 0.31f, 0.31f, 0.9f) : WithAlpha(TextColor, 0.85f);
+            }
+            saveStatusToastRoot.SetActive(true);
+            saveStatusToastRoot.transform.SetAsLastSibling();
+            saveStatusToastHideTime = Time.unscaledTime + Mathf.Max(0.5f, durationSec);
+        }
+
+        // 현재 fade 적용된 벽(InstanceMaterial != null) 개수 — 디버그 로그 / 회귀 검증용.
+        private int CountFadedWalls()
+        {
+            int n = 0;
+            for (int i = 0; i < wallRendererCaches.Count; i++)
+            {
+                if (wallRendererCaches[i].InstanceMaterial != null) n++;
+            }
+            return n;
+        }
+
+        // savedCameraPosition 을 기준으로 orbit (yaw/pitch/distance) 역산. Default → orbit 전환 시
+        // 카메라 점프 없이 자연스러운 추격을 위해 사용. 좌표계: ComputeOrbitPose 의 역연산.
+        //   horizontal·sin(yaw) = offset.x, vertical = offset.y, -horizontal·cos(yaw) = offset.z
+        //   → yaw = atan2(offset.x, -offset.z),  pitch = asin(offset.y / distance)
+        private void DeriveOrbitFromSavedPose()
+        {
+            if (!savedCameraPoseValid) return;
+            // saved pose 는 메인뷰 → orbit 중심도 방 중앙으로 reset.
+            orbitCenter = GetRoomCenter();
+            var offset = savedCameraPosition - orbitCenter;
+            float dist = offset.magnitude;
+            if (dist < 0.01f) return; // 이상치 방어
+
+            orbitDistance = Mathf.Clamp(dist, MinOrbitDistance, MaxOrbitDistance);
+            orbitPitch = Mathf.Clamp(
+                Mathf.Asin(Mathf.Clamp(offset.y / dist, -1f, 1f)) * Mathf.Rad2Deg,
+                OrbitMinPitch, OrbitMaxPitch);
+            orbitYaw = Mathf.Atan2(offset.x, -offset.z) * Mathf.Rad2Deg;
+        }
+
+        // Default 모드 활성화 — orbit 값도 기본값으로 동기화해서 다음 A/D 첫 입력 시 자연스럽게
+        // orbit 진입 (DeriveOrbitFromSavedPose 가 saved pose 기준으로 다시 보정함).
+        // **lastAppliedFadePreset 은 손대지 않음 (#3 회귀 방어)**: ApplyWallVisibilityForCurrentView 의
+        // change-detection 이 잘못 skip 되어 TopDown→Default 전환 시 fade 가 풀리지 않는 버그 발생.
+        // 호출자(OnDefaultViewClicked / EnterEditMode 후속 ApplyWallVisibilityForPreset)가 wall fade 를
+        // 명시 적용한 후 lastAppliedFadePreset 을 직접 갱신.
+        private void ApplyDefaultViewState()
+        {
+            // orbit 중심을 방 중앙으로 — Default → orbit 자유회전(A/D) 시 방 전체 기준으로 도는게 자연스러움.
+            // 벽면 포커스 후 Default 클릭하면 orbitCenter 가 wall midpoint 로 남아있을 수 있어 명시 reset.
+            orbitCenter = GetRoomCenter();
+            orbitYaw = DefaultOrbitYaw;
+            orbitPitch = DefaultOrbitPitch;
+            orbitDistance = DefaultOrbitDistance;
+            isInDefaultView = true;
+            currentCameraPreset = CameraPreset.Default;
+        }
+
+        // 매 프레임 호출 — Default 모드면 saved main view pose, 그 외에는 orbit 상태 재계산.
+        // 둘 다 selectedObject 절대 무참조 → 객체 follow X.
+        private void LateUpdate()
+        {
+            if (!IsEditModeActive) return;
+            if (editModeCamera == null) return;
+            if (!cameraPresetTargetActive) return;
+
+            if (isInDefaultView && savedCameraPoseValid)
+            {
+                // 메인씬 기본 시점 그대로 — orbit 계산 무시.
+                cameraPresetTargetPosition = savedCameraPosition;
+                cameraPresetTargetRotation = savedCameraRotation;
+            }
+            else
+            {
+                ComputeOrbitPose(out cameraPresetTargetPosition, out cameraPresetTargetRotation);
+            }
+
+            // exponential smoothing: 99% 도달까지 ~CameraPresetLerpTimeConstant×4.6 초.
+            var t = 1f - Mathf.Exp(-Time.unscaledDeltaTime / Mathf.Max(0.0001f, CameraPresetLerpTimeConstant));
+            var tr = editModeCamera.transform;
+            tr.position = Vector3.Lerp(tr.position, cameraPresetTargetPosition, t);
+            tr.rotation = Quaternion.Slerp(tr.rotation, cameraPresetTargetRotation, t);
+        }
+
+        // orbit (yaw/pitch/distance) → world (position/rotation). orbitCenter (방 중앙 또는 벽 중앙)
+        // 기준점으로 구면좌표계 → 직교좌표 변환. 카메라는 항상 orbitCenter 를 lookAt.
+        // yaw 0° = -Z 측, 90° = +X, 180° = +Z, 270° = -X. pitch 0° = 수평, 89° ≈ 직각 위에서.
+        private void ComputeOrbitPose(out Vector3 position, out Quaternion rotation)
+        {
+            float yawRad = orbitYaw * Mathf.Deg2Rad;
+            float pitchRad = orbitPitch * Mathf.Deg2Rad;
+            float horizontal = orbitDistance * Mathf.Cos(pitchRad);
+            float vertical   = orbitDistance * Mathf.Sin(pitchRad);
+
+            var offset = new Vector3(
+                horizontal * Mathf.Sin(yawRad),
+                vertical,
+                -horizontal * Mathf.Cos(yawRad));
+
+            position = orbitCenter + offset;
+            rotation = Quaternion.LookRotation(orbitCenter - position, Vector3.up);
+        }
+
+        // 방 중앙 — Default / TopDown 의 orbit 중심.
+        private Vector3 GetRoomCenter()
+        {
+            return new Vector3(
+                (playableMinX + playableMaxX) * 0.5f,
+                1.0f,
+                (playableMinZ + playableMaxZ) * 0.5f);
+        }
+
+        // 벽면 포커스 view 의 orbit 중심 — 해당 벽의 안쪽 면 중앙. distance 가 곧 카메라-벽 거리가 됨.
+        // y=1.4m: 룸 천장 ~2.8m 의 절반 (벽 중앙 높이). x/z 는 벽 위치.
+        private Vector3 GetWallFocusCenter(CameraPreset face)
+        {
+            const float wallMidY = WallFocusHeight;
+            float centerX = (playableMinX + playableMaxX) * 0.5f;
+            float centerZ = (playableMinZ + playableMaxZ) * 0.5f;
+            switch (face)
+            {
+                case CameraPreset.Front:      return new Vector3(centerX, wallMidY, playableMaxZ);  // 책장 뒷벽
+                case CameraPreset.Back:       return new Vector3(centerX, wallMidY, playableMinZ);  // 정면 open 측 (가상 벽)
+                case CameraPreset.LeftAngle:  return new Vector3(playableMinX, wallMidY, centerZ);  // 좌측 벽
+                case CameraPreset.RightAngle: return new Vector3(playableMaxX, wallMidY, centerZ);  // 우측 벽
+                default:                      return GetRoomCenter();
+            }
+        }
+
+        // 벽 dimensions (width × height) — wall focus framing 계산용.
+        // BookshelfGenerator 가 만든 룸 높이 (~2.8m) 와 playable footprint span 으로 계산.
+        // 향후 RoomThemeApplier.RoomRoot 에서 wall renderer.bounds 직접 query 도 가능하지만 일단 footprint 기반.
+        private const float RoomCeilingHeight = 2.8f;
+        private const float WallFocusHeight = RoomCeilingHeight * 0.5f;
+        // 벽이 화면 가장자리 살짝 안쪽에 위치하도록 — 너무 1.0 (꽉 차게) 이면 잘릴 수 있고,
+        // 1.10 (10% 여유) 정도면 편집 시 손가락 잘림 없이 자연스러움.
+        private const float WallFocusFramingPadding = 1.10f;
+
+        private Vector2 GetWallDimensions(CameraPreset face)
+        {
+            switch (face)
+            {
+                case CameraPreset.Front:
+                case CameraPreset.Back:
+                    return new Vector2(playableMaxX - playableMinX, RoomCeilingHeight);
+                case CameraPreset.LeftAngle:
+                case CameraPreset.RightAngle:
+                    return new Vector2(playableMaxZ - playableMinZ, RoomCeilingHeight);
+                default:
+                    return new Vector2(0f, 0f);
+            }
+        }
+
+        // 벽 bounds + camera FOV + aspect ratio 로 "벽 전체가 화면에 들어오는" 거리 계산.
+        // vertical-fit: d ≥ H * pad / (2·tan(FOV_y/2))
+        // horizontal-fit: d ≥ W * pad / (2·tan(FOV_y/2)·aspect)
+        // → 두 distance 의 max 를 사용해야 좌우/상하 둘 다 잘리지 않음. 결과는 [Min, Max]OrbitDistance 로 클램프.
+        private float ComputeWallFocusDistance(CameraPreset face)
+        {
+            var dims = GetWallDimensions(face);
+            float wallWidth = dims.x;
+            float wallHeight = dims.y;
+            if (wallWidth <= 0f || wallHeight <= 0f)
+            {
+                return Mathf.Clamp(2.5f, MinOrbitDistance, MaxOrbitDistance);
+            }
+
+            // FOV/aspect — 카메라 미초기화 (BeginCameraViewportEdit 전 호출 등) 케이스 fallback.
+            float fovY = (editModeCamera != null && editModeCamera.fieldOfView > 0f)
+                ? editModeCamera.fieldOfView
+                : 52f;
+            float aspect = (editModeCamera != null && editModeCamera.aspect > 0f)
+                ? editModeCamera.aspect
+                : (16f / 9f);
+
+            float halfFovY = fovY * 0.5f * Mathf.Deg2Rad;
+            float tanHalf = Mathf.Tan(halfFovY);
+            if (tanHalf < 1e-4f)
+            {
+                return Mathf.Clamp(2.5f, MinOrbitDistance, MaxOrbitDistance);
+            }
+
+            float distVertical = (wallHeight * WallFocusFramingPadding) / (2f * tanHalf);
+            float distHorizontal = (wallWidth * WallFocusFramingPadding) / (2f * tanHalf * aspect);
+            float chosen = Mathf.Max(distVertical, distHorizontal);
+            return Mathf.Clamp(chosen, MinOrbitDistance, MaxOrbitDistance);
+        }
+
+        // orbit yaw/pitch → wall fade 카테고리. pitch ≥ 65° 면 TopDown,
+        // 그 외에는 yaw quadrant 로 분류 (45°/135°/225°/315° 경계).
+        // 매핑: 카메라 위치 yaw → 사용자가 보는 쪽 = preset 의미.
+        //   yaw 0° (-Z 측) → Front (앞 벽 focus, fade Front)
+        //   yaw 90° (+X 측, 좌측 벽을 봄) → LeftAngle (= "좌" 의미, fade Right)
+        //   yaw 180° (+Z 측) → Back (fade Back)
+        //   yaw 270° (-X 측, 우측 벽을 봄) → RightAngle (= "우" 의미, fade Left)
+        private CameraPreset ClassifyByOrbit()
+        {
+            if (orbitPitch >= 65f) return CameraPreset.TopDown;
+            float yawNorm = ((orbitYaw % 360f) + 360f) % 360f;
+            if (yawNorm < 45f || yawNorm >= 315f) return CameraPreset.Front;
+            if (yawNorm < 135f) return CameraPreset.LeftAngle;   // +X 측 → 좌측 벽 focus
+            if (yawNorm < 225f) return CameraPreset.Back;
+            return CameraPreset.RightAngle;                       // -X 측 → 우측 벽 focus
+        }
+
+        // 현재 view 상태 → wall fade 적용. isInDefaultView=true 면 무조건 Default(=fade 없음).
+        // A/D 회전 중에는 ClassifyByOrbit 로 quadrant 가 바뀔 때만 ApplyWallVisibilityForPreset 재호출
+        // (불필요한 Material instance 재생성 회피).
+        private void ApplyWallVisibilityForCurrentView(string contextTag)
+        {
+            var target = isInDefaultView ? CameraPreset.Default : currentCameraPreset;
+            if (target == lastAppliedFadePreset) return;
+            ApplyWallVisibilityForPreset(target);
+            lastAppliedFadePreset = target;
+            Debug.Log($"[RoomEdit][WallFade] view 갱신 (context={contextTag}) → {target}");
+        }
+
+        // ---------- Edit-mode wall occlusion fade ----------
+        //
+        // 진입 시 한 번 collect, 프리셋 바뀔 때마다 ApplyWallVisibilityForPreset, 종료 시
+        // RestoreWallVisibility. Material 은 instance(.material) 로 변경하고 종료 시
+        // sharedMaterial 원본 reference 로 되돌리면서 instance 는 Destroy → 메모리 누수 방지.
+        // Collider 는 절대 건드리지 않음 → 기존 충돌/배치 검증 영향 없음.
+        private void CollectWallRenderers()
+        {
+            if (wallVisibilityCollected) return;
+            wallRendererCaches.Clear();
+
+            // RoomThemeApplier 가 가진 RoomRoot 를 우선 사용 — 절차적으로 빌드된 룸의
+            // 정확한 부모. 못 찾으면 활성 씬 전체 root scan 으로 fallback.
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            Transform roomRoot = themeApplier != null ? themeApplier.RoomRoot : null;
+
+            Renderer[] renderers;
+            if (roomRoot != null)
+            {
+                renderers = roomRoot.GetComponentsInChildren<Renderer>(true);
+            }
+            else
+            {
+                var roots = SceneManager.GetActiveScene().GetRootGameObjects();
+                var list = new List<Renderer>();
+                for (int i = 0; i < roots.Length; i++)
+                {
+                    list.AddRange(roots[i].GetComponentsInChildren<Renderer>(true));
+                }
+                renderers = list.ToArray();
+            }
+
+            int wallCount = 0, ceilingCount = 0;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null) continue;
+                if (!TryClassifyWallName(r.gameObject.name, out var group)) continue;
+
+                wallRendererCaches.Add(new WallRendererCache
+                {
+                    Renderer = r,
+                    InstanceMaterial = null,
+                    SharedOriginal = r.sharedMaterial,
+                    RendererWasEnabled = r.enabled,
+                    Group = group,
+                });
+                if (group == WallGroup.Ceiling) ceilingCount++;
+                else wallCount++;
+            }
+            wallVisibilityCollected = true;
+
+            Debug.Log($"[RoomEdit][WallFade] 수집 완료 — wall={wallCount} ceiling={ceilingCount} total={wallRendererCaches.Count} (roomRoot={(roomRoot != null ? roomRoot.name : "<scene-scan>")})");
+        }
+
+        private static bool TryClassifyWallName(string name, out WallGroup group)
+        {
+            group = default;
+            if (string.IsNullOrEmpty(name)) return false;
+            if (name.Equals("LeftWall", StringComparison.OrdinalIgnoreCase)) { group = WallGroup.Left; return true; }
+            if (name.Equals("RightWall", StringComparison.OrdinalIgnoreCase)) { group = WallGroup.Right; return true; }
+            if (name.StartsWith("BackWall", StringComparison.OrdinalIgnoreCase)) { group = WallGroup.Back; return true; }
+            if (name.Equals("FrontWall", StringComparison.OrdinalIgnoreCase)) { group = WallGroup.Front; return true; }
+            if (name.Equals("Ceiling", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("AlcoveCeiling", StringComparison.OrdinalIgnoreCase))
+            {
+                group = WallGroup.Ceiling;
+                return true;
+            }
+            return false;
+        }
+
+        // 프리셋별 어떤 벽 그룹을 fade 시킬지 — hard-coded 매핑이 dot-product 동적 결정보다
+        // 예측 가능하고 디버깅하기 쉬워서 의도적으로 단순화. preset 추가 시 여기만 손대면 됨.
+        private static bool ShouldFadeWall(WallGroup group, CameraPreset preset)
+        {
+            switch (preset)
+            {
+                case CameraPreset.Default:
+                    return false; // 메인뷰 사선 시점 — fade 없음.
+                case CameraPreset.TopDown:
+                    return true;  // 모든 벽 + 천장 fade — 위에서 내려보면 둘 다 시야 차단.
+                case CameraPreset.Front:
+                case CameraPreset.Back:
+                case CameraPreset.LeftAngle:
+                case CameraPreset.RightAngle:
+                    // 큐브 면 클릭 = 카메라가 방 안쪽에서 해당 벽을 본다 (inside view). 다른 벽들은
+                    // 카메라 frustum 측면/뒤에 있으므로 occlusion 없음 → fade 불필요. 타깃 벽도 opaque
+                    // 유지해야 사용자가 "벽면 배치 오브젝트" 를 인식 가능.
+                    return false;
+                default:
+                    return false;
+            }
+        }
+
+        private void ApplyWallVisibilityForPreset(CameraPreset preset)
+        {
+            if (!wallVisibilityCollected) return;
+
+            int faded = 0, restored = 0;
+            for (int i = 0; i < wallRendererCaches.Count; i++)
+            {
+                var cache = wallRendererCaches[i];
+                if (cache.Renderer == null) continue;
+                bool shouldFade = ShouldFadeWall(cache.Group, preset);
+                ApplyWallFadeState(cache, shouldFade);
+                if (shouldFade) faded++; else restored++;
+            }
+            Debug.Log($"[RoomEdit][WallFade] preset={preset} faded={faded} kept-opaque={restored} alpha={Mathf.Clamp01(wallFadeAlpha):0.00}");
+        }
+
+        // shouldFade=true 면 instance material 만들어서 transparent + alpha 적용,
+        // false 면 sharedMaterial 원본으로 되돌리고 instance 정리.
+        private void ApplyWallFadeState(WallRendererCache cache, bool shouldFade)
+        {
+            if (cache.Renderer == null) return;
+
+            if (!shouldFade)
+            {
+                if (cache.InstanceMaterial != null)
+                {
+                    cache.Renderer.sharedMaterial = cache.SharedOriginal;
+                    Destroy(cache.InstanceMaterial);
+                    cache.InstanceMaterial = null;
+                }
+                if (cache.Renderer.enabled != cache.RendererWasEnabled)
+                {
+                    cache.Renderer.enabled = cache.RendererWasEnabled;
+                }
+                return;
+            }
+
+            // Renderer 가 OFF 상태였으면 일단 켜야 fade 가 보임.
+            if (!cache.Renderer.enabled)
+            {
+                cache.Renderer.enabled = true;
+            }
+
+            if (cache.InstanceMaterial == null)
+            {
+                // .material 접근 시 Unity 가 자동으로 instance 생성 + assign. 이걸 우리가 쥐고 있다가
+                // 종료 시 Destroy 한다.
+                cache.InstanceMaterial = cache.Renderer.material;
+                ConfigureMaterialAsTransparent(cache.InstanceMaterial);
+            }
+
+            // _BaseColor (URP) 우선, 없으면 _Color (Standard) 로 fallback.
+            // [#3 Must Fix] 둘 다 없는 custom shader 면 alpha 적용이 silent fail → 벽이 그대로
+            // occlusion. 이 경우 통째 숨김(enabled=false) 으로 fallback 해서 사용자 시야는 보장.
+            // 종료 시 RendererWasEnabled 로 복구되므로 디자이너가 원본을 바꿀 일은 없음.
+            // 디자이너가 인스펙터에서 0~1 밖 값을 입력하더라도 안전하도록 매 적용 시 클램프.
+            var alpha = Mathf.Clamp01(wallFadeAlpha);
+            if (cache.InstanceMaterial.HasProperty("_BaseColor"))
+            {
+                var c = cache.InstanceMaterial.GetColor("_BaseColor");
+                c.a = alpha;
+                cache.InstanceMaterial.SetColor("_BaseColor", c);
+            }
+            else if (cache.InstanceMaterial.HasProperty("_Color"))
+            {
+                var c = cache.InstanceMaterial.GetColor("_Color");
+                c.a = alpha;
+                cache.InstanceMaterial.SetColor("_Color", c);
+            }
+            else
+            {
+                Debug.LogWarning(
+                    $"[RoomEdit][WallFade] '{cache.Renderer.gameObject.name}' material 에 _BaseColor/_Color 둘 다 없음 " +
+                    $"(shader={cache.InstanceMaterial.shader?.name}). alpha fade 불가 → Renderer 통째 숨김 fallback.");
+                cache.Renderer.enabled = false;
+            }
+        }
+
+        // URP Lit/Standard 호환 — opaque material 의 surface mode 와 blend state 를 transparent
+        // 로 전환. Shader 의 _Surface keyword 가 _SURFACE_TYPE_TRANSPARENT 일 때만 알파가 보이므로
+        // keyword 토글이 핵심. 이 작업은 instance material 에만 적용 → shared 원본 보존.
+        private static void ConfigureMaterialAsTransparent(Material material)
+        {
+            if (material == null) return;
+            if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 1f);
+            if (material.HasProperty("_Blend")) material.SetFloat("_Blend", 0f);
+            if (material.HasProperty("_SrcBlend")) material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (material.HasProperty("_DstBlend")) material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (material.HasProperty("_ZWrite")) material.SetFloat("_ZWrite", 0f);
+            material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.DisableKeyword("_ALPHATEST_ON");
+        }
+
+        private void RestoreWallVisibility(string contextTag = "exit")
+        {
+            if (!wallVisibilityCollected) return;
+
+            // 편집 모드가 아직 활성인 상태에서 호출되면 사용자가 곧장 시야를 잃는다 (이번 버그의 핵심).
+            // exit/destroy 외 경로에서 호출되면 즉시 알 수 있게 warning. context tag 로 caller 식별.
+            // ExitEditModeInternal 은 호출 직전에 IsEditModeActive=false 로 내리므로 정상 경로는 warning 안 나옴.
+            // OnDisable 도 lifecycle teardown(컴포넌트 비활성/scene unload) 경로라 warning 제외.
+            if (IsEditModeActive && contextTag != "OnDestroy" && contextTag != "OnDisable")
+            {
+                Debug.LogWarning(
+                    $"[RoomEdit][WallFade] ⚠ RestoreWallVisibility 가 편집 모드 도중 호출됨 (context={contextTag}) — 의도된 호출이 아니라면 wall fade 가 풀려서 occlusion 이 돌아옴. " +
+                    "Theme/customization 적용 직후라면 RefreshWallVisibilityAfterMaterialMutation 으로 대체할 것.");
+            }
+
+            int restored = 0, destroyed = 0;
+            for (int i = 0; i < wallRendererCaches.Count; i++)
+            {
+                var cache = wallRendererCaches[i];
+                if (cache.Renderer != null)
+                {
+                    if (cache.InstanceMaterial != null)
+                    {
+                        cache.Renderer.sharedMaterial = cache.SharedOriginal;
+                    }
+                    cache.Renderer.enabled = cache.RendererWasEnabled;
+                    restored++;
+                }
+                if (cache.InstanceMaterial != null)
+                {
+                    Destroy(cache.InstanceMaterial);
+                    cache.InstanceMaterial = null;
+                    destroyed++;
+                }
+            }
+            Debug.Log($"[RoomEdit][WallFade] 복구 완료 (context={contextTag}) — restored={restored}/{wallRendererCaches.Count} destroyed-instances={destroyed}");
+            wallRendererCaches.Clear();
+            wallVisibilityCollected = false;
+        }
+
+        // 테마 / customization 적용 직후 호출. 외부에서 renderer.sharedMaterial 이 실제로 swap 된
+        // 경우에만 SharedOriginal 을 재스냅샷한다 — fade instance 가 그대로 sharedMaterial 자리에
+        // 있는데 destroy + 그 destroyed reference 를 SharedOriginal 로 저장하던 [P1 #4] 회귀 가드.
+        //
+        // 동작:
+        //   - 편집 모드가 아니면 noop
+        //   - cache 가 아직 안 만들어졌으면 collect
+        //   - dangling Renderer 가 있으면 [#1] 전체 재수집 (룸 재생성/씬 reload 가드)
+        //   - 각 cache 별로:
+        //       (a) InstanceMaterial 이 sharedMaterial 자리에 그대로면 → 외부 swap 없었음.
+        //           벽 fade 가 살아있으니 SharedOriginal/InstanceMaterial 모두 변경하지 말 것.
+        //       (b) sharedMaterial 이 우리 instance 가 아니면 → 외부에서 swap 됨.
+        //           orphan instance 정리 + 새 sharedMaterial 을 SharedOriginal 로 재스냅샷.
+        //   - RendererWasEnabled 는 fade 가 임시로 켰을 수 있으니 absolutely 절대 갱신하지 않는다 — 진입 시 수집 값 유지.
+        //   - 끝에 ApplyWallVisibilityForPreset 으로 현재 프리셋 fade 재적용.
+        private void RefreshWallVisibilityAfterMaterialMutation(string contextTag)
+        {
+            if (!IsEditModeActive)
+            {
+                return;
+            }
+            if (!wallVisibilityCollected)
+            {
+                CollectWallRenderers();
+            }
+            else
+            {
+                // [#1 Must Fix] dangling renderer 감지 — Unity null pattern (destroyed) 인 cache 가
+                // 하나라도 있으면 룸이 재생성됐을 가능성 있음. 부분 갱신 시도하지 말고 전체 재수집.
+                bool hasDangling = false;
+                for (int i = 0; i < wallRendererCaches.Count; i++)
+                {
+                    if (wallRendererCaches[i].Renderer == null) { hasDangling = true; break; }
+                }
+                if (hasDangling)
+                {
+                    Debug.LogWarning(
+                        $"[RoomEdit][WallFade] dangling renderer 감지 (context={contextTag}) — 룸 재생성 가능성. " +
+                        "cache 전체 재수집.");
+                    // 살아있는 instance material 정리.
+                    for (int i = 0; i < wallRendererCaches.Count; i++)
+                    {
+                        var c = wallRendererCaches[i];
+                        if (c.InstanceMaterial != null)
+                        {
+                            Destroy(c.InstanceMaterial);
+                            c.InstanceMaterial = null;
+                        }
+                    }
+                    wallRendererCaches.Clear();
+                    wallVisibilityCollected = false;
+                    CollectWallRenderers();
+                }
+                else
+                {
+                    int externalSwapDetected = 0, fadeKept = 0;
+                    for (int i = 0; i < wallRendererCaches.Count; i++)
+                    {
+                        var cache = wallRendererCaches[i];
+                        if (cache.Renderer == null) continue;
+
+                        // [P1 #4] sharedMaterial 이 우리 instance 자리에 그대로 있으면 → 외부 swap 없었음.
+                        // 예: ApplyEntryVisual/Floor 처럼 bookshelf/floor 만 swap 한 경우 벽 material 은 무손상.
+                        // 이 cache 는 손대지 않는다 (fade 유지). 그렇지 않으면 destroyed reference 를
+                        // SharedOriginal 로 저장하는 회귀 발생 [P1 #4].
+                        bool fadeInstanceStillInstalled =
+                            cache.InstanceMaterial != null &&
+                            ReferenceEquals(cache.Renderer.sharedMaterial, cache.InstanceMaterial);
+
+                        if (fadeInstanceStillInstalled)
+                        {
+                            fadeKept++;
+                            continue;
+                        }
+
+                        // 외부 swap 발생 (벽 카테고리 등). orphan 된 우리 instance 가 있으면 정리하고
+                        // 새 sharedMaterial 을 새 원본으로 잡는다. 종료 시 이걸로 복구해야 사용자가
+                        // 적용한 새 wallpaper 선택이 유지됨.
+                        if (cache.InstanceMaterial != null)
+                        {
+                            Destroy(cache.InstanceMaterial);
+                            cache.InstanceMaterial = null;
+                        }
+                        cache.SharedOriginal = cache.Renderer.sharedMaterial;
+                        // RendererWasEnabled 는 의도적으로 갱신하지 않음 — fade 가 임시로 enabled=true
+                        // 로 켜놨다면 외부 swap 직후의 값이 진실이 아니다. CollectWallRenderers 시점의
+                        // 원본 enabled 가 종료 시 복구의 기준.
+                        externalSwapDetected++;
+                    }
+                    Debug.Log(
+                        $"[RoomEdit][WallFade] cache 재스냅샷 (context={contextTag}) — " +
+                        $"외부 swap 감지 {externalSwapDetected}, fade 유지 {fadeKept} / total {wallRendererCaches.Count}");
+                }
+            }
+            // theme/customization swap 직후 — 같은 preset 이라도 새 sharedMaterial 기준으로 fade
+            // 다시 만들어야 하므로 ApplyWallVisibilityForCurrentView 의 변경 감지 건너뛰고 직접 호출.
+            var fadeTarget = isInDefaultView ? CameraPreset.Default : currentCameraPreset;
+            ApplyWallVisibilityForPreset(fadeTarget);
+            lastAppliedFadePreset = fadeTarget;
+            Debug.Log($"[RoomEdit][WallFade] preset 재적용 (context={contextTag}) — preset={fadeTarget}");
         }
 
         // Toolbar ------------------------------------------------------------------
@@ -2961,6 +4829,7 @@ namespace App.Bootstrap
             if (defaultTheme != null && defaultTheme != themeApplier.CurrentTheme)
             {
                 themeApplier.Apply(defaultTheme);
+                RefreshWallVisibilityAfterMaterialMutation("ResetThemeToDefaultLocally");
             }
         }
 
@@ -2974,6 +4843,17 @@ namespace App.Bootstrap
             }
             if (entry.Prefab == null)
             {
+                return;
+            }
+
+            // 1회 배치 제한 — 동일 자산이 이미 씬에 살아있으면 새로 만들지 않는다.
+            // 슬롯은 이미 disabled 처리되지만 race(첫 클릭 ~ Rebuild 사이) 방어로 여기서도 한 번 더 차단.
+            // WallDeco/BookshelfDeco 분기보다 먼저 검사 — PlaceWallDecoEntry 가 향후 inventoryKey
+            // 시스템에 합류해도 별도 수정 없이 1회 제한이 자동 적용되도록.
+            var inventoryKey = BuildInventoryKey(entry);
+            if (IsInventoryKeyPlaced(inventoryKey))
+            {
+                Debug.Log($"[RoomEdit][Inventory] 배치 차단 — '{entry.DisplayName}' (key={inventoryKey}) 는 이미 씬에 1개 배치되어 있습니다.");
                 return;
             }
 
@@ -3067,7 +4947,18 @@ namespace App.Bootstrap
                 collider.size = new Vector3(Mathf.Abs(localSize.x), Mathf.Abs(localSize.y), Mathf.Abs(localSize.z));
             }
 
-            go.AddComponent<DecorationItemMarker>();
+            var marker = go.AddComponent<DecorationItemMarker>();
+            marker.InventoryKey = inventoryKey;
+
+            if (!string.IsNullOrEmpty(inventoryKey))
+            {
+                placedByInventoryKey[inventoryKey] = go;
+                Debug.Log($"[RoomEdit][Inventory] 배치 — '{entry.DisplayName}' key={inventoryKey} pos={go.transform.position}");
+            }
+
+            // 인벤토리 슬롯이 비활성화된 상태로 즉시 보이도록 슬롯 다시 빌드.
+            RebuildInventorySlots();
+            SetDirty("PlaceInventoryEntry");
         }
 
         // Search outward from `desiredPosition` in MinorGridStep rings for a
@@ -3815,6 +5706,8 @@ namespace App.Bootstrap
         {
             draggingObject = target;
             dragLastValidPosition = target.transform.position;
+            // FinishDrag 가 epsilon 비교로 실제 이동 여부를 판별하기 위한 anchor.
+            dragStartPosition = target.transform.position;
 
             // Capture grab offset so the model doesn't snap its center under the
             // pointer at drag start — instead it stays where it was relative to
@@ -3998,8 +5891,23 @@ namespace App.Bootstrap
             // Position is always inside the room because UpdateDrag clamped it
             // every frame, so we don't need to revert anywhere. Just close out
             // the drag state and hide the grid overlay.
+            //
+            // 이전 구현은 wasDragging 만 보고 SetDirty 를 항상 호출했다. 사용자가 마커를 단순
+            // 선택만 해도 BeginDrag 가 같이 시작되므로 release 시 좌표 변화가 없어도 dirty 가 켜져서
+            // 미저장 모달이 뜨는 회귀 (MR #120 skh1205 리뷰 #3) 가 있었다. 시작 좌표와 현재 좌표를
+            // epsilon 비교해 실제 이동이 발생한 경우에만 dirty 처리.
+            var dragged = draggingObject;
             draggingObject = null;
             HideGrid();
+            if (dragged == null) return;
+
+            // grid snap 단계(MinorGridStep ~ 0.1m) 보다 한참 작은 epsilon — 부동소수 잡음만 무시.
+            const float MovementEpsilonSqr = 1e-6f;
+            var moved = (dragged.transform.position - dragStartPosition).sqrMagnitude > MovementEpsilonSqr;
+            if (moved)
+            {
+                SetDirty("FinishDrag");
+            }
         }
 
         // Floor placement plane (room floor surface is y = 0 in world).
@@ -4425,14 +6333,36 @@ namespace App.Bootstrap
             selectedObject = null;
         }
 
-        private void RotateSelectedObject()
+        // 좌회전(반시계방향) 45° — 버튼 핸들러용.
+        private void RotateSelectedCounterClockwise()
+        {
+            RotateSelectedBy(-SelectionRotateStepDegrees);
+        }
+
+        // 우회전(시계방향) 45° — 버튼 핸들러용. Unity 의 Vector3.up 을 축으로 한 양수 각도는
+        // 위에서 내려본 시점에서 시계방향 회전이다 (left-handed Y-up).
+        private void RotateSelectedClockwise()
+        {
+            RotateSelectedBy(SelectionRotateStepDegrees);
+        }
+
+        // 부호 있는 각도(±45°) 로 Y축 회전 후 충돌/방 범위 검증. 실패 시 회전 전 quaternion 으로
+        // 즉시 복구. 검증은 PlaceInventoryEntry / UpdateDrag 가 쓰는 ComputeRendererBounds +
+        // ClampToFloorBounds + IsSpawnPositionBlockedAt 를 그대로 재사용해서 "배치 검증 = 회전
+        // 검증" 으로 일관성을 맞춘다 — 회전 후 AABB 가 방 footprint 를 벗어나거나, 다른 blocker
+        // (벽/책장/노트북/기존 배치) 와 겹치면 reverted.
+        private void RotateSelectedBy(float signedDegrees)
         {
             if (selectedObject == null) return;
+            // 모달 표시 중에는 회전 버튼 자체가 selection 패널과 함께 숨겨져 있어 클릭이 닿지 않지만,
+            // 같은 프레임에 stale invocation 이 들어올 가능성에 대비해 방어.
+            if (isUnsavedChangesModalOpen) return;
+
             // entry-level allowRotation flag — 창문처럼 fixed orientation 이어야 하는
             // wall deco 는 회전 무시. UpdateSelectionPanel 에서 버튼도 disabled 상태이지만
             // 키보드/외부 트리거 가능성 방어.
-            var marker = selectedObject.GetComponent<WallDecoMarker>();
-            if (marker != null && !marker.AllowRotation)
+            var wallMarker = selectedObject.GetComponent<WallDecoMarker>();
+            if (wallMarker != null && !wallMarker.AllowRotation)
             {
                 return;
             }
@@ -4442,12 +6372,54 @@ namespace App.Bootstrap
             {
                 FinishDrag();
             }
-            selectedObject.transform.Rotate(Vector3.up, SelectionRotateStepDegrees, Space.World);
+
+            var direction = signedDegrees >= 0f ? "CW" : "CCW";
+            var prevRotation = selectedObject.transform.rotation;
+            var prevYaw = prevRotation.eulerAngles.y;
+
+            selectedObject.transform.Rotate(Vector3.up, signedDegrees, Space.World);
+            var newYaw = selectedObject.transform.rotation.eulerAngles.y;
+
+            string revertReason = null;
+            var rotatedBounds = ComputeRendererBounds(selectedObject);
+            if (rotatedBounds.HasValue)
+            {
+                var bounds = rotatedBounds.Value;
+                var pos = selectedObject.transform.position;
+
+                // 방 범위 밖으로 나갔는지 — ClampToFloorBounds 가 위치를 옮겨오면 회전으로 인해
+                // AABB 가 footprint 밖으로 삐져나간 케이스. 위치는 유지하고 회전만 되돌린다.
+                var clamped = ClampToFloorBounds(pos, pos, bounds);
+                if (Vector3.Distance(clamped, pos) > 1e-4f)
+                {
+                    revertReason = "out-of-room";
+                }
+                else if (IsSpawnPositionBlockedAt(selectedObject, bounds, pos))
+                {
+                    revertReason = "blocker-overlap";
+                }
+            }
+
+            if (revertReason != null)
+            {
+                selectedObject.transform.rotation = prevRotation;
+                Debug.Log(
+                    $"[RoomEdit][Rotate] dir={direction} delta={signedDegrees:+#0;-#0;0}° from={prevYaw:0.#}° to={newYaw:0.#}° " +
+                    $"result=reverted reason={revertReason} obj={selectedObject.name}");
+                return;
+            }
+
+            Debug.Log(
+                $"[RoomEdit][Rotate] dir={direction} delta={signedDegrees:+#0;-#0;0}° from={prevYaw:0.#}° to={newYaw:0.#}° " +
+                $"result=ok obj={selectedObject.name}");
+            SetDirty($"RotateSelected/{direction}");
         }
 
         private void DeleteSelectedObject()
         {
             if (selectedObject == null) return;
+            // 모달이 열린 동안 stale invocation 차단 (RotateSelectedBy 와 동일 이유).
+            if (isUnsavedChangesModalOpen) return;
             if (draggingObject != null)
             {
                 // Drop the in-flight drag state cleanly before destroying so the
@@ -4456,8 +6428,23 @@ namespace App.Bootstrap
                 HideGrid();
             }
             var toDestroy = selectedObject;
+
+            // 인벤토리 1회 배치 제한 캐시에서도 제거 — 안 하면 같은 슬롯이 영구 disabled 로 남는다.
+            // marker 가 없는 case (사전에 부착 실패 등) 도 방어.
+            var marker = toDestroy != null ? toDestroy.GetComponent<DecorationItemMarker>() : null;
+            var deletedKey = marker != null ? marker.InventoryKey : null;
+            if (!string.IsNullOrEmpty(deletedKey) && placedByInventoryKey.TryGetValue(deletedKey, out var tracked) && tracked == toDestroy)
+            {
+                placedByInventoryKey.Remove(deletedKey);
+                Debug.Log($"[RoomEdit][Inventory] 삭제 — key={deletedKey} 인벤토리 재활성화.");
+            }
+
             DeselectCurrentObject();
             Destroy(toDestroy);
+
+            // 슬롯의 disabled/배치됨 표시 해제. 같은 자산을 다시 클릭해서 배치 가능하게 됨.
+            RebuildInventorySlots();
+            SetDirty("DeleteSelectedObject");
         }
 
         // Helpers ------------------------------------------------------------------
