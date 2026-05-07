@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using App.Application.Dashboard;
+using App.Application.Decoration;
+using App.Domain.Decoration;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dashboard;
 using App.Infrastructure.Api.Dtos;
 using App.Infrastructure.Catalogs;
+using App.Infrastructure.Decoration;
 using BookshelfPorting.Runtime;
 using Dotshelf.Scripts.RoomTheme;
 using TMPro;
@@ -240,6 +243,16 @@ namespace App.Bootstrap
         private GameObject bottomMenuRoot;
         private GameObject inventoryContentRoot;
         private GameObject returnButtonRoot;
+        private GameObject saveButtonRoot;
+        private GameObject unsavedChangesModalRoot;
+        // 미저장 모달이 떠 있는 동안 selection action UI(좌/우 회전·삭제 패널)를 숨기고
+        // 편집 입력(드래그/회전/삭제/카메라 orbit)을 무시하기 위한 플래그. 모달이 닫히면
+        // 다음 Update 의 UpdateSelectionPanel 이 selectedObject 가 살아있는 경우에 한해
+        // 패널을 다시 노출한다.
+        private bool isUnsavedChangesModalOpen;
+        private GameObject saveStatusToastRoot;
+        private TMP_Text saveStatusToastText;
+        private float saveStatusToastHideTime;
         private GameObject readyModalRoot;
         private GameObject themeApplyModeModalRoot;
         private GameObject customizationLockedModalRoot;
@@ -399,6 +412,31 @@ namespace App.Bootstrap
         private bool wallVisibilityCollected;
         // 0.18 → 내부가 충분히 보이면서도 벽 윤곽선은 살짝 인지되는 정도.
         private const float WallFadeAlpha = 0.18f;
+
+        // ---- Decoration save / dirty state ----
+        // 명시적 "저장" 버튼 흐름. PlaceInventoryEntry / FinishDrag / RotateSelectedBy /
+        // DeleteSelectedObject 직후 SetDirty 만 호출하고, 실제 영속화는 OnSaveButtonClicked 에서만.
+        // 네트워크 부담 + 의도치 않은 부분 저장 방지.
+        private bool isDirty;
+        private SaveDecorationsUseCase saveDecorationsUseCase;
+        private LoadDecorationsUseCase loadDecorationsUseCase;
+        private IDecorationRepository decorationRepository;
+
+        // 편집 진입 시점 marker 스냅샷 — "저장하지 않고 나가기" 롤백 기준점.
+        // InstanceAtEntry 는 Unity 의 destroyed-pattern 으로 살아있는지 판별. 살아있으면 transform 만
+        // 복원, destroy 됐으면 SourcePrefab 으로 재생성. SourcePrefab 이 null 이면 복원 불가 (scene-baked
+        // marker 등 inventoryEntries 에 없는 케이스 — 진단 로그 후 skip).
+        private struct DecorationSnapshot
+        {
+            public string InventoryKey;
+            public GameObject SourcePrefab;
+            public string DisplayName;
+            public GameObject InstanceAtEntry;
+            public Vector3 Position;
+            public Quaternion Rotation;
+            public Vector3 LocalScale;
+        }
+        private readonly List<DecorationSnapshot> editEntrySnapshot = new List<DecorationSnapshot>();
 
         // Decoration catalog loaded from Resources (built by the editor menu item).
         private readonly List<InventoryEntry> inventoryEntries = new List<InventoryEntry>();
@@ -712,8 +750,131 @@ namespace App.Bootstrap
             BuildBottomMenu(editOverlayRoot.transform);
             BuildPillarboxFills(editOverlayRoot.transform);
             BuildReturnButton(editOverlayRoot.transform);
+            BuildSaveButton(editOverlayRoot.transform);
             BuildMiniCubeUI(editOverlayRoot.transform);
             BuildDefaultViewButton(editOverlayRoot.transform);
+            BuildUnsavedChangesModal(editOverlayRoot.transform);
+            BuildSaveStatusToast(editOverlayRoot.transform);
+        }
+
+        // "저장" 버튼 — Return 버튼 바로 아래 (top-right column). 편집 모드 동안만 노출 (editOverlayRoot
+        // 자식이라 자동). 클릭 시 현재 배치 markers → SaveDecorationsUseCase 호출.
+        private void BuildSaveButton(Transform parent)
+        {
+            saveButtonRoot = CreateRectObject("SaveButtonRoot", parent);
+            var rect = (RectTransform)saveButtonRoot.transform;
+            rect.anchorMin = new Vector2(1f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(1f, 1f);
+            rect.sizeDelta = new Vector2(ButtonWidth, ButtonHeight);
+            // Return 버튼 바로 아래 — Return 은 (-Margin, -Margin), Save 는 그 아래 ButtonStackGap.
+            rect.anchoredPosition = new Vector2(-ButtonMargin, -ButtonMargin - ButtonHeight - ButtonStackGap);
+
+            var button = CreateButton(
+                saveButtonRoot.transform, "SaveButton", "저장",
+                PrimaryColor, Color.white, new Vector2(ButtonWidth, ButtonHeight),
+                false, BorderColor);
+            StretchToParent((RectTransform)button.transform);
+            button.onClick.AddListener(OnSaveButtonClicked);
+        }
+
+        // 미저장 변경사항 안내 모달 — 돌아가기 버튼 클릭 시 isDirty 면 노출. 3개 액션 버튼.
+        private void BuildUnsavedChangesModal(Transform parent)
+        {
+            unsavedChangesModalRoot = CreateRectObject("UnsavedChangesModal", parent);
+            var modalRect = (RectTransform)unsavedChangesModalRoot.transform;
+            StretchToParent(modalRect);
+
+            // 반투명 배경 — 클릭이 뒤로 통과하지 않도록 raycastTarget=true.
+            var dim = CreateImage(unsavedChangesModalRoot.transform, "Dim", new Color(0f, 0f, 0f, 0.45f));
+            StretchToParent(dim.rectTransform);
+
+            // 카드.
+            var card = CreateImage(unsavedChangesModalRoot.transform, "Card", CardColor);
+            card.sprite = roundedRectSprite;
+            card.type = Image.Type.Sliced;
+            var cardRect = card.rectTransform;
+            cardRect.anchorMin = new Vector2(0.5f, 0.5f);
+            cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+            cardRect.pivot = new Vector2(0.5f, 0.5f);
+            cardRect.sizeDelta = new Vector2(680f, 280f);
+            cardRect.anchoredPosition = Vector2.zero;
+            var cardOutline = card.gameObject.AddComponent<Outline>();
+            cardOutline.effectColor = WithAlpha(BorderColor, 0.95f);
+            cardOutline.effectDistance = new Vector2(1f, -1f);
+
+            var title = CreateText(card.transform, "Title", "저장하지 않은 변경사항", 24f,
+                FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
+            var titleRect = title.rectTransform;
+            titleRect.anchorMin = new Vector2(0f, 1f);
+            titleRect.anchorMax = new Vector2(1f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.offsetMin = new Vector2(32f, -76f);
+            titleRect.offsetMax = new Vector2(-32f, -28f);
+
+            var body = CreateText(card.transform, "Body",
+                "저장하지 않은 변경사항이 있습니다.\n저장하지 않고 나가시겠습니까?",
+                17f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Center);
+            var bodyRect = body.rectTransform;
+            bodyRect.anchorMin = new Vector2(0f, 0.34f);
+            bodyRect.anchorMax = new Vector2(1f, 0.74f);
+            bodyRect.pivot = new Vector2(0.5f, 0.5f);
+            bodyRect.offsetMin = new Vector2(32f, 0f);
+            bodyRect.offsetMax = new Vector2(-32f, 0f);
+
+            // 3 버튼 — 가로 배치. 좌: 저장하고 나가기 (primary), 가운데: 저장하지 않고 나가기 (danger),
+            // 우: 취소 (secondary).
+            var saveExitButton = CreateButton(card.transform, "SaveAndExitButton", "저장하고 나가기",
+                PrimaryColor, Color.white, new Vector2(196f, 56f), false, BorderColor);
+            var saveExitRect = (RectTransform)saveExitButton.transform;
+            saveExitRect.anchorMin = new Vector2(0.5f, 0f);
+            saveExitRect.anchorMax = new Vector2(0.5f, 0f);
+            saveExitRect.pivot = new Vector2(0.5f, 0f);
+            saveExitRect.anchoredPosition = new Vector2(-208f, 28f);
+            saveExitButton.onClick.AddListener(OnSaveAndExitClicked);
+
+            var discardExitButton = CreateButton(card.transform, "DiscardAndExitButton", "저장하지 않고 나가기",
+                Hex("#C14E4E"), Color.white, new Vector2(196f, 56f), false, BorderColor);
+            var discardExitRect = (RectTransform)discardExitButton.transform;
+            discardExitRect.anchorMin = new Vector2(0.5f, 0f);
+            discardExitRect.anchorMax = new Vector2(0.5f, 0f);
+            discardExitRect.pivot = new Vector2(0.5f, 0f);
+            discardExitRect.anchoredPosition = new Vector2(0f, 28f);
+            discardExitButton.onClick.AddListener(OnDiscardAndExitClicked);
+
+            var cancelButton = CreateButton(card.transform, "CancelButton", "취소",
+                CardColor, TextColor, new Vector2(140f, 56f), true, BorderColor);
+            var cancelRect = (RectTransform)cancelButton.transform;
+            cancelRect.anchorMin = new Vector2(0.5f, 0f);
+            cancelRect.anchorMax = new Vector2(0.5f, 0f);
+            cancelRect.pivot = new Vector2(0.5f, 0f);
+            cancelRect.anchoredPosition = new Vector2(180f, 28f);
+            cancelButton.onClick.AddListener(OnCancelExitClicked);
+
+            unsavedChangesModalRoot.SetActive(false);
+        }
+
+        // 짧은 안내 토스트 — 저장 성공/실패 시 ~2초 표시 후 자동 사라짐.
+        private void BuildSaveStatusToast(Transform parent)
+        {
+            saveStatusToastRoot = CreateRectObject("SaveStatusToast", parent);
+            var rootRect = (RectTransform)saveStatusToastRoot.transform;
+            rootRect.anchorMin = new Vector2(0.5f, 1f);
+            rootRect.anchorMax = new Vector2(0.5f, 1f);
+            rootRect.pivot = new Vector2(0.5f, 1f);
+            rootRect.sizeDelta = new Vector2(360f, 56f);
+            rootRect.anchoredPosition = new Vector2(0f, -24f);
+
+            var bg = CreateImage(saveStatusToastRoot.transform, "Background", WithAlpha(TextColor, 0.85f));
+            bg.sprite = roundedRectSprite;
+            bg.type = Image.Type.Sliced;
+            StretchToParent(bg.rectTransform);
+
+            saveStatusToastText = CreateText(saveStatusToastRoot.transform, "Text", "저장되었습니다",
+                15f, FontStyles.Bold, Color.white, TextAlignmentOptions.Center);
+            StretchToParent(saveStatusToastText.rectTransform);
+
+            saveStatusToastRoot.SetActive(false);
         }
 
         // 좌측 상단 미니 큐브 UI — 동물의 숲 해피홈 식 "방향 선택 도구". 5개 면(상/전/후/좌/우)을
@@ -2536,11 +2697,18 @@ namespace App.Bootstrap
 
             UpdateButtonVisibility();
             UpdateSelectionPanel();
+            UpdateSaveStatusToast();
 
             if (IsEditModeActive)
             {
-                HandleEditCameraInput();
-                HandleEditModeInput();
+                // 미저장 모달이 떠 있는 동안에는 카메라 orbit/객체 선택·드래그 입력을 모두 차단.
+                // 모달 Dim 이 raycast 를 가로채긴 하지만, 키보드(A/D/W/S) orbit 입력은 EventSystem
+                // 우회로 들어오므로 별도 가드 필요.
+                if (!isUnsavedChangesModalOpen)
+                {
+                    HandleEditCameraInput();
+                    HandleEditModeInput();
+                }
             }
             else if (IsDecorationPopupOpen)
             {
@@ -2683,10 +2851,23 @@ namespace App.Bootstrap
 
         private void UpdateSelectionPanel()
         {
-            var shouldShow = IsEditModeActive && selectedObject != null;
+            // 미저장 모달이 떠 있는 동안에는 selection action UI(좌/우 회전·삭제) 를
+            // 숨겨서 모달과 시각적으로 겹치지 않게 한다. 취소 시 selectedObject 가 그대로
+            // 살아있으면 모달 닫힌 다음 Update 에서 자동 복귀.
+            var shouldShow = IsEditModeActive && selectedObject != null && !isUnsavedChangesModalOpen;
             if (selectionPanelRoot != null && selectionPanelRoot.activeSelf != shouldShow)
             {
                 selectionPanelRoot.SetActive(shouldShow);
+            }
+        }
+
+        // 토스트 자동 숨김 — saveStatusToastHideTime 까지만 노출.
+        private void UpdateSaveStatusToast()
+        {
+            if (saveStatusToastRoot == null || !saveStatusToastRoot.activeSelf) return;
+            if (Time.unscaledTime >= saveStatusToastHideTime)
+            {
+                saveStatusToastRoot.SetActive(false);
             }
         }
 
@@ -2817,6 +2998,14 @@ namespace App.Bootstrap
             // 에 미리 배치된 marker, (c) 다른 코드가 만든 marker 가 누락되어 슬롯이 다시 활성
             // 상태로 보이는 경우 발생. "씬에 1개만" 이라는 요구사항을 만족시키려면 scene 전체 스캔.
             RebuildPlacedByInventoryKeyFromScene();
+
+            // 진입 시 dirty 초기화 (이전 세션의 dirty 가 남아있으면 즉시 모달이 뜨는 회귀 방지).
+            isDirty = false;
+            // 저장된 layout 복원 시도 (현재 부분 구현 — 기존 marker transform 만 갱신).
+            TryRestoreSavedDecorations();
+            // 진입 시점 marker 스냅샷 — "저장하지 않고 나가기" 롤백 기준점. load 후 캡처 순서가 중요:
+            // 사용자가 진입 화면에서 본 상태가 곧 롤백 목표 상태가 되도록.
+            TakeEditEntrySnapshot();
 
             // 동물의 숲 스타일 — 시점 전환에서 벽이 시야를 가리지 않게 fade 시스템 활성화.
             // 진입 시 Default 프리셋으로 시작하므로 fade=none 으로 시작 (메인뷰 그대로).
@@ -3094,7 +3283,80 @@ namespace App.Bootstrap
 
         public void ExitEditMode()
         {
+            // 미저장 변경사항이 있으면 모달로 사용자 확인. 없으면 기존처럼 즉시 종료.
+            if (isDirty)
+            {
+                Debug.Log("[RoomEdit][Save] 돌아가기 클릭 — dirty=true → 미저장 모달 표시");
+                ShowUnsavedChangesModal();
+                return;
+            }
+            Debug.Log("[RoomEdit][Save] 돌아가기 클릭 — dirty=false → 즉시 편집 종료");
             ExitEditModeInternal();
+        }
+
+        private void ShowUnsavedChangesModal()
+        {
+            if (unsavedChangesModalRoot == null) return;
+            unsavedChangesModalRoot.transform.SetAsLastSibling();
+            unsavedChangesModalRoot.SetActive(true);
+            // 플래그 set 즉시 다음 UpdateSelectionPanel 이 selection action UI 를 숨긴다.
+            // 또한 HandleEditModeInput / HandleEditCameraInput / Rotate / Delete 입력도 차단.
+            isUnsavedChangesModalOpen = true;
+            // 같은 프레임 내 입력 leak 방지 — 모달 표시 직전 selection 패널이 떠 있을 수 있으므로
+            // 즉시 비활성화. 이후 닫힐 때 selectedObject 가 살아있으면 다음 Update 에서 자동 복귀.
+            if (selectionPanelRoot != null && selectionPanelRoot.activeSelf)
+            {
+                selectionPanelRoot.SetActive(false);
+            }
+        }
+
+        private void HideUnsavedChangesModal()
+        {
+            if (unsavedChangesModalRoot != null)
+            {
+                unsavedChangesModalRoot.SetActive(false);
+            }
+            // 모달 닫는 모든 경로(취소/저장하고 나가기/저장하지 않고 나가기) 에서 flag clear.
+            // 취소 시: UpdateSelectionPanel 이 selectedObject 살아있으면 패널 재표시.
+            // 저장/폐기 시: ExitEditModeInternal 의 DeselectCurrentObject 가 selectedObject=null
+            // 로 만들어 패널은 계속 숨김.
+            isUnsavedChangesModalOpen = false;
+        }
+
+        private void OnSaveAndExitClicked()
+        {
+            Debug.Log("[RoomEdit][Save] 미저장 모달: '저장하고 나가기' 선택");
+            HideUnsavedChangesModal();
+            // 저장 성공 시 종료, 실패 시 편집 모드 유지 + dirty 유지 + 모달 다시 표시.
+            PerformSave(
+                onSuccess: () =>
+                {
+                    Debug.Log("[RoomEdit][Save] 저장 성공 후 편집 종료");
+                    ExitEditModeInternal();
+                },
+                onError: msg =>
+                {
+                    Debug.LogError($"[RoomEdit][Save] 저장 실패 → 편집 모드 유지. 에러: {msg}");
+                    // dirty 는 PerformSave 내부에서 그대로 유지됨 (성공 시에만 ClearDirty).
+                    ShowSaveStatusToast($"저장 실패: {msg}", isError: true, durationSec: 4f);
+                });
+        }
+
+        private void OnDiscardAndExitClicked()
+        {
+            Debug.Log("[RoomEdit][Save] 미저장 모달: '저장하지 않고 나가기' 선택 — 변경사항 폐기 + 씬 롤백");
+            HideUnsavedChangesModal();
+            // 핵심: 저장만 skip 하면 메인뷰에 편집 중 변경사항이 그대로 남는 회귀 — 진입 시점 스냅샷으로
+            // 씬 자체를 되돌려야 함. (배치한 객체 destroy / 이동한 객체 transform 복원 / 삭제한 객체 재생성)
+            RollbackToEditEntrySnapshot();
+            ClearDirty("discard via modal");
+            ExitEditModeInternal();
+        }
+
+        private void OnCancelExitClicked()
+        {
+            Debug.Log("[RoomEdit][Save] 미저장 모달: '취소' 선택 — 편집 모드 유지");
+            HideUnsavedChangesModal();
         }
 
         private void ExitEditModeInternal()
@@ -3130,6 +3392,10 @@ namespace App.Bootstrap
             {
                 experienceManager.AreSceneInteractionsSuppressed = false;
             }
+
+            // Snapshot 의 GameObject reference 해제 — 다음 진입 시 stale reference 들고 있지 않도록.
+            // 다음 EnterEditMode 가 TakeEditEntrySnapshot 으로 다시 캡처하므로 여기서 비워도 안전.
+            editEntrySnapshot.Clear();
         }
 
         // Shrink the main camera's viewport rect so it renders only into the area
@@ -3365,6 +3631,351 @@ namespace App.Bootstrap
                     "[RoomEdit][Camera] 기본 시점 복귀 — savedCameraPose 무효 → orbit 기본값 fallback. " +
                     $"이전 view={previousPreset} 잔여 faded={fadedAfterReset}");
             }
+        }
+
+        // ---------- Decoration 저장 / 로드 / dirty 추적 ----------
+
+        // 명시적 "저장" 버튼 핸들러. 현재 씬의 DecorationItemMarker 들을 DecorationLayoutItem 으로
+        // 직렬화 후 SaveDecorationsUseCase 로 영속화. 성공 시 ClearDirty + 토스트.
+        private void OnSaveButtonClicked()
+        {
+            if (!IsEditModeActive) return;
+            Debug.Log("[RoomEdit][Save] 저장 버튼 클릭");
+            PerformSave(
+                onSuccess: () => ShowSaveStatusToast("저장되었습니다", isError: false, durationSec: 2.0f),
+                onError: msg => ShowSaveStatusToast($"저장 실패: {msg}", isError: true, durationSec: 4f));
+        }
+
+        // 저장 핵심 — UseCase 보장 + 마커 수집 + 진단 로그 + 콜백.
+        private void PerformSave(Action onSuccess, Action<string> onError)
+        {
+            EnsureDecorationUseCases();
+            if (saveDecorationsUseCase == null)
+            {
+                Debug.LogError("[RoomEdit][Save] SaveDecorationsUseCase 생성 실패 — 저장 불가");
+                onError?.Invoke("저장 시스템 초기화 실패");
+                return;
+            }
+
+            var items = CollectDecorationLayoutItems();
+            Debug.Log($"[RoomEdit][Save] 저장 대상 데코레이션 {items.Count}개");
+            for (int i = 0; i < items.Count; i++)
+            {
+                var it = items[i];
+                Debug.Log(
+                    $"  [{i}] assetId={it.AssetId} pos=({it.PositionX:0.##},{it.PositionY:0.##},{it.PositionZ:0.##}) " +
+                    $"rotY={it.RotationY:0.#}° scale=({it.ScaleX:0.##},{it.ScaleY:0.##},{it.ScaleZ:0.##})");
+            }
+
+            saveDecorationsUseCase.Execute(items,
+                onSuccess: () =>
+                {
+                    Debug.Log($"[RoomEdit][Save] 저장 성공 — {items.Count}개 영속화 완료");
+                    ClearDirty("save success");
+                    onSuccess?.Invoke();
+                },
+                onError: msg =>
+                {
+                    Debug.LogError($"[RoomEdit][Save] 저장 실패 — {msg}");
+                    // dirty 유지 — 사용자가 다시 저장 시도하거나 discard 선택할 때까지.
+                    onError?.Invoke(msg);
+                });
+        }
+
+        // 씬의 DecorationItemMarker 들을 DecorationLayoutItem 으로 변환. InventoryKey 가 비어있는
+        // marker 는 식별 불가 → skip + 경고 로그.
+        private List<DecorationLayoutItem> CollectDecorationLayoutItems()
+        {
+            var list = new List<DecorationLayoutItem>();
+            var markers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            int skipped = 0;
+            for (int i = 0; i < markers.Length; i++)
+            {
+                var m = markers[i];
+                if (m == null) continue;
+                if (string.IsNullOrEmpty(m.InventoryKey))
+                {
+                    skipped++;
+                    Debug.LogWarning($"[RoomEdit][Save] '{m.gameObject.name}' InventoryKey 비어있음 — 저장 skip");
+                    continue;
+                }
+                var t = m.transform;
+                list.Add(new DecorationLayoutItem
+                {
+                    AssetId = m.InventoryKey,
+                    PositionX = t.position.x,
+                    PositionY = t.position.y,
+                    PositionZ = t.position.z,
+                    RotationY = t.rotation.eulerAngles.y,
+                    ScaleX = t.localScale.x,
+                    ScaleY = t.localScale.y,
+                    ScaleZ = t.localScale.z,
+                });
+            }
+            if (skipped > 0)
+            {
+                Debug.LogWarning($"[RoomEdit][Save] InventoryKey 누락 marker {skipped}개 skip — 저장 대상에서 제외됨");
+            }
+            return list;
+        }
+
+        // UseCase / Repository 지연 초기화 — InitializeOnce 시점에 호출.
+        // TODO(server-decoration-api): 백엔드 데코레이션 API 추가 시 LocalFileDecorationRepository 를
+        // ApiDecorationRepository 로 교체하면 됨 (interface 동일).
+        private void EnsureDecorationUseCases()
+        {
+            if (saveDecorationsUseCase != null && loadDecorationsUseCase != null) return;
+            try
+            {
+                if (decorationRepository == null)
+                {
+                    decorationRepository = new LocalFileDecorationRepository();
+                }
+                if (saveDecorationsUseCase == null)
+                {
+                    saveDecorationsUseCase = new SaveDecorationsUseCase(decorationRepository);
+                }
+                if (loadDecorationsUseCase == null)
+                {
+                    loadDecorationsUseCase = new LoadDecorationsUseCase(decorationRepository);
+                }
+                Debug.Log($"[RoomEdit][Save] decoration use cases ready (repo={decorationRepository.GetType().Name})");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[RoomEdit][Save] EnsureDecorationUseCases 실패: {ex.GetType().Name} {ex.Message}");
+            }
+        }
+
+        // dirty 상태 마킹 — 인벤토리 배치/이동/회전/삭제 직후 호출. 저장 성공/모달 discard 시 ClearDirty.
+        private void SetDirty(string reason)
+        {
+            if (isDirty) return;
+            isDirty = true;
+            Debug.Log($"[RoomEdit][Save] dirty=true (reason={reason})");
+        }
+
+        private void ClearDirty(string reason)
+        {
+            if (!isDirty) return;
+            isDirty = false;
+            Debug.Log($"[RoomEdit][Save] dirty=false (reason={reason})");
+        }
+
+        // 편집 진입 시점의 marker 상태를 스냅샷. "저장하지 않고 나가기" 롤백의 기준점.
+        // 호출 순서: RebuildPlacedByInventoryKeyFromScene → TryRestoreSavedDecorations → TakeEditEntrySnapshot
+        // (저장본 load 까지 끝난 직후 캡처해야 사용자가 본 진입 화면과 정확히 동일한 상태 보존).
+        private void TakeEditEntrySnapshot()
+        {
+            editEntrySnapshot.Clear();
+            var markers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            int unmatched = 0;
+            for (int i = 0; i < markers.Length; i++)
+            {
+                var m = markers[i];
+                if (m == null) continue;
+                var snap = new DecorationSnapshot
+                {
+                    InventoryKey = m.InventoryKey,
+                    InstanceAtEntry = m.gameObject,
+                    Position = m.transform.position,
+                    Rotation = m.transform.rotation,
+                    LocalScale = m.transform.localScale,
+                };
+                if (TryFindInventoryEntryByKey(m.InventoryKey, out var entry))
+                {
+                    snap.SourcePrefab = entry.Prefab;
+                    snap.DisplayName = entry.DisplayName;
+                }
+                else
+                {
+                    unmatched++;
+                    snap.SourcePrefab = null;
+                    snap.DisplayName = m.gameObject.name;
+                }
+                editEntrySnapshot.Add(snap);
+            }
+            Debug.Log(
+                $"[RoomEdit][Snapshot] entry 시점 marker {editEntrySnapshot.Count}개 캡처 " +
+                $"(인벤토리 매칭 실패 {unmatched}개 — 편집 중 삭제 시 복원 불가).");
+        }
+
+        // InventoryKey 로 inventoryEntries 에서 매칭. BuildInventoryKey 가 일관된 prefix 를 발행하므로
+        // 단순 string 비교로 충분.
+        private bool TryFindInventoryEntryByKey(string key, out InventoryEntry entry)
+        {
+            if (!string.IsNullOrEmpty(key))
+            {
+                for (int i = 0; i < inventoryEntries.Count; i++)
+                {
+                    if (BuildInventoryKey(inventoryEntries[i]) == key)
+                    {
+                        entry = inventoryEntries[i];
+                        return true;
+                    }
+                }
+            }
+            entry = default;
+            return false;
+        }
+
+        // "저장하지 않고 나가기" 롤백 — 진입 시점 스냅샷 기준으로 씬 상태 복원.
+        // 동작:
+        //   1) 진행 중 드래그/선택 정리 (다음 destroy 가 dangling 참조를 만들지 않게).
+        //   2) snapshot 에 살아있는 marker 들의 reference set 구축.
+        //   3) 현재 marker 중 set 에 없는 것 (= 편집 중 새로 배치된 것) Destroy.
+        //   4) snapshot 항목별:
+        //        - InstanceAtEntry 살아있음 → transform/scale 복원 (이동/회전 되돌림).
+        //        - InstanceAtEntry 죽음 + SourcePrefab 있음 → 재생성 (삭제 되돌림).
+        //        - SourcePrefab 도 없음 → 복원 불가 (warning 로그, drop).
+        //   5) placedByInventoryKey 재구성 + 인벤토리 슬롯 갱신.
+        private void RollbackToEditEntrySnapshot()
+        {
+            Debug.Log($"[RoomEdit][Rollback] 시작 — 스냅샷 {editEntrySnapshot.Count}개 기준으로 씬 복원");
+
+            // 1) drag/select 정리.
+            if (draggingObject != null) FinishDrag();
+            DeselectCurrentObject();
+
+            // 2) snapshot 의 살아있는 instance set.
+            var aliveAtSnapshot = new HashSet<GameObject>();
+            for (int i = 0; i < editEntrySnapshot.Count; i++)
+            {
+                var inst = editEntrySnapshot[i].InstanceAtEntry;
+                if (inst != null) aliveAtSnapshot.Add(inst);
+            }
+
+            // 3) 편집 중 새로 배치된 marker destroy.
+            var currentMarkers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            int newlyDestroyed = 0;
+            for (int i = 0; i < currentMarkers.Length; i++)
+            {
+                var m = currentMarkers[i];
+                if (m == null) continue;
+                if (!aliveAtSnapshot.Contains(m.gameObject))
+                {
+                    Destroy(m.gameObject);
+                    newlyDestroyed++;
+                }
+            }
+
+            // 4) snapshot 항목 처리.
+            int transformRestored = 0, recreated = 0, lost = 0;
+            for (int i = 0; i < editEntrySnapshot.Count; i++)
+            {
+                var snap = editEntrySnapshot[i];
+                if (snap.InstanceAtEntry != null)
+                {
+                    var t = snap.InstanceAtEntry.transform;
+                    t.SetPositionAndRotation(snap.Position, snap.Rotation);
+                    t.localScale = snap.LocalScale;
+                    transformRestored++;
+                }
+                else if (snap.SourcePrefab != null)
+                {
+                    RecreateMarkerFromSnapshot(snap);
+                    recreated++;
+                }
+                else
+                {
+                    lost++;
+                    Debug.LogWarning(
+                        $"[RoomEdit][Rollback] '{snap.InventoryKey}' prefab 없음 — 복원 skip " +
+                        "(snapshot 시점 inventoryEntries 매칭 실패한 marker. scene-baked 또는 catalog 변경).");
+                }
+            }
+
+            // 5) dictionary + 인벤토리 슬롯 재구성.
+            placedByInventoryKey.Clear();
+            RebuildPlacedByInventoryKeyFromScene();
+            RebuildInventorySlots();
+
+            Debug.Log(
+                $"[RoomEdit][Rollback] 완료 — 새로 추가분 destroy={newlyDestroyed}, " +
+                $"transform 복원={transformRestored}, 재생성={recreated}, 복원 불가={lost}");
+        }
+
+        // PlaceInventoryEntry 의 GameObject 생성/collider/marker 부분만 추출 — 롤백 전용.
+        // ring search / bounds clamp 는 skip (snapshot 의 transform 은 이미 valid 한 placement 였음).
+        private void RecreateMarkerFromSnapshot(DecorationSnapshot snap)
+        {
+            if (snap.SourcePrefab == null) return;
+            EnsurePlacedItemsRoot();
+
+            var go = Instantiate(snap.SourcePrefab);
+            go.name = $"Decoration_{SanitizeName(snap.DisplayName)}_{System.Guid.NewGuid():N}";
+            go.transform.SetParent(placedItemsRoot.transform, true);
+            go.transform.SetPositionAndRotation(snap.Position, snap.Rotation);
+            go.transform.localScale = snap.LocalScale;
+
+            // collider 합성 (없으면) — PlaceInventoryEntry 와 동일 패턴, raycast selection 위해 필요.
+            var rendererBounds = ComputeRendererBounds(go);
+            if (rendererBounds.HasValue && go.GetComponentInChildren<Collider>() == null)
+            {
+                var bounds = rendererBounds.Value;
+                var collider = go.AddComponent<BoxCollider>();
+                var localCenter = go.transform.InverseTransformPoint(bounds.center);
+                var localSize = go.transform.InverseTransformVector(bounds.size);
+                collider.center = localCenter;
+                collider.size = new Vector3(Mathf.Abs(localSize.x), Mathf.Abs(localSize.y), Mathf.Abs(localSize.z));
+            }
+
+            var marker = go.AddComponent<DecorationItemMarker>();
+            marker.InventoryKey = snap.InventoryKey;
+        }
+
+        // 진입 시 저장된 layout 복원. 현재는 부분 구현 — 이미 씬에 marker 가 있으면 transform 만 갱신.
+        // TODO(full-restore): inventoryEntries 에서 assetId 매칭 prefab 을 Instantiate 해서 미배치 항목도
+        // 복원. PlaceInventoryEntry 를 재사용하되 "force-position to saved coords" 옵션이 필요.
+        private void TryRestoreSavedDecorations()
+        {
+            EnsureDecorationUseCases();
+            if (loadDecorationsUseCase == null) return;
+            loadDecorationsUseCase.Execute(
+                onSuccess: items =>
+                {
+                    if (items == null || items.Count == 0)
+                    {
+                        Debug.Log("[RoomEdit][Load] 저장된 데코레이션 없음 (빈 리스트)");
+                        return;
+                    }
+                    int matched = 0, unmatched = 0;
+                    for (int i = 0; i < items.Count; i++)
+                    {
+                        var it = items[i];
+                        if (placedByInventoryKey.TryGetValue(it.AssetId, out var existing) && existing != null)
+                        {
+                            existing.transform.position = new Vector3(it.PositionX, it.PositionY, it.PositionZ);
+                            existing.transform.rotation = Quaternion.Euler(0f, it.RotationY, 0f);
+                            existing.transform.localScale = new Vector3(it.ScaleX, it.ScaleY, it.ScaleZ);
+                            matched++;
+                        }
+                        else
+                        {
+                            unmatched++;
+                        }
+                    }
+                    Debug.Log(
+                        $"[RoomEdit][Load] 복원 완료 — 기존 marker 매칭 갱신 {matched}개, 매칭 실패 (씬에 없음) {unmatched}개. " +
+                        "TODO(full-restore): unmatched 도 inventoryEntries 에서 prefab 매칭해 Instantiate 필요.");
+                },
+                onError: msg => Debug.LogWarning($"[RoomEdit][Load] 저장 데이터 로드 실패: {msg}"));
+        }
+
+        // 토스트 — 짧은 안내 메시지. 색상은 success/error 구분.
+        private void ShowSaveStatusToast(string message, bool isError, float durationSec)
+        {
+            if (saveStatusToastRoot == null || saveStatusToastText == null) return;
+            saveStatusToastText.text = message;
+            saveStatusToastText.color = Color.white;
+            var bg = saveStatusToastRoot.GetComponentInChildren<Image>();
+            if (bg != null)
+            {
+                bg.color = isError ? new Color(0.76f, 0.31f, 0.31f, 0.9f) : WithAlpha(TextColor, 0.85f);
+            }
+            saveStatusToastRoot.SetActive(true);
+            saveStatusToastRoot.transform.SetAsLastSibling();
+            saveStatusToastHideTime = Time.unscaledTime + Mathf.Max(0.5f, durationSec);
         }
 
         // 현재 fade 적용된 벽(InstanceMaterial != null) 개수 — 디버그 로그 / 회귀 검증용.
@@ -4178,6 +4789,7 @@ namespace App.Bootstrap
 
             // 인벤토리 슬롯이 비활성화된 상태로 즉시 보이도록 슬롯 다시 빌드.
             RebuildInventorySlots();
+            SetDirty("PlaceInventoryEntry");
         }
 
         // Search outward from `desiredPosition` in MinorGridStep rings for a
@@ -4787,8 +5399,13 @@ namespace App.Bootstrap
             // Position is always inside the room because UpdateDrag clamped it
             // every frame, so we don't need to revert anywhere. Just close out
             // the drag state and hide the grid overlay.
+            bool wasDragging = draggingObject != null;
             draggingObject = null;
             HideGrid();
+            if (wasDragging)
+            {
+                SetDirty("FinishDrag");
+            }
         }
 
         // Floor placement plane (room floor surface is y = 0 in world).
@@ -5235,6 +5852,9 @@ namespace App.Bootstrap
         private void RotateSelectedBy(float signedDegrees)
         {
             if (selectedObject == null) return;
+            // 모달 표시 중에는 회전 버튼 자체가 selection 패널과 함께 숨겨져 있어 클릭이 닿지 않지만,
+            // 같은 프레임에 stale invocation 이 들어올 가능성에 대비해 방어.
+            if (isUnsavedChangesModalOpen) return;
 
             // Don't rotate mid-drag — would invalidate the bounds-based placement
             // check until the next move tick. Forces drag to commit first.
@@ -5282,11 +5902,14 @@ namespace App.Bootstrap
             Debug.Log(
                 $"[RoomEdit][Rotate] dir={direction} delta={signedDegrees:+#0;-#0;0}° from={prevYaw:0.#}° to={newYaw:0.#}° " +
                 $"result=ok obj={selectedObject.name}");
+            SetDirty($"RotateSelected/{direction}");
         }
 
         private void DeleteSelectedObject()
         {
             if (selectedObject == null) return;
+            // 모달이 열린 동안 stale invocation 차단 (RotateSelectedBy 와 동일 이유).
+            if (isUnsavedChangesModalOpen) return;
             if (draggingObject != null)
             {
                 // Drop the in-flight drag state cleanly before destroying so the
@@ -5311,6 +5934,7 @@ namespace App.Bootstrap
 
             // 슬롯의 disabled/배치됨 표시 해제. 같은 자산을 다시 클릭해서 배치 가능하게 됨.
             RebuildInventorySlots();
+            SetDirty("DeleteSelectedObject");
         }
 
         // Helpers ------------------------------------------------------------------
