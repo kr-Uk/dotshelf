@@ -1740,13 +1740,21 @@ namespace App.Bootstrap
             }
 
             // 2) native renderer 들 disable (visual hide, GameObject 자체는 유지 — collider/
-            // 기능 컴포넌트 보존)
+            // 기능 컴포넌트 보존). 카테고리 매칭 transform 의 모든 자식 renderer 까지 hide —
+            // NotebookStation 같은 root 의 자식 (UnibodyBase/Trackpad 등) 은 prefix 매칭 안
+            // 되어 renderer 자체 검색만으론 missed. transform 단위로 매칭 후 GetComponentsInChildren
+            // 으로 자식까지 모두 hide → 노트북 visual 도 같이 사라짐.
             Transform anchor = null;
-            foreach (var renderer in roomRoot.GetComponentsInChildren<Renderer>(true))
+            var allTransforms = roomRoot.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < allTransforms.Length; i++)
             {
-                if (!MatchesCategoryName(category, renderer.gameObject.name)) continue;
-                renderer.enabled = false;
-                if (anchor == null) anchor = renderer.transform; // 첫 매칭 anchor — origin 기준
+                var t = allTransforms[i];
+                if (!MatchesCategoryName(category, t.gameObject.name)) continue;
+                if (anchor == null) anchor = t;
+                foreach (var r in t.GetComponentsInChildren<Renderer>(true))
+                {
+                    r.enabled = false;
+                }
             }
             if (anchor == null)
             {
@@ -1777,11 +1785,15 @@ namespace App.Bootstrap
                     else DestroyImmediate(child.gameObject);
                 }
             }
-            foreach (var renderer in roomRoot.GetComponentsInChildren<Renderer>(true))
+            // ApplyCategoryMeshSwap 와 대칭 — transform 단위 매칭 후 자식 renderer 까지 enable.
+            var allTransforms = roomRoot.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < allTransforms.Length; i++)
             {
-                if (MatchesCategoryName(category, renderer.gameObject.name))
+                var t = allTransforms[i];
+                if (!MatchesCategoryName(category, t.gameObject.name)) continue;
+                foreach (var r in t.GetComponentsInChildren<Renderer>(true))
                 {
-                    renderer.enabled = true;
+                    r.enabled = true;
                 }
             }
         }
