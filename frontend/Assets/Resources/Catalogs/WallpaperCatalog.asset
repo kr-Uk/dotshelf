@@ -18,6 +18,8 @@ MonoBehaviour:
     displayName: "\uBCBD\uC9C0 Cream"
     description: 
     previewSprite: {fileID: 0}
+    themeTag: 
+    isLocalPreview: 1
     materials:
     - {fileID: 2100000, guid: e6df4cc2a2c89472bbdd202ab959c665, type: 2}
     lightColor: {r: 1, g: 1, b: 1, a: 1}
@@ -31,6 +33,8 @@ MonoBehaviour:
     displayName: "\uBCBD\uC9C0 Lavender"
     description: 
     previewSprite: {fileID: 0}
+    themeTag: 
+    isLocalPreview: 1
     materials:
     - {fileID: 2100000, guid: 98e40c5c1ace34b33b804567185b1bf9, type: 2}
     lightColor: {r: 1, g: 1, b: 1, a: 1}
@@ -44,6 +48,8 @@ MonoBehaviour:
     displayName: "\uBCBD\uC9C0 Mint"
     description: 
     previewSprite: {fileID: 0}
+    themeTag: 
+    isLocalPreview: 1
     materials:
     - {fileID: 2100000, guid: 18d29caadf9014f5dbb726195b07c121, type: 2}
     lightColor: {r: 1, g: 1, b: 1, a: 1}
@@ -57,6 +63,8 @@ MonoBehaviour:
     displayName: "\uBCBD\uC9C0 Beige"
     description: 
     previewSprite: {fileID: 0}
+    themeTag: 
+    isLocalPreview: 1
     materials:
     - {fileID: 2100000, guid: 6c70acb8daf104b2b90271775ce23eae, type: 2}
     lightColor: {r: 1, g: 1, b: 1, a: 1}
@@ -70,8 +78,85 @@ MonoBehaviour:
     displayName: "\uBCBD\uC9C0 OffWhite"
     description: 
     previewSprite: {fileID: 0}
+    themeTag: 
+    isLocalPreview: 1
     materials:
     - {fileID: 2100000, guid: bb45a2934b3634c17935b86e615b1f24, type: 2}
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: 0}
+    placementAnchor: {x: 0, y: 0, z: 0}
+    placementRotation: {x: 0, y: 0, z: 0}
+    placementScale: {x: 1, y: 1, z: 1}
+  - assetId: 200001
+    displayName: "Natural \uBCBD\uC9C0"
+    description: 
+    previewSprite: {fileID: 0}
+    themeTag: Natural
+    isLocalPreview: 1
+    materials:
+    - {fileID: 2100000, guid: 6d2bf3e9df8e96e4e963f203debb803a, type: 2}
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: 0}
+    placementAnchor: {x: 0, y: 0, z: 0}
+    placementRotation: {x: 0, y: 0, z: 0}
+    placementScale: {x: 1, y: 1, z: 1}
+  - assetId: 200002
+    displayName: "Classic \uBCBD\uC9C0"
+    description: 
+    previewSprite: {fileID: 0}
+    themeTag: Classic
+    isLocalPreview: 1
+    materials:
+    - {fileID: 2100000, guid: 02c247a051d09ee418b052d275e5eae9, type: 2}
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: 0}
+    placementAnchor: {x: 0, y: 0, z: 0}
+    placementRotation: {x: 0, y: 0, z: 0}
+    placementScale: {x: 1, y: 1, z: 1}
+  - assetId: 200003
+    displayName: "Modern \uBCBD\uC9C0"
+    description: 
+    previewSprite: {fileID: 0}
+    themeTag: Modern
+    isLocalPreview: 1
+    materials:
+    - {fileID: 2100000, guid: a060053af0572ea4f912c52534c35a32, type: 2}
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: 0}
+    placementAnchor: {x: 0, y: 0, z: 0}
+    placementRotation: {x: 0, y: 0, z: 0}
+    placementScale: {x: 1, y: 1, z: 1}
+  - assetId: 200004
+    displayName: "Vintage \uBCBD\uC9C0"
+    description: 
+    previewSprite: {fileID: 0}
+    themeTag: Vintage
+    isLocalPreview: 1
+    materials:
+    - {fileID: 2100000, guid: e60df8fdb1cf8d14d8de443badf6d55d, type: 2}
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: 0}
+    placementAnchor: {x: 0, y: 0, z: 0}
+    placementRotation: {x: 0, y: 0, z: 0}
+    placementScale: {x: 1, y: 1, z: 1}
+  - assetId: 200005
+    displayName: "Pastel \uBCBD\uC9C0"
+    description: 
+    previewSprite: {fileID: 0}
+    themeTag: Pastel
+    isLocalPreview: 1
+    materials:
+    - {fileID: 2100000, guid: 5958b805b39e6a04aa6ffead820f32dd, type: 2}
     lightColor: {r: 1, g: 1, b: 1, a: 1}
     lightIntensity: 1
     colorTemperatureKelvin: 6500

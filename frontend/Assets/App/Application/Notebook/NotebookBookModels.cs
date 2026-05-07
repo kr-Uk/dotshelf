@@ -39,6 +39,7 @@ namespace App.Application.Notebook
         public int PurchaseCount { get; set; }
         public int RecordCount { get; set; }
         public int PlacementCount { get; set; }
+        public int BookshelfAddCount { get; set; }
         public bool HasPaidCover { get; set; }
     }
 

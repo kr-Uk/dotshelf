@@ -204,13 +204,23 @@ namespace BookshelfPorting.Runtime
 
         public void ApplyServerBookshelves(IReadOnlyList<BookshelfRuntimeApiSnapshot> shelves)
         {
-            if (shelves == null || shelves.Count == 0)
+            var orderedShelves = shelves != null
+                ? new List<BookshelfRuntimeApiSnapshot>(shelves)
+                : new List<BookshelfRuntimeApiSnapshot>();
+            orderedShelves.Sort((left, right) => left.DisplayOrder.CompareTo(right.DisplayOrder));
+
+            var hasItemsLoadFallback = orderedShelves.Exists(shelf => shelf != null && shelf.ItemsLoadFailed);
+            if (hasItemsLoadFallback)
             {
-                return;
+                SaveActiveBookshelfLayoutSnapshot();
             }
 
-            var orderedShelves = new List<BookshelfRuntimeApiSnapshot>(shelves);
-            orderedShelves.Sort((left, right) => left.DisplayOrder.CompareTo(right.DisplayOrder));
+            var previousLayoutsByServerId = hasItemsLoadFallback
+                ? CreateBookshelfLayoutSnapshotsByServerId()
+                : null;
+            var previousSectionsByServerId = hasItemsLoadFallback
+                ? CreateSectionServerIdsByServerId()
+                : null;
 
             bookshelfLayoutSnapshots.Clear();
             bookshelfServerIds.Clear();
@@ -218,6 +228,24 @@ namespace BookshelfPorting.Runtime
             bookshelfNames.Clear();
             bookshelfDesignStyles.Clear();
             bookshelfVisibilityScopes.Clear();
+
+            if (orderedShelves.Count == 0)
+            {
+                bookshelfCount = 0;
+                activeBookshelfIndex = 0;
+                pendingBookshelfIndex = -1;
+                queuedBookshelfSwitchDirection = 0;
+                ClearBookshelfShellChildren();
+                ClearBookshelfBooks();
+                bookshelfSections.Clear();
+                if (state != null)
+                {
+                    state.ResetSections(bookshelfSections);
+                }
+
+                BookshelfSwitchStateChanged?.Invoke();
+                return;
+            }
 
             bookshelfCount = Mathf.Max(1, orderedShelves.Count);
             activeBookshelfIndex = Mathf.Clamp(activeBookshelfIndex, 0, bookshelfCount - 1);
@@ -242,11 +270,32 @@ namespace BookshelfPorting.Runtime
                     }
                 }
 
-                bookshelfSectionServerIds[i] = CreateSectionServerIdMap(shelf);
-                bookshelfLayoutSnapshots[i] = CreateServerBookshelfLayoutSnapshot(shelf, i);
+                if (shelf.ItemsLoadFailed &&
+                    !string.IsNullOrWhiteSpace(shelf.BookshelfId) &&
+                    previousSectionsByServerId != null &&
+                    previousSectionsByServerId.TryGetValue(shelf.BookshelfId, out var previousSections))
+                {
+                    bookshelfSectionServerIds[i] = new Dictionary<string, string>(previousSections);
+                }
+                else
+                {
+                    bookshelfSectionServerIds[i] = CreateSectionServerIdMap(shelf);
+                }
+
+                if (shelf.ItemsLoadFailed &&
+                    !string.IsNullOrWhiteSpace(shelf.BookshelfId) &&
+                    previousLayoutsByServerId != null &&
+                    previousLayoutsByServerId.TryGetValue(shelf.BookshelfId, out var previousLayout))
+                {
+                    bookshelfLayoutSnapshots[i] = previousLayout;
+                }
+                else
+                {
+                    bookshelfLayoutSnapshots[i] = CreateServerBookshelfLayoutSnapshot(shelf, i);
+                }
             }
 
-            if (bookshelfSections.Count > 0 && booksRoot != null)
+            if (booksRoot != null)
             {
                 RebuildActiveBookshelfVariant(activeBookshelfIndex);
                 BookshelfSwitchStateChanged?.Invoke();
@@ -261,6 +310,60 @@ namespace BookshelfPorting.Runtime
         public string GetActiveBookshelfServerId()
         {
             return GetBookshelfServerId(activeBookshelfIndex);
+        }
+
+        public bool HasServerPlacementIdsForBookshelf(int index)
+        {
+            var wrappedIndex = GetWrappedBookshelfIndex(index);
+            if (!bookshelfServerIds.TryGetValue(wrappedIndex, out var bookshelfId) ||
+                string.IsNullOrWhiteSpace(bookshelfId))
+            {
+                return false;
+            }
+
+            if (!bookshelfSectionServerIds.TryGetValue(wrappedIndex, out var sections) ||
+                sections == null)
+            {
+                return false;
+            }
+
+            var requiredSectionCount = Mathf.Max(1, rows * columns);
+            return sections.Count >= requiredSectionCount;
+        }
+
+        private Dictionary<string, BookshelfLayoutSnapshot> CreateBookshelfLayoutSnapshotsByServerId()
+        {
+            var result = new Dictionary<string, BookshelfLayoutSnapshot>();
+            foreach (var pair in bookshelfServerIds)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Value) ||
+                    !bookshelfLayoutSnapshots.TryGetValue(pair.Key, out var snapshot))
+                {
+                    continue;
+                }
+
+                result[pair.Value] = snapshot;
+            }
+
+            return result;
+        }
+
+        private Dictionary<string, Dictionary<string, string>> CreateSectionServerIdsByServerId()
+        {
+            var result = new Dictionary<string, Dictionary<string, string>>();
+            foreach (var pair in bookshelfServerIds)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Value) ||
+                    !bookshelfSectionServerIds.TryGetValue(pair.Key, out var sections) ||
+                    sections == null)
+                {
+                    continue;
+                }
+
+                result[pair.Value] = new Dictionary<string, string>(sections);
+            }
+
+            return result;
         }
 
         public IReadOnlyList<string> GetBookshelfServerIdsInDisplayOrder()
@@ -474,7 +577,7 @@ namespace BookshelfPorting.Runtime
             activeBookshelfIndex = 0;
             pendingBookshelfIndex = -1;
             queuedBookshelfSwitchDirection = 0;
-            bookshelfCount = InitialBookshelfCount;
+            bookshelfCount = useServerBookshelfSnapshots ? 0 : InitialBookshelfCount;
 
             ClearRoomChildren();
             ClearTurntableDecorationChildren();
@@ -602,10 +705,44 @@ namespace BookshelfPorting.Runtime
             BuildBackWallAlcove();
             CreateBox("LeftWall", roomRoot, new Vector3(-RoomWidth * 0.5f + 0.05f, RoomHeight * 0.5f, 0f), new Vector3(0.08f, RoomHeight, RoomDepth), materialFactory.GetWallMaterial());
             CreateBox("RightWall", roomRoot, new Vector3(RoomWidth * 0.5f - 0.05f, RoomHeight * 0.5f, 0f), new Vector3(0.08f, RoomHeight, RoomDepth), materialFactory.GetWallMaterial());
+            EnsureCeiling();
 
             BuildGuestbookBoard();
             BuildNotebookStation();
             EnsureRoomDecorations();
+        }
+
+        private const float CeilingThickness = 0.08f;
+
+        // 천장은 테마와 무관한 공통 구조물. 다음 두 메커니즘으로 Generate() 재실행에서도 보존된다:
+        //   1) generatedGeometry 에 의도적으로 등록하지 않음 → ClearGenerated() 의 강제 destroy 대상에서 제외.
+        //   2) PreservedRoomChildNames 에 "Ceiling" 등록됨 → ClearRoomChildren() 가 자식 destroy 시 skip.
+        //
+        // roomRoot.Find("Ceiling") 으로 idempotent: 이미 있으면 새로 만들지 않음 (중복 차단).
+        // 추후 천장 조명/장식은 이 Ceiling 의 자식으로 추가 (예: Ceiling/Lights, Ceiling/Decor) — 조명 parent
+        // 가 분리되도록 구조 확장 가능.
+        private void EnsureCeiling()
+        {
+            if (roomRoot == null)
+            {
+                return;
+            }
+
+            if (roomRoot.Find("Ceiling") != null)
+            {
+                return;
+            }
+
+            var ceiling = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            ceiling.name = "Ceiling";
+            ceiling.transform.SetParent(roomRoot, false);
+            // 벽 top y == RoomHeight, 천장 bottom y == RoomHeight 로 정렬해 틈/겹침 차단.
+            ceiling.transform.localPosition = new Vector3(0f, RoomHeight + CeilingThickness * 0.5f, 0f);
+            // floor 와 동일한 footprint — 시각적으로 닫힌 방.
+            ceiling.transform.localScale = new Vector3(RoomWidth, CeilingThickness, RoomDepth);
+            ceiling.GetComponent<MeshRenderer>().sharedMaterial = materialFactory.GetCeilingMaterial();
+            DestroyImmediate(ceiling.GetComponent<Collider>());
+            // generatedGeometry 등록 안 함 — 의도적. ClearGenerated() 가 강제 destroy 하지 않도록.
         }
 
         private static readonly Vector3 LampFloorLocalPosition = new Vector3(-1.05f, 0f, 1.05f);
@@ -869,6 +1006,20 @@ namespace BookshelfPorting.Runtime
             ConfigureBookshelfTurntable();
             bookshelfRootBaseScale = bookshelfRoot.localScale;
             ResetBookshelfToFrontSlot();
+            if (bookshelfCount <= 0)
+            {
+                ClearBookshelfShellChildren();
+                ClearBookshelfBooks();
+                bookshelfSections.Clear();
+                if (state != null)
+                {
+                    state.ResetSections(bookshelfSections);
+                }
+
+                BuildHamhamDisplay();
+                return;
+            }
+
             var wood = GetBookshelfMaterial(activeBookshelfIndex);
 
             BuildBookshelfShell(bookshelfRoot, bookshelfSections, true, wood);
@@ -1885,13 +2036,16 @@ namespace BookshelfPorting.Runtime
         public bool AddBookshelf()
         {
             if (IsBookshelfSwitching ||
-                booksRoot == null ||
-                bookshelfSections.Count == 0)
+                booksRoot == null)
             {
                 return false;
             }
 
-            SaveActiveBookshelfLayoutSnapshot();
+            if (bookshelfCount > 0 && bookshelfSections.Count > 0)
+            {
+                SaveActiveBookshelfLayoutSnapshot();
+            }
+
             var newIndex = bookshelfCount;
             EnsureBookshelfDataForCurrentOrder();
             bookshelfCount++;
@@ -3258,6 +3412,10 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var previousReadingRecordId = book.readingRecordId;
+            var previousReportTitle = book.reportTitle;
+            var previousReportBody = book.reportBody;
+            var previousReportUpdatedLabel = book.reportUpdatedLabel;
             book.bookId = string.IsNullOrWhiteSpace(placement.BookId) ? placement.BookKey : placement.BookId;
             book.bookshelfItemId = placement.BookshelfItemId;
             book.userBookId = placement.UserBookId;
@@ -3280,12 +3438,51 @@ namespace BookshelfPorting.Runtime
             book.isLiked = placement.IsLiked;
             book.isPublic = placement.IsPublic;
             book.reportVisibility = placement.ReportVisibility;
-            book.reportTitle = placement.ReportTitle;
-            book.reportBody = placement.ReportBody;
-            book.reportUpdatedLabel = placement.ReportUpdatedLabel;
+            ApplySnapshotReportFields(
+                book,
+                placement,
+                previousReadingRecordId,
+                previousReportTitle,
+                previousReportBody,
+                previousReportUpdatedLabel);
             book.isPaidCoverOwned = placement.IsPaidCoverOwned;
             book.isDecoration = placement.IsDecoration;
             RefreshBookCoverVisuals(book);
+        }
+
+        private static void ApplySnapshotReportFields(
+            BookEntity book,
+            BookPlacementSnapshot placement,
+            string previousReadingRecordId,
+            string previousReportTitle,
+            string previousReportBody,
+            string previousReportUpdatedLabel)
+        {
+            if (book == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(placement.ReadingRecordId))
+            {
+                book.reportTitle = string.Empty;
+                book.reportBody = string.Empty;
+                book.reportUpdatedLabel = string.Empty;
+                return;
+            }
+
+            var canReusePreviousReport =
+                !string.IsNullOrWhiteSpace(previousReadingRecordId) &&
+                string.Equals(previousReadingRecordId, placement.ReadingRecordId, System.StringComparison.Ordinal);
+            book.reportTitle = !string.IsNullOrWhiteSpace(placement.ReportTitle)
+                ? placement.ReportTitle
+                : canReusePreviousReport ? previousReportTitle : book.reportTitle;
+            book.reportBody = !string.IsNullOrWhiteSpace(placement.ReportBody)
+                ? placement.ReportBody
+                : canReusePreviousReport ? previousReportBody : book.reportBody;
+            book.reportUpdatedLabel = !string.IsNullOrWhiteSpace(placement.ReportUpdatedLabel)
+                ? placement.ReportUpdatedLabel
+                : canReusePreviousReport ? previousReportUpdatedLabel : book.reportUpdatedLabel;
         }
 
         private static string GetBookLayoutKey(BookEntity book)

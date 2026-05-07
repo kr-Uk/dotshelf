@@ -33,8 +33,26 @@ namespace Dotshelf.Scripts.Dashboard
 
         [Header("Mode")]
         [SerializeField] private ViewMode viewMode = ViewMode.Mine;
-        [SerializeField] private long visitedSpaceId = 1L;
+        // Default 0 (미정). 옛 default 1L 은 dev DB 에 spaceId=1 이 없어 GET /v1/spaces/1/dashboard 호출 시 404/500 유발.
+        // 이제 외부에서 visitedSpaceId 를 명시 set 하지 않으면 LoadInitialData/카드 클릭 콜백이 dashboard 호출 자체를 skip.
+        [SerializeField] private long visitedSpaceId;
+        // prefab 의 직렬화 default 는 true 지만 SceneInstaller.Configure(... isMockMode) 가 실제 주입된 repo 에 맞춰
+        // runtime 에 덮어쓴다. OnVisitUser/LoadInitialData 의 real-API mode 가드는 이 필드 (post-Configure) 에 의존.
         [SerializeField] private bool useMockRepositories = true;
+
+        // dashboard fetch 발사 출처 — 같은 호출이 어디서 나왔는지 다음 사고 시 로그에서 즉시 식별하기 위함.
+        // /v1/spaces/1/dashboard 가 다시 찍히면 source 가 어떤 값인지로 ingress 경로를 좁힐 수 있다.
+        private enum DashboardCallSource
+        {
+            MySpace,           // ExecuteForMine — /v1/spaces/me 응답 id 로 fetch (source of truth)
+            VisitedExplicit,   // SerializeField visitedSpaceId 로 fetch (LoadInitialData)
+            UserClick,         // user list 카드 클릭 → OnVisitUser
+            DashboardEditRefresh // 편집 모달 저장 후 본인 dashboard 재로드
+        }
+
+        // PlayerPrefs 의 legacy visitedSpaceId 키들을 한 번만 청소하기 위한 1-shot guard.
+        // 이번 빌드 부터는 visitedSpaceId 를 영속화하지 않으므로 과거 빌드가 남긴 key 가 살아 있을 가능성만 차단.
+        private static bool legacyDashboardPrefsCleaned;
 
         private UIDocument document;
 
@@ -295,6 +313,22 @@ namespace Dotshelf.Scripts.Dashboard
             IFollowRepository followRepo,
             ILibraryViewRepository libraryRepo)
         {
+            // 호환 유지용 — isMockMode 미지정 시 prefab field 그대로 사용. (SceneInstaller 는 항상 새 overload 사용 권장.)
+            Configure(dashboardRepo, guestbookRepo, spaceSettingsRepo, followRepo, libraryRepo, useMockRepositories);
+        }
+
+        // SceneInstaller 가 effectiveMode (Mock/Api) 와 함께 호출하는 경로.
+        // useMockRepositories 필드를 주입된 repo 와 동기화해서 OnVisitUser 등의 real-API 가드가 정확히 동작하게 한다.
+        // (MR #114 이후에도 필드가 prefab default(true) 로 남아 있어 real-API 모드인데도 mock 분기로 빠지는 버그가 있었다.)
+        public void Configure(
+            IDashboardRepository dashboardRepo,
+            IGuestbookRepository guestbookRepo,
+            ISpaceSettingsRepository spaceSettingsRepo,
+            IFollowRepository followRepo,
+            ILibraryViewRepository libraryRepo,
+            bool isMockMode)
+        {
+            useMockRepositories = isMockMode;
             BuildUseCasesFromRepos(dashboardRepo, guestbookRepo, spaceSettingsRepo, followRepo, libraryRepo);
             configured = true;
         }
@@ -628,6 +662,7 @@ namespace Dotshelf.Scripts.Dashboard
             if (viewMode == ViewMode.Mine) return;
             viewMode = ViewMode.Mine;
             ApplyViewMode();
+            LogDashboardFetch(DashboardCallSource.MySpace, explicitSpaceId: null);
             loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
         }
 
@@ -637,14 +672,112 @@ namespace Dotshelf.Scripts.Dashboard
             guestbookCursorHistory.Clear();
             guestbookCursorHistory.Add(null);
 
+            CleanupLegacyDashboardPrefsOnce();
+
             if (viewMode == ViewMode.Mine)
             {
+                // 본인 공간 — GET /v1/spaces/me 응답의 id 를 사용 (Repository 가 처리). source of truth = BE.
+                LogDashboardFetch(DashboardCallSource.MySpace, explicitSpaceId: null);
                 loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
+            }
+            else if (visitedSpaceId > 0)
+            {
+                if (!TryGuardStaleSpaceIdOne(visitedSpaceId, DashboardCallSource.VisitedExplicit))
+                {
+                    LogDashboardFetch(DashboardCallSource.VisitedExplicit, explicitSpaceId: visitedSpaceId);
+                    loadDashboardUseCase.Execute(visitedSpaceId, OnDashboardLoaded, OnError);
+                }
             }
             else
             {
-                loadDashboardUseCase.Execute(visitedSpaceId, OnDashboardLoaded, OnError);
+                // visitedSpaceId 미설정 — 외부 caller (Search 등) 가 set 하기 전에는 호출 자체를 skip.
+                // 이전에는 SerializeField default 1L 이 그대로 전파돼 GET /v1/spaces/1/dashboard 가 호출됨.
+                Debug.LogWarning(
+                    $"[Dashboard] visitedSpaceId 미설정 (viewMode={viewMode}) — dashboard 호출 skip. " +
+                    "공간 카드 클릭으로 spaceId 가 set 된 후 OnVisitUser → loadDashboardUseCase.Execute 경로로 호출됩니다.");
             }
+        }
+
+        // real-API 모드에서 spaceId == 1 의 stale 호출을 일괄 차단하는 stop-gap 가드.
+        // dev/test BE 에 spaceId=1 row 가 없어 404/500 을 유발해 온 회귀를 막기 위한 임시 방어 — 근본적으로는
+        // 호출 site 에서 실제 spaceId 가 들어오게 해야 한다. mock 모드에서는 Mock repo 가 fake snapshot 을 만들어
+        // API hit 가 없으므로 가드 적용 안 함. 본인 공간 (DashboardCallSource.MySpace) 은 /v1/spaces/me 응답에서
+        // 1 이 나오면 그게 source of truth 이므로 차단하지 않는다. 호출자가 차단된 경우 true 반환.
+        private bool TryGuardStaleSpaceIdOne(long targetSpaceId, DashboardCallSource source)
+        {
+            if (useMockRepositories)
+            {
+                return false;
+            }
+            if (source == DashboardCallSource.MySpace)
+            {
+                return false;
+            }
+            if (targetSpaceId != 1L)
+            {
+                return false;
+            }
+
+            Debug.LogWarning(
+                $"[Dashboard] real API 모드에서 spaceId=1 호출을 stop-gap 으로 차단 (source={source}, viewMode={viewMode}). " +
+                "이건 stale ingress 진단용 임시 방어입니다 — 실제 spaceId 가 어디서 1 로 흘러들어왔는지 호출 chain 을 확인하세요.");
+            return true;
+        }
+
+        // 사고 재현 시 어떤 경로에서 dashboard fetch 가 발사됐는지 즉시 보이도록 표준 prefix + 모든 컨텍스트를 한 줄로.
+        // explicitSpaceId 가 null 이면 ExecuteForMine 경로 — 실제 spaceId 는 /v1/spaces/me 응답이 와봐야 결정된다.
+        private void LogDashboardFetch(DashboardCallSource source, long? explicitSpaceId)
+        {
+            string url = explicitSpaceId.HasValue
+                ? $"/v1/spaces/{explicitSpaceId.Value}/dashboard?period=weekly"
+                : "/v1/spaces/me → /v1/spaces/{id}/dashboard?period=weekly";
+            string targetText = explicitSpaceId.HasValue ? explicitSpaceId.Value.ToString() : "(unresolved — /me 응답 후 결정)";
+            Debug.Log(
+                $"[Dashboard][fetch] source={source} viewMode={viewMode} useMockRepositories={useMockRepositories} " +
+                $"targetSpaceId={targetText} url={url}");
+        }
+
+        // 이 빌드는 visitedSpaceId / dashboard target id 를 PlayerPrefs 에 저장하지 않는다. 그러나 이전 (검토되지 않은)
+        // 브랜치/실험 빌드가 영속화한 키가 사용자 단말에 남아 있을 수 있어, 후보 key 를 한 번만 선별 삭제한다.
+        // - DeleteAll 은 사용 금지 (auth/login 토큰 등 다른 도메인 키 보호)
+        // - 키가 실제로 존재했고 stale 값 (<=1) 인 경우만 삭제 + 명시 로그
+        private void CleanupLegacyDashboardPrefsOnce()
+        {
+            if (legacyDashboardPrefsCleaned)
+            {
+                return;
+            }
+            legacyDashboardPrefsCleaned = true;
+
+            string[] legacyKeys =
+            {
+                "Dotshelf.Dashboard.VisitedSpaceId",
+                "Dotshelf.Dashboard.LastTargetSpaceId",
+                "Dotshelf.Dashboard.TargetSpaceId",
+                "DashboardVisitedSpaceId"
+            };
+
+            for (int i = 0; i < legacyKeys.Length; i++)
+            {
+                string key = legacyKeys[i];
+                if (!PlayerPrefs.HasKey(key))
+                {
+                    continue;
+                }
+
+                long legacyValue = 0L;
+                long.TryParse(PlayerPrefs.GetString(key, "0"), out legacyValue);
+                PlayerPrefs.DeleteKey(key);
+                if (legacyValue <= 1L)
+                {
+                    Debug.Log($"[Dashboard] Cleared stale visitedSpaceId={legacyValue} (PlayerPrefs key='{key}').");
+                }
+                else
+                {
+                    Debug.Log($"[Dashboard] Cleared legacy PlayerPrefs key='{key}' value={legacyValue} (이 빌드는 dashboard target id 를 영속화하지 않음).");
+                }
+            }
+            PlayerPrefs.Save();
         }
 
         private void OnDashboardLoaded(DashboardSnapshot snapshot)
@@ -1292,6 +1425,7 @@ namespace Dotshelf.Scripts.Dashboard
                     // 부분 성공 시에도 화면은 갱신 (사용자가 어디까지 저장됐는지 다시 열어 확인 가능).
                     if (viewMode == ViewMode.Mine)
                     {
+                        LogDashboardFetch(DashboardCallSource.DashboardEditRefresh, explicitSpaceId: null);
                         loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
                     }
                 }
@@ -1300,6 +1434,7 @@ namespace Dotshelf.Scripts.Dashboard
             CloseDashboardEditModal();
             if (viewMode == ViewMode.Mine)
             {
+                LogDashboardFetch(DashboardCallSource.DashboardEditRefresh, explicitSpaceId: null);
                 loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
             }
         }
@@ -1521,11 +1656,15 @@ namespace Dotshelf.Scripts.Dashboard
             VisualElement actions = new VisualElement();
             actions.AddToClassList("user-row-actions");
 
-            // 방문 — 항상 표시 (와이어 페이지 2)
-            Button visitBtn = new Button { text = "방문" };
-            visitBtn.AddToClassList("user-row-action-button");
-            visitBtn.clicked += () => OnVisitUser(user);
-            actions.Add(visitBtn);
+            // 방문 — mock 모드에서만 노출. real API 모드에서는 UserSummary.Id → spaceId 매핑이 없어 silent
+            // no-op 이 되므로 버튼 자체를 안 그린다 (UserSummary 에 SpaceId 합류 또는 user→space 매핑 endpoint 추가 시 복구).
+            if (useMockRepositories)
+            {
+                Button visitBtn = new Button { text = "방문" };
+                visitBtn.AddToClassList("user-row-action-button");
+                visitBtn.clicked += () => OnVisitUser(user);
+                actions.Add(visitBtn);
+            }
 
             bool isMineSpace = viewMode == ViewMode.Mine;
             if (isMineSpace && currentUserListMode == UserListMode.Followers)
@@ -1563,15 +1702,38 @@ namespace Dotshelf.Scripts.Dashboard
         private void OnVisitUser(UserSummary user)
         {
             CloseUserListModal();
-            // Mock 가정: user.Id == spaceId. Api 합류 시 user-to-space 매핑 따로 조회.
-            long targetSpaceId = user.Id;
+            // Mock 가정: user.Id == spaceId. Api 모드에선 user/space 도메인 분리되어 다른 값 가능.
+            // (MR 114 review skh1205 [P2]) UserSummary.Id 는 follower/following API 의 사용자 ID — spaceId 보장 X.
+            // UserSummary 에 spaceId 합류 또는 GET /v1/users/{id}/space 매핑 endpoint 추가 전까지 임시 방어:
+            //   - mock 모드: 기존대로 user.Id == spaceId 가정 진행 (테스트 데이터 호환)
+            //   - real API 모드: visit skip + 사용자 메시지 (spaceId 알 수 없으므로 잘못된 dashboard 호출 차단)
             if (currentSnapshot != null && user.Id == currentSnapshot.Space.OwnerUserId)
+            {
+                return;
+            }
+            if (!useMockRepositories)
+            {
+                Debug.LogWarning(
+                    $"[Dashboard] OnVisitUser — real API 모드에서 user.Id({user.Id}) 를 spaceId 로 가정 불가. " +
+                    "UserSummary 에 spaceId 합류 또는 user→space 매핑 API 가 필요합니다. visit skip.");
+                return;
+            }
+            long targetSpaceId = user.Id;
+            if (targetSpaceId <= 0)
+            {
+                Debug.LogWarning($"[Dashboard] OnVisitUser — invalid targetSpaceId={targetSpaceId} (user.Id 미설정). dashboard 호출 skip.");
+                return;
+            }
+            // OnVisitUser 는 위 useMockRepositories 가드로 real-API 모드에서 이미 return 한다. 여기까지 왔다면 mock 모드.
+            // 그래도 추가 방어로 stop-gap (==1) 가드를 통과시켜 향후 실수로 가드가 풀려도 stale 호출이 새지 않게 한다.
+            if (TryGuardStaleSpaceIdOne(targetSpaceId, DashboardCallSource.UserClick))
             {
                 return;
             }
             viewMode = ViewMode.Visitor;
             visitedSpaceId = targetSpaceId;
             ApplyViewMode();
+            LogDashboardFetch(DashboardCallSource.UserClick, explicitSpaceId: targetSpaceId);
             loadDashboardUseCase.Execute(targetSpaceId, OnDashboardLoaded, OnError);
         }
 

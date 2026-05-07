@@ -198,6 +198,15 @@ namespace App.Bootstrap
             ("SHOP", "샵"),
         };
 
+        // FURNITURE 탭 선택 시 노출되는 sub-tab. CustomizationCategory의 외형형 가구 3종.
+        // (의자는 Desk = '노트북 & 책상 세트'에 묶여있어 별도 sub-tab 불필요.)
+        private static readonly (string Key, string Label)[] FurnitureSubItems =
+        {
+            ("DESK", "책상"),
+            ("BOOKSHELF_SKIN", "책장"),
+            ("DASHBOARD_SKIN", "대시보드"),
+        };
+
         private struct InventoryEntry
         {
             public string DisplayName;
@@ -236,6 +245,13 @@ namespace App.Bootstrap
         private string selectedToolbarKey = "ALL";
         private readonly Dictionary<string, Image> toolbarBackgrounds = new Dictionary<string, Image>();
         private readonly Dictionary<string, TMP_Text> toolbarLabels = new Dictionary<string, TMP_Text>();
+
+        // FURNITURE sub-tab. selectedToolbarKey == "FURNITURE" 일 때만 의미 있음.
+        private string selectedFurnitureSubKey = "DESK";
+        private GameObject furnitureSubToolbarRoot;
+        private GameObject inventoryTitleObject;
+        private readonly Dictionary<string, Image> furnitureSubBackgrounds = new Dictionary<string, Image>();
+        private readonly Dictionary<string, TMP_Text> furnitureSubLabels = new Dictionary<string, TMP_Text>();
 
         private RoomThemeCatalogAsset themeCatalog;
         private RoomThemeApplier themeApplier;
@@ -337,6 +353,16 @@ namespace App.Bootstrap
         private void Awake()
         {
             InitializeIfNeeded();
+            // 상단 메뉴 'Dotshelf > Theme > Filter Inventory By > ...' 가 RoomEditThemeFilter.ActiveTheme 을
+            // 바꾸면 Changed 가 발사된다 → 편집 모드 활성 상태면 인벤토리 다시 그려 필터 반영.
+            RoomEditThemeFilter.Changed += HandleThemeFilterChanged;
+        }
+
+        private void HandleThemeFilterChanged()
+        {
+            if (!IsEditModeActive) return;
+            ApplyThemeFilterLabel();
+            RebuildInventorySlots();
         }
 
         private void InitializeIfNeeded()
@@ -764,6 +790,134 @@ namespace App.Bootstrap
             toolbarLabels[key] = labelText;
         }
 
+        // InventoryListContainer 내부 title 영역 위에 가로 strip으로 sub-tab 3개.
+        // FURNITURE 선택 시만 활성화 (UpdateFurnitureSubToolbarVisibility). 단일 row,
+        // title과 anchor 영역 거의 동일 (top, height 28) — title은 그 시점에 SetActive(false).
+        private void BuildFurnitureSubToolbar(Transform parent)
+        {
+            furnitureSubToolbarRoot = CreateRectObject("FurnitureSubToolbar", parent);
+            var rect = (RectTransform)furnitureSubToolbarRoot.transform;
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.sizeDelta = new Vector2(-48f, 36f);
+            rect.anchoredPosition = new Vector2(0f, -8f);
+
+            var layout = furnitureSubToolbarRoot.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 8f;
+            layout.childAlignment = TextAnchor.MiddleLeft;
+            layout.childControlWidth = false;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+
+            for (var i = 0; i < FurnitureSubItems.Length; i++)
+            {
+                BuildFurnitureSubButton(furnitureSubToolbarRoot.transform, FurnitureSubItems[i].Key, FurnitureSubItems[i].Label);
+            }
+
+            ApplyFurnitureSubSelectionVisuals();
+            furnitureSubToolbarRoot.SetActive(false);
+        }
+
+        // 책장 스킨은 BE PATCH 경로 미지원 (ISpaceSettingsRepository.ChangeBookshelfSkin 없음 +
+        // SpaceResponseDto.CurrentBookshelfSkinInventoryId 없음 + GetCategoryIdFromSpace/
+        // OptimisticallyUpdateServerSpace 미지원). 클릭 가능하면 visual만 바뀌고 PATCH는 안 나가
+        // 다음 reload 에서 선택이 사라짐 — '저장 안 되는 UI'가 됨.
+        // 후속 PR에서 BE 경로 + DTO 필드 + repository 연결까지 묶어서 활성화 예정.
+        private static bool IsFurnitureSubDisabled(string key) => key == "BOOKSHELF_SKIN";
+
+        private void BuildFurnitureSubButton(Transform parent, string key, string label)
+        {
+            bool disabled = IsFurnitureSubDisabled(key);
+
+            var background = CreateImage(parent, $"FurnitureSub_{key}", disabled ? CardColor : SecondaryColor);
+            background.sprite = roundedRectSprite;
+            background.type = Image.Type.Sliced;
+            var rect = background.rectTransform;
+            rect.sizeDelta = new Vector2(disabled ? 132f : 96f, 32f);
+
+            var layoutElement = background.gameObject.AddComponent<LayoutElement>();
+            layoutElement.minWidth = rect.sizeDelta.x;
+            layoutElement.preferredWidth = rect.sizeDelta.x;
+            layoutElement.minHeight = rect.sizeDelta.y;
+            layoutElement.preferredHeight = rect.sizeDelta.y;
+
+            var outline = background.gameObject.AddComponent<Outline>();
+            outline.effectColor = WithAlpha(BorderColor, 0.85f);
+            outline.effectDistance = new Vector2(1f, -1f);
+
+            string displayLabel = disabled ? $"{label} 준비 중" : label;
+            var labelText = CreateText(background.transform, "Label", displayLabel, 14f, FontStyles.Bold,
+                disabled ? MutedTextColor : TextColor, TextAlignmentOptions.Center);
+            labelText.overflowMode = TextOverflowModes.Ellipsis;
+            StretchToParent(labelText.rectTransform);
+
+            var button = background.gameObject.AddComponent<Button>();
+            button.targetGraphic = background;
+            button.transition = Selectable.Transition.None;
+            button.interactable = !disabled;
+            if (!disabled)
+            {
+                button.onClick.AddListener(() => OnFurnitureSubClicked(key));
+            }
+
+            furnitureSubBackgrounds[key] = background;
+            furnitureSubLabels[key] = labelText;
+        }
+
+        private void OnFurnitureSubClicked(string key)
+        {
+            if (selectedFurnitureSubKey == key) return;
+            selectedFurnitureSubKey = key;
+            ApplyFurnitureSubSelectionVisuals();
+            RebuildInventorySlots();
+        }
+
+        private void ApplyFurnitureSubSelectionVisuals()
+        {
+            foreach (var pair in furnitureSubBackgrounds)
+            {
+                furnitureSubLabels.TryGetValue(pair.Key, out var label);
+                if (IsFurnitureSubDisabled(pair.Key))
+                {
+                    // disabled 키는 항상 disabled 색상 유지 — 사용자 클릭 불가지만 방어적.
+                    pair.Value.color = CardColor;
+                    if (label != null) label.color = MutedTextColor;
+                    continue;
+                }
+                var isSelected = pair.Key == selectedFurnitureSubKey;
+                pair.Value.color = isSelected ? PrimaryColor : SecondaryColor;
+                if (label != null) label.color = isSelected ? Color.white : TextColor;
+            }
+        }
+
+        private void UpdateFurnitureSubToolbarVisibility()
+        {
+            bool showSub = selectedToolbarKey == "FURNITURE";
+            if (furnitureSubToolbarRoot != null && furnitureSubToolbarRoot.activeSelf != showSub)
+            {
+                furnitureSubToolbarRoot.SetActive(showSub);
+            }
+            if (inventoryTitleObject != null && inventoryTitleObject.activeSelf == showSub)
+            {
+                inventoryTitleObject.SetActive(!showSub);
+            }
+        }
+
+        // toolbar sub-key → CustomizationCategory 매핑.
+        private static bool TryResolveFurnitureSubCategory(string subKey, out CustomizationCategory category)
+        {
+            switch (subKey)
+            {
+                case "DESK":            category = CustomizationCategory.Desk;          return true;
+                case "BOOKSHELF_SKIN":  category = CustomizationCategory.BookshelfSkin; return true;
+                case "DASHBOARD_SKIN":  category = CustomizationCategory.DashboardSkin; return true;
+                default:                category = default;                              return false;
+            }
+        }
+
         // Inventory list occupies the rest of the bottom menu panel beneath the
         // toolbar strip. Background is intentionally transparent so the panel reads
         // as one continuous beige surface.
@@ -784,6 +938,10 @@ namespace App.Bootstrap
             titleRect.pivot = new Vector2(0f, 1f);
             titleRect.sizeDelta = new Vector2(-48f, 28f);
             titleRect.anchoredPosition = new Vector2(28f, -12f);
+            inventoryTitleObject = title.gameObject;
+
+            // FURNITURE 탭 선택 시 title 자리에 sub-toolbar 노출 — 책상/책장/대시보드.
+            BuildFurnitureSubToolbar(listContainer.transform);
 
             var scrollRect = listContainer.AddComponent<ScrollRect>();
             scrollRect.horizontal = true;
@@ -832,6 +990,34 @@ namespace App.Bootstrap
             RebuildInventorySlots();
         }
 
+        // 현재 적용된 상단 메뉴 테마 필터를 인벤토리 영역 상단에 표시. 매 RebuildInventorySlots 마다 갱신.
+        private TMP_Text themeFilterLabel;
+
+        private void ApplyThemeFilterLabel()
+        {
+            if (inventoryContentRoot == null) return;
+            var bottomRoot = bottomMenuRoot != null ? bottomMenuRoot.transform : inventoryContentRoot.transform.parent;
+            if (bottomRoot == null) return;
+
+            if (themeFilterLabel == null)
+            {
+                var go = new GameObject("ThemeFilterLabel", typeof(RectTransform));
+                go.transform.SetParent(bottomRoot, false);
+                themeFilterLabel = go.AddComponent<TextMeshProUGUI>();
+                themeFilterLabel.font = fontAsset;
+                themeFilterLabel.fontSize = 18f;
+                themeFilterLabel.color = TextColor;
+                themeFilterLabel.alignment = TextAlignmentOptions.MidlineLeft;
+                var rt = themeFilterLabel.rectTransform;
+                rt.anchorMin = new Vector2(0f, 1f);
+                rt.anchorMax = new Vector2(0f, 1f);
+                rt.pivot = new Vector2(0f, 1f);
+                rt.anchoredPosition = new Vector2(24f, -8f);
+                rt.sizeDelta = new Vector2(360f, 24f);
+            }
+            themeFilterLabel.text = $"현재 테마 필터: {RoomEditThemeFilter.DescribeActive()}";
+        }
+
         // Clears the inventory content row and rebuilds it from the entries that
         // match the currently selected toolbar category. Called on init and on every
         // category click so the inventory always reflects the active tab.
@@ -841,6 +1027,8 @@ namespace App.Bootstrap
             {
                 return;
             }
+
+            ApplyThemeFilterLabel();
 
             for (var i = inventoryContentRoot.transform.childCount - 1; i >= 0; i--)
             {
@@ -854,7 +1042,16 @@ namespace App.Bootstrap
             }
 
             // v1.0 customization — 1:1 카테고리 매핑이 명확한 toolbar 키는 CustomizationCatalog로 처리.
-            // 묶음 탭(FURNITURE/OBJECT_SKIN)은 후속 PR에서 sub-탭화.
+            // FURNITURE는 sub-tab(책상/책장스킨/대시보드스킨)으로 분기. OBJECT_SKIN은 후속 PR에서 sub-탭화.
+            if (selectedToolbarKey == "FURNITURE")
+            {
+                if (TryResolveFurnitureSubCategory(selectedFurnitureSubKey, out var furnitureCategory))
+                {
+                    BuildCustomizationSlots(inventoryContentRoot.transform, furnitureCategory);
+                    return;
+                }
+            }
+
             if (TryResolveCustomizationCategory(selectedToolbarKey, out var category))
             {
                 BuildCustomizationSlots(inventoryContentRoot.transform, category);
@@ -899,12 +1096,17 @@ namespace App.Bootstrap
                 return;
             }
 
+            int rendered = 0;
             for (int i = 0; i < catalog.Entries.Count; i++)
             {
                 var entry = catalog.Entries[i];
                 if (entry == null) continue;
+                // 상단 메뉴 테마 필터 적용. 빈 ThemeTag (legacy/공통) 는 항상 통과.
+                if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag)) continue;
                 BuildCustomizationSlot(parent, i, category, entry);
+                rendered++;
             }
+            Debug.Log($"[RoomEditModeController] Theme={RoomEditThemeFilter.DescribeActive()}, Category={category}, ResultCount={rendered}");
         }
 
         private CustomizationCatalogAsset LoadCategoryCatalog(CustomizationCategory category)
@@ -1171,6 +1373,14 @@ namespace App.Bootstrap
             themeApplier.Apply(theme);
             RebuildInventorySlots();
 
+            // local preview 전용 테마 — placeholder (가구/벽지/바닥 미제작). 명시 플래그 + assetId<=0 fallback.
+            // RoomThemeApplier 는 라이팅만 영향. POST /spaces/me/theme/{id}/apply 는 skip (401/403 회피).
+            if (IsLocalPreviewTheme(theme))
+            {
+                Debug.Log($"[RoomEditModeController] Skip PATCH for local preview theme: {theme.DisplayName} (assetId={theme.AssetId}, mode={mode})");
+                return;
+            }
+
             EnsureThemeUseCase();
             if (themeUseCase == null)
             {
@@ -1279,6 +1489,20 @@ namespace App.Bootstrap
             ApplyEntryVisual(category, entry);
             if (entry.AssetId > 0) lastAppliedEntries[category] = entry.AssetId;
             RebuildInventorySlots();
+
+            // local preview 전용 entry — 사용자 inventory 에 없는 placeholder. PATCH 시 401(인증)/403(S006) 으로 거부되므로
+            // 백엔드 호출 자체를 skip 하고 RoomLighting 하위에 Preview Light 만 갱신.
+            // 명시적 IsLocalPreview 플래그 + assetId 범위 fallback 으로 robust 판정 (catalog 재생성 안 해도 동작).
+            if (IsLocalPreviewEntry(entry))
+            {
+                if (category == CustomizationCategory.InteriorLight || category == CustomizationCategory.ExteriorLight)
+                {
+                    ApplyLocalLightingPreview(category, entry);
+                    Debug.Log($"[RoomEditModeController] Local preview lighting applied: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
+                }
+                Debug.Log($"[RoomEditModeController] Skip PATCH for local preview item: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
+                return;
+            }
 
             // 백엔드 PATCH wiring
             EnsureSpaceSettingsRepository();
@@ -1419,6 +1643,119 @@ namespace App.Bootstrap
             {
                 Debug.LogWarning($"[RoomEditModeController] {category} 매칭 0개 (entry={entry.DisplayName}).");
             }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Local preview detection + RoomLighting GameObject 생성
+        //
+        // catalog asset 의 isLocalPreview 가 disk 에 박힌 상태가 아니어도 (이전 placeholder 메뉴 실행본 등),
+        // assetId 범위만으로 placeholder 판정해 PATCH 401/403 차단. DesignPreviewPackCreatorUtility 가
+        // 사용하는 ID range 는 100000+ (legacy 무테마) / 200000+ (5 테마별). 진짜 서버 inventory item 은
+        // 이 범위 밖이라고 가정 (현재 BE schema 상 assetId 가 BIGINT auto-increment 라 실제 운영 ID 와 충돌 없음).
+        private const long LocalPreviewAssetIdMin = 100000L;
+        private const long LocalPreviewAssetIdMax = 299999L;
+
+        private static bool IsLocalPreviewEntry(CustomizationEntry entry)
+        {
+            if (entry == null) return false;
+            if (entry.IsLocalPreview) return true;
+            return entry.AssetId >= LocalPreviewAssetIdMin && entry.AssetId <= LocalPreviewAssetIdMax;
+        }
+
+        private static bool IsLocalPreviewTheme(RoomThemeAsset theme)
+        {
+            if (theme == null) return false;
+            if (theme.IsLocalPreview) return true;
+            // assetId == 0 이면 backend 미연결 — 기존 ApplyThemeSelected 도 이미 0 일 때 PATCH skip 했음.
+            return theme.AssetId <= 0;
+        }
+
+        // local preview 클릭 시 RoomLighting 하위에 Preview Light GameObject 를 생성/갱신.
+        // 사용자 요구사항: RoomLighting/Preview_InternalLight, RoomLighting/Preview_ExternalLight.
+        // 같은 카테고리 재클릭 시 기존 Light 컴포넌트 재사용 → 중복 생성 차단.
+        // 다른 테마 조명을 클릭하면 같은 자식이 색/강도만 갱신 (이름 동일 → Find 매칭).
+        private const string PreviewLightingRootName = "RoomLighting";
+        private const string PreviewInternalLightName = "Preview_InternalLight";
+        private const string PreviewExternalLightName = "Preview_ExternalLight";
+
+        // RoomLighting 루트 cache — ApplyLocalLightingPreview 가 매 클릭마다 GameObject.Find(전체 씬 scan)
+        // 호출하지 않도록. 씬 reload / 외부 destroy 로 transform null 이 되면 재해결.
+        // (MR 109 review — simonjiho #4 / 0w0n2x #2)
+        private Transform cachedPreviewLightingRoot;
+
+        private Transform ResolveOrCreatePreviewLightingRoot()
+        {
+            if (cachedPreviewLightingRoot != null)
+            {
+                return cachedPreviewLightingRoot;
+            }
+            var existing = GameObject.Find(PreviewLightingRootName);
+            if (existing == null)
+            {
+                existing = new GameObject(PreviewLightingRootName);
+            }
+            cachedPreviewLightingRoot = existing.transform;
+            return cachedPreviewLightingRoot;
+        }
+
+        private void ApplyLocalLightingPreview(CustomizationCategory category, CustomizationEntry entry)
+        {
+            var rootTransform = ResolveOrCreatePreviewLightingRoot();
+            var rootGo = rootTransform.gameObject;
+
+            string childName;
+            bool isInterior;
+            if (category == CustomizationCategory.InteriorLight)
+            {
+                childName = PreviewInternalLightName;
+                isInterior = true;
+            }
+            else if (category == CustomizationCategory.ExteriorLight)
+            {
+                childName = PreviewExternalLightName;
+                isInterior = false;
+            }
+            else
+            {
+                return;
+            }
+
+            var existing = rootGo.transform.Find(childName);
+            GameObject lightGo = existing != null
+                ? existing.gameObject
+                : new GameObject(childName);
+            if (existing == null)
+            {
+                lightGo.transform.SetParent(rootGo.transform, false);
+            }
+
+            var light = lightGo.GetComponent<Light>();
+            if (light == null)
+            {
+                light = lightGo.AddComponent<Light>();
+            }
+
+            if (isInterior)
+            {
+                // 천장 가까운 룸 중심에 Point — RoomHeight 약 2.8m 이므로 y=2.4 정도.
+                light.type = LightType.Point;
+                lightGo.transform.localPosition = new Vector3(0f, 2.4f, 0f);
+                light.range = 6f;
+            }
+            else
+            {
+                // 외부광 — 통창(back wall, +Z 방향) 너머에서 안쪽으로 비춤. Natural 은 intensity 자체가 강함.
+                light.type = LightType.Directional;
+                lightGo.transform.localPosition = Vector3.zero;
+                lightGo.transform.localRotation = Quaternion.Euler(35f, 200f, 0f);
+            }
+
+            light.color = entry.LightColor;
+            light.useColorTemperature = true;
+            light.colorTemperature = entry.ColorTemperatureKelvin;
+            light.intensity = entry.LightIntensity;
+            // 프리뷰는 그림자 비활성 — 모바일/Editor 성능 + URP 리얼타임 그림자 budget 보존.
+            light.shadows = LightShadows.None;
         }
 
         // RoomGameObjectPatterns에 통합된 매칭 규칙을 카테고리별로 위임. RoomThemeApplier와 동일.
@@ -2422,6 +2759,7 @@ namespace App.Bootstrap
             // restore the camera viewport so a re-loaded scene doesn't inherit a
             // partial rect.
             EndCameraViewportEdit();
+            RoomEditThemeFilter.Changed -= HandleThemeFilterChanged;
         }
 
         // Toolbar ------------------------------------------------------------------
@@ -2435,6 +2773,7 @@ namespace App.Bootstrap
             }
             selectedToolbarKey = key;
             ApplyToolbarSelectionVisuals();
+            UpdateFurnitureSubToolbarVisibility();
             RebuildInventorySlots();
         }
 

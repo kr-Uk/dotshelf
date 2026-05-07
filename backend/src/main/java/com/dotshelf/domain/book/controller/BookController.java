@@ -77,6 +77,7 @@ public class BookController {
         );
     }
 
+    @Operation(summary = "추천 도서 조회", description = "현재 사용자에게 추천할 도서 목록을 지정한 개수만큼 조회합니다.")
     @GetMapping("/books/recommended")
     public ApiResponse<BookListResponse> recommended(
             @CurrentUser Long userId,
@@ -85,6 +86,7 @@ public class BookController {
         return ApiResponse.success(bookService.getRecommended(userId, limit));
     }
 
+    @Operation(summary = "도서 랭킹 조회", description = "장르, 가격 유형, 정렬 조건으로 랭킹 도서 목록을 커서 기반으로 조회합니다.")
     @GetMapping("/books/ranking")
     public ApiResponse<BookListResponse> ranking(
             @CurrentUser Long userId,
@@ -97,11 +99,13 @@ public class BookController {
         return ApiResponse.success(bookService.getRanking(userId, genre, priceType, cursor, sort, limit));
     }
 
+    @Operation(summary = "도서 상세 조회", description = "도서 ID로 도서 상세 정보와 현재 사용자의 상호작용 상태를 조회합니다.")
     @GetMapping("/books/{bookId}")
     public ApiResponse<BookResponse> getBook(@CurrentUser Long userId, @PathVariable Long bookId) {
         return ApiResponse.success(bookService.getBook(userId, bookId));
     }
 
+    @Operation(summary = "도서 리뷰 목록 조회", description = "도서 ID로 리뷰 목록을 정렬 조건과 커서 기반 페이지로 조회합니다.")
     @GetMapping("/books/{bookId}/reviews")
     public ApiResponse<BookReviewListResponse> getReviews(
             @PathVariable Long bookId,
@@ -112,6 +116,7 @@ public class BookController {
         return ApiResponse.success(bookReviewService.getReviews(bookId, sort, cursor, limit));
     }
 
+    @Operation(summary = "도서 리뷰 작성", description = "현재 사용자가 지정한 도서에 리뷰를 작성합니다.")
     @PostMapping("/books/{bookId}/reviews")
     public ApiResponse<BookReviewResponse> createReview(
             @CurrentUser Long userId,
@@ -121,6 +126,7 @@ public class BookController {
         return ApiResponse.success(bookReviewService.createReview(userId, bookId, request));
     }
 
+    @Operation(summary = "내 책장에 도서 추가", description = "기존 도서를 현재 사용자의 지정한 책장에 추가합니다.")
     @PostMapping("/bookshelves/{bookshelfId}/books")
     public ApiResponse<UserBookResponse> addToShelf(
             @CurrentUser Long userId,
@@ -140,6 +146,7 @@ public class BookController {
         return ApiResponse.success(bookService.addKakaoBookToShelf(userId, bookshelfId, request));
     }
 
+    @Operation(summary = "내 책 정보 수정", description = "현재 사용자의 보유 도서 읽기 상태, 메모 등 사용자별 책 정보를 수정합니다.")
     @PatchMapping("/user-books/{userBookId}")
     public ApiResponse<UserBookResponse> updateUserBook(
             @CurrentUser Long userId,
@@ -149,6 +156,7 @@ public class BookController {
         return ApiResponse.success(bookService.updateUserBook(userId, userBookId, request));
     }
 
+    @Operation(summary = "내 책 이동", description = "현재 사용자의 보유 도서를 다른 책장 또는 섹션 위치로 이동합니다.")
     @PostMapping("/user-books/{userBookId}/move")
     public ApiResponse<UserBookResponse> move(
             @CurrentUser Long userId,
@@ -158,22 +166,26 @@ public class BookController {
         return ApiResponse.success(bookService.move(userId, userBookId, request));
     }
 
+    @Operation(summary = "내 책 보관 처리", description = "현재 사용자의 보유 도서를 보관 상태로 변경합니다.")
     @PostMapping("/user-books/{userBookId}/archive")
     public ApiResponse<UserBookResponse> archive(@CurrentUser Long userId, @PathVariable Long userBookId) {
         return ApiResponse.success(bookService.archive(userId, userBookId));
     }
 
+    @Operation(summary = "내 책 삭제", description = "현재 사용자의 보유 도서를 삭제합니다.")
     @DeleteMapping("/user-books/{userBookId}")
     public ApiResponse<Void> delete(@CurrentUser Long userId, @PathVariable Long userBookId) {
         bookService.delete(userId, userBookId);
         return ApiResponse.success();
     }
 
+    @Operation(summary = "보관한 내 책 조회", description = "현재 사용자가 보관 처리한 보유 도서 목록을 조회합니다.")
     @GetMapping("/user-books/archived")
     public ApiResponse<UserBookListResponse> getArchived(@CurrentUser Long userId) {
         return ApiResponse.success(bookService.getArchived(userId));
     }
 
+    @Operation(summary = "내 책 배치 목록 조회", description = "현재 사용자의 보유 도서를 상태, 책장, 섹션 조건으로 조회합니다.")
     @GetMapping("/user-books")
     public ApiResponse<UserBookPlacementListResponse> getUserBooks(
             @CurrentUser Long userId,
@@ -194,11 +206,13 @@ public class BookController {
         ));
     }
 
+    @Operation(summary = "내 책 좋아요", description = "현재 사용자의 보유 도서에 좋아요를 추가하고 현재 토글 상태를 반환합니다.")
     @PostMapping("/user-books/{userBookId}/like")
     public ApiResponse<ToggleResponse> like(@CurrentUser Long userId, @PathVariable Long userBookId) {
         return ApiResponse.success(bookService.like(userId, userBookId));
     }
 
+    @Operation(summary = "내 책 좋아요 취소", description = "현재 사용자의 보유 도서 좋아요를 취소하고 현재 토글 상태를 반환합니다.")
     @DeleteMapping("/user-books/{userBookId}/like")
     public ApiResponse<ToggleResponse> unlike(@CurrentUser Long userId, @PathVariable Long userBookId) {
         return ApiResponse.success(bookService.unlike(userId, userBookId));

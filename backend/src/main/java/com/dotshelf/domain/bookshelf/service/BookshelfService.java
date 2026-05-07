@@ -13,7 +13,6 @@ import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.entity.UserAssetInventory;
 import com.dotshelf.domain.asset.repository.AssetRepository;
 import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
-import com.dotshelf.domain.book.entity.Book;
 import com.dotshelf.domain.book.entity.UserBook;
 import com.dotshelf.domain.book.repository.BookRepository;
 import com.dotshelf.domain.book.repository.UserBookRepository;
@@ -38,7 +37,6 @@ import com.dotshelf.domain.bookshelf.entity.BookshelfSection;
 import com.dotshelf.domain.bookshelf.repository.BookshelfItemRepository;
 import com.dotshelf.domain.bookshelf.repository.BookshelfRepository;
 import com.dotshelf.domain.bookshelf.repository.BookshelfSectionRepository;
-import com.dotshelf.domain.readingrecord.entity.ReadingRecord;
 import com.dotshelf.domain.readingrecord.repository.ReadingRecordRepository;
 import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.service.SpaceService;
@@ -48,7 +46,9 @@ import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -77,17 +77,25 @@ public class BookshelfService {
     }
 
     public BookshelfRenderResponse getItems(Long userId, Long bookshelfId) {
+        // 진단 로그 — 500 발생 시 어느 단계에서 끊겼는지 GlobalExceptionHandler 의 stack trace 와 함께 식별 가능.
+        // 단계별 size 출력으로 데이터 깨짐(orphan FK) / 빈 결과 vs 예외 구분.
+        // log.debug — getItems 는 메인/책장 동기화에서 빈도 높은 read endpoint 라 info 면 운영 로그 폭주 + userId
+        // 식별자 누적. 의심 케이스(orphan FK)만 warn 으로 emit. (MR 113 review skh1205 [P3])
+        log.debug("getItems userId={} bookshelfId={}", userId, bookshelfId);
         Bookshelf bookshelf = getBookshelf(bookshelfId);
         requireReadable(userId, bookshelf);
         List<BookshelfSection> sections = sectionRepository.findByBookshelfIdOrderByRowNoAscColumnNoAsc(bookshelfId);
         List<BookshelfItem> items = bookshelfItemRepository.findByBookshelfIdAndStatusOrderByBookshelfSectionIdAscSlotNoAsc(bookshelfId, "ACTIVE");
+        log.debug("getItems bookshelfId={} sections={} items={}", bookshelfId, sections.size(), items.size());
         Map<Long, BookshelfSection> sectionsById = sections.stream()
                 .collect(Collectors.toMap(BookshelfSection::getId, Function.identity()));
         Map<Long, UserBook> userBooks = userBooksById(items);
-        Map<Long, Book> books = booksById(userBooks);
-        Map<Long, ReadingRecord> readingRecords = readingRecordsByUserBookId(userBooks);
+        Map<Long, BookSummaryResponse> books = bookSummariesById(userBooks);
+        Map<Long, ReadingRecordSummaryResponse> readingRecords = readingRecordSummariesByUserBookId(userBooks);
         Map<Long, UserAssetInventory> inventories = inventoriesById(items);
         Map<Long, Asset> assets = assetsById(inventories);
+        log.debug("getItems bookshelfId={} userBooks={} books={} readingRecords={} inventories={} assets={}",
+                bookshelfId, userBooks.size(), books.size(), readingRecords.size(), inventories.size(), assets.size());
         return new BookshelfRenderResponse(
                 BookshelfResponse.from(bookshelf),
                 sections.stream()
@@ -303,31 +311,42 @@ public class BookshelfService {
                 .collect(Collectors.toMap(UserBook::getId, Function.identity()));
     }
 
-    private Map<Long, Book> booksById(Map<Long, UserBook> userBooks) {
+    private Map<Long, BookSummaryResponse> bookSummariesById(Map<Long, UserBook> userBooks) {
         List<Long> bookIds = userBooks.values().stream()
                 .map(UserBook::getBookId)
+                .filter(id -> id != null)
                 .distinct()
                 .toList();
         if (bookIds.isEmpty()) {
             return Map.of();
         }
-        return bookRepository.findAllById(bookIds).stream()
-                .collect(Collectors.toMap(Book::getId, Function.identity()));
+        return bookRepository.findBookshelfRenderSummariesByIdIn(bookIds).stream()
+                .collect(Collectors.toMap(BookSummaryResponse::bookId, Function.identity()));
     }
 
-    private Map<Long, ReadingRecord> readingRecordsByUserBookId(Map<Long, UserBook> userBooks) {
+    private Map<Long, ReadingRecordSummaryResponse> readingRecordSummariesByUserBookId(Map<Long, UserBook> userBooks) {
         List<Long> userBookIds = userBooks.values().stream()
                 .map(UserBook::getId)
+                .filter(id -> id != null)
                 .distinct()
                 .toList();
         if (userBookIds.isEmpty()) {
             return Map.of();
         }
-        return readingRecordRepository.findByUserBookIdInAndStatus(userBookIds, "ACTIVE").stream()
+        return readingRecordRepository.findBookshelfRenderSummariesByUserBookIdInAndStatus(userBookIds, "ACTIVE").stream()
                 .collect(Collectors.toMap(
-                        ReadingRecord::getUserBookId,
+                        ReadingRecordSummaryResponse::userBookId,
                         Function.identity(),
-                        (left, right) -> left.getUpdatedAt().isAfter(right.getUpdatedAt()) ? left : right
+                        // 같은 user_book 에 ACTIVE record 가 둘 이상이면 더 최근 것 채택. updatedAt 이 null 인 케이스
+                        // (직접 INSERT 시드 데이터 등) 에서 isAfter 가 NPE 던지지 않도록 null-safe 비교.
+                        (left, right) -> {
+                            java.time.Instant l = left.updatedAt();
+                            java.time.Instant r = right.updatedAt();
+                            if (l == null && r == null) return left;
+                            if (l == null) return right;
+                            if (r == null) return left;
+                            return l.isAfter(r) ? left : right;
+                        }
                 ));
     }
 
@@ -347,6 +366,7 @@ public class BookshelfService {
     private Map<Long, Asset> assetsById(Map<Long, UserAssetInventory> inventories) {
         List<Long> assetIds = inventories.values().stream()
                 .map(UserAssetInventory::getAssetId)
+                .filter(id -> id != null)
                 .distinct()
                 .toList();
         if (assetIds.isEmpty()) {
@@ -361,17 +381,38 @@ public class BookshelfService {
             BookshelfItem item,
             Map<Long, BookshelfSection> sectionsById,
             Map<Long, UserBook> userBooks,
-            Map<Long, Book> books,
-            Map<Long, ReadingRecord> readingRecords,
+            Map<Long, BookSummaryResponse> books,
+            Map<Long, ReadingRecordSummaryResponse> readingRecords,
             Map<Long, UserAssetInventory> inventories,
             Map<Long, Asset> assets
     ) {
-        UserBook userBook = userBooks.get(item.getUserBookId());
-        Book book = userBook == null ? null : books.get(userBook.getBookId());
-        BookshelfSection section = sectionsById.get(item.getBookshelfSectionId());
-        ReadingRecord record = userBook == null ? null : visibleReadingRecord(viewerUserId, userBook, readingRecords.get(userBook.getId()));
-        UserAssetInventory inventory = inventories.get(item.getAssetInventoryId());
-        Asset asset = inventory == null ? null : assets.get(inventory.getAssetId());
+        UserBook userBook = getIfPresent(userBooks, item.getUserBookId());
+        BookSummaryResponse book = userBook == null ? null : getIfPresent(books, userBook.getBookId());
+        BookshelfSection section = getIfPresent(sectionsById, item.getBookshelfSectionId());
+        ReadingRecordSummaryResponse record = userBook == null ? null : visibleReadingRecord(viewerUserId, userBook, getIfPresent(readingRecords, userBook.getId()));
+        UserAssetInventory inventory = getIfPresent(inventories, item.getAssetInventoryId());
+        Asset asset = inventory == null ? null : getIfPresent(assets, inventory.getAssetId());
+        // Orphan FK 진단 — 깨진 참조 데이터를 운영자가 식별할 수 있도록 warn 로그 (NPE 자체는 위 null 가드가 막음).
+        // userBookId/sectionId/inventoryId 가 not null 인데 매핑된 entity 가 없으면 FK 무결성 깨짐 의심.
+        if (item.getUserBookId() != null && userBook == null) {
+            log.warn("orphan userBook itemId={} userBookId={} bookshelfId={}",
+                    item.getId(), item.getUserBookId(), item.getBookshelfId());
+        }
+        if (userBook != null && userBook.getBookId() != null && book == null) {
+            log.warn("orphan book itemId={} userBookId={} bookId={}",
+                    item.getId(), userBook.getId(), userBook.getBookId());
+        }
+        if (item.getBookshelfSectionId() != null && section == null) {
+            log.warn("orphan section itemId={} sectionId={} bookshelfId={}",
+                    item.getId(), item.getBookshelfSectionId(), item.getBookshelfId());
+        }
+        if (item.getAssetInventoryId() != null && inventory == null) {
+            log.warn("orphan inventory itemId={} inventoryId={}", item.getId(), item.getAssetInventoryId());
+        }
+        if (inventory != null && inventory.getAssetId() != null && asset == null) {
+            log.warn("orphan asset itemId={} inventoryId={} assetId={}",
+                    item.getId(), inventory.getId(), inventory.getAssetId());
+        }
         return new BookshelfRenderItemResponse(
                 item.getId(),
                 item.getItemType(),
@@ -384,7 +425,7 @@ public class BookshelfService {
                 item.getRotationDeg(),
                 item.getUserBookId(),
                 UserBookSummaryResponse.from(userBook),
-                BookSummaryResponse.from(book),
+                book,
                 item.getAssetInventoryId(),
                 asset == null ? null : new AssetSummaryResponse(
                         asset.getId(),
@@ -392,21 +433,28 @@ public class BookshelfService {
                         asset.getName(),
                         asset.getPreviewImageUrl()
                 ),
-                ReadingRecordSummaryResponse.from(record)
+                record
         );
     }
 
-    private ReadingRecord visibleReadingRecord(Long viewerUserId, UserBook userBook, ReadingRecord record) {
+    private static <K, V> V getIfPresent(Map<K, V> map, K key) {
+        if (map == null || key == null) {
+            return null;
+        }
+        return map.get(key);
+    }
+
+    private ReadingRecordSummaryResponse visibleReadingRecord(Long viewerUserId, UserBook userBook, ReadingRecordSummaryResponse record) {
         if (record == null || userBook == null) {
             return null;
         }
-        if (userBook.getUserId().equals(viewerUserId)) {
+        if (viewerUserId != null && viewerUserId.equals(userBook.getUserId())) {
             return record;
         }
-        if ("PUBLIC".equalsIgnoreCase(record.getVisibilityScope())) {
+        if ("PUBLIC".equalsIgnoreCase(record.visibilityScope())) {
             return record;
         }
-        if ("FOLLOWERS".equalsIgnoreCase(record.getVisibilityScope())
+        if ("FOLLOWERS".equalsIgnoreCase(record.visibilityScope())
                 && viewerUserId != null
                 && followRepository.existsByFollowerUserIdAndFollowingUserId(viewerUserId, userBook.getUserId())) {
             return record;

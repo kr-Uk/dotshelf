@@ -19,6 +19,9 @@ namespace BookshelfPorting.Runtime
         private long? currentSpaceId;
         private bool configured;
         private bool isRefreshing;
+        private Action<bool, string> refreshCompletion;
+        private int itemsLoadFailureCount;
+        private string firstItemsLoadFailureMessage;
         // Lifetime: per-controller instance. BE visit endpoint is not strictly
         // idempotent (visit count) so we de-dupe at the FE level — re-entering
         // the same other-user space within a single play session counts once.
@@ -30,6 +33,8 @@ namespace BookshelfPorting.Runtime
         private bool CanUseServerApi => IsConfigured && !IsLocalDevModeActive();
 
         public bool IsServerSyncEnabled => CanUseServerApi;
+
+        public bool IsRefreshing => isRefreshing;
 
         public void Configure(
             NotebookApiClient apiClient,
@@ -56,10 +61,17 @@ namespace BookshelfPorting.Runtime
 #endif
         }
 
-        public void RefreshFromServer()
+        public void RefreshFromServer(Action<bool, string> onCompleted = null)
         {
-            if (!IsConfigured || isRefreshing)
+            if (!IsConfigured)
             {
+                onCompleted?.Invoke(false, "책장 API 동기화가 아직 준비되지 않았습니다.");
+                return;
+            }
+
+            if (isRefreshing)
+            {
+                onCompleted?.Invoke(false, "책장 새로고침이 이미 진행 중입니다.");
                 return;
             }
 
@@ -69,10 +81,11 @@ namespace BookshelfPorting.Runtime
             // visible. Replaces the former IsGuestSession gate (MR #88).
             if (APIManager.Instance == null || !APIManager.Instance.HasAccessToken)
             {
+                onCompleted?.Invoke(false, "로그인 정보가 없어 책장 새로고침을 건너뜁니다.");
                 return;
             }
 
-            isRefreshing = true;
+            BeginRefresh(onCompleted);
             client.GetMySpace(
                 space =>
                 {
@@ -113,6 +126,14 @@ namespace BookshelfPorting.Runtime
                 });
         }
 
+        private void BeginRefresh(Action<bool, string> onCompleted)
+        {
+            isRefreshing = true;
+            refreshCompletion = onCompleted;
+            itemsLoadFailureCount = 0;
+            firstItemsLoadFailureMessage = null;
+        }
+
         // External entry point for "visit another user's space" flows
         // (search result click, dashboard, deep link, etc.). Caller must
         // resolve the spaceId — this method does NOT take a hardcoded ID.
@@ -133,7 +154,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            isRefreshing = true;
+            BeginRefresh(null);
             client.GetSpace(
                 spaceId,
                 space =>
@@ -632,11 +653,15 @@ namespace BookshelfPorting.Runtime
             return true;
         }
 
-        public void ToggleReadingRecordLike(BookEntity book, bool liked, Action<BookEntity> onUpdated = null)
+        public bool ToggleReadingRecordLike(
+            BookEntity book,
+            bool liked,
+            Action<BookEntity> onUpdated = null,
+            Action<string> onFailed = null)
         {
             if (!CanUseServerApi || book == null || !TryParseId(book.readingRecordId, out var recordId))
             {
-                return;
+                return false;
             }
 
             Action<ToggleResponseDto> success = response =>
@@ -653,7 +678,12 @@ namespace BookshelfPorting.Runtime
 
                 onUpdated?.Invoke(book);
             };
-            Action<ApiErrorResponseDto> failure = error => Debug.LogWarning($"Reading record like update failed: {FormatError(error)}");
+            Action<ApiErrorResponseDto> failure = error =>
+            {
+                var message = FormatUserFacingError(error);
+                Debug.LogWarning($"Reading record like update failed: {FormatError(error)}");
+                onFailed?.Invoke(message);
+            };
             if (liked)
             {
                 client.LikeReadingRecord(recordId, success, failure);
@@ -662,13 +692,18 @@ namespace BookshelfPorting.Runtime
             {
                 client.UnlikeReadingRecord(recordId, success, failure);
             }
+
+            return true;
         }
 
-        public void FetchReadingRecordComments(BookEntity book, Action<IReadOnlyList<CommentResponseDto>> onLoaded = null)
+        public bool FetchReadingRecordComments(
+            BookEntity book,
+            Action<IReadOnlyList<CommentResponseDto>> onLoaded = null,
+            Action<string> onFailed = null)
         {
             if (!CanUseServerApi || book == null || !TryParseId(book.readingRecordId, out var recordId))
             {
-                return;
+                return false;
             }
 
             client.GetReadingRecordComments(
@@ -679,17 +714,27 @@ namespace BookshelfPorting.Runtime
                     book.reportCommentCount = comments.Count;
                     onLoaded?.Invoke(comments);
                 },
-                error => Debug.LogWarning($"Reading record comments load failed: {FormatError(error)}"));
+                error =>
+                {
+                    var message = FormatUserFacingError(error);
+                    Debug.LogWarning($"Reading record comments load failed: {FormatError(error)}");
+                    onFailed?.Invoke(message);
+                });
+            return true;
         }
 
-        public void CreateReadingRecordComment(BookEntity book, string content, Action<CommentResponseDto> onCreated = null)
+        public bool CreateReadingRecordComment(
+            BookEntity book,
+            string content,
+            Action<CommentResponseDto> onCreated = null,
+            Action<string> onFailed = null)
         {
             if (!CanUseServerApi ||
                 book == null ||
                 string.IsNullOrWhiteSpace(content) ||
                 !TryParseId(book.readingRecordId, out var recordId))
             {
-                return;
+                return false;
             }
 
             client.CreateReadingRecordComment(
@@ -700,7 +745,13 @@ namespace BookshelfPorting.Runtime
                     book.reportCommentCount = Mathf.Max(0, book.reportCommentCount + 1);
                     onCreated?.Invoke(response);
                 },
-                error => Debug.LogWarning($"Reading record comment create failed: {FormatError(error)}"));
+                error =>
+                {
+                    var message = FormatUserFacingError(error);
+                    Debug.LogWarning($"Reading record comment create failed: {FormatError(error)}");
+                    onFailed?.Invoke(message);
+                });
+            return true;
         }
 
         public void DeleteReadingRecordComment(long commentId, Action onDeleted = null)
@@ -1055,11 +1106,14 @@ namespace BookshelfPorting.Runtime
                 error => Debug.LogWarning($"Interior object add failed: {FormatError(error)}"));
         }
 
-        public void SaveReadingRecord(BookEntity book)
+        public bool SaveReadingRecord(
+            BookEntity book,
+            Action<BookEntity> onSucceeded = null,
+            Action<string> onFailed = null)
         {
             if (!CanUseServerApi || book == null || !TryParseId(book.userBookId, out var userBookId))
             {
-                return;
+                return false;
             }
 
             var request = new ReadingRecordRequestDto
@@ -1075,15 +1129,34 @@ namespace BookshelfPorting.Runtime
                 client.UpdateReadingRecord(
                     recordId,
                     request,
-                    response => ApplyReadingRecordResponse(book, response),
-                    error => Debug.LogWarning($"Reading record update failed: {FormatError(error)}"));
-                return;
+                    response =>
+                    {
+                        ApplyReadingRecordResponse(book, response);
+                        onSucceeded?.Invoke(book);
+                    },
+                    error =>
+                    {
+                        var message = FormatUserFacingError(error);
+                        Debug.LogWarning($"Reading record update failed: {FormatError(error)}");
+                        onFailed?.Invoke(message);
+                    });
+                return true;
             }
 
             client.CreateReadingRecord(
                 request,
-                response => ApplyReadingRecordResponse(book, response),
-                error => Debug.LogWarning($"Reading record create failed: {FormatError(error)}"));
+                response =>
+                {
+                    ApplyReadingRecordResponse(book, response);
+                    onSucceeded?.Invoke(book);
+                },
+                error =>
+                {
+                    var message = FormatUserFacingError(error);
+                    Debug.LogWarning($"Reading record create failed: {FormatError(error)}");
+                    onFailed?.Invoke(message);
+                });
+            return true;
         }
 
         private IEnumerator RefreshAfterSceneSettles()
@@ -1094,10 +1167,15 @@ namespace BookshelfPorting.Runtime
 
         private void LoadBookshelfItems(BookshelfListResponseDto response)
         {
+            itemsLoadFailureCount = 0;
+            firstItemsLoadFailureMessage = null;
+
             var shelves = response?.Bookshelves ?? new List<BookshelfResponseDto>();
             if (shelves.Count == 0)
             {
-                FinishRefresh(false, "서버 책장 목록이 비어 있습니다.");
+                generator.ApplyServerBookshelves(Array.Empty<BookshelfRuntimeApiSnapshot>());
+                experienceManager?.NotifyBookshelfApiSynced();
+                FinishRefresh(true, null);
                 return;
             }
 
@@ -1120,6 +1198,26 @@ namespace BookshelfPorting.Runtime
             }
 
             var shelf = shelves[index];
+
+            // 진단 — items API path 의 id 자리에 spaceId 가 잘못 들어가는지 가시화. 정상 응답은 spaceId != id.
+            // BE 버그 / DTO 매핑 실수 의심 케이스 (id == 0 또는 spaceId == id) 는 명시적으로 경고 + 호출 skip.
+            if (shelf.Id <= 0)
+            {
+                Debug.LogWarning(
+                    $"[Bookshelf] shelf.Id 비유효 (id={shelf.Id}, spaceId={shelf.SpaceId}) — items API skip + 빈 snapshot fallback. " +
+                    "BE 응답의 'id' 필드 누락/0 값 의심.");
+                snapshots.Add(MapShelfOnly(shelf));
+                LoadBookshelfItemAt(shelves, snapshots, index + 1);
+                return;
+            }
+            if (shelf.SpaceId > 0 && shelf.SpaceId == shelf.Id)
+            {
+                Debug.LogWarning(
+                    $"[Bookshelf] shelf.SpaceId == shelf.Id ({shelf.Id}) — BE 가 같은 값을 반환 중. " +
+                    "/v1/bookshelves/{id}/items 가 spaceId 로 호출되는 것처럼 보일 수 있음. BE 측 점검 필요.");
+            }
+            Debug.Log($"[Bookshelf] GET /v1/bookshelves/{shelf.Id}/items (spaceId={shelf.SpaceId}, displayOrder={shelf.DisplayOrder})");
+
             client.GetBookshelfItems(
                 shelf.Id,
                 render =>
@@ -1129,8 +1227,12 @@ namespace BookshelfPorting.Runtime
                 },
                 error =>
                 {
-                    Debug.LogWarning($"Bookshelf items load failed: {FormatError(error)}");
-                    snapshots.Add(MapShelfOnly(shelf));
+                    TrackBookshelfItemsLoadFailure(shelf, error);
+                    Debug.LogWarning(
+                        $"[Bookshelf] items load failed (bookshelfId={shelf.Id}, spaceId={shelf.SpaceId}): {FormatError(error)} - preserving previous shelf snapshot when available.");
+                    var fallback = MapShelfOnly(shelf);
+                    fallback.ItemsLoadFailed = true;
+                    snapshots.Add(fallback);
                     LoadBookshelfItemAt(shelves, snapshots, index + 1);
                 });
         }
@@ -1236,13 +1338,42 @@ namespace BookshelfPorting.Runtime
             return snapshot;
         }
 
+        private void TrackBookshelfItemsLoadFailure(BookshelfResponseDto shelf, ApiErrorResponseDto error)
+        {
+            itemsLoadFailureCount++;
+            if (!string.IsNullOrWhiteSpace(firstItemsLoadFailureMessage))
+            {
+                return;
+            }
+
+            var shelfName = string.IsNullOrWhiteSpace(shelf?.Name) ? "책장" : shelf.Name;
+            firstItemsLoadFailureMessage = $"{shelfName}: {FormatUserFacingError(error)}";
+        }
+
         private void FinishRefresh(bool success, string message)
         {
+            var hasItemsLoadFailure = success && itemsLoadFailureCount > 0;
+            var completionSuccess = success && !hasItemsLoadFailure;
+            var completionMessage = message;
+            if (hasItemsLoadFailure)
+            {
+                completionMessage = itemsLoadFailureCount == 1
+                    ? $"책장 내용 조회에 실패했습니다. {firstItemsLoadFailureMessage}"
+                    : $"{itemsLoadFailureCount}개 책장 내용 조회에 실패했습니다. {firstItemsLoadFailureMessage}";
+                Debug.LogWarning($"Bookshelf API refresh completed with item load failures: {completionMessage}");
+            }
+
             isRefreshing = false;
             if (!success && !string.IsNullOrWhiteSpace(message))
             {
                 Debug.LogWarning($"Bookshelf API refresh skipped: {message}");
             }
+
+            var completion = refreshCompletion;
+            refreshCompletion = null;
+            itemsLoadFailureCount = 0;
+            firstItemsLoadFailureMessage = null;
+            completion?.Invoke(completionSuccess, completionMessage);
         }
 
         private static void ApplyUserBookResponse(BookEntity book, UserBookResponseDto response)

@@ -72,6 +72,9 @@ namespace App.Auth
             Action<AuthTokenResponseDto> onSuccess,
             Action<ApiErrorResponseDto> onError)
         {
+            // Editor/Build 의 baseUrl 일관성 확인용 — code/state 등 민감 정보 노출 안 함
+            // (SendJson 내부 Redact 가 이미 다룸).
+            Debug.Log($"[Auth] POST /v1/auth/social-login baseUrl={baseUrl}");
             return StartCoroutine(SendJson("/v1/auth/social-login", request, onSuccess, onError));
         }
 
@@ -235,11 +238,13 @@ namespace App.Auth
                 || string.Equals(scheme, "wss", StringComparison.OrdinalIgnoreCase);
         }
 
-        // Redact provider/access/refresh tokens and OIDC nonce from JSON bodies before
-        // they reach Debug.Log. Unity logs leak through editor consoles, device logcat,
-        // CI batchmode logs, and crash reports, so the raw token must never be written.
+        // Redact provider/access/refresh tokens, OIDC nonce, OAuth code/state, and PKCE codeVerifier
+        // from JSON bodies before they reach Debug.Log. Unity logs leak through editor consoles, device
+        // logcat, CI batchmode logs, and crash reports, so the raw values must never be written.
+        // PKCE codeVerifier (RFC 7636) — BE forwards it to the OAuth provider for code/challenge
+        // verification; if logged it lets an attacker reuse a stolen authorization code (MR 113 review skh1205 [P2]).
         private static readonly Regex SensitiveFieldRegex = new Regex(
-            "\"(token|accessToken|refreshToken|idToken|access_token|refresh_token|id_token|nonce|guestSessionId|guest_session_id|code|state)\"\\s*:\\s*\"[^\"]*\"",
+            "\"(token|accessToken|refreshToken|idToken|access_token|refresh_token|id_token|nonce|guestSessionId|guest_session_id|code|state|codeVerifier|code_verifier)\"\\s*:\\s*\"[^\"]*\"",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static string Redact(string body)

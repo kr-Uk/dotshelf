@@ -1,6 +1,7 @@
 using System;
 using App.Application.Dashboard;
 using App.Domain.Dashboard;
+using UnityEngine;
 
 namespace App.Infrastructure.Api.Dashboard
 {
@@ -15,11 +16,14 @@ namespace App.Infrastructure.Api.Dashboard
 
         public void LoadDashboard(long spaceId, Action<DashboardSnapshot> onSuccess, Action<DashboardApiError> onError)
         {
-            client.GetSpaceDashboard(
-                spaceId,
-                period: "weekly",
-                onSuccess: dto => onSuccess?.Invoke(DashboardDtoMapper.MapSnapshot(dto)),
-                onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
+            if (spaceId <= 0L)
+            {
+                Debug.LogWarning($"[Dashboard][ApiRepo] LoadDashboard skip — invalid spaceId={spaceId}.");
+                onError?.Invoke(new DashboardApiError { Code = "INVALID_INPUT", Message = "잘못된 공간 정보입니다." });
+                return;
+            }
+
+            FetchDashboard(spaceId, onSuccess, onError);
         }
 
         public void LoadMyDashboard(Action<DashboardSnapshot> onSuccess, Action<DashboardApiError> onError)
@@ -33,8 +37,19 @@ namespace App.Infrastructure.Api.Dashboard
                         return;
                     }
 
-                    LoadDashboard(spaceDto.Id, onSuccess, onError);
+                    Debug.Log($"[Dashboard][ApiRepo] LoadMyDashboard resolved /v1/spaces/me → id={spaceDto.Id}. fetching dashboard.");
+                    FetchDashboard(spaceDto.Id, onSuccess, onError);
                 },
+                onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
+        }
+
+        private void FetchDashboard(long spaceId, Action<DashboardSnapshot> onSuccess, Action<DashboardApiError> onError)
+        {
+            Debug.Log($"[Dashboard][ApiRepo] GET /v1/spaces/{spaceId}/dashboard?period=weekly");
+            client.GetSpaceDashboard(
+                spaceId,
+                period: "weekly",
+                onSuccess: dto => onSuccess?.Invoke(DashboardDtoMapper.MapSnapshot(dto)),
                 onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
         }
 

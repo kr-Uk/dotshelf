@@ -34,13 +34,14 @@ class GoogleTokenVerifierTest {
     private HttpServer tokenServer;
     private String tokenUri;
     private final AtomicReference<String> tokenRequestBody = new AtomicReference<>();
+    private final AtomicReference<String> tokenResponse = new AtomicReference<>("{\"id_token\":\"not-a-jwt\"}");
 
     @BeforeEach
     void setUp() throws Exception {
         tokenServer = HttpServer.create(new InetSocketAddress(0), 0);
         tokenServer.createContext("/token", exchange -> {
             tokenRequestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] response = "{\"id_token\":\"not-a-jwt\"}".getBytes(StandardCharsets.UTF_8);
+            byte[] response = tokenResponse.get().getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, response.length);
             try (OutputStream outputStream = exchange.getResponseBody()) {
@@ -127,6 +128,76 @@ class GoogleTokenVerifierTest {
         assertThat(tokenRequestBody.get()).isNull();
     }
 
+    @Test
+    @DisplayName("Google은 ACCESS_TOKEN 타입을 INVALID_INPUT으로 거절한다")
+    void verify_withAccessToken_throwsInvalidInput() {
+        GoogleTokenVerifier verifier = verifier();
+
+        assertThatThrownBy(() -> verifier.verify("access-token", SocialTokenType.ACCESS_TOKEN, REDIRECT_URI, null, null))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+        assertThat(tokenRequestBody.get()).isNull();
+    }
+
+    @Test
+    @DisplayName("Google token 응답에 id_token이 없으면 INVALID_TOKEN을 던진다")
+    void verify_tokenResponseWithoutIdToken_throwsInvalidToken() {
+        tokenResponse.set("{}");
+        GoogleTokenVerifier verifier = verifier();
+
+        assertThatThrownBy(() -> verifier.verify("authorization-code", SocialTokenType.AUTHORIZATION_CODE, REDIRECT_URI, null, null))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_TOKEN);
+        assertThat(tokenRequestBody.get()).contains("code=authorization-code");
+    }
+
+    @Test
+    @DisplayName("Google server auth code 흐름에서 server client id가 없으면 INVALID_TOKEN을 던진다")
+    void verify_missingServerClientId_throwsInvalidToken() {
+        GoogleTokenVerifier verifier = new GoogleTokenVerifier(RestClient.builder(), properties(null, CLIENT_SECRET, null, null));
+
+        assertThatThrownBy(() -> verifier.verify("authorization-code", SocialTokenType.AUTHORIZATION_CODE, REDIRECT_URI, null, null))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_TOKEN);
+        assertThat(tokenRequestBody.get()).isNull();
+    }
+
+    @Test
+    @DisplayName("Google server auth code 흐름에서 client secret이 없으면 INVALID_TOKEN을 던진다")
+    void verify_missingClientSecret_throwsInvalidToken() {
+        GoogleTokenVerifier verifier = new GoogleTokenVerifier(RestClient.builder(), properties(SERVER_CLIENT_ID, null, null, null));
+
+        assertThatThrownBy(() -> verifier.verify("authorization-code", SocialTokenType.AUTHORIZATION_CODE, REDIRECT_URI, null, null))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_TOKEN);
+        assertThat(tokenRequestBody.get()).isNull();
+    }
+
+    @Test
+    @DisplayName("PKCE 흐름에서 desktop secret이 있으면 client_secret도 함께 전송한다")
+    void verify_withPkceAndDesktopSecret_sendsDesktopSecret() {
+        GoogleTokenVerifier verifier = new GoogleTokenVerifier(RestClient.builder(), properties(
+                SERVER_CLIENT_ID,
+                CLIENT_SECRET,
+                DESKTOP_CLIENT_ID,
+                "desktop-secret"
+        ));
+
+        assertThatThrownBy(() -> verifier.verify("auth-code", SocialTokenType.AUTHORIZATION_CODE, REDIRECT_URI, null, VALID_CODE_VERIFIER))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_TOKEN);
+
+        assertThat(tokenRequestBody.get())
+                .contains("client_id=" + DESKTOP_CLIENT_ID)
+                .contains("client_secret=desktop-secret")
+                .contains("code_verifier=" + VALID_CODE_VERIFIER);
+    }
+
     private GoogleTokenVerifier verifier() {
         return new GoogleTokenVerifier(RestClient.builder(), properties(null));
     }
@@ -136,16 +207,20 @@ class GoogleTokenVerifierTest {
     }
 
     private SocialLoginProperties properties(String desktopClientId) {
+        return properties(SERVER_CLIENT_ID, CLIENT_SECRET, desktopClientId, null);
+    }
+
+    private SocialLoginProperties properties(String serverClientId, String clientSecret, String desktopClientId, String desktopClientSecret) {
         return new SocialLoginProperties(
                 new SocialLoginProperties.Google(
-                        SERVER_CLIENT_ID,
-                        List.of(SERVER_CLIENT_ID),
+                        serverClientId,
+                        serverClientId == null ? List.of() : List.of(serverClientId),
                         List.of("https://accounts.google.com", "accounts.google.com"),
                         "http://127.0.0.1:1/keys",
-                        CLIENT_SECRET,
+                        clientSecret,
                         tokenUri,
                         desktopClientId,
-                        null  // desktopClientSecret — PKCE 단독 테스트
+                        desktopClientSecret
                 ),
                 null,
                 null
