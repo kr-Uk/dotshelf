@@ -107,13 +107,23 @@ namespace BookshelfPorting.Runtime
         {
             if (wallMaterial == null)
             {
-                // URP Lit shader 그대로 사용 + stencil property set. URP Lit 의
-                // ForwardLit pass Stencil block 이 [_Stencil] / [_StencilComp] property 사용
-                // 해 material 단에서 동작 제어 가능. PBR 톤 유지 + wall hole 동작.
-                wallMaterial = CreateLitMaterial("Wall", null, null, wallColor, 0.08f, false);
-                wallMaterial.SetFloat("_Stencil", 1f);
-                wallMaterial.SetFloat("_StencilComp", 6f); // NotEqual
-                wallMaterial.SetFloat("_StencilOp", 0f);   // Keep
+                // URP Lit 의 ForwardLit pass 에는 stencil block 자체가 없어 (XRMotionVectors
+                // 전용 + 하드코드) material property 로 stencil 동작 제어 불가.
+                // 우리 Dotshelf/WallStencilReader 가 URP Lit ForwardLit pass 그대로 + Stencil
+                // block 추가한 변형. PBR 톤 유지 + wall hole 동작.
+                var stencilShader = Shader.Find("Dotshelf/WallStencilReader");
+                if (stencilShader != null)
+                {
+                    wallMaterial = new Material(stencilShader) { name = "Wall" };
+                    wallMaterial.SetColor("_BaseColor", wallColor);
+                    wallMaterial.color = wallColor;
+                    wallMaterial.SetFloat("_Smoothness", 0.08f);
+                }
+                else
+                {
+                    Debug.LogWarning("[MaterialFactory] Dotshelf/WallStencilReader shader 못 찾음 — URP Lit fallback. wall hole 효과 비동작.");
+                    wallMaterial = CreateLitMaterial("Wall", null, null, wallColor, 0.08f, false);
+                }
             }
 
             return wallMaterial;
