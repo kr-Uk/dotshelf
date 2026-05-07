@@ -19,7 +19,6 @@ public partial class MainWindow : Window
     private const string LauncherDownloadUrl = "https://dotshelf.digital/download";
     private static readonly TimeSpan BannerRotationInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan BannerManualPauseDuration = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan DefaultHeroRotationInterval = TimeSpan.FromSeconds(5);
 
     private readonly ManifestClient manifestClient = new();
     private readonly EventsClient eventsClient = new();
@@ -27,8 +26,6 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer gameTimer = new();
     private readonly DispatcherTimer bannerRotateTimer = new();
     private readonly DispatcherTimer bannerResumeTimer = new();
-    private readonly DispatcherTimer defaultHeroRotateTimer = new();
-    private int defaultHeroIndex;
     private Process? launchedProcess;
     private readonly Random gameRandom = new();
     private readonly List<FallingGameItem> fallingGameItems = new();
@@ -61,14 +58,13 @@ public partial class MainWindow : Window
         gameTimer.Tick += GameTimer_Tick;
         bannerRotateTimer.Interval = BannerRotationInterval;
         bannerRotateTimer.Tick += BannerRotateTimer_Tick;
+        bannerRotateTimer.Start();
         bannerResumeTimer.Interval = BannerManualPauseDuration;
         bannerResumeTimer.Tick += BannerResumeTimer_Tick;
-        defaultHeroRotateTimer.Interval = DefaultHeroRotationInterval;
-        defaultHeroRotateTimer.Tick += DefaultHeroRotateTimer_Tick;
-        defaultHeroRotateTimer.Start();
         UpdateGameHud();
         ApplyUiState(LauncherUiState.Checking);
         Loaded += MainWindow_Loaded;
+        Closed += MainWindow_Closed;
     }
 
     private enum LauncherUiState
@@ -588,6 +584,7 @@ public partial class MainWindow : Window
     {
         try
         {
+            DetachLaunchedProcess();
             launchedProcess = process;
             process.EnableRaisingEvents = true;
             process.Exited += LaunchedProcess_Exited;
@@ -599,42 +596,45 @@ public partial class MainWindow : Window
         }
     }
 
+    private void DetachLaunchedProcess()
+    {
+        if (launchedProcess is { } previous)
+        {
+            previous.Exited -= LaunchedProcess_Exited;
+            previous.Dispose();
+            launchedProcess = null;
+        }
+    }
+
     private void LaunchedProcess_Exited(object? sender, EventArgs e)
     {
         Dispatcher.BeginInvoke(new Action(async () =>
         {
-            launchedProcess = null;
+            DetachLaunchedProcess();
             Log("DotShelf 앱이 종료되었습니다.");
             await RefreshLauncherStateAsync(resetProgress: false);
         }));
     }
 
-    private int TotalHeroSlots => activeBanners.Count;
-
-    private void HeroDefaultPrevButton_Click(object sender, RoutedEventArgs e) => CycleHero(-1);
-
-    private void HeroDefaultNextButton_Click(object sender, RoutedEventArgs e) => CycleHero(+1);
-
-    private void DefaultHeroRotateTimer_Tick(object? sender, EventArgs e)
+    private void MainWindow_Closed(object? sender, EventArgs e)
     {
-        if (TotalHeroSlots <= 1) return;
-        defaultHeroIndex = (defaultHeroIndex + 1) % TotalHeroSlots;
-        ApplyDefaultHeroIndex();
+        // Window 종료 시 외부 프로세스 핸들 정리 — Dispatcher 도 곧 shutdown 되므로
+        // Exited 콜백이 race 로 도착하기 전에 unsubscribe 해 둔다.
+        DetachLaunchedProcess();
     }
 
-    private void CycleHero(int delta)
+    private void CycleBanner(int delta)
     {
-        if (TotalHeroSlots == 0) return;
-        var total = TotalHeroSlots;
-        defaultHeroIndex = ((defaultHeroIndex + delta) % total + total) % total;
-        ApplyDefaultHeroIndex();
-        defaultHeroRotateTimer.Stop();
-        defaultHeroRotateTimer.Start();
+        if (activeBanners.Count == 0) return;
+        var total = activeBanners.Count;
+        currentBannerIndex = ((currentBannerIndex + delta) % total + total) % total;
+        ApplyBannerIndex();
+        bannerRotateTimer.Stop();
+        bannerRotateTimer.Start();
     }
 
-    private void ApplyDefaultHeroIndex()
+    private void ApplyBannerIndex()
     {
-        // 배너 없으면 hero 영역 자체를 접어 공간을 회수.
         if (activeBanners.Count == 0)
         {
             HeroSlot.Visibility = Visibility.Collapsed;
@@ -643,14 +643,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (defaultHeroIndex >= activeBanners.Count) defaultHeroIndex = 0;
+        if (currentBannerIndex >= activeBanners.Count) currentBannerIndex = 0;
 
         HeroSlot.Visibility = Visibility.Visible;
         BannerRow.Visibility = Visibility.Visible;
-        currentBannerIndex = defaultHeroIndex;
-        RenderBanner(activeBanners[defaultHeroIndex]);
+        RenderBanner(activeBanners[currentBannerIndex]);
 
-        RebuildHeroDots(activeBanners.Count, defaultHeroIndex);
+        RebuildHeroDots(activeBanners.Count, currentBannerIndex);
     }
 
     private void RebuildHeroDots(int total, int activeIdx)
@@ -1075,20 +1074,11 @@ public partial class MainWindow : Window
 
     private void UpdateBannerUi()
     {
-        // 통합 회전: 4 default hero + activeBanners → 한 큐. 별도 banner timer 안 씀.
-        bannerRotateTimer.Stop();
         bannerResumeTimer.Stop();
+        currentBannerIndex = 0;
+        ApplyBannerIndex();
 
-        if (currentBannerIndex >= activeBanners.Count)
-        {
-            currentBannerIndex = 0;
-        }
-
-        // 슬롯 0..3 = default hero, 4.. = real banners. 시작은 default 1번부터.
-        defaultHeroIndex = 0;
-        ApplyDefaultHeroIndex();
-
-        var hasMultiple = (4 + activeBanners.Count) > 1;
+        var hasMultiple = activeBanners.Count > 1;
         BannerPrevButton.IsEnabled = hasMultiple;
         BannerNextButton.IsEnabled = hasMultiple;
     }
@@ -1130,24 +1120,26 @@ public partial class MainWindow : Window
 
     private void BannerRotateTimer_Tick(object? sender, EventArgs e)
     {
-        // 통합 회전으로 이관 — 이 timer는 더 이상 자동 시작하지 않음.
+        if (activeBanners.Count <= 1) return;
+        currentBannerIndex = (currentBannerIndex + 1) % activeBanners.Count;
+        ApplyBannerIndex();
     }
 
     private void BannerResumeTimer_Tick(object? sender, EventArgs e)
     {
         bannerResumeTimer.Stop();
-        defaultHeroRotateTimer.Start();
+        bannerRotateTimer.Start();
     }
 
     private void BannerPrevButton_Click(object sender, RoutedEventArgs e)
     {
-        CycleHero(-1);
+        CycleBanner(-1);
         PauseBannerRotation();
     }
 
     private void BannerNextButton_Click(object sender, RoutedEventArgs e)
     {
-        CycleHero(+1);
+        CycleBanner(+1);
         PauseBannerRotation();
     }
 
@@ -1173,22 +1165,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ShowNextBanner()
-    {
-        if (activeBanners.Count == 0)
-        {
-            return;
-        }
-
-        currentBannerIndex = (currentBannerIndex + 1) % activeBanners.Count;
-        RenderBanner(activeBanners[currentBannerIndex]);
-    }
-
     private void PauseBannerRotation()
     {
-        defaultHeroRotateTimer.Stop();
+        bannerRotateTimer.Stop();
         bannerResumeTimer.Stop();
-        if (TotalHeroSlots > 1)
+        if (activeBanners.Count > 1)
         {
             bannerResumeTimer.Start();
         }

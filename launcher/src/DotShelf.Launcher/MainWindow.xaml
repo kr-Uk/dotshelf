@@ -130,8 +130,6 @@
             </Setter>
         </Style>
 
-        <Style x:Key="CompactSecondaryButtonStyle" BasedOn="{StaticResource SecondaryButtonStyle}" TargetType="Button" />
-        <Style x:Key="PrimaryButtonStyle" BasedOn="{StaticResource SecondaryButtonStyle}" TargetType="Button" />
 
         <!-- ============ Window controls (28×28 ghost) ============ -->
         <Style x:Key="WindowButtonStyle" TargetType="Button">
