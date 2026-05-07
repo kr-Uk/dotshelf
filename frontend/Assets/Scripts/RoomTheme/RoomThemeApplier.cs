@@ -196,9 +196,14 @@ namespace Dotshelf.Scripts.RoomTheme
             return spawned;
         }
 
-        // wall deco 는 spec.WallSide 가 명시한 wall transform 자식으로 spawn — local 좌표계가
-        // 그 벽 기준이 되어 spec authoring 시 '왼쪽 벽 가운데 (0, 1.5, 0)' 같은 위치 표기 가능.
-        // wallSide==None 또는 매칭 wall 못 찾으면 fallback parent (themeDecoRoot) 자식으로 spawn.
+        // wall deco — wall transform 을 직접 parent 로 안 씀 (BookshelfGenerator.CreateBox 가
+        // wall 의 actual size 를 transform.localScale 에 넣음 — 그 자식이 되면 spec 의
+        // localPosition/Scale 이 wall 의 non-uniform scale 에 곱해져 deco 가 찌그러짐).
+        // 대신 themeDecoRoot (scale 1) 자식 + wall surface anchor 의 world coord 변환.
+        //
+        // Authoring 좌표계: spec.LocalPosition 은 wall surface 기준 (X/Y 는 wall 평면, Z 는
+        // 벽에서 룸 안쪽 방향). TryGetWallSurfaceAnchor 가 wall 의 inner face center 와
+        // 정면 향한 회전을 반환 → spec local 을 그 frame 에서 world 로 변환.
         private int SpawnWallDecoSpecs(IReadOnlyList<RoomThemeDecoSpec> specs, Transform fallbackParent)
         {
             if (specs == null) return 0;
@@ -207,10 +212,39 @@ namespace Dotshelf.Scripts.RoomTheme
             {
                 var spec = specs[i];
                 if (spec == null || spec.Prefab == null) continue;
-                var wallParent = ResolveWallTransform(spec.WallSide) ?? fallbackParent;
-                spawned += SpawnSingleSpec(spec, wallParent);
+                spawned += SpawnWallSpecAtAnchor(spec, fallbackParent);
             }
             return spawned;
+        }
+
+        // wall anchor world 좌표계로 spec 적용. anchor 못 찾으면 fallbackParent local 로 fallback
+        // + warning. parent 는 항상 fallbackParent (scale 1) — wall mesh scale 영향 차단.
+        private int SpawnWallSpecAtAnchor(RoomThemeDecoSpec spec, Transform fallbackParent)
+        {
+            if (spec == null || spec.Prefab == null) return 0;
+
+            var go = Instantiate(spec.Prefab, fallbackParent);
+            spawnedThemeDecos.Add(go);
+
+            if (TryGetWallSurfaceAnchor(spec.WallSide, out var anchorPos, out var anchorRot))
+            {
+                // wall surface frame 의 local → world 변환
+                var worldPos = anchorPos + anchorRot * spec.LocalPosition;
+                var worldRot = anchorRot * Quaternion.Euler(spec.LocalRotation);
+                go.transform.SetPositionAndRotation(worldPos, worldRot);
+                go.transform.localScale = spec.LocalScale;
+            }
+            else
+            {
+                if (spec.WallSide != WallSide.None)
+                {
+                    Debug.LogWarning($"[RoomThemeApplier] WallSide.{spec.WallSide} 의 wall transform 못 찾음 — themeDecoRoot 기준 fallback. Wall 이름이 'LeftWall'/'RightWall'/'BackWall' (또는 *_Strip suffix) 인지 확인.");
+                }
+                go.transform.localPosition = spec.LocalPosition;
+                go.transform.localEulerAngles = spec.LocalRotation;
+                go.transform.localScale = spec.LocalScale;
+            }
+            return 1;
         }
 
         private int SpawnSingleSpec(RoomThemeDecoSpec spec, Transform parent)
@@ -224,8 +258,76 @@ namespace Dotshelf.Scripts.RoomTheme
             return 1;
         }
 
-        // WallSide → 룸의 wall GameObject transform. RoomGameObjectPatterns.Wall과 1:1 매핑.
-        // roomRoot 미설정이거나 매칭 wall GameObject 없으면 null. 호출부는 fallback 처리.
+        // wall 의 inner face center world position + rotation 산출. wall mesh transform 의
+        // scale 영향 안 받도록 mesh 의 worldBounds 사용 + strips 다중 매칭 (BackWall 처럼
+        // 분할 wall 도 통합). rotation 은 wall normal (룸 안쪽 방향) 을 +Z 로 하는 LookRotation.
+        //
+        // RoomGameObjectPatterns.IsWallName 의 prefix 매칭 사용 → BackWall_LeftStrip 등 strips
+        // 모두 같은 wall 로 인식 + bounds 통합. wallSide=Back 시 strips 의 union bounds 의
+        // inner face center 가 anchor.
+        private bool TryGetWallSurfaceAnchor(WallSide wall, out Vector3 worldPos, out Quaternion worldRot)
+        {
+            worldPos = Vector3.zero;
+            worldRot = Quaternion.identity;
+            if (wall == WallSide.None || roomRoot == null) return false;
+
+            Bounds? unionBounds = null;
+            var renderers = roomRoot.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var name = renderers[i].gameObject.name;
+                if (!RoomGameObjectPatterns.IsWallName(name)) continue;
+                if (WallSideForName(name) != wall) continue;
+                if (unionBounds == null) unionBounds = renderers[i].bounds;
+                else { var b = unionBounds.Value; b.Encapsulate(renderers[i].bounds); unionBounds = b; }
+            }
+            if (unionBounds == null) return false;
+
+            // wall normal (룸 안쪽 방향) + inner face center
+            Vector3 normal;
+            Vector3 surfaceCenter = unionBounds.Value.center;
+            switch (wall)
+            {
+                case WallSide.Left:
+                    normal = Vector3.right;
+                    surfaceCenter.x = unionBounds.Value.max.x; // inner face = max.x (룸 안쪽 방향)
+                    break;
+                case WallSide.Right:
+                    normal = Vector3.left;
+                    surfaceCenter.x = unionBounds.Value.min.x;
+                    break;
+                case WallSide.Back:
+                    normal = Vector3.back;
+                    surfaceCenter.z = unionBounds.Value.min.z;
+                    break;
+                case WallSide.Front:
+                    normal = Vector3.forward;
+                    surfaceCenter.z = unionBounds.Value.max.z;
+                    break;
+                default: return false;
+            }
+            worldPos = surfaceCenter;
+            // anchor 의 +Z 가 wall 의 inner face normal (룸 안쪽). spec 작성자가
+            // localPosition.z 양수로 두면 wall 에서 룸 안쪽으로 나옴.
+            worldRot = Quaternion.LookRotation(normal);
+            return true;
+        }
+
+        // RoomGameObjectPatterns 의 prefix 매칭과 일치하는 GameObject name → WallSide 변환.
+        // RoomEditModeController 의 같은 이름 함수와 동일 로직.
+        private static WallSide WallSideForName(string name)
+        {
+            if (name == "LeftWall" || name.StartsWith("LeftWall_")) return WallSide.Left;
+            if (name == "RightWall" || name.StartsWith("RightWall_")) return WallSide.Right;
+            if (name == "BackWall" || name.StartsWith("BackWall_")) return WallSide.Back;
+            if (name == "FrontWall" || name.StartsWith("FrontWall_")) return WallSide.Front;
+            return WallSide.None;
+        }
+
+        // legacy — ResolveWallTransform 은 wall mesh transform 을 직접 parent 로 사용했었음.
+        // wall 의 non-uniform scale 이 spec 좌표계에 곱해지는 [P1] 버그로 폐기. anchor 기반 변환
+        // (TryGetWallSurfaceAnchor) 으로 대체. 호출부 없음.
+        [System.Obsolete("Use TryGetWallSurfaceAnchor — wall mesh scale 영향 회피")]
         private Transform ResolveWallTransform(WallSide side)
         {
             if (side == WallSide.None || roomRoot == null) return null;
