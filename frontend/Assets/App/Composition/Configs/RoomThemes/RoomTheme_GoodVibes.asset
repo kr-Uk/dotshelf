@@ -38,9 +38,9 @@ MonoBehaviour:
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: e3f4a5b6c7d8901234567890abcdef03, type: 3}
     wallSide: 0
-    localPosition: {x: -1.0, y: 0.7, z: -1.5}
-    localRotation: {x: 0, y: 0, z: 0}
-    localScale: {x: 0.4, y: 0.4, z: 0.4}
+    localPosition: {x: -1.672, y: 0.831, z: -0.29}
+    localRotation: {x: 0, y: 90, z: 0}
+    localScale: {x: 0.3, y: 0.3, z: 0.3}
     anchorTag: "monitor"
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: e6f7a8b9c0d1234567890123abcdef06, type: 3}
