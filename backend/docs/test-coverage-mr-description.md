@@ -10,6 +10,7 @@
 - Controller, Service, Repository/JPA, Integration 테스트 기반을 추가했습니다.
 - Auth/User/Space/Book/Bookshelf/Asset/ReadingRecord/Guestbook/Report/Notification/Payment/Admin 주요 플로우 테스트를 추가했습니다.
 - PostgreSQL Testcontainers 기반 JPA 검증을 추가했습니다.
+- PostgreSQL 17 Testcontainers 기반 Flyway V1~V20 migration/backfill 검증을 추가했습니다.
 - Jacoco line coverage gate를 85%로 상향했습니다.
 - GitLab CI에서 Postgres Testcontainers 테스트와 Jacoco 리포트 아티팩트를 실행/보관하도록 보강했습니다.
 
@@ -68,6 +69,13 @@
   - GlobalExceptionHandler 주요 예외 변환
   - S3 storage wrapper, 이미지 매직 바이트 검증, 업로드 예외 변환
 
+- Migration
+  - Flyway로 V1~V19를 실제 migrate한 뒤 기존 사용자/공간 데이터를 seed
+  - V20 적용 시 활성 Space가 없는 활성 사용자에게만 기본 공간 backfill
+  - 기존 활성 Space 중복 생성 방지
+  - 삭제된 Space만 있는 활성 사용자는 새 활성 Space 생성
+  - `DELETED` status 또는 `deleted_at` 존재 사용자는 제외
+
 ## CI / Test Infra
 
 - `build.gradle.kts`
@@ -93,7 +101,7 @@
 ./gradlew.bat clean build -DrunPostgresTests=true
 
 BUILD SUCCESSFUL
-tests=497 failures=0 errors=0 skipped=0
+tests=498 failures=0 errors=0 skipped=0
 Jacoco excluded line coverage=86.25%
 covered=3231 missed=515 total=3746
 ```

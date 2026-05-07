@@ -9,7 +9,7 @@
 
 백엔드 테스트 기반을 Controller / Service / Repository / Integration 레이어로 넓히고, PostgreSQL Testcontainers와 Jacoco coverage gate를 CI에 연결했다.
 
-최종 검증 기준은 `./gradlew.bat clean build -DrunPostgresTests=true`이며, 테스트 `497개`, 실패 `0개`, 제외 기준 line coverage `86.25%`로 Jacoco gate `85%`를 통과한다.
+최종 검증 기준은 `./gradlew.bat clean build -DrunPostgresTests=true`이며, 테스트 `498개`, 실패 `0개`, 제외 기준 line coverage `86.25%`로 Jacoco gate `85%`를 통과한다.
 
 기능 로직도 함께 보강했다. 소셜 신규 가입 시 기본 `Space`가 생성되도록 했고, 기존 사용자 중 활성 `Space`가 없는 계정은 migration으로 backfill한다. 책장 데코 아이템 매핑에서 `assetInventoryId == null`일 때 NPE가 나지 않게 방어했다.
 
@@ -60,6 +60,7 @@ tasks.named<org.gradle.testing.jacoco.tasks.JacocoCoverageVerification>("jacocoT
 - Admin
 - Global error / Security / Health
 - S3 storage / 이미지 업로드 검증
+- Flyway V1~V20 migration / 기존 사용자 Space backfill
 
 ### 3. 신규 소셜 가입 시 기본 Space 생성 보장
 
@@ -97,6 +98,20 @@ tasks.named<org.gradle.testing.jacoco.tasks.JacocoCoverageVerification>("jacocoT
 `IntegrationTestSupport`는 기본적으로 `@Transactional` rollback 격리를 사용한다. 이 방식은 테스트 데이터 정리가 단순하지만 실제 commit이 발생하지 않는다.
 
 그래서 `@TransactionalEventListener(phase = AFTER_COMMIT)`처럼 commit 후 listener가 발사되어야 하는 흐름은 이 베이스를 상속하지 않고, 테스트별 cleanup으로 격리한다. 알림 flow처럼 production commit 경계가 중요한 테스트는 이 규칙을 따라야 한다.
+
+### V20 migration을 실제 Flyway 경로로 검증
+
+V20은 기존 사용자에게 기본 `Space`를 backfill하는 운영 DB migration이다. JPA `ddl-auto=create-drop` 테스트로는 SQL 문법, Flyway 순서, 데이터 보강 결과를 검증할 수 없으므로 PostgreSQL 17 Testcontainers에서 Flyway를 직접 실행한다.
+
+테스트 흐름:
+
+- Flyway `target=19`로 V1~V19까지 실제 migrate
+- 기존 사용자와 기존/삭제 공간 데이터를 seed
+- Flyway `target=20`으로 V20만 추가 적용
+- 활성 Space가 없는 활성 사용자는 기본 공간 생성
+- 이미 활성 Space가 있는 사용자는 중복 생성 방지
+- 삭제된 Space만 있는 활성 사용자는 새 활성 Space 생성
+- `DELETED` status 또는 `deleted_at` 존재 사용자는 제외
 
 ### 테스트 지원 객체를 공통화
 
@@ -141,7 +156,7 @@ Payment와 Admin, Auth verifier는 성공 케이스만으로 충분하지 않다
 ./gradlew.bat clean build -DrunPostgresTests=true
 
 BUILD SUCCESSFUL
-tests=497 failures=0 errors=0 skipped=0
+tests=498 failures=0 errors=0 skipped=0
 Jacoco excluded line coverage=86.25%
 covered=3231 missed=515 total=3746
 ```
