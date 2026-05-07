@@ -1630,6 +1630,11 @@ namespace App.Bootstrap
             // 1) 이전 테마 spawn deco 정리 — 사용자 직접 placement 는 보존 (ThemeSpawnedMarker 로 구분)
             ClearThemeSpawnedDecos();
 
+            // 1.5) 이전 mesh swap 모두 native 복원. theme 의 defaultEntries 에 해당 카테고리
+            // entry 가 있으면 step 2 에서 다시 swap 적용. 없으면 native 유지 (기본 책상/책장 복귀).
+            // 이게 없으면 이전 산뜻 테마의 mesh swap 이 default theme 적용 후에도 유지됨.
+            RestoreAllMeshSwaps();
+
             // 2) 항시 카테고리 (Wallpaper/Floor/Desk/BookshelfSkin/DashboardSkin/InteriorLight/
             //    ExteriorLight) — ApplyEntryVisual 로 mesh / material / light swap
             var defaults = theme.DefaultEntries;
@@ -1943,6 +1948,19 @@ namespace App.Bootstrap
                 }
                 EnsureCollidersForGameObject(native.gameObject);
             }
+        }
+
+        // 모든 mesh swap 카테고리 native 복원 — RestoreCategoryNativeMesh 의 일괄 호출. 이전
+        // 테마의 mesh swap (e.g. 산뜻 책상) 을 native (procedural 책상/노트북) 로 되돌림.
+        // 새 테마의 defaultEntries 가 다시 swap 하면 그 시점에 새 mesh 로 교체.
+        private void RestoreAllMeshSwaps()
+        {
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            var roomRoot = themeApplier?.RoomRoot;
+            if (roomRoot == null) return;
+            RestoreCategoryNativeMesh(CustomizationCategory.Desk, roomRoot);
+            RestoreCategoryNativeMesh(CustomizationCategory.BookshelfSkin, roomRoot);
+            RestoreCategoryNativeMesh(CustomizationCategory.DashboardSkin, roomRoot);
         }
 
         // Desk entry 의 monitorPrefab spawn — book 책상 mesh swap 의 일부. 별도 GameObject (이름
