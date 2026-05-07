@@ -55,7 +55,7 @@ jwt:
 
 admin:
   test-auth:
-    enabled: ${ADMIN_TEST_AUTH_ENABLED:true}
+    enabled: ${ADMIN_TEST_AUTH_ENABLED:false}
     header-name: ${ADMIN_TEST_AUTH_HEADER_NAME:X-Test-Admin-User-Id}
 
 social:
