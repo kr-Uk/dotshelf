@@ -102,7 +102,7 @@ namespace App.Infrastructure.Api
                 isbn: isbn,
                 isbn13: isbn,
                 likeCount: dto.LikeCount,
-                bookshelfAddCount: dto.PlacementCount,
+                bookshelfAddCount: dto.EffectiveBookshelfAddCount,
                 ratingSum: dto.AvgRating * recordCount,
                 ratingCount: recordCount,
                 createdAt: now,

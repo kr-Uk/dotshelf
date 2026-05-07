@@ -14,7 +14,6 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -53,7 +52,7 @@ public class Book extends BaseEntity {
 
     private LocalDate publishedDate;
 
-    @Lob
+    @Column(columnDefinition = "TEXT")
     private String description;
 
     @Column(length = 500)
