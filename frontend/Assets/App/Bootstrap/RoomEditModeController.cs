@@ -1624,32 +1624,150 @@ namespace App.Bootstrap
         // PATCH 는 안 보냄 — visual 만. 사용자가 명시적으로 entry 클릭해야 BE 저장.
         private void ApplyThemeDefaultEntries(RoomThemeAsset theme)
         {
-            Debug.Log($"[RoomEditModeController] ApplyThemeDefaultEntries 진입 — theme={theme?.DisplayName ?? "null"}, defaults={(theme?.DefaultEntries?.Count ?? 0)}");
             if (theme == null) return;
+            Debug.Log($"[RoomEditModeController] ApplyThemeDefaultEntries 진입 — theme={theme.DisplayName}, defaults={(theme.DefaultEntries?.Count ?? 0)}, floorDecos={(theme.FloorDecoSpecs?.Count ?? 0)}, wallDecos={(theme.WallDecoSpecs?.Count ?? 0)}");
+
+            // 1) 이전 테마 spawn deco 정리 — 사용자 직접 placement 는 보존 (ThemeSpawnedMarker 로 구분)
+            ClearThemeSpawnedDecos();
+
+            // 2) 항시 카테고리 (Wallpaper/Floor/Desk/BookshelfSkin/DashboardSkin/InteriorLight/
+            //    ExteriorLight) — ApplyEntryVisual 로 mesh / material / light swap
             var defaults = theme.DefaultEntries;
-            if (defaults == null) return;
-            for (int i = 0; i < defaults.Count; i++)
+            if (defaults != null)
             {
-                var def = defaults[i];
-                if (def == null) continue;
-                Debug.Log($"[RoomEditModeController] default entry [{i}] {def.Category}:{def.AssetId}");
-                var catalog = LoadCategoryCatalog(def.Category);
-                if (catalog == null || catalog.Entries == null)
+                for (int i = 0; i < defaults.Count; i++)
                 {
-                    Debug.LogWarning($"[RoomEditModeController] catalog 못 찾음: {def.Category} — Resources/Catalogs/{def.Category}Catalog.asset 확인.");
-                    continue;
+                    var def = defaults[i];
+                    if (def == null) continue;
+                    var catalog = LoadCategoryCatalog(def.Category);
+                    if (catalog == null || catalog.Entries == null)
+                    {
+                        Debug.LogWarning($"[RoomEditModeController] catalog 못 찾음: {def.Category} — Resources/Catalogs/{def.Category}Catalog.asset 확인.");
+                        continue;
+                    }
+                    var entry = catalog.FindByAssetId(def.AssetId);
+                    if (entry == null)
+                    {
+                        Debug.LogWarning($"[RoomEditModeController] {theme.DisplayName} default entry {def.Category}:{def.AssetId} 못 찾음 — catalog 에 등록되어 있는지 확인.");
+                        continue;
+                    }
+                    ApplyEntryVisual(def.Category, entry);
+                    if (entry.AssetId > 0) lastAppliedEntries[def.Category] = entry.AssetId;
                 }
-                var entry = catalog.FindByAssetId(def.AssetId);
-                if (entry == null)
-                {
-                    Debug.LogWarning($"[RoomEditModeController] {theme.DisplayName} default entry {def.Category}:{def.AssetId} 못 찾음 — catalog 에 등록되어 있는지 확인.");
-                    continue;
-                }
-                Debug.Log($"[RoomEditModeController] ApplyEntryVisual({def.Category}, {entry.DisplayName}) — Prefab={(entry.Prefab != null)}");
-                ApplyEntryVisual(def.Category, entry);
-                if (entry.AssetId > 0) lastAppliedEntries[def.Category] = entry.AssetId;
             }
+
+            // 3) 설치 카테고리 (FloorDeco/WallDeco) — placedItemsRoot 자식으로 spawn,
+            //    DecorationItemMarker + ThemeSpawnedMarker 추가 → 사용자가 drag/select/delete 가능.
+            //    다른 테마 적용 시 ClearThemeSpawnedDecos 가 정리.
+            if (theme.FloorDecoSpecs != null)
+            {
+                for (int i = 0; i < theme.FloorDecoSpecs.Count; i++)
+                {
+                    SpawnThemeFloorDecoFromSpec(theme.FloorDecoSpecs[i]);
+                }
+            }
+            if (theme.WallDecoSpecs != null)
+            {
+                for (int i = 0; i < theme.WallDecoSpecs.Count; i++)
+                {
+                    SpawnThemeWallDecoFromSpec(theme.WallDecoSpecs[i]);
+                }
+            }
+
             RebuildInventorySlots();
+        }
+
+        // 테마 변경 시 이전 테마 spawn deco 정리. ThemeSpawnedMarker 가진 GameObject 만 destroy
+        // — 사용자 직접 placement (marker 없음) 는 보존. selection/drag 상태도 정리.
+        private void ClearThemeSpawnedDecos()
+        {
+            if (placedItemsRoot == null) return;
+            var markers = placedItemsRoot.GetComponentsInChildren<ThemeSpawnedMarker>(true);
+            for (int i = 0; i < markers.Length; i++)
+            {
+                if (markers[i] == null) continue;
+                var go = markers[i].gameObject;
+                if (selectedObject == go) selectedObject = null;
+                if (draggingObject == go) draggingObject = null;
+                if (UnityEngine.Application.isPlaying) Destroy(go);
+                else DestroyImmediate(go);
+            }
+        }
+
+        // 테마 floorDecoSpec → placedItemsRoot 자식 spawn. PlaceInventoryEntry 와 동일 시스템 —
+        // DecorationItemMarker + collider → 사용자가 클릭해 drag/delete 가능. ThemeSpawnedMarker
+        // 로 테마 자동 spawn 식별.
+        private void SpawnThemeFloorDecoFromSpec(RoomThemeDecoSpec spec)
+        {
+            if (spec == null || spec.Prefab == null) return;
+            EnsurePlacedItemsRoot();
+
+            var go = Instantiate(spec.Prefab);
+            go.name = $"ThemeDeco_Floor_{SanitizeName(spec.Prefab.name)}";
+            go.transform.SetParent(placedItemsRoot.transform, true);
+            // localPosition 을 룸 원점 기준 world 로 적용 (placedItemsRoot scale 1 가정).
+            go.transform.position = spec.LocalPosition;
+            go.transform.localEulerAngles = spec.LocalRotation;
+            go.transform.localScale = spec.LocalScale;
+
+            go.AddComponent<DecorationItemMarker>();
+            go.AddComponent<ThemeSpawnedMarker>();
+            EnsureCollidersForGameObject(go);
+        }
+
+        // 테마 wallDecoSpec → placedItemsRoot 자식 + WallDecoMarker (drag wall surface 동작). spec 의
+        // localPosition 은 wall surface anchor frame 기준 — themeApplier.TryGetWallSurfaceAnchor
+        // 로 world coord 변환. anchor 못 찾으면 fallback (localPosition 그대로 world).
+        private void SpawnThemeWallDecoFromSpec(RoomThemeDecoSpec spec)
+        {
+            if (spec == null || spec.Prefab == null) return;
+            EnsurePlacedItemsRoot();
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+
+            Vector3 worldPos;
+            Quaternion worldRot;
+            if (themeApplier != null && themeApplier.TryGetWallSurfaceAnchor(spec.WallSide, out var anchorPos, out var anchorRot))
+            {
+                worldPos = anchorPos + anchorRot * spec.LocalPosition;
+                worldRot = anchorRot * Quaternion.Euler(spec.LocalRotation);
+            }
+            else
+            {
+                Debug.LogWarning($"[RoomEditModeController] WallDecoSpec WallSide={spec.WallSide} anchor 못 찾음 — localPosition 을 world 로 fallback.");
+                worldPos = spec.LocalPosition;
+                worldRot = Quaternion.Euler(spec.LocalRotation);
+            }
+
+            var go = Instantiate(spec.Prefab);
+            go.name = $"ThemeDeco_Wall_{SanitizeName(spec.Prefab.name)}";
+            go.transform.SetParent(placedItemsRoot.transform, true);
+            go.transform.SetPositionAndRotation(worldPos, worldRot);
+            go.transform.localScale = spec.LocalScale;
+
+            var marker = go.AddComponent<WallDecoMarker>();
+            marker.CurrentWall = spec.WallSide;
+            marker.AllowRotation = false; // 테마 자동 spawn 은 회전 비활성 (사용자가 위치만 옮김)
+
+            go.AddComponent<DecorationItemMarker>();
+            go.AddComponent<ThemeSpawnedMarker>();
+            EnsureCollidersForGameObject(go);
+        }
+
+        // 일반화된 collider 보장 — EnsureCollidersForWallDeco 와 동일 로직 (mesh 자식에 MeshCollider).
+        // WallMaskQuad 는 stencil 전용이라 제외.
+        private static void EnsureCollidersForGameObject(GameObject go)
+        {
+            var meshFilters = go.GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < meshFilters.Length; i++)
+            {
+                var mf = meshFilters[i];
+                if (mf == null || mf.sharedMesh == null) continue;
+                if (mf.gameObject.name == "WallMaskQuad") continue;
+                if (mf.GetComponent<Collider>() != null) continue;
+                var collider = mf.gameObject.AddComponent<MeshCollider>();
+                collider.sharedMesh = mf.sharedMesh;
+                collider.convex = false;
+            }
         }
 
         // 카테고리별 visual swap. RoomThemeApplier의 RoomRoot/DirectionalLight reference를
