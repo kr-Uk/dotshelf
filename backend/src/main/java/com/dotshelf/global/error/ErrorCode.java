@@ -74,7 +74,14 @@ public enum ErrorCode {
 
     // Notification / Report
     NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "N001", "알림을 찾을 수 없습니다."),
-    REPORT_ALREADY_EXISTS(HttpStatus.CONFLICT, "RP001", "이미 신고한 대상입니다.");
+    REPORT_ALREADY_EXISTS(HttpStatus.CONFLICT, "RP001", "이미 신고한 대상입니다."),
+
+    // Storage / 업로드
+    STORAGE_INVALID_CONTENT_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ST001", "허용되지 않은 파일 형식입니다."),
+    STORAGE_FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "ST002", "파일 크기가 허용 범위를 초과했습니다."),
+    STORAGE_OBJECT_NOT_UPLOADED(HttpStatus.NOT_FOUND, "ST003", "업로드된 객체를 찾을 수 없습니다."),
+    STORAGE_INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "ST004", "스토리지 처리에 실패했습니다."),
+    STORAGE_INVALID_KEY(HttpStatus.BAD_REQUEST, "ST005", "유효하지 않은 객체 키입니다.");
 
     private final HttpStatus status;
     private final String code;

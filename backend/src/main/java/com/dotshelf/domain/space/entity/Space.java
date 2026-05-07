@@ -48,6 +48,9 @@ public class Space extends BaseEntity {
     @Column(nullable = false)
     private long layoutVersion = 0;
 
+    @Column(length = 500)
+    private String thumbnailUrl;
+
     private Long currentThemeInventoryId;
 
     // 카테고리별 개별 적용 항목. currentThemeInventoryId(전체 테마)와 독립적으로
@@ -94,6 +97,10 @@ public class Space extends BaseEntity {
     public long nextLayoutVersion() {
         this.layoutVersion += 1;
         return this.layoutVersion;
+    }
+
+    public void updateThumbnail(String thumbnailUrl) {
+        this.thumbnailUrl = thumbnailUrl;
     }
 
     public void applyTheme(Long inventoryId) {

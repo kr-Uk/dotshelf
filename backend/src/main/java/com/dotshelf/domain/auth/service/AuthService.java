@@ -132,6 +132,7 @@ public class AuthService {
                 .nickname(nickname)
                 .profileImageUrl(socialUser.profileImageUrl())
                 .build());
+        spaceService.ensureDefaultSpace(user.getId());
         notificationSettingRepository.save(UserNotificationSetting.builder()
                 .userId(user.getId())
                 .build());

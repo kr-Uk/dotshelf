@@ -189,6 +189,7 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
 - `C` Common, `A` Auth, `U` User, `B` Book, `S` Bookshelf/Space
 - `R` ReadingRecord/Review, `F` Follow, `AS` Asset, `G` Guestbook
 - `N` Notification, `RP` Report, `P` Payment, `FD` Feed
+- `ST` Storage (S3 업로드/presign 공통)
 - 신규 도메인 추가 시 충돌 없는 prefix 지정 후 이 목록 갱신
 
 ---

@@ -17,6 +17,13 @@ spring:
     time-zone: UTC
     default-property-inclusion: non_null
 
+  # multipart 기본 한도(1MB)는 Unity 자동 캡처 썸네일에는 부족.
+  # SpaceService.MAX_THUMBNAIL_SIZE_BYTES(2MB) 와 연동해 약간 여유를 둔다.
+  servlet:
+    multipart:
+      max-file-size: 4MB
+      max-request-size: 4MB
+
   jpa:
     properties:
       hibernate:
@@ -86,3 +93,16 @@ payment:
     return-url: ${INICIS_RETURN_URL:}
     close-url: ${INICIS_CLOSE_URL:}
     request-script-url: ${INICIS_REQUEST_SCRIPT_URL:https://stdpay.inicis.com/stdjs/INIStdPay.js}
+
+# 이미지/에셋 업로드용 S3 설정. 자격증명은 .env(local) / GitLab Variables(prod) 경유.
+# public-base-url 은 CDN(CloudFront) 또는 버킷 public URL — 클라가 GET 으로 보는 호스트.
+app:
+  storage:
+    s3:
+      bucket: ${S3_BUCKET:}
+      region: ${S3_REGION:ap-northeast-2}
+      access-key: ${S3_ACCESS_KEY:}
+      secret-key: ${S3_SECRET_KEY:}
+      public-base-url: ${S3_PUBLIC_BASE_URL:}
+      presign-ttl-seconds: ${S3_PRESIGN_TTL:300}
+      presign-bundle-ttl-seconds: ${S3_PRESIGN_BUNDLE_TTL:1800}
