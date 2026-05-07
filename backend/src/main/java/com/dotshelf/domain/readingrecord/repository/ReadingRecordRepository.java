@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.ReadingRecordSummaryResponse;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordSummary;
 import com.dotshelf.domain.readingrecord.entity.ReadingRecord;
 
@@ -16,6 +17,14 @@ public interface ReadingRecordRepository extends JpaRepository<ReadingRecord, Lo
     Optional<ReadingRecord> findByUserBookId(Long userBookId);
 
     List<ReadingRecord> findByUserBookIdInAndStatus(Collection<Long> userBookIds, String status);
+
+    @Query("SELECT new com.dotshelf.domain.bookshelf.dto.BookshelfDtos$ReadingRecordSummaryResponse("
+            + "r.id, r.userBookId, r.title, null, r.visibilityScope, r.likeCount, r.commentCount, r.createdAt, r.updatedAt) "
+            + "FROM ReadingRecord r WHERE r.userBookId IN :userBookIds AND r.status = :status")
+    List<ReadingRecordSummaryResponse> findBookshelfRenderSummariesByUserBookIdInAndStatus(
+            @Param("userBookIds") Collection<Long> userBookIds,
+            @Param("status") String status
+    );
 
     /**
      * 대시보드 \"독후감 풀 목록\" 정렬/페이지네이션용 단일 batch fetch.

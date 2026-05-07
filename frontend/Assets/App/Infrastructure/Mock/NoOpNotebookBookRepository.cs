@@ -134,6 +134,7 @@ namespace App.Infrastructure.Mock
                 PurchaseCount = source.PurchaseCount,
                 RecordCount = source.RecordCount,
                 PlacementCount = source.PlacementCount,
+                BookshelfAddCount = source.BookshelfAddCount > 0 ? source.BookshelfAddCount : source.PlacementCount,
                 HasPaidCover = source.HasPaidCover
             };
         }
@@ -192,6 +193,7 @@ namespace App.Infrastructure.Mock
                 PurchaseCount = paidCover ? Math.Max(1, reviews / 2) : 0,
                 RecordCount = records,
                 PlacementCount = placements,
+                BookshelfAddCount = placements,
                 HasPaidCover = paidCover
             };
         }
