@@ -473,10 +473,10 @@ MonoBehaviour:
   - provider: 1
     authorizeEndpoint: https://kauth.kakao.com/oauth/authorize
     clientId: d8c6ed5428758bd9a50e1f41a70d3d69
-    scope:
-    responseType:
+    scope: 
+    responseType: 
     useNonce: 0
-    extraQuery:
+    extraQuery: 
 --- !u!1 &122077081
 GameObject:
   m_ObjectHideFlags: 0

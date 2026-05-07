@@ -79,7 +79,7 @@ namespace Dotshelf.Scripts.Dashboard
                     spaceSettingsRepo = new MockSpaceSettingsRepository();
                     followRepo = new MockFollowRepository();
                     libraryRepo = new MockLibraryViewRepository();
-                    controller.Configure(dashboardRepo, guestbookRepo, spaceSettingsRepo, followRepo, libraryRepo);
+                    controller.Configure(dashboardRepo, guestbookRepo, spaceSettingsRepo, followRepo, libraryRepo, isMockMode: true);
                     return;
                 }
                 NotebookApiClient client = new NotebookApiClient(resolvedApiManager);
@@ -90,7 +90,15 @@ namespace Dotshelf.Scripts.Dashboard
                 libraryRepo = new ApiLibraryViewRepository(client);
             }
 
-            controller.Configure(dashboardRepo, guestbookRepo, spaceSettingsRepo, followRepo, libraryRepo);
+            // isMockMode 를 controller 의 useMockRepositories 필드와 동기화한다. prefab 의 직렬화 default(true) 가
+            // real-API 주입과 충돌해 OnVisitUser 의 mode 가드가 잘못된 분기로 빠지는 회귀 (#114 후속) 차단.
+            controller.Configure(
+                dashboardRepo,
+                guestbookRepo,
+                spaceSettingsRepo,
+                followRepo,
+                libraryRepo,
+                isMockMode: effectiveMode == RepositoryMode.Mock);
         }
 
         private AppApiConfig ResolveApiConfig()
