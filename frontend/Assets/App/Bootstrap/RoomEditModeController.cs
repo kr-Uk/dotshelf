@@ -1395,6 +1395,11 @@ namespace App.Bootstrap
             themeApplier.Apply(theme);
             RebuildInventorySlots();
 
+            // 테마의 default entries 자동 적용 — visual 즉시 반영. PATCH 결과 무관 (401/네트워크
+            // 실패해도 산뜻 자산 mesh swap 적용). 사용자가 BE 인증 안 된 dev 환경에서도 검증 가능.
+            // PATCH 성공 후엔 BE 응답 themeReset 의 ReloadRoomState 가 server 권위 상태로 재동기화.
+            ApplyThemeDefaultEntries(theme);
+
             // local preview 전용 테마 — placeholder (가구/벽지/바닥 미제작). 명시 플래그 + assetId<=0 fallback.
             // RoomThemeApplier 는 라이팅만 영향. POST /spaces/me/theme/{id}/apply 는 skip (401/403 회피).
             if (IsLocalPreviewTheme(theme))
@@ -1433,10 +1438,9 @@ namespace App.Bootstrap
                     if (themeReset || mode == ThemeApplyMode.Reset)
                     {
                         ApplyThemeResetVisualFallback();
+                        // reset 후 default entries 재적용 (fallback 이 lastAppliedEntries clear 함).
+                        ApplyThemeDefaultEntries(theme);
                     }
-                    // 테마의 default entries 자동 적용 — 카테고리별 default mesh/material swap.
-                    // 산뜻 테마 = (Desk:201) 같이 정의돼 있으면 자동으로 GoodVibes_Desk entry 적용.
-                    ApplyThemeDefaultEntries(theme);
                 },
                 onError: error =>
                 {
