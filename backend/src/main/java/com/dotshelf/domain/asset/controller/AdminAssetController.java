@@ -17,6 +17,7 @@ import com.dotshelf.global.common.CurrentUser;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -49,9 +50,10 @@ public class AdminAssetController {
     public ApiResponse<AdminAssetResponse> confirmBundle(
             @CurrentUser Long userId,
             @PathVariable Long assetId,
-            @RequestBody @Valid AdminAssetConfirmRequest request
+            @RequestBody @Valid AdminAssetConfirmRequest request,
+            HttpServletRequest httpRequest
     ) {
-        return ApiResponse.success(adminAssetService.confirmBundle(userId, assetId, request));
+        return ApiResponse.success(adminAssetService.confirmBundle(userId, assetId, request, clientIp(httpRequest)));
     }
 
     @Operation(
@@ -75,8 +77,21 @@ public class AdminAssetController {
     public ApiResponse<AdminAssetResponse> confirmPreviewImage(
             @CurrentUser Long userId,
             @PathVariable Long assetId,
-            @RequestBody @Valid AdminAssetConfirmRequest request
+            @RequestBody @Valid AdminAssetConfirmRequest request,
+            HttpServletRequest httpRequest
     ) {
-        return ApiResponse.success(adminAssetService.confirmPreviewImage(userId, assetId, request));
+        return ApiResponse.success(adminAssetService.confirmPreviewImage(userId, assetId, request, clientIp(httpRequest)));
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            return forwardedFor.split(",")[0].trim();
+        }
+        String realIp = request.getHeader("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp.trim();
+        }
+        return request.getRemoteAddr();
     }
 }

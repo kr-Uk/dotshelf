@@ -48,12 +48,14 @@ public final class UserDtos {
         }
     }
 
+    /**
+     * 프로필 이미지 URL 은 이 요청으로 직접 바꾸지 않는다 — 임의 외부 URL 저장으로 S3 업로드 검증을 우회하지 못하게,
+     * 변경은 반드시 POST /v1/users/me/profile-image/upload-url + PATCH /v1/users/me/profile-image 흐름을 거친다.
+     */
     public record UpdateProfileRequest(
             @NotBlank(message = "닉네임은 필수입니다.")
             @Size(max = 50, message = "닉네임은 50자 이하입니다.")
             String nickname,
-            @Size(max = 500, message = "프로필 이미지 URL은 500자 이하입니다.")
-            String profileImageUrl,
             @Size(max = 255, message = "한 줄 소개는 255자 이하입니다.")
             String introduction
     ) {

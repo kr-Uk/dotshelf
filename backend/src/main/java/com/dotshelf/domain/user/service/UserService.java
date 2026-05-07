@@ -87,7 +87,9 @@ public class UserService {
         if (!user.getNickname().equals(request.nickname()) && userRepository.existsByNickname(request.nickname())) {
             throw new CustomException(ErrorCode.DUPLICATE_NICKNAME);
         }
-        user.updateProfile(request.nickname(), request.profileImageUrl(), request.introduction());
+        // 프로필 이미지 URL 은 본 메서드로 변경하지 않는다 — S3 업로드/confirm 흐름으로만 갱신.
+        // 닉네임/소개만 갱신하고 기존 이미지 URL 은 그대로 보존.
+        user.updateProfile(request.nickname(), user.getProfileImageUrl(), request.introduction());
         // 온보딩 첫 프로필 set 시점에 isOnboarded 를 영구화. PATCH /v1/users/me 가 온보딩 step1 에서
         // 호출되는 유일한 완료 신호이므로 여기서 flip. 이후 Settings 등에서 재호출돼도 idempotent.
         // 다음 socialLogin 응답의 onboarded=true 로 FE 가 onboarding 반복하지 않게 됨.

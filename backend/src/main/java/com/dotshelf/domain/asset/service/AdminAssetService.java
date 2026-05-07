@@ -8,6 +8,8 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dotshelf.domain.admin.entity.AdminAuditLog;
+import com.dotshelf.domain.admin.repository.AdminAuditLogRepository;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetConfirmRequest;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetUploadUrlRequest;
@@ -38,6 +40,9 @@ import lombok.RequiredArgsConstructor;
 public class AdminAssetService {
 
     private static final String ROLE_ADMIN = "ADMIN";
+    private static final String AUDIT_TARGET_TYPE = "ASSET";
+    private static final String AUDIT_ACTION_BUNDLE = "UPDATE_ASSET_BUNDLE";
+    private static final String AUDIT_ACTION_PREVIEW_IMAGE = "UPDATE_ASSET_PREVIEW_IMAGE";
 
     // 본체는 Unity AssetBundle / 압축 번들이 들어온다. content-type 은 클라가 신뢰성 있게 못 정해서
     // octet-stream / zip 정도만 받고, 진짜 검증은 byteLength 와 운영자 검수에 맡긴다.
@@ -54,6 +59,7 @@ public class AdminAssetService {
 
     private final AssetRepository assetRepository;
     private final UserService userService;
+    private final AdminAuditLogRepository adminAuditLogRepository;
     private final S3StorageService s3StorageService;
     private final S3StorageProperties s3StorageProperties;
 
@@ -78,11 +84,14 @@ public class AdminAssetService {
     }
 
     @Transactional
-    public AdminAssetResponse confirmBundle(Long userId, Long assetId, AdminAssetConfirmRequest request) {
-        requireAdmin(userId);
+    public AdminAssetResponse confirmBundle(Long userId, Long assetId, AdminAssetConfirmRequest request, String ipAddress) {
+        User actor = requireAdmin(userId);
         Asset asset = getAsset(assetId);
         verifyKeyAndExistence(request.key(), "assets/" + asset.getCode() + "/bundle/");
-        asset.updateAssetUrl(s3StorageService.publicUrl(request.key()));
+        String before = asset.getAssetUrl();
+        String after = s3StorageService.publicUrl(request.key());
+        asset.updateAssetUrl(after);
+        writeAudit(actor, AUDIT_ACTION_BUNDLE, asset.getId(), before, after, ipAddress);
         return AdminAssetResponse.from(asset);
     }
 
@@ -107,11 +116,14 @@ public class AdminAssetService {
     }
 
     @Transactional
-    public AdminAssetResponse confirmPreviewImage(Long userId, Long assetId, AdminAssetConfirmRequest request) {
-        requireAdmin(userId);
+    public AdminAssetResponse confirmPreviewImage(Long userId, Long assetId, AdminAssetConfirmRequest request, String ipAddress) {
+        User actor = requireAdmin(userId);
         Asset asset = getAsset(assetId);
         verifyKeyAndExistence(request.key(), "assets/" + asset.getCode() + "/preview/");
-        asset.updatePreviewImageUrl(s3StorageService.publicUrl(request.key()));
+        String before = asset.getPreviewImageUrl();
+        String after = s3StorageService.publicUrl(request.key());
+        asset.updatePreviewImageUrl(after);
+        writeAudit(actor, AUDIT_ACTION_PREVIEW_IMAGE, asset.getId(), before, after, ipAddress);
         return AdminAssetResponse.from(asset);
     }
 
@@ -129,10 +141,27 @@ public class AdminAssetService {
                 .orElseThrow(() -> new CustomException(ErrorCode.ASSET_NOT_FOUND));
     }
 
-    private void requireAdmin(Long userId) {
+    private User requireAdmin(Long userId) {
         User user = userService.getUser(userService.requireUserId(userId));
         if (!ROLE_ADMIN.equalsIgnoreCase(user.getRole())) {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
+        return user;
+    }
+
+    /**
+     * 본체/프리뷰 변경은 운영 영향이 커서 actor / before / after / ip 를 admin_audit_logs 에 기록한다.
+     * 잘못된 번들 배포나 오염된 프리뷰 이미지 사고 시 추적이 가능하도록.
+     */
+    private void writeAudit(User actor, String action, Long assetId, String before, String after, String ipAddress) {
+        adminAuditLogRepository.save(AdminAuditLog.builder()
+                .actorUserId(actor.getId())
+                .action(action)
+                .targetType(AUDIT_TARGET_TYPE)
+                .targetId(assetId)
+                .beforePayload(before)
+                .afterPayload(after)
+                .ipAddress(ipAddress)
+                .build());
     }
 }
