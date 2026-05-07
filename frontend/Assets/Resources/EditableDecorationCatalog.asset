@@ -26,8 +26,8 @@ MonoBehaviour:
     Prefab: {fileID: -8098169881513260187, guid: 4f9ca772872790543895cc1371706137, type: 3}
     SourceAssetPath: Assets/Arts/Models/Props/doll_hamham.glb
   - DisplayName: Goodvibes Window
-    Prefab: {fileID: -8098169881513260187, guid: 8cf9f41845bae4aa1a85afdf0405e751, type: 3}
-    SourceAssetPath: Assets/Arts/Models/Window/GoodVibes_Window.glb
+    Prefab: {fileID: 1000000000, guid: d4e5f67890123456789abcdef0123456, type: 3}
+    SourceAssetPath: Assets/App/Composition/Prefabs/Themes/GoodVibes/GoodVibes_Window.prefab
     PlacementCategory: 9
     AllowRotation: 0
   - DisplayName: Lamp Floor
