@@ -41,6 +41,7 @@ import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 import com.dotshelf.global.storage.S3StorageProperties;
 import com.dotshelf.global.storage.S3StorageService;
+import com.dotshelf.global.storage.S3StorageService.ObjectMetadata;
 import com.dotshelf.global.storage.S3StorageService.PresignedPut;
 
 import lombok.RequiredArgsConstructor;
@@ -128,8 +129,10 @@ public class UserService {
     }
 
     /**
-     * 클라 직업로드 후 confirm. key 가 본인 prefix 인지 + 실제 객체가 S3 에 있는지 확인 후 DB 갱신.
-     * key prefix 검사로 다른 사용자의 객체를 자기 프로필로 등록하는 패턴 차단.
+     * 클라 직업로드 후 confirm. 검증 layer 3 단:
+     *   1) key prefix → 다른 사용자의 객체를 자기 프로필로 등록하는 패턴 차단
+     *   2) headObject → 객체 실존 + S3 가 받은 contentType / contentLength 확인
+     *   3) 도메인 화이트리스트 재검증 → 1단계 발급 신고 값과 도메인 정책 일치 확인
      */
     @Transactional
     public UserProfileResponse confirmProfileImage(Long userId, ProfileImageConfirmRequest request) {
@@ -138,8 +141,12 @@ public class UserService {
         if (!request.key().startsWith(prefix)) {
             throw new CustomException(ErrorCode.STORAGE_INVALID_KEY);
         }
-        if (!s3StorageService.objectExists(request.key())) {
-            throw new CustomException(ErrorCode.STORAGE_OBJECT_NOT_UPLOADED);
+        ObjectMetadata metadata = s3StorageService.headObject(request.key());
+        if (!ALLOWED_PROFILE_IMAGE_TYPES.containsKey(metadata.contentType())) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+        }
+        if (metadata.contentLength() > MAX_PROFILE_IMAGE_SIZE_BYTES) {
+            throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
         }
         User user = getUser(currentUserId);
         user.updateProfile(user.getNickname(), s3StorageService.publicUrl(request.key()), user.getIntroduction());

@@ -15,6 +15,7 @@ import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -79,18 +80,19 @@ public class S3StorageService {
     }
 
     /**
-     * presigned PUT 의 confirm 단계에서 호출. 클라가 실제로 객체를 올렸는지 headObject 로 확인한다.
-     * 없으면 STORAGE_OBJECT_NOT_UPLOADED, S3 자체 오류면 STORAGE_INTERNAL_ERROR.
+     * presigned PUT 의 confirm 단계에서 호출. 객체가 실제로 올라갔는지 + S3 가 받은 contentType /
+     * contentLength 가 도메인 화이트리스트에 맞는지 재검증하는 입구. 1단계 발급 때 신고한 값을 클라가
+     * 변조하면 PUT 서명이 깨져 막히지만, layer-of-defense 로 confirm 시점에 한 번 더 본다.
      */
-    public boolean objectExists(String key) {
+    public ObjectMetadata headObject(String key) {
         try {
-            s3Client.headObject(HeadObjectRequest.builder()
+            HeadObjectResponse response = s3Client.headObject(HeadObjectRequest.builder()
                     .bucket(properties.bucket())
                     .key(key)
                     .build());
-            return true;
+            return new ObjectMetadata(response.contentType(), response.contentLength());
         } catch (NoSuchKeyException e) {
-            return false;
+            throw new CustomException(ErrorCode.STORAGE_OBJECT_NOT_UPLOADED);
         } catch (SdkException e) {
             log.error("[S3] headObject 실패 key={}", key, e);
             throw new CustomException(ErrorCode.STORAGE_INTERNAL_ERROR);
@@ -113,5 +115,8 @@ public class S3StorageService {
     }
 
     public record PresignedPut(String uploadUrl, String key, long expiresInSeconds) {
+    }
+
+    public record ObjectMetadata(String contentType, long contentLength) {
     }
 }

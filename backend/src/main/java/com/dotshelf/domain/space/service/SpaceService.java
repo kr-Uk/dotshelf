@@ -59,6 +59,7 @@ import com.dotshelf.global.common.CursorParser;
 import com.dotshelf.global.common.ToggleResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
+import com.dotshelf.global.storage.ImageContentValidator;
 import com.dotshelf.global.storage.S3StorageService;
 
 import lombok.RequiredArgsConstructor;
@@ -250,6 +251,9 @@ public class SpaceService {
         if (contentType == null || !ALLOWED_THUMBNAIL_TYPES.containsKey(contentType)) {
             throw new CustomException(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
         }
+        // 서버 경유 업로드라 파일 본체를 직접 볼 수 있다 — 클라가 image/jpeg 라고 신고해도
+        // 실제 헤더가 JPEG/PNG/WebP signature 가 아니면 거부.
+        ImageContentValidator.verifyMagicBytes(file, contentType);
         return contentType;
     }
 

@@ -22,6 +22,7 @@ import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 import com.dotshelf.global.storage.S3StorageProperties;
 import com.dotshelf.global.storage.S3StorageService;
+import com.dotshelf.global.storage.S3StorageService.ObjectMetadata;
 import com.dotshelf.global.storage.S3StorageService.PresignedPut;
 
 import lombok.RequiredArgsConstructor;
@@ -87,7 +88,11 @@ public class AdminAssetService {
     public AdminAssetResponse confirmBundle(Long userId, Long assetId, AdminAssetConfirmRequest request, String ipAddress) {
         User actor = requireAdmin(userId);
         Asset asset = getAsset(assetId);
-        verifyKeyAndExistence(request.key(), "assets/" + asset.getCode() + "/bundle/");
+        verifyConfirmedObject(
+                request.key(),
+                "assets/" + asset.getCode() + "/bundle/",
+                ALLOWED_BUNDLE_TYPES::contains,
+                MAX_BUNDLE_SIZE_BYTES);
         String before = asset.getAssetUrl();
         String after = s3StorageService.publicUrl(request.key());
         asset.updateAssetUrl(after);
@@ -119,7 +124,11 @@ public class AdminAssetService {
     public AdminAssetResponse confirmPreviewImage(Long userId, Long assetId, AdminAssetConfirmRequest request, String ipAddress) {
         User actor = requireAdmin(userId);
         Asset asset = getAsset(assetId);
-        verifyKeyAndExistence(request.key(), "assets/" + asset.getCode() + "/preview/");
+        verifyConfirmedObject(
+                request.key(),
+                "assets/" + asset.getCode() + "/preview/",
+                ALLOWED_PREVIEW_IMAGE_TYPES::containsKey,
+                MAX_PREVIEW_IMAGE_SIZE_BYTES);
         String before = asset.getPreviewImageUrl();
         String after = s3StorageService.publicUrl(request.key());
         asset.updatePreviewImageUrl(after);
@@ -127,12 +136,27 @@ public class AdminAssetService {
         return AdminAssetResponse.from(asset);
     }
 
-    private void verifyKeyAndExistence(String key, String expectedPrefix) {
+    /**
+     * presigned PUT 의 confirm 단계 공통 검증.
+     *   1) key prefix 가 본 도메인 영역인지 (다른 자산/카테고리 객체 confirm 차단)
+     *   2) headObject 로 객체 실존 확인
+     *   3) S3 가 받은 contentType 이 도메인 화이트리스트에 있는지 (1단계 발급 시 신고 값과 일치 재확인)
+     *   4) 실제 contentLength 가 한도 이내인지
+     */
+    private void verifyConfirmedObject(
+            String key,
+            String expectedPrefix,
+            java.util.function.Predicate<String> contentTypeAllowed,
+            long maxSizeBytes) {
         if (!key.startsWith(expectedPrefix)) {
             throw new CustomException(ErrorCode.STORAGE_INVALID_KEY);
         }
-        if (!s3StorageService.objectExists(key)) {
-            throw new CustomException(ErrorCode.STORAGE_OBJECT_NOT_UPLOADED);
+        ObjectMetadata metadata = s3StorageService.headObject(key);
+        if (!contentTypeAllowed.test(metadata.contentType())) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+        }
+        if (metadata.contentLength() > maxSizeBytes) {
+            throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
         }
     }
 
