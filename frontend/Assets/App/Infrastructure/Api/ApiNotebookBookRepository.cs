@@ -120,6 +120,7 @@ namespace App.Infrastructure.Api
                     PurchaseCount = item.PurchaseCount,
                     RecordCount = item.RecordCount,
                     PlacementCount = item.PlacementCount,
+                    BookshelfAddCount = item.EffectiveBookshelfAddCount,
                     HasPaidCover = item.HasPaidCover
                 });
             }

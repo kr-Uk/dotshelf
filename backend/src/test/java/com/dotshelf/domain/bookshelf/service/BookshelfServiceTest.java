@@ -22,8 +22,10 @@ import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
 import com.dotshelf.domain.book.entity.UserBook;
 import com.dotshelf.domain.book.repository.BookRepository;
 import com.dotshelf.domain.book.repository.UserBookRepository;
+import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.BookSummaryResponse;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.CreateBookshelfRequest;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.InteriorObjectRequest;
+import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.ReadingRecordSummaryResponse;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.ReorderBookshelvesRequest;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.SectionAlignmentRequest;
 import com.dotshelf.domain.bookshelf.dto.BookshelfDtos.UpdateBookshelfRequest;
@@ -126,9 +128,27 @@ class BookshelfServiceTest {
         given(bookshelfItemRepository.findByBookshelfIdAndStatusOrderByBookshelfSectionIdAscSlotNoAsc(3L, "ACTIVE"))
                 .willReturn(List.of(bookItem, decorItem));
         given(userBookRepository.findAllById(List.of(20L))).willReturn(List.of(userBook));
-        given(bookRepository.findAllById(List.of(9L))).willReturn(List.of(TestFixtures.book(9L, "Book")));
-        given(readingRecordRepository.findByUserBookIdInAndStatus(List.of(20L), "ACTIVE"))
-                .willReturn(List.of(TestFixtures.readingRecord(40L, 20L)));
+        given(bookRepository.findBookshelfRenderSummariesByIdIn(List.of(9L)))
+                .willReturn(List.of(new BookSummaryResponse(
+                        9L,
+                        "Book",
+                        "author",
+                        "publisher",
+                        null,
+                        "9780000000009",
+                        null,
+                        "https://example.com/book.jpg")));
+        given(readingRecordRepository.findBookshelfRenderSummariesByUserBookIdInAndStatus(List.of(20L), "ACTIVE"))
+                .willReturn(List.of(new ReadingRecordSummaryResponse(
+                        40L,
+                        20L,
+                        "record",
+                        null,
+                        "PUBLIC",
+                        0,
+                        0,
+                        null,
+                        null)));
         given(inventoryRepository.findAllById(List.of(8L))).willReturn(List.of(TestFixtures.inventory(8L, 1L, 50L)));
         given(assetRepository.findAllById(List.of(50L))).willReturn(List.of(TestFixtures.asset(50L, 1L, "decor", 0)));
 

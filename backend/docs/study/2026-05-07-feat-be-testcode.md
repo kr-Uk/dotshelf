@@ -9,7 +9,7 @@
 
 백엔드 테스트 기반을 Controller / Service / Repository / Integration 레이어로 넓히고, PostgreSQL Testcontainers와 Jacoco coverage gate를 CI에 연결했다.
 
-최종 검증 기준은 `./gradlew.bat clean build -DrunPostgresTests=true`이며, 테스트 `497개`, 실패 `0개`, 제외 기준 line coverage `86.24%`로 Jacoco gate `85%`를 통과한다.
+최종 검증 기준은 `./gradlew.bat clean build -DrunPostgresTests=true`이며, 테스트 `497개`, 실패 `0개`, 제외 기준 line coverage `86.25%`로 Jacoco gate `85%`를 통과한다.
 
 기능 로직도 함께 보강했다. 소셜 신규 가입 시 기본 `Space`가 생성되도록 했고, 기존 사용자 중 활성 `Space`가 없는 계정은 migration으로 backfill한다. 책장 데코 아이템 매핑에서 `assetInventoryId == null`일 때 NPE가 나지 않게 방어했다.
 
@@ -142,8 +142,8 @@ Payment와 Admin, Auth verifier는 성공 케이스만으로 충분하지 않다
 
 BUILD SUCCESSFUL
 tests=497 failures=0 errors=0 skipped=0
-Jacoco excluded line coverage=86.24%
-covered=3229 missed=515 total=3744
+Jacoco excluded line coverage=86.25%
+covered=3231 missed=515 total=3746
 ```
 
 - MR 설명 초안: `backend/docs/test-coverage-mr-description.md`
