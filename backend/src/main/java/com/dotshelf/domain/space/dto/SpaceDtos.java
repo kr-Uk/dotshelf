@@ -23,6 +23,7 @@ public final class SpaceDtos {
             long likeCount,
             boolean liked,
             long layoutVersion,
+            String thumbnailUrl,
             Long currentThemeInventoryId,
             Long currentWallpaperInventoryId,
             Long currentFloorInventoryId,
@@ -47,6 +48,7 @@ public final class SpaceDtos {
                     space.getLikeCount(),
                     liked,
                     space.getLayoutVersion(),
+                    space.getThumbnailUrl(),
                     space.getCurrentThemeInventoryId(),
                     space.getCurrentWallpaperInventoryId(),
                     space.getCurrentFloorInventoryId(),
@@ -55,6 +57,17 @@ public final class SpaceDtos {
                     space.getCurrentInteriorLightInventoryId(),
                     space.getCurrentExteriorLightInventoryId()
             );
+        }
+    }
+
+    /**
+     * Unity 가 방 배치 변경을 캡처해 multipart 로 업로드한 직후 받는 응답.
+     * 클라가 다음 화면에서 즉시 새 URL 을 사용할 수 있도록 thumbnailUrl + layoutVersion 만 단순 노출.
+     */
+    public record ThumbnailUploadResponse(Long spaceId, String thumbnailUrl, long layoutVersion) {
+
+        public static ThumbnailUploadResponse from(Space space) {
+            return new ThumbnailUploadResponse(space.getId(), space.getThumbnailUrl(), space.getLayoutVersion());
         }
     }
 

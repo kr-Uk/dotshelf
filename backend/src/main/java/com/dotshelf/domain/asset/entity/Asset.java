@@ -101,4 +101,12 @@ public class Asset extends BaseEntity {
         this.compatibleTargets = compatibleTargets;
         this.allowsCustomization = allowsCustomization == null ? true : allowsCustomization;
     }
+
+    public void updateAssetUrl(String assetUrl) {
+        this.assetUrl = assetUrl;
+    }
+
+    public void updatePreviewImageUrl(String previewImageUrl) {
+        this.previewImageUrl = previewImageUrl;
+    }
 }

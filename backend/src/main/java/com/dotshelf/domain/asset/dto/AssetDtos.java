@@ -6,6 +6,11 @@ import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.entity.AssetCategory;
 import com.dotshelf.domain.asset.entity.AssetPurchase;
 import com.dotshelf.domain.asset.entity.UserAssetInventory;
+import com.dotshelf.global.storage.S3StorageService.PresignedPut;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
 public final class AssetDtos {
 
@@ -100,6 +105,62 @@ public final class AssetDtos {
                     purchase.getAssetId(),
                     purchase.getInventoryId(),
                     purchase.getPricePages()
+            );
+        }
+    }
+
+    /**
+     * 관리자가 에셋 본체(Unity AssetBundle 등) 또는 프리뷰 이미지를 S3 에 직업로드하기 위해
+     * 발급받는 presigned PUT 요청. 본체와 프리뷰 모두 같은 형식을 공유한다.
+     */
+    public record AdminAssetUploadUrlRequest(
+            @NotBlank(message = "contentType은 필수입니다.")
+            String contentType,
+            @NotNull(message = "byteLength는 필수입니다.")
+            @Positive(message = "byteLength는 양수여야 합니다.")
+            Long byteLength
+    ) {
+    }
+
+    public record AdminAssetUploadUrlResponse(
+            String uploadUrl,
+            String key,
+            long expiresInSeconds
+    ) {
+
+        public static AdminAssetUploadUrlResponse from(PresignedPut presigned) {
+            return new AdminAssetUploadUrlResponse(
+                    presigned.uploadUrl(),
+                    presigned.key(),
+                    presigned.expiresInSeconds());
+        }
+    }
+
+    public record AdminAssetConfirmRequest(
+            @NotBlank(message = "key는 필수입니다.")
+            String key
+    ) {
+    }
+
+    /**
+     * 관리자 콘솔에서 본체/프리뷰 갱신 후 받는 응답. 일반 사용자용 AssetResponse 와 달리
+     * assetUrl(본체) 까지 노출한다 — 관리자가 검증용으로 직접 클릭해 확인하기 위함.
+     */
+    public record AdminAssetResponse(
+            Long id,
+            String code,
+            String name,
+            String assetUrl,
+            String previewImageUrl
+    ) {
+
+        public static AdminAssetResponse from(Asset asset) {
+            return new AdminAssetResponse(
+                    asset.getId(),
+                    asset.getCode(),
+                    asset.getName(),
+                    asset.getAssetUrl(),
+                    asset.getPreviewImageUrl()
             );
         }
     }

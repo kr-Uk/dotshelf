@@ -15,6 +15,9 @@ import com.dotshelf.domain.user.dto.UserDtos.FeedSettingResponse;
 import com.dotshelf.domain.user.dto.UserDtos.NicknameAvailabilityResponse;
 import com.dotshelf.domain.user.dto.UserDtos.NotificationSettingRequest;
 import com.dotshelf.domain.user.dto.UserDtos.NotificationSettingResponse;
+import com.dotshelf.domain.user.dto.UserDtos.ProfileImageConfirmRequest;
+import com.dotshelf.domain.user.dto.UserDtos.ProfileImageUploadUrlRequest;
+import com.dotshelf.domain.user.dto.UserDtos.ProfileImageUploadUrlResponse;
 import com.dotshelf.domain.user.dto.UserDtos.UpdateProfileRequest;
 import com.dotshelf.domain.user.dto.UserDtos.UserListResponse;
 import com.dotshelf.domain.user.dto.UserDtos.UserProfileResponse;
@@ -57,6 +60,31 @@ public class UserController {
     public ApiResponse<Void> deleteMe(@CurrentUser Long userId) {
         userService.deleteMe(userId);
         return ApiResponse.success();
+    }
+
+    @Operation(
+            summary = "프로필 이미지 업로드 URL 발급",
+            description = "클라가 contentType / byteLength 를 신고하면 BE 가 S3 presigned PUT URL 을 발급한다. "
+                    + "클라는 발급된 URL 로 S3 에 직접 PUT 한 뒤 PATCH /me/profile-image 로 confirm 호출."
+    )
+    @PostMapping("/me/profile-image/upload-url")
+    public ApiResponse<ProfileImageUploadUrlResponse> createProfileImageUploadUrl(
+            @CurrentUser Long userId,
+            @RequestBody @Valid ProfileImageUploadUrlRequest request
+    ) {
+        return ApiResponse.success(userService.createProfileImageUploadUrl(userId, request));
+    }
+
+    @Operation(
+            summary = "프로필 이미지 업로드 확정",
+            description = "presigned PUT 으로 S3 직업로드를 마친 뒤 호출. BE 가 객체 존재를 검증하고 사용자 profileImageUrl 을 갱신한다."
+    )
+    @PatchMapping("/me/profile-image")
+    public ApiResponse<UserProfileResponse> confirmProfileImage(
+            @CurrentUser Long userId,
+            @RequestBody @Valid ProfileImageConfirmRequest request
+    ) {
+        return ApiResponse.success(userService.confirmProfileImage(userId, request));
     }
 
     @Operation(summary = "다른 사용자 프로필 조회", description = "사용자 ID로 다른 사용자의 공개 프로필과 현재 사용자 기준 관계 상태를 조회합니다.")

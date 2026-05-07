@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.entity.UserAssetInventory;
@@ -36,6 +37,7 @@ import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyMode;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.VisibilityRequest;
 import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.entity.SpaceGuestbookPostItWhitelist;
@@ -57,6 +59,8 @@ import com.dotshelf.global.common.CursorParser;
 import com.dotshelf.global.common.ToggleResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
+import com.dotshelf.global.storage.ImageContentValidator;
+import com.dotshelf.global.storage.S3StorageService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -80,6 +84,13 @@ public class SpaceService {
     private static final String ASSET_TYPE_INTERIOR_LIGHT = "INTERIOR_LIGHT";
     private static final String ASSET_TYPE_EXTERIOR_LIGHT = "EXTERIOR_LIGHT";
 
+    // Unity 자동 캡처 썸네일은 보통 수백 KB. 2MB 면 2k 해상도 jpg 도 충분히 들어간다.
+    private static final long MAX_THUMBNAIL_SIZE_BYTES = 2L * 1024 * 1024;
+    private static final Map<String, String> ALLOWED_THUMBNAIL_TYPES = Map.of(
+            "image/jpeg", "jpg",
+            "image/png", "png",
+            "image/webp", "webp");
+
     private final SpaceRepository spaceRepository;
     private final SpaceTemplateRepository spaceTemplateRepository;
     private final SpaceVisitRepository spaceVisitRepository;
@@ -94,6 +105,7 @@ public class SpaceService {
     private final AssetRepository assetRepository;
     private final UserAssetInventoryRepository userAssetInventoryRepository;
     private final BookshelfRepository bookshelfRepository;
+    private final S3StorageService s3StorageService;
 
     @Transactional
     public SpaceResponse getMySpace(Long userId) {
@@ -207,6 +219,42 @@ public class SpaceService {
                 .savedByUserId(currentUserId)
                 .build());
         return new LayoutSaveResponse(space.getId(), version);
+    }
+
+    /**
+     * Unity 가 방 배치 변경을 감지해 자동으로 캡처한 썸네일을 받아 S3 에 저장하고 공간 thumbnailUrl 갱신.
+     * 키에 layoutVersion 을 박아 CDN 캐시 무효화 없이 항상 최신 이미지를 노출한다 — 이전 버전은 라이프사이클 정책으로 정리.
+     */
+    @Transactional
+    public ThumbnailUploadResponse uploadThumbnail(Long userId, MultipartFile file) {
+        Long currentUserId = userService.requireUserId(userId);
+        Space space = findOrCreateMySpace(currentUserId);
+
+        String contentType = validateThumbnailFile(file);
+        String extension = ALLOWED_THUMBNAIL_TYPES.get(contentType);
+        long nextVersion = space.nextLayoutVersion();
+        String key = "spaces/" + space.getId() + "/thumbnail-" + nextVersion + "." + extension;
+
+        s3StorageService.putObject(key, file, contentType);
+        space.updateThumbnail(s3StorageService.publicUrl(key));
+        return ThumbnailUploadResponse.from(space);
+    }
+
+    private String validateThumbnailFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
+        if (file.getSize() > MAX_THUMBNAIL_SIZE_BYTES) {
+            throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_THUMBNAIL_TYPES.containsKey(contentType)) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+        }
+        // 서버 경유 업로드라 파일 본체를 직접 볼 수 있다 — 클라가 image/jpeg 라고 신고해도
+        // 실제 헤더가 JPEG/PNG/WebP signature 가 아니면 거부.
+        ImageContentValidator.verifyMagicBytes(file, contentType);
+        return contentType;
     }
 
     @Transactional
@@ -478,7 +526,7 @@ public class SpaceService {
                 space.getSpaceName(),
                 "공개 서재",
                 null,
-                null,
+                space.getThumbnailUrl(),
                 space.getVisibilityScope(),
                 space.getVisitCount(),
                 space.getLikeCount(),
