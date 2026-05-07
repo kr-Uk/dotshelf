@@ -366,7 +366,9 @@ namespace BookshelfPorting.Runtime
 
             if (book.hasAggregateBookStats)
             {
-                return Mathf.Max(0, book.totalLikeCount);
+                return book.isLiked
+                    ? Mathf.Max(1, book.totalLikeCount)
+                    : Mathf.Max(0, book.totalLikeCount);
             }
 
             return book.isLiked ? 1 : 0;

@@ -37,13 +37,6 @@ variables:
         - .gitlab-ci.yml
         - .ci/**/*
 
-.frontend-unity-rules:
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - frontend/**/*
-        - .gitlab-ci.yml
-
 .deploy-rules:
   # backend prod 배포: master 트리거만.
   rules:
@@ -164,11 +157,18 @@ backend:build:
     expire_in: 1 week
 
 frontend:unity-compile:
-  extends: .frontend-unity-rules
   stage: build
   # Current shared Docker runner is arm64, while Unity editor containers are amd64-only.
-  # Keep this job visible on MR pipelines and make it blocking once an amd64 Unity runner is available.
-  allow_failure: true
+  # Keep this job disabled until an amd64 Unity runner is available.
+  # Set the project/group CI/CD variable UNITY_COMPILE_ENABLED=true to enable it; failures should then block the MR.
+  rules:
+    - if: '$UNITY_COMPILE_ENABLED != "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - frontend/**/*
+        - .gitlab-ci.yml
+    - when: never
   image:
     name: unityci/editor:ubuntu-$UNITY_VERSION-base-3
     docker:
@@ -189,7 +189,8 @@ frontend:unity-compile:
     - |
       "$UNITY_EXECUTABLE" -batchmode -nographics -quit -projectPath "$UNITY_PROJECT_PATH" -executeMethod BookshelfPorting.Editor.Ci.UnityCompileCheck.Run -logFile "$UNITY_PROJECT_PATH/unity-compile.log"
   after_script:
-    - test -f frontend/unity-compile.log && tail -n 200 frontend/unity-compile.log || true
+    - test -f frontend/unity-compile.log || touch frontend/unity-compile.log
+    - tail -n 200 frontend/unity-compile.log || true
   artifacts:
     name: "dotshelf-unity-compile-$CI_COMMIT_SHORT_SHA"
     paths:
