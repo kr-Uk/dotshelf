@@ -1656,11 +1656,15 @@ namespace Dotshelf.Scripts.Dashboard
             VisualElement actions = new VisualElement();
             actions.AddToClassList("user-row-actions");
 
-            // 방문 — 항상 표시 (와이어 페이지 2)
-            Button visitBtn = new Button { text = "방문" };
-            visitBtn.AddToClassList("user-row-action-button");
-            visitBtn.clicked += () => OnVisitUser(user);
-            actions.Add(visitBtn);
+            // 방문 — mock 모드에서만 노출. real API 모드에서는 UserSummary.Id → spaceId 매핑이 없어 silent
+            // no-op 이 되므로 버튼 자체를 안 그린다 (UserSummary 에 SpaceId 합류 또는 user→space 매핑 endpoint 추가 시 복구).
+            if (useMockRepositories)
+            {
+                Button visitBtn = new Button { text = "방문" };
+                visitBtn.AddToClassList("user-row-action-button");
+                visitBtn.clicked += () => OnVisitUser(user);
+                actions.Add(visitBtn);
+            }
 
             bool isMineSpace = viewMode == ViewMode.Mine;
             if (isMineSpace && currentUserListMode == UserListMode.Followers)
