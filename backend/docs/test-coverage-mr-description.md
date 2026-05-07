@@ -5,6 +5,7 @@
 백엔드 테스트 기반과 도메인별 테스트를 대폭 보강했습니다.
 
 - 신규 소셜 가입 시 기본 `Space`가 생성되도록 `AuthService` 로직을 보강했습니다.
+- 기존 사용자 중 활성 `Space`가 없는 계정을 위한 backfill migration을 추가했습니다.
 - `BookshelfService`의 데코 아이템 매핑에서 `assetInventoryId == null`일 때 발생할 수 있는 NPE를 방어했습니다.
 - Controller, Service, Repository/JPA, Integration 테스트 기반을 추가했습니다.
 - Auth/User/Space/Book/Bookshelf/Asset/ReadingRecord/Guestbook/Report/Notification/Payment/Admin 주요 플로우 테스트를 추가했습니다.
@@ -72,6 +73,7 @@
 - `build.gradle.kts`
   - Jacoco plugin 및 XML/HTML report 활성화
   - DTO/entity/config/Application/Q-class 제외 기준 적용
+  - entity는 coverage 산식에서는 제외하되 entity 상태 변경은 service 테스트에서 간접 검증
   - `check`가 `jacocoTestCoverageVerification`을 수행하도록 연결
   - line coverage minimum: `0.85`
   - `-DrunPostgresTests=true` 전달 시 Postgres Testcontainers 테스트 활성화
@@ -82,6 +84,8 @@
   - test report, Jacoco report, Gradle problems report를 artifact로 보관
 
 > CI runner가 Docker dind를 사용하려면 privileged runner 설정이 필요합니다. runner 정책상 dind가 막혀 있다면 Postgres Testcontainers 테스트는 별도 job 또는 runner 설정 조정이 필요합니다.
+
+> `IntegrationTestSupport`는 rollback 격리용 `@Transactional` 베이스입니다. `@TransactionalEventListener(AFTER_COMMIT)` 검증처럼 실제 commit이 필요한 통합 테스트는 이 베이스를 상속하지 않고 테스트별 cleanup으로 격리합니다.
 
 ## Verification
 

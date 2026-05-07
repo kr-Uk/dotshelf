@@ -11,7 +11,7 @@
 
 최종 검증 기준은 `./gradlew.bat clean build -DrunPostgresTests=true`이며, 테스트 `497개`, 실패 `0개`, 제외 기준 line coverage `86.24%`로 Jacoco gate `85%`를 통과한다.
 
-기능 로직도 두 군데 보강했다. 소셜 신규 가입 시 기본 `Space`가 생성되도록 했고, 책장 데코 아이템 매핑에서 `assetInventoryId == null`일 때 NPE가 나지 않게 방어했다.
+기능 로직도 함께 보강했다. 소셜 신규 가입 시 기본 `Space`가 생성되도록 했고, 기존 사용자 중 활성 `Space`가 없는 계정은 migration으로 backfill한다. 책장 데코 아이템 매핑에서 `assetInventoryId == null`일 때 NPE가 나지 않게 방어했다.
 
 ## 무엇을 했나
 
@@ -91,6 +91,12 @@ tasks.named<org.gradle.testing.jacoco.tasks.JacocoCoverageVerification>("jacocoT
 - 모든 테스트를 통합 테스트로 만들면 느리고 리뷰가 어려워진다.
 - H2만 쓰면 PostgreSQL 제약조건, enum, timestamp, Flyway 차이를 놓칠 수 있다.
 - CI에서는 명시적으로 `-DrunPostgresTests=true`를 넘겨 실제 DB 호환성을 같이 본다.
+
+### rollback 통합 테스트와 AFTER_COMMIT 테스트를 분리
+
+`IntegrationTestSupport`는 기본적으로 `@Transactional` rollback 격리를 사용한다. 이 방식은 테스트 데이터 정리가 단순하지만 실제 commit이 발생하지 않는다.
+
+그래서 `@TransactionalEventListener(phase = AFTER_COMMIT)`처럼 commit 후 listener가 발사되어야 하는 흐름은 이 베이스를 상속하지 않고, 테스트별 cleanup으로 격리한다. 알림 flow처럼 production commit 경계가 중요한 테스트는 이 규칙을 따라야 한다.
 
 ### 테스트 지원 객체를 공통화
 
