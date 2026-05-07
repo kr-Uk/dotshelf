@@ -157,6 +157,9 @@ backend:build:
 frontend:unity-compile:
   extends: .frontend-unity-rules
   stage: build
+  # Current shared Docker runner is arm64, while Unity editor containers are amd64-only.
+  # Keep this job visible on MR pipelines and make it blocking once an amd64 Unity runner is available.
+  allow_failure: true
   image:
     name: unityci/editor:ubuntu-$UNITY_VERSION-base-3
     docker:
