@@ -3730,21 +3730,40 @@ namespace App.Bootstrap
                 return;
             }
 
+            // candidate transform 임시 적용 → bounds 계산 → invalid 면 rollback.
+            // candidate 기준 bounds 정확히 측정해야 obstruction check 정확. transform
+            // 변경 후 Renderer.bounds 가 즉시 갱신되므로 1 프레임 안에 검사 + 필요 시 rollback.
+            var prevPosition = draggingObject.transform.position;
+            var prevRotation = draggingObject.transform.rotation;
+            var prevWall = marker.CurrentWall;
+
             draggingObject.transform.position = hitPoint;
             draggingObject.transform.rotation = WallFacingRotation(newWall);
-            marker.CurrentWall = newWall;
-            dragLastValidPosition = hitPoint;
 
-            // obstruction check — bounds 를 wall surface rect 로 projection 후 registry 비교.
-            // invalid 면 붉은 tint + valid 면 원래 색 복원.
+            bool isFree = true;
             var bounds = ComputeRendererBounds(draggingObject);
             if (bounds.HasValue)
             {
                 var rect = ProjectBoundsToWallRect(bounds.Value, newWall);
                 var registry = EnsureWallObstructionRegistry();
-                bool isFree = registry.IsRectFreeOnWall(newWall, rect);
-                ApplyWallDecoValidityFeedback(draggingObject, isFree);
+                isFree = registry.IsRectFreeOnWall(newWall, rect);
             }
+
+            if (isFree)
+            {
+                marker.CurrentWall = newWall;
+                dragLastValidPosition = hitPoint;
+            }
+            else
+            {
+                // 책장/대시보드 영역 진입 차단 — 마지막 valid 위치/회전 유지. 사용자가
+                // mouse 를 obstruction 밖으로 옮기면 다음 frame 에서 자동 follow.
+                draggingObject.transform.position = prevPosition;
+                draggingObject.transform.rotation = prevRotation;
+                marker.CurrentWall = prevWall;
+            }
+
+            ApplyWallDecoValidityFeedback(draggingObject, isFree);
         }
 
         // World AABB → wall surface (u, v) Rect — WallObstructionRegistry 와 동일 좌표계.
