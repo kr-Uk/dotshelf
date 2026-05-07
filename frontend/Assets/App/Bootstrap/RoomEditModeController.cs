@@ -2080,24 +2080,33 @@ namespace App.Bootstrap
             }
         }
 
-        // 인벤토리 자산 식별 키. EditableDecorationCatalog 의 Entry 는 inventoryId/assetId 를
-        // 직접 들고 있지 않아서 SourceAssetPath (예: Assets/Arts/Models/Furniture/Bookshelf.fbx)
-        // 를 stable key 로 사용한다 — 카탈로그 안에서 자산당 고유. 비어있는 경우만 fallback 으로
-        // DisplayName / Prefab.name 을 사용. 서버 인벤토리(assetId/inventoryId) 가 들어오면
-        // 이 메서드만 교체하면 된다 (호출부 변경 불필요).
+        // 인벤토리 자산 식별 키.
+        //
+        // TODO(server-inventory): EditableDecorationCatalog 에 inventoryId / assetId 가 추가되면
+        // "asset:{AssetId}" / "inv:{InventoryId}" 가 정식 키. 그 시점에는 fallback 들을 dev-only
+        // assertion 으로 좁히고 prod 에서는 서버 ID 만 신뢰. PR !120 review #2 (beshu) 참조.
+        //
+        // 현재 우선순위 (안정성 큰 순):
+        //   1. SourceAssetPath: 카탈로그 asset path — 자산이 이동/리네이밍되지 않는 한 고유.
+        //      "path:" prefix 로 다른 fallback 키와 절대 충돌하지 않게 namespace 분리.
+        //   2. Prefab.GetInstanceID(): asset GUID 기반 런타임 InstanceID. 한 세션 내에선 자산당 고유 →
+        //      DisplayName 충돌(동명 자산) 보다 안전. 단 세션 간 안정성은 없음.
+        //   3. DisplayName: 마지막 fallback. 동명 자산 위험 인지 후 사용.
+        // 호출부(BuildInventorySlot / PlaceInventoryEntry / DeleteSelectedObject / DecorationItemMarker.InventoryKey
+        //  scene scan) 모두 같은 메서드를 거치므로 여기서 prefix 만 일관되면 양쪽 매칭이 자동.
         private static string BuildInventoryKey(InventoryEntry entry)
         {
             if (!string.IsNullOrEmpty(entry.SourceAssetPath))
             {
-                return entry.SourceAssetPath;
+                return "path:" + entry.SourceAssetPath;
+            }
+            if (entry.Prefab != null)
+            {
+                return "prefab-iid:" + entry.Prefab.GetInstanceID();
             }
             if (!string.IsNullOrEmpty(entry.DisplayName))
             {
                 return "name:" + entry.DisplayName;
-            }
-            if (entry.Prefab != null && !string.IsNullOrEmpty(entry.Prefab.name))
-            {
-                return "prefab:" + entry.Prefab.name;
             }
             return null;
         }
@@ -2116,6 +2125,39 @@ namespace App.Bootstrap
                 return false;
             }
             return true;
+        }
+
+        // [#5 P1] EnterEditMode 시 scene 전체의 DecorationItemMarker 를 훑어 placedByInventoryKey 를
+        // 재구성. controller-local cache 만 가지면 다음 케이스에서 슬롯이 재활성화됨:
+        //   - 저장 데이터에서 복원된 배치 오브젝트
+        //   - 씬에 미리 박혀있는 marker
+        //   - controller reload 등으로 dict 만 초기화된 케이스
+        // "씬에 1개만 배치" 가 요구사항이므로 placedItemsRoot 하위가 아닌 scene 전체 스캔.
+        private void RebuildPlacedByInventoryKeyFromScene()
+        {
+            placedByInventoryKey.Clear();
+            var markers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            int restored = 0, skippedNoKey = 0, dupes = 0;
+            for (int i = 0; i < markers.Length; i++)
+            {
+                var m = markers[i];
+                if (m == null) continue;
+                if (string.IsNullOrEmpty(m.InventoryKey))
+                {
+                    skippedNoKey++;
+                    continue;
+                }
+                if (placedByInventoryKey.ContainsKey(m.InventoryKey))
+                {
+                    // 같은 key 중복 — 이미 위반 상태지만 여기서 추가 처리하지 않음 (사용자가 삭제로 정리).
+                    dupes++;
+                    continue;
+                }
+                placedByInventoryKey[m.InventoryKey] = m.gameObject;
+                restored++;
+            }
+            Debug.Log(
+                $"[RoomEdit][Inventory] 진입 시 scene 스캔 — 등록 {restored}, 키 없음 skip {skippedNoKey}, 중복 skip {dupes} / total marker {markers.Length}");
         }
 
         private static string ResolveSlotInitial(string displayName)
@@ -2569,6 +2611,12 @@ namespace App.Bootstrap
                 experienceManager.SnapToMainView();
             }
             BeginCameraViewportEdit();
+
+            // [#5 P1] 진입 시 scene 전체에서 DecorationItemMarker 를 스캔해 placedByInventoryKey 를
+            // 재구성. controller-local cache 만 의존하면 (a) 저장에서 복원된 오브젝트, (b) scene
+            // 에 미리 배치된 marker, (c) 다른 코드가 만든 marker 가 누락되어 슬롯이 다시 활성
+            // 상태로 보이는 경우 발생. "씬에 1개만" 이라는 요구사항을 만족시키려면 scene 전체 스캔.
+            RebuildPlacedByInventoryKeyFromScene();
 
             // 동물의 숲 스타일 — 시점 전환에서 벽이 시야를 가리지 않게 fade 시스템 활성화.
             // 진입 시 0(Default) 프리셋으로 시작하므로 fade=none 으로 시작 (메인뷰 그대로).
@@ -3245,6 +3293,9 @@ namespace App.Bootstrap
             }
 
             // _BaseColor (URP) 우선, 없으면 _Color (Standard) 로 fallback.
+            // [#3 Must Fix] 둘 다 없는 custom shader 면 alpha 적용이 silent fail → 벽이 그대로
+            // occlusion. 이 경우 통째 숨김(enabled=false) 으로 fallback 해서 사용자 시야는 보장.
+            // 종료 시 RendererWasEnabled 로 복구되므로 디자이너가 원본을 바꿀 일은 없음.
             if (cache.InstanceMaterial.HasProperty("_BaseColor"))
             {
                 var c = cache.InstanceMaterial.GetColor("_BaseColor");
@@ -3256,6 +3307,13 @@ namespace App.Bootstrap
                 var c = cache.InstanceMaterial.GetColor("_Color");
                 c.a = WallFadeAlpha;
                 cache.InstanceMaterial.SetColor("_Color", c);
+            }
+            else
+            {
+                Debug.LogWarning(
+                    $"[RoomEdit][WallFade] '{cache.Renderer.gameObject.name}' material 에 _BaseColor/_Color 둘 다 없음 " +
+                    $"(shader={cache.InstanceMaterial.shader?.name}). alpha fade 불가 → Renderer 통째 숨김 fallback.");
+                cache.Renderer.enabled = false;
             }
         }
 
@@ -3314,13 +3372,21 @@ namespace App.Bootstrap
             wallVisibilityCollected = false;
         }
 
-        // 테마 / customization 적용으로 외부에서 renderer.sharedMaterial 이 swap 된 직후 호출.
-        // - 우리가 만든 instance material 은 renderer 에서 분리되어 orphan 상태 → Destroy
-        // - 새 sharedMaterial 을 SharedOriginal 로 재스냅샷 → 종료 시 사용자의 새 테마/벽지 선택이 보존
-        // - 현재 카메라 프리셋 기준으로 fade 재적용 → 탑다운/사선 뷰에서 occlusion 이 돌아오지 않음
+        // 테마 / customization 적용 직후 호출. 외부에서 renderer.sharedMaterial 이 실제로 swap 된
+        // 경우에만 SharedOriginal 을 재스냅샷한다 — fade instance 가 그대로 sharedMaterial 자리에
+        // 있는데 destroy + 그 destroyed reference 를 SharedOriginal 로 저장하던 [P1 #4] 회귀 가드.
         //
-        // 편집 모드가 아니거나 아직 collect 가 안 된 상태면 noop. RestoreWallVisibility() 와 달리
-        // cache 자체는 유지하면서 SharedOriginal/InstanceMaterial 만 갱신하는 점이 핵심.
+        // 동작:
+        //   - 편집 모드가 아니면 noop
+        //   - cache 가 아직 안 만들어졌으면 collect
+        //   - dangling Renderer 가 있으면 [#1] 전체 재수집 (룸 재생성/씬 reload 가드)
+        //   - 각 cache 별로:
+        //       (a) InstanceMaterial 이 sharedMaterial 자리에 그대로면 → 외부 swap 없었음.
+        //           벽 fade 가 살아있으니 SharedOriginal/InstanceMaterial 모두 변경하지 말 것.
+        //       (b) sharedMaterial 이 우리 instance 가 아니면 → 외부에서 swap 됨.
+        //           orphan instance 정리 + 새 sharedMaterial 을 SharedOriginal 로 재스냅샷.
+        //   - RendererWasEnabled 는 fade 가 임시로 켰을 수 있으니 absolutely 절대 갱신하지 않는다 — 진입 시 수집 값 유지.
+        //   - 끝에 ApplyWallVisibilityForPreset 으로 현재 프리셋 fade 재적용.
         private void RefreshWallVisibilityAfterMaterialMutation(string contextTag)
         {
             if (!IsEditModeActive)
@@ -3333,22 +3399,72 @@ namespace App.Bootstrap
             }
             else
             {
-                int refreshed = 0;
+                // [#1 Must Fix] dangling renderer 감지 — Unity null pattern (destroyed) 인 cache 가
+                // 하나라도 있으면 룸이 재생성됐을 가능성 있음. 부분 갱신 시도하지 말고 전체 재수집.
+                bool hasDangling = false;
                 for (int i = 0; i < wallRendererCaches.Count; i++)
                 {
-                    var cache = wallRendererCaches[i];
-                    if (cache.Renderer == null) continue;
-
-                    if (cache.InstanceMaterial != null)
-                    {
-                        Destroy(cache.InstanceMaterial);
-                        cache.InstanceMaterial = null;
-                    }
-                    cache.SharedOriginal = cache.Renderer.sharedMaterial;
-                    cache.RendererWasEnabled = cache.Renderer.enabled;
-                    refreshed++;
+                    if (wallRendererCaches[i].Renderer == null) { hasDangling = true; break; }
                 }
-                Debug.Log($"[RoomEdit][WallFade] cache 재스냅샷 (context={contextTag}) — {refreshed}/{wallRendererCaches.Count}");
+                if (hasDangling)
+                {
+                    Debug.LogWarning(
+                        $"[RoomEdit][WallFade] dangling renderer 감지 (context={contextTag}) — 룸 재생성 가능성. " +
+                        "cache 전체 재수집.");
+                    // 살아있는 instance material 정리.
+                    for (int i = 0; i < wallRendererCaches.Count; i++)
+                    {
+                        var c = wallRendererCaches[i];
+                        if (c.InstanceMaterial != null)
+                        {
+                            Destroy(c.InstanceMaterial);
+                            c.InstanceMaterial = null;
+                        }
+                    }
+                    wallRendererCaches.Clear();
+                    wallVisibilityCollected = false;
+                    CollectWallRenderers();
+                }
+                else
+                {
+                    int externalSwapDetected = 0, fadeKept = 0;
+                    for (int i = 0; i < wallRendererCaches.Count; i++)
+                    {
+                        var cache = wallRendererCaches[i];
+                        if (cache.Renderer == null) continue;
+
+                        // [P1 #4] sharedMaterial 이 우리 instance 자리에 그대로 있으면 → 외부 swap 없었음.
+                        // 예: ApplyEntryVisual/Floor 처럼 bookshelf/floor 만 swap 한 경우 벽 material 은 무손상.
+                        // 이 cache 는 손대지 않는다 (fade 유지). 그렇지 않으면 destroyed reference 를
+                        // SharedOriginal 로 저장하는 회귀 발생 [P1 #4].
+                        bool fadeInstanceStillInstalled =
+                            cache.InstanceMaterial != null &&
+                            ReferenceEquals(cache.Renderer.sharedMaterial, cache.InstanceMaterial);
+
+                        if (fadeInstanceStillInstalled)
+                        {
+                            fadeKept++;
+                            continue;
+                        }
+
+                        // 외부 swap 발생 (벽 카테고리 등). orphan 된 우리 instance 가 있으면 정리하고
+                        // 새 sharedMaterial 을 새 원본으로 잡는다. 종료 시 이걸로 복구해야 사용자가
+                        // 적용한 새 wallpaper 선택이 유지됨.
+                        if (cache.InstanceMaterial != null)
+                        {
+                            Destroy(cache.InstanceMaterial);
+                            cache.InstanceMaterial = null;
+                        }
+                        cache.SharedOriginal = cache.Renderer.sharedMaterial;
+                        // RendererWasEnabled 는 의도적으로 갱신하지 않음 — fade 가 임시로 enabled=true
+                        // 로 켜놨다면 외부 swap 직후의 값이 진실이 아니다. CollectWallRenderers 시점의
+                        // 원본 enabled 가 종료 시 복구의 기준.
+                        externalSwapDetected++;
+                    }
+                    Debug.Log(
+                        $"[RoomEdit][WallFade] cache 재스냅샷 (context={contextTag}) — " +
+                        $"외부 swap 감지 {externalSwapDetected}, fade 유지 {fadeKept} / total {wallRendererCaches.Count}");
+                }
             }
             var preset = CameraPresetCycle[currentCameraPresetIndex];
             ApplyWallVisibilityForPreset(preset);
