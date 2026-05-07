@@ -32,3 +32,7 @@ MonoBehaviour:
     notebookStationPosition: {x: 0.323, y: -0.349, z: -0.41}
     notebookStationRotation: {x: 0, y: 90, z: 0}
     notebookStationScale: {x: 0.3, y: 0.3, z: 0.3}
+    monitorPrefab: {fileID: -8098169881513260187, guid: e3f4a5b6c7d8901234567890abcdef03, type: 3}
+    monitorPosition: {x: -1.672, y: 0.831, z: -0.29}
+    monitorRotation: {x: 0, y: 90, z: 0}
+    monitorScale: {x: 0.3, y: 0.3, z: 0.3}

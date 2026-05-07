@@ -1915,7 +1915,59 @@ namespace App.Bootstrap
             if (category == CustomizationCategory.Desk)
             {
                 ApplyNotebookStationPlacement(roomRoot, entry);
+                // Monitor sub-prefab — 책상의 일부로 함께 spawn (사용자 placement 불가, 고정).
+                ApplyMonitorMeshSwap(roomRoot, entry);
             }
+        }
+
+        // BookshelfGenerator 가 roomRoot 자식으로 spawn 한 native deco (RugNatural / BookStack /
+        // ClockHamham / HamhamDisplay 등) 에 DecorationItemMarker + collider 자동 추가 — 사용자가
+        // 클릭해 select / drag / delete 가능. native 자산이지만 placement 자유도 보장.
+        // 위치 변경 BE 저장은 별도 (현재 visual 만).
+        private static readonly string[] NativeDecoNames = {
+            "RugNatural", "BookStack", "ClockHamham", "HamhamDisplay"
+        };
+
+        private void EnableNativeDecoPlacement()
+        {
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            var roomRoot = themeApplier?.RoomRoot;
+            if (roomRoot == null) return;
+            for (int i = 0; i < NativeDecoNames.Length; i++)
+            {
+                var native = FindChildByName(roomRoot, NativeDecoNames[i]);
+                if (native == null) continue;
+                if (native.GetComponent<DecorationItemMarker>() == null)
+                {
+                    native.gameObject.AddComponent<DecorationItemMarker>();
+                }
+                EnsureCollidersForGameObject(native.gameObject);
+            }
+        }
+
+        // Desk entry 의 monitorPrefab spawn — book 책상 mesh swap 의 일부. 별도 GameObject (이름
+        // MeshSwap_DeskMonitor) 로 roomRoot 자식. 다음 desk 적용 또는 RestoreCategoryNativeMesh 시
+        // 같이 정리.
+        private void ApplyMonitorMeshSwap(Transform roomRoot, CustomizationEntry entry)
+        {
+            // 이전 monitor swap 정리
+            const string monitorSwapName = "MeshSwap_DeskMonitor";
+            for (int i = roomRoot.childCount - 1; i >= 0; i--)
+            {
+                var child = roomRoot.GetChild(i);
+                if (child.gameObject.name == monitorSwapName)
+                {
+                    if (UnityEngine.Application.isPlaying) Destroy(child.gameObject);
+                    else DestroyImmediate(child.gameObject);
+                }
+            }
+
+            if (entry.MonitorPrefab == null) return;
+
+            var go = Instantiate(entry.MonitorPrefab, roomRoot);
+            go.name = monitorSwapName;
+            go.transform.SetPositionAndRotation(entry.MonitorPosition, Quaternion.Euler(entry.MonitorRotation));
+            go.transform.localScale = entry.MonitorScale != Vector3.zero ? entry.MonitorScale : Vector3.one;
         }
 
         // NotebookStation 의 원래 transform 보존용 — 첫 swap 호출 시 저장, restore 시 복원.
@@ -1990,12 +2042,23 @@ namespace App.Bootstrap
         }
 
         // mesh swap 복원 — native renderer 들 enable + spawned mesh swap 정리 + Desk 의 경우
-        // NotebookStation localPosition 도 native 로 복원.
+        // NotebookStation localPosition + Monitor sub-prefab 도 native 복원.
         private void RestoreCategoryNativeMesh(CustomizationCategory category, Transform roomRoot)
         {
             if (category == CustomizationCategory.Desk)
             {
                 RestoreNotebookStationPosition(roomRoot);
+                // monitor sub-prefab 정리
+                const string monitorSwapName = "MeshSwap_DeskMonitor";
+                for (int i = roomRoot.childCount - 1; i >= 0; i--)
+                {
+                    var child = roomRoot.GetChild(i);
+                    if (child.gameObject.name == monitorSwapName)
+                    {
+                        if (UnityEngine.Application.isPlaying) Destroy(child.gameObject);
+                        else DestroyImmediate(child.gameObject);
+                    }
+                }
             }
             string swapName = $"MeshSwap_{category}";
             for (int i = roomRoot.childCount - 1; i >= 0; i--)
@@ -2746,6 +2809,11 @@ namespace App.Bootstrap
             }
 
             IsEditModeActive = true;
+
+            // Native deco (rug/hamham/bookstack/clock 등) placement 활성화 — DecorationItemMarker
+            // + collider 자동 추가해서 사용자가 select/drag/delete 가능하게. BookshelfGenerator 가
+            // roomRoot 자식으로 만든 native deco 는 marker 없으면 클릭 무시됨.
+            EnableNativeDecoPlacement();
 
             // Edit 모드 진입 시 서버 Space 상태 비동기 동기화 — IsCategoryEntryCurrent /
             // OptimisticallyUpdateServerSpace의 single source of truth(`lastServerSpace`)

@@ -78,6 +78,14 @@ namespace App.Infrastructure.Catalogs
         [Tooltip("NotebookStation 의 localScale.")]
         [SerializeField] private Vector3 notebookStationScale = Vector3.one;
 
+        [Header("Desk 전용 — Monitor sub-prefab (책상 + 모니터 한 entry, 사용자 placement 불가)")]
+        [Tooltip("책상 mesh swap 시 함께 spawn 되는 monitor mesh. NotebookStation 과 같은 위치/회전/" +
+                 "스케일로 fit 하면 노트북 클릭 hit area 와 monitor 화면이 정확 align.")]
+        [SerializeField] private GameObject monitorPrefab;
+        [SerializeField] private Vector3 monitorPosition;
+        [SerializeField] private Vector3 monitorRotation;
+        [SerializeField] private Vector3 monitorScale = Vector3.one;
+
         public long AssetId => assetId;
         public string DisplayName => displayName;
         public string Description => description;
@@ -97,6 +105,10 @@ namespace App.Infrastructure.Catalogs
         public Vector3 NotebookStationPosition => notebookStationPosition;
         public Vector3 NotebookStationRotation => notebookStationRotation;
         public Vector3 NotebookStationScale => notebookStationScale;
+        public GameObject MonitorPrefab => monitorPrefab;
+        public Vector3 MonitorPosition => monitorPosition;
+        public Vector3 MonitorRotation => monitorRotation;
+        public Vector3 MonitorScale => monitorScale;
     }
 
     /// <summary>
