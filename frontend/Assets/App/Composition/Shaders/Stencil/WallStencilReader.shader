@@ -88,10 +88,15 @@ Shader "Dotshelf/WallStencilReader"
                 half4 baseTex = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv);
                 half3 albedo = baseTex.rgb * _BaseColor.rgb;
 
-                // ambient + 메인 directional light(외부조명) 의 약한 반응. 산뜻 톤 유지.
+                // URP 의 ambient SH probe (RenderSettings.ambientIntensity 등 반영) + main
+                // directional light. URP Lit 의 톤과 비슷하게 산뜻하게. 이전 단순 ambient
+                // multiply 만 쓰던 버전보다 wall 이 어둡게 보이지 않음.
+                float3 normalWS = normalize(i.normalWS);
                 Light mainLight = GetMainLight();
-                half NdotL = saturate(dot(normalize(i.normalWS), mainLight.direction));
-                half3 lit = albedo * (mainLight.color * NdotL * 0.4 + _AmbientStrength * 0.6);
+                half NdotL = saturate(dot(normalWS, mainLight.direction));
+                half3 ambient = SampleSH(normalWS) * _AmbientStrength;
+                half3 direct = mainLight.color * NdotL;
+                half3 lit = albedo * (ambient + direct);
                 return half4(lit, 1);
             }
             ENDHLSL
