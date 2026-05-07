@@ -20,6 +20,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 
 import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.repository.AssetRepository;
@@ -50,6 +51,7 @@ import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
+import com.dotshelf.global.storage.S3StorageService;
 import com.dotshelf.support.TestFixtures;
 
 @ExtendWith(MockitoExtension.class)
@@ -96,6 +98,9 @@ class SpaceServiceTest {
 
     @Mock
     private BookshelfRepository bookshelfRepository;
+
+    @Mock
+    private S3StorageService s3StorageService;
 
     @InjectMocks
     private SpaceService spaceService;
@@ -281,6 +286,85 @@ class SpaceServiceTest {
         assertThat(response.layoutVersion()).isEqualTo(1L);
         then(layoutSnapshotRepository).should().save(captor.capture());
         assertThat(captor.getValue().getLayoutPayload()).isEqualTo("{\"items\":[]}");
+    }
+
+    @Test
+    @DisplayName("썸네일 업로드는 이미지 매직 바이트 검증 후 S3에 저장하고 thumbnailUrl과 layoutVersion을 갱신한다")
+    void uploadThumbnail_validPng_uploadsToS3AndUpdatesSpace() {
+        Space space = TestFixtures.space(10L, 1L);
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "thumbnail.png",
+                "image/png",
+                new byte[] {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00});
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+        given(s3StorageService.publicUrl("spaces/10/thumbnail-1.png"))
+                .willReturn("https://cdn.test/spaces/10/thumbnail-1.png");
+
+        var response = spaceService.uploadThumbnail(1L, file);
+
+        assertThat(response.spaceId()).isEqualTo(10L);
+        assertThat(response.layoutVersion()).isEqualTo(1L);
+        assertThat(response.thumbnailUrl()).isEqualTo("https://cdn.test/spaces/10/thumbnail-1.png");
+        assertThat(space.getThumbnailUrl()).isEqualTo("https://cdn.test/spaces/10/thumbnail-1.png");
+        then(s3StorageService).should().putObject("spaces/10/thumbnail-1.png", file, "image/png");
+    }
+
+    @Test
+    @DisplayName("썸네일 업로드는 파일이 비어 있으면 INVALID_INPUT을 던진다")
+    void uploadThumbnail_emptyFile_throwsInvalidInput() {
+        MockMultipartFile file = new MockMultipartFile("file", "empty.png", "image/png", new byte[] {});
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L))
+                .willReturn(Optional.of(TestFixtures.space(10L, 1L)));
+
+        assertThatThrownBy(() -> spaceService.uploadThumbnail(1L, file))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        then(s3StorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("썸네일 업로드는 최대 크기를 넘으면 STORAGE_FILE_TOO_LARGE를 던진다")
+    void uploadThumbnail_tooLarge_throwsFileTooLarge() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "large.png",
+                "image/png",
+                new byte[(int) (2L * 1024 * 1024 + 1)]);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L))
+                .willReturn(Optional.of(TestFixtures.space(10L, 1L)));
+
+        assertThatThrownBy(() -> spaceService.uploadThumbnail(1L, file))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.STORAGE_FILE_TOO_LARGE);
+
+        then(s3StorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("썸네일 업로드는 contentType과 실제 파일 시그니처가 다르면 STORAGE_INVALID_CONTENT_TYPE을 던진다")
+    void uploadThumbnail_mismatchedMagicBytes_throwsInvalidContentType() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "fake.png",
+                "image/png",
+                new byte[] {'N', 'O', 'T', '_', 'P', 'N', 'G'});
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L))
+                .willReturn(Optional.of(TestFixtures.space(10L, 1L)));
+
+        assertThatThrownBy(() -> spaceService.uploadThumbnail(1L, file))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+
+        then(s3StorageService).shouldHaveNoInteractions();
     }
 
     @Test

@@ -98,7 +98,7 @@ class AuthServiceTest {
         assertThat(response.accessToken()).isEqualTo("access");
         then(notificationSettingRepository).should().save(settingCaptor.capture());
         assertThat(settingCaptor.getValue().getUserId()).isEqualTo(1L);
-        then(spaceService).should().findOrCreateMySpace(1L);
+        then(spaceService).should().ensureDefaultSpace(1L);
         then(socialAccountRepository).should().save(accountCaptor.capture());
         assertThat(accountCaptor.getValue().getProvider()).isEqualTo(SocialProvider.GOOGLE);
         assertThat(accountCaptor.getValue().getProviderUserId()).isEqualTo("google-1");

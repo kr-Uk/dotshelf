@@ -47,6 +47,7 @@
   - 인벤토리 조회
   - 위시리스트
   - 구매 성공, 잔액 부족, 중복 구매, 무료 에셋 구매
+  - 관리자 에셋 번들/프리뷰 이미지 presigned upload URL 및 confirm 검증
 
 - ReadingRecord / Guestbook / Report / Notification
   - CRUD, 좋아요/댓글, 권한 검증
@@ -64,6 +65,7 @@
   - `/health` 200/503 응답
   - Spring Security 401/403 entry point envelope
   - GlobalExceptionHandler 주요 예외 변환
+  - S3 storage wrapper, 이미지 매직 바이트 검증, 업로드 예외 변환
 
 ## CI / Test Infra
 
@@ -87,7 +89,7 @@
 ./gradlew.bat clean build -DrunPostgresTests=true
 
 BUILD SUCCESSFUL
-tests=463 failures=0 errors=0 skipped=0
-Jacoco excluded line coverage=86.05%
-covered=3040 missed=493 total=3533
+tests=497 failures=0 errors=0 skipped=0
+Jacoco excluded line coverage=86.24%
+covered=3229 missed=515 total=3744
 ```

@@ -398,6 +398,7 @@ class SpaceControllerTest {
                 0,
                 false,
                 0,
+                null,
                 themeInventoryId,
                 wallpaperInventoryId,
                 null,

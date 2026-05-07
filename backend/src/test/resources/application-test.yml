@@ -42,3 +42,14 @@ payment:
     return-url: http://localhost/v1/payments/inicis/return
     close-url: http://localhost/v1/payments/inicis/close
     request-script-url: https://pay.example/stdpay.js
+
+app:
+  storage:
+    s3:
+      bucket: dotshelf-test-bucket
+      region: ap-northeast-2
+      access-key: test-access-key
+      secret-key: test-secret-key
+      public-base-url: https://cdn.test.dotshelf.invalid
+      presign-ttl-seconds: 300
+      presign-bundle-ttl-seconds: 1800

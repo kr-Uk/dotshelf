@@ -136,7 +136,6 @@ public class AuthService {
         notificationSettingRepository.save(UserNotificationSetting.builder()
                 .userId(user.getId())
                 .build());
-        spaceService.findOrCreateMySpace(user.getId());
         socialAccountRepository.save(UserSocialAccount.builder()
                 .userId(user.getId())
                 .provider(socialUser.provider())

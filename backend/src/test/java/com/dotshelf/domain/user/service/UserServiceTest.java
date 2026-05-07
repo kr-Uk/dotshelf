@@ -3,10 +3,13 @@ package com.dotshelf.domain.user.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,6 +24,8 @@ import org.springframework.data.domain.Pageable;
 
 import com.dotshelf.domain.user.dto.UserDtos.FeedSettingRequest;
 import com.dotshelf.domain.user.dto.UserDtos.NotificationSettingRequest;
+import com.dotshelf.domain.user.dto.UserDtos.ProfileImageConfirmRequest;
+import com.dotshelf.domain.user.dto.UserDtos.ProfileImageUploadUrlRequest;
 import com.dotshelf.domain.user.dto.UserDtos.UpdateProfileRequest;
 import com.dotshelf.domain.user.entity.Follow;
 import com.dotshelf.domain.user.entity.User;
@@ -34,6 +39,10 @@ import com.dotshelf.domain.user.repository.UserNotificationSettingRepository;
 import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
+import com.dotshelf.global.storage.S3StorageProperties;
+import com.dotshelf.global.storage.S3StorageService;
+import com.dotshelf.global.storage.S3StorageService.ObjectMetadata;
+import com.dotshelf.global.storage.S3StorageService.PresignedPut;
 import com.dotshelf.support.TestFixtures;
 
 @ExtendWith(MockitoExtension.class)
@@ -54,6 +63,12 @@ class UserServiceTest {
     @Mock
     private UserFeedSettingRepository feedSettingRepository;
 
+    @Mock
+    private S3StorageService s3StorageService;
+
+    @Mock
+    private S3StorageProperties s3StorageProperties;
+
     @InjectMocks
     private UserService userService;
 
@@ -64,11 +79,11 @@ class UserServiceTest {
         given(userRepository.findById(1L)).willReturn(Optional.of(user));
         given(userRepository.existsByNickname("new")).willReturn(false);
 
-        var response = userService.updateMe(1L, new UpdateProfileRequest("new", "https://example.com/new.png", "intro"));
+        var response = userService.updateMe(1L, new UpdateProfileRequest("new", "intro"));
 
         assertThat(response.nickname()).isEqualTo("new");
         assertThat(response.onboarded()).isTrue();
-        assertThat(user.getProfileImageUrl()).isEqualTo("https://example.com/new.png");
+        assertThat(user.getProfileImageUrl()).isEqualTo("https://example.com/old.png");
         assertThat(user.getIntroduction()).isEqualTo("intro");
     }
 
@@ -79,7 +94,7 @@ class UserServiceTest {
         given(userRepository.findById(1L)).willReturn(Optional.of(user));
         given(userRepository.existsByNickname("taken")).willReturn(true);
 
-        assertThatThrownBy(() -> userService.updateMe(1L, new UpdateProfileRequest("taken", null, null)))
+        assertThatThrownBy(() -> userService.updateMe(1L, new UpdateProfileRequest("taken", null)))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.DUPLICATE_NICKNAME);
@@ -233,6 +248,111 @@ class UserServiceTest {
 
         assertThat(user.getStatus()).isEqualTo("DELETED");
         assertThat(user.getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("프로필 이미지 업로드 URL은 사용자 prefix key와 presigned PUT을 반환한다")
+    void createProfileImageUploadUrl_validPng_returnsScopedPresignedUrl() {
+        given(s3StorageProperties.presignTtlSeconds()).willReturn(300L);
+        given(s3StorageService.presignPut(
+                anyString(),
+                eq("image/png"),
+                eq(2048L),
+                eq(Duration.ofSeconds(300))))
+                .willAnswer(invocation -> new PresignedPut("https://upload.test/profile", invocation.getArgument(0), 300));
+
+        var response = userService.createProfileImageUploadUrl(
+                1L,
+                new ProfileImageUploadUrlRequest("image/png", 2048L));
+
+        assertThat(response.uploadUrl()).isEqualTo("https://upload.test/profile");
+        assertThat(response.key()).startsWith("users/1/profile/");
+        assertThat(response.key()).endsWith(".png");
+        assertThat(response.expiresInSeconds()).isEqualTo(300L);
+    }
+
+    @Test
+    @DisplayName("프로필 이미지 업로드 URL은 지원하지 않는 contentType이면 STORAGE_INVALID_CONTENT_TYPE을 던진다")
+    void createProfileImageUploadUrl_invalidContentType_throwsInvalidContentType() {
+        assertThatThrownBy(() -> userService.createProfileImageUploadUrl(
+                1L,
+                new ProfileImageUploadUrlRequest("image/gif", 1024L)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+
+        then(s3StorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("프로필 이미지 업로드 URL은 최대 크기를 넘으면 STORAGE_FILE_TOO_LARGE를 던진다")
+    void createProfileImageUploadUrl_tooLarge_throwsFileTooLarge() {
+        assertThatThrownBy(() -> userService.createProfileImageUploadUrl(
+                1L,
+                new ProfileImageUploadUrlRequest("image/jpeg", 5L * 1024 * 1024 + 1)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.STORAGE_FILE_TOO_LARGE);
+
+        then(s3StorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("프로필 이미지 confirm은 key prefix와 S3 metadata를 검증하고 profileImageUrl을 갱신한다")
+    void confirmProfileImage_validObject_updatesProfileImageUrl() {
+        User user = TestFixtures.user(1L, "profile");
+        String key = "users/1/profile/a.webp";
+        given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("image/webp", 2048L));
+        given(userRepository.findById(1L)).willReturn(Optional.of(user));
+        given(s3StorageService.publicUrl(key)).willReturn("https://cdn.test/" + key);
+
+        var response = userService.confirmProfileImage(1L, new ProfileImageConfirmRequest(key));
+
+        assertThat(response.profileImageUrl()).isEqualTo("https://cdn.test/" + key);
+        assertThat(user.getProfileImageUrl()).isEqualTo("https://cdn.test/" + key);
+        assertThat(user.getNickname()).isEqualTo("profile");
+        assertThat(user.getIntroduction()).isEqualTo("profile introduction");
+    }
+
+    @Test
+    @DisplayName("프로필 이미지 confirm은 다른 사용자의 key면 STORAGE_INVALID_KEY를 던진다")
+    void confirmProfileImage_wrongUserPrefix_throwsInvalidKey() {
+        assertThatThrownBy(() -> userService.confirmProfileImage(
+                1L,
+                new ProfileImageConfirmRequest("users/2/profile/a.png")))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.STORAGE_INVALID_KEY);
+
+        then(s3StorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("프로필 이미지 confirm은 S3 contentType이 이미지가 아니면 STORAGE_INVALID_CONTENT_TYPE을 던진다")
+    void confirmProfileImage_invalidContentType_throwsInvalidContentType() {
+        String key = "users/1/profile/a.png";
+        given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("text/plain", 100L));
+
+        assertThatThrownBy(() -> userService.confirmProfileImage(1L, new ProfileImageConfirmRequest(key)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+
+        then(userRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("프로필 이미지 confirm은 S3 객체 크기가 한도를 넘으면 STORAGE_FILE_TOO_LARGE를 던진다")
+    void confirmProfileImage_tooLarge_throwsFileTooLarge() {
+        String key = "users/1/profile/a.png";
+        given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("image/png", 5L * 1024 * 1024 + 1));
+
+        assertThatThrownBy(() -> userService.confirmProfileImage(1L, new ProfileImageConfirmRequest(key)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.STORAGE_FILE_TOO_LARGE);
+
+        then(userRepository).shouldHaveNoInteractions();
     }
 
     @Test
