@@ -31,5 +31,33 @@ MonoBehaviour:
   accentSecondary: {r: 1, g: 0.75686276, b: 0.7058824, a: 1}
   accentTertiary: {r: 0.65882355, g: 0.8352941, b: 0.63529414, a: 1}
   bookshelfDecoSpecs: []
-  floorDecoSpecs: []
-  wallDecoSpecs: []
+  floorDecoSpecs:
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: e6f7a8b9c0d1234567890123abcdef06, type: 3}
+    wallSide: 0
+    localPosition: {x: 0, y: 0.01, z: -0.3}
+    localRotation: {x: 0, y: 0, z: 0}
+    localScale: {x: 1, y: 1, z: 1}
+    anchorTag: "rug"
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: e1f2a3b4c5d6789012345678abcdef01, type: 3}
+    wallSide: 0
+    localPosition: {x: 1.2, y: 0, z: 0.5}
+    localRotation: {x: 0, y: 90, z: 0}
+    localScale: {x: 1, y: 1, z: 1}
+    anchorTag: "bed"
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: e5f6a7b8c9d0123456789012abcdef05, type: 3}
+    wallSide: 0
+    localPosition: {x: 1.2, y: 0.6, z: 0.7}
+    localRotation: {x: 0, y: 0, z: 0}
+    localScale: {x: 0.5, y: 0.5, z: 0.5}
+    anchorTag: "toastPillow"
+  wallDecoSpecs:
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: e4f5a6b7c8d9012345678901abcdef04, type: 3}
+    wallSide: 1
+    localPosition: {x: 0, y: 0.5, z: 0.05}
+    localRotation: {x: 0, y: 0, z: 0}
+    localScale: {x: 0.6, y: 0.6, z: 0.6}
+    anchorTag: "neonSign"
