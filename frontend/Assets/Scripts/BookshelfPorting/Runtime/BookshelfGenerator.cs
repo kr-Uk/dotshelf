@@ -3412,6 +3412,10 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var previousReadingRecordId = book.readingRecordId;
+            var previousReportTitle = book.reportTitle;
+            var previousReportBody = book.reportBody;
+            var previousReportUpdatedLabel = book.reportUpdatedLabel;
             book.bookId = string.IsNullOrWhiteSpace(placement.BookId) ? placement.BookKey : placement.BookId;
             book.bookshelfItemId = placement.BookshelfItemId;
             book.userBookId = placement.UserBookId;
@@ -3434,12 +3438,51 @@ namespace BookshelfPorting.Runtime
             book.isLiked = placement.IsLiked;
             book.isPublic = placement.IsPublic;
             book.reportVisibility = placement.ReportVisibility;
-            book.reportTitle = placement.ReportTitle;
-            book.reportBody = placement.ReportBody;
-            book.reportUpdatedLabel = placement.ReportUpdatedLabel;
+            ApplySnapshotReportFields(
+                book,
+                placement,
+                previousReadingRecordId,
+                previousReportTitle,
+                previousReportBody,
+                previousReportUpdatedLabel);
             book.isPaidCoverOwned = placement.IsPaidCoverOwned;
             book.isDecoration = placement.IsDecoration;
             RefreshBookCoverVisuals(book);
+        }
+
+        private static void ApplySnapshotReportFields(
+            BookEntity book,
+            BookPlacementSnapshot placement,
+            string previousReadingRecordId,
+            string previousReportTitle,
+            string previousReportBody,
+            string previousReportUpdatedLabel)
+        {
+            if (book == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(placement.ReadingRecordId))
+            {
+                book.reportTitle = string.Empty;
+                book.reportBody = string.Empty;
+                book.reportUpdatedLabel = string.Empty;
+                return;
+            }
+
+            var canReusePreviousReport =
+                !string.IsNullOrWhiteSpace(previousReadingRecordId) &&
+                string.Equals(previousReadingRecordId, placement.ReadingRecordId, System.StringComparison.Ordinal);
+            book.reportTitle = !string.IsNullOrWhiteSpace(placement.ReportTitle)
+                ? placement.ReportTitle
+                : canReusePreviousReport ? previousReportTitle : book.reportTitle;
+            book.reportBody = !string.IsNullOrWhiteSpace(placement.ReportBody)
+                ? placement.ReportBody
+                : canReusePreviousReport ? previousReportBody : book.reportBody;
+            book.reportUpdatedLabel = !string.IsNullOrWhiteSpace(placement.ReportUpdatedLabel)
+                ? placement.ReportUpdatedLabel
+                : canReusePreviousReport ? previousReportUpdatedLabel : book.reportUpdatedLabel;
         }
 
         private static string GetBookLayoutKey(BookEntity book)

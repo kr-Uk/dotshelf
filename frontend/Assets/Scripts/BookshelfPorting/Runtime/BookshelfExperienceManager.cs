@@ -61,6 +61,7 @@ namespace BookshelfPorting.Runtime
         private const float HudInputTextVerticalPadding = 10f;
         private const float OverlayButtonBottomPaddingExtra = 18f;
         private const int BookAddMaxResultCount = 64;
+        private const int BookAddCoverSpriteCacheLimit = 48;
         private const float BookAddResultRowHeight = 124f;
         private const float BookAddResultViewportHeight = 260f;
         private const int BookSearchMaxResultCount = 96;
@@ -598,6 +599,7 @@ namespace BookshelfPorting.Runtime
         private readonly List<BookAddCatalogItem> runtimeBookAddCatalog = new List<BookAddCatalogItem>();
         private readonly List<BookAddCatalogItem> apiBookAddCatalog = new List<BookAddCatalogItem>();
         private readonly Dictionary<string, Sprite> bookAddCoverSpriteCache = new Dictionary<string, Sprite>();
+        private readonly LinkedList<string> bookAddCoverSpriteLru = new LinkedList<string>();
         private readonly Dictionary<Image, Coroutine> bookAddCoverLoadCoroutines = new Dictionary<Image, Coroutine>();
         private readonly Dictionary<Image, string> bookAddCoverImageUrls = new Dictionary<Image, string>();
         private GameObject bookAddConfirmPanel;
@@ -1238,6 +1240,7 @@ namespace BookshelfPorting.Runtime
 
             DetachNotebookApiCallbacks();
             CancelBookAddCoverLoads();
+            ClearBookAddCoverSpriteCache();
         }
 
         public void FocusQuarterView()
@@ -6291,6 +6294,7 @@ namespace BookshelfPorting.Runtime
             }
 
             CancelBookAddCoverLoads();
+            ClearBookAddCoverSpriteCache();
 
             if (bookAddPanel != null)
             {
@@ -9001,7 +9005,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (bookAddCoverSpriteCache.TryGetValue(url, out var cachedSprite) && cachedSprite != null)
+            if (TryGetBookAddCoverSprite(url, out var cachedSprite))
             {
                 ApplyBookAddCoverSprite(image, cachedSprite);
                 return;
@@ -9012,41 +9016,38 @@ namespace BookshelfPorting.Runtime
 
         private IEnumerator LoadBookAddCoverImage(Image image, string url)
         {
-            var request = UnityWebRequestTexture.GetTexture(url);
-            request.timeout = 8;
-            request.disposeDownloadHandlerOnDispose = false;
-            yield return request.SendWebRequest();
-
-            bookAddCoverLoadCoroutines.Remove(image);
-            if (image == null ||
-                !bookAddCoverImageUrls.TryGetValue(image, out var activeUrl) ||
-                !string.Equals(activeUrl, url, System.StringComparison.Ordinal))
+            using (var request = UnityWebRequestTexture.GetTexture(url))
             {
-                request.Dispose();
-                yield break;
-            }
+                request.timeout = 8;
+                yield return request.SendWebRequest();
 
-            if (request.result != UnityWebRequest.Result.Success)
-            {
-                request.Dispose();
-                yield break;
-            }
+                bookAddCoverLoadCoroutines.Remove(image);
+                if (image == null ||
+                    !bookAddCoverImageUrls.TryGetValue(image, out var activeUrl) ||
+                    !string.Equals(activeUrl, url, System.StringComparison.Ordinal))
+                {
+                    yield break;
+                }
 
-            var texture = DownloadHandlerTexture.GetContent(request);
-            if (texture == null)
-            {
-                request.Dispose();
-                yield break;
-            }
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    yield break;
+                }
 
-            var sprite = Sprite.Create(
-                texture,
-                new Rect(0f, 0f, texture.width, texture.height),
-                new Vector2(0.5f, 0.5f),
-                100f);
-            bookAddCoverSpriteCache[url] = sprite;
-            ApplyBookAddCoverSprite(image, sprite);
-            request.Dispose();
+                var texture = DownloadHandlerTexture.GetContent(request);
+                if (texture == null)
+                {
+                    yield break;
+                }
+
+                var sprite = Sprite.Create(
+                    texture,
+                    new Rect(0f, 0f, texture.width, texture.height),
+                    new Vector2(0.5f, 0.5f),
+                    100f);
+                CacheBookAddCoverSprite(url, sprite);
+                ApplyBookAddCoverSprite(image, sprite);
+            }
         }
 
         private static void ApplyBookAddCoverSprite(Image image, Sprite sprite)
@@ -9102,6 +9103,116 @@ namespace BookshelfPorting.Runtime
             }
 
             bookAddCoverLoadCoroutines.Clear();
+        }
+
+        private bool TryGetBookAddCoverSprite(string url, out Sprite sprite)
+        {
+            sprite = null;
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return false;
+            }
+
+            if (!bookAddCoverSpriteCache.TryGetValue(url, out sprite) || sprite == null)
+            {
+                RemoveBookAddCoverSpriteCacheEntry(url);
+                return false;
+            }
+
+            TouchBookAddCoverSpriteCacheKey(url);
+            return true;
+        }
+
+        private void CacheBookAddCoverSprite(string url, Sprite sprite)
+        {
+            if (string.IsNullOrWhiteSpace(url) || sprite == null)
+            {
+                return;
+            }
+
+            if (bookAddCoverSpriteCache.TryGetValue(url, out var previous) && previous != null && previous != sprite)
+            {
+                DestroyBookAddCoverSprite(previous);
+            }
+
+            bookAddCoverSpriteCache[url] = sprite;
+            TouchBookAddCoverSpriteCacheKey(url);
+            TrimBookAddCoverSpriteCache();
+        }
+
+        private void TouchBookAddCoverSpriteCacheKey(string url)
+        {
+            for (var node = bookAddCoverSpriteLru.First; node != null; node = node.Next)
+            {
+                if (!string.Equals(node.Value, url, System.StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                bookAddCoverSpriteLru.Remove(node);
+                break;
+            }
+
+            bookAddCoverSpriteLru.AddLast(url);
+        }
+
+        private void TrimBookAddCoverSpriteCache()
+        {
+            while (bookAddCoverSpriteCache.Count > BookAddCoverSpriteCacheLimit && bookAddCoverSpriteLru.First != null)
+            {
+                RemoveBookAddCoverSpriteCacheEntry(bookAddCoverSpriteLru.First.Value);
+            }
+        }
+
+        private void RemoveBookAddCoverSpriteCacheEntry(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            if (bookAddCoverSpriteCache.TryGetValue(url, out var sprite))
+            {
+                DestroyBookAddCoverSprite(sprite);
+                bookAddCoverSpriteCache.Remove(url);
+            }
+
+            for (var node = bookAddCoverSpriteLru.First; node != null;)
+            {
+                var next = node.Next;
+                if (string.Equals(node.Value, url, System.StringComparison.Ordinal))
+                {
+                    bookAddCoverSpriteLru.Remove(node);
+                }
+
+                node = next;
+            }
+        }
+
+        private void ClearBookAddCoverSpriteCache()
+        {
+            foreach (var pair in bookAddCoverSpriteCache)
+            {
+                DestroyBookAddCoverSprite(pair.Value);
+            }
+
+            bookAddCoverSpriteCache.Clear();
+            bookAddCoverSpriteLru.Clear();
+        }
+
+        private static void DestroyBookAddCoverSprite(Sprite sprite)
+        {
+            if (sprite == null)
+            {
+                return;
+            }
+
+            var texture = sprite.texture;
+            Destroy(sprite);
+            if (texture != null)
+            {
+                Destroy(texture);
+            }
         }
 
         private static void StyleBookAddBrowseButton(Button button, bool isActive)
