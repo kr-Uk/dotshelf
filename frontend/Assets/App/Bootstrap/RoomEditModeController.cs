@@ -1734,7 +1734,7 @@ namespace App.Bootstrap
                 var child = roomRoot.GetChild(i);
                 if (child.gameObject.name == swapName)
                 {
-                    if (Application.isPlaying) Destroy(child.gameObject);
+                    if (UnityEngine.Application.isPlaying) Destroy(child.gameObject);
                     else DestroyImmediate(child.gameObject);
                 }
             }
@@ -1773,7 +1773,7 @@ namespace App.Bootstrap
                 var child = roomRoot.GetChild(i);
                 if (child.gameObject.name == swapName)
                 {
-                    if (Application.isPlaying) Destroy(child.gameObject);
+                    if (UnityEngine.Application.isPlaying) Destroy(child.gameObject);
                     else DestroyImmediate(child.gameObject);
                 }
             }
