@@ -94,9 +94,11 @@ namespace BookshelfPorting.Runtime
         }
 
         private const float CanvasScale = 0.000542f;
+        private const float ScreenSaverDepthOffset = -0.0012f;
+        private const float DashboardDepthOffset = -0.0008f;
         private const float TransitionDuration = 0.22f;
         private const float HiddenScaleMultiplier = 0.96f;
-        private static readonly Vector2 ScreenSaverCanvasSize = new(850f, 480f);
+        private static readonly Vector2 ScreenSaverCanvasSize = new(800f, 450f);
         private static readonly Vector2 DashboardCanvasSize = new(850f, 480f);
         private static readonly string[] AdvertisedBookTitles =
         {
@@ -224,6 +226,7 @@ namespace BookshelfPorting.Runtime
         private void Awake()
         {
             EnsureAdImages();
+            NormalizeSerializedScreenSaverCanvas();
             WarnIfAdsMissing();
         }
 
@@ -621,7 +624,6 @@ namespace BookshelfPorting.Runtime
             openButton.colors = colors;
             openButton.onClick.AddListener(() =>
             {
-                openAdvertisedBookOnDashboard = true;
                 if (onOpenScreenSaver != null)
                 {
                     onOpenScreenSaver.Invoke();
@@ -656,6 +658,35 @@ namespace BookshelfPorting.Runtime
             }
         }
 
+        private void NormalizeSerializedScreenSaverCanvas()
+        {
+            if (screenSaverImage == null)
+            {
+                return;
+            }
+
+            var canvas = screenSaverImage.GetComponentInParent<Canvas>(true);
+            if (canvas == null || canvas.name != "ScreenSaverCanvas")
+            {
+                return;
+            }
+
+            var rect = canvas.GetComponent<RectTransform>();
+            if (rect != null)
+            {
+                rect.sizeDelta = ScreenSaverCanvasSize;
+                ApplyCanvasTransform(canvas.transform);
+            }
+
+            screenSaverCanvas = canvas;
+            screenSaverCanvasGroup = canvas.GetComponent<CanvasGroup>();
+            screenSaverImageRect = screenSaverImage.rectTransform;
+            screenSaverImage.preserveAspect = false;
+            screenSaverImage.raycastTarget = true;
+            StretchToFill(screenSaverImageRect);
+            ApplySelectedAd();
+        }
+
         private void BuildDashboard(Transform parent, UnityAction onCloseDashboard)
         {
             RemoveLegacyDashboardContent();
@@ -668,7 +699,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var depthOffset = canvasTransform.name == "DashboardCanvas" ? -0.0008f : -0.0004f;
+            var depthOffset = canvasTransform.name == "DashboardCanvas" ? DashboardDepthOffset : ScreenSaverDepthOffset;
             canvasTransform.localPosition = new Vector3(0f, -0.022f, depthOffset);
             canvasTransform.localRotation = Quaternion.Euler(-90f, 0f, 180f);
             canvasTransform.localScale = Vector3.one * CanvasScale;
