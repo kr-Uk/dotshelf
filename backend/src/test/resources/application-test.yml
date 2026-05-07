@@ -1,0 +1,44 @@
+spring:
+  datasource:
+    url: "jdbc:h2:mem:dotshelf-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;INIT=CREATE SCHEMA IF NOT EXISTS admin"
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  flyway:
+    enabled: false
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        format_sql: false
+        hbm2ddl:
+          create_namespaces: true
+    show-sql: false
+    open-in-view: false
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+jwt:
+  secret: test-secret-change-me-32bytes-minimum-length
+  access-token-validity-seconds: 1800
+  refresh-token-validity-seconds: 2592000
+  issuer: dotshelf-test
+
+admin:
+  test-auth:
+    enabled: true
+    header-name: X-Test-Admin-User-Id
+
+payment:
+  inicis:
+    mid: test-mid
+    sign-key: test-sign-key
+    return-url: http://localhost/v1/payments/inicis/return
+    close-url: http://localhost/v1/payments/inicis/close
+    request-script-url: https://pay.example/stdpay.js

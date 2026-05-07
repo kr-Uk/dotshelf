@@ -389,7 +389,9 @@ public class BookshelfService {
         Book book = userBook == null ? null : books.get(userBook.getBookId());
         BookshelfSection section = sectionsById.get(item.getBookshelfSectionId());
         ReadingRecord record = userBook == null ? null : visibleReadingRecord(viewerUserId, userBook, readingRecords.get(userBook.getId()));
-        UserAssetInventory inventory = inventories.get(item.getAssetInventoryId());
+        UserAssetInventory inventory = item.getAssetInventoryId() == null
+                ? null
+                : inventories.get(item.getAssetInventoryId());
         Asset asset = inventory == null ? null : assets.get(inventory.getAssetId());
         // Orphan FK 진단 — 깨진 참조 데이터를 운영자가 식별할 수 있도록 warn 로그 (NPE 자체는 위 null 가드가 막음).
         // userBookId/sectionId/inventoryId 가 not null 인데 매핑된 entity 가 없으면 FK 무결성 깨짐 의심.

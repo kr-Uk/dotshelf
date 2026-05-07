@@ -129,16 +129,25 @@ backend:build:
   extends: .backend-rules
   stage: build
   image: eclipse-temurin:21-jdk
+  services:
+    - name: docker:29-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: "tcp://docker:2375"
+    DOCKER_TLS_CERTDIR: ""
+    TESTCONTAINERS_HOST_OVERRIDE: "docker"
   before_script:
     - cd backend
     - chmod +x ./gradlew
   script:
-    - ./gradlew check bootJar --no-daemon
+    - ./gradlew check bootJar -DrunPostgresTests=true --no-daemon
   artifacts:
     name: "dotshelf-api-$CI_COMMIT_SHORT_SHA"
     paths:
       - $JAR_ARTIFACT_PATH/*-SNAPSHOT.jar
       - backend/build/reports/tests/test
+      - backend/build/reports/jacoco/test
+      - backend/build/reports/problems
     reports:
       junit: backend/build/test-results/test/TEST-*.xml
     when: always

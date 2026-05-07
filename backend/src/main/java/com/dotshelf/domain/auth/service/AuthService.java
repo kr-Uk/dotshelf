@@ -19,6 +19,7 @@ import com.dotshelf.domain.auth.repository.GuestMigrationImportRepository;
 import com.dotshelf.domain.auth.repository.UserSocialAccountRepository;
 import com.dotshelf.domain.auth.service.social.SocialTokenVerifierRegistry;
 import com.dotshelf.domain.auth.service.social.SocialUserInfo;
+import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.entity.UserNotificationSetting;
 import com.dotshelf.domain.user.repository.UserNotificationSettingRepository;
@@ -43,6 +44,7 @@ public class AuthService {
     private final AuthRefreshTokenRepository refreshTokenRepository;
     private final GuestMigrationImportRepository guestMigrationImportRepository;
     private final UserService userService;
+    private final SpaceService spaceService;
     private final UserNotificationSettingRepository notificationSettingRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final SocialTokenVerifierRegistry socialTokenVerifierRegistry;
@@ -133,6 +135,7 @@ public class AuthService {
         notificationSettingRepository.save(UserNotificationSetting.builder()
                 .userId(user.getId())
                 .build());
+        spaceService.findOrCreateMySpace(user.getId());
         socialAccountRepository.save(UserSocialAccount.builder()
                 .userId(user.getId())
                 .provider(socialUser.provider())
