@@ -41,6 +41,16 @@ services:
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID}
       APPLE_CLIENT_IDS: ${APPLE_CLIENT_IDS}
+      # S3 업로드 — bucket/region 은 부팅 검증 대상이라 .env 에 비어있으면
+      # ApplicationContext 가 실패한다. master 머지 전 /opt/dotshelf/.env 에
+      # 진짜 버킷 이름/리전을 박아 두어야 한다 (자격증명은 EC2 IAM Role 또는 별도 키).
+      S3_BUCKET: ${S3_BUCKET}
+      S3_REGION: ${S3_REGION:-ap-northeast-2}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      S3_PRESIGN_TTL: ${S3_PRESIGN_TTL:-300}
+      S3_PRESIGN_BUNDLE_TTL: ${S3_PRESIGN_BUNDLE_TTL:-1800}
       TZ: Asia/Seoul
     logging:
       driver: "json-file"
@@ -85,6 +95,16 @@ services:
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID}
       APPLE_CLIENT_IDS: ${APPLE_CLIENT_IDS}
+      # S3 업로드 — bucket/region 은 부팅 검증 대상이라 .env 에 비어있으면
+      # ApplicationContext 가 실패한다. master 머지 전 /opt/dotshelf/.env 에
+      # 진짜 버킷 이름/리전을 박아 두어야 한다 (자격증명은 EC2 IAM Role 또는 별도 키).
+      S3_BUCKET: ${S3_BUCKET}
+      S3_REGION: ${S3_REGION:-ap-northeast-2}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      S3_PRESIGN_TTL: ${S3_PRESIGN_TTL:-300}
+      S3_PRESIGN_BUNDLE_TTL: ${S3_PRESIGN_BUNDLE_TTL:-1800}
       TZ: Asia/Seoul
     logging:
       driver: "json-file"
