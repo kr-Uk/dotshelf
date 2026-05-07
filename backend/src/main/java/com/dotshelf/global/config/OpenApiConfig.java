@@ -1,7 +1,5 @@
 package com.dotshelf.global.config;
 
-import java.util.List;
-
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -31,10 +29,7 @@ public class OpenApiConfig {
                         .title("DotShelf API")
                         .description("DotShelf 도서 소장 플랫폼 백엔드 API 명세")
                         .version("v1"))
-                .servers(List.of(
-                        new Server().url("https://api.dotshelf.digital").description("Production"),
-                        new Server().url("http://localhost:8080").description("Local")
-                ))
+                .addServersItem(new Server().url("/").description("Current host"))
                 .components(new Components().addSecuritySchemes(SECURITY_SCHEME_NAME, bearerScheme))
                 .addSecurityItem(new SecurityRequirement().addList(SECURITY_SCHEME_NAME));
     }

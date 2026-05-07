@@ -17,6 +17,7 @@ import com.dotshelf.domain.guestbook.service.GuestbookService;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
 
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class GuestbookController {
 
     private final GuestbookService guestbookService;
 
+    @Operation(summary = "공간 방명록 목록 조회", description = "지정한 공간의 방명록을 커서 기반으로 조회합니다.")
     @GetMapping("/spaces/{spaceId}/guestbooks")
     public ApiResponse<GuestbookListResponse> getGuestbooks(
             @CurrentUser Long currentUserId,
@@ -39,6 +41,7 @@ public class GuestbookController {
         return ApiResponse.success(guestbookService.getGuestbooks(currentUserId, spaceId, cursor, limit));
     }
 
+    @Operation(summary = "방명록 작성", description = "지정한 공간에 현재 사용자의 방명록을 작성합니다.")
     @PostMapping("/spaces/{spaceId}/guestbooks")
     public ApiResponse<GuestbookResponse> create(
             @CurrentUser Long userId,
@@ -48,12 +51,14 @@ public class GuestbookController {
         return ApiResponse.success(guestbookService.create(userId, spaceId, request));
     }
 
+    @Operation(summary = "방명록 삭제", description = "방명록 작성자 또는 권한 있는 사용자가 방명록을 삭제합니다.")
     @DeleteMapping("/guestbooks/{guestbookId}")
     public ApiResponse<Void> delete(@CurrentUser Long userId, @PathVariable Long guestbookId) {
         guestbookService.delete(userId, guestbookId);
         return ApiResponse.success();
     }
 
+    @Operation(summary = "방명록 답글 작성", description = "지정한 방명록에 현재 사용자의 답글을 작성합니다.")
     @PostMapping("/guestbooks/{guestbookId}/replies")
     public ApiResponse<GuestbookReplyResponse> reply(
             @CurrentUser Long userId,
@@ -63,6 +68,7 @@ public class GuestbookController {
         return ApiResponse.success(guestbookService.reply(userId, guestbookId, request));
     }
 
+    @Operation(summary = "방명록 답글 삭제", description = "방명록 답글을 삭제합니다.")
     @DeleteMapping("/guestbooks/{guestbookId}/replies/{replyId}")
     public ApiResponse<Void> deleteReply(
             @CurrentUser Long userId,
