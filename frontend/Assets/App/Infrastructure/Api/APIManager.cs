@@ -25,6 +25,8 @@ namespace App.Infrastructure.Api
 
     public sealed class APIManager : MonoBehaviour
     {
+        private const int ErrorResponseBodyLogLimit = 512;
+
         [SerializeField] private string baseUrl = ApiEndpointDefaults.DefaultBaseUrl;
         [SerializeField] private string accessToken;
         [SerializeField] private int timeoutSeconds = 10;
@@ -226,7 +228,9 @@ namespace App.Infrastructure.Api
                 {
                     var error = CreateError(request, request.error);
                     var message = string.IsNullOrWhiteSpace(error.Message) ? error.Error : error.Message;
-                    Debug.LogError($"API {request.method} {request.url} failed: {error.StatusCode} {message}");
+                    var body = FormatResponseBodyForLog(error.Body);
+                    var bodySuffix = string.IsNullOrWhiteSpace(body) ? string.Empty : $" body='{body}'";
+                    Debug.LogError($"API {request.method} {request.url} failed: {error.StatusCode} {message}{bodySuffix}");
                     // 401 진단 — baseUrl mismatch 디버깅용. 토큰 자체 (prefix/length 포함) 는 절대 노출 안 함:
                     // Unity 로그는 device logcat / CI batchmode / crash report 등으로 퍼져 외부에 누출 가능
                     // (AuthApiClient.Redact 와 동일 정책). tokenPresent / baseUrl / errorCode 만으로 충분.
@@ -258,7 +262,7 @@ namespace App.Infrastructure.Api
                 catch (Exception exception)
                 {
                     var error = CreateError(request, exception.Message);
-                    Debug.LogError($"API {request.method} {request.url} parse failed: {exception.Message}");
+                    Debug.LogError($"API {request.method} {request.url} parse failed: {exception.Message} (response body omitted)");
                     onError?.Invoke(error);
                 }
             }
@@ -404,6 +408,22 @@ namespace App.Infrastructure.Api
             }
 
             return string.Empty;
+        }
+
+        private static string FormatResponseBodyForLog(string body)
+        {
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                return string.Empty;
+            }
+
+            var normalized = body
+                .Replace("\r", " ")
+                .Replace("\n", " ")
+                .Trim();
+            return normalized.Length <= ErrorResponseBodyLogLimit
+                ? normalized
+                : normalized.Substring(0, ErrorResponseBodyLogLimit) + "...";
         }
 
         private void ApplyHeaders(UnityWebRequest request, Dictionary<string, string> headers)

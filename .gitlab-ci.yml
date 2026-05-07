@@ -6,6 +6,9 @@ variables:
   GRADLE_USER_HOME: "$CI_PROJECT_DIR/backend/.gradle"
   GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.caching=true"
   JAR_ARTIFACT_PATH: backend/build/libs
+  UNITY_VERSION: "6000.3.13f1"
+  UNITY_PROJECT_PATH: "$CI_PROJECT_DIR/frontend"
+  UNITY_EXECUTABLE: "/opt/unity/Editor/Unity"
 
 # 브랜치 전략 (2026-04-30~):
 # - dev    → test 환경 (dev-api.dotshelf.digital, dev.dotshelf.digital) + admin-web prod
@@ -33,6 +36,13 @@ variables:
         - backend/**/*
         - .gitlab-ci.yml
         - .ci/**/*
+
+.frontend-unity-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - frontend/**/*
+        - .gitlab-ci.yml
 
 .deploy-rules:
   # backend prod 배포: master 트리거만.
@@ -129,18 +139,61 @@ backend:build:
   extends: .backend-rules
   stage: build
   image: eclipse-temurin:21-jdk
+  services:
+    - name: docker:29-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: "tcp://docker:2375"
+    DOCKER_TLS_CERTDIR: ""
+    TESTCONTAINERS_HOST_OVERRIDE: "docker"
   before_script:
     - cd backend
     - chmod +x ./gradlew
   script:
-    - ./gradlew check bootJar --no-daemon
+    - ./gradlew check bootJar -DrunPostgresTests=true --no-daemon
   artifacts:
     name: "dotshelf-api-$CI_COMMIT_SHORT_SHA"
     paths:
       - $JAR_ARTIFACT_PATH/*-SNAPSHOT.jar
       - backend/build/reports/tests/test
+      - backend/build/reports/jacoco/test
+      - backend/build/reports/problems
     reports:
       junit: backend/build/test-results/test/TEST-*.xml
+    when: always
+    expire_in: 1 week
+
+frontend:unity-compile:
+  extends: .frontend-unity-rules
+  stage: build
+  # Current shared Docker runner is arm64, while Unity editor containers are amd64-only.
+  # Keep this job visible on MR pipelines and make it blocking once an amd64 Unity runner is available.
+  allow_failure: true
+  image:
+    name: unityci/editor:ubuntu-$UNITY_VERSION-base-3
+    docker:
+      platform: linux/amd64
+  before_script:
+    - |
+      test -n "$UNITY_LICENSE" || {
+        echo "UNITY_LICENSE CI variable is required for Unity compile check."
+        exit 1
+      }
+    - printf '%s' "$UNITY_LICENSE" > /tmp/unity-license.ulf
+  script:
+    - |
+      "$UNITY_EXECUTABLE" -batchmode -nographics -manualLicenseFile /tmp/unity-license.ulf -logFile /tmp/unity-license.log || {
+        cat /tmp/unity-license.log
+        exit 1
+      }
+    - |
+      "$UNITY_EXECUTABLE" -batchmode -nographics -quit -projectPath "$UNITY_PROJECT_PATH" -executeMethod BookshelfPorting.Editor.Ci.UnityCompileCheck.Run -logFile "$UNITY_PROJECT_PATH/unity-compile.log"
+  after_script:
+    - test -f frontend/unity-compile.log && tail -n 200 frontend/unity-compile.log || true
+  artifacts:
+    name: "dotshelf-unity-compile-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - frontend/unity-compile.log
     when: always
     expire_in: 1 week
 

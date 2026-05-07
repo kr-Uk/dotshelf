@@ -1,5 +1,6 @@
 plugins {
     java
+    jacoco
     id("org.springframework.boot") version "4.0.5"
     id("io.spring.dependency-management") version "1.1.7"
 }
@@ -68,7 +69,14 @@ dependencies {
 
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.springframework.boot:spring-boot-data-jpa-test")
+    testImplementation("org.springframework.boot:spring-boot-webmvc-test")
+    testImplementation("org.springframework.boot:spring-boot-testcontainers")
+    testImplementation(platform("org.testcontainers:testcontainers-bom:1.21.3"))
     testImplementation("org.springframework.security:spring-security-test")
+    testImplementation("org.testcontainers:junit-jupiter")
+    testImplementation("org.testcontainers:postgresql")
+    testRuntimeOnly("com.h2database:h2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -91,6 +99,56 @@ tasks.named<Delete>("clean") {
     delete(querydslDir)
 }
 
+jacoco {
+    toolVersion = "0.8.13"
+}
+
+val jacocoCoverageExclusions = listOf(
+    "**/*Application.class",
+    "**/Q*.class",
+    "**/dto/**",
+    "**/entity/**",
+    "**/config/**"
+)
+
 tasks.withType<Test> {
     useJUnitPlatform()
+    systemProperty("runPostgresTests", System.getProperty("runPostgresTests") ?: "false")
+    finalizedBy(tasks.named("jacocoTestReport"))
+}
+
+tasks.named<org.gradle.testing.jacoco.tasks.JacocoReport>("jacocoTestReport") {
+    dependsOn(tasks.test)
+    reports {
+        xml.required.set(true)
+        csv.required.set(false)
+        html.required.set(true)
+    }
+    classDirectories.setFrom(files(classDirectories.files.map {
+        fileTree(it) {
+            exclude(jacocoCoverageExclusions)
+        }
+    }))
+}
+
+tasks.named<org.gradle.testing.jacoco.tasks.JacocoCoverageVerification>("jacocoTestCoverageVerification") {
+    dependsOn(tasks.test)
+    classDirectories.setFrom(files(classDirectories.files.map {
+        fileTree(it) {
+            exclude(jacocoCoverageExclusions)
+        }
+    }))
+    violationRules {
+        rule {
+            limit {
+                counter = "LINE"
+                value = "COVEREDRATIO"
+                minimum = "0.85".toBigDecimal()
+            }
+        }
+    }
+}
+
+tasks.named("check") {
+    dependsOn(tasks.named("jacocoTestCoverageVerification"))
 }

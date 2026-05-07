@@ -1,6 +1,7 @@
 package com.dotshelf.domain.notification.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.times;
@@ -23,6 +24,9 @@ import com.dotshelf.domain.user.entity.UserNotificationSetting;
 import com.dotshelf.domain.user.repository.FollowRepository;
 import com.dotshelf.domain.user.repository.UserNotificationSettingRepository;
 import com.dotshelf.domain.user.service.UserService;
+import com.dotshelf.global.error.CustomException;
+import com.dotshelf.global.error.ErrorCode;
+import com.dotshelf.support.TestFixtures;
 
 @ExtendWith(MockitoExtension.class)
 class NotificationServiceTest {
@@ -41,6 +45,60 @@ class NotificationServiceTest {
 
     @InjectMocks
     private NotificationService notificationService;
+
+    @Test
+    @DisplayName("알림 목록 조회는 current userId의 알림만 최신순으로 매핑한다")
+    void getNotifications_mapsCurrentUserNotifications() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(notificationRepository.findByReceiverUserIdOrderByIdDesc(1L)).willReturn(List.of(
+                TestFixtures.notification(11L, 1L, 2L),
+                TestFixtures.notification(10L, 1L, 3L)
+        ));
+
+        var response = notificationService.getNotifications(1L);
+
+        assertThat(response.notifications()).extracting("id").containsExactly(11L, 10L);
+    }
+
+    @Test
+    @DisplayName("알림 읽음 처리는 수신자 본인만 가능하다")
+    void read_otherReceiverThrowsForbidden() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(notificationRepository.findById(10L))
+                .willReturn(Optional.of(TestFixtures.notification(10L, 2L, 3L)));
+
+        assertThatThrownBy(() -> notificationService.read(1L, 10L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("전체 읽음 처리는 읽지 않은 알림만 read 상태로 바꾼다")
+    void readAll_marksUnreadNotifications() {
+        Notification unread = TestFixtures.notification(10L, 1L, 2L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(notificationRepository.findByReceiverUserIdAndIsReadFalse(1L)).willReturn(List.of(unread));
+
+        notificationService.readAll(1L);
+
+        assertThat(unread.isRead()).isTrue();
+        assertThat(unread.getReadAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("긴 알림 메시지는 255자 이하로 잘라 저장한다")
+    void notifyBookAddedToFollowers_truncatesLongMessage() {
+        given(userService.getUser(7L)).willReturn(user("지은"));
+        given(followRepository.findFollowerUserIdsByFollowingUserId(7L)).willReturn(List.of(1L));
+        given(notificationSettingRepository.findByUserIdIn(List.of(1L))).willReturn(List.of());
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+
+        notificationService.notifyBookAddedToFollowers(7L, 100L, "가".repeat(400));
+
+        then(notificationRepository).should().save(captor.capture());
+        assertThat(captor.getValue().getMessage()).hasSizeLessThanOrEqualTo(255);
+    }
 
     @Test
     @DisplayName("익명 방명록 알림은 작성자 닉네임과 senderUserId를 노출하지 않는다")

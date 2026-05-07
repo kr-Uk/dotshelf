@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
+using UnityEngine.Networking;
 using UnityEngine.UI;
 using UIDocument = UnityEngine.UIElements.UIDocument;
 using RuntimePanelUtils = UnityEngine.UIElements.RuntimePanelUtils;
@@ -27,6 +28,24 @@ namespace BookshelfPorting.Runtime
 
     public class BookshelfExperienceManager : MonoBehaviour
     {
+        private struct ReportCommentViewData
+        {
+            public ReportCommentViewData(long id, string authorLabel, string content, int likeCount, bool deleted)
+            {
+                Id = id;
+                AuthorLabel = authorLabel;
+                Content = content;
+                LikeCount = likeCount;
+                Deleted = deleted;
+            }
+
+            public long Id { get; }
+            public string AuthorLabel { get; }
+            public string Content { get; }
+            public int LikeCount { get; }
+            public bool Deleted { get; }
+        }
+
         private const int GuestbookVisibleRows = 3;
         private const int GuestbookVisibleColumns = 3;
         private const int GuestbookMaxPageButtons = 4;
@@ -37,18 +56,19 @@ namespace BookshelfPorting.Runtime
         private const float GuestbookPaginationHeight = 40f;
         private const float GuestbookPaginationToPanelGap = 24f;
         private const float GuestbookInterfacePanelHeight = 184f;
-        private const float HudInputTextLeftPadding = 38f;
-        private const float HudInputTextRightPadding = 22f;
-        private const float HudInputTextVerticalPadding = 7f;
-        private const float OverlayButtonBottomPaddingExtra = 12f;
+        private const float HudInputTextLeftPadding = 34f;
+        private const float HudInputTextRightPadding = 24f;
+        private const float HudInputTextVerticalPadding = 10f;
+        private const float OverlayButtonBottomPaddingExtra = 18f;
         private const int BookAddMaxResultCount = 64;
-        private const float BookAddResultRowHeight = 62f;
+        private const int BookAddCoverSpriteCacheLimit = 48;
+        private const float BookAddResultRowHeight = 124f;
         private const float BookAddResultViewportHeight = 260f;
         private const int BookSearchMaxResultCount = 96;
-        private const float BookSearchResultRowHeight = 52f;
+        private const float BookSearchResultRowHeight = 66f;
         private const float BookSearchResultViewportHeight = 260f;
         private const int ShelfManageMaxRowCount = 24;
-        private const float ShelfManageRowHeight = 50f;
+        private const float ShelfManageRowHeight = 64f;
         private const float ShelfManageViewportHeight = 220f;
         private const int PendingMutationRetryLimit = 50;
         // Runtime HUD selector keeps one row of shelf chips readable without
@@ -387,7 +407,12 @@ namespace BookshelfPorting.Runtime
                 string isbn10 = null,
                 string publishedDate = null,
                 string coverImageUrl = null,
-                string sourceUrl = null)
+                string sourceUrl = null,
+                long viewCount = 0L,
+                long likeCount = 0L,
+                long bookshelfAddCount = 0L,
+                decimal averageRating = 0m,
+                int reviewCount = 0)
             {
                 Title = title;
                 Author = author;
@@ -401,6 +426,11 @@ namespace BookshelfPorting.Runtime
                 PublishedDate = publishedDate;
                 CoverImageUrl = coverImageUrl;
                 SourceUrl = sourceUrl;
+                ViewCount = viewCount;
+                LikeCount = likeCount;
+                BookshelfAddCount = bookshelfAddCount;
+                AverageRating = averageRating;
+                ReviewCount = reviewCount;
             }
 
             public string Title { get; }
@@ -415,6 +445,11 @@ namespace BookshelfPorting.Runtime
             public string PublishedDate { get; }
             public string CoverImageUrl { get; }
             public string SourceUrl { get; }
+            public long ViewCount { get; }
+            public long LikeCount { get; }
+            public long BookshelfAddCount { get; }
+            public decimal AverageRating { get; }
+            public int ReviewCount { get; }
         }
 
         private static readonly BookAddCatalogItem[] BookAddCatalog =
@@ -511,6 +546,13 @@ namespace BookshelfPorting.Runtime
         private GameObject bookshelfIndexPanel;
         private Text bookshelfIndexText;
         private RectTransform bookshelfIndexDotsRoot;
+        private GameObject firstBookshelfTutorialBackdrop;
+        private GameObject firstBookshelfTutorialPanel;
+        private Text firstBookshelfTutorialTitleText;
+        private Text firstBookshelfTutorialMessageText;
+        private Text firstBookshelfTutorialStepsText;
+        private Button firstBookshelfTutorialAddButton;
+        private bool isFirstBookshelfTutorialOpen;
         private Button addBookshelfButton;
         private Button openBookshelfNameEditButton;
         private Button openBookshelfDesignButton;
@@ -552,9 +594,14 @@ namespace BookshelfPorting.Runtime
         private Scrollbar bookAddScrollbar;
         private readonly Button[] bookAddResultButtons = new Button[BookAddMaxResultCount];
         private readonly Text[] bookAddResultTexts = new Text[BookAddMaxResultCount];
+        private readonly Image[] bookAddResultCoverImages = new Image[BookAddMaxResultCount];
         private readonly int[] bookAddResultCatalogIndices = new int[BookAddMaxResultCount];
         private readonly List<BookAddCatalogItem> runtimeBookAddCatalog = new List<BookAddCatalogItem>();
         private readonly List<BookAddCatalogItem> apiBookAddCatalog = new List<BookAddCatalogItem>();
+        private readonly Dictionary<string, Sprite> bookAddCoverSpriteCache = new Dictionary<string, Sprite>();
+        private readonly LinkedList<string> bookAddCoverSpriteLru = new LinkedList<string>();
+        private readonly Dictionary<Image, Coroutine> bookAddCoverLoadCoroutines = new Dictionary<Image, Coroutine>();
+        private readonly Dictionary<Image, string> bookAddCoverImageUrls = new Dictionary<Image, string>();
         private GameObject bookAddConfirmPanel;
         private Text bookAddConfirmTitleText;
         private Text bookAddConfirmMetaText;
@@ -604,6 +651,7 @@ namespace BookshelfPorting.Runtime
         private Button shelfManagePreviousButton;
         private Button shelfManageNextButton;
         private Button shelfManageVisibilityButton;
+        private Button shelfManageRenameButton;
         private Button shelfManageAddButton;
         private Button shelfManageDeleteButton;
         private Button shelfManageCloseButton;
@@ -723,21 +771,7 @@ namespace BookshelfPorting.Runtime
         };
 
         private GameObject bookDetailPanel;
-        private Text bookPanelEyebrowText;
-        private Text bookTitleText;
-        private Text bookMetaText;
-        private Text bookAverageRatingChipText;
-        private Text bookTotalLikeChipText;
-        private Text bookReviewCountChipText;
-        private Text bookPanelHintText;
-        private Button readToggleButton;
-        private Button likeToggleButton;
-        private Button ratingCycleButton;
-        private Button visibilityToggleButton;
-        private Button writeReportButton;
-        private Button readReportButton;
-        private Button detailPlacementButton;
-        private Button closeBookDetailButton;
+        private BookDetailPanelController bookDetailPanelController;
         private GameObject bookFocusToolbarPanel;
         private Button bookFocusDetailButton;
         private Button bookFocusReportButton;
@@ -761,6 +795,8 @@ namespace BookshelfPorting.Runtime
         private Text bookReportReadTitleText;
         private Text bookReportReadMetaText;
         private Text bookReportReadBodyText;
+        private Text bookReportCommentsTitleText;
+        private Text bookReportCommentsText;
         private Text bookReportSocialText;
         private Button bookReportLikeButton;
         private InputField bookReportCommentInputField;
@@ -773,13 +809,16 @@ namespace BookshelfPorting.Runtime
         private bool isBookReportReadPanelOpen;
         private App.Domain.VisibilityScope stagedBookReportVisibility = App.Domain.VisibilityScope.Public;
         private BookEntity activeReportBook;
+        private readonly List<ReportCommentViewData> activeReportComments = new List<ReportCommentViewData>();
+        private BookEntity activeReportCommentsBook;
+        private bool activeReportCommentsLoaded;
+        private long nextLocalReportCommentId = -1L;
         private GameObject bookEditPanel;
         private Text bookEditEyebrowText;
         private Text bookEditTitleText;
         private Text bookEditMetaText;
         private Text bookEditHintText;
         private Button deleteBookButton;
-        private Button deleteDetailBookButton;
         private Button closeBookEditButton;
         private bool isBookEditPanelOpen;
         private BookEntity pendingDeleteBook;
@@ -817,6 +856,7 @@ namespace BookshelfPorting.Runtime
         private Button bookshelfNavEditButton;
         private int lastResponsiveLayoutWidth = -1;
         private int lastResponsiveLayoutHeight = -1;
+        private readonly BookshelfOverlayStateController overlayStateController = new BookshelfOverlayStateController();
 
         public ExperienceFocusArea CurrentFocusArea { get; private set; } = ExperienceFocusArea.QuarterView;
         public bool IsBookshelfFocused => CurrentFocusArea == ExperienceFocusArea.Bookshelf;
@@ -1199,6 +1239,8 @@ namespace BookshelfPorting.Runtime
             }
 
             DetachNotebookApiCallbacks();
+            CancelBookAddCoverLoads();
+            ClearBookAddCoverSpriteCache();
         }
 
         public void FocusQuarterView()
@@ -1446,12 +1488,12 @@ namespace BookshelfPorting.Runtime
 
         public bool CanHandleFrontalZoomInput()
         {
-            return CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
-                   state != null &&
-                   !state.IsViewingBook &&
-                   state.ActiveDraggedBook == null &&
-                   !HasBlockingBookshelfOverlay() &&
-                   !IsPointerOverUi();
+            return overlayStateController.CanHandleFrontalZoomInput(
+                CurrentFocusArea,
+                state != null && state.IsViewingBook,
+                state != null && state.ActiveDraggedBook != null,
+                IsPointerOverUi(),
+                CaptureBookshelfOverlayState());
         }
 
         private bool TryPromptUnsavedBookshelfChanges(System.Action afterSaveAction)
@@ -1670,7 +1712,7 @@ namespace BookshelfPorting.Runtime
             meta.publisher = string.IsNullOrWhiteSpace(book.publisher) ? meta.publisher : book.publisher;
             meta.description = string.IsNullOrWhiteSpace(book.description) ? meta.description : book.description;
             meta.memoPreview = string.IsNullOrWhiteSpace(book.memoPreview) ? meta.memoPreview : book.memoPreview;
-            meta.ownerRating = book.ownerRating;
+            MergeOwnerRatingIntoMeta(book, meta);
             if (book.hasAggregateBookStats)
             {
                 meta.averageRating = Mathf.Clamp(book.averageRating, 0f, 5f);
@@ -1691,6 +1733,26 @@ namespace BookshelfPorting.Runtime
             meta.reportLikeCount = book.reportLikeCount;
             meta.reportCommentCount = book.reportCommentCount;
             dataStore.ApplyBookMeta(book, meta);
+        }
+
+        private static void MergeOwnerRatingIntoMeta(BookEntity book, BookMetaData meta)
+        {
+            if (book == null || meta == null)
+            {
+                return;
+            }
+
+            var incomingOwnerRating = SnapRatingToStep(Mathf.Clamp(book.ownerRating, 0f, 5f));
+            var cachedOwnerRating = SnapRatingToStep(Mathf.Clamp(meta.ownerRating, 0f, 5f));
+            if (incomingOwnerRating > 0f || cachedOwnerRating <= 0f)
+            {
+                meta.ownerRating = incomingOwnerRating;
+                book.ownerRating = incomingOwnerRating;
+                return;
+            }
+
+            meta.ownerRating = cachedOwnerRating;
+            book.ownerRating = cachedOwnerRating;
         }
 
         private void CloseBookDetailPanel()
@@ -2837,7 +2899,11 @@ namespace BookshelfPorting.Runtime
                 : App.Domain.VisibilityScope.Public;
             meta.isPublic = meta.reportVisibility == App.Domain.VisibilityScope.Public;
             dataStore.ApplyBookMeta(ActiveDetailBook, meta);
-            bookshelfApiSyncController?.SaveReadingRecord(ActiveDetailBook);
+            var book = ActiveDetailBook;
+            bookshelfApiSyncController?.SaveReadingRecord(
+                book,
+                HandleBookReportSaved,
+                error => HandleBookReportSaveFailure(book, error));
             RefreshBookDetailPanel();
             RefreshHud();
         }
@@ -3066,7 +3132,7 @@ namespace BookshelfPorting.Runtime
             bookshelfIndexDotsRoot = CreateHudContainer(bookshelfIndexPanel.transform, "BookshelfIndexDots", new Vector2(0f, -52f), new Vector2(112f, 8f), new Vector2(0.5f, 1f));
             ConfigureHorizontalLayout(bookshelfIndexDotsRoot, TextAnchor.MiddleCenter, 6f);
 
-            bookshelfBottomNavPanel = CreatePanel(canvasObject.transform, "BookshelfBottomNavPanel", new Vector2(0f, 28f), new Vector2(600f, 90f), new Vector2(0.5f, 0f));
+            bookshelfBottomNavPanel = CreatePanel(canvasObject.transform, "BookshelfBottomNavPanel", new Vector2(0f, 28f), new Vector2(680f, 104f), new Vector2(0.5f, 0f));
             StyleBookshelfIndexPanel(bookshelfBottomNavPanel.GetComponent<Image>());
             bookshelfNavHomeButton = CreateBottomNavButton(bookshelfBottomNavPanel.transform, "BookshelfNavHomeButton", "⌂\n책장", 0, FocusBookshelfHomeFromBottom);
             bookshelfNavSearchButton = CreateBottomNavButton(bookshelfBottomNavPanel.transform, "BookshelfNavSearchButton", "검색", 1, ToggleBookSearchPanel);
@@ -3096,6 +3162,30 @@ namespace BookshelfPorting.Runtime
 
             bookshelfNameModalBackdrop = CreateModalBackdrop(canvasObject.transform, "BookshelfNameModalBackdrop", new Color(0.16f, 0.11f, 0.07f, 0.36f));
             bookshelfNameModalBackdrop.SetActive(false);
+
+            firstBookshelfTutorialBackdrop = CreateModalBackdrop(canvasObject.transform, "FirstBookshelfTutorialBackdrop", new Color(0.16f, 0.11f, 0.07f, 0.46f));
+            firstBookshelfTutorialBackdrop.SetActive(false);
+            firstBookshelfTutorialPanel = CreatePanel(canvasObject.transform, "FirstBookshelfTutorialPanel", Vector2.zero, new Vector2(620f, 360f), new Vector2(0.5f, 0.5f));
+            StyleBookshelfIndexPanel(firstBookshelfTutorialPanel.GetComponent<Image>());
+            firstBookshelfTutorialPanel.SetActive(false);
+            firstBookshelfTutorialTitleText = CreateLabel(firstBookshelfTutorialPanel.transform, "FirstBookshelfTutorialTitleText", new Vector2(38f, -38f), new Vector2(544f, 36f), TextAnchor.UpperLeft);
+            firstBookshelfTutorialTitleText.text = "첫 책장을 만들어볼까요?";
+            firstBookshelfTutorialTitleText.fontSize = 24;
+            firstBookshelfTutorialTitleText.fontStyle = FontStyle.Bold;
+            firstBookshelfTutorialTitleText.color = new Color32(45, 69, 56, 255);
+            firstBookshelfTutorialMessageText = CreateLabel(firstBookshelfTutorialPanel.transform, "FirstBookshelfTutorialMessageText", new Vector2(38f, -86f), new Vector2(544f, 72f), TextAnchor.UpperLeft);
+            firstBookshelfTutorialMessageText.text = "아직 책장이 없습니다. 책장은 책을 전시하고 정리하는 기본 공간입니다. 먼저 책장 하나를 만들고 이름을 정해보세요.";
+            firstBookshelfTutorialMessageText.fontSize = 17;
+            firstBookshelfTutorialMessageText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            firstBookshelfTutorialMessageText.verticalOverflow = VerticalWrapMode.Truncate;
+            firstBookshelfTutorialMessageText.color = new Color32(92, 82, 72, 255);
+            firstBookshelfTutorialStepsText = CreateLabel(firstBookshelfTutorialPanel.transform, "FirstBookshelfTutorialStepsText", new Vector2(38f, -178f), new Vector2(544f, 86f), TextAnchor.UpperLeft);
+            firstBookshelfTutorialStepsText.text = "1. 책장 추가\n2. 책장 이름 정하기\n3. 검색 또는 추가에서 첫 책 꽂기";
+            firstBookshelfTutorialStepsText.fontSize = 17;
+            firstBookshelfTutorialStepsText.lineSpacing = 1.18f;
+            firstBookshelfTutorialStepsText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            firstBookshelfTutorialStepsText.color = new Color32(64, 84, 68, 255);
+            firstBookshelfTutorialAddButton = CreateButton(firstBookshelfTutorialPanel.transform, "FirstBookshelfTutorialAddButton", "책장 추가하기", new Vector2(384f, -292f), AddFirstBookshelfFromTutorial, new Vector2(198f, 48f), new Vector2(0f, 1f));
 
             bookshelfNameEditPanel = CreatePanel(canvasObject.transform, "BookshelfNameEditPanel", new Vector2(0f, -118f), new Vector2(380f, 92f), new Vector2(0.5f, 1f));
             StyleBookshelfIndexPanel(bookshelfNameEditPanel.GetComponent<Image>());
@@ -3190,17 +3280,25 @@ namespace BookshelfPorting.Runtime
             {
                 var resultSlot = i;
                 bookAddResultCatalogIndices[i] = -1;
-                bookAddResultButtons[i] = CreateButton(bookAddRowsContent, $"BookAddResultButton_{i}", string.Empty, new Vector2(0f, -i * BookAddResultRowHeight), () => OpenBookAddConfirmPanel(resultSlot), new Vector2(500f, 50f), new Vector2(0f, 1f));
+                bookAddResultButtons[i] = CreateButton(bookAddRowsContent, $"BookAddResultButton_{i}", string.Empty, new Vector2(0f, -i * BookAddResultRowHeight), () => OpenBookAddConfirmPanel(resultSlot), new Vector2(500f, BookAddResultRowHeight - 10f), new Vector2(0f, 1f));
                 bookAddResultTexts[i] = bookAddResultButtons[i].GetComponentInChildren<Text>();
+                bookAddResultCoverImages[i] = CreateHudImage(bookAddResultButtons[i].transform, $"BookAddResultCover_{i}", new Vector2(14f, -12f), new Vector2(62f, BookAddResultRowHeight - 34f), new Vector2(0f, 1f), new Color32(238, 231, 221, 240));
+                if (bookAddResultCoverImages[i] != null)
+                {
+                    bookAddResultCoverImages[i].raycastTarget = false;
+                    bookAddResultCoverImages[i].preserveAspect = true;
+                    bookAddResultCoverImages[i].transform.SetAsFirstSibling();
+                }
+
                 if (bookAddResultTexts[i] != null)
                 {
-                    bookAddResultTexts[i].fontSize = 13;
+                    bookAddResultTexts[i].fontSize = 12;
                     bookAddResultTexts[i].alignment = TextAnchor.MiddleLeft;
                     bookAddResultTexts[i].horizontalOverflow = HorizontalWrapMode.Wrap;
                     bookAddResultTexts[i].verticalOverflow = VerticalWrapMode.Truncate;
                     var labelRect = bookAddResultTexts[i].rectTransform;
-                    labelRect.offsetMin = new Vector2(16f, 2f);
-                    labelRect.offsetMax = new Vector2(-14f, -2f);
+                    labelRect.offsetMin = new Vector2(92f, 8f);
+                    labelRect.offsetMax = new Vector2(-18f, -8f);
                     labelRect.anchoredPosition = Vector2.zero;
                     labelRect.sizeDelta = Vector2.zero;
                 }
@@ -3360,8 +3458,9 @@ namespace BookshelfPorting.Runtime
             shelfManagePreviousButton = CreateButton(bookshelfManagePanel.transform, "ShelfManagePreviousButton", "이전 책장", new Vector2(24f, -370f), ShowPreviousManagedBookshelf, new Vector2(104f, 34f), new Vector2(0f, 1f));
             shelfManageNextButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageNextButton", "다음 책장", new Vector2(136f, -370f), ShowNextManagedBookshelf, new Vector2(104f, 34f), new Vector2(0f, 1f));
             shelfManageVisibilityButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageVisibilityButton", "공개 범위", new Vector2(24f, -370f), CycleManagedBookshelfVisibility, new Vector2(144f, 34f), new Vector2(0f, 1f));
-            shelfManageAddButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageAddButton", "추가", new Vector2(180f, -370f), AddBookshelfFromManagePanel, new Vector2(96f, 34f), new Vector2(0f, 1f));
-            shelfManageDeleteButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageDeleteButton", "삭제", new Vector2(288f, -370f), DeleteActiveBookshelf, new Vector2(96f, 34f), new Vector2(0f, 1f));
+            shelfManageRenameButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageRenameButton", "이름 변경", new Vector2(180f, -370f), OpenManagedBookshelfNameEditPanel, new Vector2(108f, 34f), new Vector2(0f, 1f));
+            shelfManageAddButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageAddButton", "추가", new Vector2(300f, -370f), AddBookshelfFromManagePanel, new Vector2(84f, 34f), new Vector2(0f, 1f));
+            shelfManageDeleteButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageDeleteButton", "삭제", new Vector2(396f, -370f), DeleteActiveBookshelf, new Vector2(84f, 34f), new Vector2(0f, 1f));
             shelfManageCloseButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageCloseButton", "닫기", new Vector2(288f, -370f), CloseBookshelfManagePanel, new Vector2(96f, 34f), new Vector2(0f, 1f));
             bookshelfManageStatusText = CreateLabel(bookshelfManagePanel.transform, "BookshelfManageStatusText", new Vector2(24f, -414f), new Vector2(512f, 28f), TextAnchor.UpperLeft);
             bookshelfManageStatusText.fontSize = 12;
@@ -3413,59 +3512,19 @@ namespace BookshelfPorting.Runtime
             bookshelfStatusMessageText.color = new Color32(84, 74, 66, 255);
             bookshelfStatusAddButton = CreateButton(bookshelfStatusPanel.transform, "BookshelfStatusAddButton", "책 추가", new Vector2(18f, -92f), OpenBookAddFromStatusPanel, new Vector2(96f, 28f), new Vector2(0f, 1f));
 
-            bookDetailPanel = CreatePanel(canvasObject.transform, "BookDetailPanel", new Vector2(-24f, -78f), new Vector2(380f, 436f), new Vector2(1f, 1f));
-            StyleBookDetailPanel(bookDetailPanel.GetComponent<Image>());
-            bookDetailPanel.SetActive(false);
-            CreateHudImage(bookDetailPanel.transform, "BookPanelAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170), false);
-            bookPanelEyebrowText = CreateLabel(bookDetailPanel.transform, "BookPanelEyebrowText", new Vector2(20f, -30f), new Vector2(340f, 18f), TextAnchor.UpperLeft);
-            bookPanelEyebrowText.fontSize = 13;
-            bookPanelEyebrowText.fontStyle = FontStyle.Bold;
-            bookPanelEyebrowText.color = new Color32(151, 104, 64, 255);
-            bookTitleText = CreateLabel(bookDetailPanel.transform, "BookTitleText", new Vector2(20f, -54f), new Vector2(340f, 46f), TextAnchor.UpperLeft);
-            bookTitleText.fontSize = 22;
-            bookTitleText.fontStyle = FontStyle.Bold;
-            bookTitleText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            bookTitleText.color = new Color32(49, 42, 36, 255);
-            bookMetaText = CreateLabel(bookDetailPanel.transform, "BookMetaText", new Vector2(20f, -112f), new Vector2(340f, 72f), TextAnchor.UpperLeft);
-            bookMetaText.fontSize = 14;
-            bookMetaText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            bookMetaText.color = new Color32(84, 74, 66, 255);
-            bookMetaText.lineSpacing = 1.08f;
-            CreateHudImage(bookDetailPanel.transform, "BookAverageRatingChip", new Vector2(20f, -190f), new Vector2(106f, 32f), new Vector2(0f, 1f), new Color32(255, 248, 236, 230));
-            bookAverageRatingChipText = CreateLabel(bookDetailPanel.transform, "BookAverageRatingChipText", new Vector2(20f, -190f), new Vector2(106f, 32f), TextAnchor.MiddleCenter);
-            bookAverageRatingChipText.fontSize = 13;
-            bookAverageRatingChipText.fontStyle = FontStyle.Bold;
-            bookAverageRatingChipText.color = new Color32(63, 47, 38, 255);
-            bookAverageRatingChipText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            bookAverageRatingChipText.verticalOverflow = VerticalWrapMode.Truncate;
-            CreateHudImage(bookDetailPanel.transform, "BookTotalLikeChip", new Vector2(136f, -190f), new Vector2(106f, 32f), new Vector2(0f, 1f), new Color32(238, 248, 241, 225));
-            bookTotalLikeChipText = CreateLabel(bookDetailPanel.transform, "BookTotalLikeChipText", new Vector2(136f, -190f), new Vector2(106f, 32f), TextAnchor.MiddleCenter);
-            bookTotalLikeChipText.fontSize = 13;
-            bookTotalLikeChipText.fontStyle = FontStyle.Bold;
-            bookTotalLikeChipText.color = new Color32(53, 94, 73, 255);
-            bookTotalLikeChipText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            bookTotalLikeChipText.verticalOverflow = VerticalWrapMode.Truncate;
-            CreateHudImage(bookDetailPanel.transform, "BookReviewCountChip", new Vector2(252f, -190f), new Vector2(106f, 32f), new Vector2(0f, 1f), new Color32(245, 237, 226, 230));
-            bookReviewCountChipText = CreateLabel(bookDetailPanel.transform, "BookReviewCountChipText", new Vector2(252f, -190f), new Vector2(106f, 32f), TextAnchor.MiddleCenter);
-            bookReviewCountChipText.fontSize = 13;
-            bookReviewCountChipText.fontStyle = FontStyle.Bold;
-            bookReviewCountChipText.color = new Color32(84, 74, 66, 255);
-            bookReviewCountChipText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            bookReviewCountChipText.verticalOverflow = VerticalWrapMode.Truncate;
-            CreateHudImage(bookDetailPanel.transform, "BookPanelDivider", new Vector2(20f, -198f), new Vector2(340f, 1f), new Vector2(0f, 1f), new Color32(205, 186, 168, 126));
-            bookPanelHintText = CreateLabel(bookDetailPanel.transform, "BookPanelHintText", new Vector2(20f, -214f), new Vector2(340f, 52f), TextAnchor.UpperLeft);
-            bookPanelHintText.fontSize = 13;
-            bookPanelHintText.color = new Color32(124, 111, 101, 255);
-            bookPanelHintText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            writeReportButton = CreateButton(bookDetailPanel.transform, "WriteReportButton", "독후감 작성", new Vector2(20f, -282f), OpenBookReportWritePanel, new Vector2(104f, 32f), new Vector2(0f, 1f));
-            readReportButton = CreateButton(bookDetailPanel.transform, "ReadReportButton", "독후감 보기", new Vector2(136f, -282f), OpenBookReportReadPanel, new Vector2(104f, 32f), new Vector2(0f, 1f));
-            detailPlacementButton = CreateButton(bookDetailPanel.transform, "DetailPlacementButton", "배치 변경", new Vector2(252f, -282f), OpenBookPlacementEditor, new Vector2(108f, 32f), new Vector2(0f, 1f));
-            readToggleButton = CreateButton(bookDetailPanel.transform, "ReadToggleButton", "상태 변경", new Vector2(20f, -322f), ToggleReadState, new Vector2(164f, 34f), new Vector2(0f, 1f));
-            likeToggleButton = CreateButton(bookDetailPanel.transform, "LikeToggleButton", "좋아요", new Vector2(196f, -322f), ToggleLikeState, new Vector2(164f, 34f), new Vector2(0f, 1f));
-            ratingCycleButton = CreateButton(bookDetailPanel.transform, "RatingCycleButton", "별점", new Vector2(20f, -360f), CycleOwnerRating, new Vector2(164f, 34f), new Vector2(0f, 1f));
-            visibilityToggleButton = CreateButton(bookDetailPanel.transform, "VisibilityToggleButton", "공개 범위 변경", new Vector2(196f, -360f), ToggleVisibilityState, new Vector2(164f, 34f), new Vector2(0f, 1f));
-            closeBookDetailButton = CreateButton(bookDetailPanel.transform, "CloseBookDetailButton", "닫기", new Vector2(20f, -400f), CloseBookDetailPanel, new Vector2(340f, 32f), new Vector2(0f, 1f));
-            deleteDetailBookButton = CreateButton(bookDetailPanel.transform, "DeleteDetailBookButton", "책 삭제", new Vector2(20f, -400f), DeleteActiveBookFromDetail, new Vector2(340f, 32f), new Vector2(0f, 1f));
+            bookDetailPanelController = new BookDetailPanelController(
+                canvasObject.transform,
+                new BookDetailPanelCallbacks(
+                    OpenBookReportWritePanel,
+                    OpenBookReportReadPanel,
+                    OpenBookPlacementEditor,
+                    ToggleReadState,
+                    ToggleLikeState,
+                    CycleOwnerRating,
+                    ToggleVisibilityState,
+                    CloseBookDetailPanel,
+                    DeleteActiveBookFromDetail));
+            bookDetailPanel = bookDetailPanelController.Panel;
 
             bookFocusToolbarPanel = CreatePanel(canvasObject.transform, "BookFocusToolbarPanel", new Vector2(0f, 24f), new Vector2(470f, 58f), new Vector2(0.5f, 0f));
             StyleBookshelfIndexPanel(bookFocusToolbarPanel.GetComponent<Image>());
@@ -3514,6 +3573,7 @@ namespace BookshelfPorting.Runtime
             bookReportBodyInputField = CreateHudInputField(bookReportWritePanel.transform, "BookReportBodyInputField", new Vector2(20f, -160f), new Vector2(390f, 180f), "내용을 입력하세요");
             bookReportBodyInputField.characterLimit = 1500;
             bookReportBodyInputField.lineType = InputField.LineType.MultiLineNewline;
+            ApplyHudInputTextPadding(bookReportBodyInputField);
             if (bookReportBodyInputField.textComponent != null)
             {
                 bookReportBodyInputField.textComponent.alignment = TextAnchor.UpperLeft;
@@ -3544,6 +3604,16 @@ namespace BookshelfPorting.Runtime
             bookReportReadBodyText.verticalOverflow = VerticalWrapMode.Truncate;
             bookReportReadBodyText.lineSpacing = 1.16f;
             bookReportReadBodyText.color = new Color32(63, 47, 38, 255);
+            bookReportCommentsTitleText = CreateLabel(bookReportReadPanel.transform, "BookReportCommentsTitleText", new Vector2(20f, -286f), new Vector2(390f, 22f), TextAnchor.UpperLeft);
+            bookReportCommentsTitleText.fontSize = 13;
+            bookReportCommentsTitleText.fontStyle = FontStyle.Bold;
+            bookReportCommentsTitleText.color = new Color32(72, 58, 47, 255);
+            bookReportCommentsText = CreateLabel(bookReportReadPanel.transform, "BookReportCommentsText", new Vector2(20f, -310f), new Vector2(390f, 72f), TextAnchor.UpperLeft);
+            bookReportCommentsText.fontSize = 13;
+            bookReportCommentsText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            bookReportCommentsText.verticalOverflow = VerticalWrapMode.Truncate;
+            bookReportCommentsText.lineSpacing = 1.08f;
+            bookReportCommentsText.color = new Color32(83, 72, 63, 255);
             bookReportSocialText = CreateLabel(bookReportReadPanel.transform, "BookReportSocialText", new Vector2(20f, -318f), new Vector2(390f, 22f), TextAnchor.UpperLeft);
             bookReportSocialText.fontSize = 12;
             bookReportSocialText.color = new Color32(124, 111, 101, 255);
@@ -3635,8 +3705,8 @@ namespace BookshelfPorting.Runtime
             int slotIndex,
             UnityEngine.Events.UnityAction onClick)
         {
-            var x = -204f + slotIndex * 136f;
-            var button = CreateButton(parent, name, label, new Vector2(x, 0f), onClick, new Vector2(116f, 68f), new Vector2(0.5f, 0.5f));
+            var x = -222f + slotIndex * 148f;
+            var button = CreateButton(parent, name, label, new Vector2(x, 0f), onClick, new Vector2(128f, 76f), new Vector2(0.5f, 0.5f));
             var text = button.GetComponentInChildren<Text>();
             if (text != null)
             {
@@ -4012,6 +4082,7 @@ namespace BookshelfPorting.Runtime
             ApplyResponsiveFocusOverlayLayout(true);
             RefreshFloatingBookRatingChoicePanel();
             RefreshDeleteResultDialog();
+            RefreshFirstBookshelfTutorialPanel();
         }
 
         private void ApplyResponsiveFocusOverlayLayout(bool force = false)
@@ -4248,8 +4319,8 @@ namespace BookshelfPorting.Runtime
             bool isCompact)
         {
             var modalTop = safeMargins.w + Mathf.Clamp(canvasSize.y * 0.12f, 116f, 158f);
-            var widePanelWidth = Mathf.Clamp(canvasSize.x * (isCompact ? 0.78f : 0.48f), 680f, 860f);
-            var mediumPanelWidth = Mathf.Clamp(canvasSize.x * (isCompact ? 0.7f : 0.38f), 560f, 700f);
+            var widePanelWidth = Mathf.Clamp(canvasSize.x * (isCompact ? 0.88f : 0.62f), 760f, 980f);
+            var mediumPanelWidth = Mathf.Clamp(canvasSize.x * (isCompact ? 0.74f : 0.42f), 600f, 760f);
             var largeOverlayWidth = Mathf.Clamp(canvasSize.x * 0.80f, 760f, Mathf.Max(760f, canvasSize.x - safeMargins.x - safeMargins.z - edge * 2f));
             var largeOverlayHeight = Mathf.Clamp(canvasSize.y * 0.80f, 620f, Mathf.Max(620f, canvasSize.y - safeMargins.y - safeMargins.w - edge * 2f));
 
@@ -4259,7 +4330,7 @@ namespace BookshelfPorting.Runtime
             ApplyBookAddPanelLayout(largeOverlayWidth, largeOverlayHeight, modalTop + 8f);
             ApplyBookAddConfirmPanelLayout(Mathf.Clamp(mediumPanelWidth + 24f, 620f, 740f), 520f, modalTop + 12f);
             ApplyBookSearchPanelLayout(canvasSize, safeMargins, edge, topOffset, bottomOffset, isCompact);
-            ApplyBookshelfManagePanelLayout(widePanelWidth, Mathf.Clamp(canvasSize.y * 0.68f, 640f, 760f), modalTop + 8f);
+            ApplyBookshelfManagePanelLayout(widePanelWidth, Mathf.Clamp(canvasSize.y * 0.78f, 720f, 860f), modalTop + 8f);
             ApplyBookshelfUnsavedConfirmPanelLayout(Mathf.Clamp(mediumPanelWidth, 560f, 680f), 204f, modalTop + 28f);
             ApplyDeleteResultDialogLayout(Mathf.Clamp(mediumPanelWidth, 520f, 680f), 210f);
             ApplyBookshelfStatusPanelLayout(canvasSize, safeMargins, edge, bottomOffset);
@@ -4340,18 +4411,18 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var padding = 42f;
+            var padding = 48f;
             var contentWidth = panelWidth - padding * 2f;
             var scrollbarWidth = 10f;
             var scrollbarGap = 12f;
             var rowsWidth = contentWidth - scrollbarWidth - scrollbarGap;
             var modeGap = 10f;
             var modeWidth = Mathf.Min(112f, (contentWidth - modeGap * 2f) / 3f);
-            var selectorLabelY = -122f;
-            var selectorY = -150f;
-            var modeY = -204f;
-            var inputY = -248f;
-            var viewportY = -306f;
+            var selectorLabelY = -126f;
+            var selectorY = -156f;
+            var modeY = -214f;
+            var inputY = -262f;
+            var viewportY = -324f;
             var statusHeight = 24f;
             var statusY = -(panelHeight - padding - statusHeight);
             var viewportHeight = Mathf.Max(260f, -statusY - Mathf.Abs(viewportY) - 24f);
@@ -4360,7 +4431,7 @@ namespace BookshelfPorting.Runtime
             SetHudChildRect(bookAddPanel, "BookAddAccent", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -28f), new Vector2(96f, 3f));
             SetHudChildActive(bookAddPanel, "BookAddAccent", false);
             SetHudComponentRect(bookAddTitleText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -44f), new Vector2(contentWidth - 48f, 28f));
-            SetHudComponentRect(bookAddHintText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -84f), new Vector2(contentWidth, 38f));
+            SetHudComponentRect(bookAddHintText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -84f), new Vector2(contentWidth, 44f));
             SetHudComponentRect(bookAddShelfSelectorLabelText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, selectorLabelY), new Vector2(contentWidth, 18f));
             LayoutBookshelfSelectorButtons(bookAddShelfSelectorButtons, padding, selectorY, contentWidth, 34f, Mathf.Min(116f, contentWidth * 0.18f));
             SetHudComponentRect(bookAddSearchModeButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, modeY), new Vector2(modeWidth, 34f));
@@ -4422,29 +4493,29 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var panelWidth = Mathf.Clamp(canvasSize.x * (isCompact ? 0.66f : 0.32f), 500f, 620f);
-            var panelHeight = Mathf.Clamp(canvasSize.y * 0.58f, 540f, 680f);
-            var padding = 38f;
+            var panelWidth = Mathf.Clamp(canvasSize.x * (isCompact ? 0.88f : 0.72f), 760f, 1040f);
+            var panelHeight = Mathf.Clamp(canvasSize.y * 0.74f, 640f, 820f);
+            var padding = 48f;
             var contentWidth = panelWidth - padding * 2f;
             var scrollbarWidth = 10f;
             var scrollbarGap = 12f;
             var rowsWidth = contentWidth - scrollbarWidth - scrollbarGap;
-            var selectorLabelY = -136f;
-            var selectorY = -164f;
-            var filterY = -214f;
-            var viewportY = -260f;
+            var selectorLabelY = -144f;
+            var selectorY = -174f;
+            var filterY = -226f;
+            var viewportY = -278f;
             var statusHeight = 24f;
             var statusY = -(panelHeight - padding - statusHeight);
             var viewportHeight = Mathf.Max(260f, -statusY - Mathf.Abs(viewportY) - 24f);
             var filterGap = 10f;
             var filterWidth = (contentWidth - filterGap * 3f) / 4f;
 
-            SetHudObjectRect(bookSearchPanel, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(safeMargins.x + edge, -topOffset - 22f), new Vector2(panelWidth, panelHeight));
+            SetHudObjectRect(bookSearchPanel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, Mathf.Clamp(canvasSize.y * 0.06f, 64f, 96f)), new Vector2(panelWidth, panelHeight));
             SetHudChildRect(bookSearchPanel, "BookSearchAccent", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -28f), new Vector2(96f, 3f));
             SetHudChildActive(bookSearchPanel, "BookSearchAccent", false);
             SetHudComponentRect(bookSearchTitleText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -44f), new Vector2(contentWidth - 48f, 28f));
             SetHudComponentRect(closeBookSearchButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(panelWidth - padding - 34f, -28f), new Vector2(34f, 34f));
-            SetHudComponentRect(bookSearchInputField, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -86f), new Vector2(contentWidth, 42f));
+            SetHudComponentRect(bookSearchInputField, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -92f), new Vector2(contentWidth, 44f));
             SetHudComponentRect(bookSearchShelfSelectorLabelText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, selectorLabelY), new Vector2(contentWidth, 18f));
             LayoutBookshelfSelectorButtons(bookSearchShelfSelectorButtons, padding, selectorY, contentWidth, 32f, Mathf.Min(96f, contentWidth * 0.22f));
             SetHudComponentRect(bookSearchAllFilterButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, filterY), new Vector2(filterWidth, 34f));
@@ -4464,17 +4535,16 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var padding = 42f;
+            var padding = 48f;
             var contentWidth = panelWidth - padding * 2f;
             var scrollbarWidth = 10f;
             var scrollbarGap = 12f;
             var rowsWidth = contentWidth - scrollbarWidth - scrollbarGap;
-            var viewportY = -154f;
-            var viewportHeight = Mathf.Clamp(panelHeight - 460f, 150f, 270f);
+            var viewportY = -160f;
+            var viewportHeight = Mathf.Clamp(panelHeight - 420f, 190f, 330f);
             var sortLabelY = viewportY - viewportHeight - 28f;
             var sortButtonY = sortLabelY - 28f;
-            var secondaryY = sortButtonY - 52f;
-            var tertiaryY = secondaryY - 48f;
+            var actionY = sortButtonY - 58f;
             var statusY = -(panelHeight - padding - 28f);
             var gap = 12f;
             var sortWidth = (contentWidth - gap * 3f) / 4f;
@@ -4493,12 +4563,19 @@ namespace BookshelfPorting.Runtime
             SetHudComponentRect(shelfManageSortAuthorButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + sortWidth + gap, sortButtonY), new Vector2(sortWidth, 36f));
             SetHudComponentRect(shelfManageSortStatusButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + (sortWidth + gap) * 2f, sortButtonY), new Vector2(sortWidth, 36f));
             SetHudComponentRect(shelfManageSortLikedButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + (sortWidth + gap) * 3f, sortButtonY), new Vector2(sortWidth, 36f));
-            SetHudComponentRect(shelfManagePreviousButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, secondaryY), new Vector2(112f, 38f));
-            SetHudComponentRect(shelfManageNextButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + 124f, secondaryY), new Vector2(112f, 38f));
-            SetHudComponentRect(shelfManageVisibilityButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + 248f, secondaryY), new Vector2(152f, 38f));
-            SetHudComponentRect(shelfManageAddButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, tertiaryY), new Vector2(104f, 38f));
-            SetHudComponentRect(shelfManageDeleteButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + 116f, tertiaryY), new Vector2(104f, 38f));
-            SetHudComponentRect(shelfManageCloseButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + contentWidth - 104f, tertiaryY), new Vector2(104f, 38f));
+            SetHudComponentRect(shelfManagePreviousButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, actionY), new Vector2(0f, 0f));
+            SetHudComponentRect(shelfManageNextButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, actionY), new Vector2(0f, 0f));
+            var actionGap = 8f;
+            var visibilityWidth = 128f;
+            var renameWidth = 102f;
+            var addWidth = 72f;
+            var deleteWidth = 72f;
+            var closeWidth = 88f;
+            SetHudComponentRect(shelfManageVisibilityButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, actionY), new Vector2(visibilityWidth, 40f));
+            SetHudComponentRect(shelfManageRenameButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + visibilityWidth + actionGap, actionY), new Vector2(renameWidth, 40f));
+            SetHudComponentRect(shelfManageAddButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + visibilityWidth + renameWidth + actionGap * 2f, actionY), new Vector2(addWidth, 40f));
+            SetHudComponentRect(shelfManageDeleteButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + visibilityWidth + renameWidth + addWidth + actionGap * 3f, actionY), new Vector2(deleteWidth, 40f));
+            SetHudComponentRect(shelfManageCloseButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + contentWidth - closeWidth, actionY), new Vector2(closeWidth, 40f));
             SetHudComponentRect(bookshelfManageStatusText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, statusY), new Vector2(contentWidth, 28f));
             ResizeBookshelfManageRows(rowsWidth);
         }
@@ -4762,11 +4839,17 @@ namespace BookshelfPorting.Runtime
                     new Vector2(0f, 1f),
                     new Vector2(0f, 1f),
                     new Vector2(0f, -i * BookAddResultRowHeight),
-                    new Vector2(rowWidth, BookAddResultRowHeight - 8f));
+                    new Vector2(rowWidth, BookAddResultRowHeight - 10f));
+                SetHudComponentRect(
+                    bookAddResultCoverImages[i],
+                    new Vector2(0f, 1f),
+                    new Vector2(0f, 1f),
+                    new Vector2(14f, -12f),
+                    new Vector2(64f, BookAddResultRowHeight - 34f));
                 if (bookAddResultTexts[i] != null)
                 {
-                    bookAddResultTexts[i].rectTransform.offsetMin = new Vector2(18f, 3f);
-                    bookAddResultTexts[i].rectTransform.offsetMax = new Vector2(-16f, -3f);
+                    bookAddResultTexts[i].rectTransform.offsetMin = new Vector2(94f, 8f);
+                    bookAddResultTexts[i].rectTransform.offsetMax = new Vector2(-18f, -8f);
                 }
             }
         }
@@ -5063,35 +5146,7 @@ namespace BookshelfPorting.Runtime
 
         private void ApplyBookDetailPanelResponsiveLayout(float panelWidth, float panelHeight)
         {
-            var padding = Mathf.Clamp(panelWidth * 0.058f, 26f, 36f);
-            var contentWidth = Mathf.Max(320f, panelWidth - padding * 2f);
-            SetHudChildRect(bookDetailPanel, "BookPanelAccent", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -22f), new Vector2(84f, 3f));
-            SetHudChildActive(bookDetailPanel, "BookPanelAccent", false);
-            SetHudComponentRect(bookPanelEyebrowText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -30f), new Vector2(contentWidth, 18f));
-            SetHudComponentRect(bookTitleText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -54f), new Vector2(contentWidth, 56f));
-            SetHudComponentRect(bookMetaText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -122f), new Vector2(contentWidth, 68f));
-
-            var chipGap = Mathf.Clamp(contentWidth * 0.024f, 8f, 12f);
-            var chipWidth = (contentWidth - chipGap * 2f) / 3f;
-            var chipHeight = 34f;
-            var chipY = -202f;
-            SetHudChildRect(bookDetailPanel, "BookAverageRatingChip", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, chipY), new Vector2(chipWidth, chipHeight));
-            SetHudComponentRect(bookAverageRatingChipText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, chipY), new Vector2(chipWidth, chipHeight));
-            SetHudChildRect(bookDetailPanel, "BookTotalLikeChip", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + chipWidth + chipGap, chipY), new Vector2(chipWidth, chipHeight));
-            SetHudComponentRect(bookTotalLikeChipText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + chipWidth + chipGap, chipY), new Vector2(chipWidth, chipHeight));
-            SetHudChildRect(bookDetailPanel, "BookReviewCountChip", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + (chipWidth + chipGap) * 2f, chipY), new Vector2(chipWidth, chipHeight));
-            SetHudComponentRect(bookReviewCountChipText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + (chipWidth + chipGap) * 2f, chipY), new Vector2(chipWidth, chipHeight));
-            SetHudChildRect(bookDetailPanel, "BookPanelDivider", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -250f), new Vector2(contentWidth, 1f));
-
-            var buttonHeight = 34f;
-            var actionY = -(panelHeight - padding - OverlayButtonBottomPaddingExtra - buttonHeight);
-            var deleteY = actionY + buttonHeight + 10f;
-            var hintY = -268f;
-            var hintHeight = Mathf.Max(92f, -deleteY - Mathf.Abs(hintY) - 18f);
-
-            SetHudComponentRect(bookPanelHintText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, hintY), new Vector2(contentWidth, hintHeight));
-            SetHudComponentRect(readReportButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, actionY), new Vector2(contentWidth, buttonHeight));
-            SetHudComponentRect(deleteDetailBookButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, deleteY), new Vector2(contentWidth, buttonHeight));
+            bookDetailPanelController?.ApplyResponsiveLayout(panelWidth, panelHeight);
         }
 
         private void ApplyBookReportWritePanelResponsiveLayout(float panelWidth, float panelHeight)
@@ -5146,7 +5201,16 @@ namespace BookshelfPorting.Runtime
             var bodyY = -164f;
             var commentY = buttonY + buttonHeight + 12f;
             var socialY = commentY + 30f;
-            var bodyHeight = Mathf.Max(96f, -socialY - Mathf.Abs(bodyY) - 12f);
+            var commentsTitleHeight = 20f;
+            var commentsGap = 12f;
+            var commentsMinHeight = 76f;
+            var contentBottomY = socialY + 16f;
+            var contentSpan = Mathf.Max(240f, bodyY - contentBottomY);
+            var maxBodyHeight = Mathf.Max(110f, contentSpan - commentsTitleHeight - commentsGap * 2f - commentsMinHeight);
+            var bodyHeight = Mathf.Min(Mathf.Clamp(contentSpan * 0.54f, 126f, 260f), maxBodyHeight);
+            var commentsTitleY = bodyY - bodyHeight - commentsGap;
+            var commentsTextY = commentsTitleY - commentsTitleHeight;
+            var commentsHeight = Mathf.Max(commentsMinHeight, commentsTextY - contentBottomY);
             var closeWidth = 92f;
             var editWidth = 90f;
             var visibilityWidth = 126f;
@@ -5160,7 +5224,10 @@ namespace BookshelfPorting.Runtime
             SetHudComponentRect(bookReportReadTitleText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -40f), new Vector2(contentWidth, 56f));
             SetHudComponentRect(bookReportReadMetaText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -106f), new Vector2(contentWidth, 28f));
             SetHudChildRect(bookReportReadPanel, "BookReportReadDivider", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -144f), new Vector2(contentWidth, 1f));
+            SetHudChildActive(bookReportReadPanel, "BookReportReadDivider", false);
             SetHudComponentRect(bookReportReadBodyText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, bodyY), new Vector2(contentWidth, bodyHeight));
+            SetHudComponentRect(bookReportCommentsTitleText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, commentsTitleY), new Vector2(contentWidth, commentsTitleHeight));
+            SetHudComponentRect(bookReportCommentsText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, commentsTextY), new Vector2(contentWidth, commentsHeight));
             SetHudComponentRect(bookReportSocialText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, socialY), new Vector2(contentWidth, 24f));
             SetHudComponentRect(bookReportCommentInputField, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, commentY), new Vector2(contentWidth - likeWidth - commentButtonWidth - gap * 2f, 34f));
             SetHudComponentRect(bookReportLikeButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + contentWidth - likeWidth - commentButtonWidth - gap, commentY), new Vector2(likeWidth, 34f));
@@ -5185,6 +5252,7 @@ namespace BookshelfPorting.Runtime
             SetHudComponentRect(bookEditTitleText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -56f), new Vector2(contentWidth, 56f));
             SetHudComponentRect(bookEditMetaText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -126f), new Vector2(contentWidth, 82f));
             SetHudChildRect(bookEditPanel, "BookEditDivider", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -220f), new Vector2(contentWidth, 1f));
+            SetHudChildActive(bookEditPanel, "BookEditDivider", false);
             SetHudComponentRect(bookEditHintText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -238f), new Vector2(contentWidth, 58f));
             SetHudComponentRect(deleteBookButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, deleteY), new Vector2(contentWidth, buttonHeight));
             SetHudComponentRect(closeBookEditButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, closeY), new Vector2(contentWidth, buttonHeight));
@@ -5206,6 +5274,7 @@ namespace BookshelfPorting.Runtime
             SetHudComponentRect(sectionEditTitleText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -56f), new Vector2(contentWidth, 56f));
             SetHudComponentRect(sectionEditMetaText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -126f), new Vector2(contentWidth, 96f));
             SetHudChildRect(sectionEditPanel, "SectionEditDivider", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -232f), new Vector2(contentWidth, 1f));
+            SetHudChildActive(sectionEditPanel, "SectionEditDivider", false);
             SetHudComponentRect(sectionEditHintText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -250f), new Vector2(contentWidth, 58f));
             SetHudComponentRect(alignLeftButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, alignY), new Vector2(alignWidth, buttonHeight));
             SetHudComponentRect(alignCenterButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + alignWidth + gap, alignY), new Vector2(alignWidth, buttonHeight));
@@ -5368,12 +5437,7 @@ namespace BookshelfPorting.Runtime
 
         private static void SetHudObjectRect(GameObject target, Vector2 anchor, Vector2 pivot, Vector2 anchoredPosition, Vector2 size)
         {
-            if (target == null)
-            {
-                return;
-            }
-
-            SetHudRect(target.GetComponent<RectTransform>(), anchor, pivot, anchoredPosition, size);
+            RuntimeHudLayout.SetObjectRect(target, anchor, pivot, anchoredPosition, size);
         }
 
         private static void SetHudComponentRect(Component target, Vector2 anchor, Vector2 pivot, Vector2 anchoredPosition, Vector2 size)
@@ -5383,7 +5447,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            SetHudRect(target.GetComponent<RectTransform>(), anchor, pivot, anchoredPosition, size);
+            RuntimeHudLayout.SetComponentRect(target, anchor, pivot, anchoredPosition, size);
             if (target is Button button)
             {
                 var label = GetButtonLabelText(button);
@@ -5392,68 +5456,30 @@ namespace BookshelfPorting.Runtime
                     StretchTextToParent(label);
                 }
             }
+            else if (target is InputField inputField)
+            {
+                ApplyHudInputTextPadding(inputField);
+            }
         }
 
         private static void SetHudChildRect(GameObject parent, string childName, Vector2 anchor, Vector2 pivot, Vector2 anchoredPosition, Vector2 size)
         {
-            if (parent == null || string.IsNullOrEmpty(childName))
-            {
-                return;
-            }
-
-            var child = parent.transform.Find(childName);
-            if (child == null)
-            {
-                return;
-            }
-
-            SetHudRect(child.GetComponent<RectTransform>(), anchor, pivot, anchoredPosition, size);
+            RuntimeHudLayout.SetChildRect(parent, childName, anchor, pivot, anchoredPosition, size);
         }
 
         private static void SetHudChildActive(GameObject parent, string childName, bool isActive)
         {
-            if (parent == null || string.IsNullOrEmpty(childName))
-            {
-                return;
-            }
-
-            var child = parent.transform.Find(childName);
-            if (child != null)
-            {
-                child.gameObject.SetActive(isActive);
-            }
+            RuntimeHudLayout.SetChildActive(parent, childName, isActive);
         }
 
         private static void SetHudRect(RectTransform rect, Vector2 anchor, Vector2 pivot, Vector2 anchoredPosition, Vector2 size)
         {
-            if (rect == null)
-            {
-                return;
-            }
-
-            rect.anchorMin = anchor;
-            rect.anchorMax = anchor;
-            rect.pivot = pivot;
-            rect.anchoredPosition = anchoredPosition;
-            rect.sizeDelta = size;
-            rect.localScale = Vector3.one;
+            RuntimeHudLayout.SetRect(rect, anchor, pivot, anchoredPosition, size);
         }
 
         private static void StretchTextToParent(Text text)
         {
-            if (text == null)
-            {
-                return;
-            }
-
-            var rect = text.rectTransform;
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-            rect.anchoredPosition = Vector2.zero;
-            rect.sizeDelta = Vector2.zero;
+            RuntimeHudLayout.InsetTextToParent(text, 10f, 3f);
         }
 
         private void RefreshBookshelfOverlay()
@@ -5529,12 +5555,13 @@ namespace BookshelfPorting.Runtime
                               (bookshelfGenerator == null || !bookshelfGenerator.IsBookshelfSwitching);
             var canSearch = canInteract && !isBookPlacementEditorOpen;
             var canMutate = canInteract && !isBookPlacementEditorOpen && CanMutateOwnedBookshelf();
+            var canAdd = canMutate && CanUseBookshelfServerPlacement(bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1);
             var canEdit = canMutate;
 
             var activeTab = ResolveBookshelfBottomNavTab();
             StyleBookshelfBottomNavButton(bookshelfNavHomeButton, activeTab == BookshelfBottomNavTab.Home, canInteract, "⌂\n책장");
             StyleBookshelfBottomNavButton(bookshelfNavSearchButton, activeTab == BookshelfBottomNavTab.Search, canSearch, "검색");
-            StyleBookshelfBottomNavButton(bookshelfNavAddButton, activeTab == BookshelfBottomNavTab.Add, canMutate, "+\n추가");
+            StyleBookshelfBottomNavButton(bookshelfNavAddButton, activeTab == BookshelfBottomNavTab.Add, canAdd, "+\n추가");
             StyleBookshelfBottomNavButton(bookshelfNavEditButton, activeTab == BookshelfBottomNavTab.Edit, canEdit, "✎\n편집");
         }
 
@@ -5696,11 +5723,12 @@ namespace BookshelfPorting.Runtime
         {
             if (bookshelfIndexPanel != null)
             {
-                bookshelfIndexPanel.SetActive(shouldShow && bookshelfGenerator != null);
+                bookshelfIndexPanel.SetActive(shouldShow && bookshelfGenerator != null && bookshelfGenerator.BookshelfCount > 0);
             }
 
-            if (!shouldShow || bookshelfGenerator == null)
+            if (!shouldShow || bookshelfGenerator == null || bookshelfGenerator.BookshelfCount <= 0)
             {
+                RefreshBookshelfIndexDots(0, 0);
                 return;
             }
 
@@ -5712,6 +5740,124 @@ namespace BookshelfPorting.Runtime
             }
 
             RefreshBookshelfIndexDots(displayIndex, totalCount);
+        }
+
+        private void RefreshFirstBookshelfTutorialPanel()
+        {
+            if (firstBookshelfTutorialPanel == null || firstBookshelfTutorialBackdrop == null)
+            {
+                return;
+            }
+
+            var shouldShow = ShouldShowFirstBookshelfTutorial();
+            isFirstBookshelfTutorialOpen = shouldShow;
+            firstBookshelfTutorialBackdrop.SetActive(shouldShow);
+            firstBookshelfTutorialPanel.SetActive(shouldShow);
+            if (!shouldShow)
+            {
+                return;
+            }
+
+            SuppressBookshelfModalBackgroundHud();
+            firstBookshelfTutorialBackdrop.transform.SetAsLastSibling();
+            firstBookshelfTutorialPanel.transform.SetAsLastSibling();
+
+            var canvasSize = GetHudCanvasSize();
+            var panelWidth = Mathf.Clamp(canvasSize.x * 0.48f, 580f, 760f);
+            var panelHeight = Mathf.Clamp(canvasSize.y * 0.40f, 340f, 430f);
+            SetHudObjectRect(
+                firstBookshelfTutorialPanel,
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                Vector2.zero,
+                new Vector2(panelWidth, panelHeight));
+
+            var padding = Mathf.Clamp(panelWidth * 0.06f, 34f, 48f);
+            SetHudComponentRect(
+                firstBookshelfTutorialTitleText,
+                new Vector2(0f, 1f),
+                new Vector2(0f, 1f),
+                new Vector2(padding, -padding),
+                new Vector2(panelWidth - padding * 2f, 40f));
+            SetHudComponentRect(
+                firstBookshelfTutorialMessageText,
+                new Vector2(0f, 1f),
+                new Vector2(0f, 1f),
+                new Vector2(padding, -(padding + 56f)),
+                new Vector2(panelWidth - padding * 2f, 86f));
+            SetHudComponentRect(
+                firstBookshelfTutorialStepsText,
+                new Vector2(0f, 1f),
+                new Vector2(0f, 1f),
+                new Vector2(padding, -(padding + 160f)),
+                new Vector2(panelWidth - padding * 2f, 94f));
+            SetHudComponentRect(
+                firstBookshelfTutorialAddButton,
+                new Vector2(1f, 0f),
+                new Vector2(1f, 0f),
+                new Vector2(-padding, padding),
+                new Vector2(Mathf.Clamp(panelWidth * 0.30f, 178f, 220f), 52f));
+
+            StyleHudButton(
+                firstBookshelfTutorialAddButton,
+                new Color32(78, 105, 83, 245),
+                new Color32(92, 121, 96, 255),
+                new Color32(224, 219, 214, 140),
+                17,
+                Color.white,
+                true);
+        }
+
+        private bool ShouldShowFirstBookshelfTutorial()
+        {
+            if (bookshelfGenerator == null ||
+                bookshelfGenerator.BookshelfCount > 0 ||
+                CurrentFocusArea != ExperienceFocusArea.Bookshelf ||
+                !CanMutateOwnedBookshelf())
+            {
+                return false;
+            }
+
+            if (state != null && (state.IsViewingBook || state.ActiveDraggedBook != null))
+            {
+                return false;
+            }
+
+            return !isBookshelfNameEditPanelOpen &&
+                   !isBookshelfDeleteConfirmPanelOpen &&
+                   !isBookshelfDesignPanelOpen &&
+                   !isBookAddPanelOpen &&
+                   !isBookAddConfirmPanelOpen &&
+                   !isBookshelfManagePanelOpen &&
+                   !isBookshelfUnsavedConfirmPanelOpen &&
+                   !isDeleteResultDialogOpen &&
+                   !isBookSearchPanelOpen &&
+                   !isBookAddPlacementSelectionActive &&
+                   !isBookEditPanelOpen &&
+                   !isBookPlacementEditorOpen &&
+                   !isBookReportWritePanelOpen &&
+                   !isBookReportReadPanelOpen &&
+                   activeEditSection == null;
+        }
+
+        private void AddFirstBookshelfFromTutorial()
+        {
+            if (bookshelfGenerator == null || !CanMutateOwnedBookshelf())
+            {
+                return;
+            }
+
+            isFirstBookshelfTutorialOpen = false;
+            if (!IsBookshelfEditMode)
+            {
+                SetBookshelfEditMode(true);
+            }
+
+            AddBookshelf();
+            if (bookshelfGenerator.BookshelfCount > 0)
+            {
+                OpenBookshelfNameEditPanel();
+            }
         }
 
         private void RefreshBookshelfNameEditPanel()
@@ -5791,6 +5937,11 @@ namespace BookshelfPorting.Runtime
             var showBookshelfManagePanel = shouldShowEditControls && isBookshelfManagePanelOpen;
             var showUnsavedConfirmPanel = isBookshelfUnsavedConfirmPanelOpen;
             var showModal = showNamePanel || showDeletePanel || showDesignPanel || showBookAddPanel || showBookAddConfirmPanel || showBookshelfManagePanel || showUnsavedConfirmPanel;
+            if (showModal)
+            {
+                SuppressBookshelfModalBackgroundHud();
+            }
+
             if (bookshelfNameModalBackdrop != null)
             {
                 bookshelfNameModalBackdrop.SetActive(showModal);
@@ -5859,35 +6010,6 @@ namespace BookshelfPorting.Runtime
                     bookshelfManagePanel.transform.SetAsLastSibling();
                 }
 
-                if (!showUnsavedConfirmPanel && bookshelfBottomNavPanel != null && bookshelfBottomNavPanel.activeSelf)
-                {
-                    bookshelfBottomNavPanel.transform.SetAsLastSibling();
-                }
-
-                if (!showUnsavedConfirmPanel && bookshelfIndexPanel != null && bookshelfIndexPanel.activeSelf)
-                {
-                    bookshelfIndexPanel.transform.SetAsLastSibling();
-                }
-
-                if (!showUnsavedConfirmPanel && focusBackButton != null && focusBackButton.gameObject.activeSelf)
-                {
-                    focusBackButton.transform.SetAsLastSibling();
-                }
-
-                if (!showUnsavedConfirmPanel && openBookshelfManageButton != null && openBookshelfManageButton.gameObject.activeSelf)
-                {
-                    openBookshelfManageButton.transform.SetAsLastSibling();
-                }
-
-                if (!showUnsavedConfirmPanel && openBookshelfDesignButton != null && openBookshelfDesignButton.gameObject.activeSelf)
-                {
-                    openBookshelfDesignButton.transform.SetAsLastSibling();
-                }
-
-                if (!showUnsavedConfirmPanel && bookshelfEditModeButton != null && bookshelfEditModeButton.gameObject.activeSelf)
-                {
-                    bookshelfEditModeButton.transform.SetAsLastSibling();
-                }
             }
 
             if (!canShowBookshelfOverlay || bookshelfGenerator == null)
@@ -5957,6 +6079,39 @@ namespace BookshelfPorting.Runtime
             }
         }
 
+        private void SuppressBookshelfModalBackgroundHud()
+        {
+            if (bookshelfBottomNavPanel != null)
+            {
+                bookshelfBottomNavPanel.SetActive(false);
+            }
+
+            if (bookshelfIndexPanel != null)
+            {
+                bookshelfIndexPanel.SetActive(false);
+            }
+
+            if (focusBackButton != null)
+            {
+                focusBackButton.gameObject.SetActive(false);
+            }
+
+            if (bookshelfEditModeButton != null)
+            {
+                bookshelfEditModeButton.gameObject.SetActive(false);
+            }
+
+            if (openBookshelfManageButton != null)
+            {
+                openBookshelfManageButton.gameObject.SetActive(false);
+            }
+
+            if (openBookshelfDesignButton != null)
+            {
+                openBookshelfDesignButton.gameObject.SetActive(false);
+            }
+        }
+
         private void OpenBookshelfNameEditPanel()
         {
             if (!IsBookshelfEditMode ||
@@ -6000,13 +6155,16 @@ namespace BookshelfPorting.Runtime
             }
 
             var displayIndex = Mathf.Clamp(bookshelfGenerator.DisplayBookshelfIndex, 0, Mathf.Max(1, bookshelfGenerator.BookshelfCount) - 1);
-            var previousName = bookshelfGenerator.GetBookshelfName(displayIndex);
-            bookshelfGenerator.SetBookshelfName(displayIndex, bookshelfNameInputField.text);
-            bookshelfNameInputField.text = bookshelfGenerator.GetBookshelfName(displayIndex);
+            var targetIndex = bookshelfNameInputIndex >= 0
+                ? Mathf.Clamp(bookshelfNameInputIndex, 0, Mathf.Max(1, bookshelfGenerator.BookshelfCount) - 1)
+                : displayIndex;
+            var previousName = bookshelfGenerator.GetBookshelfName(targetIndex);
+            bookshelfGenerator.SetBookshelfName(targetIndex, bookshelfNameInputField.text);
+            bookshelfNameInputField.text = bookshelfGenerator.GetBookshelfName(targetIndex);
             if (bookshelfNameInputField.text != previousName)
             {
                 MarkBookshelfEditDirty();
-                SyncBookshelfUpdateOrRefresh(displayIndex, "책장 이름 변경");
+                SyncBookshelfUpdateOrRefresh(targetIndex, "책장 이름 변경");
             }
 
             SetBookshelfOverlayMode(BookshelfOverlayMode.None);
@@ -6021,8 +6179,9 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            CloseOverlayPanels(bookshelfDesignPanel);
             SetBookshelfOverlayMode(BookshelfOverlayMode.Design);
-            RefreshBookshelfNameEditPanel();
+            RefreshHud();
         }
 
         private void CloseBookshelfDesignPanel()
@@ -6045,6 +6204,14 @@ namespace BookshelfPorting.Runtime
         {
             if (!CanOpenBookAddPanel())
             {
+                if (CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                    bookshelfGenerator != null &&
+                    bookshelfGenerator.BookshelfCount > 0 &&
+                    !CanUseBookshelfServerPlacement(bookshelfGenerator.DisplayBookshelfIndex))
+                {
+                    ShowBookshelfServerPlacementPending();
+                }
+
                 return;
             }
 
@@ -6123,7 +6290,11 @@ namespace BookshelfPorting.Runtime
             for (var i = 0; i < bookAddResultCatalogIndices.Length; i++)
             {
                 bookAddResultCatalogIndices[i] = -1;
+                BindBookAddCoverImage(i, null);
             }
+
+            CancelBookAddCoverLoads();
+            ClearBookAddCoverSpriteCache();
 
             if (bookAddPanel != null)
             {
@@ -6164,6 +6335,12 @@ namespace BookshelfPorting.Runtime
                 index >= bookshelfGenerator.BookshelfCount ||
                 !CanOpenBookAddPanel())
             {
+                return;
+            }
+
+            if (!CanUseBookshelfServerPlacement(index))
+            {
+                ShowBookshelfServerPlacementPending();
                 return;
             }
 
@@ -6217,10 +6394,10 @@ namespace BookshelfPorting.Runtime
 
             if (bookAddHintText != null)
             {
-                var sectionSummary = bookshelfGenerator != null && bookshelfGenerator.ActiveBookshelfSectionCount > 0
+            var sectionSummary = bookshelfGenerator != null && bookshelfGenerator.ActiveBookshelfSectionCount > 0
                     ? $" 현재 빈 섹션 {bookshelfGenerator.ActiveBookshelfEmptySectionCount}/{bookshelfGenerator.ActiveBookshelfSectionCount}개."
                     : string.Empty;
-                bookAddHintText.text = $"책장을 고른 뒤 책을 선택하고, 꽂을 칸이나 책 사이를 직접 지정합니다.{sectionSummary}";
+                bookAddHintText.text = $"책장을 고른 뒤 원하는 책을 선택하고, 꽂을 위치를 직접 지정해 내 책장 분위기를 완성합니다.{sectionSummary}";
             }
 
             RefreshBookshelfSelectorButtons(bookAddShelfSelectorButtons, displayIndex, CanOpenBookAddPanel());
@@ -6266,8 +6443,9 @@ namespace BookshelfPorting.Runtime
                     {
                         button.gameObject.SetActive(true);
                         button.interactable = canAdd && !isAlreadyAdded;
-                        SetButtonLabel(button, $"{item.Title}\n{item.Author} · {item.Publisher} · {GetOrientationLabel(item.Orientation)}{(isAlreadyAdded ? " · 이미 추가됨" : string.Empty)}");
+                        SetButtonLabel(button, BuildBookAddResultLabel(item, isAlreadyAdded));
                         StyleBookAddResultButton(button, !isAlreadyAdded);
+                        LayoutBookAddResultRow(visibleSlot, item);
                     }
                 }
 
@@ -6294,6 +6472,8 @@ namespace BookshelfPorting.Runtime
                 {
                     bookAddResultButtons[i].gameObject.SetActive(false);
                 }
+
+                BindBookAddCoverImage(i, null);
             }
 
             if (closeBookAddButton != null)
@@ -6437,6 +6617,13 @@ namespace BookshelfPorting.Runtime
                 pendingBookAddCatalogItem == null)
             {
                 CloseBookAddConfirmPanel();
+                return;
+            }
+
+            if (!CanUseBookshelfServerPlacement(bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1))
+            {
+                CloseBookAddConfirmPanel();
+                ShowBookshelfServerPlacementPending();
                 return;
             }
 
@@ -6720,6 +6907,17 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (!CanUseBookshelfServerPlacement(targetBookshelfIndex))
+            {
+                RollbackAddedBookAfterApiFailure(
+                    book,
+                    sourceSection,
+                    item.Title,
+                    "새 책장 정보가 아직 서버와 동기화되지 않았습니다. 잠시 후 다시 시도해 주세요.");
+                ShowBookshelfServerPlacementPending();
+                return;
+            }
+
             bookAddFeedbackMessage = $"{item.Title} 추가 요청 중입니다.";
             var didStartAddSync = bookshelfApiSyncController.AddBookToShelf(
                 book,
@@ -6814,26 +7012,33 @@ namespace BookshelfPorting.Runtime
 
         private bool HasOpenBookshelfModal()
         {
-            return isBookshelfNameEditPanelOpen ||
-                   isBookshelfDeleteConfirmPanelOpen ||
-                   isBookshelfDesignPanelOpen ||
-                   isBookAddPanelOpen ||
-                   isBookAddConfirmPanelOpen ||
-                   isBookshelfManagePanelOpen ||
-                   isBookshelfUnsavedConfirmPanelOpen ||
-                   isDeleteResultDialogOpen;
+            return overlayStateController.HasOpenBookshelfModal(CaptureBookshelfOverlayState());
         }
 
         private bool HasBlockingBookshelfOverlay()
         {
-            return HasOpenBookshelfModal() ||
-                   isBookSearchPanelOpen ||
-                   isBookAddPlacementSelectionActive ||
-                   isBookEditPanelOpen ||
-                   isBookPlacementEditorOpen ||
-                   isBookReportWritePanelOpen ||
-                   isBookReportReadPanelOpen ||
-                   activeEditSection != null;
+            return overlayStateController.HasBlockingBookshelfOverlay(CaptureBookshelfOverlayState());
+        }
+
+        private BookshelfOverlayStateSnapshot CaptureBookshelfOverlayState()
+        {
+            return new BookshelfOverlayStateSnapshot(
+                isBookshelfNameEditPanelOpen,
+                isBookshelfDeleteConfirmPanelOpen,
+                isBookshelfDesignPanelOpen,
+                isBookAddPanelOpen,
+                isBookAddConfirmPanelOpen,
+                isBookshelfManagePanelOpen,
+                isBookshelfUnsavedConfirmPanelOpen,
+                isDeleteResultDialogOpen,
+                isBookSearchPanelOpen,
+                isBookAddPlacementSelectionActive,
+                isBookEditPanelOpen,
+                isBookPlacementEditorOpen,
+                isBookReportWritePanelOpen,
+                isBookReportReadPanelOpen,
+                isFirstBookshelfTutorialOpen,
+                activeEditSection != null);
         }
 
         private void ToggleBookSearchPanel()
@@ -7090,7 +7295,7 @@ namespace BookshelfPorting.Runtime
 
             CloseOverlayPanels(bookshelfManagePanel);
             SetBookshelfOverlayMode(BookshelfOverlayMode.Manage);
-            RefreshBookshelfNameEditPanel();
+            RefreshHud();
         }
 
         private void CloseBookshelfManagePanel()
@@ -7214,12 +7419,14 @@ namespace BookshelfPorting.Runtime
             StyleBookshelfManageSortButton(shelfManageNextButton, canSwitchManagedShelf);
             if (shelfManagePreviousButton != null)
             {
-                shelfManagePreviousButton.interactable = canSwitchManagedShelf;
+                shelfManagePreviousButton.gameObject.SetActive(false);
+                shelfManagePreviousButton.interactable = false;
             }
 
             if (shelfManageNextButton != null)
             {
-                shelfManageNextButton.interactable = canSwitchManagedShelf;
+                shelfManageNextButton.gameObject.SetActive(false);
+                shelfManageNextButton.interactable = false;
             }
 
             StyleHudButton(
@@ -7231,6 +7438,20 @@ namespace BookshelfPorting.Runtime
                 new Color32(53, 94, 73, 255),
                 true);
             SetButtonLabel(shelfManageVisibilityButton, $"공개: {GetVisibilityLabel(bookshelfGenerator.GetBookshelfVisibility(activeIndex))}");
+            StyleHudButton(
+                shelfManageRenameButton,
+                new Color32(255, 248, 236, 235),
+                new Color32(255, 255, 255, 245),
+                new Color32(224, 219, 214, 140),
+                13,
+                new Color32(63, 47, 38, 255),
+                true);
+            SetButtonLabel(shelfManageRenameButton, "이름 변경");
+            if (shelfManageRenameButton != null)
+            {
+                shelfManageRenameButton.interactable = CanMutateBookshelfCollection() && bookshelfGenerator.BookshelfCount > 0;
+            }
+
             StyleHudButton(
                 shelfManageAddButton,
                 new Color32(238, 248, 241, 235),
@@ -7262,8 +7483,18 @@ namespace BookshelfPorting.Runtime
                                                  bookshelfManageDragSourceIndex < bookshelfGenerator.BookshelfCount &&
                                                  bookshelfManageDragTargetIndex < bookshelfGenerator.BookshelfCount
                     ? $"{bookshelfManageDragSourceIndex + 1}번 책장을 {bookshelfManageDragTargetIndex + 1}번째 위치로 이동 중입니다. 놓으면 순서가 바뀝니다."
-                    : "이전/다음으로 책장을 넘기며 바로 편집하고, 햄버거 핸들로 순서를 바꿀 수 있습니다.";
+                    : "목록에서 책장을 선택하고 이름 변경, 공개 범위, 순서를 관리할 수 있습니다.";
             }
+        }
+
+        private void OpenManagedBookshelfNameEditPanel()
+        {
+            if (!CanMutateBookshelfCollection())
+            {
+                return;
+            }
+
+            OpenBookshelfNameEditPanel();
         }
 
         private void SelectManagedBookshelf(int rowIndex)
@@ -7881,6 +8112,20 @@ namespace BookshelfPorting.Runtime
                                 !isBookshelfManagePanelOpen &&
                                 !HasOpenBookshelfModal() &&
                                 !isSwitching;
+            var showServerPlacementPending = isBookshelfFocused &&
+                                             !isViewingBook &&
+                                             !isDraggingBook &&
+                                             !IsBookshelfEditMode &&
+                                             !isBookAddPlacementSelectionActive &&
+                                             !isBookSearchPanelOpen &&
+                                             !isBookAddPanelOpen &&
+                                             !isBookAddConfirmPanelOpen &&
+                                             !isBookshelfManagePanelOpen &&
+                                             !isBookPlacementEditorOpen &&
+                                             !HasOpenBookshelfModal() &&
+                                             bookshelfGenerator != null &&
+                                             bookshelfGenerator.BookshelfCount > 0 &&
+                                             !CanUseBookshelfServerPlacement(bookshelfGenerator.DisplayBookshelfIndex);
             var showEmpty = isBookshelfFocused &&
                             !isViewingBook &&
                             !isDraggingBook &&
@@ -7892,7 +8137,7 @@ namespace BookshelfPorting.Runtime
                             bookshelfGenerator != null &&
                             bookshelfGenerator.ActiveBookshelfBookCount == 0;
             var showSwitching = isBookshelfFocused && isSwitching;
-            var show = showPlacementSelection || showPendingRetries || showTransient || showEmpty || showSwitching;
+            var show = showPlacementSelection || showPendingRetries || showTransient || showServerPlacementPending || showEmpty || showSwitching;
             bookshelfStatusPanel.SetActive(show);
             if (!show)
             {
@@ -7909,7 +8154,9 @@ namespace BookshelfPorting.Runtime
                             ? $"{pendingMutationRetries.Count}개 변경 저장 필요"
                             : showTransient
                                 ? bookshelfTransientStatusTitle
-                                : "빈 책장";
+                                : showServerPlacementPending
+                                    ? "책장 저장 중"
+                                    : "빈 책장";
                 bookshelfStatusTitleText.color = (showPendingRetries || showTransient && bookshelfTransientStatusIsError)
                     ? new Color32(112, 46, 42, 255)
                     : showTransient
@@ -7939,6 +8186,10 @@ namespace BookshelfPorting.Runtime
                 {
                     bookshelfStatusMessageText.text = bookshelfTransientStatusMessage;
                 }
+                else if (showServerPlacementPending)
+                {
+                    bookshelfStatusMessageText.text = "새 책장/섹션 정보를 서버에서 불러오는 중입니다. 완료되면 책을 추가할 수 있습니다.";
+                }
                 else
                 {
                     var sectionCount = bookshelfGenerator != null ? bookshelfGenerator.ActiveBookshelfSectionCount : 0;
@@ -7951,7 +8202,7 @@ namespace BookshelfPorting.Runtime
 
             if (bookshelfStatusAddButton != null)
             {
-                var showActionButton = showPlacementSelection || showPendingRetries || showTransient || showEmpty;
+                var showActionButton = showPlacementSelection || showPendingRetries || showTransient || showServerPlacementPending || showEmpty;
                 bookshelfStatusAddButton.gameObject.SetActive(showActionButton);
                 if (showActionButton)
                 {
@@ -7968,12 +8219,16 @@ namespace BookshelfPorting.Runtime
                     {
                         bookshelfStatusAddButton.onClick.AddListener(CloseBookshelfTransientStatusFromStatusPanel);
                     }
+                    else if (showServerPlacementPending)
+                    {
+                        bookshelfStatusAddButton.onClick.AddListener(ShowBookshelfServerPlacementPending);
+                    }
                     else
                     {
                         bookshelfStatusAddButton.onClick.AddListener(OpenBookAddFromStatusPanel);
                     }
 
-                    SetButtonLabel(bookshelfStatusAddButton, showPlacementSelection ? "취소" : showPendingRetries ? "전체 재시도" : showTransient ? "닫기" : "책 추가");
+                    SetButtonLabel(bookshelfStatusAddButton, showPlacementSelection ? "취소" : showPendingRetries ? "전체 재시도" : showTransient ? "닫기" : showServerPlacementPending ? "새로고침" : "책 추가");
                 }
 
                 StyleHudButton(
@@ -8262,7 +8517,12 @@ namespace BookshelfPorting.Runtime
                 null,
                 book.PublishedDate?.ToString("yyyy-MM-dd"),
                 book.CoverImageUrl,
-                null);
+                null,
+                book.ViewCount,
+                book.LikeCount,
+                book.BookshelfAddCount,
+                book.AverageRating,
+                book.RatingCount);
         }
 
         private static BookAddCatalogItem CreateBookAddCatalogItem(NotebookBookSearchItem source)
@@ -8289,7 +8549,12 @@ namespace BookshelfPorting.Runtime
                 source.Isbn10,
                 source.PublishedDate,
                 source.CoverImageUrl,
-                source.SourceUrl);
+                source.SourceUrl,
+                source.ViewCount,
+                source.LikeCount,
+                source.BookshelfAddCount > 0 ? source.BookshelfAddCount : source.PlacementCount,
+                source.AvgRating,
+                source.ReviewCount);
         }
 
         private void RequestBookAddApiSearch(string query)
@@ -8605,6 +8870,351 @@ namespace BookshelfPorting.Runtime
             };
         }
 
+        private static string BuildBookAddResultLabel(BookAddCatalogItem item, bool isAlreadyAdded)
+        {
+            if (item == null)
+            {
+                return string.Empty;
+            }
+
+            var title = FirstNonEmpty(item.Title, "제목 없음");
+            var meta = $"{FirstNonEmpty(item.Author, "저자 미상")} · {FirstNonEmpty(item.Publisher, "출판사 미상")}";
+            var summary = TruncateBookAddResultText(FirstNonEmpty(item.Summary, "책 설명이 없습니다."), 78);
+            var stats = BuildBookAddStatsLine(item);
+            var suffix = isAlreadyAdded ? "\n이미 이 책장에 추가됨" : string.Empty;
+            return string.IsNullOrWhiteSpace(stats)
+                ? $"{title}\n{meta}\n{summary}{suffix}"
+                : $"{title}\n{meta}\n{summary}\n{stats}{suffix}";
+        }
+
+        private static string BuildBookAddStatsLine(BookAddCatalogItem item)
+        {
+            if (item == null)
+            {
+                return string.Empty;
+            }
+
+            var stats = new List<string>(4);
+            if (item.ViewCount > 0L)
+            {
+                stats.Add($"조회 {FormatCompactCount(item.ViewCount)}");
+            }
+
+            if (item.LikeCount > 0L)
+            {
+                stats.Add($"좋아요 {FormatCompactCount(item.LikeCount)}");
+            }
+
+            if (item.BookshelfAddCount > 0L)
+            {
+                stats.Add($"책장 추가 {FormatCompactCount(item.BookshelfAddCount)}");
+            }
+
+            if (item.AverageRating > 0m)
+            {
+                stats.Add($"평점 {item.AverageRating:0.0}");
+            }
+
+            return stats.Count == 0 ? string.Empty : string.Join(" · ", stats);
+        }
+
+        private static string TruncateBookAddResultText(string value, int maxLength)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var compact = value.Replace("\r", " ").Replace("\n", " ").Trim();
+            while (compact.Contains("  "))
+            {
+                compact = compact.Replace("  ", " ");
+            }
+
+            if (compact.Length <= maxLength)
+            {
+                return compact;
+            }
+
+            return compact.Substring(0, Mathf.Max(0, maxLength - 1)).TrimEnd() + "...";
+        }
+
+        private static string FormatCompactCount(long count)
+        {
+            if (count >= 100000000L)
+            {
+                return $"{count / 100000000d:0.#}억";
+            }
+
+            if (count >= 10000L)
+            {
+                return $"{count / 10000d:0.#}만";
+            }
+
+            return count.ToString("N0");
+        }
+
+        private void LayoutBookAddResultRow(int slotIndex, BookAddCatalogItem item)
+        {
+            if (slotIndex < 0 || slotIndex >= bookAddResultButtons.Length)
+            {
+                return;
+            }
+
+            var label = bookAddResultTexts[slotIndex];
+            if (label != null)
+            {
+                label.alignment = TextAnchor.UpperLeft;
+                label.fontSize = 12;
+                label.horizontalOverflow = HorizontalWrapMode.Wrap;
+                label.verticalOverflow = VerticalWrapMode.Truncate;
+                label.lineSpacing = 1.05f;
+                label.rectTransform.offsetMin = new Vector2(94f, 8f);
+                label.rectTransform.offsetMax = new Vector2(-18f, -8f);
+            }
+
+            BindBookAddCoverImage(slotIndex, item);
+        }
+
+        private void BindBookAddCoverImage(int slotIndex, BookAddCatalogItem item)
+        {
+            if (slotIndex < 0 || slotIndex >= bookAddResultCoverImages.Length)
+            {
+                return;
+            }
+
+            var image = bookAddResultCoverImages[slotIndex];
+            if (image == null)
+            {
+                return;
+            }
+
+            var url = item != null ? item.CoverImageUrl : null;
+            if (bookAddCoverImageUrls.TryGetValue(image, out var currentUrl) &&
+                string.Equals(currentUrl, url ?? string.Empty, System.StringComparison.Ordinal) &&
+                (string.IsNullOrWhiteSpace(url) || image.sprite != null))
+            {
+                return;
+            }
+
+            StopBookAddCoverLoad(image);
+            bookAddCoverImageUrls[image] = url ?? string.Empty;
+            ResetBookAddCoverImage(image);
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            if (TryGetBookAddCoverSprite(url, out var cachedSprite))
+            {
+                ApplyBookAddCoverSprite(image, cachedSprite);
+                return;
+            }
+
+            bookAddCoverLoadCoroutines[image] = StartCoroutine(LoadBookAddCoverImage(image, url));
+        }
+
+        private IEnumerator LoadBookAddCoverImage(Image image, string url)
+        {
+            using (var request = UnityWebRequestTexture.GetTexture(url))
+            {
+                request.timeout = 8;
+                yield return request.SendWebRequest();
+
+                bookAddCoverLoadCoroutines.Remove(image);
+                if (image == null ||
+                    !bookAddCoverImageUrls.TryGetValue(image, out var activeUrl) ||
+                    !string.Equals(activeUrl, url, System.StringComparison.Ordinal))
+                {
+                    yield break;
+                }
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    yield break;
+                }
+
+                var texture = DownloadHandlerTexture.GetContent(request);
+                if (texture == null)
+                {
+                    yield break;
+                }
+
+                var sprite = Sprite.Create(
+                    texture,
+                    new Rect(0f, 0f, texture.width, texture.height),
+                    new Vector2(0.5f, 0.5f),
+                    100f);
+                CacheBookAddCoverSprite(url, sprite);
+                ApplyBookAddCoverSprite(image, sprite);
+            }
+        }
+
+        private static void ApplyBookAddCoverSprite(Image image, Sprite sprite)
+        {
+            if (image == null || sprite == null)
+            {
+                return;
+            }
+
+            image.sprite = sprite;
+            image.type = Image.Type.Simple;
+            image.preserveAspect = true;
+            image.color = Color.white;
+        }
+
+        private static void ResetBookAddCoverImage(Image image)
+        {
+            if (image == null)
+            {
+                return;
+            }
+
+            ApplyRoundedSprite(image);
+            image.sprite = GetRoundedUiSprite();
+            image.type = Image.Type.Sliced;
+            image.preserveAspect = false;
+            image.color = new Color32(238, 231, 221, 240);
+        }
+
+        private void StopBookAddCoverLoad(Image image)
+        {
+            if (image == null)
+            {
+                return;
+            }
+
+            if (bookAddCoverLoadCoroutines.TryGetValue(image, out var coroutine) && coroutine != null)
+            {
+                StopCoroutine(coroutine);
+            }
+
+            bookAddCoverLoadCoroutines.Remove(image);
+        }
+
+        private void CancelBookAddCoverLoads()
+        {
+            foreach (var pair in bookAddCoverLoadCoroutines)
+            {
+                if (pair.Value != null)
+                {
+                    StopCoroutine(pair.Value);
+                }
+            }
+
+            bookAddCoverLoadCoroutines.Clear();
+        }
+
+        private bool TryGetBookAddCoverSprite(string url, out Sprite sprite)
+        {
+            sprite = null;
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return false;
+            }
+
+            if (!bookAddCoverSpriteCache.TryGetValue(url, out sprite) || sprite == null)
+            {
+                RemoveBookAddCoverSpriteCacheEntry(url);
+                return false;
+            }
+
+            TouchBookAddCoverSpriteCacheKey(url);
+            return true;
+        }
+
+        private void CacheBookAddCoverSprite(string url, Sprite sprite)
+        {
+            if (string.IsNullOrWhiteSpace(url) || sprite == null)
+            {
+                return;
+            }
+
+            if (bookAddCoverSpriteCache.TryGetValue(url, out var previous) && previous != null && previous != sprite)
+            {
+                DestroyBookAddCoverSprite(previous);
+            }
+
+            bookAddCoverSpriteCache[url] = sprite;
+            TouchBookAddCoverSpriteCacheKey(url);
+            TrimBookAddCoverSpriteCache();
+        }
+
+        private void TouchBookAddCoverSpriteCacheKey(string url)
+        {
+            for (var node = bookAddCoverSpriteLru.First; node != null; node = node.Next)
+            {
+                if (!string.Equals(node.Value, url, System.StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                bookAddCoverSpriteLru.Remove(node);
+                break;
+            }
+
+            bookAddCoverSpriteLru.AddLast(url);
+        }
+
+        private void TrimBookAddCoverSpriteCache()
+        {
+            while (bookAddCoverSpriteCache.Count > BookAddCoverSpriteCacheLimit && bookAddCoverSpriteLru.First != null)
+            {
+                RemoveBookAddCoverSpriteCacheEntry(bookAddCoverSpriteLru.First.Value);
+            }
+        }
+
+        private void RemoveBookAddCoverSpriteCacheEntry(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            if (bookAddCoverSpriteCache.TryGetValue(url, out var sprite))
+            {
+                DestroyBookAddCoverSprite(sprite);
+                bookAddCoverSpriteCache.Remove(url);
+            }
+
+            for (var node = bookAddCoverSpriteLru.First; node != null;)
+            {
+                var next = node.Next;
+                if (string.Equals(node.Value, url, System.StringComparison.Ordinal))
+                {
+                    bookAddCoverSpriteLru.Remove(node);
+                }
+
+                node = next;
+            }
+        }
+
+        private void ClearBookAddCoverSpriteCache()
+        {
+            foreach (var pair in bookAddCoverSpriteCache)
+            {
+                DestroyBookAddCoverSprite(pair.Value);
+            }
+
+            bookAddCoverSpriteCache.Clear();
+            bookAddCoverSpriteLru.Clear();
+        }
+
+        private static void DestroyBookAddCoverSprite(Sprite sprite)
+        {
+            if (sprite == null)
+            {
+                return;
+            }
+
+            var texture = sprite.texture;
+            Destroy(sprite);
+            if (texture != null)
+            {
+                Destroy(texture);
+            }
+        }
+
         private static void StyleBookAddBrowseButton(Button button, bool isActive)
         {
             StyleHudButton(
@@ -8627,6 +9237,13 @@ namespace BookshelfPorting.Runtime
                 13,
                 isAvailable ? new Color32(44, 66, 53, 255) : new Color32(138, 126, 114, 255),
                 false);
+            if (button != null)
+            {
+                AddSoftOutline(
+                    button.gameObject,
+                    isAvailable ? new Color32(193, 215, 199, 150) : new Color32(224, 219, 214, 130),
+                    new Vector2(1f, -1f));
+            }
 
             var label = button != null ? button.GetComponentInChildren<Text>() : null;
             if (label != null)
@@ -8880,13 +9497,50 @@ namespace BookshelfPorting.Runtime
                    (state == null || (!state.IsViewingBook && state.ActiveDraggedBook == null));
         }
 
+        private bool CanUseBookshelfServerPlacement(int bookshelfIndex)
+        {
+            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                return true;
+            }
+
+            return bookshelfGenerator != null &&
+                   bookshelfIndex >= 0 &&
+                   bookshelfGenerator.HasServerPlacementIdsForBookshelf(bookshelfIndex);
+        }
+
+        private void ShowBookshelfServerPlacementPending()
+        {
+            if (bookshelfApiSyncController != null &&
+                bookshelfApiSyncController.IsServerSyncEnabled &&
+                !bookshelfApiSyncController.IsRefreshing)
+            {
+                bookshelfApiSyncController.RefreshFromServer();
+            }
+
+            bookAddFeedbackMessage = "새 책장 정보를 서버와 동기화하는 중입니다.";
+            ShowBookshelfTransientStatus(
+                "책장 저장 중",
+                "새 책장/섹션 정보를 서버에서 불러온 뒤 책을 추가할 수 있습니다. 잠시 후 다시 시도해 주세요.",
+                false);
+        }
+
         private bool CanOpenBookAddPanel()
         {
             return CanMutateOwnedBookshelf() &&
                    CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
                    bookshelfGenerator != null &&
+                   bookshelfGenerator.BookshelfCount > 0 &&
+                   CanUseBookshelfServerPlacement(bookshelfGenerator.DisplayBookshelfIndex) &&
                    !bookshelfGenerator.IsBookshelfSwitching &&
                    !isBookPlacementEditorOpen &&
+                   !isFirstBookshelfTutorialOpen &&
+                   !isBookshelfNameEditPanelOpen &&
+                   !isBookshelfDeleteConfirmPanelOpen &&
+                   !isBookshelfDesignPanelOpen &&
+                   !isBookshelfManagePanelOpen &&
+                   !isBookshelfUnsavedConfirmPanelOpen &&
+                   !isDeleteResultDialogOpen &&
                    (state == null || (!state.IsViewingBook && state.ActiveDraggedBook == null));
         }
 
@@ -9193,7 +9847,7 @@ namespace BookshelfPorting.Runtime
 
         private void RefreshBookDetailPanel()
         {
-            if (bookDetailPanel == null || !bookDetailPanel.activeSelf || ActiveDetailBook == null || dataStore == null)
+            if (bookDetailPanelController == null || !bookDetailPanelController.IsVisible || ActiveDetailBook == null || dataStore == null)
             {
                 return;
             }
@@ -9204,124 +9858,24 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            bookTitleText.text = TryGetBookDisplayTitle(ActiveDetailBook);
             var section = ActiveDetailBook.CurrentSection;
-            if (bookPanelEyebrowText != null)
-            {
-                bookPanelEyebrowText.text = "책 상세";
-            }
-
             var averageRating = ResolveDisplayAverageRating(meta);
             var totalLikeCount = ResolveDisplayLikeCount(meta);
-            bookMetaText.text = $"저자      {ResolveFallbackText(meta.author, "저자 미상")}\n" +
-                                $"출판사    {ResolveFallbackText(meta.publisher, "출판사 미상")}\n" +
-                                $"저장 위치  {(section != null ? $"{section.row + 1}행 {section.column + 1}열" : "책장 밖")}";
-            if (bookAverageRatingChipText != null)
-            {
-                bookAverageRatingChipText.text = $"★ {GetAverageRatingLabel(averageRating)}";
-            }
-
-            if (bookTotalLikeChipText != null)
-            {
-                bookTotalLikeChipText.text = $"좋아요 {totalLikeCount}개";
-            }
-
-            if (bookReviewCountChipText != null)
-            {
-                bookReviewCountChipText.text = $"리뷰 {Mathf.Max(0, meta.reviewCount)}개";
-            }
-
-            if (bookPanelHintText != null)
-            {
-                bookPanelHintText.text = ResolveFallbackText(meta.description, meta.memoPreview);
-            }
-
-            if (readToggleButton != null)
-            {
-                readToggleButton.gameObject.SetActive(false);
-            }
-
-            if (likeToggleButton != null)
-            {
-                likeToggleButton.gameObject.SetActive(false);
-            }
-
-            if (ratingCycleButton != null)
-            {
-                ratingCycleButton.gameObject.SetActive(false);
-            }
-
-            if (visibilityToggleButton != null)
-            {
-                visibilityToggleButton.gameObject.SetActive(false);
-            }
-
             var hasReport = !string.IsNullOrWhiteSpace(meta.reportBody);
-            if (writeReportButton != null)
-            {
-                writeReportButton.gameObject.SetActive(false);
-                SetButtonLabel(writeReportButton, hasReport ? "독후감 수정" : "독후감 작성");
-                StyleHudButton(
-                    writeReportButton,
-                    new Color32(255, 255, 255, 245),
-                    new Color32(241, 235, 230, 255),
-                    new Color32(224, 219, 214, 140),
-                    13,
-                    new Color32(63, 47, 38, 255),
-                    true);
-            }
-
-            if (readReportButton != null)
-            {
-                readReportButton.gameObject.SetActive(true);
-                readReportButton.interactable = hasReport;
-                StyleHudButton(
-                    readReportButton,
-                    hasReport ? new Color32(255, 255, 255, 245) : new Color32(238, 231, 221, 142),
-                    new Color32(241, 235, 230, 255),
-                    new Color32(224, 219, 214, 120),
-                    13,
-                    hasReport ? new Color32(63, 47, 38, 255) : new Color32(124, 111, 101, 142),
-                    true);
-            }
-
-            if (deleteDetailBookButton != null)
-            {
-                var canDeleteBook = CanUseOwnerBookActions();
-                var isConfirmingDelete = pendingDeleteBook == ActiveDetailBook;
-                deleteDetailBookButton.gameObject.SetActive(canDeleteBook);
-                deleteDetailBookButton.interactable = canDeleteBook;
-                SetButtonLabel(deleteDetailBookButton, isConfirmingDelete ? "한 번 더 눌러 제거" : "책장에서 제거");
-                StyleDeleteActionButton(deleteDetailBookButton, canDeleteBook, isConfirmingDelete, 13);
-            }
-
-            if (detailPlacementButton != null)
-            {
-                detailPlacementButton.gameObject.SetActive(false);
-                detailPlacementButton.interactable = false;
-                StyleHudButton(
-                    detailPlacementButton,
-                    new Color32(255, 255, 255, 245),
-                    new Color32(241, 235, 230, 255),
-                    new Color32(224, 219, 214, 140),
-                    13,
-                    new Color32(63, 47, 38, 255),
-                    true);
-            }
-
-            if (closeBookDetailButton != null)
-            {
-                closeBookDetailButton.gameObject.SetActive(false);
-                StyleHudButton(
-                    closeBookDetailButton,
-                    new Color32(245, 237, 226, 245),
-                    new Color32(255, 248, 236, 255),
-                    new Color32(224, 219, 214, 140),
-                    14,
-                    new Color32(84, 74, 66, 255),
-                    true);
-            }
-
+            var canDeleteBook = CanUseOwnerBookActions();
+            var viewModel = new BookDetailPanelViewModel(
+                TryGetBookDisplayTitle(ActiveDetailBook),
+                $"저자      {ResolveFallbackText(meta.author, "저자 미상")}\n" +
+                $"출판사    {ResolveFallbackText(meta.publisher, "출판사 미상")}\n" +
+                $"저장 위치  {(section != null ? $"{section.row + 1}행 {section.column + 1}열" : "책장 밖")}",
+                GetAverageRatingLabel(averageRating),
+                totalLikeCount.ToString(),
+                Mathf.Max(0, meta.reviewCount).ToString(),
+                ResolveFallbackText(meta.description, meta.memoPreview),
+                hasReport,
+                canDeleteBook,
+                pendingDeleteBook == ActiveDetailBook);
+            bookDetailPanelController.Refresh(viewModel);
         }
 
         private void RefreshBookFocusToolbar()
@@ -9662,6 +10216,7 @@ namespace BookshelfPorting.Runtime
         {
             if (book == null || bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
             {
+                RequestReportComments(book);
                 return;
             }
 
@@ -9683,16 +10238,118 @@ namespace BookshelfPorting.Runtime
 
         private void RequestReportComments(BookEntity book)
         {
-            if (book == null || bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            EnsureActiveReportCommentContext(book);
+            if (book == null)
             {
                 return;
             }
 
-            bookshelfApiSyncController.FetchReadingRecordComments(book, _ =>
+            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
             {
+                activeReportCommentsLoaded = true;
+                RefreshHud();
+                return;
+            }
+
+            if (!HasReadingRecordServerId(book))
+            {
+                activeReportComments.Clear();
+                activeReportCommentsLoaded = true;
+                RefreshHud();
+                return;
+            }
+
+            activeReportCommentsLoaded = false;
+            var didStartLoad = bookshelfApiSyncController.FetchReadingRecordComments(book, comments =>
+            {
+                EnsureActiveReportCommentContext(book);
+                activeReportComments.Clear();
+                if (comments != null)
+                {
+                    foreach (var comment in comments)
+                    {
+                        if (comment == null)
+                        {
+                            continue;
+                        }
+
+                        activeReportComments.Add(CreateReportCommentViewData(comment.Id, comment.UserId, comment.Content, comment.LikeCount, comment.Deleted));
+                    }
+                }
+
+                activeReportCommentsLoaded = true;
                 ApplyBookEntityToMeta(book);
                 RefreshHud();
+            }, _ =>
+            {
+                activeReportCommentsLoaded = true;
+                RefreshHud();
             });
+            if (!didStartLoad)
+            {
+                activeReportCommentsLoaded = true;
+                RefreshHud();
+            }
+        }
+
+        private void EnsureActiveReportCommentContext(BookEntity book)
+        {
+            if (activeReportCommentsBook == book)
+            {
+                return;
+            }
+
+            activeReportCommentsBook = book;
+            activeReportComments.Clear();
+            activeReportCommentsLoaded = false;
+        }
+
+        private ReportCommentViewData CreateReportCommentViewData(long id, long userId, string content, int likeCount, bool deleted)
+        {
+            var authorLabel = userId > 0L ? $"사용자 {userId}" : "나";
+            return new ReportCommentViewData(
+                id,
+                authorLabel,
+                string.IsNullOrWhiteSpace(content) ? string.Empty : content.Trim(),
+                Mathf.Max(0, likeCount),
+                deleted);
+        }
+
+        private void AddActiveReportComment(BookEntity book, string authorLabel, string content)
+        {
+            EnsureActiveReportCommentContext(book);
+            activeReportCommentsLoaded = true;
+            activeReportComments.Add(new ReportCommentViewData(
+                nextLocalReportCommentId--,
+                string.IsNullOrWhiteSpace(authorLabel) ? "나" : authorLabel.Trim(),
+                string.IsNullOrWhiteSpace(content) ? string.Empty : content.Trim(),
+                0,
+                false));
+        }
+
+        private void RestoreActiveReportComments(
+            BookEntity commentsBook,
+            IReadOnlyList<ReportCommentViewData> comments,
+            bool loaded)
+        {
+            activeReportCommentsBook = commentsBook;
+            activeReportComments.Clear();
+            if (comments != null)
+            {
+                for (var i = 0; i < comments.Count; i++)
+                {
+                    activeReportComments.Add(comments[i]);
+                }
+            }
+
+            activeReportCommentsLoaded = loaded;
+        }
+
+        private void ClearActiveReportComments()
+        {
+            activeReportCommentsBook = null;
+            activeReportComments.Clear();
+            activeReportCommentsLoaded = false;
         }
 
         private void RefreshBookReportWritePanel()
@@ -9790,9 +10447,9 @@ namespace BookshelfPorting.Runtime
                 bookReportSocialText.text = $"공감 {Mathf.Max(0, meta.reportLikeCount)}개 · 댓글 {Mathf.Max(0, meta.reportCommentCount)}개";
             }
 
-            var canUseReportSocial = bookshelfApiSyncController != null &&
-                                     bookshelfApiSyncController.IsServerSyncEnabled &&
-                                     !string.IsNullOrWhiteSpace(activeReportBook.readingRecordId);
+            RefreshBookReportComments(meta);
+
+            var canUseReportSocial = CanUseReportSocialControls(meta);
             if (bookReportCommentInputField != null)
             {
                 bookReportCommentInputField.interactable = canUseReportSocial;
@@ -9871,6 +10528,97 @@ namespace BookshelfPorting.Runtime
             bookReportReadPanel.transform.SetAsLastSibling();
         }
 
+        private void RefreshBookReportComments(BookMetaData meta)
+        {
+            EnsureActiveReportCommentContext(activeReportBook);
+            var visibleCommentCount = Mathf.Max(meta != null ? meta.reportCommentCount : 0, activeReportComments.Count);
+            if (bookReportCommentsTitleText != null)
+            {
+                bookReportCommentsTitleText.text = visibleCommentCount > 0
+                    ? $"댓글 {visibleCommentCount}개"
+                    : "댓글";
+            }
+
+            if (bookReportCommentsText == null)
+            {
+                return;
+            }
+
+            bookReportCommentsText.text = BuildReportCommentsText();
+            bookReportCommentsText.color = activeReportCommentsLoaded && activeReportComments.Count > 0
+                ? new Color32(83, 72, 63, 255)
+                : new Color32(143, 132, 121, 255);
+        }
+
+        private string BuildReportCommentsText()
+        {
+            if (!activeReportCommentsLoaded)
+            {
+                return "댓글을 불러오는 중입니다.";
+            }
+
+            if (activeReportComments.Count == 0)
+            {
+                return "아직 댓글이 없습니다.";
+            }
+
+            var lines = new List<string>();
+            var visibleCount = Mathf.Min(activeReportComments.Count, 4);
+            for (var i = 0; i < visibleCount; i++)
+            {
+                var comment = activeReportComments[i];
+                var content = comment.Deleted
+                    ? "삭제된 댓글입니다."
+                    : NormalizeReportCommentContent(comment.Content);
+                var line = $"{comment.AuthorLabel}  {content}";
+                if (comment.LikeCount > 0)
+                {
+                    line += $" · 공감 {comment.LikeCount}";
+                }
+
+                lines.Add(line);
+            }
+
+            if (activeReportComments.Count > visibleCount)
+            {
+                lines.Add($"댓글 {activeReportComments.Count - visibleCount}개 더 있음");
+            }
+
+            return string.Join("\n", lines);
+        }
+
+        private static string NormalizeReportCommentContent(string content)
+        {
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return "(내용 없음)";
+            }
+
+            return content.Trim().Replace("\r", " ").Replace("\n", " ");
+        }
+
+        private bool CanUseReportSocialControls(BookMetaData meta)
+        {
+            if (activeReportBook == null || meta == null || string.IsNullOrWhiteSpace(meta.reportBody))
+            {
+                return false;
+            }
+
+            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                return true;
+            }
+
+            return HasReadingRecordServerId(activeReportBook);
+        }
+
+        private static bool HasReadingRecordServerId(BookEntity book)
+        {
+            return book != null &&
+                   long.TryParse(book.readingRecordId, out var recordId) &&
+                   recordId > 0L;
+        }
+
         private void ToggleActiveReportLike()
         {
             if (activeReportBook == null || dataStore == null)
@@ -9884,15 +10632,57 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (!CanUseReportSocialControls(meta))
+            {
+                ShowDeleteResultDialog(
+                    "공감 준비 중",
+                    "독후감 저장 정보가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.",
+                    false);
+                return;
+            }
+
+            var previousLiked = meta.reportLiked;
+            var previousLikeCount = meta.reportLikeCount;
             var nextLiked = !meta.reportLiked;
             meta.reportLiked = nextLiked;
             meta.reportLikeCount = Mathf.Max(0, meta.reportLikeCount + (nextLiked ? 1 : -1));
             dataStore.ApplyBookMeta(activeReportBook, meta);
-            bookshelfApiSyncController?.ToggleReadingRecordLike(activeReportBook, nextLiked, updatedBook =>
+            var book = activeReportBook;
+            var didStartSync = bookshelfApiSyncController != null &&
+                               bookshelfApiSyncController.ToggleReadingRecordLike(book, nextLiked, updatedBook =>
             {
                 ApplyBookEntityToMeta(updatedBook);
                 RefreshHud();
+            }, error =>
+            {
+                RestoreReportLikeAfterFailure(book, previousLiked, previousLikeCount, error);
             });
+            if (!didStartSync && bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                RestoreReportLikeAfterFailure(book, previousLiked, previousLikeCount, "독후감 서버 식별자를 찾을 수 없습니다.");
+                return;
+            }
+
+            RefreshHud();
+        }
+
+        private void RestoreReportLikeAfterFailure(BookEntity book, bool previousLiked, int previousLikeCount, string errorMessage)
+        {
+            if (dataStore != null && book != null)
+            {
+                var meta = dataStore.GetOrCreateBookMeta(book);
+                if (meta != null)
+                {
+                    meta.reportLiked = previousLiked;
+                    meta.reportLikeCount = Mathf.Max(0, previousLikeCount);
+                    dataStore.ApplyBookMeta(book, meta);
+                }
+            }
+
+            ShowDeleteResultDialog(
+                "공감 저장 실패",
+                $"서버 요청을 완료하지 못해 공감 상태를 되돌렸습니다.\n{NormalizeMutationErrorMessage(errorMessage)}",
+                false);
             RefreshHud();
         }
 
@@ -9910,6 +10700,19 @@ namespace BookshelfPorting.Runtime
             }
 
             var meta = dataStore.GetOrCreateBookMeta(activeReportBook);
+            if (!CanUseReportSocialControls(meta))
+            {
+                ShowDeleteResultDialog(
+                    "댓글 준비 중",
+                    "독후감 저장 정보가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.",
+                    false);
+                return;
+            }
+
+            var previousCommentCount = meta != null ? meta.reportCommentCount : 0;
+            var previousCommentsBook = activeReportCommentsBook;
+            var previousCommentsLoaded = activeReportCommentsLoaded;
+            var previousComments = new List<ReportCommentViewData>(activeReportComments);
             if (meta != null)
             {
                 meta.reportCommentCount = Mathf.Max(0, meta.reportCommentCount + 1);
@@ -9917,7 +10720,66 @@ namespace BookshelfPorting.Runtime
             }
 
             bookReportCommentInputField.text = string.Empty;
-            bookshelfApiSyncController?.CreateReadingRecordComment(activeReportBook, content, _ => RequestReportComments(activeReportBook));
+            var book = activeReportBook;
+            AddActiveReportComment(book, "나", content);
+            var didStartSync = bookshelfApiSyncController != null &&
+                               bookshelfApiSyncController.CreateReadingRecordComment(
+                                   book,
+                                   content,
+                                   _ => RequestReportComments(book),
+                                   error => RestoreReportCommentAfterFailure(
+                                       book,
+                                       previousCommentCount,
+                                       content,
+                                       error,
+                                       previousCommentsBook,
+                                       previousComments,
+                                       previousCommentsLoaded));
+            if (!didStartSync && bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                RestoreReportCommentAfterFailure(
+                    book,
+                    previousCommentCount,
+                    content,
+                    "독후감 서버 식별자를 찾을 수 없습니다.",
+                    previousCommentsBook,
+                    previousComments,
+                    previousCommentsLoaded);
+                return;
+            }
+
+            RefreshHud();
+        }
+
+        private void RestoreReportCommentAfterFailure(
+            BookEntity book,
+            int previousCommentCount,
+            string content,
+            string errorMessage,
+            BookEntity previousCommentsBook,
+            IReadOnlyList<ReportCommentViewData> previousComments,
+            bool previousCommentsLoaded)
+        {
+            if (dataStore != null && book != null)
+            {
+                var meta = dataStore.GetOrCreateBookMeta(book);
+                if (meta != null)
+                {
+                    meta.reportCommentCount = Mathf.Max(0, previousCommentCount);
+                    dataStore.ApplyBookMeta(book, meta);
+                }
+            }
+
+            RestoreActiveReportComments(previousCommentsBook, previousComments, previousCommentsLoaded);
+            if (bookReportCommentInputField != null)
+            {
+                bookReportCommentInputField.text = content ?? string.Empty;
+            }
+
+            ShowDeleteResultDialog(
+                "댓글 등록 실패",
+                $"서버 요청을 완료하지 못해 댓글 입력을 복원했습니다.\n{NormalizeMutationErrorMessage(errorMessage)}",
+                false);
             RefreshHud();
         }
 
@@ -10040,24 +10902,24 @@ namespace BookshelfPorting.Runtime
                 meta.readingStatus = App.Domain.ReadingStatus.Unread;
 
                 dataStore.ApplyBookMeta(activeReportBook, meta);
-                var book = activeReportBook;
+                var reportBook = activeReportBook;
                 var didStartDeleteSync = bookshelfApiSyncController != null &&
                                          bookshelfApiSyncController.DeleteReadingRecord(
-                                             book,
+                                             reportBook,
                                              () => ShowDeleteResultDialog("독후감 삭제 완료", "빈 내용으로 저장되어 독후감을 삭제했습니다.", true),
-                                             error => RestoreBookReportAfterDeleteFailure(book, rollback, error));
+                                             error => RestoreBookReportAfterDeleteFailure(reportBook, rollback, error));
                 if (!didStartDeleteSync)
                 {
                     if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
                     {
-                        RestoreBookReportAfterDeleteFailure(book, rollback, "독후감 서버 식별자를 찾을 수 없습니다.");
+                        RestoreBookReportAfterDeleteFailure(reportBook, rollback, "독후감 서버 식별자를 찾을 수 없습니다.");
                         return;
                     }
 
                     ShowDeleteResultDialog("독후감 삭제 완료", "빈 내용으로 저장되어 독후감을 삭제했습니다.", true);
                 }
 
-                bookshelfApiSyncController?.SyncBookState(book);
+                bookshelfApiSyncController?.SyncBookState(reportBook);
                 isBookReportWritePanelOpen = true;
                 isBookReportReadPanelOpen = false;
                 RefreshHud();
@@ -10072,10 +10934,46 @@ namespace BookshelfPorting.Runtime
             meta.readingStatus = App.Domain.ReadingStatus.Read;
 
             dataStore.ApplyBookMeta(activeReportBook, meta);
-            bookshelfApiSyncController?.SaveReadingRecord(activeReportBook);
-            bookshelfApiSyncController?.SyncBookState(activeReportBook);
+            var book = activeReportBook;
+            var didStartSave = bookshelfApiSyncController != null &&
+                               bookshelfApiSyncController.SaveReadingRecord(
+                                   book,
+                                   HandleBookReportSaved,
+                                   error => HandleBookReportSaveFailure(book, error));
+            if (!didStartSave && bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                HandleBookReportSaveFailure(book, "독후감 저장에 필요한 서버 식별자를 찾을 수 없습니다.");
+            }
+
+            bookshelfApiSyncController?.SyncBookState(book);
             isBookReportWritePanelOpen = false;
             isBookReportReadPanelOpen = true;
+            RefreshHud();
+        }
+
+        private void HandleBookReportSaved(BookEntity updatedBook)
+        {
+            ApplyBookEntityToMeta(updatedBook);
+            if (updatedBook != null && activeReportBook == updatedBook)
+            {
+                RequestReportComments(updatedBook);
+            }
+
+            RefreshBookDetailPanel();
+            RefreshHud();
+        }
+
+        private void HandleBookReportSaveFailure(BookEntity book, string errorMessage)
+        {
+            if (book != null)
+            {
+                activeReportBook = book;
+            }
+
+            ShowDeleteResultDialog(
+                "독후감 저장 실패",
+                $"서버 요청을 완료하지 못했습니다. 독후감은 로컬 화면에만 반영되어 있습니다.\n{NormalizeMutationErrorMessage(errorMessage)}",
+                false);
             RefreshHud();
         }
 
@@ -10100,7 +10998,11 @@ namespace BookshelfPorting.Runtime
             };
             meta.isPublic = meta.reportVisibility == App.Domain.VisibilityScope.Public;
             dataStore.ApplyBookMeta(activeReportBook, meta);
-            bookshelfApiSyncController?.SaveReadingRecord(activeReportBook);
+            var book = activeReportBook;
+            bookshelfApiSyncController?.SaveReadingRecord(
+                book,
+                HandleBookReportSaved,
+                error => HandleBookReportSaveFailure(book, error));
             RefreshHud();
         }
 
@@ -10127,6 +11029,7 @@ namespace BookshelfPorting.Runtime
             isBookReportReadPanelOpen = false;
             activeReportBook = null;
             pendingDeleteReportBook = null;
+            ClearActiveReportComments();
             if (bookReportWritePanel != null)
             {
                 bookReportWritePanel.SetActive(false);
@@ -11476,39 +12379,7 @@ namespace BookshelfPorting.Runtime
 
         private static void StyleGuestbookActionButton(Button button, Color background, Color highlightedBackground, Color disabledBackground, int fontSize, Color textColor, bool isBold = false)
         {
-            if (button == null)
-            {
-                return;
-            }
-
-            var image = button.GetComponent<Image>();
-            if (image != null)
-            {
-                ApplyRoundedSprite(image);
-                image.color = background;
-            }
-
-            AddSoftShadow(button.gameObject, new Color(0f, 0f, 0f, 0.06f), new Vector2(0f, -2f));
-
-            var colors = button.colors;
-            colors.normalColor = background;
-            colors.highlightedColor = highlightedBackground;
-            colors.pressedColor = Color.Lerp(highlightedBackground, Color.black, 0.12f);
-            colors.selectedColor = highlightedBackground;
-            colors.disabledColor = disabledBackground;
-            colors.fadeDuration = 0.1f;
-            button.colors = colors;
-            button.transition = Selectable.Transition.ColorTint;
-            button.navigation = new Navigation { mode = Navigation.Mode.None };
-
-            var label = GetButtonLabelText(button);
-            if (label != null)
-            {
-                label.fontSize = fontSize;
-                label.color = textColor;
-                label.fontStyle = isBold ? FontStyle.Bold : FontStyle.Normal;
-                StretchTextToParent(label);
-            }
+            RuntimeHudStyle.StyleButton(button, background, highlightedBackground, disabledBackground, fontSize, textColor, isBold);
         }
 
         private static RectTransform CreateWorldContainer(Transform parent, string name, Vector2 size, Vector2 anchor, Vector2 pivot, Vector2 anchoredPosition)
@@ -11599,13 +12470,7 @@ namespace BookshelfPorting.Runtime
 
         private static void ApplyRoundedSprite(Image image)
         {
-            if (image == null)
-            {
-                return;
-            }
-
-            image.sprite = GetRoundedUiSprite();
-            image.type = Image.Type.Sliced;
+            RuntimeHudStyle.ApplyRoundedSprite(image);
         }
 
         private static Sprite GetRoundedUiSprite()
@@ -11696,129 +12561,37 @@ namespace BookshelfPorting.Runtime
 
         private static void AddSoftShadow(GameObject target, Color color, Vector2 distance)
         {
-            if (target == null)
-            {
-                return;
-            }
-
-            Shadow shadow = null;
-            var shadows = target.GetComponents<Shadow>();
-            for (var i = 0; i < shadows.Length; i++)
-            {
-                if (shadows[i] != null && shadows[i].GetType() == typeof(Shadow))
-                {
-                    shadow = shadows[i];
-                    break;
-                }
-            }
-
-            if (shadow == null)
-            {
-                shadow = target.AddComponent<Shadow>();
-            }
-
-            shadow.effectColor = color;
-            shadow.effectDistance = distance;
-            shadow.useGraphicAlpha = true;
+            RuntimeHudStyle.AddSoftShadow(target, color, distance);
         }
 
         private static void AddSoftOutline(GameObject target, Color color, Vector2 distance)
         {
-            if (target == null)
-            {
-                return;
-            }
-
-            var outline = target.GetComponent<Outline>();
-            if (outline == null)
-            {
-                outline = target.AddComponent<Outline>();
-            }
-
-            outline.effectColor = color;
-            outline.effectDistance = distance;
-            outline.useGraphicAlpha = true;
+            RuntimeHudStyle.AddSoftOutline(target, color, distance);
         }
 
         private static void StyleHudPanel(Image image, Color background)
         {
-            if (image == null)
-            {
-                return;
-            }
-
-            ApplyRoundedSprite(image);
-            image.color = background;
-            AddSoftShadow(image.gameObject, new Color(0f, 0f, 0f, 0.12f), new Vector2(0f, -5f));
+            RuntimeHudStyle.StylePanel(image, background);
         }
 
         private static void StyleBookDetailPanel(Image image)
         {
-            if (image == null)
-            {
-                return;
-            }
-
-            ApplyRoundedSprite(image);
-            image.color = new Color32(255, 248, 236, 242);
-            AddSoftShadow(image.gameObject, new Color(46f / 255f, 30f / 255f, 20f / 255f, 0.20f), new Vector2(0f, -9f));
-            AddSoftOutline(image.gameObject, new Color32(255, 255, 255, 150), new Vector2(1f, -1f));
+            RuntimeHudStyle.StyleBookDetailPanel(image);
         }
 
         private static void StyleBookshelfIndexPanel(Image image)
         {
-            if (image == null)
-            {
-                return;
-            }
-
-            ApplyRoundedSprite(image);
-            image.color = new Color32(255, 248, 236, 214);
-            AddSoftShadow(image.gameObject, new Color(46f / 255f, 30f / 255f, 20f / 255f, 0.18f), new Vector2(0f, -7f));
-            AddSoftOutline(image.gameObject, new Color32(255, 255, 255, 132), new Vector2(1f, -1f));
+            RuntimeHudStyle.StyleBookshelfIndexPanel(image);
         }
 
         private static void PrepareBookshelfNavigationButton(Button button)
         {
-            if (button == null)
-            {
-                return;
-            }
-
-            var hoverEffect = button.GetComponent<UiHoverScaleEffect>();
-            if (hoverEffect == null)
-            {
-                hoverEffect = button.gameObject.AddComponent<UiHoverScaleEffect>();
-            }
-
-            hoverEffect.SetBaseScale(Vector3.one);
-            AddSoftOutline(button.gameObject, new Color32(255, 255, 255, 150), new Vector2(1f, -1f));
+            RuntimeHudStyle.PrepareBookshelfNavigationButton(button);
         }
 
         private static void StyleBookshelfNavigationButton(Button button, bool isInteractable)
         {
-            if (button == null)
-            {
-                return;
-            }
-
-            var background = isInteractable
-                ? new Color32(255, 248, 236, 222)
-                : new Color32(238, 231, 221, 96);
-            var highlighted = new Color32(255, 255, 255, 245);
-            var disabled = new Color32(224, 216, 205, 92);
-            var textColor = isInteractable
-                ? new Color32(66, 49, 39, 255)
-                : new Color32(124, 111, 101, 142);
-
-            StyleHudButton(button, background, highlighted, disabled, 34, textColor, true);
-            AddSoftOutline(button.gameObject, new Color32(255, 255, 255, 150), new Vector2(1f, -1f));
-
-            var label = button.GetComponentInChildren<Text>();
-            if (label != null)
-            {
-                label.rectTransform.anchoredPosition = new Vector2(0f, 1f);
-            }
+            RuntimeHudStyle.StyleBookshelfNavigationButton(button, isInteractable);
         }
 
         private static void StyleHudButton(Button button, Color background, Color highlightedBackground, Color disabledBackground, int fontSize, Color textColor, bool isBold = false)
@@ -11848,36 +12621,12 @@ namespace BookshelfPorting.Runtime
 
         private static void SetButtonLabel(Button button, string label)
         {
-            if (button == null)
-            {
-                return;
-            }
-
-            var text = GetButtonLabelText(button);
-            if (text != null)
-            {
-                text.text = label;
-            }
+            RuntimeHudStyle.SetButtonLabel(button, label);
         }
 
         private static Text GetButtonLabelText(Button button)
         {
-            if (button == null)
-            {
-                return null;
-            }
-
-            var labelTransform = button.transform.Find("Label");
-            if (labelTransform != null)
-            {
-                var labelText = labelTransform.GetComponent<Text>();
-                if (labelText != null)
-                {
-                    return labelText;
-                }
-            }
-
-            return button.GetComponentInChildren<Text>();
+            return RuntimeHudStyle.GetButtonLabelText(button);
         }
 
         private void CloseOverlayPanels(GameObject except = null)
@@ -12108,27 +12857,13 @@ namespace BookshelfPorting.Runtime
             var text = CreateInputLabel(inputObject.transform, "Text", string.Empty, size, new Color32(63, 47, 38, 255));
             inputField.textComponent = text;
             inputField.placeholder = placeholderText;
+            ApplyHudInputTextPadding(inputField);
             return inputField;
         }
 
         private static GameObject CreateModalBackdrop(Transform parent, string name, Color color)
         {
-            var backdropObject = new GameObject(name);
-            backdropObject.transform.SetParent(parent, false);
-
-            var image = backdropObject.AddComponent<Image>();
-            image.color = color;
-            image.raycastTarget = true;
-
-            var rect = backdropObject.GetComponent<RectTransform>();
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-            rect.anchoredPosition = Vector2.zero;
-            rect.sizeDelta = Vector2.zero;
-            return backdropObject;
+            return RuntimeHudFactory.CreateModalBackdrop(parent, name, color);
         }
 
         private static Text CreateInputLabel(Transform parent, string name, string value, Vector2 parentSize, Color color)
@@ -12146,15 +12881,43 @@ namespace BookshelfPorting.Runtime
             text.verticalOverflow = VerticalWrapMode.Truncate;
             text.raycastTarget = false;
 
-            var rect = textObject.GetComponent<RectTransform>();
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.offsetMin = new Vector2(HudInputTextLeftPadding, HudInputTextVerticalPadding);
-            rect.offsetMax = new Vector2(-HudInputTextRightPadding, -HudInputTextVerticalPadding);
-            rect.anchoredPosition = Vector2.zero;
-            rect.sizeDelta = Vector2.zero;
+            ApplyHudInputTextRect(text, false);
             return text;
+        }
+
+        private static void ApplyHudInputTextPadding(InputField inputField)
+        {
+            if (inputField == null)
+            {
+                return;
+            }
+
+            var isMultiLine = inputField.lineType != InputField.LineType.SingleLine;
+            ApplyHudInputTextRect(inputField.textComponent, isMultiLine);
+            if (inputField.placeholder is Text placeholderText)
+            {
+                ApplyHudInputTextRect(placeholderText, isMultiLine);
+            }
+        }
+
+        private static void ApplyHudInputTextRect(Text text, bool isMultiLine)
+        {
+            if (text == null)
+            {
+                return;
+            }
+
+            text.alignment = isMultiLine ? TextAnchor.UpperLeft : TextAnchor.MiddleLeft;
+            var parentRect = text.transform.parent != null ? text.transform.parent.GetComponent<RectTransform>() : null;
+            var parentSize = parentRect != null ? parentRect.sizeDelta : Vector2.zero;
+            var width = Mathf.Max(24f, parentSize.x - HudInputTextLeftPadding - HudInputTextRightPadding);
+            var height = Mathf.Max(18f, parentSize.y - HudInputTextVerticalPadding * 2f);
+            var rect = text.rectTransform;
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 1f);
+            rect.anchoredPosition = new Vector2(HudInputTextLeftPadding, -HudInputTextVerticalPadding);
+            rect.sizeDelta = new Vector2(width, height);
         }
 
         private sealed class BookshelfManageDragHandle : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
@@ -12199,186 +12962,47 @@ namespace BookshelfPorting.Runtime
 
         private static Button CreateButton(Transform parent, string name, string label, Vector2 anchoredPosition, UnityEngine.Events.UnityAction onClick)
         {
-            return CreateButton(parent, name, label, anchoredPosition, onClick, new Vector2(170f, 40f), new Vector2(1f, 1f));
+            return RuntimeHudFactory.CreateButton(parent, name, label, anchoredPosition, onClick);
         }
 
         private static Button CreateButton(Transform parent, string name, string label, Vector2 anchoredPosition, UnityEngine.Events.UnityAction onClick, Vector2 size, Vector2 anchor)
         {
-            var buttonObject = new GameObject(name);
-            buttonObject.transform.SetParent(parent, false);
-
-            var image = buttonObject.AddComponent<Image>();
-            image.color = new Color(0.11f, 0.12f, 0.14f, 0.86f);
-
-            var button = buttonObject.AddComponent<Button>();
-            button.targetGraphic = image;
-            if (onClick != null)
-            {
-                button.onClick.AddListener(onClick);
-            }
-
-            var rect = buttonObject.GetComponent<RectTransform>();
-            rect.anchorMin = anchor;
-            rect.anchorMax = anchor;
-            rect.pivot = anchor;
-            rect.anchoredPosition = anchoredPosition;
-            rect.sizeDelta = size;
-
-            var labelText = CreateLabel(buttonObject.transform, "Label", Vector2.zero, size, TextAnchor.MiddleCenter);
-            labelText.text = label;
-            labelText.fontSize = 18;
-
-            return button;
+            return RuntimeHudFactory.CreateButton(parent, name, label, anchoredPosition, onClick, size, anchor);
         }
 
         private static GameObject CreatePanel(Transform parent, string name, Vector2 anchoredPosition, Vector2 size, Vector2 anchor)
         {
-            var panelObject = new GameObject(name);
-            panelObject.transform.SetParent(parent, false);
-
-            var image = panelObject.AddComponent<Image>();
-            image.color = new Color(0.06f, 0.07f, 0.09f, 0.88f);
-            image.raycastTarget = false;
-
-            var rect = panelObject.GetComponent<RectTransform>();
-            rect.anchorMin = anchor;
-            rect.anchorMax = anchor;
-            rect.pivot = anchor;
-            rect.anchoredPosition = anchoredPosition;
-            rect.sizeDelta = size;
-            return panelObject;
+            return RuntimeHudFactory.CreatePanel(parent, name, anchoredPosition, size, anchor);
         }
 
         private static RectTransform CreateHudContainer(Transform parent, string name, Vector2 anchoredPosition, Vector2 size, Vector2 anchor)
         {
-            var container = new GameObject(name);
-            container.transform.SetParent(parent, false);
-
-            var rect = container.AddComponent<RectTransform>();
-            rect.anchorMin = anchor;
-            rect.anchorMax = anchor;
-            rect.pivot = anchor;
-            rect.anchoredPosition = anchoredPosition;
-            rect.sizeDelta = size;
-            rect.localScale = Vector3.one;
-            return rect;
+            return RuntimeHudFactory.CreateContainer(parent, name, anchoredPosition, size, anchor);
         }
 
         private static GameObject CreateHudScrollViewport(Transform parent, string name, Vector2 anchoredPosition, Vector2 size, Vector2 anchor)
         {
-            var viewportObject = new GameObject(name);
-            viewportObject.transform.SetParent(parent, false);
-
-            var image = viewportObject.AddComponent<Image>();
-            image.color = new Color(1f, 1f, 1f, 0.002f);
-            image.raycastTarget = true;
-            viewportObject.AddComponent<RectMask2D>();
-
-            var rect = viewportObject.GetComponent<RectTransform>();
-            rect.anchorMin = anchor;
-            rect.anchorMax = anchor;
-            rect.pivot = anchor;
-            rect.anchoredPosition = anchoredPosition;
-            rect.sizeDelta = size;
-            rect.localScale = Vector3.one;
-
-            var scrollRect = viewportObject.AddComponent<ScrollRect>();
-            scrollRect.horizontal = false;
-            scrollRect.vertical = true;
-            scrollRect.scrollSensitivity = 22f;
-            scrollRect.movementType = ScrollRect.MovementType.Clamped;
-            return viewportObject;
+            return RuntimeHudFactory.CreateScrollViewport(parent, name, anchoredPosition, size, anchor);
         }
 
         private static RectTransform CreateHudScrollContent(Transform parent, string name, Vector2 size)
         {
-            var contentObject = new GameObject(name);
-            contentObject.transform.SetParent(parent, false);
-
-            var rect = contentObject.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(1f, 1f);
-            rect.pivot = new Vector2(0f, 1f);
-            rect.anchoredPosition = Vector2.zero;
-            rect.sizeDelta = new Vector2(0f, size.y);
-            rect.localScale = Vector3.one;
-            return rect;
+            return RuntimeHudFactory.CreateScrollContent(parent, name, size);
         }
 
         private static Scrollbar CreateHudVerticalScrollbar(Transform parent, string name, Vector2 anchoredPosition, Vector2 size, Vector2 anchor)
         {
-            var scrollbarObject = new GameObject(name);
-            scrollbarObject.transform.SetParent(parent, false);
-
-            var trackImage = scrollbarObject.AddComponent<Image>();
-            ApplyRoundedSprite(trackImage);
-            trackImage.color = new Color32(238, 231, 221, 150);
-            trackImage.raycastTarget = true;
-
-            var rect = scrollbarObject.GetComponent<RectTransform>();
-            rect.anchorMin = anchor;
-            rect.anchorMax = anchor;
-            rect.pivot = anchor;
-            rect.anchoredPosition = anchoredPosition;
-            rect.sizeDelta = size;
-            rect.localScale = Vector3.one;
-
-            var handleObject = new GameObject("Handle");
-            handleObject.transform.SetParent(scrollbarObject.transform, false);
-            var handleImage = handleObject.AddComponent<Image>();
-            ApplyRoundedSprite(handleImage);
-            handleImage.color = new Color32(73, 117, 147, 210);
-            handleImage.raycastTarget = true;
-
-            var handleRect = handleObject.GetComponent<RectTransform>();
-            handleRect.anchorMin = Vector2.zero;
-            handleRect.anchorMax = Vector2.one;
-            handleRect.offsetMin = new Vector2(1f, 1f);
-            handleRect.offsetMax = new Vector2(-1f, -1f);
-            handleRect.localScale = Vector3.one;
-
-            var scrollbar = scrollbarObject.AddComponent<Scrollbar>();
-            scrollbar.direction = Scrollbar.Direction.BottomToTop;
-            scrollbar.targetGraphic = handleImage;
-            scrollbar.handleRect = handleRect;
-            return scrollbar;
+            return RuntimeHudFactory.CreateVerticalScrollbar(parent, name, anchoredPosition, size, anchor);
         }
 
         private static void StyleHudScrollbar(Scrollbar scrollbar, Color32 handleColor, Color32 trackColor)
         {
-            if (scrollbar == null)
-            {
-                return;
-            }
-
-            var trackImage = scrollbar.GetComponent<Image>();
-            if (trackImage != null)
-            {
-                ApplyRoundedSprite(trackImage);
-                trackImage.color = trackColor;
-            }
-
-            if (scrollbar.handleRect == null)
-            {
-                return;
-            }
-
-            var handleImage = scrollbar.handleRect.GetComponent<Image>();
-            if (handleImage != null)
-            {
-                ApplyRoundedSprite(handleImage);
-                handleImage.color = handleColor;
-            }
+            RuntimeHudStyle.StyleScrollbar(scrollbar, handleColor, trackColor);
         }
 
         private static float GetHudScrollViewportHeight(ScrollRect scrollRect, float fallbackHeight)
         {
-            if (scrollRect != null && scrollRect.viewport != null && scrollRect.viewport.rect.height > 1f)
-            {
-                return scrollRect.viewport.rect.height;
-            }
-
-            return fallbackHeight;
+            return RuntimeHudLayout.GetScrollViewportHeight(scrollRect, fallbackHeight);
         }
 
         private static void ApplyHudScrollState(
@@ -12389,98 +13013,22 @@ namespace BookshelfPorting.Runtime
             bool resetToTop,
             float scrollSensitivity = 24f)
         {
-            if (scrollbar != null)
-            {
-                scrollbar.gameObject.SetActive(canScroll);
-                scrollbar.interactable = canScroll;
-                if (!canScroll)
-                {
-                    scrollbar.size = 1f;
-                    scrollbar.value = 1f;
-                }
-            }
-
-            if (scrollRect == null)
-            {
-                return;
-            }
-
-            scrollRect.enabled = canScroll;
-            scrollRect.scrollSensitivity = scrollSensitivity;
-            Canvas.ForceUpdateCanvases();
-            if (!canScroll || resetToTop)
-            {
-                scrollRect.verticalNormalizedPosition = 1f;
-                if (content != null)
-                {
-                    content.anchoredPosition = Vector2.zero;
-                }
-
-                return;
-            }
-
-            ClampHudScrollContentToViewport(scrollRect, content);
+            RuntimeHudLayout.ApplyScrollState(scrollRect, scrollbar, content, canScroll, resetToTop, scrollSensitivity);
         }
 
         private static void ClampHudScrollContentToViewport(ScrollRect scrollRect, RectTransform content)
         {
-            if (scrollRect == null || content == null || scrollRect.viewport == null)
-            {
-                return;
-            }
-
-            var maxY = Mathf.Max(0f, content.rect.height - scrollRect.viewport.rect.height);
-            var position = content.anchoredPosition;
-            position.x = 0f;
-            position.y = Mathf.Clamp(position.y, 0f, maxY);
-            content.anchoredPosition = position;
-            if (maxY <= 0.01f)
-            {
-                scrollRect.verticalNormalizedPosition = 1f;
-            }
+            RuntimeHudLayout.ClampScrollContentToViewport(scrollRect, content);
         }
 
         private static Image CreateHudImage(Transform parent, string name, Vector2 anchoredPosition, Vector2 size, Vector2 anchor, Color color, bool isVisible = true)
         {
-            var imageObject = new GameObject(name);
-            imageObject.transform.SetParent(parent, false);
-
-            var image = imageObject.AddComponent<Image>();
-            ApplyRoundedSprite(image);
-            image.color = color;
-            image.raycastTarget = false;
-            imageObject.SetActive(isVisible);
-
-            var rect = imageObject.GetComponent<RectTransform>();
-            rect.anchorMin = anchor;
-            rect.anchorMax = anchor;
-            rect.pivot = anchor;
-            rect.anchoredPosition = anchoredPosition;
-            rect.sizeDelta = size;
-            rect.localScale = Vector3.one;
-            return image;
+            return RuntimeHudFactory.CreateImage(parent, name, anchoredPosition, size, anchor, color, isVisible);
         }
 
         private static Text CreateLabel(Transform parent, string name, Vector2 anchoredPosition, Vector2 size, TextAnchor alignment)
         {
-            var textObject = new GameObject(name);
-            textObject.transform.SetParent(parent, false);
-
-            var text = textObject.AddComponent<Text>();
-            text.font = RuntimeUiFont.Resolve();
-            text.color = Color.white;
-            text.alignment = alignment;
-            text.text = string.Empty;
-            text.raycastTarget = false;
-
-            var rect = textObject.GetComponent<RectTransform>();
-            rect.anchorMin = alignment == TextAnchor.UpperLeft ? new Vector2(0f, 1f) : Vector2.zero;
-            rect.anchorMax = alignment == TextAnchor.UpperLeft ? new Vector2(0f, 1f) : Vector2.one;
-            rect.pivot = alignment == TextAnchor.UpperLeft ? new Vector2(0f, 1f) : new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = anchoredPosition;
-            rect.sizeDelta = size;
-
-            return text;
+            return RuntimeHudFactory.CreateLabel(parent, name, anchoredPosition, size, alignment);
         }
 
         private bool TryHitGuestbookBoard()
@@ -12645,7 +13193,39 @@ namespace BookshelfPorting.Runtime
 
         private void HandleNotebookBookAddedToShelfThroughApi()
         {
-            bookshelfApiSyncController?.RefreshFromServer();
+            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                ShowBookshelfTransientStatus("책 추가 저장 완료", "책은 서버에 저장됐지만 이 화면에서는 책장 새로고침을 실행할 수 없습니다.", false);
+                RefreshHud();
+                return;
+            }
+
+            ShowBookshelfTransientStatus("책 추가 저장 완료", "책은 서버에 저장됐고 책장 새로고침을 시작합니다.", false);
+            bookshelfApiSyncController.RefreshFromServer(HandleNotebookBookAddRefreshCompleted);
+            RefreshHud();
+        }
+
+        private void HandleNotebookBookAddRefreshCompleted(bool success, string message)
+        {
+            if (success)
+            {
+                ShowBookshelfTransientStatus("책장 새로고침 완료", "추가된 책을 책장에 반영했습니다.", false);
+                RefreshHud();
+                return;
+            }
+
+            var detail = NormalizeMutationErrorMessage(message);
+            ShowBookshelfTransientStatus(
+                "책 추가 완료 · 새로고침 실패",
+                "책은 서버에 저장됐지만 책장 내용을 다시 불러오지 못했습니다.",
+                true);
+            ShowDeleteResultDialog(
+                "책 추가 완료 · 새로고침 실패",
+                $"책 추가 요청은 성공했습니다. 다만 책장 렌더 조회가 실패해 화면은 이전 책장 상태를 유지합니다.\n{detail}",
+                false,
+                () => bookshelfApiSyncController?.RefreshFromServer(HandleNotebookBookAddRefreshCompleted),
+                "새로고침");
+            RefreshHud();
         }
 
         private int BeginNotebookFocusRequest()
