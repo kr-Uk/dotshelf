@@ -53,6 +53,9 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
 
+    // AWS SDK v2 — S3 (이미지/에셋 업로드). S3Presigner 는 software.amazon.awssdk:s3 에 포함.
+    implementation("software.amazon.awssdk:s3:2.29.20")
+
     // Lombok
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")

@@ -1,10 +1,12 @@
 package com.dotshelf.domain.user.service;
 
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -17,6 +19,9 @@ import com.dotshelf.domain.user.dto.UserDtos.FeedSettingResponse;
 import com.dotshelf.domain.user.dto.UserDtos.NicknameAvailabilityResponse;
 import com.dotshelf.domain.user.dto.UserDtos.NotificationSettingRequest;
 import com.dotshelf.domain.user.dto.UserDtos.NotificationSettingResponse;
+import com.dotshelf.domain.user.dto.UserDtos.ProfileImageConfirmRequest;
+import com.dotshelf.domain.user.dto.UserDtos.ProfileImageUploadUrlRequest;
+import com.dotshelf.domain.user.dto.UserDtos.ProfileImageUploadUrlResponse;
 import com.dotshelf.domain.user.dto.UserDtos.UpdateProfileRequest;
 import com.dotshelf.domain.user.dto.UserDtos.UserListResponse;
 import com.dotshelf.domain.user.dto.UserDtos.UserProfileResponse;
@@ -34,6 +39,9 @@ import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.global.common.ToggleResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
+import com.dotshelf.global.storage.S3StorageProperties;
+import com.dotshelf.global.storage.S3StorageService;
+import com.dotshelf.global.storage.S3StorageService.PresignedPut;
 
 import lombok.RequiredArgsConstructor;
 
@@ -42,11 +50,20 @@ import lombok.RequiredArgsConstructor;
 @Transactional(readOnly = true)
 public class UserService {
 
+    // 프로필 이미지 — 너무 큰 파일은 막되 카메라 원본(보통 3~4MB)은 받을 수 있도록 5MB.
+    private static final long MAX_PROFILE_IMAGE_SIZE_BYTES = 5L * 1024 * 1024;
+    private static final Map<String, String> ALLOWED_PROFILE_IMAGE_TYPES = Map.of(
+            "image/jpeg", "jpg",
+            "image/png", "png",
+            "image/webp", "webp");
+
     private final UserRepository userRepository;
     private final FollowRepository followRepository;
     private final UserBlockRepository userBlockRepository;
     private final UserNotificationSettingRepository notificationSettingRepository;
     private final UserFeedSettingRepository feedSettingRepository;
+    private final S3StorageService s3StorageService;
+    private final S3StorageProperties s3StorageProperties;
 
     public UserProfileResponse getMe(Long userId) {
         return UserProfileResponse.from(getUser(requireUserId(userId)));
@@ -83,6 +100,48 @@ public class UserService {
     @Transactional
     public void deleteMe(Long userId) {
         getUser(requireUserId(userId)).delete();
+    }
+
+    /**
+     * 프로필 이미지 presigned PUT URL 발급. 클라가 contentType / byteLength 신고 → 화이트리스트 검증 →
+     * key("users/{userId}/profile/{uuid}.{ext}") 생성 → presigned URL 반환.
+     * 클라는 응답의 uploadUrl 로 S3 에 직업로드한 뒤 confirm 으로 BE 에 알린다.
+     */
+    public ProfileImageUploadUrlResponse createProfileImageUploadUrl(Long userId, ProfileImageUploadUrlRequest request) {
+        Long currentUserId = requireUserId(userId);
+        if (!ALLOWED_PROFILE_IMAGE_TYPES.containsKey(request.contentType())) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+        }
+        if (request.byteLength() > MAX_PROFILE_IMAGE_SIZE_BYTES) {
+            throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
+        }
+        String extension = ALLOWED_PROFILE_IMAGE_TYPES.get(request.contentType());
+        String key = "users/" + currentUserId + "/profile/" + UUID.randomUUID() + "." + extension;
+        PresignedPut presigned = s3StorageService.presignPut(
+                key,
+                request.contentType(),
+                request.byteLength(),
+                Duration.ofSeconds(s3StorageProperties.presignTtlSeconds()));
+        return ProfileImageUploadUrlResponse.from(presigned);
+    }
+
+    /**
+     * 클라 직업로드 후 confirm. key 가 본인 prefix 인지 + 실제 객체가 S3 에 있는지 확인 후 DB 갱신.
+     * key prefix 검사로 다른 사용자의 객체를 자기 프로필로 등록하는 패턴 차단.
+     */
+    @Transactional
+    public UserProfileResponse confirmProfileImage(Long userId, ProfileImageConfirmRequest request) {
+        Long currentUserId = requireUserId(userId);
+        String prefix = "users/" + currentUserId + "/profile/";
+        if (!request.key().startsWith(prefix)) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_KEY);
+        }
+        if (!s3StorageService.objectExists(request.key())) {
+            throw new CustomException(ErrorCode.STORAGE_OBJECT_NOT_UPLOADED);
+        }
+        User user = getUser(currentUserId);
+        user.updateProfile(user.getNickname(), s3StorageService.publicUrl(request.key()), user.getIntroduction());
+        return UserProfileResponse.from(user);
     }
 
     public NicknameAvailabilityResponse checkNickname(String nickname) {

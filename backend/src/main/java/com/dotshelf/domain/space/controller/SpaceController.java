@@ -1,5 +1,6 @@
 package com.dotshelf.domain.space.controller;
 
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -9,7 +10,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.dotshelf.domain.book.dto.BookDtos.OwnedBookListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.CategoryInventoryRequest;
@@ -24,6 +27,7 @@ import com.dotshelf.domain.space.dto.SpaceDtos.SpaceResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyMode;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.VisibilityRequest;
 import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.global.common.ApiResponse;
@@ -114,6 +118,19 @@ public class SpaceController {
             @RequestBody @Valid LayoutSaveRequest request
     ) {
         return ApiResponse.success(spaceService.saveMyLayout(userId, request));
+    }
+
+    @Operation(
+            summary = "내 공간 썸네일 업로드",
+            description = "Unity 가 방 배치 변경 시 자동 캡처한 이미지를 multipart 로 업로드한다. "
+                    + "BE 가 S3 에 저장 후 공간의 thumbnailUrl 을 갱신하고 갱신된 layoutVersion 을 반환한다."
+    )
+    @PostMapping(value = "/me/thumbnail", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<ThumbnailUploadResponse> uploadThumbnail(
+            @CurrentUser Long userId,
+            @RequestPart("file") MultipartFile file
+    ) {
+        return ApiResponse.success(spaceService.uploadThumbnail(userId, file));
     }
 
     @Operation(summary = "내 공간 테마 적용", description = "현재 사용자의 공간에 테마 적용 요청을 처리합니다.")

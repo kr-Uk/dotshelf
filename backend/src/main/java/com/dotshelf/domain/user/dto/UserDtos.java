@@ -5,8 +5,11 @@ import java.util.List;
 import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.entity.UserFeedSetting;
 import com.dotshelf.domain.user.entity.UserNotificationSetting;
+import com.dotshelf.global.storage.S3StorageService.PresignedPut;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 public final class UserDtos {
@@ -57,6 +60,43 @@ public final class UserDtos {
     }
 
     public record NicknameAvailabilityResponse(boolean available) {
+    }
+
+    /**
+     * presigned PUT 발급 요청. 클라가 올릴 파일의 contentType / 크기를 미리 신고하면
+     * BE 가 화이트리스트 검증 후 S3 PUT URL 을 발급한다.
+     */
+    public record ProfileImageUploadUrlRequest(
+            @NotBlank(message = "contentType은 필수입니다.")
+            String contentType,
+            @NotNull(message = "byteLength는 필수입니다.")
+            @Positive(message = "byteLength는 양수여야 합니다.")
+            Long byteLength
+    ) {
+    }
+
+    public record ProfileImageUploadUrlResponse(
+            String uploadUrl,
+            String key,
+            long expiresInSeconds
+    ) {
+
+        public static ProfileImageUploadUrlResponse from(PresignedPut presigned) {
+            return new ProfileImageUploadUrlResponse(
+                    presigned.uploadUrl(),
+                    presigned.key(),
+                    presigned.expiresInSeconds());
+        }
+    }
+
+    /**
+     * presigned PUT 으로 클라가 S3 직업로드를 마친 뒤 BE 에 \"실제로 올렸다\"고 알리는 confirm.
+     * BE 는 headObject 로 객체 존재를 확인한 뒤에만 DB 의 profileImageUrl 을 갱신한다.
+     */
+    public record ProfileImageConfirmRequest(
+            @NotBlank(message = "key는 필수입니다.")
+            String key
+    ) {
     }
 
     public record UserSummaryResponse(
