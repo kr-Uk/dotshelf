@@ -1868,18 +1868,22 @@ namespace App.Bootstrap
                 }
             }
 
-            // 2) native renderer 들 disable (visual hide, GameObject 자체는 유지 — collider/
+            // 2) primary anchor 검색 — 카테고리별 정확한 root transform 우선. "DeskRoot" /
+            //    "BookshelfRoot" 같은 이름 정확 매칭 우선. 첫 매칭 transform (예: NotebookStation
+            //    또는 Desk_*Strip) 이 anchor 가 되면 GLB prefab spawn 위치가 native 와 어긋남.
+            var anchor = FindPrimaryAnchor(roomRoot, category);
+
+            // 3) native renderer 들 disable (visual hide, GameObject 자체는 유지 — collider/
             // 기능 컴포넌트 보존). 카테고리 매칭 transform 의 모든 자식 renderer 까지 hide —
             // NotebookStation 같은 root 의 자식 (UnibodyBase/Trackpad 등) 은 prefix 매칭 안
             // 되어 renderer 자체 검색만으론 missed. transform 단위로 매칭 후 GetComponentsInChildren
             // 으로 자식까지 모두 hide → 노트북 visual 도 같이 사라짐.
-            Transform anchor = null;
             var allTransforms = roomRoot.GetComponentsInChildren<Transform>(true);
             for (int i = 0; i < allTransforms.Length; i++)
             {
                 var t = allTransforms[i];
                 if (!MatchesCategoryName(category, t.gameObject.name)) continue;
-                if (anchor == null) anchor = t;
+                if (anchor == null) anchor = t; // primary 못 찾으면 첫 매칭 fallback
                 foreach (var r in t.GetComponentsInChildren<Renderer>(true))
                 {
                     r.enabled = false;
@@ -1891,14 +1895,36 @@ namespace App.Bootstrap
                 return;
             }
 
-            // 3) prefab 을 roomRoot 자식으로 spawn — anchor 의 world position/rotation 적용.
+            // 4) prefab 을 roomRoot 자식으로 spawn — anchor 의 world position/rotation 적용.
             // 직접 anchor 자식이 아닌 이유: anchor 가 wall 처럼 non-uniform scale 을 가질 수
             // 있어 prefab 이 찌그러질 수 있음. roomRoot (보통 scale 1) 자식 + anchor world
             // 좌표 적용으로 wall mesh scale propagation [P1] 회피.
+            // 노트북/책상 같은 항시 카테고리는 anchor 가 native DeskRoot 라 GLB prefab spawn
+            // 위치가 native 와 동일 — 사용자 요구 "위치/방향 항상 유지" 충족.
             var go = Instantiate(prefab, roomRoot);
             go.name = swapName;
             go.transform.SetPositionAndRotation(anchor.position, anchor.rotation);
             go.transform.localScale = Vector3.one;
+        }
+
+        // 카테고리별 primary anchor — native 룸의 root transform. mesh swap 시 이 위치/회전을
+        // 그대로 GLB prefab 에 적용해 native 와 일치시킴.
+        private static Transform FindPrimaryAnchor(Transform roomRoot, CustomizationCategory category)
+        {
+            string primaryName = null;
+            switch (category)
+            {
+                case CustomizationCategory.Desk:           primaryName = "DeskRoot"; break;
+                case CustomizationCategory.BookshelfSkin:  primaryName = "BookshelfRoot"; break;
+                case CustomizationCategory.DashboardSkin:  primaryName = "DashboardScreenPanel"; break;
+                default: return null;
+            }
+            var allTransforms = roomRoot.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < allTransforms.Length; i++)
+            {
+                if (allTransforms[i].gameObject.name == primaryName) return allTransforms[i];
+            }
+            return null;
         }
 
         // mesh swap 복원 — native renderer 들 enable + spawned mesh swap 정리.
