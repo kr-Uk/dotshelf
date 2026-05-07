@@ -1624,6 +1624,7 @@ namespace App.Bootstrap
         // PATCH 는 안 보냄 — visual 만. 사용자가 명시적으로 entry 클릭해야 BE 저장.
         private void ApplyThemeDefaultEntries(RoomThemeAsset theme)
         {
+            Debug.Log($"[RoomEditModeController] ApplyThemeDefaultEntries 진입 — theme={theme?.DisplayName ?? "null"}, defaults={(theme?.DefaultEntries?.Count ?? 0)}");
             if (theme == null) return;
             var defaults = theme.DefaultEntries;
             if (defaults == null) return;
@@ -1631,14 +1632,20 @@ namespace App.Bootstrap
             {
                 var def = defaults[i];
                 if (def == null) continue;
+                Debug.Log($"[RoomEditModeController] default entry [{i}] {def.Category}:{def.AssetId}");
                 var catalog = LoadCategoryCatalog(def.Category);
-                if (catalog == null || catalog.Entries == null) continue;
+                if (catalog == null || catalog.Entries == null)
+                {
+                    Debug.LogWarning($"[RoomEditModeController] catalog 못 찾음: {def.Category} — Resources/Catalogs/{def.Category}Catalog.asset 확인.");
+                    continue;
+                }
                 var entry = catalog.FindByAssetId(def.AssetId);
                 if (entry == null)
                 {
                     Debug.LogWarning($"[RoomEditModeController] {theme.DisplayName} default entry {def.Category}:{def.AssetId} 못 찾음 — catalog 에 등록되어 있는지 확인.");
                     continue;
                 }
+                Debug.Log($"[RoomEditModeController] ApplyEntryVisual({def.Category}, {entry.DisplayName}) — Prefab={(entry.Prefab != null)}");
                 ApplyEntryVisual(def.Category, entry);
                 if (entry.AssetId > 0) lastAppliedEntries[def.Category] = entry.AssetId;
             }
