@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using App.Application.Dashboard;
 using App.Application.Decoration;
+using App.Auth;
 using App.Domain.Decoration;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dashboard;
@@ -292,6 +293,10 @@ namespace App.Bootstrap
         private GameObject draggingObject;
         private Vector3 dragLastValidPosition;
         private Vector3 dragGrabOffset;             // pointer-floor-hit minus object world XZ at drag start
+        // 드래그 시작 시점 position — FinishDrag 에서 epsilon 비교용. 사용자가 단순 선택/확인 클릭 시
+        // 좌표가 변하지 않았는데 dirty 가 켜져서 "미저장 변경사항" 모달이 뜨는 회귀 가드.
+        // MR #120 skh1205 리뷰 #3 반영.
+        private Vector3 dragStartPosition;
         private bool gridSnapEnabled = true;
         private GameObject gridDisplayRoot;
 
@@ -410,8 +415,10 @@ namespace App.Bootstrap
         }
         private readonly List<WallRendererCache> wallRendererCaches = new List<WallRendererCache>();
         private bool wallVisibilityCollected;
-        // 0.18 → 내부가 충분히 보이면서도 벽 윤곽선은 살짝 인지되는 정도.
-        private const float WallFadeAlpha = 0.18f;
+        // 0.18 → 내부가 충분히 보이면서도 벽 윤곽선은 살짝 인지되는 정도. 디자이너가 인스펙터에서
+        // 바로 튜닝할 수 있도록 SerializeField 노출 — MR #120 simonjiho 리뷰 #5 반영.
+        // [0..1] 클램프는 ApplyWallFadeState 에서 매 적용 시 보장.
+        [SerializeField, Range(0f, 1f)] private float wallFadeAlpha = 0.18f;
 
         // ---- Decoration save / dirty state ----
         // 명시적 "저장" 버튼 흐름. PlaceInventoryEntry / FinishDrag / RotateSelectedBy /
@@ -3486,6 +3493,16 @@ namespace App.Bootstrap
             RoomEditThemeFilter.Changed -= HandleThemeFilterChanged;
         }
 
+        // MR #120 simonjiho 리뷰 #6 반영 — 비정상 종료(scene unload, GameObject SetActive(false),
+        // domain reload 직전) 경로에서도 instance material leak / sharedMaterial 미복구 회귀를 막는
+        // defensive fallback. ExitEditMode 정상 흐름은 RestoreWallVisibility 를 이미 호출하므로 여기서는
+        // wallVisibilityCollected==true 인 경우(=fade instance 가 아직 살아있는 경우) 만 추가로 정리.
+        private void OnDisable()
+        {
+            if (!wallVisibilityCollected) return;
+            RestoreWallVisibility("OnDisable");
+        }
+
         // ---------- Animal Crossing 해피홈식 자유 orbit 카메라 ----------
         //
         // pose = (orbitYaw, orbitPitch, orbitDistance) 로만 결정 — selectedObject 무참조
@@ -3682,13 +3699,15 @@ namespace App.Bootstrap
                 });
         }
 
-        // 씬의 DecorationItemMarker 들을 DecorationLayoutItem 으로 변환. InventoryKey 가 비어있는
-        // marker 는 식별 불가 → skip + 경고 로그.
+        // 씬의 DecorationItemMarker 들을 DecorationLayoutItem 으로 변환. InventoryKey 가 비어있거나
+        // 세션 간 안정적이지 않은 fallback (prefab-iid:) 인 경우 식별 불가 → skip + 경고 로그.
+        // MR #120 skh1205 리뷰 #4 반영 — Prefab.GetInstanceID() 는 한 세션 내에서만 유효한
+        // 런타임 ID 라 저장 파일에 들어가는 순간 다음 실행에서 매칭이 깨진다.
         private List<DecorationLayoutItem> CollectDecorationLayoutItems()
         {
             var list = new List<DecorationLayoutItem>();
             var markers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            int skipped = 0;
+            int skipped = 0, unstable = 0;
             for (int i = 0; i < markers.Length; i++)
             {
                 var m = markers[i];
@@ -3697,6 +3716,14 @@ namespace App.Bootstrap
                 {
                     skipped++;
                     Debug.LogWarning($"[RoomEdit][Save] '{m.gameObject.name}' InventoryKey 비어있음 — 저장 skip");
+                    continue;
+                }
+                if (!IsPersistableInventoryKey(m.InventoryKey))
+                {
+                    unstable++;
+                    Debug.LogWarning(
+                        $"[RoomEdit][Save] '{m.gameObject.name}' key='{m.InventoryKey}' — 세션 간 안정적이지 않은 식별자 (prefab-iid). " +
+                        "다음 실행에서 매칭이 깨지므로 저장에서 제외. catalog 의 SourceAssetPath 를 채워야 함.");
                     continue;
                 }
                 var t = m.transform;
@@ -3712,11 +3739,23 @@ namespace App.Bootstrap
                     ScaleZ = t.localScale.z,
                 });
             }
-            if (skipped > 0)
+            if (skipped > 0 || unstable > 0)
             {
-                Debug.LogWarning($"[RoomEdit][Save] InventoryKey 누락 marker {skipped}개 skip — 저장 대상에서 제외됨");
+                Debug.LogWarning(
+                    $"[RoomEdit][Save] 저장 제외 — InventoryKey 누락 {skipped}개, prefab-iid (불안정) {unstable}개");
             }
             return list;
+        }
+
+        // 세션 간 안정적인 영속화 키만 true. BuildInventoryKey 가 발행하는 prefix:
+        //   - "path:..."     → 자산 경로 기반. SourceAssetPath 가 바뀌지 않는 한 안정. 저장 OK.
+        //   - "asset:..."    → 서버 inventory assetId. 미래 도입 예정. 저장 OK.
+        //   - "inv:..."      → 서버 inventory inventoryId. 미래 도입 예정. 저장 OK.
+        //   - "name:..."     → DisplayName fallback. 동명 자산 충돌 위험은 있지만 빌드 간 동일하므로 허용.
+        //   - "prefab-iid:..." → Prefab.GetInstanceID() 런타임 ID. 세션 간 안정성 X. 저장 NO.
+        private static bool IsPersistableInventoryKey(string key)
+        {
+            return !string.IsNullOrEmpty(key) && !key.StartsWith("prefab-iid:", StringComparison.Ordinal);
         }
 
         // UseCase / Repository 지연 초기화 — InitializeOnce 시점에 호출.
@@ -3729,7 +3768,10 @@ namespace App.Bootstrap
             {
                 if (decorationRepository == null)
                 {
-                    decorationRepository = new LocalFileDecorationRepository();
+                    // user/space scope — 같은 기기에 다른 계정으로 로그인해도 layout 이 섞이지 않게
+                    // userId 를 파일명에 포함. AuthSession.UserId 가 0 이면 anon fallback (대부분 dev 경로).
+                    // MR #120 skh1205 리뷰 #2 반영.
+                    decorationRepository = new LocalFileDecorationRepository(AuthSession.UserId);
                 }
                 if (saveDecorationsUseCase == null)
                 {
@@ -3924,9 +3966,12 @@ namespace App.Bootstrap
             marker.InventoryKey = snap.InventoryKey;
         }
 
-        // 진입 시 저장된 layout 복원. 현재는 부분 구현 — 이미 씬에 marker 가 있으면 transform 만 갱신.
-        // TODO(full-restore): inventoryEntries 에서 assetId 매칭 prefab 을 Instantiate 해서 미배치 항목도
-        // 복원. PlaceInventoryEntry 를 재사용하되 "force-position to saved coords" 옵션이 필요.
+        // 진입 시 저장된 layout 복원.
+        //   - 씬에 marker 가 이미 있으면 transform 만 갱신 (e.g. scene-baked 자산).
+        //   - 씬에 marker 가 없으면 inventoryEntries 에서 prefab 매칭해 Instantiate (앱 재시작 후 복원 경로).
+        //   - prefab 매칭 실패하면 lost 로 집계 + 경고 (catalog 누락 / 이름 변경).
+        // MR #120 skh1205 리뷰 #1 반영 — 이전에는 unmatched 가 그냥 drop 되어 fresh scene 에서
+        // 사용자가 저장 토스트는 봤는데 방은 비어있는 회귀가 있었다.
         private void TryRestoreSavedDecorations()
         {
             EnsureDecorationUseCases();
@@ -3939,7 +3984,7 @@ namespace App.Bootstrap
                         Debug.Log("[RoomEdit][Load] 저장된 데코레이션 없음 (빈 리스트)");
                         return;
                     }
-                    int matched = 0, unmatched = 0;
+                    int matched = 0, recreated = 0, lost = 0;
                     for (int i = 0; i < items.Count; i++)
                     {
                         var it = items[i];
@@ -3949,17 +3994,76 @@ namespace App.Bootstrap
                             existing.transform.rotation = Quaternion.Euler(0f, it.RotationY, 0f);
                             existing.transform.localScale = new Vector3(it.ScaleX, it.ScaleY, it.ScaleZ);
                             matched++;
+                            continue;
+                        }
+
+                        if (TryInstantiateSavedItem(it))
+                        {
+                            recreated++;
                         }
                         else
                         {
-                            unmatched++;
+                            lost++;
                         }
                     }
+                    if (recreated > 0)
+                    {
+                        // 슬롯 disabled/배치됨 표시를 새로 생성된 인스턴스에 맞춰 갱신.
+                        RebuildInventorySlots();
+                    }
                     Debug.Log(
-                        $"[RoomEdit][Load] 복원 완료 — 기존 marker 매칭 갱신 {matched}개, 매칭 실패 (씬에 없음) {unmatched}개. " +
-                        "TODO(full-restore): unmatched 도 inventoryEntries 에서 prefab 매칭해 Instantiate 필요.");
+                        $"[RoomEdit][Load] 복원 완료 — 기존 marker 매칭 갱신 {matched}개, prefab 재생성 {recreated}개, 복원 불가 {lost}개");
                 },
                 onError: msg => Debug.LogWarning($"[RoomEdit][Load] 저장 데이터 로드 실패: {msg}"));
+        }
+
+        // 저장된 layout item 1개를 prefab Instantiate 해서 씬에 복원. 성공 시 placedByInventoryKey 등록.
+        // PlaceInventoryEntry 의 ring-search/bounds-clamp 는 건너뛴다 — 저장 시점에 valid 한 좌표였고
+        // 같은 placement 를 그대로 되살리는 게 의도. 충돌은 사용자가 다음 편집 모드에서 직접 정리.
+        private bool TryInstantiateSavedItem(DecorationLayoutItem it)
+        {
+            if (it == null || string.IsNullOrEmpty(it.AssetId))
+            {
+                Debug.LogWarning("[RoomEdit][Load] AssetId 비어있는 item — skip");
+                return false;
+            }
+            if (!TryFindInventoryEntryByKey(it.AssetId, out var entry) || entry.Prefab == null)
+            {
+                Debug.LogWarning(
+                    $"[RoomEdit][Load] '{it.AssetId}' prefab 매칭 실패 — 카탈로그 누락 또는 path 변경. 복원 skip.");
+                return false;
+            }
+
+            EnsurePlacedItemsRoot();
+            var go = Instantiate(entry.Prefab);
+            go.name = $"Decoration_{SanitizeName(entry.DisplayName)}_{System.Guid.NewGuid():N}";
+            go.transform.SetParent(placedItemsRoot.transform, true);
+            go.transform.SetPositionAndRotation(
+                new Vector3(it.PositionX, it.PositionY, it.PositionZ),
+                Quaternion.Euler(0f, it.RotationY, 0f));
+            // 저장 시점의 scale 그대로 — NormalizeSpawnedScale 의 등방성 가정과 어긋나도
+            // 사용자가 본 그대로 복원하는 invariant 우선.
+            go.transform.localScale = new Vector3(it.ScaleX, it.ScaleY, it.ScaleZ);
+
+            // collider 합성 (없으면) — RecreateMarkerFromSnapshot/PlaceInventoryEntry 와 동일 패턴.
+            var rendererBounds = ComputeRendererBounds(go);
+            if (rendererBounds.HasValue && go.GetComponentInChildren<Collider>() == null)
+            {
+                var bounds = rendererBounds.Value;
+                var collider = go.AddComponent<BoxCollider>();
+                var localCenter = go.transform.InverseTransformPoint(bounds.center);
+                var localSize = go.transform.InverseTransformVector(bounds.size);
+                collider.center = localCenter;
+                collider.size = new Vector3(Mathf.Abs(localSize.x), Mathf.Abs(localSize.y), Mathf.Abs(localSize.z));
+            }
+
+            var marker = go.AddComponent<DecorationItemMarker>();
+            marker.InventoryKey = it.AssetId;
+
+            // 1회 배치 제한 캐시 등록 — 안 하면 사용자가 인벤토리에서 같은 자산 재배치 시도 시
+            // disabled 표시가 안 떠서 이중 배치 가능.
+            placedByInventoryKey[it.AssetId] = go;
+            return true;
         }
 
         // 토스트 — 짧은 안내 메시지. 색상은 success/error 구분.
@@ -4294,7 +4398,7 @@ namespace App.Bootstrap
                 ApplyWallFadeState(cache, shouldFade);
                 if (shouldFade) faded++; else restored++;
             }
-            Debug.Log($"[RoomEdit][WallFade] preset={preset} faded={faded} kept-opaque={restored} alpha={WallFadeAlpha:0.00}");
+            Debug.Log($"[RoomEdit][WallFade] preset={preset} faded={faded} kept-opaque={restored} alpha={Mathf.Clamp01(wallFadeAlpha):0.00}");
         }
 
         // shouldFade=true 면 instance material 만들어서 transparent + alpha 적용,
@@ -4336,16 +4440,18 @@ namespace App.Bootstrap
             // [#3 Must Fix] 둘 다 없는 custom shader 면 alpha 적용이 silent fail → 벽이 그대로
             // occlusion. 이 경우 통째 숨김(enabled=false) 으로 fallback 해서 사용자 시야는 보장.
             // 종료 시 RendererWasEnabled 로 복구되므로 디자이너가 원본을 바꿀 일은 없음.
+            // 디자이너가 인스펙터에서 0~1 밖 값을 입력하더라도 안전하도록 매 적용 시 클램프.
+            var alpha = Mathf.Clamp01(wallFadeAlpha);
             if (cache.InstanceMaterial.HasProperty("_BaseColor"))
             {
                 var c = cache.InstanceMaterial.GetColor("_BaseColor");
-                c.a = WallFadeAlpha;
+                c.a = alpha;
                 cache.InstanceMaterial.SetColor("_BaseColor", c);
             }
             else if (cache.InstanceMaterial.HasProperty("_Color"))
             {
                 var c = cache.InstanceMaterial.GetColor("_Color");
-                c.a = WallFadeAlpha;
+                c.a = alpha;
                 cache.InstanceMaterial.SetColor("_Color", c);
             }
             else
@@ -4380,7 +4486,8 @@ namespace App.Bootstrap
             // 편집 모드가 아직 활성인 상태에서 호출되면 사용자가 곧장 시야를 잃는다 (이번 버그의 핵심).
             // exit/destroy 외 경로에서 호출되면 즉시 알 수 있게 warning. context tag 로 caller 식별.
             // ExitEditModeInternal 은 호출 직전에 IsEditModeActive=false 로 내리므로 정상 경로는 warning 안 나옴.
-            if (IsEditModeActive && contextTag != "OnDestroy")
+            // OnDisable 도 lifecycle teardown(컴포넌트 비활성/scene unload) 경로라 warning 제외.
+            if (IsEditModeActive && contextTag != "OnDestroy" && contextTag != "OnDisable")
             {
                 Debug.LogWarning(
                     $"[RoomEdit][WallFade] ⚠ RestoreWallVisibility 가 편집 모드 도중 호출됨 (context={contextTag}) — 의도된 호출이 아니라면 wall fade 가 풀려서 occlusion 이 돌아옴. " +
@@ -5321,6 +5428,8 @@ namespace App.Bootstrap
         {
             draggingObject = target;
             dragLastValidPosition = target.transform.position;
+            // FinishDrag 가 epsilon 비교로 실제 이동 여부를 판별하기 위한 anchor.
+            dragStartPosition = target.transform.position;
 
             // Capture grab offset so the model doesn't snap its center under the
             // pointer at drag start — instead it stays where it was relative to
@@ -5399,10 +5508,20 @@ namespace App.Bootstrap
             // Position is always inside the room because UpdateDrag clamped it
             // every frame, so we don't need to revert anywhere. Just close out
             // the drag state and hide the grid overlay.
-            bool wasDragging = draggingObject != null;
+            //
+            // 이전 구현은 wasDragging 만 보고 SetDirty 를 항상 호출했다. 사용자가 마커를 단순
+            // 선택만 해도 BeginDrag 가 같이 시작되므로 release 시 좌표 변화가 없어도 dirty 가 켜져서
+            // 미저장 모달이 뜨는 회귀 (MR #120 skh1205 리뷰 #3) 가 있었다. 시작 좌표와 현재 좌표를
+            // epsilon 비교해 실제 이동이 발생한 경우에만 dirty 처리.
+            var dragged = draggingObject;
             draggingObject = null;
             HideGrid();
-            if (wasDragging)
+            if (dragged == null) return;
+
+            // grid snap 단계(MinorGridStep ~ 0.1m) 보다 한참 작은 epsilon — 부동소수 잡음만 무시.
+            const float MovementEpsilonSqr = 1e-6f;
+            var moved = (dragged.transform.position - dragStartPosition).sqrMagnitude > MovementEpsilonSqr;
+            if (moved)
             {
                 SetDirty("FinishDrag");
             }
