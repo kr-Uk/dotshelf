@@ -212,6 +212,13 @@ namespace App.Bootstrap
             public string DisplayName;
             public GameObject Prefab;
             public string SourceAssetPath;
+            // 설치 카테고리 — placement 분기에 사용 (BookshelfDeco/FloorDeco/WallDeco).
+            // default(0)=Wallpaper 인데 호환성 위해 명시적으로 unset 표현하려면 BookshelfDeco
+            // 같은 placement 카테고리 default 채택. 현재 LoadInventoryEntries 는 floor 위
+            // placement 만 만들어와서 default = FloorDeco 가 맞다.
+            public CustomizationCategory PlacementCategory;
+            // 회전 허용 여부. default true. 창문처럼 회전 비활성 entry 는 false.
+            public bool AllowRotation;
         }
 
         // Public state ------------------------------------------------------------
@@ -241,6 +248,7 @@ namespace App.Bootstrap
         private CustomizationCategory pendingCustomizationCategory;
         private CustomizationEntry pendingCustomizationEntry;
         private GameObject selectionPanelRoot;
+        private Button selectionRotateButton;
 
         private string selectedToolbarKey = "ALL";
         private readonly Dictionary<string, Image> toolbarBackgrounds = new Dictionary<string, Image>();
@@ -263,6 +271,11 @@ namespace App.Bootstrap
         private int themeRequestVersion;
 
         private GameObject placedItemsRoot;
+
+        // Wall placement obstruction registry — RightWall/LeftWall/BackWall surface 의
+        // 책장/대시보드 점유 영역 추적. EnsureWallObstructionRegistry 가 lazy 빌드.
+        private WallObstructionRegistry wallObstructionRegistry;
+        private bool wallObstructionRegistryBuilt;
         private GameObject selectedObject;
         private readonly List<RendererTint> selectedRendererTints = new List<RendererTint>();
 
@@ -414,11 +427,18 @@ namespace App.Bootstrap
                 {
                     var entry = catalog.Entries[i];
                     if (entry == null || entry.Prefab == null) continue;
+                    // catalog Entry 의 PlacementCategory 가 Wallpaper(=enum 0, unset 의미)
+                    // 면 FloorDeco 로 fallback — 기존 catalog 자산 호환.
+                    var placement = entry.PlacementCategory == CustomizationCategory.Wallpaper
+                        ? CustomizationCategory.FloorDeco
+                        : entry.PlacementCategory;
                     inventoryEntries.Add(new InventoryEntry
                     {
                         DisplayName = string.IsNullOrWhiteSpace(entry.DisplayName) ? entry.Prefab.name : entry.DisplayName,
                         Prefab = entry.Prefab,
                         SourceAssetPath = entry.SourceAssetPath ?? string.Empty,
+                        PlacementCategory = placement,
+                        AllowRotation = entry.AllowRotation,
                     });
                 }
             }
@@ -462,6 +482,8 @@ namespace App.Bootstrap
                     DisplayName = ToDisplayName(System.IO.Path.GetFileNameWithoutExtension(path)),
                     Prefab = prefab,
                     SourceAssetPath = path,
+                    PlacementCategory = CustomizationCategory.FloorDeco,
+                    AllowRotation = true,
                 });
             }
 
@@ -2202,6 +2224,7 @@ namespace App.Bootstrap
             rotateRect.pivot = new Vector2(0f, 0.5f);
             rotateRect.anchoredPosition = new Vector2(16f, 0f);
             rotateButton.onClick.AddListener(RotateSelectedObject);
+            selectionRotateButton = rotateButton;
 
             var deleteButton = CreateButton(selectionPanelRoot.transform, "DeleteButton", "삭제",
                 Hex("#C14E4E"), Color.white, new Vector2(112f, 60f), false, BorderColor);
@@ -2270,6 +2293,21 @@ namespace App.Bootstrap
             if (selectionPanelRoot != null && selectionPanelRoot.activeSelf != shouldShow)
             {
                 selectionPanelRoot.SetActive(shouldShow);
+            }
+
+            // 회전 비활성 entry — wall deco marker.AllowRotation == false 면 회전 버튼 disabled.
+            if (selectionRotateButton != null)
+            {
+                bool allowRotation = true;
+                if (selectedObject != null)
+                {
+                    var marker = selectedObject.GetComponent<WallDecoMarker>();
+                    if (marker != null && !marker.AllowRotation) allowRotation = false;
+                }
+                if (selectionRotateButton.interactable != allowRotation)
+                {
+                    selectionRotateButton.interactable = allowRotation;
+                }
             }
         }
 
@@ -2939,6 +2977,19 @@ namespace App.Bootstrap
                 return;
             }
 
+            // placement category 분기. WallDeco 는 wall surface 부착 placement 로 별도 흐름.
+            // BookshelfDeco 는 후속 (책장 섹션 anchoring 시스템 합류 시점). 그 외 (FloorDeco/
+            // 미지정 default) 는 기존 floor placement 유지.
+            switch (entry.PlacementCategory)
+            {
+                case CustomizationCategory.WallDeco:
+                    PlaceWallDecoEntry(entry);
+                    return;
+                case CustomizationCategory.BookshelfDeco:
+                    Debug.LogWarning($"[RoomEditModeController] BookshelfDeco placement 미지원 — '{entry.DisplayName}' skip. 후속 PR.");
+                    return;
+            }
+
             EnsurePlacedItemsRoot();
 
             var go = Instantiate(entry.Prefab);
@@ -3461,6 +3512,222 @@ namespace App.Bootstrap
             SceneManager.MoveGameObjectToScene(placedItemsRoot, gameObject.scene);
         }
 
+        // Wall placement --------------------------------------------------------
+
+        // 룸의 책장(BackWall)/대시보드(LeftWall) bounds 를 측정해 wall obstruction 등록.
+        // 룸 GameObject 가 BookshelfGenerator 에 의해 만들어진 후에 호출. 매번 재측정해
+        // 책장/대시보드 위치 변경에도 자동 정합 (e.g. theme 이 다른 prefab 사용 시).
+        private WallObstructionRegistry EnsureWallObstructionRegistry()
+        {
+            if (wallObstructionRegistry == null)
+            {
+                wallObstructionRegistry = new WallObstructionRegistry();
+            }
+            // 첫 호출 시만 build — 이후 캐싱. 매 프레임 build 하면 GetComponentsInChildren
+            // 중복 호출로 GC pressure. 룸 재생성 시 InvalidateWallObstructionRegistry()
+            // 호출 (현재 호출처 없음 — 룸이 한 번만 만들어진다고 가정).
+            if (!wallObstructionRegistryBuilt)
+            {
+                if (themeApplier == null)
+                {
+                    themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+                }
+                var roomRoot = themeApplier?.RoomRoot;
+                if (roomRoot != null)
+                {
+                    wallObstructionRegistry.Build(roomRoot);
+                    wallObstructionRegistryBuilt = true;
+                }
+            }
+            return wallObstructionRegistry;
+        }
+
+        // 룸 재생성/씬 reload 후 호출 — 다음 EnsureWallObstructionRegistry 가 다시 Build.
+        private void InvalidateWallObstructionRegistry()
+        {
+            wallObstructionRegistryBuilt = false;
+        }
+
+        // Wall deco placement — RightWall 가운데 spawn (default). 사용자는 spawn 후
+        // 드래그로 wall surface 따라 이동 (drag clamp + obstruction check 은 후속 commit).
+        // 회전 비활성 entry (allowRotation=false) 는 Selection panel 의 rotate 버튼 disable
+        // (후속 commit).
+        //
+        // 후속 commit roadmap:
+        // - drag wall surface clamp (raycast 로 hit wall 의 surface YZ 또는 XY 평면 따라 이동)
+        // - obstruction check 실패 시 invalid feedback (붉은 tint)
+        // - hit wall 변경 (RightWall → LeftWall 등 사용자 드래그로 wall 전환)
+        private void PlaceWallDecoEntry(InventoryEntry entry)
+        {
+            if (entry.Prefab == null) return;
+
+            EnsurePlacedItemsRoot();
+            EnsureWallObstructionRegistry();
+
+            var go = Instantiate(entry.Prefab);
+            go.name = $"WallDeco_{SanitizeName(entry.DisplayName)}_{System.Guid.NewGuid():N}";
+            go.transform.SetParent(placedItemsRoot.transform, true);
+
+            // default placement — RightWall 표면 가운데. RightWall x = +RoomWidth/2 - 0.05.
+            // RoomWidth/Height 상수는 BookshelfGenerator private 이라 정확값 query 불가 →
+            // themeApplier.RoomRoot 의 RightWall transform 으로 위치 산출.
+            Transform rightWall = null;
+            var roomRoot = themeApplier?.RoomRoot;
+            if (roomRoot != null)
+            {
+                var transforms = roomRoot.GetComponentsInChildren<Transform>(true);
+                for (int i = 0; i < transforms.Length; i++)
+                {
+                    if (transforms[i].gameObject.name == "RightWall")
+                    {
+                        rightWall = transforms[i];
+                        break;
+                    }
+                }
+            }
+
+            if (rightWall != null)
+            {
+                // RightWall inner face = wall.position.x - WallHalfThickness(0.04).
+                // wall 표면에 정확히 위로 spawn. mesh 두께가 wall 안으로 박히는 부분은
+                // prefab 안에서 GLB instance 의 localZ 을 살짝 양수 (회전 후 -X = 룸 안쪽)
+                // 으로 띄워 사용자가 fitting.
+                go.transform.position = new Vector3(rightWall.position.x - 0.04f, rightWall.position.y, rightWall.position.z);
+                go.transform.rotation = WallFacingRotation(WallSide.Right);
+            }
+            else
+            {
+                Debug.LogWarning("[RoomEditModeController] RightWall transform not found — wall deco spawn 위치 불확실. RoomThemeApplier.RoomRoot wiring 확인.");
+                go.transform.position = Vector3.zero;
+            }
+
+            // marker 추가 — UpdateDrag 가 wall placement 드래그로 분기하기 위함.
+            var marker = go.AddComponent<WallDecoMarker>();
+            marker.CurrentWall = WallSide.Right;
+            marker.AllowRotation = entry.AllowRotation;
+
+            // DecorationItemMarker 도 추가 — BeginEditModePointerPress 가 mouse down 시
+            // 이 컴포넌트 검사해 select+drag 시작. 없으면 사용자 클릭 무시됨.
+            // floor placement (PlaceInventoryEntry) 와 동일 마커 시스템 공유.
+            go.AddComponent<DecorationItemMarker>();
+
+            // collider 보장 — Meshy GLB 는 import 시 collider 자동 생성 안 함.
+            // 없으면 mouse down raycast 가 deco mesh 를 hit 못 해 select/drag 진입 불가.
+            EnsureCollidersForWallDeco(go);
+
+            // selection 으로 자동 잡아 사용자가 즉시 드래그 가능하게.
+            SelectObject(go);
+        }
+
+        // wall deco 의 모든 mesh 자식에 MeshCollider 추가 (없으면). WallMaskQuad 는 stencil
+        // 전용이라 collider 추가 X — 사용자 raycast 가 그걸 hit 하면 안 되고 wall 까지 통과해야 함.
+        private static void EnsureCollidersForWallDeco(GameObject go)
+        {
+            var meshFilters = go.GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < meshFilters.Length; i++)
+            {
+                var mf = meshFilters[i];
+                if (mf == null || mf.sharedMesh == null) continue;
+                if (mf.gameObject.name == "WallMaskQuad") continue;
+                if (mf.GetComponent<Collider>() != null) continue;
+                var collider = mf.gameObject.AddComponent<MeshCollider>();
+                collider.sharedMesh = mf.sharedMesh;
+                collider.convex = false; // raycast 용도라 충돌 처리 불필요
+            }
+        }
+
+        // ray 와 4 wall 의 inner face plane 교차 → 가장 가까운 wall 의 hit 위치 반환.
+        // wall transform 은 BookshelfGenerator.CreateBox 가 만든 cube — collider 는 없지만
+        // position/scale 으로 plane 정의 가능. wall thickness 0.08 가정 (= half 0.04).
+        // BookshelfGenerator 의 다른 wall thickness 가 도입되면 그 값으로 수정 필요.
+        private bool TryRaycastWallSurface(Ray ray, out WallSide hitWall, out Vector3 hitPoint)
+        {
+            hitWall = WallSide.None;
+            hitPoint = Vector3.zero;
+            const float WallHalfThickness = 0.04f;
+
+            var roomRoot = themeApplier?.RoomRoot;
+            if (roomRoot == null) return false;
+
+            float closestDistance = float.MaxValue;
+            var transforms = roomRoot.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                var t = transforms[i];
+                var wall = WallNameToSide(t.gameObject.name);
+                if (wall == WallSide.None) continue;
+
+                Vector3 planePoint;
+                Vector3 planeNormal;
+                switch (wall)
+                {
+                    case WallSide.Left:
+                        planePoint = new Vector3(t.position.x + WallHalfThickness, t.position.y, t.position.z);
+                        planeNormal = Vector3.right; break;
+                    case WallSide.Right:
+                        planePoint = new Vector3(t.position.x - WallHalfThickness, t.position.y, t.position.z);
+                        planeNormal = Vector3.left; break;
+                    case WallSide.Back:
+                        planePoint = new Vector3(t.position.x, t.position.y, t.position.z - WallHalfThickness);
+                        planeNormal = Vector3.back; break;
+                    case WallSide.Front:
+                        planePoint = new Vector3(t.position.x, t.position.y, t.position.z + WallHalfThickness);
+                        planeNormal = Vector3.forward; break;
+                    default: continue;
+                }
+
+                float denom = Vector3.Dot(ray.direction, planeNormal);
+                // dotshelf camera 는 룸 앞쪽 (z=-2.45) 위치, ray 가 +Z 방향으로 룸 안쪽 향함.
+                // BackWall planeNormal = -Z. ray.direction · normal = (+) · (-) = -. 즉 사용자가
+                // 보는 wall inner face 시점은 denom < 0. (camera 가 룸 안쪽으로 ray 발사하면
+                // wall 의 inner face normal 방향과 반대.) 양수면 wall 뒷면 시점 reject.
+                if (denom >= -0.0001f) continue;
+                float distance = Vector3.Dot(planePoint - ray.origin, planeNormal) / denom;
+                if (distance < 0f) continue; // 뒤쪽
+
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    hitWall = wall;
+                    hitPoint = ray.origin + ray.direction * distance;
+                }
+            }
+            return hitWall != WallSide.None;
+        }
+
+        // wall 의 안쪽 face (룸 내부 향하는 방향) 으로 deco 회전.
+        // 좌표계: +Z 가 default forward, wall 별로 deco 가 룸 안쪽 향하게 Y 축 회전.
+        private static Quaternion WallFacingRotation(WallSide wall)
+        {
+            switch (wall)
+            {
+                case WallSide.Left:  return Quaternion.Euler(0f, 90f, 0f);   // +X 향함
+                case WallSide.Right: return Quaternion.Euler(0f, -90f, 0f);  // -X 향함
+                case WallSide.Back:  return Quaternion.Euler(0f, 180f, 0f);  // -Z 향함
+                case WallSide.Front: return Quaternion.identity;             // +Z 향함
+                default:             return Quaternion.identity;
+            }
+        }
+
+        private static WallSide WallNameToSide(string name)
+        {
+            switch (name)
+            {
+                case "LeftWall":  return WallSide.Left;
+                case "RightWall": return WallSide.Right;
+                case "FrontWall": return WallSide.Front;
+                // BackWall 자체는 BookshelfGenerator.BuildBackWallAlcove 가 alcove 때문에
+                // 통째 wall 안 만들고 strip 3개 (LeftStrip/RightStrip/TopStrip) 로 분할 생성.
+                // 모든 strip 의 z 좌표는 동일 (BackWallZ const) 이라 plane 으로 동치 — 어떤
+                // strip 이 매칭돼도 같은 BackWall 로 취급.
+                case "BackWall":
+                case "BackWall_LeftStrip":
+                case "BackWall_RightStrip":
+                case "BackWall_TopStrip":  return WallSide.Back;
+                default:                   return WallSide.None;
+            }
+        }
+
         // Edit-mode click → selection ---------------------------------------------
 
         // Mouse-down / mouse-held / mouse-up routing for select + drag. The
@@ -3588,6 +3855,15 @@ namespace App.Bootstrap
                 return;
             }
 
+            // wall deco 면 wall surface 따라 별도 흐름으로 라우트. floor placement 드래그
+            // 와 시스템이 다름 — raycast 로 hit wall 의 표면 위치 + obstruction check.
+            var wallMarker = draggingObject.GetComponent<WallDecoMarker>();
+            if (wallMarker != null)
+            {
+                UpdateWallDrag(camera, pointer, wallMarker);
+                return;
+            }
+
             var ray = camera.ScreenPointToRay(pointer);
             if (!TryRaycastFloorPlane(ray, out var floorHit))
             {
@@ -3619,6 +3895,102 @@ namespace App.Bootstrap
 
             draggingObject.transform.position = candidate;
             dragLastValidPosition = candidate;
+        }
+
+        // Wall deco 드래그 — 마우스 raycast 로 hit 한 wall 의 surface 위치로 이동 + 회전.
+        // 다른 wall 로 hit 옮겨가면 자동으로 wall 전환 (deco 회전도 새 wall 안쪽 면 향하게).
+        // obstruction check — registry 와 비교해 invalid 영역이면 붉은 tint feedback.
+        // FrontWall 은 카메라 쪽 벽이라 hit 안 되는 게 일반적. Left/Right/Back 만 실질 후보.
+        private void UpdateWallDrag(Camera camera, Vector2 pointer, WallDecoMarker marker)
+        {
+            // BookshelfGenerator.CreateBox 가 wall collider 명시 제거 → Physics.Raycast 로
+            // wall hit 못 함. 대신 wall 의 inner face plane 과 ray 의 수학적 교차 — collider
+            // 의존성 없음 + self-raycast 회피 자동 (plane 만 본다).
+            if (!TryRaycastWallSurface(camera.ScreenPointToRay(pointer), out var newWall, out var hitPoint))
+            {
+                return;
+            }
+
+            // candidate transform 임시 적용 → bounds 계산 → invalid 면 rollback.
+            // candidate 기준 bounds 정확히 측정해야 obstruction check 정확. transform
+            // 변경 후 Renderer.bounds 가 즉시 갱신되므로 1 프레임 안에 검사 + 필요 시 rollback.
+            var prevPosition = draggingObject.transform.position;
+            var prevRotation = draggingObject.transform.rotation;
+            var prevWall = marker.CurrentWall;
+
+            draggingObject.transform.position = hitPoint;
+            draggingObject.transform.rotation = WallFacingRotation(newWall);
+
+            bool isFree = true;
+            var bounds = ComputeRendererBounds(draggingObject);
+            if (bounds.HasValue)
+            {
+                var rect = ProjectBoundsToWallRect(bounds.Value, newWall);
+                var registry = EnsureWallObstructionRegistry();
+                isFree = registry.IsRectFreeOnWall(newWall, rect);
+            }
+
+            if (isFree)
+            {
+                marker.CurrentWall = newWall;
+                dragLastValidPosition = hitPoint;
+            }
+            else
+            {
+                // 책장/대시보드 영역 진입 차단 — 마지막 valid 위치/회전 유지. 사용자가
+                // mouse 를 obstruction 밖으로 옮기면 다음 frame 에서 자동 follow.
+                draggingObject.transform.position = prevPosition;
+                draggingObject.transform.rotation = prevRotation;
+                marker.CurrentWall = prevWall;
+            }
+
+            ApplyWallDecoValidityFeedback(draggingObject, isFree);
+        }
+
+        // World AABB → wall surface (u, v) Rect — WallObstructionRegistry 와 동일 좌표계.
+        private static Rect ProjectBoundsToWallRect(Bounds worldBounds, WallSide wall)
+        {
+            float vMin = worldBounds.min.y;
+            float vMax = worldBounds.max.y;
+            float uMin, uMax;
+            switch (wall)
+            {
+                case WallSide.Back:
+                case WallSide.Front:
+                    uMin = worldBounds.min.x;
+                    uMax = worldBounds.max.x;
+                    break;
+                case WallSide.Left:
+                case WallSide.Right:
+                    uMin = worldBounds.min.z;
+                    uMax = worldBounds.max.z;
+                    break;
+                default:
+                    return Rect.zero;
+            }
+            return new Rect(uMin, vMin, uMax - uMin, vMax - vMin);
+        }
+
+        // valid: 원래 색 / invalid: 붉은 tint. material instance 사용 — 원본 protect.
+        // 단순 tint 누적 회피를 위해 _BaseColor 직접 set (multiply 아님).
+        // 단점: 원래 material 의 _BaseColor 를 모름 — 일단 white(valid) / soft red(invalid) 하드.
+        // follow-up 에서 원래 색 캐싱 + 정확 복원 (또는 별도 outline 시각).
+        private void ApplyWallDecoValidityFeedback(GameObject deco, bool isValid)
+        {
+            var renderers = deco.GetComponentsInChildren<Renderer>(true);
+            var tint = isValid ? Color.white : new Color(1f, 0.55f, 0.55f, 1f);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var mat = renderers[i].material;
+                if (mat.HasProperty("_BaseColor"))
+                {
+                    mat.SetColor("_BaseColor", tint);
+                }
+                else if (mat.HasProperty("_Color"))
+                {
+                    mat.SetColor("_Color", tint);
+                }
+            }
         }
 
         private void FinishDrag()
@@ -4056,6 +4428,14 @@ namespace App.Bootstrap
         private void RotateSelectedObject()
         {
             if (selectedObject == null) return;
+            // entry-level allowRotation flag — 창문처럼 fixed orientation 이어야 하는
+            // wall deco 는 회전 무시. UpdateSelectionPanel 에서 버튼도 disabled 상태이지만
+            // 키보드/외부 트리거 가능성 방어.
+            var marker = selectedObject.GetComponent<WallDecoMarker>();
+            if (marker != null && !marker.AllowRotation)
+            {
+                return;
+            }
             // Don't rotate mid-drag — would invalidate the bounds-based placement
             // check until the next move tick. Forces drag to commit first.
             if (draggingObject != null)
