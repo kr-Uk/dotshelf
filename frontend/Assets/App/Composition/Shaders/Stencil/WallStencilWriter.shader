@@ -18,11 +18,15 @@ Shader "Hidden/Dotshelf/WallStencilWriter"
         Pass
         {
             Name "StencilWrite"
-            // wall 보다 앞에 있어야 mask 가 동작. ZWrite Off — depth 영향 안 줌.
+            // ZTest Always — mask 가 wall 과 같은 z 평면이거나 뒤쪽이라도 stencil 찍어야 함.
+            // default ZTest LEqual 이면 wall 이 먼저 그려져 mask fragment 가 z-fight 또는
+            // 가려져 stencil 안 찍힘. mask 의 목적이 visual 이 아니라 stencil ref=1 set 이므로
+            // depth test 우회 안전.
+            ZTest Always
             ZWrite Off
             // color 안 그림 — 보이지 않는 mask
             ColorMask 0
-            Cull Back
+            Cull Off // mask quad 양면 모두 stencil 찍기 (사용자가 quad 뒤쪽에서 봐도 동작)
 
             Stencil
             {
