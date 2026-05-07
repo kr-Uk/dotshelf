@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private const string LauncherDownloadUrl = "https://dotshelf.digital/download";
     private static readonly TimeSpan BannerRotationInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan BannerManualPauseDuration = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DefaultHeroRotationInterval = TimeSpan.FromSeconds(5);
 
     private readonly ManifestClient manifestClient = new();
     private readonly EventsClient eventsClient = new();
@@ -26,6 +27,9 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer gameTimer = new();
     private readonly DispatcherTimer bannerRotateTimer = new();
     private readonly DispatcherTimer bannerResumeTimer = new();
+    private readonly DispatcherTimer defaultHeroRotateTimer = new();
+    private int defaultHeroIndex;
+    private Process? launchedProcess;
     private readonly Random gameRandom = new();
     private readonly List<FallingGameItem> fallingGameItems = new();
     private List<EventBanner> activeBanners = new();
@@ -59,6 +63,9 @@ public partial class MainWindow : Window
         bannerRotateTimer.Tick += BannerRotateTimer_Tick;
         bannerResumeTimer.Interval = BannerManualPauseDuration;
         bannerResumeTimer.Tick += BannerResumeTimer_Tick;
+        defaultHeroRotateTimer.Interval = DefaultHeroRotationInterval;
+        defaultHeroRotateTimer.Tick += DefaultHeroRotateTimer_Tick;
+        defaultHeroRotateTimer.Start();
         UpdateGameHud();
         ApplyUiState(LauncherUiState.Checking);
         Loaded += MainWindow_Loaded;
@@ -71,6 +78,7 @@ public partial class MainWindow : Window
         UpdateAvailable,
         Ready,
         OfflineReady,
+        Running,
         Error
     }
 
@@ -172,6 +180,50 @@ public partial class MainWindow : Window
     private void GameCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         GameCanvas.Focus();
+    }
+
+    private void MiniGameCard_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        OpenGameModal();
+    }
+
+    private void CloseGameButton_Click(object sender, RoutedEventArgs e)
+    {
+        CloseGameModal();
+    }
+
+    private void GameModalBackdrop_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        CloseGameModal();
+    }
+
+    private void OpenGameModal()
+    {
+        // 모달 열기: 게임 시작 전 안내 화면 상태로 초기화.
+        GameOverlay.Visibility = Visibility.Visible;
+        GameOverlayTitle.Text = "하늘책 수집";
+        GameOverlayDescription.Text = "책을 받으면 점수가 오르고, 어두운 장애물에 닿으면 게임이 끝납니다.";
+        GameOverlayInstruction.Text = "← / → 방향키로 이동";
+        StartGameButton.Visibility = Visibility.Visible;
+        RetryGameButton.Visibility = Visibility.Collapsed;
+
+        UpdateGameHud();
+        GameModal.Visibility = Visibility.Visible;
+        GameCanvas.Focus();
+    }
+
+    private void CloseGameModal()
+    {
+        // 게임이 돌고 있다면 정리하고 닫음.
+        gameTimer.Stop();
+        isGameRunning = false;
+        isMovingLeft = false;
+        isMovingRight = false;
+        fallingGameItems.Clear();
+        GameCanvas.Children.Clear();
+        gamePlayer = null;
+
+        GameModal.Visibility = Visibility.Collapsed;
     }
 
     private void StartMiniGame()
@@ -526,9 +578,110 @@ public partial class MainWindow : Window
         await RunActionAsync(async cancellationToken =>
         {
             var process = await packageInstaller.LaunchAsync(cancellationToken);
-            StatusText.Text = "DotShelf 앱을 실행했습니다.";
+            StatusText.Text = "DotShelf 앱을 실행 중입니다.";
             Log($"실행된 프로세스: {process.Id}");
+            TrackRunningProcess(process);
         });
+    }
+
+    private void TrackRunningProcess(Process process)
+    {
+        try
+        {
+            launchedProcess = process;
+            process.EnableRaisingEvents = true;
+            process.Exited += LaunchedProcess_Exited;
+            ApplyUiState(LauncherUiState.Running);
+        }
+        catch (Exception ex)
+        {
+            Log($"실행 상태 추적에 실패했습니다: {ex.Message}");
+        }
+    }
+
+    private void LaunchedProcess_Exited(object? sender, EventArgs e)
+    {
+        Dispatcher.BeginInvoke(new Action(async () =>
+        {
+            launchedProcess = null;
+            Log("DotShelf 앱이 종료되었습니다.");
+            await RefreshLauncherStateAsync(resetProgress: false);
+        }));
+    }
+
+    private int TotalHeroSlots => activeBanners.Count;
+
+    private void HeroDefaultPrevButton_Click(object sender, RoutedEventArgs e) => CycleHero(-1);
+
+    private void HeroDefaultNextButton_Click(object sender, RoutedEventArgs e) => CycleHero(+1);
+
+    private void DefaultHeroRotateTimer_Tick(object? sender, EventArgs e)
+    {
+        if (TotalHeroSlots <= 1) return;
+        defaultHeroIndex = (defaultHeroIndex + 1) % TotalHeroSlots;
+        ApplyDefaultHeroIndex();
+    }
+
+    private void CycleHero(int delta)
+    {
+        if (TotalHeroSlots == 0) return;
+        var total = TotalHeroSlots;
+        defaultHeroIndex = ((defaultHeroIndex + delta) % total + total) % total;
+        ApplyDefaultHeroIndex();
+        defaultHeroRotateTimer.Stop();
+        defaultHeroRotateTimer.Start();
+    }
+
+    private void ApplyDefaultHeroIndex()
+    {
+        // 배너 없으면 hero 영역 자체를 접어 공간을 회수.
+        if (activeBanners.Count == 0)
+        {
+            HeroSlot.Visibility = Visibility.Collapsed;
+            BannerRow.Visibility = Visibility.Collapsed;
+            HeroDotsPanel.Children.Clear();
+            return;
+        }
+
+        if (defaultHeroIndex >= activeBanners.Count) defaultHeroIndex = 0;
+
+        HeroSlot.Visibility = Visibility.Visible;
+        BannerRow.Visibility = Visibility.Visible;
+        currentBannerIndex = defaultHeroIndex;
+        RenderBanner(activeBanners[defaultHeroIndex]);
+
+        RebuildHeroDots(activeBanners.Count, defaultHeroIndex);
+    }
+
+    private void RebuildHeroDots(int total, int activeIdx)
+    {
+        HeroDotsPanel.Children.Clear();
+        if (total <= 1) return;
+
+        var on = (Brush)new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFFFFF")!);
+        var off = (Brush)new SolidColorBrush((Color)ColorConverter.ConvertFromString("#59FFFFFF")!);
+
+        for (var i = 0; i < total; i++)
+        {
+            var dot = new System.Windows.Shapes.Ellipse
+            {
+                Width = 8,
+                Height = 8,
+                Fill = i == activeIdx ? on : off,
+                Margin = new Thickness(0, 0, i == total - 1 ? 0 : 8, 0)
+            };
+            HeroDotsPanel.Children.Add(dot);
+        }
+    }
+
+    private void KeepCurrentLink_Click(object sender, MouseButtonEventArgs e)
+    {
+        // "이번 버전 그대로 실행" — UpdateAvailable 일 때 업데이트 건너뛰고 기존 버전 실행
+        if (currentUiState != LauncherUiState.UpdateAvailable)
+        {
+            return;
+        }
+        LaunchButton_Click(sender, new RoutedEventArgs());
     }
 
     private async void DeleteButton_Click(object sender, RoutedEventArgs e)
@@ -742,20 +895,49 @@ public partial class MainWindow : Window
     {
         currentUiState = uiState;
 
-        ActionButton.Visibility = uiState is LauncherUiState.NotInstalled or LauncherUiState.UpdateAvailable
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        LaunchButton.Visibility = uiState is LauncherUiState.Ready or LauncherUiState.OfflineReady
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        DeleteButton.Visibility = uiState is LauncherUiState.Ready or LauncherUiState.OfflineReady
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        var showAction = uiState is LauncherUiState.NotInstalled or LauncherUiState.UpdateAvailable or LauncherUiState.Error;
+        var showLaunch = uiState is LauncherUiState.Ready or LauncherUiState.OfflineReady;
+        var showDelete = uiState is LauncherUiState.Ready or LauncherUiState.OfflineReady or LauncherUiState.UpdateAvailable;
+        var showRunning = uiState == LauncherUiState.Running;
+        var showError = uiState == LauncherUiState.Error;
+        var showKeepCurrent = uiState == LauncherUiState.UpdateAvailable;
 
-        ActionButton.Content = uiState == LauncherUiState.UpdateAvailable ? "업데이트" : "설치하기";
-        ActionButton.IsEnabled = !isBusy && ActionButton.Visibility == Visibility.Visible;
-        LaunchButton.IsEnabled = !isBusy && LaunchButton.Visibility == Visibility.Visible;
-        DeleteButton.IsEnabled = !isBusy && DeleteButton.Visibility == Visibility.Visible;
+        ActionButton.Visibility = showAction ? Visibility.Visible : Visibility.Collapsed;
+        LaunchButton.Visibility = showLaunch ? Visibility.Visible : Visibility.Collapsed;
+        DeleteButton.Visibility = showDelete ? Visibility.Visible : Visibility.Collapsed;
+        RunningIndicator.Visibility = showRunning ? Visibility.Visible : Visibility.Collapsed;
+        ErrorAlert.Visibility = showError ? Visibility.Visible : Visibility.Collapsed;
+        if (showError)
+        {
+            ErrorAlertText.Text = string.IsNullOrWhiteSpace(StatusText.Text)
+                ? "오류가 발생했습니다. 다시 시도해 주세요."
+                : StatusText.Text;
+        }
+        KeepCurrentLink.Visibility = showKeepCurrent ? Visibility.Visible : Visibility.Collapsed;
+        MoreMenuToggle.Visibility = showRunning ? Visibility.Collapsed : Visibility.Visible;
+
+        ActionButton.Content = uiState switch
+        {
+            LauncherUiState.UpdateAvailable => "업데이트",
+            LauncherUiState.Error => "다시 시도",
+            _ => "설치하기"
+        };
+        LaunchButton.Content = "▶  시작하기";
+
+        CtaCaption.Text = uiState switch
+        {
+            LauncherUiState.NotInstalled => "디스크 1.2 GB 필요",
+            LauncherUiState.UpdateAvailable => "",
+            LauncherUiState.Ready or LauncherUiState.OfflineReady =>
+                latestManifest != null ? $"v{latestManifest.LatestVersion}" : "",
+            LauncherUiState.Running => "창을 닫아도 계속 실행됩니다",
+            LauncherUiState.Error => "지원이 필요하면 dotshelf.digital로 문의 주세요",
+            _ => ""
+        };
+
+        ActionButton.IsEnabled = !isBusy && showAction;
+        LaunchButton.IsEnabled = !isBusy && showLaunch;
+        DeleteButton.IsEnabled = !isBusy && showDelete;
     }
 
     private void Log(string message)
@@ -865,7 +1047,7 @@ public partial class MainWindow : Window
             return false;
         }
 
-        if (banner.Type is not "event" and not "update")
+        if (banner.Type is not "event" and not "update" and not "notice" and not "collab" and not "collaboration")
         {
             Log($"배너 '{banner.Id}' type이 알 수 없어 표시하지 않습니다: {banner.Type}");
             return false;
@@ -893,42 +1075,46 @@ public partial class MainWindow : Window
 
     private void UpdateBannerUi()
     {
+        // 통합 회전: 4 default hero + activeBanners → 한 큐. 별도 banner timer 안 씀.
         bannerRotateTimer.Stop();
         bannerResumeTimer.Stop();
 
-        if (activeBanners.Count == 0)
-        {
-            BannerRow.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        BannerRow.Visibility = Visibility.Visible;
         if (currentBannerIndex >= activeBanners.Count)
         {
             currentBannerIndex = 0;
         }
 
-        RenderBanner(activeBanners[currentBannerIndex]);
+        // 슬롯 0..3 = default hero, 4.. = real banners. 시작은 default 1번부터.
+        defaultHeroIndex = 0;
+        ApplyDefaultHeroIndex();
 
-        var hasMultiple = activeBanners.Count > 1;
+        var hasMultiple = (4 + activeBanners.Count) > 1;
         BannerPrevButton.IsEnabled = hasMultiple;
         BannerNextButton.IsEnabled = hasMultiple;
-
-        if (hasMultiple)
-        {
-            bannerRotateTimer.Start();
-        }
     }
 
     private void RenderBanner(EventBanner banner)
     {
-        var isUpdate = banner.Type == "update";
-        var brush = BrushFromHex(isUpdate ? "#B08E75" : "#3F4A3A");
+        // banner.Type 4종 매핑 — 디자인 §6 기반.
+        var (label, chipHex, gradientStartHex, gradientEndHex, chipFgHex) = banner.Type?.ToLowerInvariant() switch
+        {
+            "update" => ("업데이트", "#5C9F6F", "#5C9F6F", "#3F7E54", "#FFFFFF"),
+            "notice" => ("공지", "#6B5C50", "#2A2018", "#5A4538", "#FFFFFF"),
+            "collab" or "collaboration"
+                     => ("콜라보", "#C99450", "#D2BBA0", "#B79676", "#2A2018"),
+            _        => ("이벤트", "#9F7E69", "#9F7E69", "#876653", "#FFFFFF")
+        };
 
-        BannerAccent.Background = brush;
-        BannerChip.Background = brush;
-        BannerChipText.Text = isUpdate ? "업데이트" : "이벤트";
+        BannerAccent.Background = BrushFromHex(chipHex);
+        BannerChip.Background = BrushFromHex(chipHex);
+        BannerChipText.Foreground = BrushFromHex(chipFgHex);
+        BannerChipText.Text = label;
         BannerTitle.Text = banner.Title;
+        BannerRow.Background = new LinearGradientBrush(
+            (Color)ColorConverter.ConvertFromString(gradientStartHex)!,
+            (Color)ColorConverter.ConvertFromString(gradientEndHex)!,
+            new System.Windows.Point(0, 0),
+            new System.Windows.Point(1, 1));
 
         if (!string.IsNullOrWhiteSpace(banner.LinkUrl))
         {
@@ -944,33 +1130,24 @@ public partial class MainWindow : Window
 
     private void BannerRotateTimer_Tick(object? sender, EventArgs e)
     {
-        ShowNextBanner();
+        // 통합 회전으로 이관 — 이 timer는 더 이상 자동 시작하지 않음.
     }
 
     private void BannerResumeTimer_Tick(object? sender, EventArgs e)
     {
         bannerResumeTimer.Stop();
-        if (activeBanners.Count > 1)
-        {
-            bannerRotateTimer.Start();
-        }
+        defaultHeroRotateTimer.Start();
     }
 
     private void BannerPrevButton_Click(object sender, RoutedEventArgs e)
     {
-        if (activeBanners.Count == 0)
-        {
-            return;
-        }
-
-        currentBannerIndex = (currentBannerIndex - 1 + activeBanners.Count) % activeBanners.Count;
-        RenderBanner(activeBanners[currentBannerIndex]);
+        CycleHero(-1);
         PauseBannerRotation();
     }
 
     private void BannerNextButton_Click(object sender, RoutedEventArgs e)
     {
-        ShowNextBanner();
+        CycleHero(+1);
         PauseBannerRotation();
     }
 
@@ -1009,9 +1186,9 @@ public partial class MainWindow : Window
 
     private void PauseBannerRotation()
     {
-        bannerRotateTimer.Stop();
+        defaultHeroRotateTimer.Stop();
         bannerResumeTimer.Stop();
-        if (activeBanners.Count > 1)
+        if (TotalHeroSlots > 1)
         {
             bannerResumeTimer.Start();
         }
