@@ -107,21 +107,13 @@ namespace BookshelfPorting.Runtime
         {
             if (wallMaterial == null)
             {
-                // Wall 만 stencil reader shader 사용 — wall placement deco (창문 등) 가
-                // mask quad 로 stencil 찍으면 wall 이 그 영역 discard. 다른 카테고리 default
-                // material 은 stencil 무관 (URP Lit 유지).
-                var stencilShader = Shader.Find("Dotshelf/WallStencilReader");
-                if (stencilShader != null)
-                {
-                    wallMaterial = new Material(stencilShader) { name = "Wall" };
-                    wallMaterial.SetColor("_BaseColor", wallColor);
-                    wallMaterial.SetFloat("_AmbientStrength", 1f);
-                }
-                else
-                {
-                    Debug.LogWarning("[MaterialFactory] Dotshelf/WallStencilReader shader 못 찾음 — URP Lit fallback. wall hole 효과 비동작.");
-                    wallMaterial = CreateLitMaterial("Wall", null, null, wallColor, 0.08f, false);
-                }
+                // URP Lit shader 그대로 사용 + stencil property set. URP Lit 의
+                // ForwardLit pass Stencil block 이 [_Stencil] / [_StencilComp] property 사용
+                // 해 material 단에서 동작 제어 가능. PBR 톤 유지 + wall hole 동작.
+                wallMaterial = CreateLitMaterial("Wall", null, null, wallColor, 0.08f, false);
+                wallMaterial.SetFloat("_Stencil", 1f);
+                wallMaterial.SetFloat("_StencilComp", 6f); // NotEqual
+                wallMaterial.SetFloat("_StencilOp", 0f);   // Keep
             }
 
             return wallMaterial;
