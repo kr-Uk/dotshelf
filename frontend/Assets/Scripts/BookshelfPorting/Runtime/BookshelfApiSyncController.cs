@@ -507,11 +507,21 @@ namespace BookshelfPorting.Runtime
                     request,
                     response =>
                     {
+                        if (!IsBookEntityAlive(book))
+                        {
+                            return;
+                        }
+
                         ApplyBookshelfItemResponse(book, response);
                         onSucceeded?.Invoke(book);
                     },
                     error =>
                     {
+                        if (!IsBookEntityAlive(book))
+                        {
+                            return;
+                        }
+
                         RestoreBookPlacementIds(book, previousBookshelfId, previousBookshelfSectionId);
                         var message = FormatUserFacingError(error);
                         Debug.LogWarning($"Bookshelf item move failed: {FormatError(error)}");
@@ -534,11 +544,21 @@ namespace BookshelfPorting.Runtime
                     },
                     response =>
                     {
+                        if (!IsBookEntityAlive(book))
+                        {
+                            return;
+                        }
+
                         ApplyUserBookResponse(book, response);
                         onSucceeded?.Invoke(book);
                     },
                     error =>
                     {
+                        if (!IsBookEntityAlive(book))
+                        {
+                            return;
+                        }
+
                         RestoreBookPlacementIds(book, previousBookshelfId, previousBookshelfSectionId);
                         var message = FormatUserFacingError(error);
                         Debug.LogWarning($"User book move failed: {FormatError(error)}");
@@ -1015,6 +1035,11 @@ namespace BookshelfPorting.Runtime
 
             book.bookshelfId = bookshelfId;
             book.bookshelfSectionId = bookshelfSectionId;
+        }
+
+        private static bool IsBookEntityAlive(BookEntity book)
+        {
+            return book != null && book.gameObject != null;
         }
 
         public bool RemoveBook(BookEntity book, Action onSucceeded = null, Action<string> onFailed = null)

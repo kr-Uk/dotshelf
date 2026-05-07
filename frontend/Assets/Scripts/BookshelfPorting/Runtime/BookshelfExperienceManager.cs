@@ -2821,7 +2821,10 @@ namespace BookshelfPorting.Runtime
             }
 
             var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
-            if (book == null || dataStore == null || !CanUseOwnerBookActions())
+            if (book == null ||
+                dataStore == null ||
+                bookReviewWritePanel == null ||
+                !CanUseOwnerBookActions())
             {
                 return;
             }
@@ -3061,6 +3064,11 @@ namespace BookshelfPorting.Runtime
             isBookReviewSaving = false;
             activeReviewBook = null;
             SetBookReviewStatus(string.Empty);
+            if (bookReviewContentInputField != null)
+            {
+                bookReviewContentInputField.text = string.Empty;
+            }
+
             if (bookReviewWritePanel != null)
             {
                 bookReviewWritePanel.SetActive(false);
