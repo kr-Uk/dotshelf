@@ -1434,6 +1434,9 @@ namespace App.Bootstrap
                     {
                         ApplyThemeResetVisualFallback();
                     }
+                    // 테마의 default entries 자동 적용 — 카테고리별 default mesh/material swap.
+                    // 산뜻 테마 = (Desk:201) 같이 정의돼 있으면 자동으로 GoodVibes_Desk entry 적용.
+                    ApplyThemeDefaultEntries(theme);
                 },
                 onError: error =>
                 {
@@ -1611,6 +1614,33 @@ namespace App.Bootstrap
             RebuildInventorySlots();
         }
 
+        // 테마의 defaultEntries 따라 카테고리별 entry 자동 적용. 산뜻 테마 = Desk:201 등록
+        // 시 DeskCatalog 의 assetId=201 entry (GoodVibes_Desk) 자동 swap. 사용자가 추후
+        // 다른 entry 선택하면 그것이 우선 (PATCH 별개 흐름).
+        // PATCH 는 안 보냄 — visual 만. 사용자가 명시적으로 entry 클릭해야 BE 저장.
+        private void ApplyThemeDefaultEntries(RoomThemeAsset theme)
+        {
+            if (theme == null) return;
+            var defaults = theme.DefaultEntries;
+            if (defaults == null) return;
+            for (int i = 0; i < defaults.Count; i++)
+            {
+                var def = defaults[i];
+                if (def == null) continue;
+                var catalog = LoadCategoryCatalog(def.Category);
+                if (catalog == null || catalog.Entries == null) continue;
+                var entry = catalog.FindByAssetId(def.AssetId);
+                if (entry == null)
+                {
+                    Debug.LogWarning($"[RoomEditModeController] {theme.DisplayName} default entry {def.Category}:{def.AssetId} 못 찾음 — catalog 에 등록되어 있는지 확인.");
+                    continue;
+                }
+                ApplyEntryVisual(def.Category, entry);
+                if (entry.AssetId > 0) lastAppliedEntries[def.Category] = entry.AssetId;
+            }
+            RebuildInventorySlots();
+        }
+
         // 카테고리별 visual swap. RoomThemeApplier의 RoomRoot/DirectionalLight reference를
         // 재사용해 GameObject.Find/FindObjectsByType 매 클릭마다 호출 안 하도록.
         // 매칭 패턴은 RoomGameObjectPatterns로 통합(RoomThemeApplier와 동일).
@@ -1646,11 +1676,26 @@ namespace App.Bootstrap
                 return;
             }
 
-            var mat = entry.PrimaryMaterial;
-            if (mat == null) return;
-
             var roomRootTransform = themeApplier.RoomRoot;
             if (roomRootTransform == null) return;
+
+            // mesh swap — entry.Prefab 있으면 native renderer disable + prefab 자식 spawn.
+            // Desk/BookshelfSkin/DashboardSkin 처럼 mesh 자체가 바뀌어야 하는 카테고리. 기존
+            // material-only swap 과 공존 — prefab 우선, 없으면 material swap.
+            if (entry.Prefab != null && IsMeshSwapCategory(category))
+            {
+                ApplyCategoryMeshSwap(category, entry.Prefab, roomRootTransform);
+                return;
+            }
+            // entry.Prefab 가 null 이지만 이전에 mesh swap 됐으면 복원. (다른 entry 선택 시
+            // native mesh 가 다시 보이도록.)
+            if (IsMeshSwapCategory(category))
+            {
+                RestoreCategoryNativeMesh(category, roomRootTransform);
+            }
+
+            var mat = entry.PrimaryMaterial;
+            if (mat == null) return;
 
             int swapped = 0;
             foreach (var renderer in roomRootTransform.GetComponentsInChildren<Renderer>(true))
@@ -1664,6 +1709,80 @@ namespace App.Bootstrap
             if (swapped == 0)
             {
                 Debug.LogWarning($"[RoomEditModeController] {category} 매칭 0개 (entry={entry.DisplayName}).");
+            }
+        }
+
+        // mesh swap 가능 카테고리 — 외형 mesh 자체가 entry 별로 다른 카테고리들.
+        // Wallpaper/Floor 는 평면 material swap 으로 충분 → 제외.
+        // InteriorLight/ExteriorLight 는 light component property — 별도 처리 (위쪽 분기).
+        private static bool IsMeshSwapCategory(CustomizationCategory category)
+        {
+            return category == CustomizationCategory.Desk
+                || category == CustomizationCategory.BookshelfSkin
+                || category == CustomizationCategory.DashboardSkin;
+        }
+
+        // category 매칭 native renderer 들 disable + prefab 을 첫 매칭 anchor 자식으로 spawn.
+        // NotebookStation 같은 자식 transform 은 native 그대로 → 인터랙션 보존.
+        // 이전 swap spawn 한 prefab 있으면 destroy 후 새로.
+        private void ApplyCategoryMeshSwap(CustomizationCategory category, GameObject prefab, Transform roomRoot)
+        {
+            // 1) 이전 mesh swap 된 GameObject 정리 (이름 prefix 로 식별)
+            string swapName = $"MeshSwap_{category}";
+            for (int i = roomRoot.childCount - 1; i >= 0; i--)
+            {
+                var child = roomRoot.GetChild(i);
+                if (child.gameObject.name == swapName)
+                {
+                    if (Application.isPlaying) Destroy(child.gameObject);
+                    else DestroyImmediate(child.gameObject);
+                }
+            }
+
+            // 2) native renderer 들 disable (visual hide, GameObject 자체는 유지 — collider/
+            // 기능 컴포넌트 보존)
+            Transform anchor = null;
+            foreach (var renderer in roomRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                if (!MatchesCategoryName(category, renderer.gameObject.name)) continue;
+                renderer.enabled = false;
+                if (anchor == null) anchor = renderer.transform; // 첫 매칭 anchor — origin 기준
+            }
+            if (anchor == null)
+            {
+                Debug.LogWarning($"[RoomEditModeController] {category} mesh swap — native anchor 못 찾음, prefab spawn skip.");
+                return;
+            }
+
+            // 3) prefab 을 roomRoot 자식으로 spawn — anchor 의 world position/rotation 적용.
+            // 직접 anchor 자식이 아닌 이유: anchor 가 wall 처럼 non-uniform scale 을 가질 수
+            // 있어 prefab 이 찌그러질 수 있음. roomRoot (보통 scale 1) 자식 + anchor world
+            // 좌표 적용으로 wall mesh scale propagation [P1] 회피.
+            var go = Instantiate(prefab, roomRoot);
+            go.name = swapName;
+            go.transform.SetPositionAndRotation(anchor.position, anchor.rotation);
+            go.transform.localScale = Vector3.one;
+        }
+
+        // mesh swap 복원 — native renderer 들 enable + spawned mesh swap 정리.
+        private void RestoreCategoryNativeMesh(CustomizationCategory category, Transform roomRoot)
+        {
+            string swapName = $"MeshSwap_{category}";
+            for (int i = roomRoot.childCount - 1; i >= 0; i--)
+            {
+                var child = roomRoot.GetChild(i);
+                if (child.gameObject.name == swapName)
+                {
+                    if (Application.isPlaying) Destroy(child.gameObject);
+                    else DestroyImmediate(child.gameObject);
+                }
+            }
+            foreach (var renderer in roomRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                if (MatchesCategoryName(category, renderer.gameObject.name))
+                {
+                    renderer.enabled = true;
+                }
             }
         }
 

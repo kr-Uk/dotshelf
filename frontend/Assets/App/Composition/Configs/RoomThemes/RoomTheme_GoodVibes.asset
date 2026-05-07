@@ -30,8 +30,18 @@ MonoBehaviour:
   accentPrimary: {r: 1, g: 0.84313726, b: 0.4509804, a: 1}
   accentSecondary: {r: 1, g: 0.75686276, b: 0.7058824, a: 1}
   accentTertiary: {r: 0.65882355, g: 0.8352941, b: 0.63529414, a: 1}
+  defaultEntries:
+  - category: 4
+    assetId: 200030
   bookshelfDecoSpecs: []
   floorDecoSpecs:
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: e3f4a5b6c7d8901234567890abcdef03, type: 3}
+    wallSide: 0
+    localPosition: {x: -1.0, y: 0.7, z: -1.5}
+    localRotation: {x: 0, y: 0, z: 0}
+    localScale: {x: 0.4, y: 0.4, z: 0.4}
+    anchorTag: "monitor"
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: e6f7a8b9c0d1234567890123abcdef06, type: 3}
     wallSide: 0
