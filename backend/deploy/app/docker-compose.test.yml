@@ -72,9 +72,10 @@ services:
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-http://localhost:18080/oauth/kakao/callback}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-dummy}
       APPLE_CLIENT_IDS: ${APPLE_CLIENT_IDS:-dummy}
-      # S3 업로드 — bucket/region 은 부팅 검증 대상이라 비워두면 ApplicationContext 가
-      # 실패한다. dev/test 는 placeholder 라도 박아 부팅을 통과시키고, 실제 자격증명이
-      # 도착하면 .env.test 의 S3_ACCESS_KEY/S3_SECRET_KEY 만 교체한다.
+      # S3 업로드 — dev/test 는 prod 와 달리 bucket 미설정 시 placeholder 로 fallback.
+      # placeholder-not-real 은 부팅(@NotBlank) 만 통과시키는 값이고 실제 PUT/GET 시
+      # NoSuchBucket 가 떨어진다. 진짜 검증은 .env.test 에 S3_BUCKET 을 채우거나
+      # LocalStack endpoint(S3_ENDPOINT) 를 도입한 후 가능 — 이번 단계에선 테스트 부팅만 보장.
       S3_BUCKET: ${S3_BUCKET:-placeholder-not-real}
       S3_REGION: ${S3_REGION:-ap-northeast-2}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
