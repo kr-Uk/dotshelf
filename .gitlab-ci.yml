@@ -90,10 +90,11 @@ variables:
         - web/admin-web/**/*
         - .gitlab-ci.yml
         - .ci/**/*
-        # admin 컨테이너 정의(compose) 또는 admin vhost(nginx) 만 변경된 경우에도
-        # admin-web:deploy 가 돌아 컨테이너 재빌드/기동까지 가도록 rule 에 포함.
+        # admin 컨테이너 정의(compose) 또는 nginx conf.d 의 어떤 파일이든 변경되면
+        # admin-web:deploy 가 돌도록 — admin-vhost.conf 와 00-cf-allowlist.conf 같은
+        # 전역 의존 파일도 자기 잡이 보내야 source-of-truth 동기화 보장.
         - backend/deploy/app/docker-compose.yml
-        - backend/deploy/prod/nginx/conf.d/default.conf
+        - backend/deploy/prod/nginx/conf.d/**/*
 
 .launcher-build-rules:
   rules:
@@ -101,13 +102,16 @@ variables:
       changes:
         - launcher/**/*
         - web/service-web/app/(marketing)/download/page.tsx
-        - backend/deploy/prod/nginx/conf.d/default.conf
+        # nginx conf.d 의 어떤 파일이든 변경되면 launcher:publish 가 돌아야 하므로
+        # build 도 같이 돌아야 함 (publish 가 build artifact 를 needs 로 요구).
+        # launcher-publish-rules 와 동일 범위로 통일.
+        - backend/deploy/prod/nginx/conf.d/**/*
         - .gitlab-ci.yml
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - launcher/**/*
         - web/service-web/app/(marketing)/download/page.tsx
-        - backend/deploy/prod/nginx/conf.d/default.conf
+        - backend/deploy/prod/nginx/conf.d/**/*
         - .gitlab-ci.yml
 
 # 출시 전: dev 가 사실상 메인이라 dev 머지 시 prod 배포까지 진행.
@@ -249,7 +253,11 @@ backend:deploy:
     # 파일별로 분리 rsync (master 잡은 default.conf + blue-green templates/ 만 — admin-vhost.conf
     # / dev-vhosts.conf 는 각자 잡이 담당). 디렉터리 통째로 보내면 dev 브랜치에서 다른 vhost 를
     # 건드린 게 master 머지 전에 prod 로 새어나가므로 격리.
+    # 00-cf-allowlist.conf 는 모든 vhost 의 $is_from_cf 의존이라 nginx 를 reload 하는
+    # 모든 잡이 vhost 파일보다 먼저 보내야 한다 (bootstrapping 안전 + 후속 allowlist-only
+    # 변경에서 어느 잡이 먼저 돌든 nginx -t 통과 보장).
     - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $PROD_DEPLOY_PATH/nginx/conf.d"
+    - rsync -az "$NGINX_CONFD/00-cf-allowlist.conf" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/00-cf-allowlist.conf"
     - rsync -az "$NGINX_CONFD/default.conf" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/default.conf"
     - rsync -az --delete --exclude='upstream.active.conf' --exclude='*.bak*' "$NGINX_CONFD/templates/" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/templates/"
     # --- Blue-Green orchestration ---
@@ -288,7 +296,10 @@ service-web:deploy:
     # --- Stage Nginx config to prod (root vhost 의 service-web 프록시 전환 반영) ---
     # default.conf 만 보냄 — admin-vhost.conf / dev-vhosts.conf 는 각자 담당 잡 (admin-web:deploy
     # / *:test-deploy) 이 보냄. master 잡이 다른 vhost 를 건드리지 않게 격리.
+    # 00-cf-allowlist.conf 는 default.conf 의 $is_from_cf 가드 의존이라 같이 동기화 (위
+    # backend:deploy 와 동일 이유).
     - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $PROD_DEPLOY_PATH/nginx/conf.d"
+    - rsync -az "$NGINX_CONFD/00-cf-allowlist.conf" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/00-cf-allowlist.conf"
     - rsync -az "$NGINX_CONFD/default.conf" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/default.conf"
     # --- 컨테이너 재빌드 + 기동 (호스트에서 amd64 네이티브 빌드) ---
     - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose up -d --build service-web && docker image prune -f"
@@ -338,6 +349,8 @@ launcher:publish:
     - rsync -az "$MANIFEST" "$PROD_USER@$PROD_HOST:$REMOTE_DIR/latest.json"
     - rsync -az "$EVENTS" "$PROD_USER@$PROD_HOST:$REMOTE_DIR/events.json"
     - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $PROD_DEPLOY_PATH/nginx/conf.d"
+    # 00-cf-allowlist.conf 는 default.conf 의 $is_from_cf 가드 의존이라 같이 동기화.
+    - rsync -az "$NGINX_CONFD/00-cf-allowlist.conf" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/00-cf-allowlist.conf"
     - rsync -az "$NGINX_CONFD/default.conf" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/default.conf"
     - ssh "$PROD_USER@$PROD_HOST" "sudo docker exec dotshelf-nginx nginx -t && sudo docker exec dotshelf-nginx nginx -s reload"
     - curl -fI "https://dotshelf.digital/launcher/windows/DotShelfLauncher-$LAUNCHER_VERSION.exe"
@@ -372,7 +385,13 @@ admin-web:deploy:
     # --- Stage Nginx config to prod (admin-vhost.conf 만 — 다른 prod vhost 미영향) ---
     # admin-web 은 dev=prod 단일 스테이지라 dev 트리거가 admin vhost 만 갱신하고 default.conf
     # (api/service-web/grafana) 는 안 건드리도록 자기 파일만 보냄.
+    # 00-cf-allowlist.conf 는 admin-vhost.conf 의 $is_from_cf 가드 의존이라 같이 동기화 —
+    # 다른 deploy 잡들 (backend / service-web / *:test-deploy / launcher:publish) 도 각자
+    # 같은 패턴으로 00-cf-allowlist.conf 를 먼저 보낸 뒤 자기 vhost 파일을 보낸다.
+    # 한 잡에 의존시키면 admin-web:deploy 가 fail / skip 되거나 다른 잡이 먼저 돌면
+    # nginx -t 가 unknown variable 로 실패할 수 있으므로 모든 잡이 idempotent rsync.
     - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $PROD_DEPLOY_PATH/nginx/conf.d"
+    - rsync -az "$NGINX_CONFD/00-cf-allowlist.conf" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/00-cf-allowlist.conf"
     - rsync -az "$NGINX_CONFD/admin-vhost.conf" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/admin-vhost.conf"
     # --- 컨테이너 재빌드 + 기동 ---
     - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose up -d --build admin-web && docker image prune -f"
@@ -419,7 +438,10 @@ backend:test-deploy:
     # --- Stage Nginx config to prod (dev-vhosts.conf 만 — prod vhost 미영향) ---
     # dev 트리거 잡이 default.conf (prod) 를 보내지 않도록 자기 파일만 rsync. dev 브랜치에서
     # 누가 prod vhost 를 건드려도 master 머지 전엔 prod 라우팅에 영향 가지 않음.
+    # 00-cf-allowlist.conf 는 dev-vhosts.conf 의 $is_from_cf 가드 의존이라 같이 동기화 —
+    # bootstrapping 시 nginx -t 가 unknown variable 로 실패하는 회귀 차단.
     - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $PROD_DEPLOY_PATH/nginx/conf.d"
+    - rsync -az "$NGINX_CONFD/00-cf-allowlist.conf" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/00-cf-allowlist.conf"
     - rsync -az "$NGINX_CONFD/dev-vhosts.conf" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/dev-vhosts.conf"
     # --- 컨테이너 재빌드 + 기동 (단순 up, blue-green 없음) ---
     - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose --env-file .env.test -f docker-compose.test.yml up -d --build api-test && docker image prune -f"
@@ -457,7 +479,9 @@ service-web:test-deploy:
     - ssh "$EC2_USER@$EC2_HOST" "chmod 640 $EC2_DEPLOY_PATH/docker-compose.test.yml"
     # --- Stage Nginx config to prod (dev-vhosts.conf 만 — prod vhost 미영향) ---
     # dev 트리거 잡이 default.conf (prod) 를 보내지 않도록 자기 파일만 rsync.
+    # 00-cf-allowlist.conf 는 dev-vhosts.conf 의 $is_from_cf 가드 의존이라 같이 동기화.
     - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $PROD_DEPLOY_PATH/nginx/conf.d"
+    - rsync -az "$NGINX_CONFD/00-cf-allowlist.conf" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/00-cf-allowlist.conf"
     - rsync -az "$NGINX_CONFD/dev-vhosts.conf" "$PROD_USER@$PROD_HOST:$PROD_DEPLOY_PATH/nginx/conf.d/dev-vhosts.conf"
     # --- 컨테이너 재빌드 + 기동 ---
     - ssh "$EC2_USER@$EC2_HOST" "cd $EC2_DEPLOY_PATH && docker compose --env-file .env.test -f docker-compose.test.yml up -d --build service-web-test && docker image prune -f"
