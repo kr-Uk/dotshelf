@@ -2239,10 +2239,17 @@ namespace App.Bootstrap
             EnsureCollidersForGameObject(go);
         }
 
-        // 일반화된 collider 보장 — EnsureCollidersForWallDeco 와 동일 로직 (mesh 자식에 MeshCollider).
-        // WallMaskQuad 는 stencil 전용이라 제외.
+        // 일반화된 collider 보장 — root 에 BoxCollider 를 renderer bounds 에 맞춰 합성.
+        // [MR 135 fix] PlaceInventoryEntry Step 4 와 동일 패턴 — GLB 가 root 에 mesh 없는 빈
+        // MeshCollider 만 들고 import 되는 케이스 (Hierarchy 자식 없음 + Inspector Mesh 비어있음 +
+        // Physics.Raycast hit 0) 회피. 기존 collider 가 있어도 추가로 BoxCollider 를 root 에
+        // 박아서 raycast selection 100% 보장. 비용은 collider 1개 추가뿐이라 무시 가능.
+        // WallMaskQuad 의 collider 추가는 stencil 전용 mesh 라 명시적으로 skip.
         private static void EnsureCollidersForGameObject(GameObject go)
         {
+            // mesh 자식에도 MeshCollider 합성 (정밀 hit 가 필요한 케이스 대비 — drag/select 는
+            // root BoxCollider 만으로도 동작하지만, 향후 다른 사용처에서 mesh-precise hit 필요할
+            // 수도 있어 retain).
             var meshFilters = go.GetComponentsInChildren<MeshFilter>(true);
             for (int i = 0; i < meshFilters.Length; i++)
             {
@@ -2253,6 +2260,21 @@ namespace App.Bootstrap
                 var collider = mf.gameObject.AddComponent<MeshCollider>();
                 collider.sharedMesh = mf.sharedMesh;
                 collider.convex = false;
+            }
+
+            // root 에 BoxCollider 가 이미 있으면 skip (중복 회피). 없으면 renderer bounds 로 합성.
+            // PlaceInventoryEntry 와 동일 좌표 변환 (world → local, 음수 size 방지 Mathf.Abs).
+            if (go.GetComponent<BoxCollider>() == null)
+            {
+                var rendererBounds = ComputeRendererBounds(go);
+                if (rendererBounds.HasValue)
+                {
+                    var box = go.AddComponent<BoxCollider>();
+                    var localCenter = go.transform.InverseTransformPoint(rendererBounds.Value.center);
+                    var localSize = go.transform.InverseTransformVector(rendererBounds.Value.size);
+                    box.center = localCenter;
+                    box.size = new Vector3(Mathf.Abs(localSize.x), Mathf.Abs(localSize.y), Mathf.Abs(localSize.z));
+                }
             }
         }
 
