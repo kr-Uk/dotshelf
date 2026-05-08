@@ -2842,7 +2842,7 @@ namespace BookshelfPorting.Runtime
                         book.reportBody,
                         book.reportUpdatedLabel,
                         averageRating: book.averageRating,
-                        totalLikeCount: book.totalLikeCount,
+                        totalLikeCount: ResolveSnapshotLikeCount(book.totalLikeCount, book.isLiked),
                         reviewCount: book.reviewCount,
                         hasAggregateBookStats: book.hasAggregateBookStats));
                 }
@@ -2954,7 +2954,7 @@ namespace BookshelfPorting.Runtime
                     source.ReportBody,
                     source.ReportUpdatedLabel,
                     averageRating: source.AverageRating,
-                    totalLikeCount: source.TotalLikeCount,
+                    totalLikeCount: ResolveSnapshotLikeCount(source.TotalLikeCount, source.IsLiked),
                     reviewCount: source.ReviewCount,
                     hasAggregateBookStats: source.HasAggregateBookStats));
             }
@@ -3017,6 +3017,7 @@ namespace BookshelfPorting.Runtime
                 ? readingRecord.Content
                 : description;
 
+            var isLiked = userBook?.IsLiked ?? false;
             return new BookPlacementSnapshot(
                 bookKey,
                 BookOrientation.Spine,
@@ -3028,12 +3029,18 @@ namespace BookshelfPorting.Runtime
                 memoPreview,
                 userBook?.OwnerRating.HasValue == true ? (float)userBook.OwnerRating.Value : 0f,
                 userBook?.ReadingStatus ?? ReadingStatus.Unread,
-                userBook?.IsLiked ?? false,
+                isLiked,
                 readingRecord == null || readingRecord.VisibilityScope == VisibilityScope.Public,
                 averageRating: book != null ? (float)book.AverageRating : 0f,
-                totalLikeCount: book != null ? Mathf.Max(0, (int)book.LikeCount) : 0,
+                totalLikeCount: book != null ? ResolveSnapshotLikeCount((int)book.LikeCount, isLiked) : 0,
                 reviewCount: book != null ? Mathf.Max(0, book.RatingCount) : 0,
                 hasAggregateBookStats: book != null);
+        }
+
+        private static int ResolveSnapshotLikeCount(int likeCount, bool isLiked)
+        {
+            var count = Mathf.Max(0, likeCount);
+            return isLiked ? Mathf.Max(1, count) : count;
         }
 
         private void MergeBookshelfSnapshots(int sourceIndex, int targetIndex)
@@ -3429,7 +3436,7 @@ namespace BookshelfPorting.Runtime
             book.memoPreview = string.IsNullOrWhiteSpace(placement.MemoPreview) ? book.memoPreview : placement.MemoPreview;
             book.ownerRating = Mathf.Clamp(placement.OwnerRating, 0f, 5f);
             book.averageRating = Mathf.Clamp(placement.AverageRating, 0f, 5f);
-            book.totalLikeCount = Mathf.Max(0, placement.TotalLikeCount);
+            book.totalLikeCount = ResolveSnapshotLikeCount(placement.TotalLikeCount, placement.IsLiked);
             book.reviewCount = Mathf.Max(0, placement.ReviewCount);
             book.hasAggregateBookStats = placement.HasAggregateBookStats;
             book.rating = Mathf.RoundToInt(book.hasAggregateBookStats ? book.averageRating : book.ownerRating);

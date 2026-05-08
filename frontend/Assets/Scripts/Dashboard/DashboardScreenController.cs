@@ -406,6 +406,8 @@ namespace Dotshelf.Scripts.Dashboard
                 return;
             }
 
+            DashboardRaycastFilter.Register(this);
+
             if (stylesheet != null && !root.styleSheets.Contains(stylesheet))
             {
                 root.styleSheets.Add(stylesheet);
@@ -426,6 +428,8 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void OnDisable()
         {
+            DashboardRaycastFilter.Unregister(this);
+
             if (eventsWired)
             {
                 UnwireEvents();

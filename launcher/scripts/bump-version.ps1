@@ -98,8 +98,12 @@ elseif ($Target -eq "unity") {
     Write-Host "  2. SHA-256 계산:"
     Write-Host "     (Get-FileHash -Algorithm SHA256 -Path .\Dotshelf-$NewVersion.zip).Hash"
     Write-Host "  3. launcher/manifests/dev/windows/latest.json 의 sha256 필드 손으로 갱신"
-    Write-Host "  4. LAUNCHER_UNITY_ZIP_URL CI/CD 변수에서 받을 수 있는 위치에 zip 업로드"
-    Write-Host "  5. launcher:publish 가 sha256 검증 후 운영 경로에 업로드"
+    Write-Host "  4. zip 을 GitLab Generic Packages (dotshelf-unity) 로 업로드:"
+    Write-Host "     curl --request PUT ``"
+    Write-Host "       --header `"PRIVATE-TOKEN: `$env:GITLAB_TOKEN`" ``"
+    Write-Host "       --upload-file .\Dotshelf-$NewVersion.zip ``"
+    Write-Host "       `"https://lab.ssafy.com/api/v4/projects/1304436/packages/generic/dotshelf-unity/$NewVersion/Dotshelf-$NewVersion.zip`""
+    Write-Host "  5. master 머지 → launcher:publish 가 sha256 검증 후 운영 경로에 업로드"
 }
 
 Write-Host

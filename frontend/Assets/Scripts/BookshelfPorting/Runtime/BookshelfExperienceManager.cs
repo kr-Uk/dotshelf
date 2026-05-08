@@ -790,6 +790,21 @@ namespace BookshelfPorting.Runtime
         private GameObject bookRatingChoicePanel;
         private readonly Button[] bookRatingChoiceButtons = new Button[BookRatingChoiceCount];
         private bool isBookRatingChoicePanelOpen;
+        private GameObject bookReviewWritePanel;
+        private Text bookReviewWriteTitleText;
+        private Text bookReviewWriteBookText;
+        private Text bookReviewRatingText;
+        private Text bookReviewStatusText;
+        private InputField bookReviewContentInputField;
+        private Button saveBookReviewButton;
+        private Button cancelBookReviewButton;
+        private readonly Button[] bookReviewRatingButtons = new Button[BookRatingChoiceCount];
+        private bool isBookReviewWritePanelOpen;
+        private bool isBookReviewSaving;
+        private string bookReviewStatusMessage = string.Empty;
+        private bool bookReviewStatusIsError;
+        private BookEntity activeReviewBook;
+        private float stagedBookReviewRating;
         private GameObject bookReportWritePanel;
         private Text bookReportWriteTitleText;
         private Text bookReportWriteBookText;
@@ -878,6 +893,7 @@ namespace BookshelfPorting.Runtime
         // toggle) is currently active. Independent of bookshelf/guestbook/notebook focus —
         // those don't change which main pose the camera should return to next.
         private MainCameraViewMode currentMainViewMode = MainCameraViewMode.MainView;
+        private MainCameraViewMode bookshelfReturnMainViewMode = MainCameraViewMode.MainView;
         public MainCameraViewMode CurrentMainViewMode => currentMainViewMode;
 
         // Set by the onboarding flow during Step 3. Originally only gated the
@@ -1281,6 +1297,11 @@ namespace BookshelfPorting.Runtime
 
         public void FocusMainView()
         {
+            FocusMainViewImmediate();
+        }
+
+        private void FocusMainViewImmediate()
+        {
             if (!CanStartCameraFocus())
             {
                 return;
@@ -1351,6 +1372,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            RememberBookshelfReturnMainViewMode();
             CancelPendingNotebookFocusRequest();
             cameraController.MoveToMode(CameraMode.Frontal);
         }
@@ -1647,6 +1669,15 @@ namespace BookshelfPorting.Runtime
                 sectionEditPanel.SetActive(false);
             }
 
+            if (bookReviewWritePanel != null)
+            {
+                bookReviewWritePanel.SetActive(false);
+            }
+
+            isBookReviewWritePanelOpen = false;
+            isBookReviewSaving = false;
+            activeReviewBook = null;
+            SetBookReviewStatus(string.Empty);
             CloseBookReportPanelsSilently();
             RefreshHud();
         }
@@ -1824,6 +1855,15 @@ namespace BookshelfPorting.Runtime
             {
                 bookReportReadPanel.SetActive(false);
                 isBookReportReadPanelOpen = false;
+            }
+
+            if (bookReviewWritePanel != null)
+            {
+                bookReviewWritePanel.SetActive(false);
+                isBookReviewWritePanelOpen = false;
+                isBookReviewSaving = false;
+                activeReviewBook = null;
+                SetBookReviewStatus(string.Empty);
             }
 
             placementEditBook = book;
@@ -2040,8 +2080,11 @@ namespace BookshelfPorting.Runtime
             {
                 ActiveDetailBook = null;
                 activeReportBook = null;
+                activeReviewBook = null;
                 isBookReportReadPanelOpen = false;
                 isBookReportWritePanelOpen = false;
+                isBookReviewWritePanelOpen = false;
+                isBookReviewSaving = false;
                 if (bookDetailPanel != null)
                 {
                     bookDetailPanel.SetActive(false);
@@ -2055,6 +2098,11 @@ namespace BookshelfPorting.Runtime
                 if (bookReportWritePanel != null)
                 {
                     bookReportWritePanel.SetActive(false);
+                }
+
+                if (bookReviewWritePanel != null)
+                {
+                    bookReviewWritePanel.SetActive(false);
                 }
 
                 RefreshHud();
@@ -2148,6 +2196,14 @@ namespace BookshelfPorting.Runtime
                 activeReportBook = null;
             }
 
+            if (activeReviewBook == book)
+            {
+                activeReviewBook = null;
+                isBookReviewWritePanelOpen = false;
+                isBookReviewSaving = false;
+                SetBookReviewStatus(string.Empty);
+            }
+
             isBookEditPanelOpen = false;
             if (closeReportPanels)
             {
@@ -2175,6 +2231,11 @@ namespace BookshelfPorting.Runtime
                 if (bookReportWritePanel != null)
                 {
                     bookReportWritePanel.SetActive(false);
+                }
+
+                if (bookReviewWritePanel != null)
+                {
+                    bookReviewWritePanel.SetActive(false);
                 }
             }
 
@@ -2743,7 +2804,7 @@ namespace BookshelfPorting.Runtime
             }
 
             var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
-            if (book == null || dataStore == null || !CanUseOwnerBookActions())
+            if (book == null || dataStore == null || bookReviewWritePanel == null || !CanUseOwnerBookActions())
             {
                 return;
             }
@@ -2773,7 +2834,10 @@ namespace BookshelfPorting.Runtime
             }
 
             var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
-            if (book == null || dataStore == null || !CanUseOwnerBookActions())
+            if (book == null ||
+                dataStore == null ||
+                bookReviewWritePanel == null ||
+                !CanUseOwnerBookActions())
             {
                 return;
             }
@@ -2801,6 +2865,11 @@ namespace BookshelfPorting.Runtime
 
         private void CycleOwnerRating()
         {
+            OpenBookReviewWritePanel();
+        }
+
+        private void OpenBookReviewWritePanel()
+        {
             if (TryCloseBookDetailFromFocusedBookPointer())
             {
                 return;
@@ -2812,13 +2881,27 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var meta = dataStore.GetOrCreateBookMeta(book);
-            if (meta == null)
+            if (!TryResolveBookReviewApiId(book, out _))
             {
+                ShowDeleteResultDialog("리뷰 작성 불가", "도서 서버 식별자를 찾을 수 없습니다.", false);
                 return;
             }
 
-            isBookRatingChoicePanelOpen = !isBookRatingChoicePanelOpen;
+            var meta = dataStore.GetOrCreateBookMeta(book);
+            CloseOverlayPanels(bookReviewWritePanel);
+            activeReviewBook = book;
+            stagedBookReviewRating = meta != null && meta.ownerRating > 0f
+                ? SnapRatingToStep(Mathf.Clamp(meta.ownerRating, BookRatingStep, 5f))
+                : 0f;
+            isBookRatingChoicePanelOpen = false;
+            isBookReviewWritePanelOpen = true;
+            isBookReviewSaving = false;
+            SetBookReviewStatus(string.Empty);
+            if (bookReviewContentInputField != null)
+            {
+                bookReviewContentInputField.text = string.Empty;
+            }
+
             RefreshHud();
         }
 
@@ -2881,6 +2964,161 @@ namespace BookshelfPorting.Runtime
 
             meta.reviewCount = Mathf.Max(0, count);
             meta.averageRating = count > 0 ? Mathf.Clamp(total / count, 0f, 5f) : 0f;
+            meta.hasAggregateBookStats = true;
+        }
+
+        private void SetStagedBookReviewRating(float rating)
+        {
+            stagedBookReviewRating = Mathf.Clamp(SnapRatingToStep(rating), BookRatingStep, 5f);
+            SetBookReviewStatus(string.Empty);
+            RefreshBookReviewWritePanel();
+        }
+
+        private void SaveBookReview()
+        {
+            if (isBookReviewSaving)
+            {
+                return;
+            }
+
+            var book = activeReviewBook;
+            if (book == null)
+            {
+                CloseBookReviewWritePanel();
+                return;
+            }
+
+            if (!TryResolveBookReviewApiId(book, out var bookId))
+            {
+                SetBookReviewStatus("도서 서버 식별자를 찾을 수 없습니다.", true);
+                RefreshBookReviewWritePanel();
+                return;
+            }
+
+            var rating = Mathf.Clamp(SnapRatingToStep(stagedBookReviewRating), 0f, 5f);
+            if (rating < BookRatingStep)
+            {
+                SetBookReviewStatus("별점을 선택해 주세요.", true);
+                RefreshBookReviewWritePanel();
+                return;
+            }
+
+            var content = bookReviewContentInputField != null ? bookReviewContentInputField.text : string.Empty;
+            content = string.IsNullOrWhiteSpace(content) ? string.Empty : content.Trim();
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                SetBookReviewStatus("리뷰 내용을 입력해 주세요.", true);
+                RefreshBookReviewWritePanel();
+                return;
+            }
+
+            if (content.Length > 1000)
+            {
+                content = content.Substring(0, 1000);
+            }
+
+            if (notebookRuntimeUseCase == null)
+            {
+                SetBookReviewStatus("리뷰 저장 기능이 준비되지 않았습니다.", true);
+                RefreshBookReviewWritePanel();
+                return;
+            }
+
+            isBookReviewSaving = true;
+            SetBookReviewStatus("리뷰 저장 중입니다.");
+            RefreshBookReviewWritePanel();
+            notebookRuntimeUseCase.CreateBookReview(
+                bookId,
+                rating,
+                content,
+                review => HandleBookReviewCreated(book, rating, review),
+                HandleBookReviewCreateFailed);
+        }
+
+        private void HandleBookReviewCreated(BookEntity book, float fallbackRating, NotebookReviewItem review)
+        {
+            isBookReviewSaving = false;
+
+            if (book != null && dataStore != null)
+            {
+                var meta = dataStore.GetOrCreateBookMeta(book);
+                if (meta != null)
+                {
+                    var nextRating = review != null && review.Rating > 0f ? review.Rating : fallbackRating;
+                    meta.ownerRating = Mathf.Clamp(SnapRatingToStep(nextRating), BookRatingStep, 5f);
+                    ApplyCreatedReviewToLocalAggregate(meta, meta.ownerRating);
+                    dataStore.ApplyBookMeta(book, meta);
+                }
+            }
+
+            isBookReviewWritePanelOpen = false;
+            activeReviewBook = null;
+            if (bookReviewWritePanel != null)
+            {
+                bookReviewWritePanel.SetActive(false);
+            }
+
+            RefreshBookDetailPanel();
+            RefreshHud();
+        }
+
+        private void HandleBookReviewCreateFailed(NotebookApiError error)
+        {
+            isBookReviewSaving = false;
+            var message = error != null ? FirstNonEmpty(FirstNonEmpty(error.Message, error.Error), "리뷰 저장에 실패했습니다.") : "리뷰 저장에 실패했습니다.";
+            SetBookReviewStatus(NormalizeMutationErrorMessage(message), true);
+            RefreshBookReviewWritePanel();
+            RefreshHud();
+        }
+
+        private void CloseBookReviewWritePanel()
+        {
+            isBookReviewWritePanelOpen = false;
+            isBookReviewSaving = false;
+            activeReviewBook = null;
+            SetBookReviewStatus(string.Empty);
+            if (bookReviewContentInputField != null)
+            {
+                bookReviewContentInputField.text = string.Empty;
+            }
+
+            if (bookReviewWritePanel != null)
+            {
+                bookReviewWritePanel.SetActive(false);
+            }
+
+            RefreshHud();
+        }
+
+        private void SetBookReviewStatus(string message, bool isError = false)
+        {
+            bookReviewStatusMessage = string.IsNullOrWhiteSpace(message) ? string.Empty : message.Trim();
+            bookReviewStatusIsError = isError;
+        }
+
+        private static bool TryResolveBookReviewApiId(BookEntity book, out long bookId)
+        {
+            bookId = 0;
+            return book != null &&
+                   !string.IsNullOrWhiteSpace(book.bookId) &&
+                   long.TryParse(book.bookId.Trim(), out bookId) &&
+                   bookId > 0;
+        }
+
+        private static void ApplyCreatedReviewToLocalAggregate(BookMetaData meta, float rating)
+        {
+            if (meta == null)
+            {
+                return;
+            }
+
+            var nextRating = Mathf.Clamp(SnapRatingToStep(rating), BookRatingStep, 5f);
+            var count = meta.hasAggregateBookStats ? Mathf.Max(0, meta.reviewCount) : 0;
+            var total = (meta.hasAggregateBookStats ? Mathf.Clamp(meta.averageRating, 0f, 5f) : 0f) * count;
+            total += nextRating;
+            count++;
+            meta.reviewCount = count;
+            meta.averageRating = Mathf.Clamp(total / count, 0f, 5f);
             meta.hasAggregateBookStats = true;
         }
 
@@ -3109,7 +3347,7 @@ namespace BookshelfPorting.Runtime
             hamburgerButton.GetComponentInChildren<Text>().fontSize = 26;
             StyleHudPanel(hamburgerButton.GetComponent<Image>(), new Color(0.08f, 0.09f, 0.11f, 0.78f));
 
-            focusBackButton = CreateButton(canvasObject.transform, "FocusBackButton", "←", new Vector2(34f, -34f), ReturnToQuarterView, new Vector2(66f, 66f), new Vector2(0f, 1f));
+            focusBackButton = CreateButton(canvasObject.transform, "FocusBackButton", "←", new Vector2(34f, -34f), ReturnFromFocusedArea, new Vector2(66f, 66f), new Vector2(0f, 1f));
             StyleHudPanel(focusBackButton.GetComponent<Image>(), new Color(0.08f, 0.09f, 0.11f, 0.78f));
 
             hamburgerMenuPanel = CreatePanel(canvasObject.transform, "HamburgerMenuPanel", new Vector2(-20f, -74f), new Vector2(190f, 204f), new Vector2(1f, 1f));
@@ -3543,7 +3781,7 @@ namespace BookshelfPorting.Runtime
             StyleBookshelfIndexPanel(bookFocusToolbarPanel.GetComponent<Image>());
             bookFocusToolbarPanel.SetActive(false);
             bookFocusDetailButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusDetailButton", "상태", new Vector2(174f, 0f), ToggleReadState, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
-            bookFocusRatingButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusRatingButton", "별점", new Vector2(254f, 0f), CycleOwnerRating, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
+            bookFocusRatingButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusRatingButton", "리뷰 작성", new Vector2(254f, 0f), OpenBookReviewWritePanel, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
             bookFocusReportButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusReportButton", "좋아요", new Vector2(334f, 0f), ToggleLikeState, new Vector2(86f, 36f), new Vector2(0f, 0.5f));
             bookFocusWriteReportButton = CreateButton(canvasObject.transform, "BookFocusWriteReportButton", "독후감 작성", new Vector2(0f, 128f), OpenActiveViewedBookReport, new Vector2(160f, 44f), new Vector2(0.5f, 0f));
             bookFocusWriteReportButton.gameObject.SetActive(false);
@@ -3567,6 +3805,60 @@ namespace BookshelfPorting.Runtime
                     new Vector2(50f, 36f),
                     new Vector2(0.5f, 0.5f));
             }
+
+            bookReviewWritePanel = CreatePanel(canvasObject.transform, "BookReviewWritePanel", new Vector2(-24f, -78f), new Vector2(430f, 390f), new Vector2(1f, 1f));
+            StyleBookDetailPanel(bookReviewWritePanel.GetComponent<Image>());
+            bookReviewWritePanel.SetActive(false);
+            CreateHudImage(bookReviewWritePanel.transform, "BookReviewWriteAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170), false);
+            bookReviewWriteTitleText = CreateLabel(bookReviewWritePanel.transform, "BookReviewWriteTitleText", new Vector2(20f, -36f), new Vector2(390f, 24f), TextAnchor.UpperLeft);
+            bookReviewWriteTitleText.text = "리뷰 작성";
+            bookReviewWriteTitleText.fontSize = 18;
+            bookReviewWriteTitleText.fontStyle = FontStyle.Bold;
+            bookReviewWriteTitleText.color = new Color32(45, 50, 58, 255);
+            bookReviewWriteBookText = CreateLabel(bookReviewWritePanel.transform, "BookReviewWriteBookText", new Vector2(20f, -68f), new Vector2(390f, 28f), TextAnchor.UpperLeft);
+            bookReviewWriteBookText.fontSize = 13;
+            bookReviewWriteBookText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            bookReviewWriteBookText.color = new Color32(84, 74, 66, 255);
+            bookReviewRatingText = CreateLabel(bookReviewWritePanel.transform, "BookReviewRatingText", new Vector2(20f, -112f), new Vector2(390f, 22f), TextAnchor.UpperLeft);
+            bookReviewRatingText.fontSize = 14;
+            bookReviewRatingText.fontStyle = FontStyle.Bold;
+            bookReviewRatingText.color = new Color32(72, 58, 47, 255);
+            for (var i = 0; i < bookReviewRatingButtons.Length; i++)
+            {
+                var rating = GetRatingChoiceValue(i);
+                var row = i / 5;
+                var column = i % 5;
+                bookReviewRatingButtons[i] = CreateButton(
+                    bookReviewWritePanel.transform,
+                    $"BookReviewRatingButton_{i + 1}",
+                    $"{FormatRatingValue(rating)}★",
+                    new Vector2(20f + column * 78f, -146f - row * 42f),
+                    () => SetStagedBookReviewRating(rating),
+                    new Vector2(70f, 34f),
+                    new Vector2(0f, 1f));
+            }
+            bookReviewContentInputField = CreateHudInputField(bookReviewWritePanel.transform, "BookReviewContentInputField", new Vector2(20f, -238f), new Vector2(390f, 88f), "리뷰 내용을 입력하세요");
+            bookReviewContentInputField.characterLimit = 1000;
+            bookReviewContentInputField.lineType = InputField.LineType.MultiLineNewline;
+            ApplyHudInputTextPadding(bookReviewContentInputField);
+            if (bookReviewContentInputField.textComponent != null)
+            {
+                bookReviewContentInputField.textComponent.alignment = TextAnchor.UpperLeft;
+            }
+            bookReviewContentInputField.onValueChanged.AddListener(_ =>
+            {
+                if (!isBookReviewSaving)
+                {
+                    SetBookReviewStatus(string.Empty);
+                    RefreshBookReviewWritePanel();
+                }
+            });
+            bookReviewStatusText = CreateLabel(bookReviewWritePanel.transform, "BookReviewStatusText", new Vector2(20f, -338f), new Vector2(214f, 36f), TextAnchor.UpperLeft);
+            bookReviewStatusText.fontSize = 12;
+            bookReviewStatusText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            bookReviewStatusText.color = new Color32(124, 111, 101, 255);
+            saveBookReviewButton = CreateButton(bookReviewWritePanel.transform, "SaveBookReviewButton", "저장", new Vector2(250f, -342f), SaveBookReview, new Vector2(76f, 34f), new Vector2(0f, 1f));
+            cancelBookReviewButton = CreateButton(bookReviewWritePanel.transform, "CancelBookReviewButton", "취소", new Vector2(334f, -342f), CloseBookReviewWritePanel, new Vector2(76f, 34f), new Vector2(0f, 1f));
 
             bookReportWritePanel = CreatePanel(canvasObject.transform, "BookReportWritePanel", new Vector2(-24f, -78f), new Vector2(430f, 474f), new Vector2(1f, 1f));
             StyleBookDetailPanel(bookReportWritePanel.GetComponent<Image>());
@@ -3988,7 +4280,7 @@ namespace BookshelfPorting.Runtime
             RefreshHud();
         }
 
-        private void ReturnToQuarterView()
+        private void ReturnFromFocusedArea()
         {
             if (state != null && state.IsViewingBook)
             {
@@ -3996,7 +4288,39 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (CurrentFocusArea == ExperienceFocusArea.Bookshelf)
+            {
+                if (TryPromptUnsavedBookshelfChanges(ReturnToBookshelfEntryMainViewImmediate))
+                {
+                    return;
+                }
+
+                ReturnToBookshelfEntryMainViewImmediate();
+                return;
+            }
+
             FocusQuarterView();
+        }
+
+        private void RememberBookshelfReturnMainViewMode()
+        {
+            if (cameraController != null && cameraController.CurrentMode != CameraMode.Overview)
+            {
+                return;
+            }
+
+            bookshelfReturnMainViewMode = currentMainViewMode;
+        }
+
+        private void ReturnToBookshelfEntryMainViewImmediate()
+        {
+            if (bookshelfReturnMainViewMode == MainCameraViewMode.MainView)
+            {
+                FocusMainViewImmediate();
+                return;
+            }
+
+            FocusQuarterViewImmediate();
         }
 
         private void PrepareQuarterViewReturn()
@@ -4087,6 +4411,7 @@ namespace BookshelfPorting.Runtime
             RefreshGuestbookPanel();
             RefreshBookDetailPanel();
             RefreshBookFocusToolbar();
+            RefreshBookReviewWritePanel();
             RefreshBookReportWritePanel();
             RefreshBookReportReadPanel();
             RefreshBookEditPanel();
@@ -4963,12 +5288,14 @@ namespace BookshelfPorting.Runtime
             SetHudObjectRect(bookDetailPanel, sidePanelAnchor, sidePanelPivot, sidePanelPosition, new Vector2(sidePanelWidth, detailPanelHeight));
             SetHudObjectRect(bookReportReadPanel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(writePanelWidth, writePanelHeight));
             SetHudObjectRect(bookReportWritePanel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(writePanelWidth, writePanelHeight));
+            SetHudObjectRect(bookReviewWritePanel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(writePanelWidth, writePanelHeight));
             SetHudObjectRect(bookEditPanel, sidePanelAnchor, sidePanelPivot, sidePanelPosition, new Vector2(sidePanelWidth, detailPanelHeight));
             SetHudObjectRect(sectionEditPanel, sidePanelAnchor, sidePanelPivot, sidePanelPosition, new Vector2(sidePanelWidth, detailPanelHeight));
 
             ApplyBookDetailPanelResponsiveLayout(sidePanelWidth, detailPanelHeight);
             ApplyBookReportWritePanelResponsiveLayout(writePanelWidth, writePanelHeight);
             ApplyBookReportReadPanelResponsiveLayout(writePanelWidth, writePanelHeight);
+            ApplyBookReviewWritePanelResponsiveLayout(writePanelWidth, writePanelHeight);
             ApplyBookEditPanelResponsiveLayout(sidePanelWidth, detailPanelHeight);
             ApplySectionEditPanelResponsiveLayout(sidePanelWidth, detailPanelHeight);
         }
@@ -5199,6 +5526,64 @@ namespace BookshelfPorting.Runtime
                 }
 
                 if (bookReportBodyInputField.placeholder is Text placeholderText)
+                {
+                    placeholderText.alignment = TextAnchor.UpperLeft;
+                }
+            }
+        }
+
+        private void ApplyBookReviewWritePanelResponsiveLayout(float panelWidth, float panelHeight)
+        {
+            var padding = Mathf.Clamp(panelWidth * 0.065f, 28f, 40f);
+            var contentWidth = Mathf.Max(320f, panelWidth - padding * 2f);
+            var buttonHeight = 38f;
+            var bottomButtonY = -(panelHeight - padding - OverlayButtonBottomPaddingExtra - buttonHeight);
+            var ratingButtonGap = Mathf.Clamp(contentWidth * 0.018f, 8f, 14f);
+            var ratingButtonWidth = Mathf.Min(128f, (contentWidth - ratingButtonGap * 4f) / 5f);
+            var ratingButtonHeight = 38f;
+            var ratingRowOneY = -154f;
+            var ratingRowTwoY = -200f;
+            var bodyY = -264f;
+            var statusY = bottomButtonY + 2f;
+            var bodyHeight = Mathf.Max(150f, Mathf.Abs(statusY) - Mathf.Abs(bodyY) - 18f);
+            var cancelWidth = 104f;
+            var saveWidth = 116f;
+            var actionGap = 12f;
+            var cancelX = padding + contentWidth - cancelWidth;
+            var saveX = cancelX - actionGap - saveWidth;
+            var statusWidth = Mathf.Max(220f, saveX - padding - actionGap);
+
+            SetHudChildRect(bookReviewWritePanel, "BookReviewWriteAccent", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -24f), new Vector2(90f, 3f));
+            SetHudChildActive(bookReviewWritePanel, "BookReviewWriteAccent", false);
+            SetHudComponentRect(bookReviewWriteTitleText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -38f), new Vector2(contentWidth, 26f));
+            SetHudComponentRect(bookReviewWriteBookText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -72f), new Vector2(contentWidth, 34f));
+            SetHudComponentRect(bookReviewRatingText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -118f), new Vector2(contentWidth, 24f));
+
+            for (var i = 0; i < bookReviewRatingButtons.Length; i++)
+            {
+                var row = i / 5;
+                var column = i % 5;
+                SetHudComponentRect(
+                    bookReviewRatingButtons[i],
+                    new Vector2(0f, 1f),
+                    new Vector2(0f, 1f),
+                    new Vector2(padding + (ratingButtonWidth + ratingButtonGap) * column, row == 0 ? ratingRowOneY : ratingRowTwoY),
+                    new Vector2(ratingButtonWidth, ratingButtonHeight));
+            }
+
+            SetHudComponentRect(bookReviewContentInputField, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, bodyY), new Vector2(contentWidth, bodyHeight));
+            SetHudComponentRect(bookReviewStatusText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, statusY), new Vector2(statusWidth, 40f));
+            SetHudComponentRect(saveBookReviewButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(saveX, bottomButtonY), new Vector2(saveWidth, buttonHeight));
+            SetHudComponentRect(cancelBookReviewButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(cancelX, bottomButtonY), new Vector2(cancelWidth, buttonHeight));
+
+            if (bookReviewContentInputField != null)
+            {
+                if (bookReviewContentInputField.textComponent != null)
+                {
+                    bookReviewContentInputField.textComponent.alignment = TextAnchor.UpperLeft;
+                }
+
+                if (bookReviewContentInputField.placeholder is Text placeholderText)
                 {
                     placeholderText.alignment = TextAnchor.UpperLeft;
                 }
@@ -5850,6 +6235,7 @@ namespace BookshelfPorting.Runtime
                    !isBookPlacementEditorOpen &&
                    !isBookReportWritePanelOpen &&
                    !isBookReportReadPanelOpen &&
+                   !isBookReviewWritePanelOpen &&
                    activeEditSection == null;
         }
 
@@ -7050,6 +7436,7 @@ namespace BookshelfPorting.Runtime
                 isBookPlacementEditorOpen,
                 isBookReportWritePanelOpen,
                 isBookReportReadPanelOpen,
+                isBookReviewWritePanelOpen,
                 isFirstBookshelfTutorialOpen,
                 activeEditSection != null);
         }
@@ -9748,9 +10135,14 @@ namespace BookshelfPorting.Runtime
                 return 0;
             }
 
-            return meta.hasAggregateBookStats
-                ? Mathf.Max(0, meta.totalLikeCount)
-                : meta.isLiked ? 1 : 0;
+            if (meta.hasAggregateBookStats)
+            {
+                return meta.isLiked
+                    ? Mathf.Max(1, meta.totalLikeCount)
+                    : Mathf.Max(0, meta.totalLikeCount);
+            }
+
+            return meta.isLiked ? 1 : 0;
         }
 
         private static string ResolveFallbackText(string value, string fallback)
@@ -9904,6 +10296,7 @@ namespace BookshelfPorting.Runtime
                           state.ActiveViewedBook != null &&
                           !IsBookshelfEditMode &&
                           !isBookPlacementEditorOpen &&
+                          !isBookReviewWritePanelOpen &&
                           !isBookReportWritePanelOpen &&
                           !isBookReportReadPanelOpen;
             var canUseOwnerActions = canShow && CanUseOwnerBookActions();
@@ -9945,12 +10338,12 @@ namespace BookshelfPorting.Runtime
             if (meta != null)
             {
                 SetButtonLabel(bookFocusDetailButton, GetReadingStatusLabel(meta.readingStatus));
-                SetButtonLabel(bookFocusRatingButton, GetOwnerRatingButtonLabel(meta.ownerRating));
+                SetButtonLabel(bookFocusRatingButton, "리뷰 작성");
                 SetButtonLabel(bookFocusReportButton, meta.isLiked ? "좋아요 취소" : "좋아요");
             }
             else
             {
-                SetButtonLabel(bookFocusRatingButton, "별점 미지정");
+                SetButtonLabel(bookFocusRatingButton, "리뷰 작성");
                 SetButtonLabel(bookFocusReportButton, "좋아요");
             }
 
@@ -10085,6 +10478,113 @@ namespace BookshelfPorting.Runtime
             }
 
             bookRatingChoicePanel.transform.SetAsLastSibling();
+        }
+
+        private void RefreshBookReviewWritePanel()
+        {
+            if (bookReviewWritePanel == null)
+            {
+                return;
+            }
+
+            var shouldShow = isBookReviewWritePanelOpen &&
+                             activeReviewBook != null &&
+                             CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                             state != null &&
+                             state.IsViewingBook &&
+                             state.ActiveViewedBook != null &&
+                             !IsBookshelfEditMode;
+            bookReviewWritePanel.SetActive(shouldShow);
+            if (!shouldShow)
+            {
+                return;
+            }
+
+            var bookTitle = activeReviewBook != null && !string.IsNullOrWhiteSpace(activeReviewBook.title)
+                ? activeReviewBook.title.Trim()
+                : "제목 없음";
+            if (bookReviewWriteTitleText != null)
+            {
+                bookReviewWriteTitleText.text = "리뷰 작성";
+            }
+
+            if (bookReviewWriteBookText != null)
+            {
+                bookReviewWriteBookText.text = bookTitle;
+            }
+
+            if (bookReviewRatingText != null)
+            {
+                bookReviewRatingText.text = stagedBookReviewRating >= BookRatingStep
+                    ? $"별점 {FormatRatingValue(stagedBookReviewRating)} / 5"
+                    : "별점";
+            }
+
+            for (var i = 0; i < bookReviewRatingButtons.Length; i++)
+            {
+                var rating = GetRatingChoiceValue(i);
+                var isSelected = Mathf.Approximately(rating, stagedBookReviewRating);
+                var label = $"{FormatRatingValue(rating)}★";
+                SetButtonLabel(bookReviewRatingButtons[i], isSelected ? $"✓ {label}" : label);
+                StyleHudButton(
+                    bookReviewRatingButtons[i],
+                    isSelected ? new Color32(197, 128, 67, 245) : new Color32(255, 255, 255, 240),
+                    isSelected ? new Color32(214, 145, 82, 255) : new Color32(241, 235, 230, 255),
+                    new Color32(224, 219, 214, 140),
+                    14,
+                    isSelected ? Color.white : new Color32(63, 47, 38, 255),
+                    isSelected);
+                if (bookReviewRatingButtons[i] != null)
+                {
+                    bookReviewRatingButtons[i].interactable = !isBookReviewSaving;
+                }
+            }
+
+            var hasContent = bookReviewContentInputField != null &&
+                             !string.IsNullOrWhiteSpace(bookReviewContentInputField.text);
+            if (bookReviewContentInputField != null)
+            {
+                bookReviewContentInputField.interactable = !isBookReviewSaving;
+            }
+
+            var canSave = !isBookReviewSaving &&
+                          stagedBookReviewRating >= BookRatingStep &&
+                          hasContent;
+            if (saveBookReviewButton != null)
+            {
+                saveBookReviewButton.interactable = canSave;
+                StyleHudButton(
+                    saveBookReviewButton,
+                    canSave ? new Color32(88, 133, 117, 245) : new Color32(224, 219, 214, 140),
+                    canSave ? new Color32(105, 150, 132, 255) : new Color32(224, 219, 214, 140),
+                    new Color32(224, 219, 214, 140),
+                    14,
+                    canSave ? Color.white : new Color32(128, 118, 108, 255),
+                    true);
+            }
+
+            if (cancelBookReviewButton != null)
+            {
+                cancelBookReviewButton.interactable = !isBookReviewSaving;
+                StyleHudButton(
+                    cancelBookReviewButton,
+                    new Color32(255, 255, 255, 238),
+                    new Color32(241, 235, 230, 255),
+                    new Color32(224, 219, 214, 140),
+                    14,
+                    new Color32(63, 47, 38, 255),
+                    false);
+            }
+
+            if (bookReviewStatusText != null)
+            {
+                bookReviewStatusText.text = bookReviewStatusMessage;
+                bookReviewStatusText.color = bookReviewStatusIsError
+                    ? new Color32(156, 64, 52, 255)
+                    : new Color32(124, 111, 101, 255);
+            }
+
+            bookReviewWritePanel.transform.SetAsLastSibling();
         }
 
         private void OpenActiveViewedBookDetail()
@@ -12776,9 +13276,22 @@ namespace BookshelfPorting.Runtime
                 isBookReportReadPanelOpen = false;
             }
 
+            if (bookReviewWritePanel != null && bookReviewWritePanel != except)
+            {
+                bookReviewWritePanel.SetActive(false);
+                isBookReviewWritePanelOpen = false;
+                isBookReviewSaving = false;
+                SetBookReviewStatus(string.Empty);
+            }
+
             if (except != bookReportWritePanel && except != bookReportReadPanel)
             {
                 activeReportBook = null;
+            }
+
+            if (except != bookReviewWritePanel)
+            {
+                activeReviewBook = null;
             }
 
             if (bookEditPanel != null && bookEditPanel != except)
@@ -13630,100 +14143,25 @@ namespace BookshelfPorting.Runtime
 
         private static void InvokeUiToolkitButtonClick(UnityEngine.UIElements.Button button)
         {
-            if (button == null || button.clickable == null)
+            if (button == null)
             {
                 return;
             }
 
-            var clickable = button.clickable;
-            if (InvokeClickableDelegate(clickable))
+            try
             {
-                return;
-            }
-
-            var methods = clickable.GetType().GetMethods(
-                System.Reflection.BindingFlags.Instance |
-                System.Reflection.BindingFlags.Public |
-                System.Reflection.BindingFlags.NonPublic);
-
-            for (var i = 0; i < methods.Length; i++)
-            {
-                var method = methods[i];
-                if (method.Name != "SimulateSingleClick")
+                using (var submitEvent = UnityEngine.UIElements.NavigationSubmitEvent.GetPooled())
                 {
-                    continue;
-                }
-
-                var parameters = method.GetParameters();
-                var args = new object[parameters.Length];
-                for (var j = 0; j < parameters.Length; j++)
-                {
-                    var parameterType = parameters[j].ParameterType;
-                    args[j] = parameterType.IsValueType
-                        ? System.Activator.CreateInstance(parameterType)
-                        : null;
-                }
-
-                try
-                {
-                    method.Invoke(clickable, args);
-                    return;
-                }
-                catch (System.Reflection.TargetParameterCountException)
-                {
-                }
-                catch (System.ArgumentException)
-                {
+                    submitEvent.target = button;
+                    button.SendEvent(submitEvent);
                 }
             }
-        }
-
-        private static bool InvokeClickableDelegate(object clickable)
-        {
-            for (var type = clickable.GetType(); type != null; type = type.BaseType)
+            catch (System.Exception ex)
             {
-                var fields = type.GetFields(
-                    System.Reflection.BindingFlags.Instance |
-                    System.Reflection.BindingFlags.Public |
-                    System.Reflection.BindingFlags.NonPublic |
-                    System.Reflection.BindingFlags.DeclaredOnly);
-
-                for (var i = 0; i < fields.Length; i++)
-                {
-                    var field = fields[i];
-                    if (!typeof(System.Delegate).IsAssignableFrom(field.FieldType) ||
-                        field.Name.IndexOf("clicked", System.StringComparison.OrdinalIgnoreCase) < 0)
-                    {
-                        continue;
-                    }
-
-                    if (field.GetValue(clickable) is not System.Delegate callback)
-                    {
-                        continue;
-                    }
-
-                    var handlers = callback.GetInvocationList();
-                    for (var j = 0; j < handlers.Length; j++)
-                    {
-                        var handler = handlers[j];
-                        var parameters = handler.Method.GetParameters();
-                        var args = new object[parameters.Length];
-                        for (var k = 0; k < parameters.Length; k++)
-                        {
-                            var parameterType = parameters[k].ParameterType;
-                            args[k] = parameterType.IsValueType
-                                ? System.Activator.CreateInstance(parameterType)
-                                : null;
-                        }
-
-                        handler.DynamicInvoke(args);
-                    }
-
-                    return handlers.Length > 0;
-                }
+                Debug.LogWarning(
+                    $"[Dashboard] UI Toolkit submit fallback failed for button '{button.name}': {ex.GetType().Name} {ex.Message}");
             }
 
-            return false;
         }
 
         private static bool IsPointerOverUi()
@@ -13739,35 +14177,9 @@ namespace BookshelfPorting.Runtime
                 return true;
             }
 
-            // (v1.0 dashboard 통합 — MR #61) UI Toolkit World Space panel 위에 있는지도 체크.
-            // 우리 DashboardScreenPanel은 UIDocument 기반이라 EventSystem.IsPointerOverGameObject로 안 잡힘.
-            // 이걸 안 잡으면 BookshelfExperienceManager.Update가 dashboard 안 버튼 클릭을 가로채 자체 raycast 처리.
-            var documents = Object.FindObjectsByType<UIDocument>(FindObjectsSortMode.None);
-            for (int i = 0; i < documents.Length; i++)
-            {
-                UIDocument document = documents[i];
-                if (document == null || !document.isActiveAndEnabled)
-                {
-                    continue;
-                }
-                var dashboard = document.GetComponent<DashboardScreenController>();
-                if (dashboard != null && !dashboard.InteractionEnabled)
-                {
-                    continue;
-                }
-                var root = document.rootVisualElement;
-                if (root == null || root.panel == null)
-                {
-                    continue;
-                }
-                Vector2 panelPosition = RuntimePanelUtils.ScreenToPanel(root.panel, pointerScreen);
-                var picked = root.panel.Pick(panelPosition);
-                if (picked != null)
-                {
-                    return true;
-                }
-            }
-            return false;
+            // Dashboard UIDocument hits are tracked by DashboardRaycastFilter so
+            // this hot path does not scan every UIDocument in the scene.
+            return DashboardRaycastFilter.IsPointerOverInteractiveDashboard(pointerScreen);
         }
 
         private static bool IsPointerOverBlockingEventSystemUi(Vector2 pointerScreen)

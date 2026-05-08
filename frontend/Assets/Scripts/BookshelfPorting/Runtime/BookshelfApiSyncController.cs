@@ -437,11 +437,8 @@ namespace BookshelfPorting.Runtime
             Action<ToggleResponseDto> success = response =>
             {
                 book.isLiked = response != null ? response.Active : desiredLiked;
-                if (response != null)
-                {
-                    book.totalLikeCount = Mathf.Max(0, (int)response.Count);
-                    book.hasAggregateBookStats = true;
-                }
+                book.totalLikeCount = ResolveVisibleLikeCount(book.totalLikeCount, book.isLiked);
+                book.hasAggregateBookStats = true;
 
                 onSucceeded?.Invoke(book);
             };
@@ -472,19 +469,27 @@ namespace BookshelfPorting.Runtime
                 return false;
             }
 
-            var bookshelfIdText = string.IsNullOrWhiteSpace(book.bookshelfId)
-                ? generator.GetActiveBookshelfServerId()
-                : book.bookshelfId;
-            var section = book.CurrentSection;
-            var sectionIdText = string.IsNullOrWhiteSpace(book.bookshelfSectionId) && section != null
-                ? generator.GetSectionServerId(generator.ActiveBookshelfIndex, section.row, section.column)
-                : book.bookshelfSectionId;
+            var targetBookshelfIndex = ResolveBookPlacementBookshelfIndex();
+            var bookshelfIdText = ResolveBookPlacementBookshelfId(book, targetBookshelfIndex);
+            var sectionIdText = ResolveBookPlacementSectionId(book, targetBookshelfIndex);
 
             if (!TryParseId(bookshelfIdText, out var bookshelfId) ||
                 !TryParseId(sectionIdText, out var sectionId))
             {
                 return false;
             }
+
+            var hasBookshelfItemId = TryParseId(book.bookshelfItemId, out var itemId);
+            var hasUserBookId = TryParseId(book.userBookId, out var userBookId);
+            if (!hasBookshelfItemId && !hasUserBookId)
+            {
+                return false;
+            }
+
+            var previousBookshelfId = book.bookshelfId;
+            var previousBookshelfSectionId = book.bookshelfSectionId;
+            book.bookshelfId = bookshelfId.ToString();
+            book.bookshelfSectionId = sectionId.ToString();
 
             var request = new BookshelfItemRequestDto
             {
@@ -495,18 +500,29 @@ namespace BookshelfPorting.Runtime
                 DisplayStyle = ToApiDisplayStyle(book.orientation)
             };
 
-            if (TryParseId(book.bookshelfItemId, out var itemId))
+            if (hasBookshelfItemId)
             {
                 client.MoveBookshelfItem(
                     itemId,
                     request,
                     response =>
                     {
+                        if (!IsBookEntityAlive(book))
+                        {
+                            return;
+                        }
+
                         ApplyBookshelfItemResponse(book, response);
                         onSucceeded?.Invoke(book);
                     },
                     error =>
                     {
+                        if (!IsBookEntityAlive(book))
+                        {
+                            return;
+                        }
+
+                        RestoreBookPlacementIds(book, previousBookshelfId, previousBookshelfSectionId);
                         var message = FormatUserFacingError(error);
                         Debug.LogWarning($"Bookshelf item move failed: {FormatError(error)}");
                         onFailed?.Invoke(message);
@@ -514,7 +530,7 @@ namespace BookshelfPorting.Runtime
                 return true;
             }
 
-            if (TryParseId(book.userBookId, out var userBookId))
+            if (hasUserBookId)
             {
                 client.MoveUserBook(
                     userBookId,
@@ -528,11 +544,22 @@ namespace BookshelfPorting.Runtime
                     },
                     response =>
                     {
+                        if (!IsBookEntityAlive(book))
+                        {
+                            return;
+                        }
+
                         ApplyUserBookResponse(book, response);
                         onSucceeded?.Invoke(book);
                     },
                     error =>
                     {
+                        if (!IsBookEntityAlive(book))
+                        {
+                            return;
+                        }
+
+                        RestoreBookPlacementIds(book, previousBookshelfId, previousBookshelfSectionId);
                         var message = FormatUserFacingError(error);
                         Debug.LogWarning($"User book move failed: {FormatError(error)}");
                         onFailed?.Invoke(message);
@@ -541,6 +568,53 @@ namespace BookshelfPorting.Runtime
             }
 
             return false;
+        }
+
+        private int ResolveBookPlacementBookshelfIndex()
+        {
+            if (generator == null || generator.BookshelfCount <= 0)
+            {
+                return -1;
+            }
+
+            return generator.DisplayBookshelfIndex >= 0
+                ? generator.DisplayBookshelfIndex
+                : generator.ActiveBookshelfIndex;
+        }
+
+        private string ResolveBookPlacementBookshelfId(BookEntity book, int bookshelfIndex)
+        {
+            if (generator != null && bookshelfIndex >= 0)
+            {
+                var currentBookshelfId = generator.GetBookshelfServerId(bookshelfIndex);
+                if (!string.IsNullOrWhiteSpace(currentBookshelfId))
+                {
+                    return currentBookshelfId;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(book != null ? book.bookshelfId : null))
+            {
+                return book.bookshelfId;
+            }
+
+            return generator != null ? generator.GetActiveBookshelfServerId() : null;
+        }
+
+        private string ResolveBookPlacementSectionId(BookEntity book, int bookshelfIndex)
+        {
+            var section = book != null ? book.CurrentSection : null;
+            if (section == null)
+            {
+                return book != null ? book.bookshelfSectionId : null;
+            }
+
+            if (generator == null || bookshelfIndex < 0)
+            {
+                return null;
+            }
+
+            return generator.GetSectionServerId(bookshelfIndex, section.row, section.column);
         }
 
         public void SyncSectionAlignment(ShelfSection section)
@@ -949,6 +1023,11 @@ namespace BookshelfPorting.Runtime
 
         private static void RestoreBookAddPlacementIds(BookEntity book, string bookshelfId, string bookshelfSectionId)
         {
+            RestoreBookPlacementIds(book, bookshelfId, bookshelfSectionId);
+        }
+
+        private static void RestoreBookPlacementIds(BookEntity book, string bookshelfId, string bookshelfSectionId)
+        {
             if (book == null)
             {
                 return;
@@ -956,6 +1035,11 @@ namespace BookshelfPorting.Runtime
 
             book.bookshelfId = bookshelfId;
             book.bookshelfSectionId = bookshelfSectionId;
+        }
+
+        private static bool IsBookEntityAlive(BookEntity book)
+        {
+            return book != null && book.gameObject != null;
         }
 
         public bool RemoveBook(BookEntity book, Action onSucceeded = null, Action<string> onFailed = null)
@@ -1299,7 +1383,7 @@ namespace BookshelfPorting.Runtime
                         ? item.ReadingRecord.Content
                         : item.Book.Description,
                     AverageRating = ResolveAverageRating(item.Book),
-                    TotalLikeCount = ResolveLikeCount(item.Book),
+                    TotalLikeCount = ResolveLikeCount(item.Book, item.UserBook?.Liked == true),
                     ReviewCount = ResolveReviewCount(item.Book),
                     HasAggregateBookStats = HasAggregateBookStats(item.Book),
                     OwnerRating = item.UserBook?.OwnerRating.HasValue == true ? (float)item.UserBook.OwnerRating.Value : 0f,
@@ -1454,9 +1538,16 @@ namespace BookshelfPorting.Runtime
             return Mathf.Clamp((float)value, 0f, 5f);
         }
 
-        private static int ResolveLikeCount(BookSummaryResponseDto book)
+        private static int ResolveLikeCount(BookSummaryResponseDto book, bool isLiked)
         {
-            return book == null ? 0 : Mathf.Max(0, book.LikeCount ?? 0);
+            var count = book == null ? 0 : Mathf.Max(0, book.LikeCount ?? 0);
+            return ResolveVisibleLikeCount(count, isLiked);
+        }
+
+        private static int ResolveVisibleLikeCount(int count, bool isLiked)
+        {
+            count = Mathf.Max(0, count);
+            return isLiked ? Mathf.Max(1, count) : count;
         }
 
         private static int ResolveReviewCount(BookSummaryResponseDto book)

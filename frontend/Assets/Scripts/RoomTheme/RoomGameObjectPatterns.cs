@@ -13,11 +13,17 @@ namespace Dotshelf.Scripts.RoomTheme
         public static readonly string[] Desk = { "DeskRoot", "NotebookStation", "Desk_" };
         public static readonly string[] Dashboard = { "DashboardScreenPanel", "GuestbookBoard", "Dashboard_" };
 
+        // BackWall 자체는 BookshelfGenerator.BuildBackWallAlcove 가 책장 alcove 때문에
+        // BackWall_LeftStrip / RightStrip / TopStrip 3 분할로만 생성. 정확 일치 검사하면
+        // BackWall strips 가 wall 로 인식 안 돼 RoomThemeApplier.ApplyMaterials 가 그
+        // strips 에 wall material (= stencil reader) 를 swap 안 함 → 다른 wall 만 hole
+        // 보이는 비대칭 발생. 따라서 prefix 매칭으로 BackWall_* strips 모두 wall 인식.
         public static bool IsWallName(string name)
         {
             for (int i = 0; i < Wall.Length; i++)
             {
                 if (name == Wall[i]) return true;
+                if (name.StartsWith(Wall[i] + "_")) return true;
             }
             return false;
         }

@@ -17,6 +17,7 @@ namespace BookshelfPorting.Runtime
             bool isBookPlacementEditorOpen,
             bool isBookReportWritePanelOpen,
             bool isBookReportReadPanelOpen,
+            bool isBookReviewWritePanelOpen,
             bool isFirstBookshelfTutorialOpen,
             bool hasActiveEditSection)
         {
@@ -34,6 +35,7 @@ namespace BookshelfPorting.Runtime
             IsBookPlacementEditorOpen = isBookPlacementEditorOpen;
             IsBookReportWritePanelOpen = isBookReportWritePanelOpen;
             IsBookReportReadPanelOpen = isBookReportReadPanelOpen;
+            IsBookReviewWritePanelOpen = isBookReviewWritePanelOpen;
             IsFirstBookshelfTutorialOpen = isFirstBookshelfTutorialOpen;
             HasActiveEditSection = hasActiveEditSection;
         }
@@ -52,6 +54,7 @@ namespace BookshelfPorting.Runtime
         public bool IsBookPlacementEditorOpen { get; }
         public bool IsBookReportWritePanelOpen { get; }
         public bool IsBookReportReadPanelOpen { get; }
+        public bool IsBookReviewWritePanelOpen { get; }
         public bool IsFirstBookshelfTutorialOpen { get; }
         public bool HasActiveEditSection { get; }
     }
@@ -80,6 +83,7 @@ namespace BookshelfPorting.Runtime
                    state.IsBookPlacementEditorOpen ||
                    state.IsBookReportWritePanelOpen ||
                    state.IsBookReportReadPanelOpen ||
+                   state.IsBookReviewWritePanelOpen ||
                    state.HasActiveEditSection;
         }
 

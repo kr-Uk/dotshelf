@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UIDocument = UnityEngine.UIElements.UIDocument;
@@ -7,80 +8,115 @@ namespace Dotshelf.Scripts.Dashboard
 {
     public static class DashboardRaycastFilter
     {
-        private const string PanelRaycasterTypeName = "UnityEngine.UIElements.PanelRaycaster";
-        private const string WorldDocumentRaycasterTypeName = "UnityEngine.UIElements.WorldDocumentRaycaster";
+        private static readonly List<DashboardScreenController> Controllers = new();
+
+        public static void Register(DashboardScreenController controller)
+        {
+            if (controller == null || Controllers.Contains(controller))
+            {
+                return;
+            }
+
+            Controllers.Add(controller);
+        }
+
+        public static void Unregister(DashboardScreenController controller)
+        {
+            if (controller == null)
+            {
+                return;
+            }
+
+            Controllers.Remove(controller);
+        }
 
         public static bool IsNonInteractiveDashboardRaycast(RaycastResult result, Vector2 pointerScreen)
         {
-            if (IsNonInteractiveDashboardObject(result.gameObject))
-            {
-                return true;
-            }
-
-            var moduleObject = result.module != null ? result.module.gameObject : null;
-            if (IsNonInteractiveDashboardObject(moduleObject))
-            {
-                return true;
-            }
-
-            return IsUiToolkitPanelRaycast(result) &&
-                   IsPointerOverNonInteractiveDashboardDocument(pointerScreen);
-        }
-
-        private static bool IsNonInteractiveDashboardObject(GameObject resultObject)
-        {
-            if (resultObject == null)
-            {
-                return false;
-            }
-
-            var dashboard = resultObject.GetComponentInParent<DashboardScreenController>();
+            _ = pointerScreen;
+            var dashboard = ResolveDashboardFromRaycast(result);
             return dashboard != null && !dashboard.InteractionEnabled;
         }
 
-        private static bool IsUiToolkitPanelRaycast(RaycastResult result)
+        public static bool IsPointerOverInteractiveDashboard(Vector2 pointerScreen)
         {
-            if (result.module == null)
+            PruneDestroyedControllers();
+            for (var i = 0; i < Controllers.Count; i++)
             {
-                return false;
-            }
-
-            var moduleTypeName = result.module.GetType().FullName;
-            return moduleTypeName == PanelRaycasterTypeName ||
-                   moduleTypeName == WorldDocumentRaycasterTypeName;
-        }
-
-        private static bool IsPointerOverNonInteractiveDashboardDocument(Vector2 pointerScreen)
-        {
-            var documents = Object.FindObjectsByType<UIDocument>(FindObjectsSortMode.None);
-            for (var i = 0; i < documents.Length; i++)
-            {
-                var document = documents[i];
-                if (document == null || !document.isActiveAndEnabled)
+                var dashboard = Controllers[i];
+                if (dashboard == null || !dashboard.isActiveAndEnabled || !dashboard.InteractionEnabled)
                 {
                     continue;
                 }
 
-                var dashboard = document.GetComponentInParent<DashboardScreenController>();
-                if (dashboard == null || dashboard.InteractionEnabled)
-                {
-                    continue;
-                }
-
-                var root = document.rootVisualElement;
-                if (root == null || root.panel == null)
-                {
-                    continue;
-                }
-
-                var panelPosition = RuntimePanelUtils.ScreenToPanel(root.panel, pointerScreen);
-                if (root.panel.Pick(panelPosition) != null)
+                if (IsPointerOverDashboardDocument(dashboard, pointerScreen))
                 {
                     return true;
                 }
             }
 
             return false;
+        }
+
+        private static DashboardScreenController ResolveDashboardFromRaycast(RaycastResult result)
+        {
+            var dashboard = ResolveDashboardObject(result.gameObject);
+            if (dashboard != null)
+            {
+                return dashboard;
+            }
+
+            var moduleObject = result.module != null ? result.module.gameObject : null;
+            dashboard = ResolveDashboardObject(moduleObject);
+            if (dashboard != null)
+            {
+                return dashboard;
+            }
+
+            return null;
+        }
+
+        private static DashboardScreenController ResolveDashboardObject(GameObject resultObject)
+        {
+            if (resultObject == null)
+            {
+                return null;
+            }
+
+            return resultObject.GetComponentInParent<DashboardScreenController>();
+        }
+
+        private static bool IsPointerOverDashboardDocument(DashboardScreenController dashboard, Vector2 pointerScreen)
+        {
+            if (dashboard == null)
+            {
+                return false;
+            }
+
+            var document = dashboard.GetComponent<UIDocument>();
+            if (document == null || !document.isActiveAndEnabled)
+            {
+                return false;
+            }
+
+            var root = document.rootVisualElement;
+            if (root == null || root.panel == null)
+            {
+                return false;
+            }
+
+            var panelPosition = RuntimePanelUtils.ScreenToPanel(root.panel, pointerScreen);
+            return root.panel.Pick(panelPosition) != null;
+        }
+
+        private static void PruneDestroyedControllers()
+        {
+            for (var i = Controllers.Count - 1; i >= 0; i--)
+            {
+                if (Controllers[i] == null)
+                {
+                    Controllers.RemoveAt(i);
+                }
+            }
         }
     }
 }
