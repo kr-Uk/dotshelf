@@ -133,19 +133,36 @@ python -m http.server 8080
 
 Windows Store Python alias만 있는 PC에서는 Python 서버가 바로 종료될 수 있습니다. 그 경우 PowerShell/.NET 기반 정적 파일 서버를 따로 띄우거나, Python을 설치합니다.
 
-## Unity 빌드 zip 규칙
+## Unity 빌드 + publish 자동화 (1-click)
 
-Unity Windows 빌드를 zip으로 묶고, manifest의 `packageUrl`, `sha256`, `entrypoint`를 맞춥니다.
+운영용 Unity Windows 빌드 + 배포는 Unity Editor 메뉴 한 번 눌러 끝낸다.
 
-Unity Product Name이 `Dotshelf`로 설정되어 있어 빌드 산출물은 `Dotshelf.exe`입니다 (manifest의 `entrypoint`와 일치).
+1. Unity 프로젝트(`frontend/`)를 Unity Editor 로 연다.
+2. 메뉴: **Tools → DotShelf → Build & Publish Launcher Package**
+3. 윈도우에서 새 버전(기본값: 현재 manifest patch +1, 수정 가능)과 release notes(한 줄당 bullet 하나)를 입력하고 **Build & Publish** 클릭.
 
-manifest 예시:
+Editor 가 다음을 자동으로 수행:
+
+- `BuildPipeline.BuildPlayer (StandaloneWindows64)` 로 `frontend/Build/Windows/Dotshelf.exe` 빌드
+- `launcher/scripts/publish-unity.ps1` 호출 →
+  - `bump-version.ps1 -Target unity -NewVersion <ver>` 로
+    `frontend/ProjectSettings/ProjectSettings.asset` (bundleVersion),
+    `launcher/manifests/dev/windows/latest.json` (latestVersion / packageUrl),
+    `web/service-web/app/(marketing)/download/page.tsx` (version / date) 동기 갱신
+  - `Build/Windows/*` 를 `launcher/dist/Dotshelf-<ver>.zip` 으로 압축 + SHA256 계산
+  - `latest.json` 의 `sha256`, `releaseNotes` 필드 patch
+  - GitLab Generic Packages (`dotshelf-unity/<ver>/`) 로 PUT 업로드 → HEAD 검증
+  - `feat/launcher/unity-<ver>` 신규 브랜치 생성 → 변경 커밋 → push → GitLab MR 생성 (target = `dev`)
+
+머지되면 CI 의 `launcher:publish` 잡이 Generic Packages 에서 zip 받아 sha256 검증 + prod 정적 호스트 (`/launcher/windows/`) 로 rsync + nginx reload 까지 자동.
+
+manifest 예시 (편집 대상은 `latestVersion`, `mandatory`, `packageUrl`, `sha256`, `entrypoint`, `minLauncherVersion`, `releaseNotes`):
 
 ```json
 {
   "latestVersion": "0.1.0",
   "mandatory": false,
-  "packageUrl": "http://127.0.0.1:8080/Dotshelf-0.1.0.zip",
+  "packageUrl": "https://dotshelf.digital/launcher/windows/Dotshelf-0.1.0.zip",
   "sha256": "UNITY_BUILD_ZIP_SHA256",
   "entrypoint": "Dotshelf.exe",
   "minLauncherVersion": "0.1.0",
@@ -155,13 +172,58 @@ manifest 예시:
 }
 ```
 
-SHA256 계산:
+Unity Product Name 이 `Dotshelf` 로 설정되어 있어 빌드 산출물은 `Dotshelf.exe` 다 (manifest 의 `entrypoint` 와 일치).
+
+### 사전 조건
+
+- Windows + .NET 8 SDK (`launcher` 빌드용) + Unity Editor (`frontend` 프로젝트)
+- 환경변수 `GITLAB_TOKEN` (lab.ssafy.com PAT, scope=`api`, project Developer 이상) — `publish-unity.ps1` 가 GitLab API 호출에 사용
+- **dev 브랜치 위 + clean working tree** — `publish-unity.ps1` 가 자동화 실행 전 강제 검증
+  - master 브랜치 위에서 실행하면 정책상 거절 ("master 절대 건드리지 말 것")
+  - feat/* 브랜치 위에서 실행하면 거절 (release commit 에 unrelated 변경 섞임 방지) — 작업 브랜치는 먼저 dev 로 머지 후 dev 위에서 메뉴 사용
+
+### 실패 시 recovery
+
+- **0~3 단계** (token/build/git pre-flight, bump-version, zip, manifest patch) 에서 실패: 외부 영향 없음. dirty file 만 git 으로 정리:
+  ```powershell
+  git checkout -- frontend/ProjectSettings/ProjectSettings.asset `
+                  launcher/manifests/dev/windows/latest.json `
+                  "web/service-web/app/(marketing)/download/page.tsx"
+  ```
+- **4 단계 (PUT) 이후 실패**: GitLab Generic Packages 에 zip 이 이미 올라간 상태. PUT 은 idempotent (같은 버전 덮어쓰기) 라 그대로 재시도 OK.
+- **6 단계 (commit/push/MR) 중 실패**: 로컬에 `feat/launcher/unity-<ver>` 브랜치가 남음. 정리 후 재시도:
+  ```powershell
+  git checkout dev
+  git branch -D feat/launcher/unity-<ver>
+  # 원격에 push 까지 갔으면 GitLab 에서 해당 브랜치/MR 도 같이 정리
+  ```
+
+### 수동 fallback
+
+자동화가 실패하면 다음 순서로:
 
 ```powershell
-(Get-FileHash -Algorithm SHA256 -Path .\Dotshelf-0.1.0.zip).Hash
+# 1) 버전/링크 동기 갱신
+.\launcher\scripts\bump-version.ps1 -Target unity -NewVersion 0.1.1
+
+# 2) Unity Editor → File > Build Settings > Build (Windows64) — frontend\Build\Windows\
+
+# 3) zip + sha256
+Compress-Archive -Path .\frontend\Build\Windows\* -DestinationPath .\launcher\dist\Dotshelf-0.1.1.zip
+(Get-FileHash -Algorithm SHA256 -Path .\launcher\dist\Dotshelf-0.1.1.zip).Hash
+
+# 4) launcher/manifests/dev/windows/latest.json 의 sha256, releaseNotes 손편집
+
+# 5) Generic Packages 업로드
+curl --request PUT `
+  --header "PRIVATE-TOKEN: $env:GITLAB_TOKEN" `
+  --upload-file .\launcher\dist\Dotshelf-0.1.1.zip `
+  "https://lab.ssafy.com/api/v4/projects/1304436/packages/generic/dotshelf-unity/0.1.1/Dotshelf-0.1.1.zip"
+
+# 6) feat/launcher/unity-0.1.1 브랜치로 변경 커밋 + dev 타깃 MR
 ```
 
-zip을 다시 만들면 SHA256도 반드시 다시 계산합니다.
+zip 을 다시 만들면 SHA256 도 반드시 다시 계산한다.
 
 ## 설치 동작
 
