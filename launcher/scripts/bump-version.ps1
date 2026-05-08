@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 DotShelf 버전 bump 헬퍼. 한 트랙(launcher 또는 unity) 의 source of truth 와
 미러 위치들을 한 번에 갱신한다.
@@ -93,17 +93,10 @@ elseif ($Target -eq "unity") {
     Edit-File -Path $page -OldPattern 'date: "[^"]+",' -NewLine "date: `"$ReleaseDate`"," -Regex $true
 
     Write-Host
-    Write-Host "다음 단계:"
-    Write-Host "  1. Unity Editor 빌드 → 폴더 통째로 zip 압축"
-    Write-Host "  2. SHA-256 계산:"
-    Write-Host "     (Get-FileHash -Algorithm SHA256 -Path .\Dotshelf-$NewVersion.zip).Hash"
-    Write-Host "  3. launcher/manifests/dev/windows/latest.json 의 sha256 필드 손으로 갱신"
-    Write-Host "  4. zip 을 GitLab Generic Packages (dotshelf-unity) 로 업로드:"
-    Write-Host "     curl --request PUT ``"
-    Write-Host "       --header `"PRIVATE-TOKEN: `$env:GITLAB_TOKEN`" ``"
-    Write-Host "       --upload-file .\Dotshelf-$NewVersion.zip ``"
-    Write-Host "       `"https://lab.ssafy.com/api/v4/projects/1304436/packages/generic/dotshelf-unity/$NewVersion/Dotshelf-$NewVersion.zip`""
-    Write-Host "  5. master 머지 → launcher:publish 가 sha256 검증 후 운영 경로에 업로드"
+    Write-Host "다음 단계 (자동화 권장: Unity Editor 메뉴 'Tools > DotShelf > Build & Publish Launcher Package'):"
+    Write-Host "  - 자동: launcher/scripts/publish-unity.ps1 가 zip/sha256/upload/MR 까지 처리"
+    Write-Host "  - 수동 fallback 절차는 launcher/AGENTS.md '수동 fallback' 섹션 참고"
+    Write-Host "    (요약: zip 압축 → SHA256 → manifest sha256/releaseNotes 편집 → curl PUT → feat 브랜치 + MR)"
 }
 
 Write-Host

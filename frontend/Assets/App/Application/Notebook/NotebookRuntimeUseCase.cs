@@ -56,6 +56,11 @@ namespace App.Application.Notebook
             repository.LoadSpaces(keyword, cursor, limit, onSuccess, onError);
         }
 
+        public void UploadMySpaceThumbnail(byte[] imageBytes, string contentType, Action<NotebookSpaceThumbnailUploadResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            repository.UploadMySpaceThumbnail(imageBytes, contentType, onSuccess, onError);
+        }
+
         public void LoadDefaultShelfTarget(Action<NotebookShelfTarget> onSuccess, Action<NotebookApiError> onError)
         {
             repository.LoadDefaultShelfTarget(onSuccess, onError);

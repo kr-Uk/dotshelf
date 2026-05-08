@@ -25,9 +25,12 @@ import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 import com.dotshelf.global.storage.S3StorageService.ObjectMetadata;
 
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -89,6 +92,25 @@ class S3StorageServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.STORAGE_INTERNAL_ERROR);
+    }
+
+    @Test
+    @DisplayName("readObjectHeadBytes는 S3 range GET으로 앞부분 바이트만 읽는다")
+    void readObjectHeadBytes_readsRange() {
+        given(s3Client.getObjectAsBytes(any(GetObjectRequest.class)))
+                .willReturn(ResponseBytes.fromByteArray(
+                        GetObjectResponse.builder().build(),
+                        new byte[] {1, 2, 3}));
+        ArgumentCaptor<GetObjectRequest> requestCaptor = ArgumentCaptor.forClass(GetObjectRequest.class);
+
+        byte[] bytes = s3StorageService.readObjectHeadBytes("spaces/10/thumbnail/a.png", 12);
+
+        assertThat(bytes).containsExactly(1, 2, 3);
+        then(s3Client).should().getObjectAsBytes(requestCaptor.capture());
+        GetObjectRequest request = requestCaptor.getValue();
+        assertThat(request.bucket()).isEqualTo("dotshelf-bucket");
+        assertThat(request.key()).isEqualTo("spaces/10/thumbnail/a.png");
+        assertThat(request.range()).isEqualTo("bytes=0-11");
     }
 
     @Test

@@ -5,6 +5,7 @@ using System.Linq;
 using App.Application.Notebook;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.Networking;
 using UnityEngine.UIElements;
 
 namespace App.Features.Notebook.Presentation
@@ -113,6 +114,7 @@ namespace App.Features.Notebook.Presentation
                 string mood,
                 string description,
                 string thumbnailKey,
+                string thumbnailUrl,
                 int followers,
                 int likes,
                 int visits,
@@ -126,6 +128,7 @@ namespace App.Features.Notebook.Presentation
                 Mood = mood;
                 Description = description;
                 ThumbnailKey = thumbnailKey;
+                ThumbnailUrl = thumbnailUrl;
                 Followers = followers;
                 Likes = likes;
                 Visits = visits;
@@ -140,6 +143,7 @@ namespace App.Features.Notebook.Presentation
             public string Mood { get; }
             public string Description { get; }
             public string ThumbnailKey { get; }
+            public string ThumbnailUrl { get; }
             public int Followers { get; set; }
             public int Likes { get; set; }
             public int Visits { get; }
@@ -206,6 +210,9 @@ namespace App.Features.Notebook.Presentation
         private const int DashboardSortingOrder = 320;
         private const int FallbackSortingOrder = -320;
         private const int DashboardInitializationRetryFrames = 30;
+        private const int MaxSpaceThumbnailTextureCacheCount = 32;
+        private const int MaxRemoteSpaceThumbnailWidth = 1920;
+        private const int MaxRemoteSpaceThumbnailHeight = 1080;
         private const float RecommendWheelScrollScale = 56f;
         private const int SearchResultPageSize = 48;
         private const int MarketBookPageSize = 48;
@@ -262,6 +269,9 @@ namespace App.Features.Notebook.Presentation
         private readonly Dictionary<string, List<BookReviewViewModel>> bookReviewMap = new();
         private readonly List<UserViewModel> socialListUsers = new();
         private readonly HashSet<string> requestedBookReviewIds = new();
+        private readonly Dictionary<string, Texture2D> spaceThumbnailTextureCache = new();
+        private readonly LinkedList<string> spaceThumbnailTextureCacheOrder = new();
+        private readonly Dictionary<string, LinkedListNode<string>> spaceThumbnailTextureCacheNodes = new();
         private readonly List<Button> bookRatingStarButtons = new();
         private SpaceViewModel[] apiSpaces = Array.Empty<SpaceViewModel>();
         private DecorObjectViewModel[] apiDecorObjects = Array.Empty<DecorObjectViewModel>();
@@ -434,6 +444,11 @@ namespace App.Features.Notebook.Presentation
         private void OnDisable()
         {
             visible = false;
+        }
+
+        private void OnDestroy()
+        {
+            ClearSpaceThumbnailTextureCache();
         }
 
         private void Update()
@@ -4570,6 +4585,7 @@ namespace App.Features.Notebook.Presentation
                     FirstText(item.Mood, "API · COMMUNITY"),
                     FirstText(item.Description, "API에서 불러온 공간입니다."),
                     "api-space",
+                    FirstText(item.ThumbnailUrl, string.Empty),
                     ClampToInt(item.FollowerCount),
                     ClampToInt(item.LikeCount),
                     ClampToInt(item.VisitCount),
@@ -6709,19 +6725,163 @@ namespace App.Features.Notebook.Presentation
             return button;
         }
 
-        private static void BuildSpaceThumbnail(VisualElement thumbnail, SpaceViewModel space)
+        private void BuildSpaceThumbnail(VisualElement thumbnail, SpaceViewModel space)
         {
             var key = string.IsNullOrEmpty(space.ThumbnailKey) ? space.Id : space.ThumbnailKey;
-            var resource = Resources.Load<Texture2D>($"SpaceThumbnails/{key}");
-            if (resource != null)
+            var remoteUrl = string.IsNullOrWhiteSpace(space.ThumbnailUrl) ? string.Empty : space.ThumbnailUrl.Trim();
+            if (!string.IsNullOrEmpty(remoteUrl) && TryGetCachedSpaceThumbnailTexture(remoteUrl, out var cached))
             {
-                thumbnail.style.backgroundImage = new StyleBackground(resource);
-                thumbnail.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Cover);
+                ApplySpaceThumbnailTexture(thumbnail, cached);
                 return;
             }
 
+            var resource = Resources.Load<Texture2D>($"SpaceThumbnails/{key}");
+            if (resource != null)
+            {
+                ApplySpaceThumbnailTexture(thumbnail, resource);
+                return;
+            }
+
+            BuildGeneratedSpaceThumbnail(thumbnail, space, key);
+            if (!string.IsNullOrEmpty(remoteUrl))
+            {
+                thumbnail.userData = remoteUrl;
+                StartCoroutine(LoadSpaceThumbnailTexture(remoteUrl, thumbnail));
+            }
+        }
+
+        private IEnumerator LoadSpaceThumbnailTexture(string url, VisualElement thumbnail)
+        {
+            using (var request = UnityWebRequestTexture.GetTexture(url))
+            {
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    yield break;
+                }
+
+                var texture = DownloadHandlerTexture.GetContent(request);
+                if (texture == null)
+                {
+                    yield break;
+                }
+
+                if (texture.width > MaxRemoteSpaceThumbnailWidth || texture.height > MaxRemoteSpaceThumbnailHeight)
+                {
+                    UnityEngine.Debug.LogWarning($"[NotebookToolkit] Skipped oversized space thumbnail {texture.width}x{texture.height}: {url}");
+                    Destroy(texture);
+                    yield break;
+                }
+
+                CacheSpaceThumbnailTexture(url, texture);
+                if (thumbnail != null && thumbnail.panel != null && Equals(thumbnail.userData, url))
+                {
+                    ApplySpaceThumbnailTexture(thumbnail, texture);
+                }
+            }
+        }
+
+        private bool TryGetCachedSpaceThumbnailTexture(string url, out Texture2D texture)
+        {
+            if (!spaceThumbnailTextureCache.TryGetValue(url, out texture) || texture == null)
+            {
+                spaceThumbnailTextureCache.Remove(url);
+                if (spaceThumbnailTextureCacheNodes.TryGetValue(url, out var staleNode))
+                {
+                    spaceThumbnailTextureCacheOrder.Remove(staleNode);
+                    spaceThumbnailTextureCacheNodes.Remove(url);
+                }
+
+                texture = null;
+                return false;
+            }
+
+            if (spaceThumbnailTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                spaceThumbnailTextureCacheOrder.Remove(node);
+                spaceThumbnailTextureCacheOrder.AddLast(node);
+            }
+
+            return true;
+        }
+
+        private void CacheSpaceThumbnailTexture(string url, Texture2D texture)
+        {
+            if (spaceThumbnailTextureCache.TryGetValue(url, out var previous) && previous != null && previous != texture)
+            {
+                Destroy(previous);
+            }
+
+            spaceThumbnailTextureCache[url] = texture;
+
+            if (spaceThumbnailTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                spaceThumbnailTextureCacheOrder.Remove(node);
+                spaceThumbnailTextureCacheOrder.AddLast(node);
+            }
+            else
+            {
+                node = spaceThumbnailTextureCacheOrder.AddLast(url);
+                spaceThumbnailTextureCacheNodes[url] = node;
+            }
+
+            TrimSpaceThumbnailTextureCache();
+        }
+
+        private void TrimSpaceThumbnailTextureCache()
+        {
+            while (spaceThumbnailTextureCache.Count > MaxSpaceThumbnailTextureCacheCount && spaceThumbnailTextureCacheOrder.First != null)
+            {
+                var oldestUrl = spaceThumbnailTextureCacheOrder.First.Value;
+                spaceThumbnailTextureCacheOrder.RemoveFirst();
+                spaceThumbnailTextureCacheNodes.Remove(oldestUrl);
+
+                if (spaceThumbnailTextureCache.TryGetValue(oldestUrl, out var texture) && texture != null)
+                {
+                    Destroy(texture);
+                }
+
+                spaceThumbnailTextureCache.Remove(oldestUrl);
+            }
+        }
+
+        private void ClearSpaceThumbnailTextureCache()
+        {
+            foreach (var texture in spaceThumbnailTextureCache.Values)
+            {
+                if (texture != null)
+                {
+                    Destroy(texture);
+                }
+            }
+
+            spaceThumbnailTextureCache.Clear();
+            spaceThumbnailTextureCacheOrder.Clear();
+            spaceThumbnailTextureCacheNodes.Clear();
+        }
+
+        private static void ApplySpaceThumbnailTexture(VisualElement thumbnail, Texture2D texture)
+        {
+            thumbnail.style.backgroundColor = Color.clear;
+            thumbnail.style.backgroundImage = new StyleBackground(texture);
+            thumbnail.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Cover);
+            thumbnail.Q<VisualElement>("space-thumbnail-fallback")?.RemoveFromHierarchy();
+        }
+
+        private static void BuildGeneratedSpaceThumbnail(VisualElement thumbnail, SpaceViewModel space, string key)
+        {
             var accent = space.AccentColor;
             thumbnail.style.backgroundColor = Color.Lerp(Night, accent, 0.28f);
+
+            var fallback = new VisualElement { name = "space-thumbnail-fallback" };
+            fallback.pickingMode = PickingMode.Ignore;
+            fallback.style.position = Position.Absolute;
+            fallback.style.left = 0;
+            fallback.style.right = 0;
+            fallback.style.top = 0;
+            fallback.style.bottom = 0;
+            thumbnail.Add(fallback);
 
             var wall = RoomRect("photo-wall", 18, 20, 254, 88, Rgba(0xF7, 0xFF, 0xF7, 0.13f), 10);
             wall.style.borderTopWidth = 1;
@@ -6732,32 +6892,32 @@ namespace App.Features.Notebook.Presentation
             wall.style.borderRightColor = Rgba(0xFF, 0xFF, 0xFF, 0.13f);
             wall.style.borderBottomColor = Rgba(0xFF, 0xFF, 0xFF, 0.13f);
             wall.style.borderLeftColor = Rgba(0xFF, 0xFF, 0xFF, 0.13f);
-            thumbnail.Add(wall);
+            fallback.Add(wall);
 
-            AddShelfPreview(thumbnail, 38, 56, 128, 44, accent, key == "endless-sf-shelf" ? 14 : 10);
-            AddDeskPreview(thumbnail, 42, 94, 204, 18, key == "endless-sf-shelf" ? Color.Lerp(Night, Violet, 0.46f) : WarmPaper);
-            AddNotebookPreview(thumbnail, key == "sunday-economy-desk" ? 146 : 116, 78, Accent);
+            AddShelfPreview(fallback, 38, 56, 128, 44, accent, key == "endless-sf-shelf" ? 14 : 10);
+            AddDeskPreview(fallback, 42, 94, 204, 18, key == "endless-sf-shelf" ? Color.Lerp(Night, Violet, 0.46f) : WarmPaper);
+            AddNotebookPreview(fallback, key == "sunday-economy-desk" ? 146 : 116, 78, Accent);
 
             if (key == "sunday-economy-desk")
             {
-                AddWindowPreview(thumbnail, 204, 36, 62, 56, Accent, true);
-                AddChartPreview(thumbnail, 58, 38, 74, 46, Gold);
+                AddWindowPreview(fallback, 204, 36, 62, 56, Accent, true);
+                AddChartPreview(fallback, 58, 38, 74, 46, Gold);
             }
             else if (key == "endless-sf-shelf")
             {
-                AddWindowPreview(thumbnail, 204, 34, 58, 62, Accent, false);
-                AddRoomRect(thumbnail, "neon-line", 212, 74, 42, 3, Surface, 1);
+                AddWindowPreview(fallback, 204, 34, 58, 62, Accent, false);
+                AddRoomRect(fallback, "neon-line", 212, 74, 42, 3, Surface, 1);
             }
             else if (key == "sentence-collector-shelf")
             {
-                AddPinnedCardPreview(thumbnail, 204, 40, 54, 52, Gold);
+                AddPinnedCardPreview(fallback, 204, 40, 54, 52, Gold);
             }
             else
             {
-                AddLampPreview(thumbnail, 208, 66, Gold);
+                AddLampPreview(fallback, 208, 66, Gold);
             }
 
-            AddRoomRect(thumbnail, "photo-floor-glow", 0, 106, 320, 34, Rgba(0xFF, 0xFF, 0xFF, 0.08f), 0);
+            AddRoomRect(fallback, "photo-floor-glow", 0, 106, 320, 34, Rgba(0xFF, 0xFF, 0xFF, 0.08f), 0);
         }
 
         private static VisualElement RoomRect(string name, int left, int top, int width, int height, Color color, int radius)
