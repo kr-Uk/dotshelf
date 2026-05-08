@@ -59,6 +59,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# stdout/stderr 를 UTF-8 로 출력 (Unity Editor 가 stdout 을 UTF-8 로 읽음 — PS 5.1
+# 의 default OutputEncoding 은 시스템 codepage 라 한글 메시지가 깨짐).
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $projectId = 1304436
 $gitlabApi = "https://lab.ssafy.com/api/v4/projects/$projectId"
