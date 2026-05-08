@@ -23,9 +23,16 @@ namespace BookshelfPorting.Runtime
         private bool configured;
         private bool isRefreshing;
         private bool isThumbnailUploading;
+        private bool thumbnailUploadPending;
+        private Action<NotebookSpaceThumbnailUploadResult> pendingThumbnailUploadSucceeded;
+        private Action<string> pendingThumbnailUploadFailed;
         private Action<bool, string> refreshCompletion;
         private int itemsLoadFailureCount;
         private string firstItemsLoadFailureMessage;
+        private const int RoomThumbnailCaptureWidth = 1024;
+        private const int RoomThumbnailCaptureHeight = 576;
+        private const int RoomThumbnailMaxUploadBytes = 2 * 1024 * 1024;
+        private static readonly int[] RoomThumbnailJpegQualities = { 78, 68, 58, 48 };
         // Lifetime: per-controller instance. BE visit endpoint is not strictly
         // idempotent (visit count) so we de-dupe at the FE level — re-entering
         // the same other-user space within a single play session counts once.
@@ -44,12 +51,13 @@ namespace BookshelfPorting.Runtime
             NotebookApiClient apiClient,
             BookshelfGenerator bookshelfGenerator,
             BookshelfExperienceManager manager,
-            CameraController controller = null)
+            CameraController controller = null,
+            NotebookRuntimeUseCase runtimeUseCase = null)
         {
             client = apiClient;
-            notebookRuntimeUseCase = apiClient != null
+            notebookRuntimeUseCase = runtimeUseCase ?? (apiClient != null
                 ? new NotebookRuntimeUseCase(new ApiNotebookRuntimeRepository(apiClient, () => APIManager.Instance != null && APIManager.Instance.HasAccessToken))
-                : null;
+                : null);
             generator = bookshelfGenerator;
             experienceManager = manager;
             cameraController = controller;
@@ -1210,7 +1218,11 @@ namespace BookshelfPorting.Runtime
 
             if (isThumbnailUploading)
             {
-                return false;
+                thumbnailUploadPending = true;
+                pendingThumbnailUploadSucceeded = onSucceeded;
+                pendingThumbnailUploadFailed = onFailed;
+                Debug.Log("[BookshelfApiSync] Room thumbnail upload is in progress; queued latest capture.");
+                return true;
             }
 
             StartCoroutine(CaptureAndUploadRoomThumbnail(onSucceeded, onFailed));
@@ -1222,65 +1234,76 @@ namespace BookshelfPorting.Runtime
             Action<string> onFailed)
         {
             isThumbnailUploading = true;
+            var nextOnSucceeded = onSucceeded;
+            var nextOnFailed = onFailed;
 
-            yield return new WaitForEndOfFrame();
-
-            byte[] imageBytes = null;
-            try
+            while (true)
             {
-                imageBytes = CaptureMainViewJpeg();
-            }
-            catch (Exception ex)
-            {
-                isThumbnailUploading = false;
-                Debug.LogWarning($"[BookshelfApiSync] Room thumbnail capture failed: {ex.Message}");
-                onFailed?.Invoke("Room thumbnail capture failed.");
-                yield break;
-            }
+                thumbnailUploadPending = false;
+                pendingThumbnailUploadSucceeded = null;
+                pendingThumbnailUploadFailed = null;
 
-            if (imageBytes == null || imageBytes.Length == 0)
-            {
-                isThumbnailUploading = false;
-                onFailed?.Invoke("Room thumbnail image was empty.");
-                yield break;
-            }
+                yield return new WaitForEndOfFrame();
 
-            var completed = false;
-            notebookRuntimeUseCase.UploadMySpaceThumbnail(
-                imageBytes,
-                "image/jpeg",
-                result =>
+                byte[] imageBytes = null;
+                try
                 {
-                    completed = true;
-                    isThumbnailUploading = false;
-                    Debug.Log($"[BookshelfApiSync] Room thumbnail uploaded: key={result?.ThumbnailKey}, url={result?.ThumbnailUrl}");
-                    onSucceeded?.Invoke(result);
-                },
-                error =>
+                    imageBytes = CaptureMainViewJpeg();
+                }
+                catch (Exception ex)
                 {
-                    completed = true;
-                    isThumbnailUploading = false;
-                    var message = string.IsNullOrWhiteSpace(error?.Message) ? error?.Error : error.Message;
-                    Debug.LogWarning($"[BookshelfApiSync] Room thumbnail upload failed: code={error?.Code} message={message}");
-                    onFailed?.Invoke(message);
-                });
+                    Debug.LogWarning($"[BookshelfApiSync] Room thumbnail capture failed: {ex.Message}");
+                    nextOnFailed?.Invoke("Room thumbnail capture failed.");
+                }
 
-            while (!completed)
-            {
-                yield return null;
+                if (imageBytes == null || imageBytes.Length == 0)
+                {
+                    nextOnFailed?.Invoke("Room thumbnail image was empty.");
+                }
+                else
+                {
+                    var completed = false;
+                    notebookRuntimeUseCase.UploadMySpaceThumbnail(
+                        imageBytes,
+                        "image/jpeg",
+                        result =>
+                        {
+                            completed = true;
+                            Debug.Log($"[BookshelfApiSync] Room thumbnail uploaded: key={result?.ThumbnailKey}, url={result?.ThumbnailUrl}");
+                            nextOnSucceeded?.Invoke(result);
+                        },
+                        error =>
+                        {
+                            completed = true;
+                            var message = string.IsNullOrWhiteSpace(error?.Message) ? error?.Error : error.Message;
+                            Debug.LogWarning($"[BookshelfApiSync] Room thumbnail upload failed: code={error?.Code} message={message}");
+                            nextOnFailed?.Invoke(message);
+                        });
+
+                    while (!completed)
+                    {
+                        yield return null;
+                    }
+                }
+
+                if (!thumbnailUploadPending)
+                {
+                    break;
+                }
+
+                nextOnSucceeded = pendingThumbnailUploadSucceeded;
+                nextOnFailed = pendingThumbnailUploadFailed;
             }
+
+            isThumbnailUploading = false;
         }
 
         private byte[] CaptureMainViewJpeg()
         {
-            var camera = Camera.main;
-            if (camera == null)
+            if (cameraController == null ||
+                !cameraController.TryGetMainViewPose(out var camera, out var capturePosition, out var captureRotation, out var captureFieldOfView))
             {
-                camera = UnityEngine.Object.FindFirstObjectByType<Camera>();
-            }
-            if (camera == null)
-            {
-                throw new InvalidOperationException("Main camera was not found.");
+                throw new InvalidOperationException("Main view capture pose was not available.");
             }
 
             var savedPosition = camera.transform.position;
@@ -1290,21 +1313,22 @@ namespace BookshelfPorting.Runtime
             var savedTargetTexture = camera.targetTexture;
             var previousActive = RenderTexture.active;
 
-            var width = Mathf.Clamp(Screen.width > 0 ? Screen.width : 1280, 320, 1920);
-            var height = Mathf.Clamp(Screen.height > 0 ? Screen.height : 720, 180, 1080);
+            var width = RoomThumbnailCaptureWidth;
+            var height = RoomThumbnailCaptureHeight;
             var renderTexture = RenderTexture.GetTemporary(width, height, 24, RenderTextureFormat.ARGB32);
             var texture = new Texture2D(width, height, TextureFormat.RGB24, false);
 
             try
             {
-                cameraController?.ApplyMainView();
+                camera.transform.SetPositionAndRotation(capturePosition, captureRotation);
+                camera.fieldOfView = captureFieldOfView;
                 camera.rect = new Rect(0f, 0f, 1f, 1f);
                 camera.targetTexture = renderTexture;
                 RenderTexture.active = renderTexture;
                 camera.Render();
                 texture.ReadPixels(new Rect(0, 0, width, height), 0, 0);
                 texture.Apply(false);
-                return texture.EncodeToJPG(85);
+                return EncodeRoomThumbnailJpeg(texture);
             }
             finally
             {
@@ -1316,6 +1340,20 @@ namespace BookshelfPorting.Runtime
                 RenderTexture.ReleaseTemporary(renderTexture);
                 Destroy(texture);
             }
+        }
+
+        private static byte[] EncodeRoomThumbnailJpeg(Texture2D texture)
+        {
+            foreach (var quality in RoomThumbnailJpegQualities)
+            {
+                var imageBytes = texture.EncodeToJPG(quality);
+                if (imageBytes != null && imageBytes.Length > 0 && imageBytes.Length <= RoomThumbnailMaxUploadBytes)
+                {
+                    return imageBytes;
+                }
+            }
+
+            throw new InvalidOperationException("Room thumbnail image exceeded the upload size limit.");
         }
 
         public bool SaveReadingRecord(

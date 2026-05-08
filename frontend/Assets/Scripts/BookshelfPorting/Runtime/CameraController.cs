@@ -240,6 +240,27 @@ namespace BookshelfPorting.Runtime
             isTransitioning = false;
         }
 
+        public bool TryGetMainViewPose(out Camera camera, out Vector3 position, out Quaternion rotation, out float fieldOfView)
+        {
+            camera = null;
+            position = default;
+            rotation = default;
+            fieldOfView = mainViewFieldOfView;
+
+            if (!EnsureCameraResolved())
+            {
+                return false;
+            }
+
+            if (!TryComputeMainViewPose(out position, out rotation, out fieldOfView))
+            {
+                return false;
+            }
+
+            camera = targetCamera;
+            return camera != null;
+        }
+
         public void MoveToMainView()
         {
             if (!EnsureCameraResolved())

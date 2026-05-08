@@ -268,7 +268,7 @@ namespace BookshelfPorting.Runtime
             experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase);
             if (useServerBookshelf)
             {
-                bookshelfApiSync.Configure(new NotebookApiClient(apiManager), generator, experienceManager, cameraController);
+                bookshelfApiSync.Configure(new NotebookApiClient(apiManager), generator, experienceManager, cameraController, notebookRuntimeUseCase);
                 experienceManager.ConfigureBookshelfApiSync(bookshelfApiSync);
             }
             environment.Configure(probe, null);

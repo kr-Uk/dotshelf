@@ -210,6 +210,9 @@ namespace App.Features.Notebook.Presentation
         private const int DashboardSortingOrder = 320;
         private const int FallbackSortingOrder = -320;
         private const int DashboardInitializationRetryFrames = 30;
+        private const int MaxSpaceThumbnailTextureCacheCount = 32;
+        private const int MaxRemoteSpaceThumbnailWidth = 1920;
+        private const int MaxRemoteSpaceThumbnailHeight = 1080;
         private const float RecommendWheelScrollScale = 56f;
         private const int SearchResultPageSize = 48;
         private const int MarketBookPageSize = 48;
@@ -267,6 +270,8 @@ namespace App.Features.Notebook.Presentation
         private readonly List<UserViewModel> socialListUsers = new();
         private readonly HashSet<string> requestedBookReviewIds = new();
         private readonly Dictionary<string, Texture2D> spaceThumbnailTextureCache = new();
+        private readonly LinkedList<string> spaceThumbnailTextureCacheOrder = new();
+        private readonly Dictionary<string, LinkedListNode<string>> spaceThumbnailTextureCacheNodes = new();
         private readonly List<Button> bookRatingStarButtons = new();
         private SpaceViewModel[] apiSpaces = Array.Empty<SpaceViewModel>();
         private DecorObjectViewModel[] apiDecorObjects = Array.Empty<DecorObjectViewModel>();
@@ -439,6 +444,11 @@ namespace App.Features.Notebook.Presentation
         private void OnDisable()
         {
             visible = false;
+        }
+
+        private void OnDestroy()
+        {
+            ClearSpaceThumbnailTextureCache();
         }
 
         private void Update()
@@ -6719,7 +6729,7 @@ namespace App.Features.Notebook.Presentation
         {
             var key = string.IsNullOrEmpty(space.ThumbnailKey) ? space.Id : space.ThumbnailKey;
             var remoteUrl = string.IsNullOrWhiteSpace(space.ThumbnailUrl) ? string.Empty : space.ThumbnailUrl.Trim();
-            if (!string.IsNullOrEmpty(remoteUrl) && spaceThumbnailTextureCache.TryGetValue(remoteUrl, out var cached))
+            if (!string.IsNullOrEmpty(remoteUrl) && TryGetCachedSpaceThumbnailTexture(remoteUrl, out var cached))
             {
                 ApplySpaceThumbnailTexture(thumbnail, cached);
                 return;
@@ -6757,12 +6767,98 @@ namespace App.Features.Notebook.Presentation
                     yield break;
                 }
 
-                spaceThumbnailTextureCache[url] = texture;
+                if (texture.width > MaxRemoteSpaceThumbnailWidth || texture.height > MaxRemoteSpaceThumbnailHeight)
+                {
+                    UnityEngine.Debug.LogWarning($"[NotebookToolkit] Skipped oversized space thumbnail {texture.width}x{texture.height}: {url}");
+                    Destroy(texture);
+                    yield break;
+                }
+
+                CacheSpaceThumbnailTexture(url, texture);
                 if (thumbnail != null && thumbnail.panel != null && Equals(thumbnail.userData, url))
                 {
                     ApplySpaceThumbnailTexture(thumbnail, texture);
                 }
             }
+        }
+
+        private bool TryGetCachedSpaceThumbnailTexture(string url, out Texture2D texture)
+        {
+            if (!spaceThumbnailTextureCache.TryGetValue(url, out texture) || texture == null)
+            {
+                spaceThumbnailTextureCache.Remove(url);
+                if (spaceThumbnailTextureCacheNodes.TryGetValue(url, out var staleNode))
+                {
+                    spaceThumbnailTextureCacheOrder.Remove(staleNode);
+                    spaceThumbnailTextureCacheNodes.Remove(url);
+                }
+
+                texture = null;
+                return false;
+            }
+
+            if (spaceThumbnailTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                spaceThumbnailTextureCacheOrder.Remove(node);
+                spaceThumbnailTextureCacheOrder.AddLast(node);
+            }
+
+            return true;
+        }
+
+        private void CacheSpaceThumbnailTexture(string url, Texture2D texture)
+        {
+            if (spaceThumbnailTextureCache.TryGetValue(url, out var previous) && previous != null && previous != texture)
+            {
+                Destroy(previous);
+            }
+
+            spaceThumbnailTextureCache[url] = texture;
+
+            if (spaceThumbnailTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                spaceThumbnailTextureCacheOrder.Remove(node);
+                spaceThumbnailTextureCacheOrder.AddLast(node);
+            }
+            else
+            {
+                node = spaceThumbnailTextureCacheOrder.AddLast(url);
+                spaceThumbnailTextureCacheNodes[url] = node;
+            }
+
+            TrimSpaceThumbnailTextureCache();
+        }
+
+        private void TrimSpaceThumbnailTextureCache()
+        {
+            while (spaceThumbnailTextureCache.Count > MaxSpaceThumbnailTextureCacheCount && spaceThumbnailTextureCacheOrder.First != null)
+            {
+                var oldestUrl = spaceThumbnailTextureCacheOrder.First.Value;
+                spaceThumbnailTextureCacheOrder.RemoveFirst();
+                spaceThumbnailTextureCacheNodes.Remove(oldestUrl);
+
+                if (spaceThumbnailTextureCache.TryGetValue(oldestUrl, out var texture) && texture != null)
+                {
+                    Destroy(texture);
+                }
+
+                spaceThumbnailTextureCache.Remove(oldestUrl);
+            }
+        }
+
+        private void ClearSpaceThumbnailTextureCache()
+        {
+            foreach (var texture in spaceThumbnailTextureCache.Values)
+            {
+                if (texture != null)
+                {
+                    Destroy(texture);
+                }
+            }
+
+            spaceThumbnailTextureCache.Clear();
+            spaceThumbnailTextureCacheOrder.Clear();
+            spaceThumbnailTextureCacheNodes.Clear();
         }
 
         private static void ApplySpaceThumbnailTexture(VisualElement thumbnail, Texture2D texture)

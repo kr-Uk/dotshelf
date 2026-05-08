@@ -6544,8 +6544,11 @@ namespace App.Bootstrap
                 return;
             }
 
-            apiSync.UploadCurrentRoomThumbnail(
-                onFailed: error => Debug.LogWarning($"[RoomEditModeController] Room thumbnail upload skipped/failed: {error}"));
+            if (!apiSync.UploadCurrentRoomThumbnail(
+                    onFailed: error => Debug.LogWarning($"[RoomEditModeController] Room thumbnail upload skipped/failed: {error}")))
+            {
+                Debug.LogWarning("[RoomEditModeController] Room thumbnail upload skipped: API sync is unavailable.");
+            }
         }
 
         private BookshelfApiSyncController ResolveBookshelfApiSyncController()
