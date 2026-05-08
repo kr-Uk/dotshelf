@@ -27,7 +27,7 @@ namespace App.Config
         [SerializeField] private int requestTimeoutSeconds = 10;
         [SerializeField] private bool enableVerboseLog = true;
 
-        public AppApiMode ApiMode => apiMode;
+        public AppApiMode ApiMode => NormalizeApiMode(apiMode);
         public bool UsesHttpApi => true;
         public string DevBaseUrl => devBaseUrl;
         public string ProdBaseUrl => prodBaseUrl;
@@ -48,6 +48,23 @@ namespace App.Config
         {
             var environmentToken = Environment.GetEnvironmentVariable("DOTSHELF_ACCESS_TOKEN");
             return string.IsNullOrWhiteSpace(environmentToken) ? accessToken : environmentToken;
+        }
+
+        private void OnEnable()
+        {
+            apiMode = NormalizeApiMode(apiMode);
+        }
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            apiMode = NormalizeApiMode(apiMode);
+        }
+#endif
+
+        private static AppApiMode NormalizeApiMode(AppApiMode value)
+        {
+            return Enum.IsDefined(typeof(AppApiMode), value) ? value : AppApiMode.RealApi;
         }
     }
 }

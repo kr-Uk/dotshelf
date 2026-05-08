@@ -127,6 +127,8 @@ namespace Dotshelf.Scripts.Dashboard
 
         private static bool IsUiToolkitRaycast(RaycastResult result)
         {
+            // UI Toolkit world-panel raycasters are internal Unity types, so keep
+            // this string check isolated and re-verify it when upgrading Unity.
             var moduleTypeName = result.module != null ? result.module.GetType().FullName : null;
             return moduleTypeName == "UnityEngine.UIElements.PanelRaycaster" ||
                    moduleTypeName == "UnityEngine.UIElements.WorldDocumentRaycaster";
@@ -162,7 +164,7 @@ namespace Dotshelf.Scripts.Dashboard
                 return false;
             }
 
-            return true;
+            return resultObject.GetComponentInParent<WorldSpaceRaycastPassthrough>() != null;
         }
 
         private static bool IsPointerOverDashboardDocument(DashboardScreenController dashboard, Vector2 pointerScreen)
@@ -198,5 +200,9 @@ namespace Dotshelf.Scripts.Dashboard
                 }
             }
         }
+    }
+
+    public sealed class WorldSpaceRaycastPassthrough : MonoBehaviour
+    {
     }
 }

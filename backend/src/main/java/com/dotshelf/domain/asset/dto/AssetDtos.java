@@ -88,12 +88,31 @@ public final class AssetDtos {
     public record AssetCategoryListResponse(List<AssetCategoryResponse> categories) {
     }
 
-    public record InventoryResponse(List<Long> assetIds) {
+    public record InventoryResponse(List<Long> assetIds, List<InventoryItemResponse> items) {
+
+        public InventoryResponse(List<Long> assetIds) {
+            this(assetIds, List.of());
+        }
 
         public static InventoryResponse from(List<UserAssetInventory> inventories) {
-            return new InventoryResponse(inventories.stream()
-                    .map(UserAssetInventory::getAssetId)
-                    .toList());
+            return new InventoryResponse(
+                    inventories.stream()
+                            .map(UserAssetInventory::getAssetId)
+                            .toList(),
+                    inventories.stream()
+                            .map(InventoryItemResponse::from)
+                            .toList()
+            );
+        }
+    }
+
+    public record InventoryItemResponse(Long inventoryId, Long assetId) {
+
+        public static InventoryItemResponse from(UserAssetInventory inventory) {
+            return new InventoryItemResponse(
+                    inventory.getId(),
+                    inventory.getAssetId()
+            );
         }
     }
 

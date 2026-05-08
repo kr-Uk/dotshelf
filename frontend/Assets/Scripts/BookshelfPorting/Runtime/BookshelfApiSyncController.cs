@@ -1212,8 +1212,19 @@ namespace BookshelfPorting.Runtime
                 50,
                 response =>
                 {
-                    isBookshelfSkinCatalogLoading = false;
-                    BookshelfSkinResolver.RegisterApiAssets(response);
+                    var assetsResponse = response;
+                    client.GetAssetInventory(
+                        inventory =>
+                        {
+                            isBookshelfSkinCatalogLoading = false;
+                            BookshelfSkinResolver.RegisterApiAssets(assetsResponse, inventory);
+                        },
+                        error =>
+                        {
+                            isBookshelfSkinCatalogLoading = false;
+                            BookshelfSkinResolver.RegisterApiAssets(assetsResponse, null);
+                            Debug.LogWarning($"Bookshelf skin inventory load failed: {FormatError(error)}");
+                        });
                 },
                 error =>
                 {
@@ -1977,16 +1988,18 @@ namespace BookshelfPorting.Runtime
         private static bool didWarnMissingCatalog;
         private static bool didWarnMissingStyle;
         private static bool didLoadApiAssets;
-        private static readonly Dictionary<BookshelfThemeStyle, long> apiSkinIdsByStyle = new Dictionary<BookshelfThemeStyle, long>();
-        private static readonly Dictionary<long, BookshelfThemeStyle> apiStylesBySkinId = new Dictionary<long, BookshelfThemeStyle>();
+        private static readonly Dictionary<BookshelfThemeStyle, long> apiSkinInventoryIdsByStyle = new Dictionary<BookshelfThemeStyle, long>();
+        private static readonly Dictionary<long, BookshelfThemeStyle> apiStylesByInventoryId = new Dictionary<long, BookshelfThemeStyle>();
+        private static readonly Dictionary<long, BookshelfThemeStyle> apiStylesByAssetId = new Dictionary<long, BookshelfThemeStyle>();
 
         public static bool HasLoadedApiAssets => didLoadApiAssets;
 
-        public static void RegisterApiAssets(AssetListResponseDto response)
+        public static void RegisterApiAssets(AssetListResponseDto response, InventoryResponseDto inventory)
         {
             didLoadApiAssets = true;
-            apiSkinIdsByStyle.Clear();
-            apiStylesBySkinId.Clear();
+            apiSkinInventoryIdsByStyle.Clear();
+            apiStylesByInventoryId.Clear();
+            apiStylesByAssetId.Clear();
 
             var assets = response?.Assets;
             if (assets == null)
@@ -1994,6 +2007,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var inventoryIdsByAssetId = BuildInventoryIdsByAssetId(inventory);
             var skinIndex = 0;
             for (var i = 0; i < assets.Count; i++)
             {
@@ -2006,39 +2020,32 @@ namespace BookshelfPorting.Runtime
                 }
 
                 var style = ResolveStyleFromKey(asset.Code, asset.Name, skinIndex);
-                if (!apiSkinIdsByStyle.ContainsKey(style))
+                apiStylesByAssetId[asset.Id] = style;
+
+                if (inventoryIdsByAssetId.TryGetValue(asset.Id, out var inventoryId) && inventoryId > 0L)
                 {
-                    apiSkinIdsByStyle[style] = asset.Id;
+                    if (!apiSkinInventoryIdsByStyle.ContainsKey(style))
+                    {
+                        apiSkinInventoryIdsByStyle[style] = inventoryId;
+                    }
+
+                    apiStylesByInventoryId[inventoryId] = style;
                 }
 
-                apiStylesBySkinId[asset.Id] = style;
                 skinIndex++;
             }
         }
 
         public static bool HasResolvableInventoryId(BookshelfThemeStyle style)
         {
-            if (apiSkinIdsByStyle.TryGetValue(style, out var apiSkinId) && apiSkinId > 0L)
-            {
-                return true;
-            }
-
-            var entry = FindEntry(style);
-            return ResolveEntryAssetId(entry) > 0L;
+            return apiSkinInventoryIdsByStyle.TryGetValue(style, out var inventoryId) && inventoryId > 0L;
         }
 
         public static long? ResolveInventoryId(BookshelfThemeStyle style)
         {
-            if (apiSkinIdsByStyle.TryGetValue(style, out var apiSkinId) && apiSkinId > 0L)
+            if (apiSkinInventoryIdsByStyle.TryGetValue(style, out var inventoryId) && inventoryId > 0L)
             {
-                return apiSkinId;
-            }
-
-            var entry = FindEntry(style);
-            var assetId = ResolveEntryAssetId(entry);
-            if (assetId > 0L)
-            {
-                return assetId;
+                return inventoryId;
             }
 
             WarnMissingStyle(style);
@@ -2053,7 +2060,15 @@ namespace BookshelfPorting.Runtime
                 return false;
             }
 
-            if (apiStylesBySkinId.TryGetValue(skinInventoryId.Value, out style))
+            if (apiStylesByInventoryId.TryGetValue(skinInventoryId.Value, out style))
+            {
+                return true;
+            }
+
+            // Legacy read-only compatibility: older FE builds sent Asset.id in
+            // this field. Keep rendering those shelves, but never use asset ids
+            // for future update requests.
+            if (apiStylesByAssetId.TryGetValue(skinInventoryId.Value, out style))
             {
                 return true;
             }
@@ -2077,6 +2092,29 @@ namespace BookshelfPorting.Runtime
             }
 
             return false;
+        }
+
+        private static Dictionary<long, long> BuildInventoryIdsByAssetId(InventoryResponseDto inventory)
+        {
+            var result = new Dictionary<long, long>();
+            var items = inventory?.Items;
+            if (items == null)
+            {
+                return result;
+            }
+
+            for (var i = 0; i < items.Count; i++)
+            {
+                var item = items[i];
+                if (item == null || item.AssetId <= 0L || item.InventoryId <= 0L)
+                {
+                    continue;
+                }
+
+                result[item.AssetId] = item.InventoryId;
+            }
+
+            return result;
         }
 
         private static object FindEntry(BookshelfThemeStyle style)
@@ -2222,7 +2260,7 @@ namespace BookshelfPorting.Runtime
             }
 
             didWarnMissingStyle = true;
-            Debug.LogWarning($"Bookshelf skin inventory id for style '{style}' could not be resolved from API assets or Resources/{CatalogResourcePath}.asset.");
+            Debug.LogWarning($"Bookshelf skin inventory id for style '{style}' could not be resolved from API asset inventory.");
         }
     }
 }

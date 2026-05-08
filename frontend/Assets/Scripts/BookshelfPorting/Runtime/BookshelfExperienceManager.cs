@@ -647,6 +647,8 @@ namespace BookshelfPorting.Runtime
         private string bookshelfTransientStatusMessage = string.Empty;
         private float bookshelfTransientStatusExpiresAt;
         private string bookAddFeedbackMessage = string.Empty;
+        // LocalMock was removed; this remains installer-controlled until the
+        // remaining local fallback UI branches are deleted in a focused cleanup.
         private bool usesHttpApiMode;
         private bool shouldResetBookAddScrollToTop;
         private bool shouldResetBookSearchScrollToTop;
@@ -12195,6 +12197,7 @@ namespace BookshelfPorting.Runtime
             previewRect.anchoredPosition = Vector2.zero;
             guestbookPreviewPanel.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0f);
             guestbookPreviewPanel.GetComponent<Image>().raycastTarget = false;
+            guestbookPreviewPanel.AddComponent<WorldSpaceRaycastPassthrough>();
             guestbookPreviewPanel.AddComponent<RectMask2D>();
             CreateGuestbookPreviewNotes(guestbookPreviewPanel.transform);
 
@@ -12205,6 +12208,7 @@ namespace BookshelfPorting.Runtime
             boardRect.pivot = new Vector2(0.5f, 0.5f);
             boardRect.anchoredPosition = Vector2.zero;
             StyleGuestbookBoardSurface(guestbookPanel);
+            guestbookPanel.AddComponent<WorldSpaceRaycastPassthrough>();
             guestbookPanel.SetActive(false);
 
             var boardContentRoot = CreateWorldContainer(

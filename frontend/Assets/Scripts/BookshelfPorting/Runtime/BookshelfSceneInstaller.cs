@@ -138,6 +138,8 @@ namespace BookshelfPorting.Runtime
 
             var systems = FindOrCreateRoot("BookshelfSystems");
             var apiMode = ResolveApiMode(apiConfig);
+            // LocalMock was removed, but keep this installer seam so the
+            // manager's local fallback paths can be retired deliberately later.
             var usesHttpApi = true;
             var apiBaseUrl = ResolveApiBaseUrl(apiConfig);
             var apiTimeoutSeconds = ResolveApiTimeoutSeconds(apiConfig);
