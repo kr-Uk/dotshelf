@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,6 +34,8 @@ import com.dotshelf.domain.space.dto.SpaceDtos.CategoryInventoryRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyMode;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailConfirmRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadUrlRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.VisibilityRequest;
 import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.entity.SpaceGuestbookPostItWhitelist;
@@ -51,7 +54,10 @@ import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
+import com.dotshelf.global.storage.S3StorageProperties;
 import com.dotshelf.global.storage.S3StorageService;
+import com.dotshelf.global.storage.S3StorageService.ObjectMetadata;
+import com.dotshelf.global.storage.S3StorageService.PresignedPut;
 import com.dotshelf.support.TestFixtures;
 
 @ExtendWith(MockitoExtension.class)
@@ -101,6 +107,9 @@ class SpaceServiceTest {
 
     @Mock
     private S3StorageService s3StorageService;
+
+    @Mock
+    private S3StorageProperties s3StorageProperties;
 
     @InjectMocks
     private SpaceService spaceService;
@@ -299,16 +308,101 @@ class SpaceServiceTest {
                 new byte[] {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00});
         given(userService.requireUserId(1L)).willReturn(1L);
         given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
-        given(s3StorageService.publicUrl("spaces/10/thumbnail-1.png"))
-                .willReturn("https://cdn.test/spaces/10/thumbnail-1.png");
+        given(s3StorageService.publicUrl("spaces/10/v1.png"))
+                .willReturn("https://cdn.test/spaces/10/v1.png");
 
         var response = spaceService.uploadThumbnail(1L, file);
 
         assertThat(response.spaceId()).isEqualTo(10L);
         assertThat(response.layoutVersion()).isEqualTo(1L);
-        assertThat(response.thumbnailUrl()).isEqualTo("https://cdn.test/spaces/10/thumbnail-1.png");
-        assertThat(space.getThumbnailUrl()).isEqualTo("https://cdn.test/spaces/10/thumbnail-1.png");
-        then(s3StorageService).should().putObject("spaces/10/thumbnail-1.png", file, "image/png");
+        assertThat(response.thumbnailKey()).isEqualTo("spaces/10/v1.png");
+        assertThat(response.thumbnailUrl()).isEqualTo("https://cdn.test/spaces/10/v1.png");
+        assertThat(space.getThumbnailKey()).isEqualTo("spaces/10/v1.png");
+        assertThat(space.getThumbnailUrl()).isEqualTo("https://cdn.test/spaces/10/v1.png");
+        then(s3StorageService).should().putObject("spaces/10/v1.png", file, "image/png");
+    }
+
+    @Test
+    @DisplayName("썸네일 presigned URL 발급은 이미지 타입과 크기를 검증하고 S3 PUT URL을 반환한다")
+    void createThumbnailUploadUrl_validJpeg_returnsPresignedUrl() {
+        Space space = TestFixtures.space(10L, 1L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+        given(s3StorageProperties.presignTtlSeconds()).willReturn(300L);
+        given(s3StorageService.presignPut(
+                "spaces/10/v1.jpg",
+                "image/jpeg",
+                1234L,
+                Duration.ofSeconds(300)))
+                .willReturn(new PresignedPut(
+                        "https://upload.example.com/object",
+                        "spaces/10/v1.jpg",
+                        300L));
+        given(s3StorageService.publicUrl("spaces/10/v1.jpg"))
+                .willReturn("https://cdn.test/spaces/10/v1.jpg");
+
+        var response = spaceService.createThumbnailUploadUrl(
+                1L,
+                new ThumbnailUploadUrlRequest("image/jpeg", 1234L));
+
+        assertThat(response.uploadUrl()).isEqualTo("https://upload.example.com/object");
+        assertThat(response.key()).isEqualTo("spaces/10/v1.jpg");
+        assertThat(response.publicUrl()).isEqualTo("https://cdn.test/spaces/10/v1.jpg");
+        assertThat(response.expiresInSeconds()).isEqualTo(300L);
+    }
+
+    @Test
+    @DisplayName("썸네일 presigned URL 발급은 허용되지 않은 이미지 타입을 거절한다")
+    void createThumbnailUploadUrl_invalidType_throwsInvalidContentType() {
+        Space space = TestFixtures.space(10L, 1L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+
+        assertThatThrownBy(() -> spaceService.createThumbnailUploadUrl(
+                1L,
+                new ThumbnailUploadUrlRequest("text/plain", 1234L)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+
+        then(s3StorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("썸네일 확정은 S3 객체 메타데이터 검증 후 thumbnailKey/url과 layoutVersion을 갱신한다")
+    void confirmThumbnail_validObject_updatesSpace() {
+        Space space = TestFixtures.space(10L, 1L);
+        String key = "spaces/10/v1.png";
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+        given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("image/png", 1024L));
+        given(s3StorageService.publicUrl(key)).willReturn("https://cdn.test/" + key);
+
+        var response = spaceService.confirmThumbnail(1L, new ThumbnailConfirmRequest(key));
+
+        assertThat(response.spaceId()).isEqualTo(10L);
+        assertThat(response.layoutVersion()).isEqualTo(1L);
+        assertThat(response.thumbnailKey()).isEqualTo(key);
+        assertThat(response.thumbnailUrl()).isEqualTo("https://cdn.test/" + key);
+        assertThat(space.getThumbnailKey()).isEqualTo(key);
+        assertThat(space.getThumbnailUrl()).isEqualTo("https://cdn.test/" + key);
+    }
+
+    @Test
+    @DisplayName("썸네일 확정은 내 공간 prefix가 아닌 key를 거절한다")
+    void confirmThumbnail_invalidKeyPrefix_throwsInvalidKey() {
+        Space space = TestFixtures.space(10L, 1L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+
+        assertThatThrownBy(() -> spaceService.confirmThumbnail(
+                1L,
+                new ThumbnailConfirmRequest("spaces/11/v1.png")))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.STORAGE_INVALID_KEY);
+
+        then(s3StorageService).shouldHaveNoInteractions();
     }
 
     @Test

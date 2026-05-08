@@ -4,9 +4,11 @@ import java.util.List;
 
 import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.entity.SpaceTemplate;
+import com.dotshelf.global.storage.S3StorageService.PresignedPut;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
 public final class SpaceDtos {
 
@@ -23,6 +25,7 @@ public final class SpaceDtos {
             long likeCount,
             boolean liked,
             long layoutVersion,
+            String thumbnailKey,
             String thumbnailUrl,
             Long currentThemeInventoryId,
             Long currentWallpaperInventoryId,
@@ -48,6 +51,7 @@ public final class SpaceDtos {
                     space.getLikeCount(),
                     liked,
                     space.getLayoutVersion(),
+                    space.getThumbnailKey(),
                     space.getThumbnailUrl(),
                     space.getCurrentThemeInventoryId(),
                     space.getCurrentWallpaperInventoryId(),
@@ -64,10 +68,45 @@ public final class SpaceDtos {
      * Unity 가 방 배치 변경을 캡처해 multipart 로 업로드한 직후 받는 응답.
      * 클라가 다음 화면에서 즉시 새 URL 을 사용할 수 있도록 thumbnailUrl + layoutVersion 만 단순 노출.
      */
-    public record ThumbnailUploadResponse(Long spaceId, String thumbnailUrl, long layoutVersion) {
+    public record ThumbnailUploadUrlRequest(
+            @NotBlank(message = "contentType is required")
+            String contentType,
+            @NotNull(message = "byteLength is required")
+            @Positive(message = "byteLength must be positive")
+            Long byteLength
+    ) {
+    }
+
+    public record ThumbnailUploadUrlResponse(
+            String uploadUrl,
+            String key,
+            String publicUrl,
+            long expiresInSeconds
+    ) {
+
+        public static ThumbnailUploadUrlResponse from(PresignedPut presigned, String publicUrl) {
+            return new ThumbnailUploadUrlResponse(
+                    presigned.uploadUrl(),
+                    presigned.key(),
+                    publicUrl,
+                    presigned.expiresInSeconds());
+        }
+    }
+
+    public record ThumbnailConfirmRequest(
+            @NotBlank(message = "key is required")
+            String key
+    ) {
+    }
+
+    public record ThumbnailUploadResponse(Long spaceId, String thumbnailKey, String thumbnailUrl, long layoutVersion) {
 
         public static ThumbnailUploadResponse from(Space space) {
-            return new ThumbnailUploadResponse(space.getId(), space.getThumbnailUrl(), space.getLayoutVersion());
+            return new ThumbnailUploadResponse(
+                    space.getId(),
+                    space.getThumbnailKey(),
+                    space.getThumbnailUrl(),
+                    space.getLayoutVersion());
         }
     }
 

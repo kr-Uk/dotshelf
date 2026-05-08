@@ -1,5 +1,6 @@
 package com.dotshelf.domain.space.service;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -37,7 +38,10 @@ import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyMode;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailConfirmRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadUrlRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadUrlResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.VisibilityRequest;
 import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.entity.SpaceGuestbookPostItWhitelist;
@@ -60,7 +64,10 @@ import com.dotshelf.global.common.ToggleResponse;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 import com.dotshelf.global.storage.ImageContentValidator;
+import com.dotshelf.global.storage.S3StorageProperties;
 import com.dotshelf.global.storage.S3StorageService;
+import com.dotshelf.global.storage.S3StorageService.ObjectMetadata;
+import com.dotshelf.global.storage.S3StorageService.PresignedPut;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -106,6 +113,7 @@ public class SpaceService {
     private final UserAssetInventoryRepository userAssetInventoryRepository;
     private final BookshelfRepository bookshelfRepository;
     private final S3StorageService s3StorageService;
+    private final S3StorageProperties s3StorageProperties;
 
     @Transactional
     public SpaceResponse getMySpace(Long userId) {
@@ -233,10 +241,39 @@ public class SpaceService {
         String contentType = validateThumbnailFile(file);
         String extension = ALLOWED_THUMBNAIL_TYPES.get(contentType);
         long nextVersion = space.nextLayoutVersion();
-        String key = "spaces/" + space.getId() + "/thumbnail-" + nextVersion + "." + extension;
+        String key = thumbnailObjectKey(space.getId(), nextVersion, extension);
 
         s3StorageService.putObject(key, file, contentType);
-        space.updateThumbnail(s3StorageService.publicUrl(key));
+        space.updateThumbnail(key, s3StorageService.publicUrl(key));
+        return ThumbnailUploadResponse.from(space);
+    }
+
+    @Transactional
+    public ThumbnailUploadUrlResponse createThumbnailUploadUrl(Long userId, ThumbnailUploadUrlRequest request) {
+        Long currentUserId = userService.requireUserId(userId);
+        Space space = findOrCreateMySpace(currentUserId);
+
+        String contentType = validateThumbnailUploadRequest(request);
+        String extension = ALLOWED_THUMBNAIL_TYPES.get(contentType);
+        long nextVersion = space.getLayoutVersion() + 1;
+        String key = thumbnailObjectKey(space.getId(), nextVersion, extension);
+
+        PresignedPut presigned = s3StorageService.presignPut(
+                key,
+                contentType,
+                request.byteLength(),
+                Duration.ofSeconds(s3StorageProperties.presignTtlSeconds()));
+        return ThumbnailUploadUrlResponse.from(presigned, s3StorageService.publicUrl(key));
+    }
+
+    @Transactional
+    public ThumbnailUploadResponse confirmThumbnail(Long userId, ThumbnailConfirmRequest request) {
+        Long currentUserId = userService.requireUserId(userId);
+        Space space = findOrCreateMySpace(currentUserId);
+        verifyConfirmedThumbnailObject(request.key(), space.getId());
+
+        space.nextLayoutVersion();
+        space.updateThumbnail(request.key(), s3StorageService.publicUrl(request.key()));
         return ThumbnailUploadResponse.from(space);
     }
 
@@ -255,6 +292,37 @@ public class SpaceService {
         // 실제 헤더가 JPEG/PNG/WebP signature 가 아니면 거부.
         ImageContentValidator.verifyMagicBytes(file, contentType);
         return contentType;
+    }
+
+    private String validateThumbnailUploadRequest(ThumbnailUploadUrlRequest request) {
+        if (request == null || request.byteLength() == null || request.byteLength() <= 0) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
+        if (request.byteLength() > MAX_THUMBNAIL_SIZE_BYTES) {
+            throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
+        }
+        String contentType = request.contentType();
+        if (contentType == null || !ALLOWED_THUMBNAIL_TYPES.containsKey(contentType)) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+        }
+        return contentType;
+    }
+
+    private void verifyConfirmedThumbnailObject(String key, Long spaceId) {
+        if (key == null || key.isBlank() || !key.startsWith("spaces/" + spaceId + "/")) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_KEY);
+        }
+        ObjectMetadata metadata = s3StorageService.headObject(key);
+        if (!ALLOWED_THUMBNAIL_TYPES.containsKey(metadata.contentType())) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+        }
+        if (metadata.contentLength() > MAX_THUMBNAIL_SIZE_BYTES) {
+            throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
+        }
+    }
+
+    private static String thumbnailObjectKey(Long spaceId, long layoutVersion, String extension) {
+        return "spaces/" + spaceId + "/v" + layoutVersion + "." + extension;
     }
 
     @Transactional
