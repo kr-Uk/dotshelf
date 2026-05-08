@@ -175,6 +175,35 @@ namespace App.Infrastructure.Api
             return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
         }
 
+        public Coroutine PutRaw(
+            string absoluteUrl,
+            byte[] body,
+            string contentType,
+            Action onSuccess,
+            Action<ApiErrorResponseDto> onError = null,
+            Dictionary<string, string> headers = null)
+        {
+            var request = new UnityWebRequest(absoluteUrl, UnityWebRequest.kHttpVerbPUT)
+            {
+                uploadHandler = new UploadHandlerRaw(body ?? Array.Empty<byte>()),
+                downloadHandler = new DownloadHandlerBuffer()
+            };
+            request.SetRequestHeader("Content-Type", string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType);
+
+            if (headers != null)
+            {
+                foreach (var pair in headers)
+                {
+                    if (!string.IsNullOrWhiteSpace(pair.Key) && pair.Value != null)
+                    {
+                        request.SetRequestHeader(pair.Key, pair.Value);
+                    }
+                }
+            }
+
+            return StartCoroutine(SendRaw(request, onSuccess, onError));
+        }
+
         public Coroutine Patch<TRequest, TResponse>(
             string path,
             TRequest body,
@@ -265,6 +294,37 @@ namespace App.Infrastructure.Api
                     Debug.LogError($"API {request.method} {request.url} parse failed: {exception.Message} (response body omitted)");
                     onError?.Invoke(error);
                 }
+            }
+        }
+
+        private IEnumerator SendRaw(
+            UnityWebRequest request,
+            Action onSuccess,
+            Action<ApiErrorResponseDto> onError)
+        {
+            request.timeout = Mathf.Max(1, timeoutSeconds);
+
+            using (request)
+            {
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    var error = CreateError(request, request.error);
+                    var message = string.IsNullOrWhiteSpace(error.Message) ? error.Error : error.Message;
+                    var body = FormatResponseBodyForLog(error.Body);
+                    var bodySuffix = string.IsNullOrWhiteSpace(body) ? string.Empty : $" body='{body}'";
+                    Debug.LogError($"RAW {request.method} {request.url} failed: {error.StatusCode} {message}{bodySuffix}");
+                    onError?.Invoke(error);
+                    yield break;
+                }
+
+                if (enableVerboseLog)
+                {
+                    Debug.Log($"RAW {request.method} {request.url} OK: {request.responseCode}");
+                }
+
+                onSuccess?.Invoke();
             }
         }
 

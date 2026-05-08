@@ -23,7 +23,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private Transform bookViewAnchor = null;
         [SerializeField] private float moveDuration = 0.4f;
         [SerializeField] private float overviewFieldOfView = 52f;
-        [SerializeField] private float whiteboardFieldOfView = 56f;
+        [SerializeField] private float whiteboardFieldOfView = 38f;
         [SerializeField] private float notebookFieldOfView = 24f;
         [SerializeField] private float notebookTransitionDuration = 0.75f;
         [SerializeField] private float frontalDefaultFieldOfView = 60f;
@@ -238,6 +238,27 @@ namespace BookshelfPorting.Runtime
 
             CurrentMode = CameraMode.Overview;
             isTransitioning = false;
+        }
+
+        public bool TryGetMainViewPose(out Camera camera, out Vector3 position, out Quaternion rotation, out float fieldOfView)
+        {
+            camera = null;
+            position = default;
+            rotation = default;
+            fieldOfView = mainViewFieldOfView;
+
+            if (!EnsureCameraResolved())
+            {
+                return false;
+            }
+
+            if (!TryComputeMainViewPose(out position, out rotation, out fieldOfView))
+            {
+                return false;
+            }
+
+            camera = targetCamera;
+            return camera != null;
         }
 
         public void MoveToMainView()

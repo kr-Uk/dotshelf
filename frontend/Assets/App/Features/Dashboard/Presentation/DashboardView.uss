@@ -13,6 +13,14 @@
 .dashboard-root {
     flex-grow: 1;
     background-color: rgb(253, 251, 246);
+    border-top-width: 8px;
+    border-right-width: 8px;
+    border-bottom-width: 8px;
+    border-left-width: 8px;
+    border-top-color: rgb(151, 103, 67);
+    border-right-color: rgb(151, 103, 67);
+    border-bottom-color: rgb(151, 103, 67);
+    border-left-color: rgb(151, 103, 67);
     padding: 38px;
     flex-direction: column;
     opacity: 1;
@@ -23,6 +31,58 @@
 
 .dashboard-root--dimmed {
     opacity: 0.7;
+}
+
+.dashboard-root--interactive {
+    background-color: rgb(255, 255, 255);
+}
+
+.dashboard-root--interactive .dashboard-pane {
+    background-color: rgb(255, 255, 255);
+}
+
+.dashboard-root--interactive .stats-row,
+.dashboard-root--interactive .section-card,
+.dashboard-root--interactive .page-button {
+    background-color: rgb(255, 255, 255);
+}
+
+.dashboard-root--interactive .book-cover {
+    background-color: rgb(154, 132, 110);
+}
+
+.dashboard-root--interactive .guestbook-cell {
+    background-color: rgb(255, 240, 178);
+}
+
+.dashboard-root--interactive .guestbook-cell:hover {
+    background-color: rgb(255, 246, 205);
+}
+
+.dashboard-root--interactive .nickname-label,
+.dashboard-root--interactive .section-title,
+.dashboard-root--interactive .guestbook-count,
+.dashboard-root--interactive .stat-value,
+.dashboard-root--interactive .stat-icon,
+.dashboard-root--interactive .record-cell-title,
+.dashboard-root--interactive .guestbook-cell-content,
+.dashboard-root--interactive .page-label,
+.dashboard-root--interactive .book-cell-title {
+    color: rgb(18, 18, 18);
+}
+
+.dashboard-root--interactive .follow-stat,
+.dashboard-root--interactive .section-view-all,
+.dashboard-root--interactive .record-cell-meta-item,
+.dashboard-root--interactive .weekly-visitor,
+.dashboard-root--interactive .guestbook-cell-nickname {
+    color: rgb(82, 82, 82);
+}
+
+.dashboard-root--interactive .introduction-label,
+.dashboard-root--interactive .record-cell-content,
+.dashboard-root--interactive .guestbook-cell-reply {
+    color: rgb(44, 44, 44);
 }
 
 .dashboard-body {
