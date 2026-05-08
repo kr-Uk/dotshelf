@@ -10,6 +10,7 @@ using App.Infrastructure.Api.Dtos;
 using App.Infrastructure.Catalogs;
 using App.Infrastructure.Decoration;
 using BookshelfPorting.Runtime;
+using Dotshelf.Scripts.Dashboard;
 using Dotshelf.Scripts.RoomTheme;
 using TMPro;
 using UnityEngine;
@@ -6481,7 +6482,29 @@ namespace App.Bootstrap
 
         private static bool IsPointerOverUi()
         {
-            return EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
+            if (EventSystem.current == null)
+            {
+                return false;
+            }
+
+            var pointerPosition = ReadPointerPosition();
+            var pointerEvent = new PointerEventData(EventSystem.current)
+            {
+                position = pointerPosition,
+            };
+            var hits = new List<RaycastResult>();
+            EventSystem.current.RaycastAll(pointerEvent, hits);
+            for (var i = 0; i < hits.Count; i++)
+            {
+                if (DashboardRaycastFilter.IsNonInteractiveDashboardRaycast(hits[i], pointerPosition))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
+            return false;
         }
 
         private static bool IsDescendantOf(Transform candidate, Transform ancestor)

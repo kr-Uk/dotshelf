@@ -339,6 +339,8 @@ namespace App.Features.Notebook.Presentation
         private Label toastLabel;
         private VisualElement toast;
         private ScrollView pageScrollView;
+        private int recommendWheelLockVersion;
+        private bool pointerOverRecommendScroll;
         private VisualElement scrollRail;
         private VisualElement scrollThumb;
         private Button previousPageButton;
@@ -452,7 +454,15 @@ namespace App.Features.Notebook.Presentation
             var wheel = Input.mouseScrollDelta.y;
             if (Mathf.Abs(wheel) > 0.01f)
             {
-                ScrollNotebookBy(-wheel * 90f);
+                if (pointerOverRecommendScroll && recommendScrollView != null)
+                {
+                    var lockedPageY = pageScrollView.scrollOffset.y;
+                    LockNotebookScrollForRecommendWheel(lockedPageY);
+                }
+                else
+                {
+                    ScrollNotebookBy(-wheel * 90f);
+                }
             }
 
             if (Input.GetKeyDown(KeyCode.PageDown))
@@ -886,6 +896,7 @@ namespace App.Features.Notebook.Presentation
             walletPurchaseList = null;
             detailCover = null;
             recommendScrollView = null;
+            pointerOverRecommendScroll = false;
             searchField = null;
             otherSpacesSearchField = null;
             bookReviewInput = null;
@@ -2696,8 +2707,14 @@ namespace App.Features.Notebook.Presentation
             scroller.style.marginBottom = 12;
             scroller.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
             scroller.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+            scroller.RegisterCallback<WheelEvent>(OnRecommendWheel, TrickleDown.TrickleDown);
+            scroller.RegisterCallback<WheelEvent>(OnRecommendWheel);
+            scroller.RegisterCallback<PointerEnterEvent>(_ => pointerOverRecommendScroll = true);
+            scroller.RegisterCallback<PointerLeaveEvent>(_ => pointerOverRecommendScroll = false);
             recommendList = scroller.contentContainer;
             recommendList.style.flexDirection = FlexDirection.Row;
+            recommendList.RegisterCallback<WheelEvent>(OnRecommendWheel, TrickleDown.TrickleDown);
+            recommendList.RegisterCallback<WheelEvent>(OnRecommendWheel);
             parent.Add(scroller);
         }
 
@@ -3117,13 +3134,30 @@ namespace App.Features.Notebook.Presentation
 
         private void OnNotebookPageWheel(WheelEvent evt)
         {
+            ConsumeRecommendWheel(evt, false);
+        }
+
+        private void OnRecommendWheel(WheelEvent evt)
+        {
+            pointerOverRecommendScroll = true;
+            ConsumeRecommendWheel(evt, true);
+        }
+
+        private void ConsumeRecommendWheel(WheelEvent evt, bool forceConsume)
+        {
             if (recommendScrollView == null ||
-                recommendScrollView.resolvedStyle.display == DisplayStyle.None ||
-                !recommendScrollView.worldBound.Contains(evt.mousePosition))
+                recommendScrollView.resolvedStyle.display == DisplayStyle.None)
             {
                 return;
             }
 
+            if (!forceConsume && !IsPointerOverRecommendScroll(evt))
+            {
+                return;
+            }
+
+            pointerOverRecommendScroll = true;
+            var lockedPageY = pageScrollView?.scrollOffset.y ?? 0f;
             var dominantDelta = Mathf.Abs(evt.delta.x) > Mathf.Abs(evt.delta.y)
                 ? evt.delta.x
                 : evt.delta.y;
@@ -3132,8 +3166,55 @@ namespace App.Features.Notebook.Presentation
                 ScrollRecommendBy(dominantDelta * RecommendWheelScrollScale);
             }
 
+            LockNotebookScrollForRecommendWheel(lockedPageY);
             evt.StopPropagation();
             evt.StopImmediatePropagation();
+        }
+
+        private bool IsPointerOverRecommendScroll(WheelEvent evt)
+        {
+            if (recommendScrollView == null)
+            {
+                return false;
+            }
+
+            if (recommendScrollView.worldBound.Contains(evt.mousePosition))
+            {
+                return true;
+            }
+
+            if (evt.currentTarget is VisualElement currentTarget)
+            {
+                var worldMouse = currentTarget.LocalToWorld(evt.mousePosition);
+                return recommendScrollView.worldBound.Contains(worldMouse);
+            }
+
+            return false;
+        }
+
+        private void LockNotebookScrollForRecommendWheel(float lockedPageY)
+        {
+            if (pageScrollView == null)
+            {
+                return;
+            }
+
+            var lockVersion = ++recommendWheelLockVersion;
+            SetNotebookScrollOffset(lockedPageY);
+            pageScrollView.schedule.Execute(() =>
+            {
+                if (lockVersion == recommendWheelLockVersion)
+                {
+                    SetNotebookScrollOffset(lockedPageY);
+                }
+            }).ExecuteLater(0);
+            pageScrollView.schedule.Execute(() =>
+            {
+                if (lockVersion == recommendWheelLockVersion)
+                {
+                    SetNotebookScrollOffset(lockedPageY);
+                }
+            }).ExecuteLater(16);
         }
 
         private void ScrollRecommendBy(float delta)
@@ -5390,12 +5471,15 @@ namespace App.Features.Notebook.Presentation
             sheen.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.10f);
             cover.Add(sheen);
 
+            var bandTop = height * 0.34f;
+            var bandHeight = height * 0.24f;
+
             var band = new VisualElement();
             band.style.position = Position.Absolute;
             band.style.left = 0;
             band.style.right = 0;
-            band.style.top = height * 0.34f;
-            band.style.height = height * 0.24f;
+            band.style.top = bandTop;
+            band.style.height = bandHeight;
             band.style.backgroundColor = book.AccentColor;
             band.style.opacity = 0.30f;
             cover.Add(band);
@@ -5415,10 +5499,10 @@ namespace App.Features.Notebook.Presentation
                 title.style.position = Position.Absolute;
                 title.style.left = 12;
                 title.style.right = 12;
-                title.style.top = height * 0.38f;
-                title.style.height = Mathf.Max(42, height * 0.24f);
+                title.style.top = bandTop;
+                title.style.height = Mathf.Max(38, bandHeight);
                 title.style.whiteSpace = WhiteSpace.Normal;
-                title.style.maxHeight = Mathf.Max(42, height * 0.30f);
+                title.style.maxHeight = Mathf.Max(38, bandHeight);
                 title.style.unityTextAlign = TextAnchor.MiddleCenter;
                 cover.Add(title);
 

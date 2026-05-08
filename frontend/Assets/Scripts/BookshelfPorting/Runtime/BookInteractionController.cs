@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using Dotshelf.Scripts.Dashboard;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -2100,7 +2101,17 @@ namespace BookshelfPorting.Runtime
             };
             uiRaycastResults.Clear();
             EventSystem.current.RaycastAll(eventData, uiRaycastResults);
-            return uiRaycastResults.Count > 0;
+            for (var i = 0; i < uiRaycastResults.Count; i++)
+            {
+                if (DashboardRaycastFilter.IsNonInteractiveDashboardRaycast(uiRaycastResults[i], pointer))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
+            return false;
         }
 
         private readonly struct PointerTarget
