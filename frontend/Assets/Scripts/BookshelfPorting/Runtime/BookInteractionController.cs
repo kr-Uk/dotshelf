@@ -2103,7 +2103,7 @@ namespace BookshelfPorting.Runtime
             EventSystem.current.RaycastAll(eventData, uiRaycastResults);
             for (var i = 0; i < uiRaycastResults.Count; i++)
             {
-                if (DashboardRaycastFilter.IsNonInteractiveDashboardRaycast(uiRaycastResults[i], pointer))
+                if (!DashboardRaycastFilter.IsBlockingRaycastResult(uiRaycastResults[i], pointer))
                 {
                     continue;
                 }

@@ -5,7 +5,6 @@ using App.Bootstrap;
 using App.Config;
 using App.Domain;
 using App.Infrastructure.Api;
-using App.Infrastructure.Mock;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 #if UNITY_EDITOR
@@ -139,7 +138,9 @@ namespace BookshelfPorting.Runtime
 
             var systems = FindOrCreateRoot("BookshelfSystems");
             var apiMode = ResolveApiMode(apiConfig);
-            var usesHttpApi = apiMode != AppApiMode.LocalMock;
+            // LocalMock was removed, but keep this installer seam so the
+            // manager's local fallback paths can be retired deliberately later.
+            var usesHttpApi = true;
             var apiBaseUrl = ResolveApiBaseUrl(apiConfig);
             var apiTimeoutSeconds = ResolveApiTimeoutSeconds(apiConfig);
             var apiAccessToken = ResolveApiAccessToken(apiConfig);
@@ -147,10 +148,6 @@ namespace BookshelfPorting.Runtime
             if (Application.isPlaying)
             {
                 Debug.Log($"Dotshelf API mode: {apiMode}, baseUrl={apiBaseUrl}, usesHttpApi={usesHttpApi}");
-                if (apiMode == AppApiMode.LocalMock)
-                {
-                    Debug.LogWarning("Dotshelf LocalMock mode is active; no HTTP API requests will be sent.");
-                }
             }
 
             var state = GetOrAddComponent<BookshelfState>(systems);
@@ -180,22 +177,20 @@ namespace BookshelfPorting.Runtime
                 apiTimeoutSeconds,
                 apiConfig != null && apiConfig.EnableVerboseLog);
 
-            // Server bookshelf path needs a Bearer token. Without one, /v1/spaces/me
-            // 401s and the shelf would render empty — fall back to the local catalog
-            // path until the user logs in. Computed after Configure() so the token
-            // hydrated by Configure (env var / inspector / PlayerPrefs) is reflected.
+            // In RealApi mode, the bookshelf must not fall back to hardcoded/local catalog data.
+            // If no token is available, API sync skips authenticated requests and
+            // the server bookshelf remains empty until login completes.
             // (MR #88 replaced the IsGuestSession gate.)
-            var useServerBookshelf = usesHttpApi && apiManager.HasAccessToken;
+            var useServerBookshelf = usesHttpApi;
 
             var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(
-                apiMode,
                 apiBaseUrl,
                 apiTimeoutSeconds));
-            var notebookBookRepository = CreateNotebookBookRepository(apiMode, apiManager);
+            var notebookBookRepository = CreateNotebookBookRepository(apiManager);
             var searchNotebookBooksUseCase = new SearchNotebookBooksUseCase(notebookBookRepository);
             var loadNotebookMarketBooksUseCase = new LoadNotebookMarketBooksUseCase(notebookBookRepository);
             var addNotebookBookToShelfUseCase = new AddNotebookBookToShelfUseCase(notebookBookRepository);
-            var notebookRuntimeRepository = CreateNotebookRuntimeRepository(apiMode, apiManager);
+            var notebookRuntimeRepository = CreateNotebookRuntimeRepository(apiManager);
             var notebookRuntimeUseCase = new NotebookRuntimeUseCase(notebookRuntimeRepository);
             if (Application.isPlaying && usesHttpApi && !apiManager.HasAccessToken)
             {
@@ -263,10 +258,11 @@ namespace BookshelfPorting.Runtime
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
             runtimeDataStore.Configure(state, materialFactory);
             experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
+            experienceManager.ConfigureApiMode(usesHttpApi);
             notebookUiSceneLoader.Configure(SceneKeys.NotebookUi, unloadSceneOnFocusExit: false, enablePerformanceLog: Application.isPlaying);
             experienceManager.ConfigureNotebookUiSceneLoader(notebookUiSceneLoader);
             experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase);
-            if (useServerBookshelf)
+            if (usesHttpApi)
             {
                 bookshelfApiSync.Configure(new NotebookApiClient(apiManager), generator, experienceManager, cameraController, notebookRuntimeUseCase);
                 experienceManager.ConfigureBookshelfApiSync(bookshelfApiSync);
@@ -352,32 +348,22 @@ namespace BookshelfPorting.Runtime
         }
 
         private static IBookCatalogRepository CreateBookCatalogRepository(
-            AppApiMode apiMode,
             string apiBaseUrl,
             int requestTimeoutSeconds)
         {
-            if (apiMode == AppApiMode.LocalMock)
-            {
-                return new MockBookCatalogRepository();
-            }
-
             return new ApiBookCatalogRepository(
                 apiBaseUrl,
                 requestTimeoutSeconds);
         }
 
-        private static INotebookBookRepository CreateNotebookBookRepository(AppApiMode apiMode, APIManager apiManager)
+        private static INotebookBookRepository CreateNotebookBookRepository(APIManager apiManager)
         {
-            return apiMode != AppApiMode.LocalMock && apiManager != null
-                ? new ApiNotebookBookRepository(new NotebookApiClient(apiManager))
-                : new NoOpNotebookBookRepository();
+            return new ApiNotebookBookRepository(new NotebookApiClient(apiManager));
         }
 
-        private static INotebookRuntimeRepository CreateNotebookRuntimeRepository(AppApiMode apiMode, APIManager apiManager)
+        private static INotebookRuntimeRepository CreateNotebookRuntimeRepository(APIManager apiManager)
         {
-            return apiMode != AppApiMode.LocalMock && apiManager != null
-                ? new ApiNotebookRuntimeRepository(new NotebookApiClient(apiManager), () => apiManager.HasAccessToken)
-                : new NoOpNotebookRuntimeRepository();
+            return new ApiNotebookRuntimeRepository(new NotebookApiClient(apiManager), () => apiManager.HasAccessToken);
         }
 
         private static AppApiMode ResolveApiMode(AppApiConfig apiConfig)

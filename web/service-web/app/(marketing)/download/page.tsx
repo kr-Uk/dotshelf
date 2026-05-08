@@ -5,8 +5,8 @@ import { useState } from "react";
 import { Icon } from "@/components/marketing/icon";
 
 const RELEASE = {
-  version: "0.1.0",
-  date: "2026년 5월 4일",
+  version: "0.1.1",
+  date: "2026년 5월 8일",
   size: "런처 약 69 MB · 본체 별도 다운로드",
   channel: "Beta",
 };

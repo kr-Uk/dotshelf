@@ -6873,10 +6873,72 @@ namespace App.Bootstrap
             return Mouse.current != null ? Mouse.current.position.ReadValue() : Vector2.zero;
         }
 
+        // 편집 모드에서 클릭이 "차단해야 할 UI" 위인지 판정 (MR #129).
+        //
+        // 한 줄짜리 IsPointerOverGameObject() 는 일부 Unity Input System 설정에서 WorldSpace
+        // 캔버스 hit 까지 true 로 보고해 데코 클릭/드래그가 막히는 회귀가 있어 RaycastAll 기반으로
+        // 명시적으로 분기. WorldSpace 캔버스(노트북 스크린 / guestbook preview 등)는 본질적으로
+        // 월드 오브젝트의 일부이므로 차단 사유 아님 → continue. 실제 HUD(편집 패널/모달/팝업/
+        // 인벤토리/취소·저장 버튼 등 ScreenSpaceOverlay 또는 ScreenSpaceCamera 캔버스) hit 만
+        // 차단 사유로 인정해 return true.
+        //
+        // DashboardRaycastFilter 의존 없이 Canvas.renderMode 만으로 일반화 — dashboard 도 결국
+        // ScreenSpaceCamera 또는 WorldSpace 둘 중 하나로 분류되므로 일반 로직에 자연 포섭.
+        //
+        // MR #129 임시 진단 로그 — [EditUiHit] prefix 로 RaycastAll hit 별 세부 정보(name/module/
+        // canvas/renderMode/sortingLayer·Order/raycastTarget)를 출력해 어떤 UI 가 실제로 차단을
+        // 만드는지 확정한다. 원인 fix 후 Debug.Log 라인들은 제거할 것.
         private static bool IsPointerOverUi()
         {
-            return EventSystem.current != null &&
-                   EventSystem.current.IsPointerOverGameObject();
+            var eventSystem = EventSystem.current;
+            if (eventSystem == null)
+            {
+                return false;
+            }
+
+            var pointerPosition = ReadPointerPosition();
+            var pointerEvent = new PointerEventData(eventSystem)
+            {
+                position = pointerPosition,
+            };
+            var hits = new List<RaycastResult>();
+            eventSystem.RaycastAll(pointerEvent, hits);
+
+            Debug.Log($"[EditUiHit] RaycastAll → {hits.Count} hits at pointer={pointerPosition}");
+
+            for (var i = 0; i < hits.Count; i++)
+            {
+                var hitGo = hits[i].gameObject;
+                var moduleName = hits[i].module != null ? hits[i].module.GetType().Name : "<null>";
+                var hitGoName = hitGo != null ? hitGo.name : "<null>";
+                var canvas = hitGo != null ? hitGo.GetComponentInParent<Canvas>() : null;
+                var canvasName = canvas != null ? canvas.name : "<none>";
+                var renderMode = canvas != null ? canvas.renderMode.ToString() : "<n/a>";
+                var sortingLayer = canvas != null ? canvas.sortingLayerName : "<n/a>";
+                var sortingOrder = canvas != null ? canvas.sortingOrder.ToString() : "<n/a>";
+                var graphic = hitGo != null ? hitGo.GetComponent<UnityEngine.UI.Graphic>() : null;
+                var raycastTarget = graphic != null ? graphic.raycastTarget.ToString() : "<noGraphic>";
+
+                if (hitGo == null)
+                {
+                    Debug.Log($"[EditUiHit] [{i}] gameObject=null module={moduleName} → skip (no GO)");
+                    continue;
+                }
+
+                if (canvas != null && canvas.renderMode == RenderMode.WorldSpace)
+                {
+                    // WorldSpace 캔버스 = 월드 오브젝트의 일부. 클릭 = 월드 클릭이지 UI 차단 아님.
+                    Debug.Log($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} canvas='{canvasName}' renderMode={renderMode} sortingLayer='{sortingLayer}' sortingOrder={sortingOrder} raycastTarget={raycastTarget} → SKIP (WorldSpace)");
+                    continue;
+                }
+
+                // ScreenSpaceOverlay / ScreenSpaceCamera 캔버스(또는 캔버스 부모 없는 비정상
+                // raycast hit) 는 진짜 HUD 로 간주해 차단.
+                Debug.Log($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} canvas='{canvasName}' renderMode={renderMode} sortingLayer='{sortingLayer}' sortingOrder={sortingOrder} raycastTarget={raycastTarget} → BLOCKED");
+                return true;
+            }
+
+            return false;
         }
 
         private static bool IsDescendantOf(Transform candidate, Transform ancestor)
