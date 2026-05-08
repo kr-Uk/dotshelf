@@ -97,7 +97,9 @@ class AssetIntegrationTest extends IntegrationTestSupport {
         mockMvc.perform(get("/v1/assets/me/inventory")
                         .header(TEST_USER_HEADER, user.getId().toString()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.assetIds[0]").value(asset.getId()));
+                .andExpect(jsonPath("$.result.assetIds[0]").value(asset.getId()))
+                .andExpect(jsonPath("$.result.items[0].inventoryId").value(inventory.getId()))
+                .andExpect(jsonPath("$.result.items[0].assetId").value(asset.getId()));
 
         mockMvc.perform(post("/v1/assets/{assetId}/purchase", asset.getId())
                         .header(TEST_USER_HEADER, user.getId().toString()))

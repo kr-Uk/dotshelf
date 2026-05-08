@@ -4911,9 +4911,9 @@ namespace App.Features.Notebook.Presentation
                     },
                     error =>
                     {
-                        if (IsLocalMockApiDisabled(error))
+                        if (IsApiDisabledError(error))
                         {
-                            UnityEngine.Debug.LogWarning($"Search API disabled by LocalMock. keyword={keyword}");
+                            UnityEngine.Debug.LogWarning($"Search API disabled. keyword={keyword}");
                             CompleteSearchWithApiError(requestVersion, "Notebook API disabled.");
                             return;
                         }
@@ -4943,7 +4943,7 @@ namespace App.Features.Notebook.Presentation
             RefreshAll();
         }
 
-        private static bool IsLocalMockApiDisabled(NotebookApiError error)
+        private static bool IsApiDisabledError(NotebookApiError error)
         {
             return string.Equals(error?.Code, "NOTEBOOK_API_DISABLED", StringComparison.OrdinalIgnoreCase);
         }

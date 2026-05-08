@@ -26,6 +26,7 @@ import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetListResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetPurchaseResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.InventoryItemResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.InventoryResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.ThemeContentsResponse;
 import com.dotshelf.domain.asset.service.AssetService;
@@ -119,11 +120,15 @@ class AssetControllerTest {
     @Test
     @DisplayName("내 인벤토리 조회는 current userId를 전달한다")
     void getInventory_passesCurrentUser() throws Exception {
-        given(assetService.getInventory(1L)).willReturn(new InventoryResponse(List.of(10L, 11L)));
+        given(assetService.getInventory(1L)).willReturn(new InventoryResponse(
+                List.of(10L, 11L),
+                List.of(new InventoryItemResponse(20L, 10L), new InventoryItemResponse(21L, 11L))));
 
         mockMvc.perform(get("/v1/assets/me/inventory").header("X-Test-Admin-User-Id", "1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.assetIds[1]").value(11));
+                .andExpect(jsonPath("$.result.assetIds[1]").value(11))
+                .andExpect(jsonPath("$.result.items[0].inventoryId").value(20))
+                .andExpect(jsonPath("$.result.items[0].assetId").value(10));
     }
 
     @Test

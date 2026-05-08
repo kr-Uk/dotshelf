@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 using UIDocument = UnityEngine.UIElements.UIDocument;
 using RuntimePanelUtils = UnityEngine.UIElements.RuntimePanelUtils;
 
@@ -32,9 +33,48 @@ namespace Dotshelf.Scripts.Dashboard
 
         public static bool IsNonInteractiveDashboardRaycast(RaycastResult result, Vector2 pointerScreen)
         {
-            _ = pointerScreen;
             var dashboard = ResolveDashboardFromRaycast(result);
-            return dashboard != null && !dashboard.InteractionEnabled;
+            if (dashboard != null)
+            {
+                return !dashboard.InteractionEnabled;
+            }
+
+            if (!IsUiToolkitRaycast(result))
+            {
+                return false;
+            }
+
+            PruneDestroyedControllers();
+            for (var i = 0; i < Controllers.Count; i++)
+            {
+                dashboard = Controllers[i];
+                if (dashboard == null || !dashboard.isActiveAndEnabled || dashboard.InteractionEnabled)
+                {
+                    continue;
+                }
+
+                if (IsPointerOverDashboardDocument(dashboard, pointerScreen))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static bool IsBlockingRaycastResult(RaycastResult result, Vector2 pointerScreen)
+        {
+            if (result.gameObject == null)
+            {
+                return false;
+            }
+
+            if (IsNonInteractiveDashboardRaycast(result, pointerScreen))
+            {
+                return false;
+            }
+
+            return !IsNonBlockingWorldSpaceGraphicRaycast(result);
         }
 
         public static bool IsPointerOverInteractiveDashboard(Vector2 pointerScreen)
@@ -85,6 +125,48 @@ namespace Dotshelf.Scripts.Dashboard
             return resultObject.GetComponentInParent<DashboardScreenController>();
         }
 
+        private static bool IsUiToolkitRaycast(RaycastResult result)
+        {
+            // UI Toolkit world-panel raycasters are internal Unity types, so keep
+            // this string check isolated and re-verify it when upgrading Unity.
+            var moduleTypeName = result.module != null ? result.module.GetType().FullName : null;
+            return moduleTypeName == "UnityEngine.UIElements.PanelRaycaster" ||
+                   moduleTypeName == "UnityEngine.UIElements.WorldDocumentRaycaster";
+        }
+
+        private static bool IsNonBlockingWorldSpaceGraphicRaycast(RaycastResult result)
+        {
+            var resultObject = result.gameObject;
+            if (resultObject == null)
+            {
+                return false;
+            }
+
+            Canvas canvas = null;
+            if (result.module is GraphicRaycaster graphicRaycaster)
+            {
+                canvas = graphicRaycaster.GetComponent<Canvas>();
+            }
+
+            if (canvas == null)
+            {
+                canvas = resultObject.GetComponentInParent<Canvas>();
+            }
+
+            if (canvas == null || canvas.renderMode != RenderMode.WorldSpace)
+            {
+                return false;
+            }
+
+            if (resultObject.GetComponentInParent<Selectable>() != null ||
+                resultObject.GetComponentInParent<ScrollRect>() != null)
+            {
+                return false;
+            }
+
+            return resultObject.GetComponentInParent<WorldSpaceRaycastPassthrough>() != null;
+        }
+
         private static bool IsPointerOverDashboardDocument(DashboardScreenController dashboard, Vector2 pointerScreen)
         {
             if (dashboard == null)
@@ -118,5 +200,9 @@ namespace Dotshelf.Scripts.Dashboard
                 }
             }
         }
+    }
+
+    public sealed class WorldSpaceRaycastPassthrough : MonoBehaviour
+    {
     }
 }

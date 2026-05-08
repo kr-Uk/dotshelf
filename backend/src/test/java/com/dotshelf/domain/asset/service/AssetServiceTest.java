@@ -181,5 +181,11 @@ class AssetServiceTest {
         var response = assetService.getInventory(1L);
 
         assertThat(response.assetIds()).containsExactly(10L, 11L);
+        assertThat(response.items())
+                .extracting(item -> item.inventoryId())
+                .containsExactly(1L, 2L);
+        assertThat(response.items())
+                .extracting(item -> item.assetId())
+                .containsExactly(10L, 11L);
     }
 }
