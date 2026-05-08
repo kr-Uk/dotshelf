@@ -461,6 +461,12 @@ namespace App.Bootstrap
         }
         private readonly List<DecorationSnapshot> editEntrySnapshot = new List<DecorationSnapshot>();
 
+        // 메인 씬 진입 직후 저장된 layout 을 1회만 load 하기 위한 가드. EnterEditMode 가 같은 데이터를
+        // 다시 읽어 marker 를 중복 spawn 하거나 transform 을 두 번 갱신하지 않게 한다 (MR #121).
+        // 향후 ApiDecorationRepository(비동기)로 교체 시: 이 플래그 set 위치를 onSuccess 콜백 안쪽으로
+        // 옮겨 in-flight 중에 EnterEditMode 가 fallback 경로로 두 번째 fetch 를 발사하지 않게 조정 필요.
+        private bool hasLoadedSavedDecorationsOnSceneInit;
+
         // Decoration catalog loaded from Resources (built by the editor menu item).
         private readonly List<InventoryEntry> inventoryEntries = new List<InventoryEntry>();
 
@@ -512,6 +518,16 @@ namespace App.Bootstrap
             // 상단 메뉴 'Dotshelf > Theme > Filter Inventory By > ...' 가 RoomEditThemeFilter.ActiveTheme 을
             // 바꾸면 Changed 가 발사된다 → 편집 모드 활성 상태면 인벤토리 다시 그려 필터 반영.
             RoomEditThemeFilter.Changed += HandleThemeFilterChanged;
+        }
+
+        private void Start()
+        {
+            // 메인 씬 로드 직후 저장된 데코레이션 1회 복원. 이전에는 EnterEditMode 안에서만 로드해
+            // 사용자가 편집 모드에 들어가기 전엔 메인 화면이 빈 룸으로 보이는 회귀가 있었다 (MR #121).
+            // BookshelfSceneInstaller.Awake → InstallScene 가 동기로 끝난 다음 sceneLoaded 가 fire 되고
+            // 그 안에서 이 controller 가 AddComponent 되므로, Start 시점엔 룸/책장/scene-baked marker +
+            // inventoryEntries 가 모두 준비된 상태. 안전하게 load 가능.
+            EnsureSavedDecorationsLoadedOnSceneInit();
         }
 
         private void HandleThemeFilterChanged()
@@ -3055,8 +3071,16 @@ namespace App.Bootstrap
 
             // 진입 시 dirty 초기화 (이전 세션의 dirty 가 남아있으면 즉시 모달이 뜨는 회귀 방지).
             isDirty = false;
-            // 저장된 layout 복원 시도 (현재 부분 구현 — 기존 marker transform 만 갱신).
-            TryRestoreSavedDecorations();
+            // MR #121: 저장된 layout 은 메인 씬 진입 시 Start() 에서 이미 1회 load 됐다.
+            // 같은 데이터를 EnterEditMode 마다 다시 읽으면 (a) marker transform 이 두 번 갱신되어
+            // NormalizeExistingDecorationScales/RefreshPlayableBounds 직후 다시 덮어쓰여지는 race,
+            // (b) 향후 비동기 repo 도입 시 in-flight load 와 충돌 가능성이 있어 명시적으로 skip.
+            // init load 가 어떤 이유로든 fire 안 됐으면 (e.g., controller 생성 경로 변경) fallback.
+            if (!hasLoadedSavedDecorationsOnSceneInit)
+            {
+                hasLoadedSavedDecorationsOnSceneInit = true;
+                TryRestoreSavedDecorations();
+            }
             // 진입 시점 marker 스냅샷 — "저장하지 않고 나가기" 롤백 기준점. load 후 캡처 순서가 중요:
             // 사용자가 진입 화면에서 본 상태가 곧 롤백 목표 상태가 되도록.
             TakeEditEntrySnapshot();
@@ -4013,12 +4037,34 @@ namespace App.Bootstrap
             marker.InventoryKey = snap.InventoryKey;
         }
 
+        // 메인 씬 진입 시점 1회만 fire — 저장된 layout 을 EditMode 진입 전에 미리 복원해
+        // 사용자가 메인 화면에서 즉시 마지막 배치를 볼 수 있게 한다 (MR #121).
+        //
+        // LocalFileDecorationRepository 는 동기 IO 이므로 호출 직후 placedByInventoryKey 가
+        // 채워진다 → 이후 EnterEditMode 의 RebuildPlacedByInventoryKeyFromScene 가 정상 매칭.
+        // hasLoadedSavedDecorationsOnSceneInit 가드가 EnterEditMode 의 중복 load 를 차단.
+        //
+        // InitializeIfNeeded 는 Awake 에서 이미 호출되지만, Start 호출 순서에 의존하지 않게
+        // 방어적으로 한 번 더 보장 (idempotent — `isInitialized` 가드).
+        private void EnsureSavedDecorationsLoadedOnSceneInit()
+        {
+            if (hasLoadedSavedDecorationsOnSceneInit) return;
+            hasLoadedSavedDecorationsOnSceneInit = true;
+
+            InitializeIfNeeded();
+            // 씬에 미리 배치된 marker (scene-baked 또는 다른 코드가 만든 것) 와 controller-local
+            // cache 동기화. TryRestoreSavedDecorations 의 매칭 분기 (line ~4044) 가 의존.
+            RebuildPlacedByInventoryKeyFromScene();
+            TryRestoreSavedDecorations();
+        }
+
         // 진입 시 저장된 layout 복원.
         //   - 씬에 marker 가 이미 있으면 transform 만 갱신 (e.g. scene-baked 자산).
         //   - 씬에 marker 가 없으면 inventoryEntries 에서 prefab 매칭해 Instantiate (앱 재시작 후 복원 경로).
         //   - prefab 매칭 실패하면 lost 로 집계 + 경고 (catalog 누락 / 이름 변경).
         // MR #120 skh1205 리뷰 #1 반영 — 이전에는 unmatched 가 그냥 drop 되어 fresh scene 에서
         // 사용자가 저장 토스트는 봤는데 방은 비어있는 회귀가 있었다.
+        // MR #121: 호출 시점이 EnterEditMode 단독 → "scene-init + EnterEditMode fallback" 으로 확장.
         private void TryRestoreSavedDecorations()
         {
             EnsureDecorationUseCases();
