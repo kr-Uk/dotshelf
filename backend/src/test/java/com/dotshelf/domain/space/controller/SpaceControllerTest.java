@@ -40,6 +40,10 @@ import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyMode;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailConfirmRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadUrlRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadUrlResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.VisibilityRequest;
 import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.global.common.CurrentUserArgumentResolver;
@@ -196,6 +200,55 @@ class SpaceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.spaceId").value(10))
                 .andExpect(jsonPath("$.result.layoutVersion").value(2));
+    }
+
+    @Test
+    @DisplayName("썸네일 presigned URL 발급 요청을 서비스에 전달한다")
+    void thumbnailUploadUrl_passesRequest() throws Exception {
+        given(spaceService.createThumbnailUploadUrl(any(), any(ThumbnailUploadUrlRequest.class)))
+                .willReturn(new ThumbnailUploadUrlResponse(
+                        "https://upload.example.com/object",
+                        "spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg",
+                        "https://cdn.test/spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg",
+                        300));
+
+        mockMvc.perform(post("/v1/spaces/me/thumbnail-upload-url")
+                        .header("X-Test-Admin-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"contentType":"image/jpeg","byteLength":1234}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.uploadUrl").value("https://upload.example.com/object"))
+                .andExpect(jsonPath("$.result.key").value("spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg"))
+                .andExpect(jsonPath("$.result.publicUrl").value("https://cdn.test/spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg"));
+
+        then(spaceService).should().createThumbnailUploadUrl(any(), any(ThumbnailUploadUrlRequest.class));
+    }
+
+    @Test
+    @DisplayName("썸네일 업로드 확정 요청을 서비스에 전달한다")
+    void confirmThumbnail_passesKey() throws Exception {
+        given(spaceService.confirmThumbnail(any(), any(ThumbnailConfirmRequest.class)))
+                .willReturn(new ThumbnailUploadResponse(
+                        10L,
+                        "spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg",
+                        "https://cdn.test/spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg",
+                        1L));
+
+        mockMvc.perform(patch("/v1/spaces/me/thumbnail")
+                        .header("X-Test-Admin-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"key":"spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.spaceId").value(10))
+                .andExpect(jsonPath("$.result.thumbnailKey").value("spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg"))
+                .andExpect(jsonPath("$.result.thumbnailUrl").value("https://cdn.test/spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg"))
+                .andExpect(jsonPath("$.result.layoutVersion").value(1));
+
+        then(spaceService).should().confirmThumbnail(any(), any(ThumbnailConfirmRequest.class));
     }
 
     @Test
