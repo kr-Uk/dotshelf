@@ -315,17 +315,20 @@ launcher:publish:
     - printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
     - chmod 600 ~/.ssh/known_hosts
   script:
-    - test -n "$LAUNCHER_UNITY_ZIP_URL" || { echo "LAUNCHER_UNITY_ZIP_URL is required"; exit 1; }
     - MANIFEST=launcher/manifests/dev/windows/latest.json
     - EVENTS=launcher/manifests/dev/windows/events.json
     - NGINX_CONFD=backend/deploy/prod/nginx/conf.d
     - LAUNCHER_VERSION=$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' launcher/src/DotShelf.Launcher/DotShelf.Launcher.csproj | head -n 1)
     - PACKAGE_URL=$(jq -r '.packageUrl' "$MANIFEST")
     - PACKAGE_FILE=$(basename "$PACKAGE_URL")
+    - UNITY_VERSION=$(jq -r '.latestVersion' "$MANIFEST")
     - EXPECTED_SHA=$(jq -r '.sha256' "$MANIFEST" | tr '[:lower:]' '[:upper:]')
-    - curl -fL "$LAUNCHER_UNITY_ZIP_URL" -o "$PACKAGE_FILE"
+    # Unity zip 출처: 같은 프로젝트의 GitLab Generic Packages (dotshelf-unity 패키지).
+    # 사람이 Unity Editor 로 빌드한 뒤 PRIVATE-TOKEN PUT 으로 업로드해 둔 산출물.
+    # CI 에서는 JOB-TOKEN 으로 같은 프로젝트 패키지를 인증해 받는다.
+    - curl -fL --header "JOB-TOKEN:$CI_JOB_TOKEN" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/dotshelf-unity/$UNITY_VERSION/$PACKAGE_FILE" -o "$PACKAGE_FILE"
     - ACTUAL_SHA=$(sha256sum "$PACKAGE_FILE" | awk '{print toupper($1)}')
-    - test "$ACTUAL_SHA" = "$EXPECTED_SHA" || { echo "Unity zip sha256 mismatch"; exit 1; }
+    - test "$ACTUAL_SHA" = "$EXPECTED_SHA" || { echo "Unity zip sha256 mismatch (manifest=$EXPECTED_SHA actual=$ACTUAL_SHA)"; exit 1; }
     - REMOTE_DIR=$PROD_DEPLOY_PATH/launcher/windows
     - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $REMOTE_DIR"
     - rsync -az "launcher/release/windows/DotShelfLauncher-$LAUNCHER_VERSION.exe" "$PROD_USER@$PROD_HOST:$REMOTE_DIR/"
