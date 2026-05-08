@@ -97,7 +97,7 @@ variables:
 
 .launcher-build-rules:
   rules:
-    - if: '$CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "dev"'
       changes:
         - launcher/**/*
         - web/service-web/app/(marketing)/download/page.tsx
@@ -110,9 +110,11 @@ variables:
         - backend/deploy/prod/nginx/conf.d/default.conf
         - .gitlab-ci.yml
 
+# 출시 전: dev 가 사실상 메인이라 dev 머지 시 prod 배포까지 진행.
+# 출시 후 master 가 실제 prod 분기로 활성화되면 같은 룰이 master 에서도 그대로 동작.
 .launcher-publish-rules:
   rules:
-    - if: '$CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "dev"'
       changes:
         - launcher/**/*
         - web/service-web/app/(marketing)/download/page.tsx
