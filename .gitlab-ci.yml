@@ -241,6 +241,7 @@ backend:deploy:
     - rsync -az "$JAR" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/api/build/libs/"
     - rsync -az "$DOCKERFILE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/api/Dockerfile"
     - rsync -az "$APP_COMPOSE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/docker-compose.yml"
+    - ssh "$EC2_USER@$EC2_HOST" "chmod 640 $EC2_DEPLOY_PATH/docker-compose.yml"
     - rsync -az --delete "$APP_PROMTAIL/" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/promtail/"
     # --- Stage Nginx configs to prod ---
     # 파일별로 분리 rsync (master 잡은 default.conf + blue-green templates/ 만 — admin-vhost.conf
@@ -281,6 +282,7 @@ service-web:deploy:
     - rsync -az --delete --exclude=node_modules --exclude=.next --exclude=.git "web/service-web/" "$EC2_USER@$EC2_HOST:$SERVICE_WEB_TARGET/"
     # --- compose.yml 도 함께 갱신(서비스 정의 변경분 반영) ---
     - rsync -az "$APP_COMPOSE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/docker-compose.yml"
+    - ssh "$EC2_USER@$EC2_HOST" "chmod 640 $EC2_DEPLOY_PATH/docker-compose.yml"
     # --- Stage Nginx config to prod (root vhost 의 service-web 프록시 전환 반영) ---
     # default.conf 만 보냄 — admin-vhost.conf / dev-vhosts.conf 는 각자 담당 잡 (admin-web:deploy
     # / *:test-deploy) 이 보냄. master 잡이 다른 vhost 를 건드리지 않게 격리.
@@ -361,6 +363,7 @@ admin-web:deploy:
     - ssh "$EC2_USER@$EC2_HOST" "mkdir -p $ADMIN_WEB_TARGET"
     - rsync -az --delete --exclude=node_modules --exclude=.next --exclude=.git "web/admin-web/" "$EC2_USER@$EC2_HOST:$ADMIN_WEB_TARGET/"
     - rsync -az "$APP_COMPOSE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/docker-compose.yml"
+    - ssh "$EC2_USER@$EC2_HOST" "chmod 640 $EC2_DEPLOY_PATH/docker-compose.yml"
     # --- Stage Nginx config to prod (admin-vhost.conf 만 — 다른 prod vhost 미영향) ---
     # admin-web 은 dev=prod 단일 스테이지라 dev 트리거가 admin vhost 만 갱신하고 default.conf
     # (api/service-web/grafana) 는 안 건드리도록 자기 파일만 보냄.
@@ -407,6 +410,7 @@ backend:test-deploy:
     - rsync -az "$JAR" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/api-test/build/libs/"
     - rsync -az "$DOCKERFILE" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/api-test/Dockerfile"
     - rsync -az "$APP_COMPOSE_TEST" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/docker-compose.test.yml"
+    - ssh "$EC2_USER@$EC2_HOST" "chmod 640 $EC2_DEPLOY_PATH/docker-compose.test.yml"
     # --- Stage Nginx config to prod (dev-vhosts.conf 만 — prod vhost 미영향) ---
     # dev 트리거 잡이 default.conf (prod) 를 보내지 않도록 자기 파일만 rsync. dev 브랜치에서
     # 누가 prod vhost 를 건드려도 master 머지 전엔 prod 라우팅에 영향 가지 않음.
@@ -445,6 +449,7 @@ service-web:test-deploy:
     - ssh "$EC2_USER@$EC2_HOST" "mkdir -p $SERVICE_WEB_TEST_TARGET"
     - rsync -az --delete --exclude=node_modules --exclude=.next --exclude=.git "web/service-web/" "$EC2_USER@$EC2_HOST:$SERVICE_WEB_TEST_TARGET/"
     - rsync -az "$APP_COMPOSE_TEST" "$EC2_USER@$EC2_HOST:$EC2_DEPLOY_PATH/docker-compose.test.yml"
+    - ssh "$EC2_USER@$EC2_HOST" "chmod 640 $EC2_DEPLOY_PATH/docker-compose.test.yml"
     # --- Stage Nginx config to prod (dev-vhosts.conf 만 — prod vhost 미영향) ---
     # dev 트리거 잡이 default.conf (prod) 를 보내지 않도록 자기 파일만 rsync.
     - ssh "$PROD_USER@$PROD_HOST" "mkdir -p $PROD_DEPLOY_PATH/nginx/conf.d"
