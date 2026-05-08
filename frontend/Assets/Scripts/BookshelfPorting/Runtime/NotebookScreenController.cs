@@ -100,26 +100,14 @@ namespace BookshelfPorting.Runtime
         private const float HiddenScaleMultiplier = 0.96f;
         private static readonly Vector2 ScreenSaverCanvasSize = new(800f, 450f);
         private static readonly Vector2 DashboardCanvasSize = new(850f, 480f);
-        private static readonly string[] AdvertisedBookTitles =
-        {
-            "내가 원하는 삶은 내가 만드는 것이다",
-            "너는 충분히 빛나는 아이야"
-        };
+        private static readonly string[] AdvertisedBookTitles = Array.Empty<string>();
         private static Font cachedUiFont;
         private static Sprite roundedPanelSprite;
         private static Sprite roundedPillSprite;
         private static Sprite fallbackAdSprite;
         private static readonly string[] BookCategories = { "전체", "읽는 중", "읽음", "안 읽음", "책장 1", "책장 2" };
         private static readonly string[] ReadingStatuses = { "읽음", "읽는 중", "안 읽음" };
-        private static readonly DummyBook[] DummyBooks =
-        {
-            new("모순", "양귀자", "쓰다", "복잡한 감정과 선택의 결을 따라가며 삶의 균열을 정밀하게 포착하는 장편소설.", "내 책장 1", "읽는 중", 4.3f, 1234, 12, new Color(0.86f, 0.68f, 0.42f, 1f), new DummyReview("minji", 4.5f, "문장이 차분해서 오래 남는 이야기였어요."), new DummyReview("reader_02", 4.0f, "인물 감정선이 섬세하게 이어집니다."), new DummyReview("hana", 4.4f, "끝까지 긴장감을 놓치지 않게 해줘요.")),
-            new("불편한 편의점", "김호연", "나무옆의자", "편의점을 중심으로 낯선 사람들이 느슨하게 연결되며 서로를 회복시키는 이야기.", "전체", "읽음", 4.6f, 3840, 28, new Color(0.52f, 0.74f, 0.91f, 1f), new DummyReview("soo", 4.8f, "따뜻하고 편하게 읽히는 소설입니다."), new DummyReview("bookcat", 4.6f, "장면마다 캐릭터가 살아 있어요."), new DummyReview("eun", 4.3f, "가볍게 시작했는데 여운이 컸어요.")),
-            new("아몬드", "손원평", "창비", "감정을 잘 느끼지 못하는 소년이 타인과의 관계를 통해 세계를 배워가는 성장담.", "내 책장 2", "안 읽음", 4.5f, 2911, 19, new Color(0.94f, 0.79f, 0.47f, 1f), new DummyReview("jun", 4.7f, "짧지만 밀도가 높은 성장 서사예요."), new DummyReview("mari", 4.4f, "감정의 의미를 다시 보게 됩니다.")),
-            new("작별인사", "김영하", "복복서가", "인간성과 기억, 존재의 경계를 차분하게 밀어붙이는 SF 장편.", "읽는 중", "읽는 중", 4.1f, 1642, 9, new Color(0.64f, 0.70f, 0.88f, 1f), new DummyReview("neo", 4.2f, "SF 설정이 어렵지 않고 몰입감이 좋습니다."), new DummyReview("sena", 4.0f, "질문을 오래 남기는 타입의 작품이에요.")),
-            new("달러구트 꿈 백화점", "이미예", "팩토리나인", "잠든 사이 방문하는 꿈 백화점을 배경으로 한 판타지 힐링 서사.", "읽음", "읽음", 4.4f, 4123, 31, new Color(0.79f, 0.62f, 0.90f, 1f), new DummyReview("anna", 4.5f, "설정이 귀엽고 읽는 내내 편안했어요."), new DummyReview("jin", 4.3f, "에피소드 구성이 좋아서 끊기지 않아요.")),
-            new("메리골드 마음 세탁소", "윤정은", "북로망스", "마음을 씻어내고 다시 살아갈 힘을 건네는 따뜻한 판타지 소설.", "안 읽음", "안 읽음", 4.2f, 2085, 14, new Color(0.72f, 0.84f, 0.58f, 1f), new DummyReview("leo", 4.1f, "지친 날 가볍게 읽기 좋은 책입니다."), new DummyReview("narin", 4.3f, "메시지가 또렷하고 부담 없이 읽혀요."))
-        };
+        private static readonly DummyBook[] DummyBooks = Array.Empty<DummyBook>();
 
         private static readonly DummyUser[] DummyUsers =
         {
@@ -976,15 +964,18 @@ namespace BookshelfPorting.Runtime
 
             if (toolkitController != null)
             {
-                if (toolkitController.OpenAdvertisedBookDetail(GetSelectedAdvertisedBookTitle()))
-                {
-                    openAdvertisedBookOnDashboard = false;
-                }
-
+                toolkitController.OpenAdvertisedBookDetail(GetSelectedAdvertisedBookTitle());
+                openAdvertisedBookOnDashboard = false;
                 return;
             }
 
             openAdvertisedBookOnDashboard = false;
+            if (DummyBooks.Length == 0)
+            {
+                Refresh();
+                return;
+            }
+
             selectedTab = "Books";
             SelectBook(0);
             Refresh();
@@ -1485,6 +1476,15 @@ namespace BookshelfPorting.Runtime
 
         private void SelectBook(int index)
         {
+            if (DummyBooks.Length == 0)
+            {
+                selectedBookIndex = 0;
+                selectedStatusIndex = 1;
+                selectedBookQueuedForAdd = false;
+                Refresh();
+                return;
+            }
+
             selectedBookIndex = Mathf.Clamp(index, 0, DummyBooks.Length - 1);
             selectedBookQueuedForAdd = false;
             selectedStatusIndex = System.Array.IndexOf(ReadingStatuses, DummyBooks[selectedBookIndex].Status);

@@ -7,8 +7,7 @@ namespace App.Config
 {
     public enum AppApiMode
     {
-        RealApi = 0,
-        LocalMock = 1
+        RealApi = 0
     }
 
     [CreateAssetMenu(fileName = "AppApiConfig", menuName = "App/Config/API Config")]
@@ -16,7 +15,7 @@ namespace App.Config
     {
         [Header("Environment")]
         [FormerlySerializedAs("useMockApi")]
-        [Tooltip("RealApi: production/dev server, LocalMock: in-memory mock repositories without HTTP")]
+        [Tooltip("HTTP API mode. For mock servers, keep the same API paths and change only the base URL.")]
         [SerializeField] private AppApiMode apiMode = AppApiMode.RealApi;
         [SerializeField] private string devBaseUrl = ApiEndpointDefaults.DevBaseUrl;
         [SerializeField] private string prodBaseUrl = ApiEndpointDefaults.ProdBaseUrl;
@@ -29,7 +28,7 @@ namespace App.Config
         [SerializeField] private bool enableVerboseLog = true;
 
         public AppApiMode ApiMode => apiMode;
-        public bool UsesHttpApi => apiMode != AppApiMode.LocalMock;
+        public bool UsesHttpApi => true;
         public string DevBaseUrl => devBaseUrl;
         public string ProdBaseUrl => prodBaseUrl;
         public string HealthCheckPath => string.IsNullOrWhiteSpace(healthCheckPath) ? "/health" : healthCheckPath;
