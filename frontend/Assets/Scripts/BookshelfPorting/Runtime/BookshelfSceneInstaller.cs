@@ -238,7 +238,7 @@ namespace BookshelfPorting.Runtime
             var whiteboardAnchor = FindOrCreateAnchor(
                 camerasRoot,
                 "WhiteboardAnchor",
-                new Vector3(-0.5f, 1.18f, 0.12f),
+                new Vector3(-0.72f, 1.18f, 0.12f),
                 Quaternion.LookRotation(Vector3.left, Vector3.up));
             var notebookPosition = new Vector3(-0.12f, 0.72f, -1.28f);
             var notebookTarget = new Vector3(-0.80f, 0.56f, -0.94f);
@@ -255,7 +255,7 @@ namespace BookshelfPorting.Runtime
             var probe = GetOrAddComponent<ReflectionProbe>(probeObject);
 
             cameraController.Configure(mainCamera, overviewAnchor, frontalAnchor, whiteboardAnchor, notebookAnchor, bookViewAnchor);
-            cameraController.ConfigureViewSettings(55f, 45f, 45f, 24f, 0.7f);
+            cameraController.ConfigureViewSettings(55f, 45f, 31f, 24f, 0.7f);
             cameraController.ConfigureFrontalZoomSettings(3.25f, 0.8f, 4.5f, 0.45f, 0.15f);
             cameraController.ConfigureFrontalZoomInputPredicate(experienceManager.CanHandleFrontalZoomInput);
             generator.Configure(state, materialFactory, loadBooksUseCase);
@@ -268,7 +268,7 @@ namespace BookshelfPorting.Runtime
             experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase);
             if (useServerBookshelf)
             {
-                bookshelfApiSync.Configure(new NotebookApiClient(apiManager), generator, experienceManager);
+                bookshelfApiSync.Configure(new NotebookApiClient(apiManager), generator, experienceManager, cameraController);
                 experienceManager.ConfigureBookshelfApiSync(bookshelfApiSync);
             }
             environment.Configure(probe, null);

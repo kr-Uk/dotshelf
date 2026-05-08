@@ -49,12 +49,14 @@ namespace Dotshelf.EditorTools
             new("followers-panel-1280x720", 1280, 720, controller =>
             {
                 ActivateHeaderTab(controller, "다른 공간");
+                Invoke(controller, "RequestSpaces", string.Empty, null);
                 var space = GetFirstArrayItem(controller, "apiSpaces");
                 Invoke(controller, "OpenSocialListPanel", space, "followers");
             }),
             new("followings-panel-1600x900", 1600, 900, controller =>
             {
                 ActivateHeaderTab(controller, "다른 공간");
+                Invoke(controller, "RequestSpaces", string.Empty, null);
                 var space = GetFirstArrayItem(controller, "apiSpaces");
                 Invoke(controller, "OpenSocialListPanel", space, "followings");
             }),
@@ -638,6 +640,8 @@ namespace Dotshelf.EditorTools
 
                 onSuccess?.Invoke(new NotebookSpaceListResult(result));
             }
+
+            public void UploadMySpaceThumbnail(byte[] imageBytes, string contentType, Action<NotebookSpaceThumbnailUploadResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookSpaceThumbnailUploadResult { SpaceId = 3004, ThumbnailKey = "spaces/3004/thumbnail/mock.jpg", LayoutVersion = 1 });
 
             public void LoadDefaultShelfTarget(Action<NotebookShelfTarget> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookShelfTarget { BookshelfId = 1, SectionId = 1, SlotNo = 1 });
             public void LikeSpace(long spaceId, bool liked, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)

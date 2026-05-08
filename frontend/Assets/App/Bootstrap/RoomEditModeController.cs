@@ -476,6 +476,7 @@ namespace App.Bootstrap
         private readonly List<InventoryEntry> inventoryEntries = new List<InventoryEntry>();
 
         private BookshelfExperienceManager cachedExperienceManager;
+        private BookshelfApiSyncController cachedBookshelfApiSyncController;
         private Camera cachedSceneCamera;
 
         private struct RendererTint
@@ -3769,6 +3770,7 @@ namespace App.Bootstrap
                 {
                     Debug.Log($"[RoomEdit][Save] 저장 성공 — {items.Count}개 영속화 완료");
                     ClearDirty("save success");
+                    TryUploadRoomThumbnail();
                     onSuccess?.Invoke();
                 },
                 onError: msg =>
@@ -6532,6 +6534,29 @@ namespace App.Bootstrap
             }
             cachedExperienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
             return cachedExperienceManager;
+        }
+
+        private void TryUploadRoomThumbnail()
+        {
+            var apiSync = ResolveBookshelfApiSyncController();
+            if (apiSync == null)
+            {
+                return;
+            }
+
+            apiSync.UploadCurrentRoomThumbnail(
+                onFailed: error => Debug.LogWarning($"[RoomEditModeController] Room thumbnail upload skipped/failed: {error}"));
+        }
+
+        private BookshelfApiSyncController ResolveBookshelfApiSyncController()
+        {
+            if (cachedBookshelfApiSyncController != null)
+            {
+                return cachedBookshelfApiSyncController;
+            }
+
+            cachedBookshelfApiSyncController = UnityEngine.Object.FindFirstObjectByType<BookshelfApiSyncController>(FindObjectsInactive.Include);
+            return cachedBookshelfApiSyncController;
         }
 
         private Camera ResolveSceneCamera()

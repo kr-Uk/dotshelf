@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using App.Application.Notebook;
 using App.Auth;
 using App.Bootstrap;
 using App.Domain;
@@ -14,11 +15,14 @@ namespace BookshelfPorting.Runtime
     public sealed class BookshelfApiSyncController : MonoBehaviour
     {
         private NotebookApiClient client;
+        private NotebookRuntimeUseCase notebookRuntimeUseCase;
         private BookshelfGenerator generator;
         private BookshelfExperienceManager experienceManager;
+        private CameraController cameraController;
         private long? currentSpaceId;
         private bool configured;
         private bool isRefreshing;
+        private bool isThumbnailUploading;
         private Action<bool, string> refreshCompletion;
         private int itemsLoadFailureCount;
         private string firstItemsLoadFailureMessage;
@@ -39,11 +43,16 @@ namespace BookshelfPorting.Runtime
         public void Configure(
             NotebookApiClient apiClient,
             BookshelfGenerator bookshelfGenerator,
-            BookshelfExperienceManager manager)
+            BookshelfExperienceManager manager,
+            CameraController controller = null)
         {
             client = apiClient;
+            notebookRuntimeUseCase = apiClient != null
+                ? new NotebookRuntimeUseCase(new ApiNotebookRuntimeRepository(apiClient, () => APIManager.Instance != null && APIManager.Instance.HasAccessToken))
+                : null;
             generator = bookshelfGenerator;
             experienceManager = manager;
+            cameraController = controller;
             configured = client != null && generator != null;
 
             if (configured && Application.isPlaying)
@@ -1188,6 +1197,125 @@ namespace BookshelfPorting.Runtime
                 },
                 _ => RefreshFromServer(),
                 error => Debug.LogWarning($"Interior object add failed: {FormatError(error)}"));
+        }
+
+        public bool UploadCurrentRoomThumbnail(
+            Action<NotebookSpaceThumbnailUploadResult> onSucceeded = null,
+            Action<string> onFailed = null)
+        {
+            if (!CanUseServerApi || notebookRuntimeUseCase == null)
+            {
+                return false;
+            }
+
+            if (isThumbnailUploading)
+            {
+                return false;
+            }
+
+            StartCoroutine(CaptureAndUploadRoomThumbnail(onSucceeded, onFailed));
+            return true;
+        }
+
+        private IEnumerator CaptureAndUploadRoomThumbnail(
+            Action<NotebookSpaceThumbnailUploadResult> onSucceeded,
+            Action<string> onFailed)
+        {
+            isThumbnailUploading = true;
+
+            yield return new WaitForEndOfFrame();
+
+            byte[] imageBytes = null;
+            try
+            {
+                imageBytes = CaptureMainViewJpeg();
+            }
+            catch (Exception ex)
+            {
+                isThumbnailUploading = false;
+                Debug.LogWarning($"[BookshelfApiSync] Room thumbnail capture failed: {ex.Message}");
+                onFailed?.Invoke("Room thumbnail capture failed.");
+                yield break;
+            }
+
+            if (imageBytes == null || imageBytes.Length == 0)
+            {
+                isThumbnailUploading = false;
+                onFailed?.Invoke("Room thumbnail image was empty.");
+                yield break;
+            }
+
+            var completed = false;
+            notebookRuntimeUseCase.UploadMySpaceThumbnail(
+                imageBytes,
+                "image/jpeg",
+                result =>
+                {
+                    completed = true;
+                    isThumbnailUploading = false;
+                    Debug.Log($"[BookshelfApiSync] Room thumbnail uploaded: key={result?.ThumbnailKey}, url={result?.ThumbnailUrl}");
+                    onSucceeded?.Invoke(result);
+                },
+                error =>
+                {
+                    completed = true;
+                    isThumbnailUploading = false;
+                    var message = string.IsNullOrWhiteSpace(error?.Message) ? error?.Error : error.Message;
+                    Debug.LogWarning($"[BookshelfApiSync] Room thumbnail upload failed: code={error?.Code} message={message}");
+                    onFailed?.Invoke(message);
+                });
+
+            while (!completed)
+            {
+                yield return null;
+            }
+        }
+
+        private byte[] CaptureMainViewJpeg()
+        {
+            var camera = Camera.main;
+            if (camera == null)
+            {
+                camera = UnityEngine.Object.FindFirstObjectByType<Camera>();
+            }
+            if (camera == null)
+            {
+                throw new InvalidOperationException("Main camera was not found.");
+            }
+
+            var savedPosition = camera.transform.position;
+            var savedRotation = camera.transform.rotation;
+            var savedFov = camera.fieldOfView;
+            var savedRect = camera.rect;
+            var savedTargetTexture = camera.targetTexture;
+            var previousActive = RenderTexture.active;
+
+            var width = Mathf.Clamp(Screen.width > 0 ? Screen.width : 1280, 320, 1920);
+            var height = Mathf.Clamp(Screen.height > 0 ? Screen.height : 720, 180, 1080);
+            var renderTexture = RenderTexture.GetTemporary(width, height, 24, RenderTextureFormat.ARGB32);
+            var texture = new Texture2D(width, height, TextureFormat.RGB24, false);
+
+            try
+            {
+                cameraController?.ApplyMainView();
+                camera.rect = new Rect(0f, 0f, 1f, 1f);
+                camera.targetTexture = renderTexture;
+                RenderTexture.active = renderTexture;
+                camera.Render();
+                texture.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+                texture.Apply(false);
+                return texture.EncodeToJPG(85);
+            }
+            finally
+            {
+                camera.targetTexture = savedTargetTexture;
+                camera.rect = savedRect;
+                camera.fieldOfView = savedFov;
+                camera.transform.SetPositionAndRotation(savedPosition, savedRotation);
+                RenderTexture.active = previousActive;
+                RenderTexture.ReleaseTemporary(renderTexture);
+                Destroy(texture);
+            }
         }
 
         public bool SaveReadingRecord(

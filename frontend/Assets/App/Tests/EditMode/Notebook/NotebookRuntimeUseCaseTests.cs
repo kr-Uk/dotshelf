@@ -66,6 +66,25 @@ namespace App.Tests.EditMode.Notebook
             Assert.AreEqual(15, repo.LastFollowingsLimit);
         }
 
+        [Test]
+        public void UploadMySpaceThumbnail_DelegatesImageAndContentType()
+        {
+            var repo = new FakeNotebookRuntimeRepository();
+            var useCase = new NotebookRuntimeUseCase(repo);
+            var image = new byte[] { 1, 2, 3 };
+            NotebookSpaceThumbnailUploadResult captured = null;
+
+            useCase.UploadMySpaceThumbnail(
+                image,
+                "image/jpeg",
+                result => captured = result,
+                _ => Assert.Fail("should not error"));
+
+            Assert.IsNotNull(captured);
+            Assert.AreSame(image, repo.LastThumbnailBytes);
+            Assert.AreEqual("image/jpeg", repo.LastThumbnailContentType);
+        }
+
         private sealed class FakeNotebookRuntimeRepository : INotebookRuntimeRepository
         {
             public string LastSpaceKeyword;
@@ -77,6 +96,8 @@ namespace App.Tests.EditMode.Notebook
             public long LastFollowingsUserId;
             public string LastFollowingsCursor;
             public int LastFollowingsLimit;
+            public byte[] LastThumbnailBytes;
+            public string LastThumbnailContentType;
 
             public void LoadWallet(Action<NotebookWalletResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookWalletResult());
             public void ChargePages(int pagesAmount, Action<NotebookWalletResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookWalletResult());
@@ -93,6 +114,13 @@ namespace App.Tests.EditMode.Notebook
                 LastSpaceCursor = cursor;
                 LastSpaceLimit = limit;
                 onSuccess?.Invoke(new NotebookSpaceListResult(null));
+            }
+
+            public void UploadMySpaceThumbnail(byte[] imageBytes, string contentType, Action<NotebookSpaceThumbnailUploadResult> onSuccess, Action<NotebookApiError> onError)
+            {
+                LastThumbnailBytes = imageBytes;
+                LastThumbnailContentType = contentType;
+                onSuccess?.Invoke(new NotebookSpaceThumbnailUploadResult { SpaceId = 10L, ThumbnailKey = "spaces/10/thumbnail/mock.jpg" });
             }
 
             public void LoadDefaultShelfTarget(Action<NotebookShelfTarget> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookShelfTarget());

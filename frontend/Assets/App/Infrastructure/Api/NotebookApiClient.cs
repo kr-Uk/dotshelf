@@ -294,6 +294,21 @@ namespace App.Infrastructure.Api
             return Put<LayoutSaveRequestDto, LayoutSaveResponseDto>("/v1/spaces/me/layout", request, onSuccess, onError);
         }
 
+        public Coroutine CreateMySpaceThumbnailUploadUrl(SpaceThumbnailUploadUrlRequestDto request, Action<SpaceThumbnailUploadUrlResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Post<SpaceThumbnailUploadUrlRequestDto, SpaceThumbnailUploadUrlResponseDto>("/v1/spaces/me/thumbnail-upload-url", request, onSuccess, onError);
+        }
+
+        public Coroutine UploadRawObject(string uploadUrl, byte[] body, string contentType, Action onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return RequireApi().PutRaw(uploadUrl, body, contentType, onSuccess, onError);
+        }
+
+        public Coroutine ConfirmMySpaceThumbnail(SpaceThumbnailConfirmRequestDto request, Action<SpaceThumbnailUploadResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Patch<SpaceThumbnailConfirmRequestDto, SpaceThumbnailUploadResponseDto>("/v1/spaces/me/thumbnail", request, onSuccess, onError);
+        }
+
         public Coroutine ApplyMySpaceTheme(ThemeApplyRequestDto request, Action<SpaceResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Patch<ThemeApplyRequestDto, SpaceResponseDto>("/v1/spaces/me/theme", request, onSuccess, onError);
