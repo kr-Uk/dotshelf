@@ -6877,13 +6877,15 @@ namespace App.Bootstrap
         //
         // 한 줄짜리 IsPointerOverGameObject() 는 일부 Unity Input System 설정에서 WorldSpace
         // 캔버스 hit 까지 true 로 보고해 데코 클릭/드래그가 막히는 회귀가 있어 RaycastAll 기반으로
-        // 명시적으로 분기. WorldSpace 캔버스(노트북 스크린 / guestbook preview 등)는 본질적으로
-        // 월드 오브젝트의 일부이므로 차단 사유 아님 → continue. 실제 HUD(편집 패널/모달/팝업/
-        // 인벤토리/취소·저장 버튼 등 ScreenSpaceOverlay 또는 ScreenSpaceCamera 캔버스) hit 만
-        // 차단 사유로 인정해 return true.
-        //
-        // DashboardRaycastFilter 의존 없이 Canvas.renderMode 만으로 일반화 — dashboard 도 결국
-        // ScreenSpaceCamera 또는 WorldSpace 둘 중 하나로 분류되므로 일반 로직에 자연 포섭.
+        // 명시적으로 분기. 두 종류의 "월드 위 UI" 를 차단 사유에서 제외:
+        //   1. uGUI WorldSpace Canvas hit (노트북 스크린 / guestbook preview 등) — Canvas.renderMode
+        //      로 식별.
+        //   2. UI Toolkit WorldSpace UIDocument hit (dashboard 등) — module 이
+        //      UnityEngine.UIElements.WorldDocumentRaycaster 인 경우 식별. uGUI 와 별개 시스템이라
+        //      Canvas 가 없어 1번 체크에 안 잡힘 — 별도 분기 필요.
+        // 둘 다 본질적으로 월드 오브젝트의 일부이므로 클릭 = 월드 클릭. 실제 HUD(편집 패널/모달/
+        // 팝업/인벤토리/취소·저장 버튼 등 ScreenSpaceOverlay·ScreenSpaceCamera Canvas, 또는
+        // ScreenSpace UIDocument = UIElements.PanelRaycaster) hit 만 차단 사유로 인정해 return true.
         //
         // MR #129 임시 진단 로그 — [EditUiHit] prefix 로 RaycastAll hit 별 세부 정보(name/module/
         // canvas/renderMode/sortingLayer·Order/raycastTarget)를 출력해 어떤 UI 가 실제로 차단을
@@ -6910,6 +6912,7 @@ namespace App.Bootstrap
             {
                 var hitGo = hits[i].gameObject;
                 var moduleName = hits[i].module != null ? hits[i].module.GetType().Name : "<null>";
+                var moduleFullName = hits[i].module != null ? hits[i].module.GetType().FullName : "<null>";
                 var hitGoName = hitGo != null ? hitGo.name : "<null>";
                 var canvas = hitGo != null ? hitGo.GetComponentInParent<Canvas>() : null;
                 var canvasName = canvas != null ? canvas.name : "<none>";
@@ -6925,15 +6928,25 @@ namespace App.Bootstrap
                     continue;
                 }
 
+                // UI Toolkit (UIElements) WorldSpace UIDocument hit — uGUI Canvas 와 별개 시스템.
+                // dashboard 같은 WorldSpace UIDocument 는 본질적으로 월드 오브젝트의 일부이므로
+                // 차단 사유 아님. PanelRaycaster (ScreenSpace UIDocument) 는 여기서 skip 안 됨 →
+                // 아래 fall-through 경로에서 BLOCKED.
+                if (moduleFullName == "UnityEngine.UIElements.WorldDocumentRaycaster")
+                {
+                    Debug.Log($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} → SKIP (UI Toolkit WorldSpace)");
+                    continue;
+                }
+
                 if (canvas != null && canvas.renderMode == RenderMode.WorldSpace)
                 {
-                    // WorldSpace 캔버스 = 월드 오브젝트의 일부. 클릭 = 월드 클릭이지 UI 차단 아님.
+                    // uGUI WorldSpace 캔버스 = 월드 오브젝트의 일부. 클릭 = 월드 클릭이지 UI 차단 아님.
                     Debug.Log($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} canvas='{canvasName}' renderMode={renderMode} sortingLayer='{sortingLayer}' sortingOrder={sortingOrder} raycastTarget={raycastTarget} → SKIP (WorldSpace)");
                     continue;
                 }
 
-                // ScreenSpaceOverlay / ScreenSpaceCamera 캔버스(또는 캔버스 부모 없는 비정상
-                // raycast hit) 는 진짜 HUD 로 간주해 차단.
+                // ScreenSpaceOverlay / ScreenSpaceCamera 캔버스 또는 ScreenSpace UIDocument
+                // (UIElements.PanelRaycaster) 는 진짜 HUD 로 간주해 차단.
                 Debug.Log($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} canvas='{canvasName}' renderMode={renderMode} sortingLayer='{sortingLayer}' sortingOrder={sortingOrder} raycastTarget={raycastTarget} → BLOCKED");
                 return true;
             }
