@@ -462,6 +462,16 @@ namespace App.Bootstrap
         }
         private readonly List<DecorationSnapshot> editEntrySnapshot = new List<DecorationSnapshot>();
 
+        // BookshelfSceneInstaller.InstallIntoActiveScene 가 끝나면서 LoadSavedDecorationsAfterSceneInstall
+        // 을 호출했고 그 결과가 성공이었는지 — succeeded 의미. EnterEditMode 가 같은 데이터를 다시
+        // 읽어 marker 를 중복 spawn 하거나 transform 을 두 번 갱신하지 않게 차단한다 (MR #128).
+        //
+        // 중요: 시도 여부가 아니라 "성공한 적 있는가" 를 기록한다. 파일 손상/JSON 파싱 실패/향후
+        // ApiDecorationRepository 네트워크 실패 등으로 onError 가 발사되면 이 플래그는 false 로
+        // 남고, 다음 EnterEditMode 진입 시 fallback 경로로 한 번 더 시도된다 (MR #128 skh1205 리뷰
+        // #2 / revbot 리뷰 반영 — 이전엔 시도 즉시 true 로 set 해서 실패가 영구 차단됐었다).
+        private bool hasLoadedSavedDecorationsOnSceneInit;
+
         // Decoration catalog loaded from Resources (built by the editor menu item).
         private readonly List<InventoryEntry> inventoryEntries = new List<InventoryEntry>();
 
@@ -514,6 +524,15 @@ namespace App.Bootstrap
             // 바꾸면 Changed 가 발사된다 → 편집 모드 활성 상태면 인벤토리 다시 그려 필터 반영.
             RoomEditThemeFilter.Changed += HandleThemeFilterChanged;
         }
+
+        // MR #128 skh1205 리뷰 #1 반영: 이전 구현은 controller.Start() 에서 자체적으로 load 를
+        // 트리거했으나, 실제 부트스트랩 흐름(SceneEntry.LoadMainSceneRoutine → additive load →
+        // sceneLoaded → controller AddComponent → Start; 그 다음에서야 RunSceneInstallers 가
+        // installer.InstallScene 호출)에서는 Start 가 InstallScene 보다 *먼저* 실행될 수 있다.
+        // BookshelfSceneInstaller.Awake 는 active scene 이 Main 이 아니면 early-return 하므로
+        // additive load 시점에 InstallScene 이 안 도는 경로 존재. 따라서 자체 Start 트리거를
+        // 제거하고, InstallScene 이 끝나는 지점에서 BookshelfSceneInstaller 가 명시적으로
+        // LoadSavedDecorationsAfterSceneInstall() 을 호출하는 방식으로 단일화 (B안).
 
         private void HandleThemeFilterChanged()
         {
@@ -3056,8 +3075,21 @@ namespace App.Bootstrap
 
             // 진입 시 dirty 초기화 (이전 세션의 dirty 가 남아있으면 즉시 모달이 뜨는 회귀 방지).
             isDirty = false;
-            // 저장된 layout 복원 시도 (현재 부분 구현 — 기존 marker transform 만 갱신).
-            TryRestoreSavedDecorations();
+            // MR #128: 저장된 layout 은 BookshelfSceneInstaller.InstallIntoActiveScene 끝점에서
+            // 이미 1회 load 됐다. 같은 데이터를 EnterEditMode 마다 다시 읽으면 (a) marker transform
+            // 이 두 번 갱신되어 NormalizeExistingDecorationScales/RefreshPlayableBounds 직후 다시
+            // 덮어쓰여지는 race, (b) 향후 비동기 repo 도입 시 in-flight load 와 충돌 가능성이 있어
+            // 명시적으로 skip. init load 가 fire 안 됐거나(installer 비호출 경로) 실패했으면
+            // (파일 손상 / 권한 / 향후 API 네트워크 실패) fallback 으로 한 번 더 시도.
+            // 성공 시에만 가드 플래그를 set 하므로 실패가 영구 차단되지 않는다 (skh1205 리뷰 #2 /
+            // revbot 리뷰 반영).
+            if (!hasLoadedSavedDecorationsOnSceneInit)
+            {
+                TryRestoreSavedDecorations(onCompleted: success =>
+                {
+                    if (success) hasLoadedSavedDecorationsOnSceneInit = true;
+                });
+            }
             // 진입 시점 marker 스냅샷 — "저장하지 않고 나가기" 롤백 기준점. load 후 캡처 순서가 중요:
             // 사용자가 진입 화면에서 본 상태가 곧 롤백 목표 상태가 되도록.
             TakeEditEntrySnapshot();
@@ -4014,22 +4046,59 @@ namespace App.Bootstrap
             marker.InventoryKey = snap.InventoryKey;
         }
 
-        // 진입 시 저장된 layout 복원.
+        // BookshelfSceneInstaller.InstallIntoActiveScene 가 룸/책장/scene-baked decoration 생성을
+        // 모두 끝낸 직후 호출하는 진입점. 저장된 layout 을 메인 화면에서 즉시 보이도록 1회 복원
+        // (MR #128). 호출 책임은 installer 측에 있다 — controller 자체의 Start() 에서 트리거하면
+        // InstallScene 보다 먼저 실행될 수 있어 marker 매칭이 깨지는 순서 버그 발생 (MR #128
+        // skh1205 리뷰 #1).
+        //
+        // 동작:
+        //   1. 이미 성공적으로 1회 load 했으면 no-op (중복 spawn / 이중 갱신 차단).
+        //   2. UI/inventoryEntries 가 아직 빌드 안 됐을 수 있으므로 InitializeIfNeeded 보장.
+        //   3. scene-baked marker 와 placedByInventoryKey 동기화.
+        //   4. TryRestoreSavedDecorations 호출 — 성공 시에만 hasLoadedSavedDecorationsOnSceneInit
+        //      = true 로 set. 실패 시 false 유지 → 다음 EnterEditMode 가 fallback 으로 재시도
+        //      (MR #128 skh1205 리뷰 #2 / revbot 리뷰 — flag race 수정).
+        internal void LoadSavedDecorationsAfterSceneInstall()
+        {
+            if (hasLoadedSavedDecorationsOnSceneInit) return;
+
+            InitializeIfNeeded();
+            // 씬에 미리 배치된 marker (scene-baked 또는 다른 코드가 만든 것) 와 controller-local
+            // cache 동기화. TryRestoreSavedDecorations 의 매칭 분기가 의존.
+            RebuildPlacedByInventoryKeyFromScene();
+            TryRestoreSavedDecorations(onCompleted: success =>
+            {
+                if (success) hasLoadedSavedDecorationsOnSceneInit = true;
+            });
+        }
+
+        // 저장된 layout 복원.
         //   - 씬에 marker 가 이미 있으면 transform 만 갱신 (e.g. scene-baked 자산).
         //   - 씬에 marker 가 없으면 inventoryEntries 에서 prefab 매칭해 Instantiate (앱 재시작 후 복원 경로).
         //   - prefab 매칭 실패하면 lost 로 집계 + 경고 (catalog 누락 / 이름 변경).
         // MR #120 skh1205 리뷰 #1 반영 — 이전에는 unmatched 가 그냥 drop 되어 fresh scene 에서
         // 사용자가 저장 토스트는 봤는데 방은 비어있는 회귀가 있었다.
-        private void TryRestoreSavedDecorations()
+        // MR #128: 호출 경로가 "EnterEditMode 단독" → "InstallScene 끝점 + EnterEditMode fallback".
+        // onCompleted(bool success) 콜백으로 성공/실패를 호출자에게 전달하므로 호출자는 그 결과로
+        // hasLoadedSavedDecorationsOnSceneInit 같은 외부 가드 플래그를 정확히 관리할 수 있다.
+        // success=true: items 적용 완료 (빈 리스트 포함 — 정상 응답이므로 retry 불필요).
+        // success=false: useCase 미초기화 또는 repository onError 발사된 경우 — 호출자가 retry 가능.
+        private void TryRestoreSavedDecorations(Action<bool> onCompleted = null)
         {
             EnsureDecorationUseCases();
-            if (loadDecorationsUseCase == null) return;
+            if (loadDecorationsUseCase == null)
+            {
+                onCompleted?.Invoke(false);
+                return;
+            }
             loadDecorationsUseCase.Execute(
                 onSuccess: items =>
                 {
                     if (items == null || items.Count == 0)
                     {
                         Debug.Log("[RoomEdit][Load] 저장된 데코레이션 없음 (빈 리스트)");
+                        onCompleted?.Invoke(true);
                         return;
                     }
                     int matched = 0, recreated = 0, lost = 0;
@@ -4061,8 +4130,13 @@ namespace App.Bootstrap
                     }
                     Debug.Log(
                         $"[RoomEdit][Load] 복원 완료 — 기존 marker 매칭 갱신 {matched}개, prefab 재생성 {recreated}개, 복원 불가 {lost}개");
+                    onCompleted?.Invoke(true);
                 },
-                onError: msg => Debug.LogWarning($"[RoomEdit][Load] 저장 데이터 로드 실패: {msg}"));
+                onError: msg =>
+                {
+                    Debug.LogWarning($"[RoomEdit][Load] 저장 데이터 로드 실패: {msg}");
+                    onCompleted?.Invoke(false);
+                });
         }
 
         // 저장된 layout item 1개를 prefab Instantiate 해서 씬에 복원. 성공 시 placedByInventoryKey 등록.
