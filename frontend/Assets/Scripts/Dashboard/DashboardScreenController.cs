@@ -191,6 +191,7 @@ namespace Dotshelf.Scripts.Dashboard
 
         private DashboardSnapshot currentSnapshot;
         private bool likeRequestInFlight;
+        private bool interactionEnabled = true;
         private readonly List<string> guestbookCursorHistory = new List<string> { null };
         private int currentGuestbookPageIndex;
         private string nextGuestbookCursor;
@@ -239,7 +240,13 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void Awake()
         {
-            document = GetComponent<UIDocument>();
+            EnsureDocument();
+            if (document == null)
+            {
+                Debug.LogError("[Dashboard] UIDocument component is missing.");
+                return;
+            }
+
             if (viewAsset != null)
             {
                 document.visualTreeAsset = viewAsset;
@@ -287,7 +294,29 @@ namespace Dotshelf.Scripts.Dashboard
             onAllowAllToggleHandler = evt => RefreshWhitelistPickerSelections(evt.newValue);
         }
 
+        private void EnsureEventHandlersCached()
+        {
+            if (onOwnedBooksLoadMoreHandler != null &&
+                onUserListModalBackdropHandler != null &&
+                onWriteContentChangedHandler != null &&
+                onAllowAllToggleHandler != null)
+            {
+                return;
+            }
+
+            CacheEventHandlers();
+        }
+
+        private void EnsureDocument()
+        {
+            if (document == null)
+            {
+                document = GetComponent<UIDocument>();
+            }
+        }
+
         private const string DimmedClass = "dashboard-root--dimmed";
+        private const string InteractiveClass = "dashboard-root--interactive";
         // focus 진입 전에도 보이게(사용자 D2 요청) — full로 시작하고 BookshelfExperienceManager가
         // focus 해제 시점에 SetDimmed(true) 호출. 외부 panel 모드 활성 시 항상 visible.
         private bool dimmed = false;
@@ -304,6 +333,28 @@ namespace Dotshelf.Scripts.Dashboard
             if (root == null) return;
             if (dimmed) root.AddToClassList(DimmedClass);
             else root.RemoveFromClassList(DimmedClass);
+        }
+
+        public bool InteractionEnabled => interactionEnabled;
+
+        public void SetInteractionEnabled(bool enabled)
+        {
+            if (interactionEnabled == enabled)
+            {
+                ApplyInteractionState();
+                return;
+            }
+
+            interactionEnabled = enabled;
+            ApplyInteractionState();
+        }
+
+        private void ApplyInteractionState()
+        {
+            if (root == null) return;
+            root.SetEnabled(interactionEnabled);
+            if (interactionEnabled) root.AddToClassList(InteractiveClass);
+            else root.RemoveFromClassList(InteractiveClass);
         }
 
         public void Configure(
@@ -335,6 +386,13 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void OnEnable()
         {
+            EnsureDocument();
+            if (document == null)
+            {
+                Debug.LogError("[Dashboard] UIDocument component is missing.");
+                return;
+            }
+
             if (!configured)
             {
                 BuildMockUseCases();
@@ -354,6 +412,7 @@ namespace Dotshelf.Scripts.Dashboard
             }
 
             ApplyDimmedClass();
+            ApplyInteractionState();
 
             QueryUI();
             if (!eventsWired)
@@ -509,6 +568,8 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void WireEvents()
         {
+            EnsureEventHandlersCached();
+
             // 메서드 그룹 (인자 없는 무인자) — clicked += MethodName 패턴
             if (likeToggleButton != null) likeToggleButton.clicked += OnLikeButtonClicked;
             if (guestbookPrevButton != null) guestbookPrevButton.clicked += OnGuestbookPrev;
@@ -662,8 +723,7 @@ namespace Dotshelf.Scripts.Dashboard
             if (viewMode == ViewMode.Mine) return;
             viewMode = ViewMode.Mine;
             ApplyViewMode();
-            LogDashboardFetch(DashboardCallSource.MySpace, explicitSpaceId: null);
-            loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
+            LoadInitialData();
         }
 
         private void LoadInitialData()
@@ -677,15 +737,25 @@ namespace Dotshelf.Scripts.Dashboard
             if (viewMode == ViewMode.Mine)
             {
                 // 본인 공간 — GET /v1/spaces/me 응답의 id 를 사용 (Repository 가 처리). source of truth = BE.
+                ShowDashboardLoadingState();
                 LogDashboardFetch(DashboardCallSource.MySpace, explicitSpaceId: null);
-                loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnError);
+                loadDashboardUseCase.ExecuteForMine(OnDashboardLoaded, OnInitialDashboardError);
             }
             else if (visitedSpaceId > 0)
             {
                 if (!TryGuardStaleSpaceIdOne(visitedSpaceId, DashboardCallSource.VisitedExplicit))
                 {
+                    ShowDashboardLoadingState();
                     LogDashboardFetch(DashboardCallSource.VisitedExplicit, explicitSpaceId: visitedSpaceId);
-                    loadDashboardUseCase.Execute(visitedSpaceId, OnDashboardLoaded, OnError);
+                    loadDashboardUseCase.Execute(visitedSpaceId, OnDashboardLoaded, OnInitialDashboardError);
+                }
+                else
+                {
+                    OnInitialDashboardError(new DashboardApiError
+                    {
+                        Code = "S003",
+                        Message = "Invalid dashboard space id."
+                    });
                 }
             }
             else
@@ -695,6 +765,11 @@ namespace Dotshelf.Scripts.Dashboard
                 Debug.LogWarning(
                     $"[Dashboard] visitedSpaceId 미설정 (viewMode={viewMode}) — dashboard 호출 skip. " +
                     "공간 카드 클릭으로 spaceId 가 set 된 후 OnVisitUser → loadDashboardUseCase.Execute 경로로 호출됩니다.");
+                OnInitialDashboardError(new DashboardApiError
+                {
+                    Code = "S003",
+                    Message = "Dashboard target space id is not set."
+                });
             }
         }
 
@@ -787,6 +862,51 @@ namespace Dotshelf.Scripts.Dashboard
             LoadGuestbookPage(null);
             LoadRecentBooks();
             LoadRecentRecords();
+        }
+
+        private void OnInitialDashboardError(DashboardApiError error)
+        {
+            currentSnapshot = null;
+            OnError(error);
+            RenderDashboardLoadFailure(error);
+        }
+
+        private void ShowDashboardLoadingState()
+        {
+            if (nicknameLabel != null) nicknameLabel.text = "Loading...";
+            if (introductionLabel != null) introductionLabel.text = string.Empty;
+            ClearDashboardContent();
+            SetDashboardCounts("0");
+        }
+
+        private void RenderDashboardLoadFailure(DashboardApiError error)
+        {
+            string userMessage = DashboardErrorMessages.Format(error);
+            if (nicknameLabel != null) nicknameLabel.text = "Dashboard unavailable";
+            if (introductionLabel != null) introductionLabel.text = userMessage;
+            ClearDashboardContent();
+            SetDashboardCounts("0");
+        }
+
+        private void ClearDashboardContent()
+        {
+            if (booksCarousel != null) booksCarousel.Clear();
+            if (recordsCarousel != null) recordsCarousel.Clear();
+            if (guestbookGrid != null) guestbookGrid.Clear();
+            if (guestbookPageLabel != null) guestbookPageLabel.text = "-";
+            if (guestbookPrevButton != null) guestbookPrevButton.SetEnabled(false);
+            if (guestbookNextButton != null) guestbookNextButton.SetEnabled(false);
+        }
+
+        private void SetDashboardCounts(string value)
+        {
+            if (followingCountButton != null) followingCountButton.text = value;
+            if (followersCountButton != null) followersCountButton.text = value;
+            if (likeCountLabel != null) likeCountLabel.text = value;
+            if (bookCountLabel != null) bookCountLabel.text = value;
+            if (recordCountLabel != null) recordCountLabel.text = value;
+            if (guestbookCountLabel != null) guestbookCountLabel.text = $"방명록 {value}";
+            if (weeklyVisitorLabel != null) weeklyVisitorLabel.text = value;
         }
 
         private void LoadRecentBooks()
@@ -1733,8 +1853,9 @@ namespace Dotshelf.Scripts.Dashboard
             viewMode = ViewMode.Visitor;
             visitedSpaceId = targetSpaceId;
             ApplyViewMode();
+            ShowDashboardLoadingState();
             LogDashboardFetch(DashboardCallSource.UserClick, explicitSpaceId: targetSpaceId);
-            loadDashboardUseCase.Execute(targetSpaceId, OnDashboardLoaded, OnError);
+            loadDashboardUseCase.Execute(targetSpaceId, OnDashboardLoaded, OnInitialDashboardError);
         }
 
         private static void UpdateFollowButton(Button button, bool following)
@@ -2026,4 +2147,5 @@ namespace Dotshelf.Scripts.Dashboard
             if (state.onUp != null) scrollView.UnregisterCallback(state.onUp);
         }
     }
+
 }

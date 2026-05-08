@@ -6,6 +6,7 @@ using App.Infrastructure.Api.Dashboard;
 using App.Infrastructure.Api.Dtos;
 using App.Infrastructure.Catalogs;
 using BookshelfPorting.Runtime;
+using Dotshelf.Scripts.Dashboard;
 using Dotshelf.Scripts.RoomTheme;
 using TMPro;
 using UnityEngine;
@@ -309,7 +310,9 @@ namespace App.Bootstrap
         private readonly List<InventoryEntry> inventoryEntries = new List<InventoryEntry>();
 
         private BookshelfExperienceManager cachedExperienceManager;
+        private BookshelfApiSyncController cachedBookshelfApiSyncController;
         private Camera cachedSceneCamera;
+        private bool roomThumbnailDirty;
 
         private struct RendererTint
         {
@@ -1371,6 +1374,7 @@ namespace App.Bootstrap
             // D9(i) 낙관적 적용: 즉시 visual swap → 백엔드 PATCH → 실패 시 rollback.
             previousAppliedTheme = themeApplier.CurrentTheme;
             themeApplier.Apply(theme);
+            MarkRoomThumbnailDirty();
             RebuildInventorySlots();
 
             // local preview 전용 테마 — placeholder (가구/벽지/바닥 미제작). 명시 플래그 + assetId<=0 fallback.
@@ -1487,6 +1491,7 @@ namespace App.Bootstrap
         {
             // visual swap — 카테고리별로 적용 + 강조 상태 갱신
             ApplyEntryVisual(category, entry);
+            MarkRoomThumbnailDirty();
             if (entry.AssetId > 0) lastAppliedEntries[category] = entry.AssetId;
             RebuildInventorySlots();
 
@@ -2355,6 +2360,7 @@ namespace App.Bootstrap
             }
 
             IsEditModeActive = true;
+            roomThumbnailDirty = false;
 
             // Edit 모드 진입 시 서버 Space 상태 비동기 동기화 — IsCategoryEntryCurrent /
             // OptimisticallyUpdateServerSpace의 single source of truth(`lastServerSpace`)
@@ -2699,6 +2705,8 @@ namespace App.Bootstrap
             {
                 experienceManager.AreSceneInteractionsSuppressed = false;
             }
+
+            FlushRoomThumbnailIfDirty();
         }
 
         // Shrink the main camera's viewport rect so it renders only into the area
@@ -3017,6 +3025,7 @@ namespace App.Bootstrap
             }
 
             go.AddComponent<DecorationItemMarker>();
+            MarkRoomThumbnailDirty();
         }
 
         // Search outward from `desiredPosition` in MinorGridStep rings for a
@@ -3626,6 +3635,7 @@ namespace App.Bootstrap
             // Position is always inside the room because UpdateDrag clamped it
             // every frame, so we don't need to revert anywhere. Just close out
             // the drag state and hide the grid overlay.
+            MarkRoomThumbnailDirty();
             draggingObject = null;
             HideGrid();
         }
@@ -4063,6 +4073,7 @@ namespace App.Bootstrap
                 FinishDrag();
             }
             selectedObject.transform.Rotate(Vector3.up, SelectionRotateStepDegrees, Space.World);
+            MarkRoomThumbnailDirty();
         }
 
         private void DeleteSelectedObject()
@@ -4078,9 +4089,35 @@ namespace App.Bootstrap
             var toDestroy = selectedObject;
             DeselectCurrentObject();
             Destroy(toDestroy);
+            MarkRoomThumbnailDirty();
         }
 
         // Helpers ------------------------------------------------------------------
+
+        private void MarkRoomThumbnailDirty()
+        {
+            roomThumbnailDirty = true;
+        }
+
+        private void FlushRoomThumbnailIfDirty()
+        {
+            if (!roomThumbnailDirty)
+            {
+                return;
+            }
+
+            var apiSync = ResolveBookshelfApiSyncController();
+            if (apiSync == null)
+            {
+                return;
+            }
+
+            if (apiSync.UploadCurrentRoomThumbnail(
+                    onFailed: error => Debug.LogWarning($"[RoomEditModeController] Room thumbnail upload skipped/failed: {error}")))
+            {
+                roomThumbnailDirty = false;
+            }
+        }
 
         private BookshelfExperienceManager ResolveExperienceManager()
         {
@@ -4090,6 +4127,17 @@ namespace App.Bootstrap
             }
             cachedExperienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
             return cachedExperienceManager;
+        }
+
+        private BookshelfApiSyncController ResolveBookshelfApiSyncController()
+        {
+            if (cachedBookshelfApiSyncController != null)
+            {
+                return cachedBookshelfApiSyncController;
+            }
+
+            cachedBookshelfApiSyncController = UnityEngine.Object.FindFirstObjectByType<BookshelfApiSyncController>(FindObjectsInactive.Include);
+            return cachedBookshelfApiSyncController;
         }
 
         private Camera ResolveSceneCamera()
@@ -4114,7 +4162,29 @@ namespace App.Bootstrap
 
         private static bool IsPointerOverUi()
         {
-            return EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
+            if (EventSystem.current == null)
+            {
+                return false;
+            }
+
+            var pointerPosition = ReadPointerPosition();
+            var pointerEvent = new PointerEventData(EventSystem.current)
+            {
+                position = pointerPosition,
+            };
+            var hits = new List<RaycastResult>();
+            EventSystem.current.RaycastAll(pointerEvent, hits);
+            for (var i = 0; i < hits.Count; i++)
+            {
+                if (DashboardRaycastFilter.IsNonInteractiveDashboardRaycast(hits[i], pointerPosition))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
+            return false;
         }
 
         private static bool IsDescendantOf(Transform candidate, Transform ancestor)
