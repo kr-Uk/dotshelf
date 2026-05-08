@@ -71,11 +71,13 @@ namespace App.Infrastructure.Catalogs
         [Tooltip("true 면 Desk swap 시 NotebookStation 의 transform 을 아래 값들로 override. " +
                  "false 면 native 그대로. 다른 책상 모델 적용 시 모니터 화면/클릭 인터랙션 위치 fit.")]
         [SerializeField] private bool overrideNotebookStation;
-        [Tooltip("NotebookStation 의 world position. Inspector 에서 직접 입력.")]
+        [Tooltip("NotebookStation 의 localPosition (부모 = GuestbookBoard 기준). 적용 코드는 " +
+                 "ApplyNotebookStationPlacement 에서 transform.localPosition 으로 set 함. " +
+                 "Inspector 의 Transform > Position 표시값을 그대로 입력하면 일치.")]
         [SerializeField] private Vector3 notebookStationPosition;
-        [Tooltip("NotebookStation 의 world rotation (Euler).")]
+        [Tooltip("NotebookStation 의 localRotation (부모 기준 Euler). transform.localRotation 으로 적용.")]
         [SerializeField] private Vector3 notebookStationRotation;
-        [Tooltip("NotebookStation 의 localScale.")]
+        [Tooltip("NotebookStation 의 localScale (부모 기준).")]
         [SerializeField] private Vector3 notebookStationScale = Vector3.one;
 
         [Header("Desk 전용 — Monitor sub-prefab (책상 + 모니터 한 entry, 사용자 placement 불가)")]

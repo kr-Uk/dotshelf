@@ -23,8 +23,11 @@ MonoBehaviour:
   bookshelfMaterial: {fileID: 2100000, guid: f071bb82d59a5412e815f9c17109ebb7, type: 2}
   furnitureMaterial: {fileID: 2100000, guid: 4cbd391c6c3a8440d8283f1e2c7dd24c, type: 2}
   accentMaterial: {fileID: 2100000, guid: f3a8f3a13f0dc4942b59ae21ff4ab3be, type: 2}
-  directionalLightColor: {r: 1, g: 0.94509804, b: 0.84705883, a: 1}
-  directionalLightKelvin: 5200
+  exteriorLightColor: {r: 1, g: 0.94509804, b: 0.84705883, a: 1}
+  exteriorLightKelvin: 5200
+  exteriorLightIntensity: 1
+  interiorLightColor: {r: 1, g: 0.972549, b: 0.9254902, a: 1}
+  interiorLightKelvin: 6500
   ambientTint: {r: 1, g: 0.972549, b: 0.9254902, a: 1}
   ambientIntensity: 1.05
   accentPrimary: {r: 1, g: 0.84313726, b: 0.4509804, a: 1}

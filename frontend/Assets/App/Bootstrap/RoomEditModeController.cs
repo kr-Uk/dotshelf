@@ -1770,6 +1770,13 @@ namespace App.Bootstrap
             // D9(i) 낙관적 적용: 즉시 visual swap → 백엔드 PATCH → 실패 시 rollback.
             previousAppliedTheme = themeApplier.CurrentTheme;
             Debug.Log($"[RoomEdit][Theme] ApplyThemeSelected '{theme.DisplayName}' editMode={IsEditModeActive} preset={(IsEditModeActive ? currentCameraPreset.ToString() : "n/a")}");
+
+            // [MR 135 review beshu Finding 3 / skh1205 #2] PATCH 실패 시 사용자 placement 가
+            // 이미 destroy 된 상태로 남는 데이터 손실 회피 — 기존 placement 를 destroy 하지 않고
+            // hidden hold root 로 detach. PATCH 성공 시 destroy, 실패 시 reattach.
+            // local preview (PATCH skip) 에는 무관 — DiscardPlacementRollbackHold 로 즉시 destroy.
+            DetachPlacementForRollback();
+
             themeApplier.Apply(theme);
             // 벽 sharedMaterial 이 swap 됐으므로 편집 모드 중이면 fade 즉시 재적용 (탑다운/사선에서 occlusion 복귀 방지).
             RefreshWallVisibilityAfterMaterialMutation("ApplyThemeSelected");
@@ -1785,6 +1792,7 @@ namespace App.Bootstrap
             if (IsLocalPreviewTheme(theme))
             {
                 Debug.Log($"[RoomEditModeController] Skip PATCH for local preview theme: {theme.DisplayName} (assetId={theme.AssetId}, mode={mode})");
+                DiscardPlacementRollbackHold();
                 return;
             }
 
@@ -1792,12 +1800,14 @@ namespace App.Bootstrap
             if (themeUseCase == null)
             {
                 Debug.LogWarning("[RoomEditModeController] ISpaceSettingsRepository 미주입 — 백엔드 theme apply skip (visual만 적용).");
+                DiscardPlacementRollbackHold();
                 return;
             }
 
             if (theme.AssetId <= 0)
             {
                 Debug.LogWarning("[RoomEditModeController] theme AssetId가 없어 백엔드 theme apply skip (visual만 적용).");
+                DiscardPlacementRollbackHold();
                 return;
             }
 
@@ -1819,8 +1829,11 @@ namespace App.Bootstrap
                     {
                         ApplyThemeResetVisualFallback();
                         // reset 후 default entries 재적용 (fallback 이 lastAppliedEntries clear 함).
+                        // DetachPlacementForRollback 가 다시 hold root 로 detach 하므로 그 직후 discard.
                         ApplyThemeDefaultEntries(theme);
                     }
+                    // PATCH 성공 — rollback hold root 의 이전 placement 는 더 이상 필요 없으므로 destroy.
+                    DiscardPlacementRollbackHold();
                 },
                 onError: error =>
                 {
@@ -1830,10 +1843,12 @@ namespace App.Bootstrap
                     }
                     // Code가 비어있으면 백엔드 응답 에러가 아니라 네트워크 connection 실패
                     // (dev 환경에서 백엔드 미기동 등) — visual은 유지하고 warning만.
+                    // 다음 ReloadRoomState 또는 PATCH 시 server 와 sync.
                     bool isNetworkFailure = string.IsNullOrEmpty(error?.Code);
                     if (isNetworkFailure)
                     {
                         Debug.LogWarning($"[RoomEditModeController] PATCH connection 실패 ({error?.Message}) — visual은 유지, 다음 로드 시 서버와 동기화.");
+                        DiscardPlacementRollbackHold();
                         return;
                     }
 
@@ -1841,8 +1856,17 @@ namespace App.Bootstrap
                     if (previousAppliedTheme != null && previousAppliedTheme != theme)
                     {
                         themeApplier.Apply(previousAppliedTheme);
+                        // mesh swap + 새로 spawn 한 theme deco 정리, 그 후 hold root 의 이전 placement 복구.
+                        RestoreAllMeshSwaps();
+                        ClearAllPlacedDecos();
+                        ReattachPlacementFromRollback();
                         RefreshWallVisibilityAfterMaterialMutation("ApplyThemeSelected/rollback");
                         RebuildInventorySlots();
+                    }
+                    else
+                    {
+                        // 동일 테마 재클릭 등 rollback 대상이 없는 경우 — hold root 만 정리.
+                        DiscardPlacementRollbackHold();
                     }
                 });
         }
@@ -2049,8 +2073,8 @@ namespace App.Bootstrap
             }
 
             // 3) 설치 카테고리 (FloorDeco/WallDeco) — placedItemsRoot 자식으로 spawn,
-            //    DecorationItemMarker + ThemeSpawnedMarker 추가 → 사용자가 drag/select/delete 가능.
-            //    다른 테마 적용 시 ClearThemeSpawnedDecos 가 정리.
+            //    DecorationItemMarker 추가 → 사용자가 drag/select/delete 가능.
+            //    다른 테마 적용 시 ClearAllPlacedDecos 가 정리.
             if (theme.FloorDecoSpecs != null)
             {
                 for (int i = 0; i < theme.FloorDecoSpecs.Count; i++)
@@ -2087,9 +2111,76 @@ namespace App.Bootstrap
             }
         }
 
+        // [MR 135 review beshu Finding 3 / skh1205 #2] PATCH 실패 시 placement 복구용 hold root.
+        // 테마 적용 PATCH 가 비동기 wait 중일 때 placedItemsRoot 자식을 destroy 하지 않고 detach 보존.
+        // PATCH 성공 → DiscardPlacementRollbackHold 가 destroy. PATCH 실패 → ReattachPlacementFromRollback
+        // 가 placedItemsRoot 로 다시 reparent. lifecycle 은 ApplyThemeSelected 진입 시 begin /
+        // onSuccess|onError 에서 end 보장.
+        private GameObject placementRollbackHoldRoot;
+
+        // ApplyThemeSelected 진입 시 호출 — placedItemsRoot 자식을 hidden hold root 로 detach.
+        // 이전에 detach 된 hold 가 남아 있으면 (예: 같은 프레임 연속 클릭) destroy 후 다시 시작.
+        private void DetachPlacementForRollback()
+        {
+            DiscardPlacementRollbackHold();
+            if (placedItemsRoot == null) return;
+            if (placedItemsRoot.transform.childCount == 0) return;
+
+            placementRollbackHoldRoot = new GameObject("PlacedDecorations_RollbackHold");
+            // placedItemsRoot 의 부모 (보통 Scene root) 자식. 미리 비활성화 — visible 하지 않게.
+            var parent = placedItemsRoot.transform.parent;
+            if (parent != null)
+            {
+                placementRollbackHoldRoot.transform.SetParent(parent, false);
+            }
+            placementRollbackHoldRoot.SetActive(false);
+
+            for (int i = placedItemsRoot.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = placedItemsRoot.transform.GetChild(i);
+                // 선택/drag 상태 정리 — hold 중엔 inactive 라 클릭 불가지만 cached 참조는 끊어둠.
+                if (selectedObject == child.gameObject) selectedObject = null;
+                if (draggingObject == child.gameObject) draggingObject = null;
+                child.SetParent(placementRollbackHoldRoot.transform, true); // worldPositionStays=true
+            }
+        }
+
+        // PATCH 성공 또는 visual 유지 (network failure) 경로 — hold root + 자식 모두 destroy.
+        private void DiscardPlacementRollbackHold()
+        {
+            if (placementRollbackHoldRoot == null) return;
+            if (UnityEngine.Application.isPlaying) Destroy(placementRollbackHoldRoot);
+            else DestroyImmediate(placementRollbackHoldRoot);
+            placementRollbackHoldRoot = null;
+        }
+
+        // PATCH 실패 (BE 응답 에러) 경로 — hold root 자식을 placedItemsRoot 로 다시 reparent.
+        // 호출 직전에 RestoreAllMeshSwaps + ClearAllPlacedDecos 로 새로 spawn 된 theme deco/mesh swap
+        // 정리해야 user placement 복구 후 visual 이 일관됨. selection/drag 상태는 reset.
+        private void ReattachPlacementFromRollback()
+        {
+            if (placementRollbackHoldRoot == null) return;
+            if (placedItemsRoot == null)
+            {
+                EnsurePlacedItemsRoot();
+                if (placedItemsRoot == null)
+                {
+                    DiscardPlacementRollbackHold();
+                    return;
+                }
+            }
+            placementRollbackHoldRoot.SetActive(true);
+            for (int i = placementRollbackHoldRoot.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = placementRollbackHoldRoot.transform.GetChild(i);
+                child.SetParent(placedItemsRoot.transform, true);
+            }
+            DiscardPlacementRollbackHold();
+        }
+
         // 테마 floorDecoSpec → placedItemsRoot 자식 spawn. PlaceInventoryEntry 와 동일 시스템 —
-        // DecorationItemMarker + collider → 사용자가 클릭해 drag/delete 가능. ThemeSpawnedMarker
-        // 로 테마 자동 spawn 식별.
+        // DecorationItemMarker + collider → 사용자가 클릭해 drag/delete 가능. 테마 변경 시
+        // ClearAllPlacedDecos 가 일괄 정리 (사용자 placement 와 같은 lifecycle).
         private void SpawnThemeFloorDecoFromSpec(RoomThemeDecoSpec spec)
         {
             if (spec == null || spec.Prefab == null) return;
@@ -2104,7 +2195,6 @@ namespace App.Bootstrap
             go.transform.localScale = spec.LocalScale;
 
             go.AddComponent<DecorationItemMarker>();
-            go.AddComponent<ThemeSpawnedMarker>();
             EnsureCollidersForGameObject(go);
         }
 
@@ -2146,7 +2236,6 @@ namespace App.Bootstrap
             marker.AllowRotation = false; // 테마 자동 spawn 은 회전 비활성 (사용자가 위치만 옮김)
 
             go.AddComponent<DecorationItemMarker>();
-            go.AddComponent<ThemeSpawnedMarker>();
             EnsureCollidersForGameObject(go);
         }
 
@@ -2702,14 +2791,29 @@ namespace App.Bootstrap
             // 가 항상 false → 사전 확인 모달 미발동 → 사용자는 themeReset=true 응답을 받고서야 테마
             // 해제를 인지하게 됨.
             if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            // 테마가 server reload 로 변경됐으면 default entries (mesh swap + 자동 placement deco)
+            // 까지 재적용 — 안 그러면 [MR 135 review beshu Finding 2] 처럼 클릭 직후엔 보이던
+            // 산뜻 책상/네온/창문/러그/침대/쿠션이 재입장 / ReloadRoomState 후 사라지는 회귀.
+            // 단 동일 테마 reload 시엔 placement 보존 (사용자가 옮겼을 가능성). themeApplier.Apply 도
+            // 동일 가드.
+            bool themeChanged = false;
+            RoomThemeAsset resolvedTheme = null;
             if (themeApplier != null && themeCatalog != null)
             {
-                var resolvedTheme = themeCatalog.Resolve(space.CurrentThemeInventoryId);
+                resolvedTheme = themeCatalog.Resolve(space.CurrentThemeInventoryId);
                 if (resolvedTheme != null && resolvedTheme != themeApplier.CurrentTheme)
                 {
                     themeApplier.Apply(resolvedTheme);
                     RefreshWallVisibilityAfterMaterialMutation("ReloadRoomState");
+                    themeChanged = true;
                 }
+            }
+
+            // 테마 default entries 적용 — themeChanged 시에만. ApplyCategoryById 보다 먼저 호출해서
+            // server-saved 카테고리 (있다면) 가 default 위에 덮어쓰도록.
+            if (themeChanged && resolvedTheme != null)
+            {
+                ApplyThemeDefaultEntries(resolvedTheme);
             }
 
             ApplyCategoryById(CustomizationCategory.Wallpaper, space.CurrentWallpaperInventoryId);
