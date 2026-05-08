@@ -477,6 +477,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("layoutVersion")]
         public long LayoutVersion { get; set; }
 
+        [JsonProperty("thumbnailUrl")]
+        public string ThumbnailUrl { get; set; }
+
         [JsonProperty("currentThemeInventoryId")]
         public long? CurrentThemeInventoryId { get; set; }
 
@@ -497,6 +500,55 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("currentExteriorLightInventoryId")]
         public long? CurrentExteriorLightInventoryId { get; set; }
+    }
+
+    [Serializable]
+    public sealed class SpaceThumbnailUploadUrlRequestDto
+    {
+        [JsonProperty("contentType")]
+        public string ContentType { get; set; }
+
+        [JsonProperty("byteLength")]
+        public long ByteLength { get; set; }
+    }
+
+    [Serializable]
+    public sealed class SpaceThumbnailUploadUrlResponseDto
+    {
+        [JsonProperty("uploadUrl")]
+        public string UploadUrl { get; set; }
+
+        [JsonProperty("key")]
+        public string Key { get; set; }
+
+        [JsonProperty("publicUrl")]
+        public string PublicUrl { get; set; }
+
+        [JsonProperty("expiresInSeconds")]
+        public long ExpiresInSeconds { get; set; }
+    }
+
+    [Serializable]
+    public sealed class SpaceThumbnailConfirmRequestDto
+    {
+        [JsonProperty("key")]
+        public string Key { get; set; }
+    }
+
+    [Serializable]
+    public sealed class SpaceThumbnailUploadResponseDto
+    {
+        [JsonProperty("spaceId")]
+        public long SpaceId { get; set; }
+
+        [JsonProperty("thumbnailKey")]
+        public string ThumbnailKey { get; set; }
+
+        [JsonProperty("thumbnailUrl")]
+        public string ThumbnailUrl { get; set; }
+
+        [JsonProperty("layoutVersion")]
+        public long LayoutVersion { get; set; }
     }
 
     /// <summary>

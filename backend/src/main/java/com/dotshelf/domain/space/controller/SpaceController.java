@@ -27,7 +27,10 @@ import com.dotshelf.domain.space.dto.SpaceDtos.SpaceResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyMode;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailConfirmRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadUrlRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadUrlResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.VisibilityRequest;
 import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.global.common.ApiResponse;
@@ -131,6 +134,30 @@ public class SpaceController {
             @RequestPart("file") MultipartFile file
     ) {
         return ApiResponse.success(spaceService.uploadThumbnail(userId, file));
+    }
+
+    @Operation(
+            summary = "내 공간 썸네일 S3 업로드 URL 발급",
+            description = "Unity가 방 캡처 이미지를 S3에 직접 PUT할 수 있도록 presigned URL을 발급합니다."
+    )
+    @PostMapping("/me/thumbnail-upload-url")
+    public ApiResponse<ThumbnailUploadUrlResponse> createThumbnailUploadUrl(
+            @CurrentUser Long userId,
+            @RequestBody @Valid ThumbnailUploadUrlRequest request
+    ) {
+        return ApiResponse.success(spaceService.createThumbnailUploadUrl(userId, request));
+    }
+
+    @Operation(
+            summary = "내 공간 썸네일 S3 업로드 확정",
+            description = "presigned PUT으로 올라간 S3 객체를 확인한 뒤 spaces.thumbnail_key/url을 갱신합니다."
+    )
+    @PatchMapping("/me/thumbnail")
+    public ApiResponse<ThumbnailUploadResponse> confirmThumbnail(
+            @CurrentUser Long userId,
+            @RequestBody @Valid ThumbnailConfirmRequest request
+    ) {
+        return ApiResponse.success(spaceService.confirmThumbnail(userId, request));
     }
 
     @Operation(summary = "내 공간 테마 적용", description = "현재 사용자의 공간에 테마 적용 요청을 처리합니다.")

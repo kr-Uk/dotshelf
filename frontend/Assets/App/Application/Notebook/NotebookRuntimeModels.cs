@@ -105,6 +105,14 @@ namespace App.Application.Notebook
         public bool IsOwnSpace { get; set; }
     }
 
+    public sealed class NotebookSpaceThumbnailUploadResult
+    {
+        public long SpaceId { get; set; }
+        public string ThumbnailKey { get; set; }
+        public string ThumbnailUrl { get; set; }
+        public long LayoutVersion { get; set; }
+    }
+
     public sealed class NotebookUserListResult
     {
         public NotebookUserListResult(IReadOnlyList<NotebookUserItem> users, string nextCursor = null)

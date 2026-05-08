@@ -27,21 +27,28 @@ public final class ImageContentValidator {
     public static void verifyMagicBytes(MultipartFile file, String contentType) {
         try (InputStream in = file.getInputStream()) {
             byte[] header = in.readNBytes(12);
-            boolean ok = switch (contentType) {
-                case "image/jpeg" -> startsWith(header, JPEG_SIG);
-                case "image/png" -> startsWith(header, PNG_SIG);
-                case "image/webp" -> isWebp(header);
-                default -> false;
-            };
-            if (!ok) {
-                throw new CustomException(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
-            }
+            verifyMagicBytes(header, contentType);
         } catch (IOException e) {
             throw new CustomException(ErrorCode.STORAGE_INTERNAL_ERROR);
         }
     }
 
+    public static void verifyMagicBytes(byte[] header, String contentType) {
+        boolean ok = switch (contentType) {
+            case "image/jpeg" -> startsWith(header, JPEG_SIG);
+            case "image/png" -> startsWith(header, PNG_SIG);
+            case "image/webp" -> isWebp(header);
+            default -> false;
+        };
+        if (!ok) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+        }
+    }
+
     private static boolean startsWith(byte[] data, byte[] sig) {
+        if (data == null) {
+            return false;
+        }
         if (data.length < sig.length) {
             return false;
         }
@@ -55,7 +62,8 @@ public final class ImageContentValidator {
 
     /** WebP 컨테이너: 0..3 "RIFF", 4..7 file size, 8..11 "WEBP". */
     private static boolean isWebp(byte[] header) {
-        return header.length >= 12
+        return header != null
+                && header.length >= 12
                 && header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F'
                 && header[8] == 'W' && header[9] == 'E' && header[10] == 'B' && header[11] == 'P';
     }
