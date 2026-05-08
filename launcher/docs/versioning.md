@@ -65,11 +65,19 @@ https://dotshelf.digital/launcher/windows/
 - `web/service-web/.../page.tsx` 의 `RELEASE.version`, `RELEASE.date` 갱신
 
 후속 작업:
-- Unity Editor 에서 빌드
-- zip 압축 → SHA-256 계산
-- `latest.json` 의 `sha256` 갱신
-- Unity zip 을 `LAUNCHER_UNITY_ZIP_URL` CI/CD 변수에서 받을 수 있는 위치에 업로드
-- `launcher:publish` 가 manifest 의 `sha256` 과 다운로드한 zip 을 검증한 뒤 운영 경로에 업로드
+- Unity Editor 에서 빌드 → 폴더 통째로 zip 압축
+- SHA-256 계산: `(Get-FileHash -Algorithm SHA256 -Path .\Dotshelf-{ver}.zip).Hash`
+- `launcher/manifests/dev/windows/latest.json` 의 `sha256` 손으로 갱신
+- Unity zip 을 GitLab Generic Packages 의 `dotshelf-unity` 패키지로 업로드:
+
+  ```powershell
+  curl --request PUT `
+    --header "PRIVATE-TOKEN: $env:GITLAB_TOKEN" `
+    --upload-file .\Dotshelf-{ver}.zip `
+    "https://lab.ssafy.com/api/v4/projects/1304436/packages/generic/dotshelf-unity/{ver}/Dotshelf-{ver}.zip"
+  ```
+
+- `launcher:publish` 가 같은 패키지를 `JOB-TOKEN` 으로 받아 manifest 의 `sha256` 검증 후 prod 운영 경로에 업로드
 
 ## minLauncherVersion 게이트
 

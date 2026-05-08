@@ -157,6 +157,17 @@ namespace App.Infrastructure.Mock
             onSuccess?.Invoke(new NotebookSpaceListResult(filtered, null));
         }
 
+        public void UploadMySpaceThumbnail(byte[] imageBytes, string contentType, Action<NotebookSpaceThumbnailUploadResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            onSuccess?.Invoke(new NotebookSpaceThumbnailUploadResult
+            {
+                SpaceId = 3004L,
+                ThumbnailKey = "spaces/3004/thumbnail/mock.jpg",
+                ThumbnailUrl = string.Empty,
+                LayoutVersion = 1L
+            });
+        }
+
         public void LoadDefaultShelfTarget(Action<NotebookShelfTarget> onSuccess, Action<NotebookApiError> onError)
         {
             onSuccess?.Invoke(new NotebookShelfTarget

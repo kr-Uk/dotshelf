@@ -142,6 +142,55 @@ namespace App.Infrastructure.Api
                 error => onError?.Invoke(MapError(error)));
         }
 
+        public void UploadMySpaceThumbnail(byte[] imageBytes, string contentType, Action<NotebookSpaceThumbnailUploadResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            if (!RequireAuthenticatedApi(onError, "Space thumbnail upload API requires an access token."))
+            {
+                return;
+            }
+
+            if (imageBytes == null || imageBytes.Length == 0)
+            {
+                onError?.Invoke(new NotebookApiError
+                {
+                    Code = "NOTEBOOK_SPACE_THUMBNAIL_EMPTY",
+                    Message = "Space thumbnail image bytes are empty."
+                });
+                return;
+            }
+
+            var normalizedContentType = string.IsNullOrWhiteSpace(contentType) ? "image/jpeg" : contentType.Trim();
+            client.CreateMySpaceThumbnailUploadUrl(
+                new SpaceThumbnailUploadUrlRequestDto
+                {
+                    ContentType = normalizedContentType,
+                    ByteLength = imageBytes.LongLength
+                },
+                ticket =>
+                {
+                    if (ticket == null || string.IsNullOrWhiteSpace(ticket.UploadUrl) || string.IsNullOrWhiteSpace(ticket.Key))
+                    {
+                        onError?.Invoke(new NotebookApiError
+                        {
+                            Code = "NOTEBOOK_SPACE_THUMBNAIL_UPLOAD_URL_EMPTY",
+                            Message = "Space thumbnail upload URL was not returned."
+                        });
+                        return;
+                    }
+
+                    client.UploadRawObject(
+                        ticket.UploadUrl,
+                        imageBytes,
+                        normalizedContentType,
+                        () => client.ConfirmMySpaceThumbnail(
+                            new SpaceThumbnailConfirmRequestDto { Key = ticket.Key },
+                            response => onSuccess?.Invoke(MapSpaceThumbnailUpload(response)),
+                            error => onError?.Invoke(MapError(error))),
+                        error => onError?.Invoke(MapError(error)));
+                },
+                error => onError?.Invoke(MapError(error)));
+        }
+
         public void LoadDefaultShelfTarget(Action<NotebookShelfTarget> onSuccess, Action<NotebookApiError> onError)
         {
             if (!RequireAuthenticatedApi(onError, "Default bookshelf placement API requires an access token."))
@@ -360,6 +409,17 @@ namespace App.Infrastructure.Api
                     IsOwnSpace = currentUserId > 0L && space.OwnerUserId == currentUserId
                 })
                 .ToArray();
+        }
+
+        private static NotebookSpaceThumbnailUploadResult MapSpaceThumbnailUpload(SpaceThumbnailUploadResponseDto response)
+        {
+            return new NotebookSpaceThumbnailUploadResult
+            {
+                SpaceId = response?.SpaceId ?? 0L,
+                ThumbnailKey = response?.ThumbnailKey,
+                ThumbnailUrl = response?.ThumbnailUrl,
+                LayoutVersion = response?.LayoutVersion ?? 0L
+            };
         }
 
         private static IReadOnlyList<NotebookUserItem> MapUsers(UserListResponseDto response)

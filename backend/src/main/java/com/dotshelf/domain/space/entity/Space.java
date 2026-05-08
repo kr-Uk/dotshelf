@@ -49,6 +49,9 @@ public class Space extends BaseEntity {
     private long layoutVersion = 0;
 
     @Column(length = 500)
+    private String thumbnailKey;
+
+    @Column(length = 500)
     private String thumbnailUrl;
 
     private Long currentThemeInventoryId;
@@ -99,7 +102,8 @@ public class Space extends BaseEntity {
         return this.layoutVersion;
     }
 
-    public void updateThumbnail(String thumbnailUrl) {
+    public void updateThumbnail(String thumbnailKey, String thumbnailUrl) {
+        this.thumbnailKey = thumbnailKey;
         this.thumbnailUrl = thumbnailUrl;
     }
 

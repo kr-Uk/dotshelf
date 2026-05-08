@@ -3933,16 +3933,54 @@ namespace BookshelfPorting.Runtime
             guestbook.transform.localRotation = Quaternion.identity;
             generatedGeometry.Add(guestbook);
 
-            CreateBox("Frame", guestbook.transform, Vector3.zero, new Vector3(0.04f, 1.08f, 1.52f), materialFactory.GetWhiteboardFrameMaterial());
-            CreateBox("Surface", guestbook.transform, new Vector3(0.012f, 0f, 0f), new Vector3(0.012f, 0.96f, 1.38f), materialFactory.GetWhiteboardSurfaceMaterial());
+            CreateDashboardBezelFrame(guestbook.transform, new Vector3(0.006f, 0.64f, 1.13f), new Vector2(0.62f, 1.10f), materialFactory.GetWhiteboardFrameMaterial());
+            CreateBox("Surface", guestbook.transform, new Vector3(0.005f, 0f, 0f), new Vector3(0.004f, 0.62f, 1.10f), materialFactory.GetWhiteboardSurfaceMaterial());
 
             var hitArea = new GameObject("GuestbookHitArea");
             hitArea.transform.SetParent(guestbook.transform, false);
-            hitArea.transform.localPosition = new Vector3(0.08f, 0f, 0f);
+            hitArea.transform.localPosition = new Vector3(0.006f, 0f, 0f);
             var collider = hitArea.AddComponent<BoxCollider>();
-            collider.size = new Vector3(0.2f, 1.0f, 1.4f);
+            collider.size = new Vector3(0.05f, 0.70f, 1.20f);
             hitArea.AddComponent<GuestbookBoardHitArea>();
             generatedGeometry.Add(hitArea);
+        }
+
+        private void CreateDashboardBezelFrame(Transform parent, Vector3 outerSize, Vector2 innerSize, Material material)
+        {
+            var depth = Mathf.Max(0.001f, outerSize.x);
+            var outerHeight = Mathf.Max(0.001f, outerSize.y);
+            var outerWidth = Mathf.Max(0.001f, outerSize.z);
+            var innerHeight = Mathf.Clamp(innerSize.x, 0.001f, outerHeight);
+            var innerWidth = Mathf.Clamp(innerSize.y, 0.001f, outerWidth);
+            var horizontalThickness = Mathf.Max(0.001f, (outerHeight - innerHeight) * 0.5f);
+            var verticalThickness = Mathf.Max(0.001f, (outerWidth - innerWidth) * 0.5f);
+            var halfInnerHeight = innerHeight * 0.5f;
+            var halfInnerWidth = innerWidth * 0.5f;
+
+            CreateBox(
+                "FrameTop",
+                parent,
+                new Vector3(0f, halfInnerHeight + horizontalThickness * 0.5f, 0f),
+                new Vector3(depth, horizontalThickness, outerWidth),
+                material);
+            CreateBox(
+                "FrameBottom",
+                parent,
+                new Vector3(0f, -halfInnerHeight - horizontalThickness * 0.5f, 0f),
+                new Vector3(depth, horizontalThickness, outerWidth),
+                material);
+            CreateBox(
+                "FrameLeft",
+                parent,
+                new Vector3(0f, 0f, -halfInnerWidth - verticalThickness * 0.5f),
+                new Vector3(depth, innerHeight, verticalThickness),
+                material);
+            CreateBox(
+                "FrameRight",
+                parent,
+                new Vector3(0f, 0f, halfInnerWidth + verticalThickness * 0.5f),
+                new Vector3(depth, innerHeight, verticalThickness),
+                material);
         }
 
         private void CreateBookshelfFocusHitArea(Transform parent)

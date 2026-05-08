@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using App.Application.Notebook;
+using Dotshelf.Scripts.Dashboard;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -52,6 +53,9 @@ namespace BookshelfPorting.Runtime
         private const int GuestbookMaxPinnedNotes = 96;
         private const float GuestbookPageFadeDuration = 0.18f;
         private const float GuestbookBoardPadding = 32f;
+        private const float ExternalDashboardPanelFallbackWorldScale = 0.00060f;
+        private const float ExternalDashboardPanelHorizontalInset = 0.10f;
+        private const float ExternalDashboardPanelVerticalInset = 0.06f;
         private const float GuestbookNoteToPaginationGap = 28f;
         private const float GuestbookPaginationHeight = 40f;
         private const float GuestbookPaginationToPanelGap = 24f;
@@ -88,6 +92,10 @@ namespace BookshelfPorting.Runtime
         private static readonly Vector2 GuestbookBoardSize = new(1380f, 960f);
         private static readonly Vector2 GuestbookPreviewCardSize = new(248f, 142f);
         private static readonly Vector2 GuestbookFocusedNoteBaseSize = new(246f, 156f);
+        private static readonly Vector3 ExternalDashboardPanelSurfaceOffset = new(0.003f, 0f, 0f);
+        private static readonly Quaternion ExternalDashboardPanelLocalRotation = Quaternion.Euler(0f, 90f, 0f);
+        // Flip local X so the room-facing UI Toolkit panel reads left-to-right on the board.
+        private static readonly Vector2 ExternalDashboardPanelReferenceSize = new(1920f, 1080f);
         private static readonly Vector2[] GuestbookPreviewOffsets =
         {
             new Vector2(-336f, 154f),
@@ -728,6 +736,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private bool useExternalDashboardPanel = false;
         [Tooltip("GuestbookBoard 자리에 띄울 새 dashboard prefab 인스턴스. 보통 scene root에 두고 코드가 reparent.")]
         [SerializeField] private GameObject externalDashboardPanel;
+        private UnityEngine.UIElements.VisualElement focusedDashboardPressedElement;
 
         [SerializeField] private bool guestbookOwnerMode = true;
         private bool isGuestbookPublic = true;
@@ -1008,6 +1017,7 @@ namespace BookshelfPorting.Runtime
         {
             ApplyResponsiveFocusOverlayLayout();
             ExpireBookshelfTransientStatusIfNeeded();
+            SyncExternalDashboardPanelPresentation();
 
             if (AreSceneInteractionsSuppressed)
             {
@@ -1022,6 +1032,7 @@ namespace BookshelfPorting.Runtime
             // (focus 진입/이탈은 다른 hit area 또는 ESC로 처리됨.)
             if (useExternalDashboardPanel && CurrentFocusArea == ExperienceFocusArea.Guestbook)
             {
+                HandleFocusedDashboardPanelFallbackInput();
                 return;
             }
 
@@ -1126,6 +1137,8 @@ namespace BookshelfPorting.Runtime
         // measurable cost here.
         private void LateUpdate()
         {
+            SyncExternalDashboardPanelPresentation();
+
             if (isOnboardingStep3Active)
             {
                 EnforceOnboardingStep3UiHidden();
@@ -11788,18 +11801,17 @@ namespace BookshelfPorting.Runtime
 
         private void EnsureGuestbookBoardUi()
         {
-            // (v1.0 dashboard 통합 — MR #61) 외부 prefab이 scene에 인스턴스화되어 있으면 어떤 모드든 시작 시 inactive 보장.
-            // useExternalDashboardPanel=false (default — input 라우팅 fix 전까지 옛 guestbookBoardCanvas 사용)
-            // 일 때도 prefab이 World Space에 떠서 raycast/render 영향 주지 않도록 강제 hide.
+            if (useExternalDashboardPanel)
+            {
+                SetExternalDashboardPanelPresentation(CurrentFocusArea == ExperienceFocusArea.Guestbook);
+                return;
+            }
+
+            // Legacy mode keeps the UI Toolkit dashboard out of the scene so it
+            // cannot render or steal raycasts from the old uGUI board.
             if (externalDashboardPanel != null && externalDashboardPanel.activeSelf)
             {
                 externalDashboardPanel.SetActive(false);
-            }
-
-            if (useExternalDashboardPanel)
-            {
-                // 외부 모드 — 옛 guestbookBoardCanvas 생성 skip. reparent + active 토글은 focus 진입 시점에.
-                return;
             }
 
             if (guestbookBoardCanvas != null)
@@ -12185,24 +12197,10 @@ namespace BookshelfPorting.Runtime
         private void SetGuestbookFocusPresentation(bool isFocused)
         {
             // (v1.0 dashboard 통합) 외부 prefab 모드면 우리 DashboardScreenPanel만 토글.
-            // focus 진입 시점에 lazy reparent — BookshelfGenerator 초기화가 안정된 후라 안전.
+            // 월드 보드가 생성된 뒤에는 매 프레임 위치를 보정해 방 뷰에서도 항상 보이게 둔다.
             if (useExternalDashboardPanel)
             {
-                if (externalDashboardPanel != null)
-                {
-                    if (isFocused)
-                    {
-                        var dynamicHitArea = FindFirstObjectByType<GuestbookBoardHitArea>();
-                        if (dynamicHitArea != null && externalDashboardPanel.transform.parent != dynamicHitArea.transform)
-                        {
-                            externalDashboardPanel.transform.SetParent(dynamicHitArea.transform, false);
-                            externalDashboardPanel.transform.localPosition = new Vector3(-0.058f, 0f, 0f);
-                            externalDashboardPanel.transform.localRotation = Quaternion.Euler(0f, -90f, 0f);
-                            externalDashboardPanel.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
-                        }
-                    }
-                    externalDashboardPanel.SetActive(isFocused);
-                }
+                SetExternalDashboardPanelPresentation(isFocused);
                 return;
             }
 
@@ -12221,6 +12219,122 @@ namespace BookshelfPorting.Runtime
             {
                 guestbookPreviewPanel.SetActive(!isFocused);
             }
+        }
+
+        private void SetExternalDashboardPanelPresentation(bool isFocused)
+        {
+            if (externalDashboardPanel == null)
+            {
+                return;
+            }
+
+            if (!MountExternalDashboardPanel())
+            {
+                SetGuestbookBoardHitAreaColliderEnabled(true);
+                if (externalDashboardPanel.activeSelf)
+                {
+                    externalDashboardPanel.SetActive(false);
+                }
+
+                return;
+            }
+
+            var controller = externalDashboardPanel.GetComponent<DashboardScreenController>();
+            if (controller == null)
+            {
+                controller = externalDashboardPanel.GetComponentInChildren<DashboardScreenController>(true);
+            }
+
+            if (controller != null)
+            {
+                controller.SetDimmed(!isFocused);
+                controller.SetInteractionEnabled(isFocused);
+            }
+
+            SetGuestbookBoardHitAreaColliderEnabled(!isFocused);
+
+            if (!externalDashboardPanel.activeSelf)
+            {
+                externalDashboardPanel.SetActive(true);
+            }
+        }
+
+        private static void SetGuestbookBoardHitAreaColliderEnabled(bool enabled)
+        {
+            var hitAreas = FindObjectsByType<GuestbookBoardHitArea>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (var i = 0; i < hitAreas.Length; i++)
+            {
+                var hitArea = hitAreas[i];
+                if (hitArea == null)
+                {
+                    continue;
+                }
+
+                var colliders = hitArea.GetComponents<Collider>();
+                for (var j = 0; j < colliders.Length; j++)
+                {
+                    if (colliders[j] != null)
+                    {
+                        colliders[j].enabled = enabled;
+                    }
+                }
+            }
+        }
+
+        private void SyncExternalDashboardPanelPresentation()
+        {
+            if (!useExternalDashboardPanel || externalDashboardPanel == null)
+            {
+                return;
+            }
+
+            SetExternalDashboardPanelPresentation(CurrentFocusArea == ExperienceFocusArea.Guestbook);
+        }
+
+        private bool MountExternalDashboardPanel()
+        {
+            if (externalDashboardPanel == null)
+            {
+                return false;
+            }
+
+            var dynamicHitArea = FindFirstObjectByType<GuestbookBoardHitArea>();
+            if (dynamicHitArea == null)
+            {
+                return false;
+            }
+
+            var panelTransform = externalDashboardPanel.transform;
+            if (panelTransform.parent != null)
+            {
+                panelTransform.SetParent(null, true);
+            }
+
+            panelTransform.position = dynamicHitArea.transform.TransformPoint(ExternalDashboardPanelSurfaceOffset);
+            panelTransform.rotation = dynamicHitArea.transform.rotation * ExternalDashboardPanelLocalRotation;
+            var panelScale = ResolveExternalDashboardPanelScale(dynamicHitArea);
+            panelTransform.localScale = new Vector3(-panelScale, panelScale, panelScale);
+            return true;
+        }
+
+        private static float ResolveExternalDashboardPanelScale(GuestbookBoardHitArea dynamicHitArea)
+        {
+            if (dynamicHitArea == null)
+            {
+                return ExternalDashboardPanelFallbackWorldScale;
+            }
+
+            var collider = dynamicHitArea.GetComponent<BoxCollider>();
+            if (collider == null)
+            {
+                return ExternalDashboardPanelFallbackWorldScale;
+            }
+
+            var usableWidth = Mathf.Max(0.1f, collider.size.z - ExternalDashboardPanelHorizontalInset);
+            var usableHeight = Mathf.Max(0.1f, collider.size.y - ExternalDashboardPanelVerticalInset);
+            var scaleByWidth = usableWidth / ExternalDashboardPanelReferenceSize.x;
+            var scaleByHeight = usableHeight / ExternalDashboardPanelReferenceSize.y;
+            return Mathf.Min(scaleByWidth, scaleByHeight);
         }
 
         private void SeedGuestbookNotes()
@@ -13598,7 +13712,7 @@ namespace BookshelfPorting.Runtime
             for (var i = 0; i < hits.Length; i++)
             {
                 var collider = hits[i].collider;
-                if (collider == null)
+                if (collider == null || ShouldIgnoreSceneHitCollider(collider))
                 {
                     continue;
                 }
@@ -13879,54 +13993,221 @@ namespace BookshelfPorting.Runtime
             Collider closestCollider = null;
             for (var i = 0; i < hits.Length; i++)
             {
+                var candidate = hits[i].collider;
+                if (candidate == null || ShouldIgnoreSceneHitCollider(candidate))
+                {
+                    continue;
+                }
+
                 if (hits[i].distance >= closestDistance)
                 {
                     continue;
                 }
 
                 closestDistance = hits[i].distance;
-                closestCollider = hits[i].collider;
+                closestCollider = candidate;
             }
 
             return closestCollider != null && closestCollider.GetComponent<T>() != null;
         }
 
-        private static bool IsPointerOverUi()
+        private static bool ShouldIgnoreSceneHitCollider(Collider collider)
         {
-            // uGUI Canvas는 EventSystem이 인식
-            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+            if (collider == null)
             {
                 return true;
             }
 
-            // (v1.0 dashboard 통합 — MR #61) UI Toolkit World Space panel 위에 있는지도 체크.
-            // 우리 DashboardScreenPanel은 UIDocument 기반이라 EventSystem.IsPointerOverGameObject로 안 잡힘.
-            // 이걸 안 잡으면 BookshelfExperienceManager.Update가 dashboard 안 버튼 클릭을 가로채 자체 raycast 처리.
+            var dashboard = collider.GetComponentInParent<DashboardScreenController>();
+            return dashboard != null && !dashboard.InteractionEnabled;
+        }
+
+        private void HandleFocusedDashboardPanelFallbackInput()
+        {
+            if (Mouse.current == null || externalDashboardPanel == null)
+            {
+                focusedDashboardPressedElement = null;
+                return;
+            }
+
+            var leftButton = Mouse.current.leftButton;
+            if (!leftButton.wasPressedThisFrame && !leftButton.wasReleasedThisFrame)
+            {
+                return;
+            }
+
+            var pointerScreen = Mouse.current.position.ReadValue();
+            if (!ShouldUseFocusedDashboardFallback(pointerScreen))
+            {
+                focusedDashboardPressedElement = null;
+                return;
+            }
+
+            if (leftButton.wasPressedThisFrame)
+            {
+                focusedDashboardPressedElement = PickFocusedDashboardElement(pointerScreen);
+            }
+
+            if (!leftButton.wasReleasedThisFrame)
+            {
+                return;
+            }
+
+            var releasedElement = PickFocusedDashboardElement(pointerScreen);
+            var pressedButton = FindUiToolkitButtonAncestor(focusedDashboardPressedElement);
+            var releasedButton = FindUiToolkitButtonAncestor(releasedElement);
+            focusedDashboardPressedElement = null;
+
+            if (pressedButton == null || pressedButton != releasedButton)
+            {
+                return;
+            }
+
+            InvokeUiToolkitButtonClick(pressedButton);
+        }
+
+        private bool ShouldUseFocusedDashboardFallback(Vector2 pointerScreen)
+        {
+            var eventSystem = EventSystem.current;
+            if (eventSystem == null)
+            {
+                return true;
+            }
+
+            var eventData = new PointerEventData(eventSystem)
+            {
+                position = pointerScreen
+            };
+            var results = new List<RaycastResult>();
+            eventSystem.RaycastAll(eventData, results);
+            for (var i = 0; i < results.Count; i++)
+            {
+                var module = results[i].module;
+                if (module == null)
+                {
+                    continue;
+                }
+
+                var moduleTypeName = module.GetType().FullName;
+                if (moduleTypeName == "UnityEngine.UIElements.PanelRaycaster" ||
+                    moduleTypeName == "UnityEngine.UIElements.WorldDocumentRaycaster")
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private UnityEngine.UIElements.VisualElement PickFocusedDashboardElement(Vector2 pointerScreen)
+        {
+            var document = externalDashboardPanel != null
+                ? externalDashboardPanel.GetComponentInChildren<UIDocument>(true)
+                : null;
+            if (document == null || !document.isActiveAndEnabled)
+            {
+                return null;
+            }
+
+            var dashboard = document.GetComponentInParent<DashboardScreenController>();
+            if (dashboard != null && !dashboard.InteractionEnabled)
+            {
+                return null;
+            }
+
+            var root = document.rootVisualElement;
+            if (root == null || root.panel == null)
+            {
+                return null;
+            }
+
+            var panelPosition = RuntimePanelUtils.ScreenToPanel(root.panel, pointerScreen);
+            return root.panel.Pick(panelPosition);
+        }
+
+        private static UnityEngine.UIElements.Button FindUiToolkitButtonAncestor(UnityEngine.UIElements.VisualElement element)
+        {
+            for (var current = element; current != null; current = current.parent)
+            {
+                if (current is UnityEngine.UIElements.Button button &&
+                    button.enabledInHierarchy &&
+                    button.resolvedStyle.display != UnityEngine.UIElements.DisplayStyle.None &&
+                    button.resolvedStyle.visibility != UnityEngine.UIElements.Visibility.Hidden)
+                {
+                    return button;
+                }
+            }
+
+            return null;
+        }
+
+        private static void InvokeUiToolkitButtonClick(UnityEngine.UIElements.Button button)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            try
+            {
+                using (var submitEvent = UnityEngine.UIElements.NavigationSubmitEvent.GetPooled())
+                {
+                    submitEvent.target = button;
+                    button.SendEvent(submitEvent);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning(
+                    $"[Dashboard] UI Toolkit submit fallback failed for button '{button.name}': {ex.GetType().Name} {ex.Message}");
+            }
+
+        }
+
+        private static bool IsPointerOverUi()
+        {
             if (Mouse.current == null)
             {
                 return false;
             }
+
             Vector2 pointerScreen = Mouse.current.position.ReadValue();
-            var documents = Object.FindObjectsByType<UIDocument>(FindObjectsSortMode.None);
-            for (int i = 0; i < documents.Length; i++)
+            if (EventSystem.current != null && IsPointerOverBlockingEventSystemUi(pointerScreen))
             {
-                UIDocument document = documents[i];
-                if (document == null || !document.isActiveAndEnabled)
-                {
-                    continue;
-                }
-                var root = document.rootVisualElement;
-                if (root == null || root.panel == null)
-                {
-                    continue;
-                }
-                Vector2 panelPosition = RuntimePanelUtils.ScreenToPanel(root.panel, pointerScreen);
-                var picked = root.panel.Pick(panelPosition);
-                if (picked != null)
-                {
-                    return true;
-                }
+                return true;
             }
+
+            // Dashboard UIDocument hits are tracked by DashboardRaycastFilter so
+            // this hot path does not scan every UIDocument in the scene.
+            return DashboardRaycastFilter.IsPointerOverInteractiveDashboard(pointerScreen);
+        }
+
+        private static bool IsPointerOverBlockingEventSystemUi(Vector2 pointerScreen)
+        {
+            var eventSystem = EventSystem.current;
+            if (eventSystem == null)
+            {
+                return false;
+            }
+
+            var eventData = new PointerEventData(eventSystem)
+            {
+                position = pointerScreen
+            };
+            var results = new List<RaycastResult>();
+            eventSystem.RaycastAll(eventData, results);
+            for (var i = 0; i < results.Count; i++)
+            {
+                var resultObject = results[i].gameObject;
+                if (resultObject == null ||
+                    DashboardRaycastFilter.IsNonInteractiveDashboardRaycast(results[i], pointerScreen))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
             return false;
         }
 

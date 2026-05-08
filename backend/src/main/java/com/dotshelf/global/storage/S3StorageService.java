@@ -11,9 +11,12 @@ import com.dotshelf.global.error.ErrorCode;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -102,6 +105,22 @@ public class S3StorageService {
     /**
      * DB 에 저장할 공개 URL. public-base-url 이 설정돼 있으면 그쪽(CDN)을, 없으면 S3 가상 호스트 URL 을 쓴다.
      */
+    public byte[] readObjectHeadBytes(String key, int byteCount) {
+        try {
+            ResponseBytes<GetObjectResponse> response = s3Client.getObjectAsBytes(GetObjectRequest.builder()
+                    .bucket(properties.bucket())
+                    .key(key)
+                    .range("bytes=0-" + Math.max(0, byteCount - 1))
+                    .build());
+            return response.asByteArray();
+        } catch (NoSuchKeyException e) {
+            throw new CustomException(ErrorCode.STORAGE_OBJECT_NOT_UPLOADED);
+        } catch (SdkException e) {
+            log.error("[S3] readObjectHeadBytes 실패 key={} byteCount={}", key, byteCount, e);
+            throw new CustomException(ErrorCode.STORAGE_INTERNAL_ERROR);
+        }
+    }
+
     public String publicUrl(String key) {
         String base = properties.publicBaseUrl();
         if (base != null && !base.isBlank()) {

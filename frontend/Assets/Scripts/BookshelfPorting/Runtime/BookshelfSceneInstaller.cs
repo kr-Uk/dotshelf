@@ -238,7 +238,7 @@ namespace BookshelfPorting.Runtime
             var whiteboardAnchor = FindOrCreateAnchor(
                 camerasRoot,
                 "WhiteboardAnchor",
-                new Vector3(-0.5f, 1.18f, 0.12f),
+                new Vector3(-0.72f, 1.18f, 0.12f),
                 Quaternion.LookRotation(Vector3.left, Vector3.up));
             var notebookPosition = new Vector3(-0.12f, 0.72f, -1.28f);
             var notebookTarget = new Vector3(-0.80f, 0.56f, -0.94f);
@@ -255,7 +255,7 @@ namespace BookshelfPorting.Runtime
             var probe = GetOrAddComponent<ReflectionProbe>(probeObject);
 
             cameraController.Configure(mainCamera, overviewAnchor, frontalAnchor, whiteboardAnchor, notebookAnchor, bookViewAnchor);
-            cameraController.ConfigureViewSettings(55f, 45f, 45f, 24f, 0.7f);
+            cameraController.ConfigureViewSettings(55f, 45f, 31f, 24f, 0.7f);
             cameraController.ConfigureFrontalZoomSettings(3.25f, 0.8f, 4.5f, 0.45f, 0.15f);
             cameraController.ConfigureFrontalZoomInputPredicate(experienceManager.CanHandleFrontalZoomInput);
             generator.Configure(state, materialFactory, loadBooksUseCase);
@@ -268,7 +268,7 @@ namespace BookshelfPorting.Runtime
             experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase);
             if (useServerBookshelf)
             {
-                bookshelfApiSync.Configure(new NotebookApiClient(apiManager), generator, experienceManager);
+                bookshelfApiSync.Configure(new NotebookApiClient(apiManager), generator, experienceManager, cameraController, notebookRuntimeUseCase);
                 experienceManager.ConfigureBookshelfApiSync(bookshelfApiSync);
             }
             environment.Configure(probe, null);
@@ -298,6 +298,20 @@ namespace BookshelfPorting.Runtime
                 // (Previously this transitioned to overviewAnchor / QuarterView, which
                 // sits at an angle and made the bookshelf appear left-shifted.)
                 cameraController.MoveToMainView();
+
+                // MR #128: 룸/책장/scene-baked decoration 생성이 모두 끝난 시점에 저장된 사용자
+                // layout 복원을 트리거. controller 자체의 Start() 에서 호출하면 SceneEntry 가 active
+                // scene 을 Main 으로 set 하기 전에 발사돼 InstallScene 보다 먼저 실행되는 순서 버그가
+                // 발생 (BookshelfSceneInstaller.Awake 의 active scene early-return 경로 + sceneLoaded
+                // → AddComponent → controller.Start 가 RunSceneInstallers 보다 빠른 케이스). 따라서
+                // installer 가 install 끝점에서 명시적으로 호출하는 single-source-of-truth 방식
+                // (skh1205 리뷰 #1 반영). controller 는 dev 빌드/플레이 모드에서 RuntimeInitializeOnLoad
+                // hook 으로 auto-bootstrap 되어 이 시점엔 이미 존재.
+                var editController = Object.FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
+                if (editController != null)
+                {
+                    editController.LoadSavedDecorationsAfterSceneInstall();
+                }
             }
         }
 
