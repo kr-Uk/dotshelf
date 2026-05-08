@@ -16,24 +16,40 @@ MonoBehaviour:
   - DisplayName: Book Stack
     Prefab: {fileID: -8098169881513260187, guid: c762a71677879be41a5a565fdad2dc71, type: 3}
     SourceAssetPath: Assets/Arts/Models/Props/book_stack.glb
+    PlacementCategory: 0
+    AllowRotation: 1
   - DisplayName: Clock Hamham
     Prefab: {fileID: -8098169881513260187, guid: fdf1809f3a17b11449a355503137638d, type: 3}
     SourceAssetPath: Assets/Arts/Models/Props/clock_hamham.glb
+    PlacementCategory: 0
+    AllowRotation: 1
   - DisplayName: Dashboard Natural
     Prefab: {fileID: -8098169881513260187, guid: 8d50791400c5e4b45a072e9b6e41807f, type: 3}
     SourceAssetPath: Assets/Arts/Models/Props/dashboard_natural.glb
+    PlacementCategory: 0
+    AllowRotation: 1
   - DisplayName: Doll Hamham
     Prefab: {fileID: -8098169881513260187, guid: 4f9ca772872790543895cc1371706137, type: 3}
     SourceAssetPath: Assets/Arts/Models/Props/doll_hamham.glb
+    PlacementCategory: 0
+    AllowRotation: 1
   - DisplayName: Goodvibes Window
     Prefab: {fileID: -8098169881513260187, guid: 8cf9f41845bae4aa1a85afdf0405e751, type: 3}
     SourceAssetPath: Assets/Arts/Models/Window/GoodVibes_Window.glb
+    PlacementCategory: 0
+    AllowRotation: 1
   - DisplayName: Lamp Floor
     Prefab: {fileID: -8098169881513260187, guid: 6386ddd70e8d2e7439c1961311c3bb2f, type: 3}
     SourceAssetPath: Assets/Arts/Models/Furniture/lamp_floor.glb
+    PlacementCategory: 0
+    AllowRotation: 1
   - DisplayName: Rug Natural
     Prefab: {fileID: -8098169881513260187, guid: a68c359f967d6064685b042697219e3d, type: 3}
     SourceAssetPath: Assets/Arts/Models/Furniture/rug_natural.glb
+    PlacementCategory: 0
+    AllowRotation: 1
   - DisplayName: Table Natural
     Prefab: {fileID: -8098169881513260187, guid: 6e5e1cd8910cedc468a37ef0c772b180, type: 3}
     SourceAssetPath: Assets/Arts/Models/Furniture/table_natural.glb
+    PlacementCategory: 0
+    AllowRotation: 1
