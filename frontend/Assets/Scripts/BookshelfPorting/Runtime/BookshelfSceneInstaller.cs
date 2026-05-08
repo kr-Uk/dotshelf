@@ -298,6 +298,20 @@ namespace BookshelfPorting.Runtime
                 // (Previously this transitioned to overviewAnchor / QuarterView, which
                 // sits at an angle and made the bookshelf appear left-shifted.)
                 cameraController.MoveToMainView();
+
+                // MR #128: 룸/책장/scene-baked decoration 생성이 모두 끝난 시점에 저장된 사용자
+                // layout 복원을 트리거. controller 자체의 Start() 에서 호출하면 SceneEntry 가 active
+                // scene 을 Main 으로 set 하기 전에 발사돼 InstallScene 보다 먼저 실행되는 순서 버그가
+                // 발생 (BookshelfSceneInstaller.Awake 의 active scene early-return 경로 + sceneLoaded
+                // → AddComponent → controller.Start 가 RunSceneInstallers 보다 빠른 케이스). 따라서
+                // installer 가 install 끝점에서 명시적으로 호출하는 single-source-of-truth 방식
+                // (skh1205 리뷰 #1 반영). controller 는 dev 빌드/플레이 모드에서 RuntimeInitializeOnLoad
+                // hook 으로 auto-bootstrap 되어 이 시점엔 이미 존재.
+                var editController = Object.FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
+                if (editController != null)
+                {
+                    editController.LoadSavedDecorationsAfterSceneInstall();
+                }
             }
         }
 
