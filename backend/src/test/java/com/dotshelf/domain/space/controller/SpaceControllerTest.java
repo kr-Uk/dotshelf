@@ -208,8 +208,8 @@ class SpaceControllerTest {
         given(spaceService.createThumbnailUploadUrl(any(), any(ThumbnailUploadUrlRequest.class)))
                 .willReturn(new ThumbnailUploadUrlResponse(
                         "https://upload.example.com/object",
-                        "spaces/10/v1.jpg",
-                        "https://cdn.test/spaces/10/v1.jpg",
+                        "spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg",
+                        "https://cdn.test/spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg",
                         300));
 
         mockMvc.perform(post("/v1/spaces/me/thumbnail-upload-url")
@@ -220,8 +220,8 @@ class SpaceControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.uploadUrl").value("https://upload.example.com/object"))
-                .andExpect(jsonPath("$.result.key").value("spaces/10/v1.jpg"))
-                .andExpect(jsonPath("$.result.publicUrl").value("https://cdn.test/spaces/10/v1.jpg"));
+                .andExpect(jsonPath("$.result.key").value("spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg"))
+                .andExpect(jsonPath("$.result.publicUrl").value("https://cdn.test/spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg"));
 
         then(spaceService).should().createThumbnailUploadUrl(any(), any(ThumbnailUploadUrlRequest.class));
     }
@@ -232,20 +232,20 @@ class SpaceControllerTest {
         given(spaceService.confirmThumbnail(any(), any(ThumbnailConfirmRequest.class)))
                 .willReturn(new ThumbnailUploadResponse(
                         10L,
-                        "spaces/10/v1.jpg",
-                        "https://cdn.test/spaces/10/v1.jpg",
+                        "spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg",
+                        "https://cdn.test/spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg",
                         1L));
 
         mockMvc.perform(patch("/v1/spaces/me/thumbnail")
                         .header("X-Test-Admin-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"key":"spaces/10/v1.jpg"}
+                                {"key":"spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.spaceId").value(10))
-                .andExpect(jsonPath("$.result.thumbnailKey").value("spaces/10/v1.jpg"))
-                .andExpect(jsonPath("$.result.thumbnailUrl").value("https://cdn.test/spaces/10/v1.jpg"))
+                .andExpect(jsonPath("$.result.thumbnailKey").value("spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg"))
+                .andExpect(jsonPath("$.result.thumbnailUrl").value("https://cdn.test/spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.jpg"))
                 .andExpect(jsonPath("$.result.layoutVersion").value(1));
 
         then(spaceService).should().confirmThumbnail(any(), any(ThumbnailConfirmRequest.class));
@@ -451,7 +451,6 @@ class SpaceControllerTest {
                 0,
                 false,
                 0,
-                null,
                 null,
                 themeInventoryId,
                 wallpaperInventoryId,

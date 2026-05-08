@@ -7,7 +7,10 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -97,6 +100,7 @@ public class SpaceService {
             "image/jpeg", "jpg",
             "image/png", "png",
             "image/webp", "webp");
+    private static final AtomicLong LAST_THUMBNAIL_ISSUED_AT_MILLIS = new AtomicLong();
 
     private final SpaceRepository spaceRepository;
     private final SpaceTemplateRepository spaceTemplateRepository;
@@ -240,10 +244,10 @@ public class SpaceService {
 
         String contentType = validateThumbnailFile(file);
         String extension = ALLOWED_THUMBNAIL_TYPES.get(contentType);
-        long nextVersion = space.nextLayoutVersion();
-        String key = thumbnailObjectKey(space.getId(), nextVersion, extension);
+        String key = thumbnailUploadObjectKey(space.getId(), extension);
 
         s3StorageService.putObject(key, file, contentType);
+        space.nextLayoutVersion();
         space.updateThumbnail(key, s3StorageService.publicUrl(key));
         return ThumbnailUploadResponse.from(space);
     }
@@ -255,8 +259,7 @@ public class SpaceService {
 
         String contentType = validateThumbnailUploadRequest(request);
         String extension = ALLOWED_THUMBNAIL_TYPES.get(contentType);
-        long nextVersion = space.getLayoutVersion() + 1;
-        String key = thumbnailObjectKey(space.getId(), nextVersion, extension);
+        String key = thumbnailUploadObjectKey(space.getId(), extension);
 
         PresignedPut presigned = s3StorageService.presignPut(
                 key,
@@ -270,10 +273,18 @@ public class SpaceService {
     public ThumbnailUploadResponse confirmThumbnail(Long userId, ThumbnailConfirmRequest request) {
         Long currentUserId = userService.requireUserId(userId);
         Space space = findOrCreateMySpace(currentUserId);
-        verifyConfirmedThumbnailObject(request.key(), space.getId());
+        String key = request != null ? request.key() : null;
+        validateThumbnailUploadKey(key, space.getId());
+        if (Objects.equals(space.getThumbnailKey(), key)) {
+            return ThumbnailUploadResponse.from(space);
+        }
+        if (isOlderThanCurrentThumbnail(key, space.getThumbnailKey(), space.getId())) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_KEY);
+        }
 
+        verifyConfirmedThumbnailObject(key, space.getId());
         space.nextLayoutVersion();
-        space.updateThumbnail(request.key(), s3StorageService.publicUrl(request.key()));
+        space.updateThumbnail(key, s3StorageService.publicUrl(key));
         return ThumbnailUploadResponse.from(space);
     }
 
@@ -309,20 +320,78 @@ public class SpaceService {
     }
 
     private void verifyConfirmedThumbnailObject(String key, Long spaceId) {
-        if (key == null || key.isBlank() || !key.startsWith("spaces/" + spaceId + "/")) {
-            throw new CustomException(ErrorCode.STORAGE_INVALID_KEY);
-        }
         ObjectMetadata metadata = s3StorageService.headObject(key);
         if (!ALLOWED_THUMBNAIL_TYPES.containsKey(metadata.contentType())) {
             throw new CustomException(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
         }
+        if (metadata.contentLength() <= 0) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
         if (metadata.contentLength() > MAX_THUMBNAIL_SIZE_BYTES) {
             throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
         }
+        ImageContentValidator.verifyMagicBytes(s3StorageService.readObjectHeadBytes(key, 12), metadata.contentType());
     }
 
-    private static String thumbnailObjectKey(Long spaceId, long layoutVersion, String extension) {
-        return "spaces/" + spaceId + "/v" + layoutVersion + "." + extension;
+    private static void validateThumbnailUploadKey(String key, Long spaceId) {
+        String prefix = thumbnailUploadPrefix(spaceId);
+        if (key == null || key.isBlank() || !key.startsWith(prefix)) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_KEY);
+        }
+        String fileName = key.substring(prefix.length());
+        int dashIndex = fileName.indexOf('-');
+        int dotIndex = fileName.lastIndexOf('.');
+        if (dashIndex <= 0 || dotIndex <= dashIndex + 1 || dotIndex == fileName.length() - 1) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_KEY);
+        }
+        String issuedAtPart = fileName.substring(0, dashIndex);
+        String uuidPart = fileName.substring(dashIndex + 1, dotIndex);
+        String extension = fileName.substring(dotIndex + 1);
+        if (!ALLOWED_THUMBNAIL_TYPES.containsValue(extension)) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_KEY);
+        }
+        try {
+            Long.parseLong(issuedAtPart);
+            UUID.fromString(uuidPart);
+        } catch (IllegalArgumentException e) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_KEY);
+        }
+    }
+
+    private static String thumbnailUploadObjectKey(Long spaceId, String extension) {
+        return thumbnailUploadPrefix(spaceId) + nextThumbnailIssuedAtMillis() + "-" + UUID.randomUUID() + "." + extension;
+    }
+
+    private static String thumbnailUploadPrefix(Long spaceId) {
+        return "spaces/" + spaceId + "/thumbnail/";
+    }
+
+    private static long nextThumbnailIssuedAtMillis() {
+        return LAST_THUMBNAIL_ISSUED_AT_MILLIS.updateAndGet(previous ->
+                Math.max(System.currentTimeMillis(), previous + 1));
+    }
+
+    private static boolean isOlderThanCurrentThumbnail(String candidateKey, String currentKey, Long spaceId) {
+        Long candidateIssuedAt = thumbnailIssuedAtMillisOrNull(candidateKey, spaceId);
+        Long currentIssuedAt = thumbnailIssuedAtMillisOrNull(currentKey, spaceId);
+        return candidateIssuedAt != null && currentIssuedAt != null && candidateIssuedAt < currentIssuedAt;
+    }
+
+    private static Long thumbnailIssuedAtMillisOrNull(String key, Long spaceId) {
+        String prefix = thumbnailUploadPrefix(spaceId);
+        if (key == null || !key.startsWith(prefix)) {
+            return null;
+        }
+        String fileName = key.substring(prefix.length());
+        int dashIndex = fileName.indexOf('-');
+        if (dashIndex <= 0) {
+            return null;
+        }
+        try {
+            return Long.parseLong(fileName.substring(0, dashIndex));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     @Transactional

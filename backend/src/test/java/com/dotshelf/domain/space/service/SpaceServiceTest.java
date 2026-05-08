@@ -3,6 +3,7 @@ package com.dotshelf.domain.space.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
@@ -308,18 +309,19 @@ class SpaceServiceTest {
                 new byte[] {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00});
         given(userService.requireUserId(1L)).willReturn(1L);
         given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
-        given(s3StorageService.publicUrl("spaces/10/v1.png"))
-                .willReturn("https://cdn.test/spaces/10/v1.png");
+        given(s3StorageService.publicUrl(any())).willAnswer(invocation -> "https://cdn.test/" + invocation.getArgument(0));
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
 
         var response = spaceService.uploadThumbnail(1L, file);
 
         assertThat(response.spaceId()).isEqualTo(10L);
         assertThat(response.layoutVersion()).isEqualTo(1L);
-        assertThat(response.thumbnailKey()).isEqualTo("spaces/10/v1.png");
-        assertThat(response.thumbnailUrl()).isEqualTo("https://cdn.test/spaces/10/v1.png");
-        assertThat(space.getThumbnailKey()).isEqualTo("spaces/10/v1.png");
-        assertThat(space.getThumbnailUrl()).isEqualTo("https://cdn.test/spaces/10/v1.png");
-        then(s3StorageService).should().putObject("spaces/10/v1.png", file, "image/png");
+        assertThat(response.thumbnailKey()).matches("spaces/10/thumbnail/\\d+-[0-9a-f\\-]{36}\\.png");
+        assertThat(response.thumbnailUrl()).isEqualTo("https://cdn.test/" + response.thumbnailKey());
+        assertThat(space.getThumbnailKey()).isEqualTo(response.thumbnailKey());
+        assertThat(space.getThumbnailUrl()).isEqualTo("https://cdn.test/" + response.thumbnailKey());
+        then(s3StorageService).should().putObject(keyCaptor.capture(), eq(file), eq("image/png"));
+        assertThat(keyCaptor.getValue()).isEqualTo(response.thumbnailKey());
     }
 
     @Test
@@ -330,25 +332,44 @@ class SpaceServiceTest {
         given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
         given(s3StorageProperties.presignTtlSeconds()).willReturn(300L);
         given(s3StorageService.presignPut(
-                "spaces/10/v1.jpg",
-                "image/jpeg",
-                1234L,
-                Duration.ofSeconds(300)))
-                .willReturn(new PresignedPut(
+                any(),
+                eq("image/jpeg"),
+                eq(1234L),
+                eq(Duration.ofSeconds(300))))
+                .willAnswer(invocation -> new PresignedPut(
                         "https://upload.example.com/object",
-                        "spaces/10/v1.jpg",
+                        invocation.getArgument(0),
                         300L));
-        given(s3StorageService.publicUrl("spaces/10/v1.jpg"))
-                .willReturn("https://cdn.test/spaces/10/v1.jpg");
+        given(s3StorageService.publicUrl(any())).willAnswer(invocation -> "https://cdn.test/" + invocation.getArgument(0));
 
         var response = spaceService.createThumbnailUploadUrl(
                 1L,
                 new ThumbnailUploadUrlRequest("image/jpeg", 1234L));
 
         assertThat(response.uploadUrl()).isEqualTo("https://upload.example.com/object");
-        assertThat(response.key()).isEqualTo("spaces/10/v1.jpg");
-        assertThat(response.publicUrl()).isEqualTo("https://cdn.test/spaces/10/v1.jpg");
+        assertThat(response.key()).matches("spaces/10/thumbnail/\\d+-[0-9a-f\\-]{36}\\.jpg");
+        assertThat(response.publicUrl()).isEqualTo("https://cdn.test/" + response.key());
         assertThat(response.expiresInSeconds()).isEqualTo(300L);
+    }
+
+    @Test
+    @DisplayName("썸네일 presigned URL 발급은 확정 전 중복 호출에도 서로 다른 key를 반환한다")
+    void createThumbnailUploadUrl_repeatedBeforeConfirm_returnsUniqueKeys() {
+        Space space = TestFixtures.space(10L, 1L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+        given(s3StorageProperties.presignTtlSeconds()).willReturn(300L);
+        given(s3StorageService.presignPut(any(), eq("image/png"), eq(1234L), eq(Duration.ofSeconds(300))))
+                .willAnswer(invocation -> new PresignedPut("https://upload.example.com/object", invocation.getArgument(0), 300L));
+        given(s3StorageService.publicUrl(any())).willAnswer(invocation -> "https://cdn.test/" + invocation.getArgument(0));
+
+        var first = spaceService.createThumbnailUploadUrl(1L, new ThumbnailUploadUrlRequest("image/png", 1234L));
+        var second = spaceService.createThumbnailUploadUrl(1L, new ThumbnailUploadUrlRequest("image/png", 1234L));
+
+        assertThat(first.key()).matches("spaces/10/thumbnail/\\d+-[0-9a-f\\-]{36}\\.png");
+        assertThat(second.key()).matches("spaces/10/thumbnail/\\d+-[0-9a-f\\-]{36}\\.png");
+        assertThat(first.key()).isNotEqualTo(second.key());
+        assertThat(space.getLayoutVersion()).isZero();
     }
 
     @Test
@@ -372,10 +393,12 @@ class SpaceServiceTest {
     @DisplayName("썸네일 확정은 S3 객체 메타데이터 검증 후 thumbnailKey/url과 layoutVersion을 갱신한다")
     void confirmThumbnail_validObject_updatesSpace() {
         Space space = TestFixtures.space(10L, 1L);
-        String key = "spaces/10/v1.png";
+        String key = "spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.png";
         given(userService.requireUserId(1L)).willReturn(1L);
         given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
         given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("image/png", 1024L));
+        given(s3StorageService.readObjectHeadBytes(key, 12))
+                .willReturn(new byte[] {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00});
         given(s3StorageService.publicUrl(key)).willReturn("https://cdn.test/" + key);
 
         var response = spaceService.confirmThumbnail(1L, new ThumbnailConfirmRequest(key));
@@ -389,6 +412,22 @@ class SpaceServiceTest {
     }
 
     @Test
+    @DisplayName("썸네일 확정은 같은 key 재시도 시 멱등하게 현재 응답만 반환한다")
+    void confirmThumbnail_sameCurrentKey_isIdempotent() {
+        Space space = TestFixtures.space(10L, 1L);
+        String key = "spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.png";
+        space.updateThumbnail(key, "https://cdn.test/" + key);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+
+        var response = spaceService.confirmThumbnail(1L, new ThumbnailConfirmRequest(key));
+
+        assertThat(response.thumbnailKey()).isEqualTo(key);
+        assertThat(response.layoutVersion()).isZero();
+        then(s3StorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
     @DisplayName("썸네일 확정은 내 공간 prefix가 아닌 key를 거절한다")
     void confirmThumbnail_invalidKeyPrefix_throwsInvalidKey() {
         Space space = TestFixtures.space(10L, 1L);
@@ -397,12 +436,61 @@ class SpaceServiceTest {
 
         assertThatThrownBy(() -> spaceService.confirmThumbnail(
                 1L,
-                new ThumbnailConfirmRequest("spaces/11/v1.png")))
+                new ThumbnailConfirmRequest("spaces/10/v1.png")))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.STORAGE_INVALID_KEY);
 
         then(s3StorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("썸네일 확정은 현재 썸네일보다 오래된 발급 key를 거절한다")
+    void confirmThumbnail_olderThanCurrentKey_throwsInvalidKey() {
+        Space space = TestFixtures.space(10L, 1L);
+        String currentKey = "spaces/10/thumbnail/1715000001000-123e4567-e89b-12d3-a456-426614174000.png";
+        String staleKey = "spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174001.png";
+        space.updateThumbnail(currentKey, "https://cdn.test/" + currentKey);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+
+        assertThatThrownBy(() -> spaceService.confirmThumbnail(1L, new ThumbnailConfirmRequest(staleKey)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.STORAGE_INVALID_KEY);
+
+        then(s3StorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("썸네일 확정은 빈 S3 object를 거절한다")
+    void confirmThumbnail_zeroLengthObject_throwsInvalidInput() {
+        Space space = TestFixtures.space(10L, 1L);
+        String key = "spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.png";
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+        given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("image/png", 0L));
+
+        assertThatThrownBy(() -> spaceService.confirmThumbnail(1L, new ThumbnailConfirmRequest(key)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("썸네일 확정은 metadata contentType과 실제 magic byte가 맞지 않으면 거절한다")
+    void confirmThumbnail_spoofedContentType_throwsInvalidContentType() {
+        Space space = TestFixtures.space(10L, 1L);
+        String key = "spaces/10/thumbnail/1715000000000-123e4567-e89b-12d3-a456-426614174000.png";
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+        given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("image/png", 1024L));
+        given(s3StorageService.readObjectHeadBytes(key, 12)).willReturn(new byte[] {'n', 'o', 't'});
+
+        assertThatThrownBy(() -> spaceService.confirmThumbnail(1L, new ThumbnailConfirmRequest(key)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
     }
 
     @Test
