@@ -158,7 +158,9 @@ $sha256 = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToUpper()
 Write-Host "  sha256  : $sha256"
 
 $manifestPath = Join-Path $repoRoot "launcher\manifests\dev\windows\latest.json"
-$manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+# Get-Content default encoding 함정 회피 — BOM-less UTF-8 강제 (releaseNotes 한글 안전)
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+$manifest = [System.IO.File]::ReadAllText($manifestPath, $utf8NoBom) | ConvertFrom-Json
 $manifest.sha256 = $sha256
 $manifest.releaseNotes = @($notesLines)
 $manifestJson = $manifest | ConvertTo-Json -Depth 10

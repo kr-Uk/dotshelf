@@ -42,7 +42,10 @@ function Edit-File([string]$Path, [string]$OldPattern, [string]$NewLine, [bool]$
     if (-not (Test-Path $full)) {
         throw "파일 없음: $full"
     }
-    $content = Get-Content $full -Raw
+    # PS 5.1 의 Get-Content / Set-Content default 인코딩이 시스템 codepage(CP-949) 라
+    # BOM 없는 UTF-8 파일(예: page.tsx) 의 한글이 깨진다. .NET API 로 BOM-less UTF-8 강제.
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    $content = [System.IO.File]::ReadAllText($full, $utf8NoBom)
     if ($Regex) {
         $matchCount = ([regex]::Matches($content, $OldPattern)).Count
         if ($matchCount -lt 1) { throw "패턴 매치 0건 [$Path]: $OldPattern" }
@@ -53,7 +56,7 @@ function Edit-File([string]$Path, [string]$OldPattern, [string]$NewLine, [bool]$
         if ($content -notlike "*$OldPattern*") { throw "리터럴 매치 0건 [$Path]: $OldPattern" }
         $new = $content.Replace($OldPattern, $NewLine)
     }
-    Set-Content -Path $full -Value $new -NoNewline
+    [System.IO.File]::WriteAllText($full, $new, $utf8NoBom)
     Write-Host "  ✓ $Path"
 }
 
