@@ -1627,8 +1627,10 @@ namespace App.Bootstrap
             if (theme == null) return;
             Debug.Log($"[RoomEditModeController] ApplyThemeDefaultEntries 진입 — theme={theme.DisplayName}, defaults={(theme.DefaultEntries?.Count ?? 0)}, floorDecos={(theme.FloorDecoSpecs?.Count ?? 0)}, wallDecos={(theme.WallDecoSpecs?.Count ?? 0)}");
 
-            // 1) 이전 테마 spawn deco 정리 — 사용자 직접 placement 는 보존 (ThemeSpawnedMarker 로 구분)
-            ClearThemeSpawnedDecos();
+            // 1) 이전 테마 deco + 사용자 직접 placement 모두 정리. 필수 배치 (책상/노트북/책장/
+            //    벽지/바닥/조명) 는 native + mesh swap 시스템이라 placedItemsRoot 자식이 아니라
+            //    영향 없음. 비필수 placement deco 는 모두 초기화 후 새 테마 spawn 만.
+            ClearAllPlacedDecos();
 
             // 1.5) 이전 mesh swap 모두 native 복원. theme 의 defaultEntries 에 해당 카테고리
             // entry 가 있으면 step 2 에서 다시 swap 적용. 없으면 native 유지 (기본 책상/책장 복귀).
@@ -1682,20 +1684,21 @@ namespace App.Bootstrap
             RebuildInventorySlots();
         }
 
-        // 테마 변경 시 이전 테마 spawn deco 정리. ThemeSpawnedMarker 가진 GameObject 만 destroy
-        // — 사용자 직접 placement (marker 없음) 는 보존. selection/drag 상태도 정리.
-        private void ClearThemeSpawnedDecos()
+        // 테마 변경 시 placedItemsRoot 자식 모두 destroy — 이전 테마 spawn + 사용자 직접
+        // placement 둘 다. 사용자 요구: "필수 배치 오브젝트 빼고는 테마 적용할 때마다 모든
+        // 배치 오브젝트 초기화". 필수 (책상/책장/벽지/바닥/조명/모니터) 는 native 또는 mesh swap
+        // 시스템 (roomRoot 자식) 이라 영향 X.
+        // 사용자 placement 보존 원하면 별도 marker (KeepOnThemeChange 등) 시스템 도입 필요.
+        private void ClearAllPlacedDecos()
         {
             if (placedItemsRoot == null) return;
-            var markers = placedItemsRoot.GetComponentsInChildren<ThemeSpawnedMarker>(true);
-            for (int i = 0; i < markers.Length; i++)
+            for (int i = placedItemsRoot.transform.childCount - 1; i >= 0; i--)
             {
-                if (markers[i] == null) continue;
-                var go = markers[i].gameObject;
-                if (selectedObject == go) selectedObject = null;
-                if (draggingObject == go) draggingObject = null;
-                if (UnityEngine.Application.isPlaying) Destroy(go);
-                else DestroyImmediate(go);
+                var child = placedItemsRoot.transform.GetChild(i).gameObject;
+                if (selectedObject == child) selectedObject = null;
+                if (draggingObject == child) draggingObject = null;
+                if (UnityEngine.Application.isPlaying) Destroy(child);
+                else DestroyImmediate(child);
             }
         }
 

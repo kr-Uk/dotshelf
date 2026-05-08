@@ -33,6 +33,10 @@ MonoBehaviour:
   defaultEntries:
   - category: 4
     assetId: 200030
+  - category: 0
+    assetId: 200005
+  - category: 5
+    assetId: 200015
   bookshelfDecoSpecs: []
   floorDecoSpecs:
   - assetId: 0
