@@ -66,6 +66,20 @@ trivial 한 변경(오타, 한 줄 fix)은 위 순서를 생략하고 바로 진
 - UI Toolkit — `DashboardTestScene` 등 테스트 씬에서 시각 확인. UXML 인스펙터(Window > UI Toolkit > UI Toolkit Debugger)로 계층 검사.
 - Unity GUI 동작은 자동 테스트로 잡히지 않으므로, 변경의 시각적 검증을 사용자가 해야 하면 명시적으로 알린다 ("이 변경은 에디터에서 직접 확인 필요").
 
+### Unity Console 로그 읽기
+
+- Console 패널의 로그 list 는 한 줄로 잘려 표시된다. 진단 목적으로 로그를 읽을 때는 **반드시 해당 줄을 클릭해서 하단 detail panel 을 펼쳐** 본다 — 전체 메시지 + stack trace + 호출 site 가 거기에 들어 있다.
+- screenshot 만 보고 잘린 list 에서 결론 내리지 말 것. 짧게 잘린 한 줄로 원인 추정하다 시간 낭비하는 경우가 잦다.
+- detail panel 의 stack trace 는 클릭 가능 — 해당 라인으로 IDE 가 점프한다. text 는 그대로 복사해서 grep / 분석 가능.
+- Console 우상단 카운터 (`X errors / Y warnings / Z logs`) 를 토글 클릭하면 각 type 만 필터된다. error 만 보고 싶을 때 유용.
+
+### Unity Editor 코드 변경 후 재컴파일 확인
+
+- C# 파일 수정 후 Unity 가 자동으로 재컴파일하지만, **재컴파일이 실제로 끝났는지** Play 들어가기 전에 한 번 확인:
+  - `Library/ScriptAssemblies/Assembly-CSharp.dll` 의 mtime 이 소스 수정 시각보다 최신인지
+  - Console 우하단의 spinning indicator (compiling) 사라졌는지
+- 재컴파일이 실제로 일어나지 않았는데 Play 시작 → stale 코드 사용 → 디버깅 시 fix 가 안 먹는 것처럼 보임. 의심되면 `Assets > Refresh` (Cmd+R) 명시적 호출.
+
 ## 참고 문서
 
 - `AGENTS.md` — 본 파일과 같은 정책의 더 짧은 요약 (오케스트레이터/외부 에이전트용).
