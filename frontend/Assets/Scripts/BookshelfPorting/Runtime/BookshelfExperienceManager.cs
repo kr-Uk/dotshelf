@@ -460,68 +460,6 @@ namespace BookshelfPorting.Runtime
             public int ReviewCount { get; }
         }
 
-        private static readonly BookAddCatalogItem[] BookAddCatalog =
-        {
-            new BookAddCatalogItem("물고기는 존재하지 않는다", "룰루 밀러", "곰출판", "혼돈과 분류, 그리고 삶을 바라보는 태도를 다루는 과학 에세이입니다.", BookOrientation.Front),
-            new BookAddCatalogItem("불편한 편의점", "김호연", "나무옆의자", "서울역 근처 편의점을 배경으로 사람들이 서로에게 건네는 위로를 담은 소설입니다."),
-            new BookAddCatalogItem("아주 작은 습관의 힘", "제임스 클리어", "비즈니스북스", "작은 행동을 꾸준히 쌓아 큰 변화를 만드는 방법을 설명하는 자기계발서입니다."),
-            new BookAddCatalogItem("도시와 그 불확실한 벽", "무라카미 하루키", "문학동네", "현실과 비현실 사이의 벽을 오가는 장편소설입니다.", BookOrientation.Angled45),
-            new BookAddCatalogItem("파과", "구병모", "위즈덤하우스", "나이 든 킬러의 삶과 균열을 밀도 있게 그린 장편소설입니다."),
-            new BookAddCatalogItem("역행자", "자청", "웅진지식하우스", "일과 성장의 규칙을 저자만의 방식으로 풀어낸 자기계발서입니다."),
-            new BookAddCatalogItem("소년이 온다", "한강", "창비", "상처와 기억을 정면으로 응시하는 장편소설입니다.", BookOrientation.Front),
-            new BookAddCatalogItem("채식주의자", "한강", "창비", "한 사람의 선택이 가족과 관계에 남기는 균열을 다룹니다.", BookOrientation.Angled45),
-            new BookAddCatalogItem("아몬드", "손원평", "창비", "감정을 느끼기 어려운 소년이 세상과 관계 맺는 과정을 따라갑니다."),
-            new BookAddCatalogItem("달러구트 꿈 백화점", "이미예", "팩토리나인", "꿈을 사고파는 백화점을 배경으로 한 따뜻한 판타지입니다.", BookOrientation.Front),
-            new BookAddCatalogItem("밝은 밤", "최은영", "문학동네", "세대와 시간을 넘어 이어지는 여성들의 기억을 그립니다."),
-            new BookAddCatalogItem("구의 증명", "최진영", "은행나무", "상실 이후에도 남는 사랑과 기억을 밀도 있게 다룹니다.", BookOrientation.Angled45),
-            new BookAddCatalogItem("메리골드 마음 세탁소", "윤정은", "북로망스", "마음을 세탁한다는 상상으로 위로를 건네는 소설입니다."),
-            new BookAddCatalogItem("어서 오세요, 휴남동 서점입니다", "황보름", "클레이하우스", "서점을 중심으로 사람들이 회복되는 과정을 담았습니다.", BookOrientation.Front),
-            new BookAddCatalogItem("모순", "양귀자", "쓰다", "삶의 모순과 선택을 담담하게 바라보는 장편소설입니다."),
-            new BookAddCatalogItem("종의 기원", "정유정", "은행나무", "인간 내면의 어둠을 추적하는 심리 스릴러입니다.", BookOrientation.Angled45),
-            new BookAddCatalogItem("7년의 밤", "정유정", "은행나무", "비극의 밤 이후 이어지는 죄책감과 추적을 그립니다."),
-            new BookAddCatalogItem("살인자의 기억법", "김영하", "복복서가", "기억을 잃어가는 인물의 시점으로 전개되는 서스펜스입니다."),
-            new BookAddCatalogItem("여행의 이유", "김영하", "문학동네", "여행과 삶의 태도를 돌아보는 산문집입니다.", BookOrientation.Front),
-            new BookAddCatalogItem("언어의 온도", "이기주", "말글터", "일상 속 말과 글이 지닌 온기를 짚어보는 에세이입니다."),
-            new BookAddCatalogItem("죽고 싶지만 떡볶이는 먹고 싶어", "백세희", "흔", "상담 기록을 바탕으로 마음의 굴곡을 솔직하게 담았습니다."),
-            new BookAddCatalogItem("나는 나로 살기로 했다", "김수현", "클레이하우스", "타인의 기준에서 벗어나 자신을 지키는 태도를 말합니다."),
-            new BookAddCatalogItem("기분이 태도가 되지 않게", "레몬심리", "갤리온", "감정을 다루고 관계를 안정시키는 실용 심리서입니다."),
-            new BookAddCatalogItem("데미안", "헤르만 헤세", "민음사", "자기 자신에게 이르는 성장과 방황의 고전입니다.", BookOrientation.Angled45),
-            new BookAddCatalogItem("싯다르타", "헤르만 헤세", "민음사", "깨달음을 향한 여정을 간결하고 상징적으로 그립니다."),
-            new BookAddCatalogItem("이방인", "알베르 카뮈", "민음사", "부조리한 세계와 인간의 태도를 묻는 소설입니다."),
-            new BookAddCatalogItem("노인과 바다", "어니스트 헤밍웨이", "민음사", "한 노인의 고독한 싸움을 통해 의지와 존엄을 보여줍니다.", BookOrientation.Front),
-            new BookAddCatalogItem("1984", "조지 오웰", "민음사", "감시와 통제 사회를 그린 디스토피아 고전입니다.", BookOrientation.Angled45),
-            new BookAddCatalogItem("동물농장", "조지 오웰", "민음사", "권력과 혁명의 변질을 우화로 풀어낸 작품입니다."),
-            new BookAddCatalogItem("멋진 신세계", "올더스 헉슬리", "문예출판사", "안정과 행복이 통제되는 미래 사회를 다룹니다."),
-            new BookAddCatalogItem("사피엔스", "유발 하라리", "김영사", "인류의 역사를 큰 흐름으로 조망하는 인문 교양서입니다.", BookOrientation.Front),
-            new BookAddCatalogItem("총 균 쇠", "재레드 다이아몬드", "문학사상", "문명의 격차를 환경과 역사 조건으로 설명합니다."),
-            new BookAddCatalogItem("팩트풀니스", "한스 로슬링", "김영사", "세상을 데이터로 더 정확히 보는 법을 제안합니다."),
-            new BookAddCatalogItem("코스모스", "칼 세이건", "사이언스북스", "우주와 인간의 위치를 아름답게 연결한 과학 고전입니다.", BookOrientation.Angled45),
-            new BookAddCatalogItem("정의란 무엇인가", "마이클 샌델", "와이즈베리", "정의와 공정성에 대한 철학적 질문을 대중적으로 풀어냅니다."),
-            new BookAddCatalogItem("돈의 심리학", "모건 하우절", "인플루엔셜", "돈을 대하는 행동과 심리를 짧은 이야기로 설명합니다."),
-            new BookAddCatalogItem("원씽", "게리 켈러", "비즈니스북스", "가장 중요한 한 가지에 집중하는 실행 방식을 제안합니다."),
-            new BookAddCatalogItem("딥 워크", "칼 뉴포트", "민음사", "방해를 줄이고 깊게 몰입하는 업무 방식을 설명합니다."),
-            new BookAddCatalogItem("클린 코드", "로버트 C. 마틴", "인사이트", "읽기 좋은 소프트웨어 코드를 만드는 원칙을 정리합니다.", BookOrientation.Front),
-            new BookAddCatalogItem("리팩터링", "마틴 파울러", "한빛미디어", "동작을 유지하면서 코드 구조를 개선하는 기법을 다룹니다."),
-            new BookAddCatalogItem("실용주의 프로그래머", "앤드류 헌트", "인사이트", "소프트웨어 장인정신과 실용적 개발 태도를 말합니다.", BookOrientation.Angled45),
-            new BookAddCatalogItem("오브젝트", "조영호", "위키북스", "객체지향 설계의 책임과 협력을 국내 예제로 설명합니다."),
-            new BookAddCatalogItem("함께 자라기", "김창준", "인사이트", "개발자와 팀이 학습하고 성장하는 방법을 다룹니다."),
-            new BookAddCatalogItem("컨티뉴어스 디스커버리", "테레사 토레스", "한빛미디어", "고객 학습을 제품 의사결정에 연결하는 지속적 발견 방식을 설명합니다.", BookOrientation.Front),
-            new BookAddCatalogItem("도메인 주도 설계", "에릭 에반스", "위키북스", "복잡한 비즈니스 도메인을 모델 중심으로 풀어내는 설계 고전입니다."),
-            new BookAddCatalogItem("가상 면접 사례로 배우는 대규모 시스템 설계 기초", "알렉스 쉬", "인사이트", "확장 가능한 시스템 설계 문제를 단계별로 다룹니다.", BookOrientation.Angled45),
-            new BookAddCatalogItem("사용자를 생각하게 하지 마!", "스티브 크룩", "인사이트", "웹과 앱 사용성을 직관적으로 개선하는 UX 기본서입니다.", BookOrientation.Front),
-            new BookAddCatalogItem("디자인과 인간 심리", "도널드 노먼", "학지사", "사람이 제품을 이해하고 사용하는 방식을 디자인 관점에서 설명합니다."),
-            new BookAddCatalogItem("훅", "니르 이얄", "유엑스리뷰", "사용 습관을 만드는 제품 루프와 윤리적 고려를 함께 다룹니다."),
-            new BookAddCatalogItem("해빗 메카닉", "제임스 클리어", "비즈니스북스", "행동 변화를 만들기 위한 반복과 환경 설계 원리를 정리합니다."),
-            new BookAddCatalogItem("기록하기로 했습니다", "김신지", "휴머니스트", "일상의 감정과 장면을 꾸준히 남기는 태도를 말하는 에세이입니다.", BookOrientation.Front),
-            new BookAddCatalogItem("최소한의 이웃", "허지웅", "김영사", "사회와 관계를 바라보는 시선을 담은 산문집입니다."),
-            new BookAddCatalogItem("나의 하루는 4시 30분에 시작된다", "김유진", "토네이도", "시간 관리와 루틴을 실천적으로 다룬 자기계발서입니다."),
-            new BookAddCatalogItem("몰입", "황농문", "알에이치코리아", "깊은 집중 상태를 만들고 유지하는 사고 방식을 설명합니다.", BookOrientation.Angled45),
-            new BookAddCatalogItem("생각에 관한 생각", "대니얼 카너먼", "김영사", "인간 판단과 편향을 행동경제학 관점에서 풀어낸 책입니다."),
-            new BookAddCatalogItem("타이탄의 도구들", "팀 페리스", "토네이도", "다양한 창작자와 리더의 습관과 전략을 모은 인터뷰 기반 자기계발서입니다."),
-            new BookAddCatalogItem("브랜딩 불변의 법칙", "알 리스", "비즈니스맵", "브랜드 포지셔닝과 인식의 원칙을 짧고 명확하게 다룹니다."),
-            new BookAddCatalogItem("하루키는 이렇게 쓴다", "나카무라 구니오", "현대문학", "무라카미 하루키 작품의 문장과 구조를 읽는 가이드입니다.", BookOrientation.Front)
-        };
-
         private sealed class GuestbookNoteData
         {
             public string authorName;
@@ -709,6 +647,9 @@ namespace BookshelfPorting.Runtime
         private string bookshelfTransientStatusMessage = string.Empty;
         private float bookshelfTransientStatusExpiresAt;
         private string bookAddFeedbackMessage = string.Empty;
+        // LocalMock was removed; this remains installer-controlled until the
+        // remaining local fallback UI branches are deleted in a focused cleanup.
+        private bool usesHttpApiMode;
         private bool shouldResetBookAddScrollToTop;
         private bool shouldResetBookSearchScrollToTop;
         private bool isBookAddApiSearchPending;
@@ -972,6 +913,11 @@ namespace BookshelfPorting.Runtime
         public void ConfigureBookshelfApiSync(BookshelfApiSyncController syncController)
         {
             bookshelfApiSyncController = syncController;
+        }
+
+        public void ConfigureApiMode(bool usesHttpApi)
+        {
+            usesHttpApiMode = usesHttpApi;
         }
 
         public void ConfigureNotebookUiSceneLoader(NotebookUiSceneLoader sceneLoader)
@@ -1990,10 +1936,10 @@ namespace BookshelfPorting.Runtime
                 () => RetryRemoveBook(book, sourceSection, false));
 
             pendingDeleteBook = null;
-            var didStartDeleteSync = bookshelfApiSyncController != null &&
+            var didStartDeleteSync = CanStartBookshelfApiMutation() &&
                                      bookshelfApiSyncController.RemoveBook(
-                                         book,
-                                         () =>
+                                          book,
+                                          () =>
                                           {
                                               ClearPendingMutationRetry(retryKey);
                                               RemoveBookLocally(book, sourceSection, false);
@@ -2019,6 +1965,16 @@ namespace BookshelfPorting.Runtime
                 }
 
                 RefreshHud();
+                return;
+            }
+
+            if (usesHttpApiMode && !CanStartBookshelfApiMutation())
+            {
+                RefreshServerStateAfterMutationFailure(
+                    "책 삭제",
+                    "책장 API 동기화가 준비되지 않아 책 삭제를 서버에 요청할 수 없습니다.",
+                    null,
+                    retryKey);
                 return;
             }
 
@@ -2062,10 +2018,10 @@ namespace BookshelfPorting.Runtime
 
             pendingDeleteBook = null;
             pendingDeleteReportBook = null;
-            var didStartDeleteSync = bookshelfApiSyncController != null &&
+            var didStartDeleteSync = CanStartBookshelfApiMutation() &&
                                      bookshelfApiSyncController.RemoveBook(
-                                         book,
-                                         () =>
+                                          book,
+                                          () =>
                                           {
                                               ClearPendingMutationRetry(retryKey);
                                               RemoveBookLocally(book, sourceSection, true);
@@ -2109,6 +2065,16 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (usesHttpApiMode && !CanStartBookshelfApiMutation())
+            {
+                RefreshServerStateAfterMutationFailure(
+                    "책 삭제",
+                    "책장 API 동기화가 준비되지 않아 책 삭제를 서버에 요청할 수 없습니다.",
+                    null,
+                    retryKey);
+                return;
+            }
+
             if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
             {
                 RefreshServerStateAfterMutationFailure(
@@ -2132,8 +2098,18 @@ namespace BookshelfPorting.Runtime
             }
 
             var retryKey = BuildMutationRetryKey("책 삭제", book);
-            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            if (!CanStartBookshelfApiMutation())
             {
+                if (usesHttpApiMode)
+                {
+                    RefreshServerStateAfterMutationFailure(
+                        "책 삭제",
+                        "책장 API 동기화가 준비되지 않아 책 삭제를 서버에 요청할 수 없습니다.",
+                        null,
+                        retryKey);
+                    return;
+                }
+
                 ClearPendingMutationRetry(retryKey);
                 RemoveBookLocally(book, sourceSection, closeReportPanels);
                 ShowDeleteResultDialog("책장에서 제거 완료", "책장에서 책을 제거했습니다.", true);
@@ -2531,8 +2507,15 @@ namespace BookshelfPorting.Runtime
 
         private void SyncBookshelfCreateOrRefresh(string name, string operationName)
         {
-            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            if (!CanStartBookshelfApiMutation())
             {
+                if (usesHttpApiMode)
+                {
+                    RefreshServerStateAfterMutationFailure(
+                        operationName,
+                        "책장 API 동기화가 준비되지 않아 새 책장을 서버에 생성할 수 없습니다.");
+                }
+
                 return;
             }
 
@@ -2558,10 +2541,101 @@ namespace BookshelfPorting.Runtime
             }
         }
 
+        private bool EnsureBookshelfApiMutationReady(string operationName)
+        {
+            if (!usesHttpApiMode)
+            {
+                return true;
+            }
+
+            if (bookshelfApiSyncController != null &&
+                bookshelfApiSyncController.IsServerSyncEnabled &&
+                bookshelfApiSyncController.HasAccessToken)
+            {
+                return true;
+            }
+
+            var title = $"{operationName} 보류";
+            var message = "서버 책장 정보를 불러온 뒤 변경할 수 있습니다. 로그인 상태와 API 연결을 확인해 주세요.";
+            ShowBookshelfTransientStatus(title, message, true);
+            ShowDeleteResultDialog(title, message, false);
+            return false;
+        }
+
+        private bool EnsureBookshelfApiMutationReady(int displayIndex, string operationName)
+        {
+            if (!EnsureBookshelfApiMutationReady(operationName))
+            {
+                return false;
+            }
+
+            if (!usesHttpApiMode)
+            {
+                return true;
+            }
+
+            if (bookshelfGenerator != null &&
+                displayIndex >= 0 &&
+                !string.IsNullOrWhiteSpace(bookshelfGenerator.GetBookshelfServerId(displayIndex)))
+            {
+                return true;
+            }
+
+            var title = $"{operationName} 보류";
+            var message = "대상 책장의 서버 식별자가 아직 준비되지 않았습니다. 새로고침 후 다시 시도해 주세요.";
+            ShowBookshelfTransientStatus(title, message, true);
+            ShowDeleteResultDialog(title, message, false);
+            return false;
+        }
+
+        private bool EnsureBookshelfReorderApiReady(string operationName)
+        {
+            if (!EnsureBookshelfApiMutationReady(operationName))
+            {
+                return false;
+            }
+
+            if (!usesHttpApiMode || bookshelfGenerator == null)
+            {
+                return true;
+            }
+
+            if (bookshelfGenerator.GetBookshelfServerIdsInDisplayOrder().Count == bookshelfGenerator.BookshelfCount)
+            {
+                return true;
+            }
+
+            var title = $"{operationName} 보류";
+            var message = "모든 책장의 서버 식별자가 준비된 뒤 순서를 변경할 수 있습니다. 새로고침 후 다시 시도해 주세요.";
+            ShowBookshelfTransientStatus(title, message, true);
+            ShowDeleteResultDialog(title, message, false);
+            return false;
+        }
+
+        private string BuildDefaultNewBookshelfName()
+        {
+            var nextIndex = bookshelfGenerator != null ? bookshelfGenerator.BookshelfCount + 1 : 1;
+            return $"{Mathf.Max(1, nextIndex)}번 책장";
+        }
+
+        private bool CanStartBookshelfApiMutation()
+        {
+            return bookshelfApiSyncController != null &&
+                   bookshelfApiSyncController.IsServerSyncEnabled &&
+                   (!usesHttpApiMode || bookshelfApiSyncController.HasAccessToken);
+        }
+
         private void SyncBookshelfUpdateOrRefresh(int displayIndex, string operationName)
         {
-            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            if (!CanStartBookshelfApiMutation())
             {
+                if (usesHttpApiMode)
+                {
+                    RefreshServerStateAfterMutationFailure(
+                        operationName,
+                        "책장 API 동기화가 준비되지 않아 서버에 저장할 수 없습니다.");
+                }
+
                 return;
             }
 
@@ -2589,8 +2663,15 @@ namespace BookshelfPorting.Runtime
 
         private void SyncBookshelfReorderOrRefresh(string operationName)
         {
-            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            if (!CanStartBookshelfApiMutation())
             {
+                if (usesHttpApiMode)
+                {
+                    RefreshServerStateAfterMutationFailure(
+                        operationName,
+                        "책장 API 동기화가 준비되지 않아 책장 순서를 서버에 저장할 수 없습니다.");
+                }
+
                 return;
             }
 
@@ -2617,8 +2698,15 @@ namespace BookshelfPorting.Runtime
 
         private void SyncBookPlacementOrRefresh(BookEntity book, string operationName)
         {
-            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            if (!CanStartBookshelfApiMutation())
             {
+                if (usesHttpApiMode)
+                {
+                    RefreshServerStateAfterMutationFailure(
+                        operationName,
+                        "책장 API 동기화가 준비되지 않아 책 위치를 서버에 저장할 수 없습니다.");
+                }
+
                 return;
             }
 
@@ -2655,8 +2743,17 @@ namespace BookshelfPorting.Runtime
             BookStateMutationSnapshot desired,
             string operationName)
         {
-            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            if (!CanStartBookshelfApiMutation())
             {
+                if (usesHttpApiMode)
+                {
+                    RollbackBookStateMutation(
+                        book,
+                        rollback,
+                        operationName,
+                        "책장 API 동기화가 준비되지 않아 책 상태를 서버에 저장할 수 없습니다.");
+                }
+
                 return;
             }
 
@@ -2701,8 +2798,17 @@ namespace BookshelfPorting.Runtime
             BookStateMutationSnapshot desired,
             string operationName)
         {
-            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            if (!CanStartBookshelfApiMutation())
             {
+                if (usesHttpApiMode)
+                {
+                    RollbackBookStateMutation(
+                        book,
+                        rollback,
+                        operationName,
+                        "책장 API 동기화가 준비되지 않아 좋아요를 서버에 저장할 수 없습니다.");
+                }
+
                 return;
             }
 
@@ -2836,7 +2942,6 @@ namespace BookshelfPorting.Runtime
             var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
             if (book == null ||
                 dataStore == null ||
-                bookReviewWritePanel == null ||
                 !CanUseOwnerBookActions())
             {
                 return;
@@ -2876,7 +2981,7 @@ namespace BookshelfPorting.Runtime
             }
 
             var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
-            if (book == null || dataStore == null || !CanUseOwnerBookActions())
+            if (book == null || dataStore == null || bookReviewWritePanel == null || !CanUseOwnerBookActions())
             {
                 return;
             }
@@ -3049,6 +3154,16 @@ namespace BookshelfPorting.Runtime
                     ApplyCreatedReviewToLocalAggregate(meta, meta.ownerRating);
                     dataStore.ApplyBookMeta(book, meta);
                 }
+
+                if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+                {
+                    bookshelfApiSyncController.FetchBookDetails(book, updatedBook =>
+                    {
+                        ApplyBookEntityToMeta(updatedBook);
+                        RefreshBookDetailPanel();
+                        RefreshHud();
+                    });
+                }
             }
 
             isBookReviewWritePanelOpen = false;
@@ -3145,16 +3260,33 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var rollback = new BookReportMutationSnapshot(ActiveDetailBook, meta);
             meta.reportVisibility = meta.reportVisibility == App.Domain.VisibilityScope.Public
                 ? App.Domain.VisibilityScope.Private
                 : App.Domain.VisibilityScope.Public;
             meta.isPublic = meta.reportVisibility == App.Domain.VisibilityScope.Public;
             dataStore.ApplyBookMeta(ActiveDetailBook, meta);
             var book = ActiveDetailBook;
-            bookshelfApiSyncController?.SaveReadingRecord(
-                book,
-                HandleBookReportSaved,
-                error => HandleBookReportSaveFailure(book, error));
+            var didStartSave = CanStartBookshelfApiMutation() &&
+                               bookshelfApiSyncController.SaveReadingRecord(
+                                   book,
+                                   HandleBookReportSaved,
+                                   error => HandleBookReportSaveFailure(book, rollback, error));
+            if (!didStartSave)
+            {
+                if (usesHttpApiMode && !CanStartBookshelfApiMutation())
+                {
+                    HandleBookReportSaveFailure(book, rollback, "책장 API 동기화가 준비되지 않아 독후감 공개 범위를 서버에 저장할 수 없습니다.");
+                    return;
+                }
+
+                if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+                {
+                    HandleBookReportSaveFailure(book, rollback, "독후감 공개 범위 저장에 필요한 서버 식별자를 찾을 수 없습니다.");
+                    return;
+                }
+            }
+
             RefreshBookDetailPanel();
             RefreshHud();
         }
@@ -6557,6 +6689,12 @@ namespace BookshelfPorting.Runtime
             var targetIndex = bookshelfNameInputIndex >= 0
                 ? Mathf.Clamp(bookshelfNameInputIndex, 0, Mathf.Max(1, bookshelfGenerator.BookshelfCount) - 1)
                 : displayIndex;
+            if (!EnsureBookshelfApiMutationReady(targetIndex, "책장 이름 변경"))
+            {
+                RefreshBookshelfNameEditPanel();
+                return;
+            }
+
             var previousName = bookshelfGenerator.GetBookshelfName(targetIndex);
             bookshelfGenerator.SetBookshelfName(targetIndex, bookshelfNameInputField.text);
             bookshelfNameInputField.text = bookshelfGenerator.GetBookshelfName(targetIndex);
@@ -6579,6 +6717,11 @@ namespace BookshelfPorting.Runtime
             }
 
             CloseOverlayPanels(bookshelfDesignPanel);
+            if (usesHttpApiMode)
+            {
+                bookshelfApiSyncController?.RefreshBookshelfSkinCatalog();
+            }
+
             SetBookshelfOverlayMode(BookshelfOverlayMode.Design);
             RefreshHud();
         }
@@ -6623,7 +6766,7 @@ namespace BookshelfPorting.Runtime
                 bookAddSearchInputField.text = string.Empty;
             }
 
-            activeBookAddBrowseMode = BookAddBrowseMode.Search;
+            activeBookAddBrowseMode = BookAddBrowseMode.Ranking;
             shouldResetBookAddScrollToTop = true;
             RefreshHud();
         }
@@ -6902,7 +7045,7 @@ namespace BookshelfPorting.Runtime
                 else if (!string.IsNullOrWhiteSpace(bookAddApiSearchMessage))
                 {
                     bookAddStatusText.text = matchCount > 0
-                        ? $"{bookAddApiSearchMessage} · 로컬 결과 {matchCount}개"
+                        ? $"{bookAddApiSearchMessage} · 표시 결과 {matchCount}개"
                         : bookAddApiSearchMessage;
                 }
                 else if (matchCount == 0)
@@ -7301,8 +7444,12 @@ namespace BookshelfPorting.Runtime
             var hasServerSync = bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled;
             if (!hasServerSync)
             {
-                bookAddFeedbackMessage = successMessage;
-                ShowBookshelfTransientStatus("책 추가 완료", "로컬 책장에 책을 추가했습니다.", false);
+                RollbackAddedBookAfterApiFailure(
+                    book,
+                    sourceSection,
+                    item.Title,
+                    "책장 API 동기화가 준비되지 않아 책 추가를 서버에 요청할 수 없습니다.");
+                ShowBookshelfServerPlacementPending();
                 return;
             }
 
@@ -7949,9 +8096,16 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var displayIndex = bookshelfGenerator.DisplayBookshelfIndex;
+            if (!EnsureBookshelfApiMutationReady(displayIndex, "책장 공개 범위 변경"))
+            {
+                RefreshHud();
+                return;
+            }
+
             bookshelfGenerator.CycleActiveBookshelfVisibility();
             MarkBookshelfEditDirty();
-            SyncBookshelfUpdateOrRefresh(bookshelfGenerator.DisplayBookshelfIndex, "책장 공개 범위 변경");
+            SyncBookshelfUpdateOrRefresh(displayIndex, "책장 공개 범위 변경");
             RefreshHud();
         }
 
@@ -7959,6 +8113,21 @@ namespace BookshelfPorting.Runtime
         {
             if (!CanMutateBookshelfCollection() || bookshelfGenerator == null)
             {
+                return;
+            }
+
+            if (usesHttpApiMode)
+            {
+                if (!EnsureBookshelfApiMutationReady("책장 추가"))
+                {
+                    RefreshHud();
+                    return;
+                }
+
+                ShowBookshelfTransientStatus("책장 저장 중", "새 책장을 서버에 생성하고 있습니다.", false);
+                SyncBookshelfCreateOrRefresh(BuildDefaultNewBookshelfName(), "책장 추가");
+                isBookshelfManagePanelOpen = true;
+                RefreshHud();
                 return;
             }
 
@@ -8027,9 +8196,20 @@ namespace BookshelfPorting.Runtime
             if (bookshelfGenerator != null &&
                 sourceIndex >= 0 &&
                 targetIndex >= 0 &&
-                sourceIndex != targetIndex &&
-                bookshelfGenerator.MoveBookshelfOrder(sourceIndex, targetIndex))
+                sourceIndex != targetIndex)
             {
+                if (!EnsureBookshelfReorderApiReady("책장 순서 변경"))
+                {
+                    RefreshBookshelfManagePanel();
+                    return;
+                }
+
+                if (!bookshelfGenerator.MoveBookshelfOrder(sourceIndex, targetIndex))
+                {
+                    RefreshBookshelfManagePanel();
+                    return;
+                }
+
                 MarkBookshelfEditDirty();
                 SyncBookshelfReorderOrRefresh("책장 순서 변경");
                 isBookshelfManagePanelOpen = true;
@@ -8866,23 +9046,18 @@ namespace BookshelfPorting.Runtime
                 }
             }
 
-            for (var i = 0; i < BookAddCatalog.Length; i++)
+            if (!usesHttpApiMode)
             {
-                if (!ContainsBookAddCatalogItem(runtimeBookAddCatalog, BookAddCatalog[i]))
+                var appCatalog = bookshelfGenerator != null ? bookshelfGenerator.BookCatalogItems : null;
+                if (appCatalog != null)
                 {
-                    runtimeBookAddCatalog.Add(BookAddCatalog[i]);
-                }
-            }
-
-            var appCatalog = bookshelfGenerator != null ? bookshelfGenerator.BookCatalogItems : null;
-            if (appCatalog != null)
-            {
-                for (var i = 0; i < appCatalog.Count; i++)
-                {
-                    var item = CreateBookAddCatalogItem(appCatalog[i]);
-                    if (item != null && !ContainsBookAddCatalogItem(runtimeBookAddCatalog, item))
+                    for (var i = 0; i < appCatalog.Count; i++)
                     {
-                        runtimeBookAddCatalog.Add(item);
+                        var item = CreateBookAddCatalogItem(appCatalog[i]);
+                        if (item != null && !ContainsBookAddCatalogItem(runtimeBookAddCatalog, item))
+                        {
+                            runtimeBookAddCatalog.Add(item);
+                        }
                     }
                 }
             }
@@ -8970,15 +9145,24 @@ namespace BookshelfPorting.Runtime
                 bookAddApiSearchVersion++;
                 apiBookAddCatalog.Clear();
                 bookAddApiSearchQuery = string.Empty;
-                bookAddApiSearchMessage = string.Empty;
+                bookAddApiSearchMessage = usesHttpApiMode ? "검색어를 입력해 주세요." : string.Empty;
                 isBookAddApiSearchPending = false;
                 bookAddApiCatalogMode = BookAddBrowseMode.Search;
                 return;
             }
 
-            if (searchNotebookBooksUseCase == null ||
-                (bookAddApiCatalogMode == BookAddBrowseMode.Search &&
-                 string.Equals(normalizedQuery, bookAddApiSearchQuery, System.StringComparison.OrdinalIgnoreCase)))
+            if (searchNotebookBooksUseCase == null)
+            {
+                apiBookAddCatalog.Clear();
+                bookAddApiSearchMessage = usesHttpApiMode
+                    ? "도서 검색 API가 준비되지 않았습니다."
+                    : string.Empty;
+                isBookAddApiSearchPending = false;
+                return;
+            }
+
+            if (bookAddApiCatalogMode == BookAddBrowseMode.Search &&
+                string.Equals(normalizedQuery, bookAddApiSearchQuery, System.StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
@@ -9665,9 +9849,9 @@ namespace BookshelfPorting.Runtime
             }
 
             var style = bookshelfGenerator.GetBookshelfDesignStyle(displayIndex);
-            StyleBookshelfDesignButton(defaultBookshelfDesignButton, BookshelfThemeStyle.Default, style == BookshelfThemeStyle.Default);
-            StyleBookshelfDesignButton(warmBookshelfDesignButton, BookshelfThemeStyle.Warm, style == BookshelfThemeStyle.Warm);
-            StyleBookshelfDesignButton(darkBookshelfDesignButton, BookshelfThemeStyle.Dark, style == BookshelfThemeStyle.Dark);
+            StyleBookshelfDesignButton(defaultBookshelfDesignButton, BookshelfThemeStyle.Default, style == BookshelfThemeStyle.Default, CanUseBookshelfDesignStyle(BookshelfThemeStyle.Default));
+            StyleBookshelfDesignButton(warmBookshelfDesignButton, BookshelfThemeStyle.Warm, style == BookshelfThemeStyle.Warm, CanUseBookshelfDesignStyle(BookshelfThemeStyle.Warm));
+            StyleBookshelfDesignButton(darkBookshelfDesignButton, BookshelfThemeStyle.Dark, style == BookshelfThemeStyle.Dark, CanUseBookshelfDesignStyle(BookshelfThemeStyle.Dark));
             StyleHudButton(
                 closeBookshelfDesignButton,
                 new Color32(245, 237, 226, 245),
@@ -9686,6 +9870,26 @@ namespace BookshelfPorting.Runtime
             }
 
             var displayIndex = bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1;
+            if (!EnsureBookshelfApiMutationReady(displayIndex, "책장 디자인 변경"))
+            {
+                RefreshHud();
+                return;
+            }
+
+            if (usesHttpApiMode && !BookshelfSkinResolver.ResolveInventoryId(style).HasValue)
+            {
+                bookshelfApiSyncController?.RefreshBookshelfSkinCatalog();
+                var message = BookshelfSkinResolver.HasLoadedApiAssets
+                    ? "해당 책장 디자인은 서버 카탈로그에 없어 저장할 수 없습니다."
+                    : "서버 책장 스킨 목록을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.";
+                ShowBookshelfTransientStatus(
+                    "책장 디자인 변경 불가",
+                    message,
+                    true);
+                RefreshHud();
+                return;
+            }
+
             var previous = displayIndex >= 0 ? bookshelfGenerator.GetBookshelfDesignStyle(displayIndex) : style;
             if (bookshelfGenerator.SetActiveBookshelfDesignStyle(style))
             {
@@ -9699,12 +9903,29 @@ namespace BookshelfPorting.Runtime
             }
         }
 
-        private static void StyleBookshelfDesignButton(Button button, BookshelfThemeStyle style, bool isActive)
+        private bool CanUseBookshelfDesignStyle(BookshelfThemeStyle style)
+        {
+            if (!usesHttpApiMode)
+            {
+                return true;
+            }
+
+            if (!BookshelfSkinResolver.HasLoadedApiAssets)
+            {
+                return true;
+            }
+
+            return BookshelfSkinResolver.HasResolvableInventoryId(style);
+        }
+
+        private static void StyleBookshelfDesignButton(Button button, BookshelfThemeStyle style, bool isActive, bool isEnabled)
         {
             if (button == null)
             {
                 return;
             }
+
+            button.interactable = isEnabled;
 
             Color32 background;
             Color32 highlighted;
@@ -9735,7 +9956,7 @@ namespace BookshelfPorting.Runtime
                 new Color32(224, 219, 214, 140),
                 14,
                 textColor,
-                true);
+                isEnabled);
         }
 
         private void RefreshBookshelfDeleteConfirmPanel(int displayIndex)
@@ -9784,6 +10005,20 @@ namespace BookshelfPorting.Runtime
             pendingDeleteBookshelfIndex = -1;
             ActiveDetailBook = null;
             activeEditSection = null;
+
+            if (usesHttpApiMode)
+            {
+                if (!EnsureBookshelfApiMutationReady("책장 추가"))
+                {
+                    RefreshHud();
+                    return;
+                }
+
+                ShowBookshelfTransientStatus("책장 저장 중", "새 책장을 서버에 생성하고 있습니다.", false);
+                SyncBookshelfCreateOrRefresh(BuildDefaultNewBookshelfName(), "책장 추가");
+                RefreshHud();
+                return;
+            }
 
             if (bookshelfGenerator.AddBookshelf())
             {
@@ -9846,6 +10081,12 @@ namespace BookshelfPorting.Runtime
             }
 
             var deletedBookshelfServerId = bookshelfGenerator.GetBookshelfServerId(displayIndex);
+            if (!EnsureBookshelfApiMutationReady(displayIndex, "책장 삭제"))
+            {
+                RefreshHud();
+                return;
+            }
+
             if (bookshelfGenerator.DeleteActiveBookshelf())
             {
                 MarkBookshelfEditDirty();
@@ -9901,7 +10142,12 @@ namespace BookshelfPorting.Runtime
         {
             if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
             {
-                return true;
+                return !usesHttpApiMode;
+            }
+
+            if (usesHttpApiMode && !bookshelfApiSyncController.HasAccessToken)
+            {
+                return false;
             }
 
             return bookshelfGenerator != null &&
@@ -9911,6 +10157,19 @@ namespace BookshelfPorting.Runtime
 
         private void ShowBookshelfServerPlacementPending()
         {
+            if (usesHttpApiMode &&
+                (bookshelfApiSyncController == null ||
+                 !bookshelfApiSyncController.IsServerSyncEnabled ||
+                 !bookshelfApiSyncController.HasAccessToken))
+            {
+                bookAddFeedbackMessage = "책장 API 동기화가 준비되지 않았습니다.";
+                ShowBookshelfTransientStatus(
+                    "책장 동기화 필요",
+                    "서버 책장 정보를 불러온 뒤 책을 추가할 수 있습니다. 로그인 상태와 API 연결을 확인해 주세요.",
+                    true);
+                return;
+            }
+
             if (bookshelfApiSyncController != null &&
                 bookshelfApiSyncController.IsServerSyncEnabled &&
                 !bookshelfApiSyncController.IsRefreshing)
@@ -11117,9 +11376,9 @@ namespace BookshelfPorting.Runtime
                 return false;
             }
 
-            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            if (!CanStartBookshelfApiMutation())
             {
-                return true;
+                return !usesHttpApiMode;
             }
 
             return HasReadingRecordServerId(activeReportBook);
@@ -11161,7 +11420,7 @@ namespace BookshelfPorting.Runtime
             meta.reportLikeCount = Mathf.Max(0, meta.reportLikeCount + (nextLiked ? 1 : -1));
             dataStore.ApplyBookMeta(activeReportBook, meta);
             var book = activeReportBook;
-            var didStartSync = bookshelfApiSyncController != null &&
+            var didStartSync = CanStartBookshelfApiMutation() &&
                                bookshelfApiSyncController.ToggleReadingRecordLike(book, nextLiked, updatedBook =>
             {
                 ApplyBookEntityToMeta(updatedBook);
@@ -11170,10 +11429,19 @@ namespace BookshelfPorting.Runtime
             {
                 RestoreReportLikeAfterFailure(book, previousLiked, previousLikeCount, error);
             });
-            if (!didStartSync && bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+            if (!didStartSync)
             {
-                RestoreReportLikeAfterFailure(book, previousLiked, previousLikeCount, "독후감 서버 식별자를 찾을 수 없습니다.");
-                return;
+                if (usesHttpApiMode && !CanStartBookshelfApiMutation())
+                {
+                    RestoreReportLikeAfterFailure(book, previousLiked, previousLikeCount, "책장 API 동기화가 준비되지 않아 공감을 서버에 저장할 수 없습니다.");
+                    return;
+                }
+
+                if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+                {
+                    RestoreReportLikeAfterFailure(book, previousLiked, previousLikeCount, "독후감 서버 식별자를 찾을 수 없습니다.");
+                    return;
+                }
             }
 
             RefreshHud();
@@ -11235,10 +11503,10 @@ namespace BookshelfPorting.Runtime
             bookReportCommentInputField.text = string.Empty;
             var book = activeReportBook;
             AddActiveReportComment(book, "나", content);
-            var didStartSync = bookshelfApiSyncController != null &&
+            var didStartSync = CanStartBookshelfApiMutation() &&
                                bookshelfApiSyncController.CreateReadingRecordComment(
-                                   book,
-                                   content,
+                                    book,
+                                    content,
                                    _ => RequestReportComments(book),
                                    error => RestoreReportCommentAfterFailure(
                                        book,
@@ -11246,19 +11514,35 @@ namespace BookshelfPorting.Runtime
                                        content,
                                        error,
                                        previousCommentsBook,
-                                       previousComments,
-                                       previousCommentsLoaded));
-            if (!didStartSync && bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+                                        previousComments,
+                                        previousCommentsLoaded));
+            if (!didStartSync)
             {
-                RestoreReportCommentAfterFailure(
-                    book,
-                    previousCommentCount,
-                    content,
-                    "독후감 서버 식별자를 찾을 수 없습니다.",
-                    previousCommentsBook,
-                    previousComments,
-                    previousCommentsLoaded);
-                return;
+                if (usesHttpApiMode && !CanStartBookshelfApiMutation())
+                {
+                    RestoreReportCommentAfterFailure(
+                        book,
+                        previousCommentCount,
+                        content,
+                        "책장 API 동기화가 준비되지 않아 댓글을 서버에 저장할 수 없습니다.",
+                        previousCommentsBook,
+                        previousComments,
+                        previousCommentsLoaded);
+                    return;
+                }
+
+                if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+                {
+                    RestoreReportCommentAfterFailure(
+                        book,
+                        previousCommentCount,
+                        content,
+                        "독후감 서버 식별자를 찾을 수 없습니다.",
+                        previousCommentsBook,
+                        previousComments,
+                        previousCommentsLoaded);
+                    return;
+                }
             }
 
             RefreshHud();
@@ -11325,13 +11609,19 @@ namespace BookshelfPorting.Runtime
                 dataStore.ApplyBookMeta(book, meta);
             }
 
-            var didStartDeleteSync = bookshelfApiSyncController != null &&
+            var didStartDeleteSync = CanStartBookshelfApiMutation() &&
                                      bookshelfApiSyncController.DeleteReadingRecord(
-                                         book,
-                                         () => ShowDeleteResultDialog("독후감 삭제 완료", "독후감을 삭제했습니다.", true),
-                                         error => RestoreBookReportAfterDeleteFailure(book, rollback, error));
+                                          book,
+                                          () => ShowDeleteResultDialog("독후감 삭제 완료", "독후감을 삭제했습니다.", true),
+                                          error => RestoreBookReportAfterDeleteFailure(book, rollback, error));
             if (!didStartDeleteSync)
             {
+                if (usesHttpApiMode && !CanStartBookshelfApiMutation())
+                {
+                    RestoreBookReportAfterDeleteFailure(book, rollback, "책장 API 동기화가 준비되지 않아 독후감 삭제를 서버에 요청할 수 없습니다.");
+                    return;
+                }
+
                 if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
                 {
                     RestoreBookReportAfterDeleteFailure(book, rollback, "독후감 서버 식별자를 찾을 수 없습니다.");
@@ -11416,13 +11706,19 @@ namespace BookshelfPorting.Runtime
 
                 dataStore.ApplyBookMeta(activeReportBook, meta);
                 var reportBook = activeReportBook;
-                var didStartDeleteSync = bookshelfApiSyncController != null &&
+                var didStartDeleteSync = CanStartBookshelfApiMutation() &&
                                          bookshelfApiSyncController.DeleteReadingRecord(
-                                             reportBook,
-                                             () => ShowDeleteResultDialog("독후감 삭제 완료", "빈 내용으로 저장되어 독후감을 삭제했습니다.", true),
-                                             error => RestoreBookReportAfterDeleteFailure(reportBook, rollback, error));
+                                              reportBook,
+                                              () => ShowDeleteResultDialog("독후감 삭제 완료", "빈 내용으로 저장되어 독후감을 삭제했습니다.", true),
+                                              error => RestoreBookReportAfterDeleteFailure(reportBook, rollback, error));
                 if (!didStartDeleteSync)
                 {
+                    if (usesHttpApiMode && !CanStartBookshelfApiMutation())
+                    {
+                        RestoreBookReportAfterDeleteFailure(reportBook, rollback, "책장 API 동기화가 준비되지 않아 독후감 삭제를 서버에 요청할 수 없습니다.");
+                        return;
+                    }
+
                     if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
                     {
                         RestoreBookReportAfterDeleteFailure(reportBook, rollback, "독후감 서버 식별자를 찾을 수 없습니다.");
@@ -11448,14 +11744,24 @@ namespace BookshelfPorting.Runtime
 
             dataStore.ApplyBookMeta(activeReportBook, meta);
             var book = activeReportBook;
-            var didStartSave = bookshelfApiSyncController != null &&
+            var didStartSave = CanStartBookshelfApiMutation() &&
                                bookshelfApiSyncController.SaveReadingRecord(
-                                   book,
-                                   HandleBookReportSaved,
-                                   error => HandleBookReportSaveFailure(book, error));
-            if (!didStartSave && bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+                                    book,
+                                    HandleBookReportSaved,
+                                    error => HandleBookReportSaveFailure(book, rollback, error));
+            if (!didStartSave)
             {
-                HandleBookReportSaveFailure(book, "독후감 저장에 필요한 서버 식별자를 찾을 수 없습니다.");
+                if (usesHttpApiMode && !CanStartBookshelfApiMutation())
+                {
+                    HandleBookReportSaveFailure(book, rollback, "책장 API 동기화가 준비되지 않아 독후감을 서버에 저장할 수 없습니다.");
+                    return;
+                }
+
+                if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+                {
+                    HandleBookReportSaveFailure(book, rollback, "독후감 저장에 필요한 서버 식별자를 찾을 수 없습니다.");
+                    return;
+                }
             }
 
             bookshelfApiSyncController?.SyncBookState(book);
@@ -11476,17 +11782,27 @@ namespace BookshelfPorting.Runtime
             RefreshHud();
         }
 
-        private void HandleBookReportSaveFailure(BookEntity book, string errorMessage)
+        private void HandleBookReportSaveFailure(BookEntity book, BookReportMutationSnapshot rollback, string errorMessage)
         {
+            Debug.LogWarning($"Reading record save failed on server. Restoring local report state. {errorMessage}");
             if (book != null)
             {
                 activeReportBook = book;
+                rollback.ApplyTo(book);
+            }
+
+            if (dataStore != null && book != null)
+            {
+                var meta = dataStore.GetOrCreateBookMeta(book);
+                rollback.ApplyTo(meta);
+                dataStore.ApplyBookMeta(book, meta);
             }
 
             ShowDeleteResultDialog(
                 "독후감 저장 실패",
-                $"서버 요청을 완료하지 못했습니다. 독후감은 로컬 화면에만 반영되어 있습니다.\n{NormalizeMutationErrorMessage(errorMessage)}",
+                $"서버 요청을 완료하지 못해 독후감을 변경 전 상태로 되돌렸습니다.\n{NormalizeMutationErrorMessage(errorMessage)}",
                 false);
+            RefreshBookDetailPanel();
             RefreshHud();
         }
 
@@ -11503,6 +11819,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var rollback = new BookReportMutationSnapshot(activeReportBook, meta);
             meta.reportVisibility = meta.reportVisibility switch
             {
                 App.Domain.VisibilityScope.Public => App.Domain.VisibilityScope.Followers,
@@ -11512,10 +11829,26 @@ namespace BookshelfPorting.Runtime
             meta.isPublic = meta.reportVisibility == App.Domain.VisibilityScope.Public;
             dataStore.ApplyBookMeta(activeReportBook, meta);
             var book = activeReportBook;
-            bookshelfApiSyncController?.SaveReadingRecord(
-                book,
-                HandleBookReportSaved,
-                error => HandleBookReportSaveFailure(book, error));
+            var didStartSave = CanStartBookshelfApiMutation() &&
+                               bookshelfApiSyncController.SaveReadingRecord(
+                                   book,
+                                   HandleBookReportSaved,
+                                   error => HandleBookReportSaveFailure(book, rollback, error));
+            if (!didStartSave)
+            {
+                if (usesHttpApiMode && !CanStartBookshelfApiMutation())
+                {
+                    HandleBookReportSaveFailure(book, rollback, "책장 API 동기화가 준비되지 않아 독후감 공개 범위를 서버에 저장할 수 없습니다.");
+                    return;
+                }
+
+                if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+                {
+                    HandleBookReportSaveFailure(book, rollback, "독후감 공개 범위 저장에 필요한 서버 식별자를 찾을 수 없습니다.");
+                    return;
+                }
+            }
+
             RefreshHud();
         }
 
@@ -11633,11 +11966,22 @@ namespace BookshelfPorting.Runtime
             }
 
             var previous = activeEditSection.alignment;
+            var displayIndex = bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1;
+            if (!EnsureBookshelfApiMutationReady(displayIndex, "책장 칸 정렬 변경"))
+            {
+                RefreshSectionEditPanel();
+                RefreshHud();
+                return;
+            }
+
             state.SetSectionAlignment(activeEditSection, alignment, this, true);
             if (previous != activeEditSection.alignment)
             {
                 MarkBookshelfEditDirty();
-                bookshelfApiSyncController?.SyncSectionAlignment(activeEditSection);
+                if (CanStartBookshelfApiMutation())
+                {
+                    bookshelfApiSyncController.SyncSectionAlignment(activeEditSection);
+                }
             }
 
             RefreshSectionEditPanel();
@@ -11853,6 +12197,7 @@ namespace BookshelfPorting.Runtime
             previewRect.anchoredPosition = Vector2.zero;
             guestbookPreviewPanel.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0f);
             guestbookPreviewPanel.GetComponent<Image>().raycastTarget = false;
+            guestbookPreviewPanel.AddComponent<WorldSpaceRaycastPassthrough>();
             guestbookPreviewPanel.AddComponent<RectMask2D>();
             CreateGuestbookPreviewNotes(guestbookPreviewPanel.transform);
 
@@ -11863,6 +12208,7 @@ namespace BookshelfPorting.Runtime
             boardRect.pivot = new Vector2(0.5f, 0.5f);
             boardRect.anchoredPosition = Vector2.zero;
             StyleGuestbookBoardSurface(guestbookPanel);
+            guestbookPanel.AddComponent<WorldSpaceRaycastPassthrough>();
             guestbookPanel.SetActive(false);
 
             var boardContentRoot = CreateWorldContainer(
@@ -14182,6 +14528,11 @@ namespace BookshelfPorting.Runtime
             return DashboardRaycastFilter.IsPointerOverInteractiveDashboard(pointerScreen);
         }
 
+        // origin/dev 의 의도된 동작 — RaycastAll 결과를 DashboardRaycastFilter.IsBlockingRaycastResult
+        // 가 분류한다. 그 필터는 WorldSpaceRaycastPassthrough 마커가 붙은 WorldSpace 캔버스 hit
+        // (guestbookPreviewPanel / guestbookPanel 등) 은 non-blocking 으로 처리해 메인룸 클릭이
+        // 통과되도록 보장. 마커가 없는 WorldSpace 캔버스(활성 dashboard 등) 와 ScreenSpace UI 는
+        // 정상 차단.
         private static bool IsPointerOverBlockingEventSystemUi(Vector2 pointerScreen)
         {
             var eventSystem = EventSystem.current;
@@ -14198,9 +14549,7 @@ namespace BookshelfPorting.Runtime
             eventSystem.RaycastAll(eventData, results);
             for (var i = 0; i < results.Count; i++)
             {
-                var resultObject = results[i].gameObject;
-                if (resultObject == null ||
-                    DashboardRaycastFilter.IsNonInteractiveDashboardRaycast(results[i], pointerScreen))
+                if (!DashboardRaycastFilter.IsBlockingRaycastResult(results[i], pointerScreen))
                 {
                     continue;
                 }

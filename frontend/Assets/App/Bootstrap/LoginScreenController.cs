@@ -196,11 +196,11 @@ namespace App.Bootstrap
             {
                 APIManager.Instance.SetAccessToken(string.Empty);
             }
-            // Mark this play session as dev-mode so BookshelfApiSyncController
-            // can soft-fall-back to the local catalog if /v1/spaces/me 401s
-            // (BE auth is currently unenforced for dev convenience but may
-            // partially re-enable). Cleared automatically when the play
-            // session ends because DevMainSceneMode is a static, not EditorPrefs.
+            // Mark this play session as dev-mode for editor-only shortcuts.
+            // RealApi bookshelf/book flows still use the backend as source of
+            // truth and stay empty until login instead of falling back to local
+            // catalog data. Cleared automatically when the play session ends
+            // because DevMainSceneMode is a static, not EditorPrefs.
             DevMainSceneMode.Activate();
 
             Debug.Log("[DEV MODE] entering MainScene by dev button");

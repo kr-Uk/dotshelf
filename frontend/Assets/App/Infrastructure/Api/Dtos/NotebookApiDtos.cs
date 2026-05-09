@@ -429,6 +429,19 @@ namespace App.Infrastructure.Api.Dtos
     {
         [JsonProperty("assetIds")]
         public List<long> AssetIds { get; set; }
+
+        [JsonProperty("items")]
+        public List<InventoryItemResponseDto> Items { get; set; }
+    }
+
+    [Serializable]
+    public sealed class InventoryItemResponseDto
+    {
+        [JsonProperty("inventoryId")]
+        public long InventoryId { get; set; }
+
+        [JsonProperty("assetId")]
+        public long AssetId { get; set; }
     }
 
     [Serializable]

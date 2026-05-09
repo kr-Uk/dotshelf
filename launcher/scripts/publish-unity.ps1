@@ -59,6 +59,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# stdout/stderr 를 UTF-8 로 출력 (Unity Editor 가 stdout 을 UTF-8 로 읽음 — PS 5.1
+# 의 default OutputEncoding 은 시스템 codepage 라 한글 메시지가 깨짐).
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $projectId = 1304436
 $gitlabApi = "https://lab.ssafy.com/api/v4/projects/$projectId"
@@ -153,7 +158,9 @@ $sha256 = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToUpper()
 Write-Host "  sha256  : $sha256"
 
 $manifestPath = Join-Path $repoRoot "launcher\manifests\dev\windows\latest.json"
-$manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+# Get-Content default encoding 함정 회피 — BOM-less UTF-8 강제 (releaseNotes 한글 안전)
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+$manifest = [System.IO.File]::ReadAllText($manifestPath, $utf8NoBom) | ConvertFrom-Json
 $manifest.sha256 = $sha256
 $manifest.releaseNotes = @($notesLines)
 $manifestJson = $manifest | ConvertTo-Json -Depth 10
