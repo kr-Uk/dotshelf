@@ -87,7 +87,7 @@
 - [WorldSpaceUIDocument (Dephion)](https://github.com/Dephion/WorldSpaceUIDocument) — community 라이브러리. RT + 3D mesh + custom EventSystem 으로 정공 우회.
 - [Custom Unity component to create a world-space UIToolkit panel](https://gist.github.com/katas94/7b220a591215efc36110860a0b1125eb) — 비슷한 우회 솔루션.
 - [UIToolkit world space rendering with different shader](https://discussions.unity.com/t/uitoolkit-world-space-rendering-with-different-shader/1682682) — World-space rendering 을 다른 shader 로 바꾸려는 시도.
-- [3D scene need Linear but UI need Gamma — Ming Wai Chan](https://cmwdexint.com/2019/05/30/3d-scene-need-linear-but-ui-need-gamma/) — Linear vs Gamma color space 충돌의 본질. UI 는 Gamma, 3D 는 Linear 가 자연스러운 분리.
+- [3D scene need Linear but UI need Gamma — Ming Wai Chan](https://cmwdexint.com/2019/05/30/3d-scene-need-linear-but-ui-need-gamma/) — Linear vs Gamma color space 충돌의 본질. **핵심 인사이트 (외부 블로그 reference 깨짐 대비 본문 인용)**: "UI 는 Gamma, 3D 는 Linear 가 자연스러운 분리". 우리 케이스는 이 분리 원칙 위반 — 3D 룸 라이팅 환경 (Linear) 안에 UI Toolkit (Gamma 의도) 이 World-space 로 들어가 있음.
 - [URP raw image transparency problem (Linear vs gamma color space)](https://discussions.unity.com/t/urp-raw-image-transparency-problem-linear-vs-gamma-color-space/785078) — 비슷한 color space round-trip 케이스.
 
 ## 진짜 fix 후보 (큰 작업)
@@ -103,6 +103,14 @@ Camera/Volume 후처리 layer 가 dim 원인이 아니라는 확정 (E 시도 �
 3. **Dashboard 를 World-space 가 아닌 Screen Space Overlay 로 가되, 룸 안 박히는 시각효과는 빠진 채로 받아들임** — UX 타협. Q1 의 D 옵션이 정확히 이거.
 
 **왜 PP 격리가 무효인가** — `m_RenderPostProcessing=0` 으로 단일 카메라가 PP 단계 자체 거치지 않았는데도 dashboard 가 dim 했음. 즉 dim 원인은 카메라/Volume layer 가 아니라 **UI Toolkit 의 World-space 합성 단계 (internal panel mesh shader, Linear↔sRGB 변환)** 에 있음. PanelSettings/카메라/Volume 손잡이 어느 것으로도 그 단계를 건드릴 수 없음.
+
+## 다음 action item
+
+- **현재 상태**: dashboard 가 cream 톤으로 dim 한 채 release. 시각적 회귀 인지된 상태.
+- **fix timing 후보**:
+  - 6.5 까지: 대기. 작은 손잡이 fix 만으로는 풀 수 없음 확정 (시도 6가지 모두 무효).
+  - **6.8 CoreCLR LTS 마이그레이션 시점에 PanelRenderer 마이그레이션 통합 처리 권장** — 어차피 6.8 으로 가야 하고 (Mono 제거 강제) PanelRenderer 도 같이 들어가니 **한 번의 마이그레이션 작업에 통합**. 두 번 마이그레이션 비용 회피.
+- **owner**: 미지정. dashboard cream 톤 회귀를 디자이너/사용자가 명시적으로 "fix 필요" 라고 우선순위 올릴 때 같이 결정.
 
 ## 다음 사람 메모
 

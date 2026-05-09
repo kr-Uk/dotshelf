@@ -577,6 +577,8 @@ namespace BookshelfPorting.Runtime
             DestroyBookEntitiesUnderBooksRoot();
         }
 
+        // roomRoot 자식 중 ClearRoomChildren() 가 destroy 하지 않을 이름들. 현재는 천장
+        // (테마 무관 공통 구조물) 만. 향후 spawn 단계가 추가되면 이 list 확장.
         private static readonly HashSet<string> PreservedRoomChildNames = new HashSet<string>
         {
             "Ceiling"

@@ -2456,31 +2456,6 @@ namespace App.Bootstrap
             }
         }
 
-        // BookshelfGenerator 가 roomRoot 자식으로 spawn 한 native deco (RugNatural / BookStack /
-        // ClockHamham / HamhamDisplay 등) 에 DecorationItemMarker + collider 자동 추가 — 사용자가
-        // 클릭해 select / drag / delete 가능. native 자산이지만 placement 자유도 보장.
-        // 위치 변경 BE 저장은 별도 (현재 visual 만).
-        private static readonly string[] NativeDecoNames = {
-            "RugNatural", "BookStack", "ClockHamham", "HamhamDisplay"
-        };
-
-        private void EnableNativeDecoPlacement()
-        {
-            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
-            var roomRoot = themeApplier?.RoomRoot;
-            if (roomRoot == null) return;
-            for (int i = 0; i < NativeDecoNames.Length; i++)
-            {
-                var native = FindChildByName(roomRoot, NativeDecoNames[i]);
-                if (native == null) continue;
-                if (native.GetComponent<DecorationItemMarker>() == null)
-                {
-                    native.gameObject.AddComponent<DecorationItemMarker>();
-                }
-                EnsureCollidersForGameObject(native.gameObject);
-            }
-        }
-
         // 모든 mesh swap 카테고리 native 복원 — RestoreCategoryNativeMesh 의 일괄 호출. 이전
         // 테마의 mesh swap (e.g. 산뜻 책상) 을 native (procedural 책상/노트북) 로 되돌림.
         // 새 테마의 defaultEntries 가 다시 swap 하면 그 시점에 새 mesh 로 교체.
@@ -3806,11 +3781,6 @@ namespace App.Bootstrap
             }
 
             IsEditModeActive = true;
-
-            // Native deco (rug/hamham/bookstack/clock 등) placement 활성화 — DecorationItemMarker
-            // + collider 자동 추가해서 사용자가 select/drag/delete 가능하게. BookshelfGenerator 가
-            // roomRoot 자식으로 만든 native deco 는 marker 없으면 클릭 무시됨.
-            EnableNativeDecoPlacement();
 
             // Edit 모드 진입 시 서버 Space 상태 비동기 동기화 — IsCategoryEntryCurrent /
             // OptimisticallyUpdateServerSpace의 single source of truth(`lastServerSpace`)
