@@ -1859,17 +1859,24 @@ namespace App.Bootstrap
                 },
                 onError: error =>
                 {
+                    // [Reentry race 가드 — MR 135 v2 review #2] 같은 frame 연속 클릭 (산뜻 → 모던 등)
+                    // 시 themeRequestVersion 이 증분되어 stale 콜백은 여기서 즉시 return.
+                    // 새 테마 click 의 DetachPlacementForRollback 이 hold root 를 이미 교체했어도
+                    // stale onError 가 ReattachPlacementFromRollback 으로 잘못 복구하지 않도록 보장.
                     if (requestVersion != themeRequestVersion)
                     {
                         return;
                     }
-                    // Code가 비어있으면 백엔드 응답 에러가 아니라 네트워크 connection 실패
-                    // (dev 환경에서 백엔드 미기동 등) — visual은 유지하고 warning만.
-                    // 다음 ReloadRoomState 또는 PATCH 시 server 와 sync.
                     bool isNetworkFailure = string.IsNullOrEmpty(error?.Code);
                     if (isNetworkFailure)
                     {
-                        Debug.LogWarning($"[RoomEditModeController] PATCH connection 실패 ({error?.Message}) — visual은 유지, 다음 로드 시 서버와 동기화.");
+                        // PATCH connection 실패 (dev 환경 BE 미기동 / 네트워크 단절). 클라이언트는
+                        // 새 테마 visual + default placement 를 그대로 유지 — 사용자 정책 "테마
+                        // 적용 시 모든 placement 초기화" 일관 적용. hold root 의 이전 사용자
+                        // placement 는 destroy (새 테마 default 가 placedItemsRoot 에 이미 spawn
+                        // 되어 있어 reattach 시 이중 노출 + 정책 위반).
+                        // 다음 ReloadRoomState 또는 다음 PATCH 성공 시 server 권위 상태와 sync.
+                        Debug.LogWarning($"[RoomEditModeController] PATCH connection 실패 ({error?.Message}) — 새 테마 visual + default placement 유지, hold root 의 이전 placement 는 정책상 discard. 다음 로드 시 서버와 동기화.");
                         DiscardPlacementRollbackHold();
                         return;
                     }
