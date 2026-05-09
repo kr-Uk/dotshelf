@@ -326,6 +326,9 @@ namespace App.Bootstrap
         // 좌표가 변하지 않았는데 dirty 가 켜져서 "미저장 변경사항" 모달이 뜨는 회귀 가드.
         // MR #120 skh1205 리뷰 #3 반영.
         private Vector3 dragStartPosition;
+        // 드래그 시작 시점 rotation — drop 위치가 invalid 일 때 기존 오브젝트(pending 아님) 를
+        // 시작 pose 로 rollback 하는 데 사용. 새 드래그 UX(이동은 자유, 배치만 차단) 도입과 함께 추가.
+        private Quaternion dragStartRotation;
         private bool gridSnapEnabled = true;
         private GameObject gridDisplayRoot;
 
@@ -6150,11 +6153,13 @@ namespace App.Bootstrap
         {
             // includeInactive = true so a .glb whose visual root is
             // temporarily disabled still reports a usable AABB. UpdateDrag
-            // gates ClampToFloorBounds + ResolveBlockerCollisions on
-            // bounds.HasValue — without this the dragged object would
-            // skip BOTH the wall clamp and the blocker check whenever its
-            // renderer hierarchy contained an inactive node, so it could
-            // tunnel into walls / fixtures unconstrained.
+            // gates ClampToFloorBounds on bounds.HasValue — without this the
+            // dragged object would skip the room-wall clamp whenever its
+            // renderer hierarchy contained an inactive node, and could tunnel
+            // outside the playable footprint unconstrained.
+            // (Overlap with other objects is no longer resolved during drag —
+            // it is reported via EvaluateFloorPlacementValid for footprint
+            // coloring + confirm-button disable + FinishDrag rollback only.)
             var renderers = go.GetComponentsInChildren<Renderer>(true);
             if (renderers == null || renderers.Length == 0)
             {
@@ -6507,8 +6512,10 @@ namespace App.Bootstrap
         {
             draggingObject = target;
             dragLastValidPosition = target.transform.position;
-            // FinishDrag 가 epsilon 비교로 실제 이동 여부를 판별하기 위한 anchor.
+            // FinishDrag 가 epsilon 비교로 실제 이동 여부를 판별하기 위한 anchor + drop 시 invalid 면
+            // 기존(pending 아님) 오브젝트를 시작 pose 로 rollback 하는 anchor.
             dragStartPosition = target.transform.position;
+            dragStartRotation = target.transform.rotation;
 
             // Capture grab offset so the model doesn't snap its center under the
             // pointer at drag start — instead it stays where it was relative to
@@ -6539,6 +6546,8 @@ namespace App.Bootstrap
             dragValidStateInitialized = false;
             dragLastPlacementValid = true;
             dragLastInvalidReason = null;
+            // [EditDrag] dedup 도 동일하게 리셋 — 새 드래그 시작 첫 tick 에서 한 번 로그 남게.
+            dragLastEditDragLogInitialized = false;
             // footprint 가 첫 frame 에 좌표 0,0,0 으로 깜빡이지 않도록 현재 위치를 초기 probe 로.
             lastFloorDragRawCandidate = target.transform.position;
         }
@@ -6590,10 +6599,17 @@ namespace App.Bootstrap
             var candidate = rawCandidate;
             var currentPosition = draggingObject.transform.position;
             var bounds = ComputeRendererBounds(draggingObject);
+            // 새 UX(이번 변경) — 이동 검증과 배치 검증 분리.
+            //   movement gate (드래그 중) : ClampToFloorBounds 만. 방 경계 안에서는 다른 오브젝트와
+            //                              겹치는 위치로도 자유롭게 이동 가능.
+            //   placement gate (확정 시점) : EvaluateFloorPlacementValid 가 ClampToFloorBounds +
+            //                              IsSpawnPositionBlockedAt 둘 다 본다. footprint 색 / 확정
+            //                              버튼 disabled / FinishDrag rollback 결정에 사용.
+            // ResolveBlockerCollisions 호출은 의도적으로 제거 — 그게 슬라이딩/완전차단으로 이동을
+            // 막아서 사용자가 겹치는 영역을 지나갈 수 없었던 회귀의 원인.
             if (bounds.HasValue)
             {
                 candidate = ClampToFloorBounds(currentPosition, candidate, bounds.Value);
-                candidate = ResolveBlockerCollisions(currentPosition, candidate, bounds.Value);
             }
 
             draggingObject.transform.position = candidate;
@@ -6605,6 +6621,11 @@ namespace App.Bootstrap
             lastFloorDragRawCandidate = rawCandidate;
             bool isValid = EvaluateFloorPlacementValid(draggingObject, rawCandidate, bounds, out var invalidReason);
             UpdatePlacementValidityState(draggingObject, isValid, invalidReason);
+            // 이동 검증/배치 검증 분리 추적 — moveAllowed 는 항상 inRoom (clamp 적용 결과 raw 와의 일치).
+            bool inRoom = bounds.HasValue
+                ? Mathf.Abs(rawCandidate.x - candidate.x) < 1e-4f && Mathf.Abs(rawCandidate.z - candidate.z) < 1e-4f
+                : true;
+            LogEditDragTransition(moveAllowed: inRoom, inRoom: inRoom, placementValid: isValid, reason: invalidReason);
         }
 
         // 배치 유효성 평가 — 기존 검증 로직(ClampToFloorBounds / IsSpawnPositionBlockedAt)
@@ -6630,6 +6651,33 @@ namespace App.Bootstrap
                 return false;
             }
             return true;
+        }
+
+        // 이동 검증(moveAllowed/inRoom) 과 배치 검증(placementValid) 분리 추적.
+        // 사용자 spec: '드래그 이동 가능 여부' 와 '최종 배치 가능 여부' 를 구분된 신호로 출력.
+        // 매 frame 도배 방지 — 직전 tick 과 (moveAllowed, inRoom, placementValid, reason) 4-tuple
+        // 이 동일하면 skip. 새 드래그가 시작되면 BeginDrag 가 dragValidStateInitialized=false 로 리셋.
+        private bool dragLastMoveAllowed;
+        private bool dragLastInRoom;
+        private bool dragLastEditDragLogInitialized;
+        private void LogEditDragTransition(bool moveAllowed, bool inRoom, bool placementValid, string reason)
+        {
+            if (dragLastEditDragLogInitialized
+                && dragLastMoveAllowed == moveAllowed
+                && dragLastInRoom == inRoom
+                && dragLastPlacementValid == placementValid
+                && dragLastInvalidReason == reason)
+            {
+                return;
+            }
+            var reasonText = reason ?? "None";
+            Debug.Log($"[EditDrag] moveAllowed={moveAllowed} inRoom={inRoom} placementValid={placementValid} reason='{reasonText}'");
+            dragLastMoveAllowed = moveAllowed;
+            dragLastInRoom = inRoom;
+            dragLastEditDragLogInitialized = true;
+            // dragLastPlacementValid / dragLastInvalidReason 는 UpdatePlacementValidityState 가 별도로
+            // 갱신하지만, 이 helper 가 placementValid 를 인자로 받을 때 그 호출이 같은 frame 안 선후순서
+            // 어느 쪽이든 [EditDrag] 의 dedup 키는 자기 시점의 값으로 유지된다.
         }
 
         // 상태 전이(valid ↔ invalid) 시점에만 로그. 매 프레임 도배 방지.
@@ -6671,15 +6719,15 @@ namespace App.Bootstrap
                 return;
             }
 
-            // candidate transform 임시 적용 → bounds 계산 → invalid 면 rollback.
-            // candidate 기준 bounds 정확히 측정해야 obstruction check 정확. transform
-            // 변경 후 Renderer.bounds 가 즉시 갱신되므로 1 프레임 안에 검사 + 필요 시 rollback.
-            var prevPosition = draggingObject.transform.position;
-            var prevRotation = draggingObject.transform.rotation;
-            var prevWall = marker.CurrentWall;
-
+            // 새 UX(이번 변경) — wall deco 도 floor 와 동일하게 이동 검증과 배치 검증 분리.
+            //   movement : 항상 hitPoint+rotation 적용. 책장/대시보드 영역 위로도 자유롭게 이동.
+            //   placement: registry.IsRectFreeOnWall 결과를 footprint feedback / FinishDrag rollback /
+            //              확정 버튼 disabled 에만 사용. 더 이상 위치 자체를 차단하지 않음.
+            // 이전 동작(invalid → prev pose 로 rollback)은 사용자가 obstruction 영역을 통과 못하게
+            // 하는 회귀였음.
             draggingObject.transform.position = hitPoint;
             draggingObject.transform.rotation = WallFacingRotation(newWall);
+            marker.CurrentWall = newWall;
 
             bool isFree = true;
             var bounds = ComputeRendererBounds(draggingObject);
@@ -6692,21 +6740,14 @@ namespace App.Bootstrap
 
             if (isFree)
             {
-                marker.CurrentWall = newWall;
                 dragLastValidPosition = hitPoint;
-            }
-            else
-            {
-                // 책장/대시보드 영역 진입 차단 — 마지막 valid 위치/회전 유지. 사용자가
-                // mouse 를 obstruction 밖으로 옮기면 다음 frame 에서 자동 follow.
-                draggingObject.transform.position = prevPosition;
-                draggingObject.transform.rotation = prevRotation;
-                marker.CurrentWall = prevWall;
             }
 
             ApplyWallDecoValidityFeedback(draggingObject, isFree);
             // MR #133 — wall deco 도 동일한 [EditPlacement] 로그 경로로 통합.
             UpdatePlacementValidityState(draggingObject, isFree, isFree ? null : "OverlapOnWall");
+            // 이동 검증/배치 검증 분리 추적 — wall 표면 hit 가 잡힌 시점이라 moveAllowed=true (방 안).
+            LogEditDragTransition(moveAllowed: true, inRoom: true, placementValid: isFree, reason: isFree ? null : "OverlapOnWall");
         }
 
         // World AABB → wall surface (u, v) Rect — WallObstructionRegistry 와 동일 좌표계.
@@ -6763,9 +6804,13 @@ namespace App.Bootstrap
 
         private void FinishDrag()
         {
-            // Position is always inside the room because UpdateDrag clamped it
-            // every frame, so we don't need to revert anywhere. Just close out
-            // the drag state and hide the grid overlay.
+            // 새 UX(이번 변경) — UpdateDrag 가 더 이상 ResolveBlockerCollisions 를 적용하지 않으므로
+            // drop 시점의 위치가 invalid(겹침)일 수 있다. 정책:
+            //   pending placement (신규로 인벤토리에서 추가됐고 아직 확정 안 됨)
+            //     → 그대로 둔다. 사용자가 다시 드래그하거나 위치를 바꿔서 valid 만들거나, 다른 곳에 둔
+            //       채로 confirm 버튼을 누름 (확정 버튼은 EvaluateConfirmEnabled 가 invalid 면 disable).
+            //   기존(이미 확정된) 오브젝트
+            //     → 시작 pose 로 rollback. "겹친 채로 commit" 회귀 차단.
             //
             // 이전 구현은 wasDragging 만 보고 SetDirty 를 항상 호출했다. 사용자가 마커를 단순
             // 선택만 해도 BeginDrag 가 같이 시작되므로 release 시 좌표 변화가 없어도 dirty 가 켜져서
@@ -6775,6 +6820,18 @@ namespace App.Bootstrap
             draggingObject = null;
             HideGrid();
             if (dragged == null) return;
+
+            // 1) drop 시점 placement 검증 — floor 와 wall 항목별 기존 검증 로직 그대로 재사용.
+            bool dropValid = EvaluateConfirmEnabled(dragged);
+            bool isPending = pendingPlacements.Contains(dragged);
+
+            // 2) 기존(non-pending) 오브젝트 + invalid drop → 시작 pose 로 rollback.
+            if (!dropValid && !isPending)
+            {
+                Debug.Log($"[EditDrag] drop invalid on existing object='{dragged.name}' → rollback to start pose");
+                dragged.transform.position = dragStartPosition;
+                dragged.transform.rotation = dragStartRotation;
+            }
 
             // MR #134 — wall deco 만 기존 body tint feedback 유지 (Animal Crossing 스타일 footprint
             // UI 는 floor 항목 전용). floor 는 본체 색을 건드리지 않으므로 release 시 복구할 게 없다.
