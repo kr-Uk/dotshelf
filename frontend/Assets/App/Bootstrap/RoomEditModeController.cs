@@ -462,15 +462,36 @@ namespace App.Bootstrap
         }
         private readonly List<DecorationSnapshot> editEntrySnapshot = new List<DecorationSnapshot>();
 
+        // Scene-init saved decoration load guard (MR #128).
         // BookshelfSceneInstaller.InstallIntoActiveScene 가 끝나면서 LoadSavedDecorationsAfterSceneInstall
         // 을 호출했고 그 결과가 성공이었는지 — succeeded 의미. EnterEditMode 가 같은 데이터를 다시
-        // 읽어 marker 를 중복 spawn 하거나 transform 을 두 번 갱신하지 않게 차단한다 (MR #128).
+        // 읽어 marker 를 중복 spawn 하거나 transform 을 두 번 갱신하지 않게 차단한다.
         //
         // 중요: 시도 여부가 아니라 "성공한 적 있는가" 를 기록한다. 파일 손상/JSON 파싱 실패/향후
         // ApiDecorationRepository 네트워크 실패 등으로 onError 가 발사되면 이 플래그는 false 로
         // 남고, 다음 EnterEditMode 진입 시 fallback 경로로 한 번 더 시도된다 (MR #128 skh1205 리뷰
         // #2 / revbot 리뷰 반영 — 이전엔 시도 즉시 true 로 set 해서 실패가 영구 차단됐었다).
         private bool hasLoadedSavedDecorationsOnSceneInit;
+
+        // Pending placement (Preview) state (MR #122).
+        // 인벤토리에서 새로 추가된 오브젝트는 "배치 확정" 버튼을 누르기 전까지 반투명 ghost 로
+        // 표시한다. 확정 전엔 CollectDecorationLayoutItems 가 저장 대상에서 제외하고, 미저장
+        // 종료 시 RollbackToEditEntrySnapshot 의 alive 비교로 자동 destroy 된다 (편집 entry
+        // 시점 snapshot 에 없는 항목은 모두 제거되는 기존 동작 그대로).
+        //
+        //   pendingPlacements        — pending 상태인 GameObject set.
+        //   pendingMaterialBackups   — Renderer 별 원본 sharedMaterials[] 배열. 확정/롤백 시
+        //                              그대로 r.sharedMaterials 에 복원해 원본 머터리얼 자산을
+        //                              건드리지 않는다 (spec: sharedMaterial 직접 수정 금지).
+        //   previewMaterialTemplate  — runtime-생성 transparent 템플릿. Renderer 마다 별도
+        //                              new Material(template) 인스턴스를 생성해 분리하므로,
+        //                              wall validity 의 빨간 tint 가 다른 pending 항목으로
+        //                              번지지 않는다. 자식 Renderer 도 동일 처리.
+        private readonly HashSet<GameObject> pendingPlacements = new HashSet<GameObject>();
+        private readonly Dictionary<Renderer, Material[]> pendingMaterialBackups = new Dictionary<Renderer, Material[]>();
+        private Material previewMaterialTemplate;
+        private GameObject confirmPlacementButtonRoot;
+        private Button confirmPlacementButton;
 
         // Decoration catalog loaded from Resources (built by the editor menu item).
         private readonly List<InventoryEntry> inventoryEntries = new List<InventoryEntry>();
@@ -565,6 +586,7 @@ namespace App.Bootstrap
             BuildThemeApplyModeModal();
             BuildCustomizationLockedModal();
             BuildSelectionPanel();
+            BuildConfirmPlacementButton();
 
             CloseDecorationPopupInternal();
             ExitEditModeInternal();
@@ -2744,6 +2766,184 @@ namespace App.Bootstrap
             deleteButton.onClick.AddListener(DeleteSelectedObject);
         }
 
+        // 배치 확정 버튼 — 좌회전/우회전/삭제 패널 바로 위(16px gap) 에 별도 root 로 띄운다.
+        // pending placement(=신규로 인벤토리 추가됐고 아직 확정되지 않은 항목) 가 선택돼 있을
+        // 때만 활성화. 별도 root 로 분리한 이유: 기존 selectionPanel 의 360x84 layout / 3 버튼
+        // 절대좌표를 건드리지 않아 회귀 위험 최소화 + 확정된 오브젝트 선택 시엔 root 째로 비활성.
+        private void BuildConfirmPlacementButton()
+        {
+            confirmPlacementButtonRoot = CreateRectObject("ConfirmPlacementPanel", canvas.transform);
+            var rect = (RectTransform)confirmPlacementButtonRoot.transform;
+            // selectionPanel 과 동일 anchor (BottomMenuFraction, 가로 중앙) — 위로 100px 띄움.
+            // selectionPanel 자체가 anchoredPosition.y = 16, sizeDelta.y = 84 이므로
+            // 100 = 16 + 84 = 패널 상단 바로 위. 16px 추가 gap 까진 안 줘도 시각적 분리 충분.
+            rect.anchorMin = new Vector2(0.5f, BottomMenuFraction);
+            rect.anchorMax = new Vector2(0.5f, BottomMenuFraction);
+            rect.pivot = new Vector2(0.5f, 0f);
+            rect.sizeDelta = new Vector2(220f, 64f);
+            rect.anchoredPosition = new Vector2(0f, 116f);
+
+            // primary-action 색상 — 회전(secondary)/삭제(red) 와 시각적으로 구분.
+            confirmPlacementButton = CreateButton(
+                confirmPlacementButtonRoot.transform, "ConfirmButton", "✓ 배치 확정",
+                Hex("#3F8C5C"), Color.white, new Vector2(220f, 64f), false, BorderColor);
+            StretchToParent(((RectTransform)confirmPlacementButton.transform));
+            confirmPlacementButton.onClick.AddListener(OnConfirmPlacementClicked);
+
+            confirmPlacementButtonRoot.SetActive(false);
+        }
+
+        // Pending placement helpers ------------------------------------------------
+
+        // 런타임-생성 transparent 템플릿. URP/Unlit 우선, fallback 으로 built-in Unlit/Color
+        // 또는 Sprites/Default (어떤 파이프라인에서도 transparent 지원). 자식 Renderer 마다
+        // 이 템플릿을 base 로 new Material(template) 인스턴스를 만들어 r.sharedMaterials 에
+        // 채운다 — 같은 템플릿을 모든 renderer 가 공유하면 wall-validity 빨간 tint 가 한 번
+        // 발사될 때 다른 pending 항목까지 번지므로 분리.
+        private Material EnsurePreviewMaterialTemplate()
+        {
+            if (previewMaterialTemplate != null) return previewMaterialTemplate;
+            var shader = Shader.Find("Universal Render Pipeline/Unlit")
+                         ?? Shader.Find("Unlit/Color")
+                         ?? Shader.Find("Sprites/Default");
+            var m = new Material(shader) { name = "RoomEditPreviewTemplate" };
+            // URP/Unlit transparent 활성화 — Surface=Transparent + alpha blend.
+            if (m.HasProperty("_Surface")) m.SetFloat("_Surface", 1f);
+            if (m.HasProperty("_Blend")) m.SetFloat("_Blend", 0f);
+            if (m.HasProperty("_AlphaClip")) m.SetFloat("_AlphaClip", 0f);
+            if (m.HasProperty("_SrcBlend")) m.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (m.HasProperty("_DstBlend")) m.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (m.HasProperty("_ZWrite")) m.SetFloat("_ZWrite", 0f);
+            m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            m.DisableKeyword("_ALPHATEST_ON");
+            m.renderQueue = 3000;
+            // 옅은 청회색 ghost — 알파 0.45. 너무 투명하면 식별 안 되고 너무 진하면 일반과 구분 약함.
+            var ghostColor = new Color(0.55f, 0.78f, 1f, 0.45f);
+            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", ghostColor);
+            if (m.HasProperty("_Color")) m.SetColor("_Color", ghostColor);
+            previewMaterialTemplate = m;
+            return previewMaterialTemplate;
+        }
+
+        // PlaceInventoryEntry 가 새로 spawn 한 GameObject 를 preview 상태로 진입시킨다.
+        //   1. 자식 포함 모든 Renderer 의 sharedMaterials 배열을 그대로 백업.
+        //   2. 동일 길이의 preview 배열로 교체 — 각 submesh slot 은 template 의 인스턴스 클론.
+        //      (자식 Renderer 마다 instance 분리 → wall validity tint 가 cross-leak 안 됨.)
+        // sharedMaterials setter 는 인자 배열 요소를 그대로 reference 저장하므로 인스턴스를
+        // 새로 만든 뒤 그 인스턴스를 채워야 sharedMaterial 직접 수정이 아닌 인스턴스 기반 처리.
+        private void BeginPendingPlacement(GameObject target)
+        {
+            if (target == null) return;
+            if (pendingPlacements.Contains(target)) return;
+            pendingPlacements.Add(target);
+            var template = EnsurePreviewMaterialTemplate();
+
+            var renderers = target.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null) continue;
+
+                // 원본 배열 clone — 이후 누가 r.sharedMaterials 를 갈아끼워도 우리 백업이 깨지지 않도록.
+                var orig = r.sharedMaterials;
+                if (orig == null) continue;
+                var bak = new Material[orig.Length];
+                for (int j = 0; j < orig.Length; j++) bak[j] = orig[j];
+                pendingMaterialBackups[r] = bak;
+
+                // Renderer 별로 instance 1개를 만들어 모든 submesh 에 배정. 이러면 wall validity 가
+                // r.material._BaseColor 를 빨갛게 칠해도 다른 Renderer / 다른 pending 에 영향 X.
+                var instance = new Material(template) { name = template.name + "_Instance" };
+                var preview = new Material[orig.Length];
+                for (int j = 0; j < orig.Length; j++) preview[j] = instance;
+                r.sharedMaterials = preview;
+            }
+            Debug.Log($"[RoomEdit][Preview] BeginPending '{target.name}' — renderers={renderers.Length}");
+        }
+
+        // 배치 확정 버튼 핸들러 — 현재 위치가 valid 한지 확인하고 preview 상태 해제.
+        // invalid 면 토스트만 띄우고 상태 유지 (사용자가 위치를 옮겨 다시 누르면 됨).
+        private void OnConfirmPlacementClicked()
+        {
+            if (!IsEditModeActive || selectedObject == null) return;
+            if (!pendingPlacements.Contains(selectedObject))
+            {
+                // 이미 확정된 항목 — 버튼이 보이고 있는 게 이상한 상황이지만 방어.
+                return;
+            }
+
+            var bounds = ComputeRendererBounds(selectedObject);
+            if (bounds.HasValue && IsSpawnPositionBlockedAt(selectedObject, bounds.Value, selectedObject.transform.position))
+            {
+                Debug.Log($"[RoomEdit][Preview] 확정 거절 — '{selectedObject.name}' 현재 위치가 다른 오브젝트와 겹침.");
+                ShowSaveStatusToast("배치 불가 — 다른 오브젝트와 겹칩니다", isError: true, durationSec: 2f);
+                return;
+            }
+
+            ConfirmPendingPlacement(selectedObject);
+        }
+
+        // preview 상태 해제 — 원본 sharedMaterials 복원 + set 에서 제거. 이후로는 일반 항목과
+        // 동일하게 저장/롤백 흐름에 합류한다. 현재 선택 중인 항목이면 SelectObject 의 gold tint
+        // 를 다시 적용하기 위해 deselect → select 사이클을 돈다 (BeginPending 시점에 gold tint 를
+        // skip 했으므로 selectedRendererTints 가 비어있어 deselect 는 no-op).
+        private void ConfirmPendingPlacement(GameObject target)
+        {
+            if (target == null || !pendingPlacements.Contains(target)) return;
+
+            bool wasSelected = (selectedObject == target);
+            if (wasSelected) DeselectCurrentObject();
+
+            RestorePendingMaterials(target);
+            pendingPlacements.Remove(target);
+
+            if (wasSelected) SelectObject(target);
+            Debug.Log($"[RoomEdit][Preview] Confirmed '{target.name}' — pending 해제 + 원본 머터리얼 복원.");
+        }
+
+        // Renderer.sharedMaterials 에 백업 배열을 그대로 다시 set. 우리가 만든 instance 머터리얼은
+        // 참조가 끊어져 Unity GC 가 정리. 자식 포함 모든 Renderer 처리 — BeginPendingPlacement 와 대칭.
+        private void RestorePendingMaterials(GameObject target)
+        {
+            if (target == null) return;
+            var renderers = target.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null) continue;
+                if (pendingMaterialBackups.TryGetValue(r, out var bak))
+                {
+                    r.sharedMaterials = bak;
+                    pendingMaterialBackups.Remove(r);
+                }
+            }
+        }
+
+        // GameObject 가 destroy 되거나 (Delete / Rollback) 편집 모드를 벗어날 때, 백업/세트를 정리.
+        // material 복원은 이미 destroy 직전이라 의미 없으므로 backup dictionary 의 stale entry
+        // 만 청소한다. set 에서도 제거.
+        private void CleanupPendingState(GameObject target)
+        {
+            if (target == null) return;
+            pendingPlacements.Remove(target);
+            // backup dictionary 에서 destroy 대상의 Renderer 항목만 제거.
+            // ToList 미사용 — 큰 dict 가 아니라 in-place 정리.
+            var renderers = target.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null) pendingMaterialBackups.Remove(renderers[i]);
+            }
+        }
+
+        // 모든 pending 항목 정리 — Rollback / ExitEditMode 후 호출. 확정된 항목은 이미
+        // RestorePendingMaterials 가 자기 backup entry 를 제거했고, pending 인 채로 destroy 된
+        // 항목의 backup entry 는 어차피 stale 이므로 dictionary 전체를 clear 한다.
+        private void ClearAllPendingState()
+        {
+            pendingPlacements.Clear();
+            pendingMaterialBackups.Clear();
+        }
+
         // Update / visibility ------------------------------------------------------
 
         private void Update()
@@ -2933,6 +3133,14 @@ namespace App.Bootstrap
             if (selectionRotateRightButton != null && selectionRotateRightButton.interactable != allowRotation)
             {
                 selectionRotateRightButton.interactable = allowRotation;
+            }
+
+            // MR #122 — 배치 확정 버튼은 pending(=preview ghost) 항목이 선택돼 있을 때만 노출.
+            // 미저장 모달이 열려있을 땐 selectionPanel 과 동일하게 숨김.
+            var shouldShowConfirm = shouldShow && selectedObject != null && pendingPlacements.Contains(selectedObject);
+            if (confirmPlacementButtonRoot != null && confirmPlacementButtonRoot.activeSelf != shouldShowConfirm)
+            {
+                confirmPlacementButtonRoot.SetActive(shouldShowConfirm);
             }
         }
 
@@ -3484,6 +3692,32 @@ namespace App.Bootstrap
             // Snapshot 의 GameObject reference 해제 — 다음 진입 시 stale reference 들고 있지 않도록.
             // 다음 EnterEditMode 가 TakeEditEntrySnapshot 으로 다시 캡처하므로 여기서 비워도 안전.
             editEntrySnapshot.Clear();
+
+            // MR #122 — pending(=미확정 preview) 항목이 ExitEditMode 까지 살아있다면 사용자가
+            // "배치 확정"을 누르지 않고 편집 모드를 떠난 것. 저장 경로에선 CollectDecorationLayoutItems
+            // 가 이미 영속화 대상에서 제외했으므로 메인 화면에 ghost 가 남지 않도록 여기서 destroy.
+            // 미저장 경로(RollbackToEditEntrySnapshot 후 ExitEditModeInternal 호출)에선 set 이 이미
+            // 비어있어 이 루프는 no-op + ClearAllPendingState 도 dangling key 청소만 한다.
+            // 또한 placedByInventoryKey 엔트리도 함께 제거 — 다음 편집 모드 진입 시 인벤토리
+            // 슬롯이 영구 disabled 로 남는 회귀 차단.
+            if (pendingPlacements.Count > 0)
+            {
+                var toDestroy = new List<GameObject>(pendingPlacements);
+                for (int i = 0; i < toDestroy.Count; i++)
+                {
+                    var go = toDestroy[i];
+                    if (go == null) continue;
+                    var marker = go.GetComponent<DecorationItemMarker>();
+                    var key = marker != null ? marker.InventoryKey : null;
+                    if (!string.IsNullOrEmpty(key) && placedByInventoryKey.TryGetValue(key, out var tracked) && tracked == go)
+                    {
+                        placedByInventoryKey.Remove(key);
+                    }
+                    Destroy(go);
+                }
+                Debug.Log($"[RoomEdit][Preview] ExitEditMode 에서 미확정 preview {toDestroy.Count}개 destroy.");
+            }
+            ClearAllPendingState();
         }
 
         // Shrink the main camera's viewport rect so it renders only into the area
@@ -3789,11 +4023,19 @@ namespace App.Bootstrap
         {
             var list = new List<DecorationLayoutItem>();
             var markers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            int skipped = 0, unstable = 0;
+            int skipped = 0, unstable = 0, pending = 0;
             for (int i = 0; i < markers.Length; i++)
             {
                 var m = markers[i];
                 if (m == null) continue;
+                // MR #122 — preview 상태(미확정 신규 추가) 항목은 저장에서 제외. 사용자가 "배치 확정"
+                // 누른 항목만 영속화 대상. 미저장 종료 시엔 RollbackToEditEntrySnapshot 가 alive
+                // 비교로 자동 destroy 한다.
+                if (pendingPlacements.Contains(m.gameObject))
+                {
+                    pending++;
+                    continue;
+                }
                 if (string.IsNullOrEmpty(m.InventoryKey))
                 {
                     skipped++;
@@ -3821,10 +4063,11 @@ namespace App.Bootstrap
                     ScaleZ = t.localScale.z,
                 });
             }
-            if (skipped > 0 || unstable > 0)
+            if (skipped > 0 || unstable > 0 || pending > 0)
             {
                 Debug.LogWarning(
-                    $"[RoomEdit][Save] 저장 제외 — InventoryKey 누락 {skipped}개, prefab-iid (불안정) {unstable}개");
+                    $"[RoomEdit][Save] 저장 제외 — InventoryKey 누락 {skipped}개, prefab-iid (불안정) {unstable}개, " +
+                    $"미확정 preview {pending}개");
             }
             return list;
         }
@@ -4013,6 +4256,10 @@ namespace App.Bootstrap
             placedByInventoryKey.Clear();
             RebuildPlacedByInventoryKeyFromScene();
             RebuildInventorySlots();
+
+            // 6) MR #122 — pending state 정리. 신규 추가분이 위 destroy 루프에서 사라졌으므로
+            // pendingPlacements set 도 비우고 dangling Renderer key 가 backup dict 에 남지 않게.
+            ClearAllPendingState();
 
             Debug.Log(
                 $"[RoomEdit][Rollback] 완료 — 새로 추가분 destroy={newlyDestroyed}, " +
@@ -5036,6 +5283,11 @@ namespace App.Bootstrap
             // 인벤토리 슬롯이 비활성화된 상태로 즉시 보이도록 슬롯 다시 빌드.
             RebuildInventorySlots();
             SetDirty("PlaceInventoryEntry");
+
+            // MR #122 — 신규 spawn 은 곧바로 pending 상태로 진입. 사용자가 "배치 확정" 누를
+            // 때까지 반투명 ghost. 자동 선택해서 드래그/회전/삭제/확정 toolbar 가 즉시 보이도록.
+            BeginPendingPlacement(go);
+            SelectObject(go);
         }
 
         // Search outward from `desiredPosition` in MinorGridStep rings for a
@@ -5583,6 +5835,11 @@ namespace App.Bootstrap
             // 없으면 mouse down raycast 가 deco mesh 를 hit 못 해 select/drag 진입 불가.
             EnsureCollidersForWallDeco(go);
 
+            // MR #122 — wall placement 도 floor 와 동일하게 pending preview 로 진입.
+            // 위치/회전/wall-snap 로직은 무변경 — 머터리얼만 반투명 ghost. 사용자가
+            // "배치 확정" 누르기 전까지는 (a) 미확정, (b) 미저장 종료 시 자동 destroy.
+            BeginPendingPlacement(go);
+
             // selection 으로 자동 잡아 사용자가 즉시 드래그 가능하게.
             SelectObject(go);
         }
@@ -5738,12 +5995,19 @@ namespace App.Bootstrap
             }
         }
 
+        // MR #129 임시 진단 로그 — 편집 모드에서 데코 클릭/이동이 안 되는 원인을 확정하기
+        // 위해 [EditPress] prefix 로 각 gate 통과 여부를 콘솔에 찍는다. 원인 확인되면 이 메서드
+        // 안의 모든 Debug.Log 라인과 본 주석을 제거할 것 — 기능 로직(early-return / SelectObject /
+        // BeginDrag / DeselectCurrentObject 호출 순서)은 무변경.
         private void BeginEditModePointerPress(Camera camera, Vector2 pointer)
         {
             // Anything that the canvas raycaster considers UI (bottom menu,
             // rotate / delete buttons, return button) just stops here.
-            if (IsPointerOverUi())
+            var overUi = IsPointerOverUi();
+            Debug.Log($"[EditPress] enter pointer={pointer} overUi={overUi} editMode={IsEditModeActive} initialized={isInitialized} modalOpen={isUnsavedChangesModalOpen}");
+            if (overUi)
             {
+                Debug.Log("[EditPress] blocked by IsPointerOverUi");
                 return;
             }
 
@@ -5751,6 +6015,7 @@ namespace App.Bootstrap
             if (pointer.x < pixelRect.xMin || pointer.x > pixelRect.xMax ||
                 pointer.y < pixelRect.yMin || pointer.y > pixelRect.yMax)
             {
+                Debug.Log($"[EditPress] blocked by pixelRect pointer={pointer} rect={pixelRect}");
                 DeselectCurrentObject();
                 return;
             }
@@ -5759,6 +6024,7 @@ namespace App.Bootstrap
             if (Physics.Raycast(ray, out var hit, 100f))
             {
                 var marker = hit.collider.GetComponentInParent<DecorationItemMarker>();
+                Debug.Log($"[EditPress] hit='{hit.collider.name}' hitObject='{hit.collider.gameObject.name}' marker={(marker != null ? marker.name : "<null>")}");
                 if (marker != null)
                 {
                     // Select first if it isn't already selected, then begin a drag
@@ -5770,10 +6036,16 @@ namespace App.Bootstrap
                         SelectObject(marker.gameObject);
                     }
                     BeginDrag(marker.gameObject, ray);
+                    Debug.Log($"[EditPress] BeginDrag fired on '{marker.gameObject.name}'");
                     return;
                 }
             }
+            else
+            {
+                Debug.Log("[EditPress] Physics.Raycast missed");
+            }
 
+            Debug.Log("[EditPress] no draggable target → DeselectCurrentObject");
             DeselectCurrentObject();
         }
 
@@ -5948,7 +6220,13 @@ namespace App.Bootstrap
         private void ApplyWallDecoValidityFeedback(GameObject deco, bool isValid)
         {
             var renderers = deco.GetComponentsInChildren<Renderer>(true);
-            var tint = isValid ? Color.white : new Color(1f, 0.55f, 0.55f, 1f);
+            // MR #122 — pending(=ghost preview) 상태 wall deco 는 알파 0.45 유지하고 RGB 만
+            // 기존 valid/invalid 색으로 덮어쓴다. 풀-알파(1f) 로 덮으면 ghost 가 불투명해져
+            // preview 상태가 시각적으로 깨진다. 확정된 항목은 기존 동작(완전 불투명) 유지.
+            bool isPending = pendingPlacements.Contains(deco);
+            var tint = isPending
+                ? (isValid ? new Color(0.55f, 0.78f, 1f, 0.45f) : new Color(1f, 0.55f, 0.55f, 0.45f))
+                : (isValid ? Color.white : new Color(1f, 0.55f, 0.55f, 1f));
             for (int i = 0; i < renderers.Length; i++)
             {
                 var mat = renderers[i].material;
@@ -6371,6 +6649,15 @@ namespace App.Bootstrap
             DeselectCurrentObject();
             selectedObject = target;
 
+            // MR #122 — pending(=preview ghost) 항목은 gold selection tint 를 적용하지 않는다.
+            // 반투명 머터리얼 자체가 "선택됨 + 미확정" 시각 cue. 여기서 추가로 _BaseColor 를
+            // 건드리면 ghost 색이 깨지고, ConfirmPendingPlacement 에서 머터리얼 복원 시 stale
+            // tint backup 이 원본에 새겨져버린다.
+            if (pendingPlacements.Contains(target))
+            {
+                return;
+            }
+
             var renderers = target.GetComponentsInChildren<Renderer>(true);
             for (var i = 0; i < renderers.Length; i++)
             {
@@ -6516,6 +6803,10 @@ namespace App.Bootstrap
                 Debug.Log($"[RoomEdit][Inventory] 삭제 — key={deletedKey} 인벤토리 재활성화.");
             }
 
+            // MR #122 — pending 상태였으면 set/backup 도 정리. destroy 후엔 Renderer 도 사라지므로
+            // material 복원은 의미 없음 — backup dictionary 의 stale entry 만 청소한다.
+            CleanupPendingState(toDestroy);
+
             DeselectCurrentObject();
             Destroy(toDestroy);
 
@@ -6582,27 +6873,81 @@ namespace App.Bootstrap
             return Mouse.current != null ? Mouse.current.position.ReadValue() : Vector2.zero;
         }
 
+        // 편집 모드에서 클릭이 "차단해야 할 UI" 위인지 판정 (MR #129).
+        //
+        // 한 줄짜리 IsPointerOverGameObject() 는 일부 Unity Input System 설정에서 WorldSpace
+        // 캔버스 hit 까지 true 로 보고해 데코 클릭/드래그가 막히는 회귀가 있어 RaycastAll 기반으로
+        // 명시적으로 분기. 두 종류의 "월드 위 UI" 를 차단 사유에서 제외:
+        //   1. uGUI WorldSpace Canvas hit (노트북 스크린 / guestbook preview 등) — Canvas.renderMode
+        //      로 식별.
+        //   2. UI Toolkit WorldSpace UIDocument hit (dashboard 등) — module 이
+        //      UnityEngine.UIElements.WorldDocumentRaycaster 인 경우 식별. uGUI 와 별개 시스템이라
+        //      Canvas 가 없어 1번 체크에 안 잡힘 — 별도 분기 필요.
+        // 둘 다 본질적으로 월드 오브젝트의 일부이므로 클릭 = 월드 클릭. 실제 HUD(편집 패널/모달/
+        // 팝업/인벤토리/취소·저장 버튼 등 ScreenSpaceOverlay·ScreenSpaceCamera Canvas, 또는
+        // ScreenSpace UIDocument = UIElements.PanelRaycaster) hit 만 차단 사유로 인정해 return true.
+        //
+        // MR #129 임시 진단 로그 — [EditUiHit] prefix 로 RaycastAll hit 별 세부 정보(name/module/
+        // canvas/renderMode/sortingLayer·Order/raycastTarget)를 출력해 어떤 UI 가 실제로 차단을
+        // 만드는지 확정한다. 원인 fix 후 Debug.Log 라인들은 제거할 것.
         private static bool IsPointerOverUi()
         {
-            if (EventSystem.current == null)
+            var eventSystem = EventSystem.current;
+            if (eventSystem == null)
             {
                 return false;
             }
 
             var pointerPosition = ReadPointerPosition();
-            var pointerEvent = new PointerEventData(EventSystem.current)
+            var pointerEvent = new PointerEventData(eventSystem)
             {
                 position = pointerPosition,
             };
             var hits = new List<RaycastResult>();
-            EventSystem.current.RaycastAll(pointerEvent, hits);
+            eventSystem.RaycastAll(pointerEvent, hits);
+
+            Debug.Log($"[EditUiHit] RaycastAll → {hits.Count} hits at pointer={pointerPosition}");
+
             for (var i = 0; i < hits.Count; i++)
             {
-                if (DashboardRaycastFilter.IsNonInteractiveDashboardRaycast(hits[i], pointerPosition))
+                var hitGo = hits[i].gameObject;
+                var moduleName = hits[i].module != null ? hits[i].module.GetType().Name : "<null>";
+                var moduleFullName = hits[i].module != null ? hits[i].module.GetType().FullName : "<null>";
+                var hitGoName = hitGo != null ? hitGo.name : "<null>";
+                var canvas = hitGo != null ? hitGo.GetComponentInParent<Canvas>() : null;
+                var canvasName = canvas != null ? canvas.name : "<none>";
+                var renderMode = canvas != null ? canvas.renderMode.ToString() : "<n/a>";
+                var sortingLayer = canvas != null ? canvas.sortingLayerName : "<n/a>";
+                var sortingOrder = canvas != null ? canvas.sortingOrder.ToString() : "<n/a>";
+                var graphic = hitGo != null ? hitGo.GetComponent<UnityEngine.UI.Graphic>() : null;
+                var raycastTarget = graphic != null ? graphic.raycastTarget.ToString() : "<noGraphic>";
+
+                if (hitGo == null)
                 {
+                    Debug.Log($"[EditUiHit] [{i}] gameObject=null module={moduleName} → skip (no GO)");
                     continue;
                 }
 
+                // UI Toolkit (UIElements) WorldSpace UIDocument hit — uGUI Canvas 와 별개 시스템.
+                // dashboard 같은 WorldSpace UIDocument 는 본질적으로 월드 오브젝트의 일부이므로
+                // 차단 사유 아님. PanelRaycaster (ScreenSpace UIDocument) 는 여기서 skip 안 됨 →
+                // 아래 fall-through 경로에서 BLOCKED.
+                if (moduleFullName == "UnityEngine.UIElements.WorldDocumentRaycaster")
+                {
+                    Debug.Log($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} → SKIP (UI Toolkit WorldSpace)");
+                    continue;
+                }
+
+                if (canvas != null && canvas.renderMode == RenderMode.WorldSpace)
+                {
+                    // uGUI WorldSpace 캔버스 = 월드 오브젝트의 일부. 클릭 = 월드 클릭이지 UI 차단 아님.
+                    Debug.Log($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} canvas='{canvasName}' renderMode={renderMode} sortingLayer='{sortingLayer}' sortingOrder={sortingOrder} raycastTarget={raycastTarget} → SKIP (WorldSpace)");
+                    continue;
+                }
+
+                // ScreenSpaceOverlay / ScreenSpaceCamera 캔버스 또는 ScreenSpace UIDocument
+                // (UIElements.PanelRaycaster) 는 진짜 HUD 로 간주해 차단.
+                Debug.Log($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} canvas='{canvasName}' renderMode={renderMode} sortingLayer='{sortingLayer}' sortingOrder={sortingOrder} raycastTarget={raycastTarget} → BLOCKED");
                 return true;
             }
 
