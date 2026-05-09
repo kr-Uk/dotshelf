@@ -59,10 +59,34 @@ namespace App.Infrastructure.Catalogs
         [Header("Prefab (Light fixture / Deco mesh)")]
         [SerializeField] private GameObject prefab;
 
-        [Header("Placement (Deco)")]
+        [Header("Placement (Deco / Desk mesh swap)")]
+        [Tooltip("mesh swap 시 native anchor (예: DeskRoot) 의 world position 에 더할 offset.")]
         [SerializeField] private Vector3 placementAnchor;
+        [Tooltip("mesh swap 시 native anchor rotation 위에 추가로 적용할 회전 (Euler).")]
         [SerializeField] private Vector3 placementRotation;
+        [Tooltip("spawn 된 prefab 의 transform.localScale. Vector3.one 기본.")]
         [SerializeField] private Vector3 placementScale = Vector3.one;
+
+        [Header("Desk 전용 — NotebookStation override (모니터 진입 위치 fit)")]
+        [Tooltip("true 면 Desk swap 시 NotebookStation 의 transform 을 아래 값들로 override. " +
+                 "false 면 native 그대로. 다른 책상 모델 적용 시 모니터 화면/클릭 인터랙션 위치 fit.")]
+        [SerializeField] private bool overrideNotebookStation;
+        [Tooltip("NotebookStation 의 localPosition (부모 = GuestbookBoard 기준). 적용 코드는 " +
+                 "ApplyNotebookStationPlacement 에서 transform.localPosition 으로 set 함. " +
+                 "Inspector 의 Transform > Position 표시값을 그대로 입력하면 일치.")]
+        [SerializeField] private Vector3 notebookStationPosition;
+        [Tooltip("NotebookStation 의 localRotation (부모 기준 Euler). transform.localRotation 으로 적용.")]
+        [SerializeField] private Vector3 notebookStationRotation;
+        [Tooltip("NotebookStation 의 localScale (부모 기준).")]
+        [SerializeField] private Vector3 notebookStationScale = Vector3.one;
+
+        [Header("Desk 전용 — Monitor sub-prefab (책상 + 모니터 한 entry, 사용자 placement 불가)")]
+        [Tooltip("책상 mesh swap 시 함께 spawn 되는 monitor mesh. NotebookStation 과 같은 위치/회전/" +
+                 "스케일로 fit 하면 노트북 클릭 hit area 와 monitor 화면이 정확 align.")]
+        [SerializeField] private GameObject monitorPrefab;
+        [SerializeField] private Vector3 monitorPosition;
+        [SerializeField] private Vector3 monitorRotation;
+        [SerializeField] private Vector3 monitorScale = Vector3.one;
 
         public long AssetId => assetId;
         public string DisplayName => displayName;
@@ -79,6 +103,14 @@ namespace App.Infrastructure.Catalogs
         public Vector3 PlacementAnchor => placementAnchor;
         public Vector3 PlacementRotation => placementRotation;
         public Vector3 PlacementScale => placementScale;
+        public bool OverrideNotebookStation => overrideNotebookStation;
+        public Vector3 NotebookStationPosition => notebookStationPosition;
+        public Vector3 NotebookStationRotation => notebookStationRotation;
+        public Vector3 NotebookStationScale => notebookStationScale;
+        public GameObject MonitorPrefab => monitorPrefab;
+        public Vector3 MonitorPosition => monitorPosition;
+        public Vector3 MonitorRotation => monitorRotation;
+        public Vector3 MonitorScale => monitorScale;
     }
 
     /// <summary>
