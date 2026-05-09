@@ -37,7 +37,10 @@ namespace Dotshelf.Scripts.RoomTheme
             currentTheme = theme;
             ApplyMaterials(theme);
             ApplyLighting(theme);
-            ApplyDecoSpecs(theme);
+            // ApplyDecoSpecs 자동 호출 폐기 — 테마 deco specs 는 RoomEditModeController.
+            // ApplyThemeDefaultEntries 가 사용자 placement 시스템 (placedItemsRoot 자식 +
+            // DecorationItemMarker + drag/select 가능) 으로 통합 처리. 사용자가 자유롭게
+            // 옮기거나 삭제 가능. ApplyDecoSpecs 메서드 자체는 retain (legacy / 외부 호출 가능).
 
             Debug.Log($"[RoomThemeApplier] Applied theme '{theme.DisplayName}' (assetId={theme.AssetId}).");
         }
@@ -265,7 +268,7 @@ namespace Dotshelf.Scripts.RoomTheme
         // RoomGameObjectPatterns.IsWallName 의 prefix 매칭 사용 → BackWall_LeftStrip 등 strips
         // 모두 같은 wall 로 인식 + bounds 통합. wallSide=Back 시 strips 의 union bounds 의
         // inner face center 가 anchor.
-        private bool TryGetWallSurfaceAnchor(WallSide wall, out Vector3 worldPos, out Quaternion worldRot)
+        public bool TryGetWallSurfaceAnchor(WallSide wall, out Vector3 worldPos, out Quaternion worldRot)
         {
             worldPos = Vector3.zero;
             worldRot = Quaternion.identity;

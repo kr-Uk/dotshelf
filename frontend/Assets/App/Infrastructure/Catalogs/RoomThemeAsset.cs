@@ -19,6 +19,21 @@ namespace App.Infrastructure.Catalogs
     }
 
     /// <summary>
+    /// 테마 적용 시 자동으로 set 할 카테고리별 default entry assetId.
+    /// 예: 산뜻 테마에 (Desk, 201) 등록하면 테마 적용 시 DeskCatalog.assetId=201 entry
+    /// (GoodVibes_Desk) 가 자동으로 swap. 사용자가 추후 다른 entry 선택하면 그것이 우선.
+    /// 이로써 테마 적용 = 카테고리별 default 자산 일괄 적용 시스템 (mesh swap 통합).
+    /// </summary>
+    [Serializable]
+    public sealed class CategoryDefault
+    {
+        [SerializeField] private CustomizationCategory category;
+        [SerializeField] private long assetId;
+        public CustomizationCategory Category => category;
+        public long AssetId => assetId;
+    }
+
+    /// <summary>
     /// 테마 적용 시 RoomThemeApplier가 자동 spawn할 deco 1개.
     /// prefab을 themeDecoRoot(또는 wallSide 매칭 wall transform) 자식으로 instantiate하고
     /// local 트랜스폼 적용.
@@ -94,6 +109,11 @@ namespace App.Infrastructure.Catalogs
         [SerializeField] private Color accentSecondary = Color.white;
         [SerializeField] private Color accentTertiary = Color.white;
 
+        [Header("Theme default entries (자동 카테고리 swap)")]
+        [Tooltip("테마 적용 시 자동으로 set 할 카테고리별 default assetId. 예: 산뜻 테마 = " +
+                 "Desk:201 (GoodVibes_Desk). 사용자 선택이 우선이라 placement 후 override 가능.")]
+        [SerializeField] private CategoryDefault[] defaultEntries;
+
         [Header("Theme deco placement (RoomThemeApplier 자동 spawn)")]
         [Tooltip("책장 섹션 내부 배치 deco. 빈 list면 spawn 안 함.")]
         [SerializeField] private RoomThemeDecoSpec[] bookshelfDecoSpecs;
@@ -135,6 +155,7 @@ namespace App.Infrastructure.Catalogs
         public Color AccentSecondary => accentSecondary;
         public Color AccentTertiary => accentTertiary;
 
+        public IReadOnlyList<CategoryDefault> DefaultEntries => defaultEntries;
         public IReadOnlyList<RoomThemeDecoSpec> BookshelfDecoSpecs => bookshelfDecoSpecs;
         public IReadOnlyList<RoomThemeDecoSpec> FloorDecoSpecs => floorDecoSpecs;
         public IReadOnlyList<RoomThemeDecoSpec> WallDecoSpecs => wallDecoSpecs;

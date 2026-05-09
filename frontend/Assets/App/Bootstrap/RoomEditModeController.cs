@@ -1792,16 +1792,29 @@ namespace App.Bootstrap
             // D9(i) 낙관적 적용: 즉시 visual swap → 백엔드 PATCH → 실패 시 rollback.
             previousAppliedTheme = themeApplier.CurrentTheme;
             Debug.Log($"[RoomEdit][Theme] ApplyThemeSelected '{theme.DisplayName}' editMode={IsEditModeActive} preset={(IsEditModeActive ? currentCameraPreset.ToString() : "n/a")}");
+
+            // [MR 135 review beshu Finding 3 / skh1205 #2] PATCH 실패 시 사용자 placement 가
+            // 이미 destroy 된 상태로 남는 데이터 손실 회피 — 기존 placement 를 destroy 하지 않고
+            // hidden hold root 로 detach. PATCH 성공 시 destroy, 실패 시 reattach.
+            // local preview (PATCH skip) 에는 무관 — DiscardPlacementRollbackHold 로 즉시 destroy.
+            DetachPlacementForRollback();
+
             themeApplier.Apply(theme);
             // 벽 sharedMaterial 이 swap 됐으므로 편집 모드 중이면 fade 즉시 재적용 (탑다운/사선에서 occlusion 복귀 방지).
             RefreshWallVisibilityAfterMaterialMutation("ApplyThemeSelected");
             RebuildInventorySlots();
+
+            // 테마의 default entries 자동 적용 — visual 즉시 반영. PATCH 결과 무관 (401/네트워크
+            // 실패해도 산뜻 자산 mesh swap 적용). 사용자가 BE 인증 안 된 dev 환경에서도 검증 가능.
+            // PATCH 성공 후엔 BE 응답 themeReset 의 ReloadRoomState 가 server 권위 상태로 재동기화.
+            ApplyThemeDefaultEntries(theme);
 
             // local preview 전용 테마 — placeholder (가구/벽지/바닥 미제작). 명시 플래그 + assetId<=0 fallback.
             // RoomThemeApplier 는 라이팅만 영향. POST /spaces/me/theme/{id}/apply 는 skip (401/403 회피).
             if (IsLocalPreviewTheme(theme))
             {
                 Debug.Log($"[RoomEditModeController] Skip PATCH for local preview theme: {theme.DisplayName} (assetId={theme.AssetId}, mode={mode})");
+                DiscardPlacementRollbackHold();
                 return;
             }
 
@@ -1809,12 +1822,14 @@ namespace App.Bootstrap
             if (themeUseCase == null)
             {
                 Debug.LogWarning("[RoomEditModeController] ISpaceSettingsRepository 미주입 — 백엔드 theme apply skip (visual만 적용).");
+                DiscardPlacementRollbackHold();
                 return;
             }
 
             if (theme.AssetId <= 0)
             {
                 Debug.LogWarning("[RoomEditModeController] theme AssetId가 없어 백엔드 theme apply skip (visual만 적용).");
+                DiscardPlacementRollbackHold();
                 return;
             }
 
@@ -1835,20 +1850,34 @@ namespace App.Bootstrap
                     if (themeReset || mode == ThemeApplyMode.Reset)
                     {
                         ApplyThemeResetVisualFallback();
+                        // reset 후 default entries 재적용 (fallback 이 lastAppliedEntries clear 함).
+                        // DetachPlacementForRollback 가 다시 hold root 로 detach 하므로 그 직후 discard.
+                        ApplyThemeDefaultEntries(theme);
                     }
+                    // PATCH 성공 — rollback hold root 의 이전 placement 는 더 이상 필요 없으므로 destroy.
+                    DiscardPlacementRollbackHold();
                 },
                 onError: error =>
                 {
+                    // [Reentry race 가드 — MR 135 v2 review #2] 같은 frame 연속 클릭 (산뜻 → 모던 등)
+                    // 시 themeRequestVersion 이 증분되어 stale 콜백은 여기서 즉시 return.
+                    // 새 테마 click 의 DetachPlacementForRollback 이 hold root 를 이미 교체했어도
+                    // stale onError 가 ReattachPlacementFromRollback 으로 잘못 복구하지 않도록 보장.
                     if (requestVersion != themeRequestVersion)
                     {
                         return;
                     }
-                    // Code가 비어있으면 백엔드 응답 에러가 아니라 네트워크 connection 실패
-                    // (dev 환경에서 백엔드 미기동 등) — visual은 유지하고 warning만.
                     bool isNetworkFailure = string.IsNullOrEmpty(error?.Code);
                     if (isNetworkFailure)
                     {
-                        Debug.LogWarning($"[RoomEditModeController] PATCH connection 실패 ({error?.Message}) — visual은 유지, 다음 로드 시 서버와 동기화.");
+                        // PATCH connection 실패 (dev 환경 BE 미기동 / 네트워크 단절). 클라이언트는
+                        // 새 테마 visual + default placement 를 그대로 유지 — 사용자 정책 "테마
+                        // 적용 시 모든 placement 초기화" 일관 적용. hold root 의 이전 사용자
+                        // placement 는 destroy (새 테마 default 가 placedItemsRoot 에 이미 spawn
+                        // 되어 있어 reattach 시 이중 노출 + 정책 위반).
+                        // 다음 ReloadRoomState 또는 다음 PATCH 성공 시 server 권위 상태와 sync.
+                        Debug.LogWarning($"[RoomEditModeController] PATCH connection 실패 ({error?.Message}) — 새 테마 visual + default placement 유지, hold root 의 이전 placement 는 정책상 discard. 다음 로드 시 서버와 동기화.");
+                        DiscardPlacementRollbackHold();
                         return;
                     }
 
@@ -1856,8 +1885,17 @@ namespace App.Bootstrap
                     if (previousAppliedTheme != null && previousAppliedTheme != theme)
                     {
                         themeApplier.Apply(previousAppliedTheme);
+                        // mesh swap + 새로 spawn 한 theme deco 정리, 그 후 hold root 의 이전 placement 복구.
+                        RestoreAllMeshSwaps();
+                        ClearAllPlacedDecos();
+                        ReattachPlacementFromRollback();
                         RefreshWallVisibilityAfterMaterialMutation("ApplyThemeSelected/rollback");
                         RebuildInventorySlots();
+                    }
+                    else
+                    {
+                        // 동일 테마 재클릭 등 rollback 대상이 없는 경우 — hold root 만 정리.
+                        DiscardPlacementRollbackHold();
                     }
                 });
         }
@@ -2018,6 +2056,257 @@ namespace App.Bootstrap
             RebuildInventorySlots();
         }
 
+        // 테마의 defaultEntries 따라 카테고리별 entry 자동 적용. 산뜻 테마 = Desk:201 등록
+        // 시 DeskCatalog 의 assetId=201 entry (GoodVibes_Desk) 자동 swap. 사용자가 추후
+        // 다른 entry 선택하면 그것이 우선 (PATCH 별개 흐름).
+        // PATCH 는 안 보냄 — visual 만. 사용자가 명시적으로 entry 클릭해야 BE 저장.
+        private void ApplyThemeDefaultEntries(RoomThemeAsset theme)
+        {
+            if (theme == null) return;
+            Debug.Log($"[RoomEditModeController] ApplyThemeDefaultEntries 진입 — theme={theme.DisplayName}, defaults={(theme.DefaultEntries?.Count ?? 0)}, floorDecos={(theme.FloorDecoSpecs?.Count ?? 0)}, wallDecos={(theme.WallDecoSpecs?.Count ?? 0)}");
+
+            // 1) 이전 테마 deco + 사용자 직접 placement 모두 정리. 필수 배치 (책상/노트북/책장/
+            //    벽지/바닥/조명) 는 native + mesh swap 시스템이라 placedItemsRoot 자식이 아니라
+            //    영향 없음. 비필수 placement deco 는 모두 초기화 후 새 테마 spawn 만.
+            ClearAllPlacedDecos();
+
+            // 1.5) 이전 mesh swap 모두 native 복원. theme 의 defaultEntries 에 해당 카테고리
+            // entry 가 있으면 step 2 에서 다시 swap 적용. 없으면 native 유지 (기본 책상/책장 복귀).
+            // 이게 없으면 이전 산뜻 테마의 mesh swap 이 default theme 적용 후에도 유지됨.
+            RestoreAllMeshSwaps();
+
+            // 2) 항시 카테고리 (Wallpaper/Floor/Desk/BookshelfSkin/DashboardSkin/InteriorLight/
+            //    ExteriorLight) — ApplyEntryVisual 로 mesh / material / light swap
+            var defaults = theme.DefaultEntries;
+            if (defaults != null)
+            {
+                for (int i = 0; i < defaults.Count; i++)
+                {
+                    var def = defaults[i];
+                    if (def == null) continue;
+                    var catalog = LoadCategoryCatalog(def.Category);
+                    if (catalog == null || catalog.Entries == null)
+                    {
+                        Debug.LogWarning($"[RoomEditModeController] catalog 못 찾음: {def.Category} — Resources/Catalogs/{def.Category}Catalog.asset 확인.");
+                        continue;
+                    }
+                    var entry = catalog.FindByAssetId(def.AssetId);
+                    if (entry == null)
+                    {
+                        Debug.LogWarning($"[RoomEditModeController] {theme.DisplayName} default entry {def.Category}:{def.AssetId} 못 찾음 — catalog 에 등록되어 있는지 확인.");
+                        continue;
+                    }
+                    ApplyEntryVisual(def.Category, entry);
+                    if (entry.AssetId > 0) lastAppliedEntries[def.Category] = entry.AssetId;
+                }
+            }
+
+            // 3) 설치 카테고리 (FloorDeco/WallDeco) — placedItemsRoot 자식으로 spawn,
+            //    DecorationItemMarker 추가 → 사용자가 drag/select/delete 가능.
+            //    다른 테마 적용 시 ClearAllPlacedDecos 가 정리.
+            if (theme.FloorDecoSpecs != null)
+            {
+                for (int i = 0; i < theme.FloorDecoSpecs.Count; i++)
+                {
+                    SpawnThemeFloorDecoFromSpec(theme.FloorDecoSpecs[i]);
+                }
+            }
+            if (theme.WallDecoSpecs != null)
+            {
+                for (int i = 0; i < theme.WallDecoSpecs.Count; i++)
+                {
+                    SpawnThemeWallDecoFromSpec(theme.WallDecoSpecs[i]);
+                }
+            }
+
+            RebuildInventorySlots();
+        }
+
+        // 테마 변경 시 placedItemsRoot 자식 모두 destroy — 이전 테마 spawn + 사용자 직접
+        // placement 둘 다. 사용자 요구: "필수 배치 오브젝트 빼고는 테마 적용할 때마다 모든
+        // 배치 오브젝트 초기화". 필수 (책상/책장/벽지/바닥/조명/모니터) 는 native 또는 mesh swap
+        // 시스템 (roomRoot 자식) 이라 영향 X.
+        // 사용자 placement 보존 원하면 별도 marker (KeepOnThemeChange 등) 시스템 도입 필요.
+        private void ClearAllPlacedDecos()
+        {
+            if (placedItemsRoot == null) return;
+            for (int i = placedItemsRoot.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = placedItemsRoot.transform.GetChild(i).gameObject;
+                if (selectedObject == child) selectedObject = null;
+                if (draggingObject == child) draggingObject = null;
+                if (UnityEngine.Application.isPlaying) Destroy(child);
+                else DestroyImmediate(child);
+            }
+        }
+
+        // [MR 135 review beshu Finding 3 / skh1205 #2] PATCH 실패 시 placement 복구용 hold root.
+        // 테마 적용 PATCH 가 비동기 wait 중일 때 placedItemsRoot 자식을 destroy 하지 않고 detach 보존.
+        // PATCH 성공 → DiscardPlacementRollbackHold 가 destroy. PATCH 실패 → ReattachPlacementFromRollback
+        // 가 placedItemsRoot 로 다시 reparent. lifecycle 은 ApplyThemeSelected 진입 시 begin /
+        // onSuccess|onError 에서 end 보장.
+        private GameObject placementRollbackHoldRoot;
+
+        // ApplyThemeSelected 진입 시 호출 — placedItemsRoot 자식을 hidden hold root 로 detach.
+        // 이전에 detach 된 hold 가 남아 있으면 (예: 같은 프레임 연속 클릭) destroy 후 다시 시작.
+        private void DetachPlacementForRollback()
+        {
+            DiscardPlacementRollbackHold();
+            if (placedItemsRoot == null) return;
+            if (placedItemsRoot.transform.childCount == 0) return;
+
+            placementRollbackHoldRoot = new GameObject("PlacedDecorations_RollbackHold");
+            // placedItemsRoot 의 부모 (보통 Scene root) 자식. 미리 비활성화 — visible 하지 않게.
+            var parent = placedItemsRoot.transform.parent;
+            if (parent != null)
+            {
+                placementRollbackHoldRoot.transform.SetParent(parent, false);
+            }
+            placementRollbackHoldRoot.SetActive(false);
+
+            for (int i = placedItemsRoot.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = placedItemsRoot.transform.GetChild(i);
+                // 선택/drag 상태 정리 — hold 중엔 inactive 라 클릭 불가지만 cached 참조는 끊어둠.
+                if (selectedObject == child.gameObject) selectedObject = null;
+                if (draggingObject == child.gameObject) draggingObject = null;
+                child.SetParent(placementRollbackHoldRoot.transform, true); // worldPositionStays=true
+            }
+        }
+
+        // PATCH 성공 또는 visual 유지 (network failure) 경로 — hold root + 자식 모두 destroy.
+        private void DiscardPlacementRollbackHold()
+        {
+            if (placementRollbackHoldRoot == null) return;
+            if (UnityEngine.Application.isPlaying) Destroy(placementRollbackHoldRoot);
+            else DestroyImmediate(placementRollbackHoldRoot);
+            placementRollbackHoldRoot = null;
+        }
+
+        // PATCH 실패 (BE 응답 에러) 경로 — hold root 자식을 placedItemsRoot 로 다시 reparent.
+        // 호출 직전에 RestoreAllMeshSwaps + ClearAllPlacedDecos 로 새로 spawn 된 theme deco/mesh swap
+        // 정리해야 user placement 복구 후 visual 이 일관됨. selection/drag 상태는 reset.
+        private void ReattachPlacementFromRollback()
+        {
+            if (placementRollbackHoldRoot == null) return;
+            if (placedItemsRoot == null)
+            {
+                EnsurePlacedItemsRoot();
+                if (placedItemsRoot == null)
+                {
+                    DiscardPlacementRollbackHold();
+                    return;
+                }
+            }
+            placementRollbackHoldRoot.SetActive(true);
+            for (int i = placementRollbackHoldRoot.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = placementRollbackHoldRoot.transform.GetChild(i);
+                child.SetParent(placedItemsRoot.transform, true);
+            }
+            DiscardPlacementRollbackHold();
+        }
+
+        // 테마 floorDecoSpec → placedItemsRoot 자식 spawn. PlaceInventoryEntry 와 동일 시스템 —
+        // DecorationItemMarker + collider → 사용자가 클릭해 drag/delete 가능. 테마 변경 시
+        // ClearAllPlacedDecos 가 일괄 정리 (사용자 placement 와 같은 lifecycle).
+        private void SpawnThemeFloorDecoFromSpec(RoomThemeDecoSpec spec)
+        {
+            if (spec == null || spec.Prefab == null) return;
+            EnsurePlacedItemsRoot();
+
+            var go = Instantiate(spec.Prefab);
+            go.name = $"ThemeDeco_Floor_{SanitizeName(spec.Prefab.name)}";
+            go.transform.SetParent(placedItemsRoot.transform, true);
+            // localPosition 을 룸 원점 기준 world 로 적용 (placedItemsRoot scale 1 가정).
+            go.transform.position = spec.LocalPosition;
+            go.transform.localEulerAngles = spec.LocalRotation;
+            go.transform.localScale = spec.LocalScale;
+
+            go.AddComponent<DecorationItemMarker>();
+            EnsureCollidersForGameObject(go);
+        }
+
+        // 테마 wallDecoSpec → placedItemsRoot 자식 + WallDecoMarker (drag wall surface 동작). spec 의
+        // localPosition 은 wall surface anchor frame 기준 — themeApplier.TryGetWallSurfaceAnchor
+        // 로 world coord 변환. anchor 못 찾으면 fallback (localPosition 그대로 world).
+        private void SpawnThemeWallDecoFromSpec(RoomThemeDecoSpec spec)
+        {
+            if (spec == null || spec.Prefab == null) return;
+            EnsurePlacedItemsRoot();
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+
+            // wall surface anchor 변환 복구 — spec.LocalPosition 은 wall surface frame 기준
+            // local. wall placement 시스템 (drag 매칭 + obstruction) 일관성 유지. 사용자가 캡처한
+            // world 좌표를 spec 에 박을 때는 anchor frame 으로 변환 필요 (helper: anchor 의 inverse
+            // rotation × (worldPos - anchor.position)).
+            Vector3 worldPos;
+            Quaternion worldRot;
+            if (themeApplier != null && themeApplier.TryGetWallSurfaceAnchor(spec.WallSide, out var anchorPos, out var anchorRot))
+            {
+                worldPos = anchorPos + anchorRot * spec.LocalPosition;
+                worldRot = anchorRot * Quaternion.Euler(spec.LocalRotation);
+            }
+            else
+            {
+                Debug.LogWarning($"[RoomEditModeController] WallDecoSpec WallSide={spec.WallSide} anchor 못 찾음 — localPosition 을 world fallback.");
+                worldPos = spec.LocalPosition;
+                worldRot = Quaternion.Euler(spec.LocalRotation);
+            }
+
+            var go = Instantiate(spec.Prefab);
+            go.name = $"ThemeDeco_Wall_{SanitizeName(spec.Prefab.name)}";
+            go.transform.SetParent(placedItemsRoot.transform, true);
+            go.transform.SetPositionAndRotation(worldPos, worldRot);
+            go.transform.localScale = spec.LocalScale;
+
+            var marker = go.AddComponent<WallDecoMarker>();
+            marker.CurrentWall = spec.WallSide;
+            marker.AllowRotation = false; // 테마 자동 spawn 은 회전 비활성 (사용자가 위치만 옮김)
+
+            go.AddComponent<DecorationItemMarker>();
+            EnsureCollidersForGameObject(go);
+        }
+
+        // 일반화된 collider 보장 — root 에 BoxCollider 를 renderer bounds 에 맞춰 합성.
+        // [MR 135 fix] PlaceInventoryEntry Step 4 와 동일 패턴 — GLB 가 root 에 mesh 없는 빈
+        // MeshCollider 만 들고 import 되는 케이스 (Hierarchy 자식 없음 + Inspector Mesh 비어있음 +
+        // Physics.Raycast hit 0) 회피. 기존 collider 가 있어도 추가로 BoxCollider 를 root 에
+        // 박아서 raycast selection 100% 보장. 비용은 collider 1개 추가뿐이라 무시 가능.
+        // WallMaskQuad 의 collider 추가는 stencil 전용 mesh 라 명시적으로 skip.
+        private static void EnsureCollidersForGameObject(GameObject go)
+        {
+            // mesh 자식에도 MeshCollider 합성 (정밀 hit 가 필요한 케이스 대비 — drag/select 는
+            // root BoxCollider 만으로도 동작하지만, 향후 다른 사용처에서 mesh-precise hit 필요할
+            // 수도 있어 retain).
+            var meshFilters = go.GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < meshFilters.Length; i++)
+            {
+                var mf = meshFilters[i];
+                if (mf == null || mf.sharedMesh == null) continue;
+                if (mf.gameObject.name == "WallMaskQuad") continue;
+                if (mf.GetComponent<Collider>() != null) continue;
+                var collider = mf.gameObject.AddComponent<MeshCollider>();
+                collider.sharedMesh = mf.sharedMesh;
+                collider.convex = false;
+            }
+
+            // root 에 BoxCollider 가 이미 있으면 skip (중복 회피). 없으면 renderer bounds 로 합성.
+            // PlaceInventoryEntry 와 동일 좌표 변환 (world → local, 음수 size 방지 Mathf.Abs).
+            if (go.GetComponent<BoxCollider>() == null)
+            {
+                var rendererBounds = ComputeRendererBounds(go);
+                if (rendererBounds.HasValue)
+                {
+                    var box = go.AddComponent<BoxCollider>();
+                    var localCenter = go.transform.InverseTransformPoint(rendererBounds.Value.center);
+                    var localSize = go.transform.InverseTransformVector(rendererBounds.Value.size);
+                    box.center = localCenter;
+                    box.size = new Vector3(Mathf.Abs(localSize.x), Mathf.Abs(localSize.y), Mathf.Abs(localSize.z));
+                }
+            }
+        }
+
         // 카테고리별 visual swap. RoomThemeApplier의 RoomRoot/DirectionalLight reference를
         // 재사용해 GameObject.Find/FindObjectsByType 매 클릭마다 호출 안 하도록.
         // 매칭 패턴은 RoomGameObjectPatterns로 통합(RoomThemeApplier와 동일).
@@ -2053,11 +2342,26 @@ namespace App.Bootstrap
                 return;
             }
 
-            var mat = entry.PrimaryMaterial;
-            if (mat == null) return;
-
             var roomRootTransform = themeApplier.RoomRoot;
             if (roomRootTransform == null) return;
+
+            // mesh swap — entry.Prefab 있으면 native renderer disable + prefab 자식 spawn.
+            // Desk/BookshelfSkin/DashboardSkin 처럼 mesh 자체가 바뀌어야 하는 카테고리. 기존
+            // material-only swap 과 공존 — prefab 우선, 없으면 material swap.
+            if (entry.Prefab != null && IsMeshSwapCategory(category))
+            {
+                ApplyCategoryMeshSwap(category, entry, roomRootTransform);
+                return;
+            }
+            // entry.Prefab 가 null 이지만 이전에 mesh swap 됐으면 복원. (다른 entry 선택 시
+            // native mesh 가 다시 보이도록.)
+            if (IsMeshSwapCategory(category))
+            {
+                RestoreCategoryNativeMesh(category, roomRootTransform);
+            }
+
+            var mat = entry.PrimaryMaterial;
+            if (mat == null) return;
 
             int swapped = 0;
             foreach (var renderer in roomRootTransform.GetComponentsInChildren<Renderer>(true))
@@ -2075,6 +2379,257 @@ namespace App.Bootstrap
             // 벽지(Wallpaper) / 바닥 등 카테고리는 벽 renderer 의 sharedMaterial 을 swap 해서
             // 편집 모드의 wall fade instance 를 풀어버린다 → 즉시 재적용.
             RefreshWallVisibilityAfterMaterialMutation($"ApplyEntryVisual/{category}");
+        }
+
+        // mesh swap 가능 카테고리 — 외형 mesh 자체가 entry 별로 다른 카테고리들.
+        // Wallpaper/Floor 는 평면 material swap 으로 충분 → 제외.
+        // InteriorLight/ExteriorLight 는 light component property — 별도 처리 (위쪽 분기).
+        private static bool IsMeshSwapCategory(CustomizationCategory category)
+        {
+            return category == CustomizationCategory.Desk
+                || category == CustomizationCategory.BookshelfSkin
+                || category == CustomizationCategory.DashboardSkin;
+        }
+
+        // category 매칭 native renderer 들 disable + prefab 을 첫 매칭 anchor 자식으로 spawn.
+        // NotebookStation 같은 자식 transform 은 native 그대로 → 인터랙션 보존.
+        // 이전 swap spawn 한 prefab 있으면 destroy 후 새로.
+        // entry 단위로 받음 — entry.Prefab + entry.PlacementAnchor/Rotation/Scale + entry.NotebookStationOffset
+        // 모두 활용. 사용자가 catalog Inspector 에서 mesh swap 시 fitting (위치/회전/스케일/모니터 위치)
+        // 직접 지정 가능.
+        private void ApplyCategoryMeshSwap(CustomizationCategory category, CustomizationEntry entry, Transform roomRoot)
+        {
+            // 1) 이전 mesh swap 된 GameObject 정리 (이름 prefix 로 식별)
+            string swapName = $"MeshSwap_{category}";
+            for (int i = roomRoot.childCount - 1; i >= 0; i--)
+            {
+                var child = roomRoot.GetChild(i);
+                if (child.gameObject.name == swapName)
+                {
+                    if (UnityEngine.Application.isPlaying) Destroy(child.gameObject);
+                    else DestroyImmediate(child.gameObject);
+                }
+            }
+
+            // 2) primary anchor 검색 — 카테고리별 정확한 root transform 우선. "DeskRoot" /
+            //    "BookshelfRoot" 같은 이름 정확 매칭 우선. 첫 매칭 transform (예: NotebookStation
+            //    또는 Desk_*Strip) 이 anchor 가 되면 GLB prefab spawn 위치가 native 와 어긋남.
+            var anchor = FindPrimaryAnchor(roomRoot, category);
+
+            // 3) native renderer 들 disable (visual hide, GameObject 자체는 유지 — collider/
+            // 기능 컴포넌트 보존). 카테고리 매칭 transform 의 모든 자식 renderer 까지 hide —
+            // NotebookStation 같은 root 의 자식 (UnibodyBase/Trackpad 등) 은 prefix 매칭 안
+            // 되어 renderer 자체 검색만으론 missed. transform 단위로 매칭 후 GetComponentsInChildren
+            // 으로 자식까지 모두 hide → 노트북 visual 도 같이 사라짐.
+            var allTransforms = roomRoot.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < allTransforms.Length; i++)
+            {
+                var t = allTransforms[i];
+                if (!MatchesCategoryName(category, t.gameObject.name)) continue;
+                if (anchor == null) anchor = t; // primary 못 찾으면 첫 매칭 fallback
+                foreach (var r in t.GetComponentsInChildren<Renderer>(true))
+                {
+                    r.enabled = false;
+                }
+            }
+            if (anchor == null)
+            {
+                Debug.LogWarning($"[RoomEditModeController] {category} mesh swap — native anchor 못 찾음, prefab spawn skip.");
+                return;
+            }
+
+            // 4) prefab spawn — entry.PlacementAnchor/Rotation/Scale 을 world 로 직접 해석.
+            // 사용자가 Unity scene 에서 시각으로 잡은 transform 값을 catalog Inspector 에 그대로
+            // 입력 가능. native anchor 위치 무시 — 책상별 크기/높이 자유 fit.
+            var go = Instantiate(entry.Prefab, roomRoot);
+            go.name = swapName;
+            go.transform.SetPositionAndRotation(entry.PlacementAnchor, Quaternion.Euler(entry.PlacementRotation));
+            go.transform.localScale = entry.PlacementScale != Vector3.zero ? entry.PlacementScale : Vector3.one;
+
+            // 5) Desk 카테고리 — NotebookStation override (모니터 진입 위치/스케일 fit).
+            //    OverrideNotebookStation=true 면 entry 의 NotebookStation* 값 적용. false 면 native.
+            if (category == CustomizationCategory.Desk)
+            {
+                ApplyNotebookStationPlacement(roomRoot, entry);
+                // Monitor sub-prefab — 책상의 일부로 함께 spawn (사용자 placement 불가, 고정).
+                ApplyMonitorMeshSwap(roomRoot, entry);
+            }
+        }
+
+        // BookshelfGenerator 가 roomRoot 자식으로 spawn 한 native deco (RugNatural / BookStack /
+        // ClockHamham / HamhamDisplay 등) 에 DecorationItemMarker + collider 자동 추가 — 사용자가
+        // 클릭해 select / drag / delete 가능. native 자산이지만 placement 자유도 보장.
+        // 위치 변경 BE 저장은 별도 (현재 visual 만).
+        private static readonly string[] NativeDecoNames = {
+            "RugNatural", "BookStack", "ClockHamham", "HamhamDisplay"
+        };
+
+        private void EnableNativeDecoPlacement()
+        {
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            var roomRoot = themeApplier?.RoomRoot;
+            if (roomRoot == null) return;
+            for (int i = 0; i < NativeDecoNames.Length; i++)
+            {
+                var native = FindChildByName(roomRoot, NativeDecoNames[i]);
+                if (native == null) continue;
+                if (native.GetComponent<DecorationItemMarker>() == null)
+                {
+                    native.gameObject.AddComponent<DecorationItemMarker>();
+                }
+                EnsureCollidersForGameObject(native.gameObject);
+            }
+        }
+
+        // 모든 mesh swap 카테고리 native 복원 — RestoreCategoryNativeMesh 의 일괄 호출. 이전
+        // 테마의 mesh swap (e.g. 산뜻 책상) 을 native (procedural 책상/노트북) 로 되돌림.
+        // 새 테마의 defaultEntries 가 다시 swap 하면 그 시점에 새 mesh 로 교체.
+        private void RestoreAllMeshSwaps()
+        {
+            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            var roomRoot = themeApplier?.RoomRoot;
+            if (roomRoot == null) return;
+            RestoreCategoryNativeMesh(CustomizationCategory.Desk, roomRoot);
+            RestoreCategoryNativeMesh(CustomizationCategory.BookshelfSkin, roomRoot);
+            RestoreCategoryNativeMesh(CustomizationCategory.DashboardSkin, roomRoot);
+        }
+
+        // Desk entry 의 monitorPrefab spawn — book 책상 mesh swap 의 일부. 별도 GameObject (이름
+        // MeshSwap_DeskMonitor) 로 roomRoot 자식. 다음 desk 적용 또는 RestoreCategoryNativeMesh 시
+        // 같이 정리.
+        private void ApplyMonitorMeshSwap(Transform roomRoot, CustomizationEntry entry)
+        {
+            // 이전 monitor swap 정리
+            const string monitorSwapName = "MeshSwap_DeskMonitor";
+            for (int i = roomRoot.childCount - 1; i >= 0; i--)
+            {
+                var child = roomRoot.GetChild(i);
+                if (child.gameObject.name == monitorSwapName)
+                {
+                    if (UnityEngine.Application.isPlaying) Destroy(child.gameObject);
+                    else DestroyImmediate(child.gameObject);
+                }
+            }
+
+            if (entry.MonitorPrefab == null) return;
+
+            var go = Instantiate(entry.MonitorPrefab, roomRoot);
+            go.name = monitorSwapName;
+            go.transform.SetPositionAndRotation(entry.MonitorPosition, Quaternion.Euler(entry.MonitorRotation));
+            go.transform.localScale = entry.MonitorScale != Vector3.zero ? entry.MonitorScale : Vector3.one;
+        }
+
+        // NotebookStation 의 원래 transform 보존용 — 첫 swap 호출 시 저장, restore 시 복원.
+        private Vector3? nativeNotebookStationLocalPos;
+        private Quaternion? nativeNotebookStationLocalRot;
+        private Vector3? nativeNotebookStationLocalScale;
+
+        private void ApplyNotebookStationPlacement(Transform roomRoot, CustomizationEntry entry)
+        {
+            var notebookStation = FindChildByName(roomRoot, "NotebookStation");
+            if (notebookStation == null) return;
+            // 첫 호출 시 native 보존
+            if (!nativeNotebookStationLocalPos.HasValue)
+            {
+                nativeNotebookStationLocalPos = notebookStation.localPosition;
+                nativeNotebookStationLocalRot = notebookStation.localRotation;
+                nativeNotebookStationLocalScale = notebookStation.localScale;
+            }
+            if (!entry.OverrideNotebookStation)
+            {
+                // override 안 함 → native 복원
+                notebookStation.localPosition = nativeNotebookStationLocalPos.Value;
+                notebookStation.localRotation = nativeNotebookStationLocalRot.Value;
+                notebookStation.localScale = nativeNotebookStationLocalScale.Value;
+                return;
+            }
+            // override — entry 값을 NotebookStation 의 부모 (GuestbookBoard) 기준 local 로 적용.
+            // Inspector 의 Transform 은 default Local 이므로 사용자 캡처값 그대로 박힘.
+            notebookStation.localPosition = entry.NotebookStationPosition;
+            notebookStation.localRotation = Quaternion.Euler(entry.NotebookStationRotation);
+            notebookStation.localScale = entry.NotebookStationScale != Vector3.zero ? entry.NotebookStationScale : Vector3.one;
+        }
+
+        private void RestoreNotebookStationPosition(Transform roomRoot)
+        {
+            if (!nativeNotebookStationLocalPos.HasValue) return;
+            var notebookStation = FindChildByName(roomRoot, "NotebookStation");
+            if (notebookStation == null) return;
+            notebookStation.localPosition = nativeNotebookStationLocalPos.Value;
+            notebookStation.localRotation = nativeNotebookStationLocalRot ?? Quaternion.identity;
+            notebookStation.localScale = nativeNotebookStationLocalScale ?? Vector3.one;
+        }
+
+        private static Transform FindChildByName(Transform root, string name)
+        {
+            var allTransforms = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < allTransforms.Length; i++)
+            {
+                if (allTransforms[i].gameObject.name == name) return allTransforms[i];
+            }
+            return null;
+        }
+
+        // 카테고리별 primary anchor — native 룸의 root transform. mesh swap 시 이 위치/회전을
+        // 그대로 GLB prefab 에 적용해 native 와 일치시킴.
+        private static Transform FindPrimaryAnchor(Transform roomRoot, CustomizationCategory category)
+        {
+            string primaryName = null;
+            switch (category)
+            {
+                case CustomizationCategory.Desk:           primaryName = "DeskRoot"; break;
+                case CustomizationCategory.BookshelfSkin:  primaryName = "BookshelfRoot"; break;
+                case CustomizationCategory.DashboardSkin:  primaryName = "DashboardScreenPanel"; break;
+                default: return null;
+            }
+            var allTransforms = roomRoot.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < allTransforms.Length; i++)
+            {
+                if (allTransforms[i].gameObject.name == primaryName) return allTransforms[i];
+            }
+            return null;
+        }
+
+        // mesh swap 복원 — native renderer 들 enable + spawned mesh swap 정리 + Desk 의 경우
+        // NotebookStation localPosition + Monitor sub-prefab 도 native 복원.
+        private void RestoreCategoryNativeMesh(CustomizationCategory category, Transform roomRoot)
+        {
+            if (category == CustomizationCategory.Desk)
+            {
+                RestoreNotebookStationPosition(roomRoot);
+                // monitor sub-prefab 정리
+                const string monitorSwapName = "MeshSwap_DeskMonitor";
+                for (int i = roomRoot.childCount - 1; i >= 0; i--)
+                {
+                    var child = roomRoot.GetChild(i);
+                    if (child.gameObject.name == monitorSwapName)
+                    {
+                        if (UnityEngine.Application.isPlaying) Destroy(child.gameObject);
+                        else DestroyImmediate(child.gameObject);
+                    }
+                }
+            }
+            string swapName = $"MeshSwap_{category}";
+            for (int i = roomRoot.childCount - 1; i >= 0; i--)
+            {
+                var child = roomRoot.GetChild(i);
+                if (child.gameObject.name == swapName)
+                {
+                    if (UnityEngine.Application.isPlaying) Destroy(child.gameObject);
+                    else DestroyImmediate(child.gameObject);
+                }
+            }
+            // ApplyCategoryMeshSwap 와 대칭 — transform 단위 매칭 후 자식 renderer 까지 enable.
+            var allTransforms = roomRoot.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < allTransforms.Length; i++)
+            {
+                var t = allTransforms[i];
+                if (!MatchesCategoryName(category, t.gameObject.name)) continue;
+                foreach (var r in t.GetComponentsInChildren<Renderer>(true))
+                {
+                    r.enabled = true;
+                }
+            }
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -2287,14 +2842,29 @@ namespace App.Bootstrap
             // 가 항상 false → 사전 확인 모달 미발동 → 사용자는 themeReset=true 응답을 받고서야 테마
             // 해제를 인지하게 됨.
             if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            // 테마가 server reload 로 변경됐으면 default entries (mesh swap + 자동 placement deco)
+            // 까지 재적용 — 안 그러면 [MR 135 review beshu Finding 2] 처럼 클릭 직후엔 보이던
+            // 산뜻 책상/네온/창문/러그/침대/쿠션이 재입장 / ReloadRoomState 후 사라지는 회귀.
+            // 단 동일 테마 reload 시엔 placement 보존 (사용자가 옮겼을 가능성). themeApplier.Apply 도
+            // 동일 가드.
+            bool themeChanged = false;
+            RoomThemeAsset resolvedTheme = null;
             if (themeApplier != null && themeCatalog != null)
             {
-                var resolvedTheme = themeCatalog.Resolve(space.CurrentThemeInventoryId);
+                resolvedTheme = themeCatalog.Resolve(space.CurrentThemeInventoryId);
                 if (resolvedTheme != null && resolvedTheme != themeApplier.CurrentTheme)
                 {
                     themeApplier.Apply(resolvedTheme);
                     RefreshWallVisibilityAfterMaterialMutation("ReloadRoomState");
+                    themeChanged = true;
                 }
+            }
+
+            // 테마 default entries 적용 — themeChanged 시에만. ApplyCategoryById 보다 먼저 호출해서
+            // server-saved 카테고리 (있다면) 가 default 위에 덮어쓰도록.
+            if (themeChanged && resolvedTheme != null)
+            {
+                ApplyThemeDefaultEntries(resolvedTheme);
             }
 
             ApplyCategoryById(CustomizationCategory.Wallpaper, space.CurrentWallpaperInventoryId);
@@ -3236,6 +3806,11 @@ namespace App.Bootstrap
             }
 
             IsEditModeActive = true;
+
+            // Native deco (rug/hamham/bookstack/clock 등) placement 활성화 — DecorationItemMarker
+            // + collider 자동 추가해서 사용자가 select/drag/delete 가능하게. BookshelfGenerator 가
+            // roomRoot 자식으로 만든 native deco 는 marker 없으면 클릭 무시됨.
+            EnableNativeDecoPlacement();
 
             // Edit 모드 진입 시 서버 Space 상태 비동기 동기화 — IsCategoryEntryCurrent /
             // OptimisticallyUpdateServerSpace의 single source of truth(`lastServerSpace`)

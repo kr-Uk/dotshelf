@@ -29,6 +29,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 100002
     displayName: "\uBCBD\uC9C0 Lavender"
     description: 
@@ -44,6 +52,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 100003
     displayName: "\uBCBD\uC9C0 Mint"
     description: 
@@ -59,6 +75,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 100004
     displayName: "\uBCBD\uC9C0 Beige"
     description: 
@@ -74,6 +98,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 100005
     displayName: "\uBCBD\uC9C0 OffWhite"
     description: 
@@ -89,6 +121,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 200001
     displayName: "Natural \uBCBD\uC9C0"
     description: 
@@ -104,6 +144,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 200002
     displayName: "Classic \uBCBD\uC9C0"
     description: 
@@ -119,6 +167,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 200003
     displayName: "Modern \uBCBD\uC9C0"
     description: 
@@ -134,6 +190,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 200004
     displayName: "Vintage \uBCBD\uC9C0"
     description: 
@@ -149,6 +213,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 200005
     displayName: "Pastel \uBCBD\uC9C0"
     description: 
@@ -164,3 +236,11 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}

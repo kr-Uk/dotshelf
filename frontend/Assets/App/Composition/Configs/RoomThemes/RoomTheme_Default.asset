@@ -23,8 +23,11 @@ MonoBehaviour:
   bookshelfMaterial: {fileID: 0}
   furnitureMaterial: {fileID: 0}
   accentMaterial: {fileID: 0}
-  directionalLightColor: {r: 1, g: 1, b: 1, a: 1}
-  directionalLightKelvin: 6500
+  exteriorLightColor: {r: 1, g: 1, b: 1, a: 1}
+  exteriorLightKelvin: 6500
+  exteriorLightIntensity: 1
+  interiorLightColor: {r: 1, g: 1, b: 1, a: 1}
+  interiorLightKelvin: 6500
   ambientTint: {r: 1, g: 1, b: 1, a: 1}
   ambientIntensity: 1
   accentPrimary: {r: 0.84705883, g: 0.8, b: 0.7372549, a: 1}
