@@ -49,6 +49,14 @@ namespace App.Bootstrap
         private const float ButtonMargin = 32f;
         private const float ButtonStackGap = 12f;
 
+        // 우측 오브젝트 조작 카드 (BuildSelectionPanel) 디멘션. Save/Return column 보다 살짝 넓되
+        // 화면을 과하게 가리지 않도록 컴팩트. SelectionButtonInnerWidth = SelectionCardWidth - SelectionCardPadding*2.
+        private const float SelectionCardWidth = 144f;
+        private const int SelectionCardPadding = 12;
+        private const float SelectionCardSpacing = 8f;
+        private const float SelectionButtonInnerWidth = 120f;
+        private const float SelectionButtonHeight = 44f;
+
         // Placement defaults: in front of the bookshelf, on the floor (Floor surface y=0).
         // Bookshelf turntable sits around z>0.5, so place items in the open floor area.
         private static readonly Vector3 InventoryPlacementCenter = new Vector3(0f, 0.0f, -0.6f);
@@ -249,6 +257,10 @@ namespace App.Bootstrap
         private GameObject decorationButtonRoot;
         private GameObject decorationPopupRoot;
         private GameObject editOverlayRoot;
+        // CanvasGroup 게이트 — IsEditModeActive=false 일 때 blocksRaycasts/interactable=false 로 강제.
+        // SetActive race window 와 무관하게 메인씬에서 편집 UI 가 raycast 를 절대 못 막게 보장.
+        private CanvasGroup editOverlayCanvasGroup;
+        private CanvasGroup selectionPanelCanvasGroup;
         private GameObject bottomMenuRoot;
         private GameObject inventoryContentRoot;
         private GameObject returnButtonRoot;
@@ -314,8 +326,24 @@ namespace App.Bootstrap
         // 좌표가 변하지 않았는데 dirty 가 켜져서 "미저장 변경사항" 모달이 뜨는 회귀 가드.
         // MR #120 skh1205 리뷰 #3 반영.
         private Vector3 dragStartPosition;
+        // 드래그 시작 시점 rotation — drop 위치가 invalid 일 때 기존 오브젝트(pending 아님) 를
+        // 시작 pose 로 rollback 하는 데 사용. 새 드래그 UX(이동은 자유, 배치만 차단) 도입과 함께 추가.
+        private Quaternion dragStartRotation;
         private bool gridSnapEnabled = true;
         private GameObject gridDisplayRoot;
+
+        // 배치 불가 영역 시각화(MR #133/#134) — 드래그 중 사용자의 raw 타깃 위치가 방 footprint
+        // 밖이거나 다른 blocker 와 겹치면 [EditPlacement] 로그 + 바닥 footprint UI 가 빨간색으로 전환.
+        // 오브젝트 본체 material 은 더 이상 빨강으로 칠하지 않는다(MR #134, AC:HHP 스타일). 검증
+        // 로직은 기존 ClampToFloorBounds / IsSpawnPositionBlockedAt / WallObstructionRegistry
+        // 를 그대로 재사용하고 결과만 시각/로그로 반영. 상태 전이 시점에만 로그를 남긴다.
+        private bool dragLastPlacementValid = true;
+        private string dragLastInvalidReason;
+        private bool dragValidStateInitialized;
+        // 드래그 중 사용자의 raw 타깃 위치(clamp/resolve 적용 전). UpdatePlacementFootprint 가
+        // 검증 probe 로 사용 — 실제 transform 은 항상 valid 로 잡혀있지만 사용자가 벽/책장 쪽으로
+        // 밀어붙이는 동안 raw 위치는 invalid. footprint 색상이 그 의도를 시각화.
+        private Vector3 lastFloorDragRawCandidate;
 
         // Runtime-derived playable area, populated when edit mode is entered
         // by scanning the actual scene geometry. The grid display, the floor
@@ -506,6 +534,208 @@ namespace App.Bootstrap
             public Color OriginalColor;
         }
 
+        // 배치 미리보기 footprint UI (MR #134) — 오브젝트 본체 색을 건드리지 않고 바닥에
+        // 초록(valid)/빨강(invalid) Quad+Border 로 배치 가능 여부를 표시한다. Animal Crossing:
+        // Happy Home Paradise 의 가구 배치 UI 와 같은 방식. material/mesh 모두 hide 플래그로
+        // 자산화되지 않게 만들고 Dispose 에서 명시 destroy — Play Mode 종료 후 Scene/Prefab
+        // 에 잔류하지 않는다. drag/pending 양쪽에서 같은 인스턴스를 재사용 (중복 생성 방지).
+        private sealed class PlacementFootprintPreview
+        {
+            private static readonly Color ValidFillColor = new Color(0.35f, 0.95f, 0.50f, 0.30f);
+            private static readonly Color ValidBorderColor = new Color(0.20f, 0.85f, 0.40f, 0.95f);
+            private static readonly Color InvalidFillColor = new Color(1.00f, 0.45f, 0.45f, 0.32f);
+            private static readonly Color InvalidBorderColor = new Color(1.00f, 0.30f, 0.30f, 0.95f);
+
+            private const float FootprintY = FloorPlaneY + 0.01f; // 바닥 z-fight 회피.
+            private const float BorderLift = 0.001f;              // border 가 fill 위로 살짝 떠서 그려지도록.
+            private const float BorderWidth = 0.02f;
+            private const float MinSize = 0.05f;
+
+            private GameObject root;
+            private GameObject fillObject;
+            private GameObject borderObject;
+            private MeshRenderer fillRenderer;
+            private LineRenderer borderLine;
+            private Material fillMaterial;
+            private Material borderMaterial;
+            private Mesh quadMesh;
+
+            private bool isShown;
+            private bool? lastIsValid;
+            private string lastReason;
+            private string lastObjectName;
+
+            public bool IsShown => isShown;
+
+            public void Show(Scene scene, Bounds worldBounds, bool isValid, string reason, string objectName)
+            {
+                EnsureBuilt(scene);
+                ApplyTransform(worldBounds);
+                ApplyColor(isValid);
+
+                if (!isShown)
+                {
+                    if (root != null) root.SetActive(true);
+                    isShown = true;
+                    Debug.Log($"[EditFootprint] show object='{objectName ?? "<null>"}' valid={(isValid ? "True" : "False")}");
+                }
+                else if (lastIsValid != isValid || lastObjectName != objectName || lastReason != reason)
+                {
+                    if (isValid)
+                    {
+                        Debug.Log($"[EditFootprint] update object='{objectName ?? "<null>"}' valid=True");
+                    }
+                    else
+                    {
+                        Debug.Log($"[EditFootprint] update object='{objectName ?? "<null>"}' valid=False reason='{reason ?? "Unknown"}'");
+                    }
+                }
+
+                lastIsValid = isValid;
+                lastReason = reason;
+                lastObjectName = objectName;
+            }
+
+            public void Hide()
+            {
+                if (!isShown) return;
+                if (root != null) root.SetActive(false);
+                isShown = false;
+                lastIsValid = null;
+                lastReason = null;
+                lastObjectName = null;
+                Debug.Log("[EditFootprint] hide");
+            }
+
+            public void Dispose()
+            {
+                Hide();
+                if (root != null) UnityEngine.Object.Destroy(root);
+                if (fillMaterial != null) UnityEngine.Object.Destroy(fillMaterial);
+                if (borderMaterial != null) UnityEngine.Object.Destroy(borderMaterial);
+                if (quadMesh != null) UnityEngine.Object.Destroy(quadMesh);
+                root = null;
+                fillObject = null;
+                borderObject = null;
+                fillRenderer = null;
+                borderLine = null;
+                fillMaterial = null;
+                borderMaterial = null;
+                quadMesh = null;
+            }
+
+            private void EnsureBuilt(Scene scene)
+            {
+                if (root != null) return;
+
+                var shader = Shader.Find("Sprites/Default");
+                fillMaterial = new Material(shader)
+                {
+                    name = "FootprintFill",
+                    hideFlags = HideFlags.HideAndDontSave,
+                    color = ValidFillColor,
+                };
+                borderMaterial = new Material(shader)
+                {
+                    name = "FootprintBorder",
+                    hideFlags = HideFlags.HideAndDontSave,
+                    color = ValidBorderColor,
+                };
+
+                root = new GameObject("EditPlacementFootprint");
+                root.hideFlags = HideFlags.HideAndDontSave;
+                if (scene.IsValid()) SceneManager.MoveGameObjectToScene(root, scene);
+                root.SetActive(false);
+
+                quadMesh = BuildUnitQuadXZ();
+
+                fillObject = new GameObject("Fill");
+                fillObject.hideFlags = HideFlags.HideAndDontSave;
+                fillObject.transform.SetParent(root.transform, false);
+                var filter = fillObject.AddComponent<MeshFilter>();
+                filter.sharedMesh = quadMesh;
+                fillRenderer = fillObject.AddComponent<MeshRenderer>();
+                fillRenderer.sharedMaterial = fillMaterial;
+                fillRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                fillRenderer.receiveShadows = false;
+                fillRenderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+                fillRenderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+                fillRenderer.allowOcclusionWhenDynamic = false;
+
+                borderObject = new GameObject("Border");
+                borderObject.hideFlags = HideFlags.HideAndDontSave;
+                borderObject.transform.SetParent(root.transform, false);
+                borderLine = borderObject.AddComponent<LineRenderer>();
+                borderLine.useWorldSpace = true;
+                borderLine.positionCount = 5;
+                borderLine.loop = false;
+                borderLine.startWidth = BorderWidth;
+                borderLine.endWidth = BorderWidth;
+                borderLine.numCornerVertices = 0;
+                borderLine.numCapVertices = 0;
+                borderLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                borderLine.receiveShadows = false;
+                borderLine.material = borderMaterial;
+                borderLine.alignment = LineAlignment.View;
+            }
+
+            private void ApplyTransform(Bounds worldBounds)
+            {
+                var sx = Mathf.Max(MinSize, worldBounds.size.x);
+                var sz = Mathf.Max(MinSize, worldBounds.size.z);
+                var cx = worldBounds.center.x;
+                var cz = worldBounds.center.z;
+
+                fillObject.transform.position = new Vector3(cx, FootprintY, cz);
+                fillObject.transform.rotation = Quaternion.identity;
+                fillObject.transform.localScale = new Vector3(sx, 1f, sz);
+
+                var halfX = sx * 0.5f;
+                var halfZ = sz * 0.5f;
+                var y = FootprintY + BorderLift;
+                borderLine.SetPosition(0, new Vector3(cx - halfX, y, cz - halfZ));
+                borderLine.SetPosition(1, new Vector3(cx + halfX, y, cz - halfZ));
+                borderLine.SetPosition(2, new Vector3(cx + halfX, y, cz + halfZ));
+                borderLine.SetPosition(3, new Vector3(cx - halfX, y, cz + halfZ));
+                borderLine.SetPosition(4, new Vector3(cx - halfX, y, cz - halfZ));
+            }
+
+            private void ApplyColor(bool isValid)
+            {
+                fillMaterial.color = isValid ? ValidFillColor : InvalidFillColor;
+                borderMaterial.color = isValid ? ValidBorderColor : InvalidBorderColor;
+            }
+
+            private static Mesh BuildUnitQuadXZ()
+            {
+                var mesh = new Mesh
+                {
+                    name = "FootprintUnitQuad",
+                    hideFlags = HideFlags.HideAndDontSave,
+                };
+                mesh.vertices = new[]
+                {
+                    new Vector3(-0.5f, 0f, -0.5f),
+                    new Vector3( 0.5f, 0f, -0.5f),
+                    new Vector3( 0.5f, 0f,  0.5f),
+                    new Vector3(-0.5f, 0f,  0.5f),
+                };
+                mesh.triangles = new[] { 0, 2, 1, 0, 3, 2 };
+                mesh.uv = new[]
+                {
+                    new Vector2(0f, 0f),
+                    new Vector2(1f, 0f),
+                    new Vector2(1f, 1f),
+                    new Vector2(0f, 1f),
+                };
+                mesh.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
+                mesh.RecalculateBounds();
+                return mesh;
+            }
+        }
+
+        private PlacementFootprintPreview placementFootprint;
+
         // Auto-bootstrap ----------------------------------------------------------
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -586,7 +816,8 @@ namespace App.Bootstrap
             BuildThemeApplyModeModal();
             BuildCustomizationLockedModal();
             BuildSelectionPanel();
-            BuildConfirmPlacementButton();
+
+            placementFootprint = new PlacementFootprintPreview();
 
             CloseDecorationPopupInternal();
             ExitEditModeInternal();
@@ -821,6 +1052,12 @@ namespace App.Bootstrap
         {
             editOverlayRoot = CreateRectObject("EditOverlay", canvas.transform);
             StretchToParent((RectTransform)editOverlayRoot.transform);
+
+            // CanvasGroup 게이트 — UpdateButtonVisibility 가 매 frame IsEditModeActive 따라
+            // blocksRaycasts/interactable 토글. SetActive 와 이중 안전망으로 메인씬 회귀 방지.
+            editOverlayCanvasGroup = editOverlayRoot.AddComponent<CanvasGroup>();
+            editOverlayCanvasGroup.blocksRaycasts = false;
+            editOverlayCanvasGroup.interactable = false;
 
             BuildBottomMenu(editOverlayRoot.transform);
             BuildPillarboxFills(editOverlayRoot.transform);
@@ -3281,85 +3518,113 @@ namespace App.Bootstrap
             cancelLockedButton.onClick.AddListener(HideCustomizationLockedModal);
         }
 
+        // 우측 세로 카드 — 헤더 + (배치 확정) + 좌회전/우회전/삭제. 따뜻한 베이지/크림톤 + 둥근 모서리 +
+        // 은은한 outline & shadow. VerticalLayoutGroup + ContentSizeFitter 로 confirm 토글 시 카드 높이 자동
+        // 재계산 (confirm 숨김 시 헤더 바로 아래에 회전/삭제 버튼이 자연스럽게 정렬). confirmPlacementButtonRoot
+        // 는 confirmPlacementButton.gameObject 그 자체를 가리켜 UpdateSelectionPanel 의 SetActive 토글이 그대로
+        // 동작 — 두 root SetActive 흐름의 의미를 보존하면서 시각적으로 단일 카드.
         private void BuildSelectionPanel()
         {
             selectionPanelRoot = CreateRectObject("SelectionPanel", canvas.transform);
             var rect = (RectTransform)selectionPanelRoot.transform;
-            // Anchor to the top edge of the bottom menu (BottomMenuFraction from
-            // bottom of canvas). Sits 16 units above so rotate/delete is reachable
-            // without overlapping the toolbar.
-            rect.anchorMin = new Vector2(0.5f, BottomMenuFraction);
-            rect.anchorMax = new Vector2(0.5f, BottomMenuFraction);
-            rect.pivot = new Vector2(0.5f, 0f);
-            // 너비 280 → 360: 좌회전/우회전/삭제 3버튼이 16px 마진 + 8px 간격으로 들어가는 폭.
-            rect.sizeDelta = new Vector2(360f, 84f);
-            rect.anchoredPosition = new Vector2(0f, 16f);
+            // 우상단 anchor + -ButtonMargin x-offset = 저장/돌아가기 column 과 동일 우측 정렬.
+            // 카드 height 는 ContentSizeFitter 가 자식 합산으로 결정 (sizeDelta.y 초기값은 무의미).
+            rect.anchorMin = new Vector2(1f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(1f, 1f);
+            rect.sizeDelta = new Vector2(SelectionCardWidth, 0f);
+            // 저장 버튼 bottom = -ButtonMargin - ButtonHeight - ButtonStackGap - ButtonHeight = -164.
+            // 24px gap → -188 (카드 top). pivot y=1 이라 카드 아래로 자라난다.
+            rect.anchoredPosition = new Vector2(-ButtonMargin, -188f);
 
+            // CanvasGroup 게이트 — UpdateSelectionPanel 이 매 frame blocksRaycasts/interactable 를
+            // shouldShow 로 토글. SetActive 와 별개로 raycast 차단을 명시 제어해 메인씬 회귀 차단.
+            selectionPanelCanvasGroup = selectionPanelRoot.AddComponent<CanvasGroup>();
+            selectionPanelCanvasGroup.blocksRaycasts = false;
+            selectionPanelCanvasGroup.interactable = false;
+
+            // 카드 배경 — 반투명 크림 + 베이지 outline + 부드러운 그림자. LayoutElement.ignoreLayout=true 로
+            // VerticalLayoutGroup 가 stretch 한 background 를 자식 슬롯으로 셈하지 않게 가드.
+            // raycastTarget=true 유지 — 편집 모드에서 카드 padding/spacing 영역의 클릭이 뒤의 데코로
+            // 새지 않도록 background 가 click eat 한다 (CanvasGroup.blocksRaycasts=false 일 땐 자동 무력화).
             var bg = CreateImage(selectionPanelRoot.transform, "Background", WithAlpha(CardColor, 0.97f));
             bg.sprite = roundedRectSprite;
             bg.type = Image.Type.Sliced;
             StretchToParent(bg.rectTransform);
+            bg.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
             var outline = bg.gameObject.AddComponent<Outline>();
             outline.effectColor = WithAlpha(BorderColor, 0.95f);
             outline.effectDistance = new Vector2(1f, -1f);
+            var bgShadow = bg.gameObject.AddComponent<Shadow>();
+            bgShadow.effectColor = WithAlpha(TextColor, 0.10f);
+            bgShadow.effectDistance = new Vector2(0f, -3f);
 
-            // 좌/우 회전 분리 (이번 브랜치 핵심 변경) + WallDecoMarker.AllowRotation 가드 (origin/dev 합류).
-            // 두 버튼 모두 selectionRotateLeftButton / selectionRotateRightButton 으로 보관해서
-            // UpdateSelectionPanel 의 AllowRotation 체크가 동시 토글.
-            var rotateLeftButton = CreateButton(selectionPanelRoot.transform, "RotateLeftButton", "↺ 좌",
-                SecondaryColor, TextColor, new Vector2(96f, 60f), true, BorderColor);
-            var rotateLeftRect = (RectTransform)rotateLeftButton.transform;
-            rotateLeftRect.anchorMin = new Vector2(0f, 0.5f);
-            rotateLeftRect.anchorMax = new Vector2(0f, 0.5f);
-            rotateLeftRect.pivot = new Vector2(0f, 0.5f);
-            rotateLeftRect.anchoredPosition = new Vector2(16f, 0f);
+            var layout = selectionPanelRoot.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(SelectionCardPadding, SelectionCardPadding, SelectionCardPadding, SelectionCardPadding);
+            layout.spacing = SelectionCardSpacing;
+            layout.childAlignment = TextAnchor.UpperCenter;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+
+            var fitter = selectionPanelRoot.AddComponent<ContentSizeFitter>();
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+
+            // 헤더 — 인벤토리 카드의 muted 캡션 톤과 동일. 장식용이라 raycastTarget=false (Background 가
+            // 카드 영역 클릭을 이미 차단하므로 헤더는 raycast 안 받아도 됨).
+            var header = CreateText(selectionPanelRoot.transform, "Header", "오브젝트 조작",
+                13f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center);
+            header.raycastTarget = false;
+            var headerLE = header.gameObject.AddComponent<LayoutElement>();
+            headerLE.preferredHeight = 22f;
+
+            // 헤더와 액션 버튼 사이 1px divider — outline 색을 한 단계 더 흐리게. 장식용 raycastTarget=false.
+            var divider = CreateImage(selectionPanelRoot.transform, "Divider", WithAlpha(BorderColor, 0.55f));
+            divider.raycastTarget = false;
+            var dividerLE = divider.gameObject.AddComponent<LayoutElement>();
+            dividerLE.preferredHeight = 1f;
+            dividerLE.minHeight = 1f;
+
+            // 배치 확정 — primary green. confirmPlacementButtonRoot 를 GameObject 자체로 두면
+            // UpdateSelectionPanel 의 SetActive 토글이 VerticalLayoutGroup 의 child enable 토글이 되어
+            // 카드가 자동 reflow.
+            confirmPlacementButton = CreateButton(
+                selectionPanelRoot.transform, "ConfirmButton", "✓ 배치 확정",
+                Hex("#3F8C5C"), Color.white, new Vector2(SelectionButtonInnerWidth, SelectionButtonHeight), false, BorderColor);
+            confirmPlacementButtonRoot = confirmPlacementButton.gameObject;
+            var confirmLE = confirmPlacementButton.gameObject.AddComponent<LayoutElement>();
+            confirmLE.preferredHeight = SelectionButtonHeight;
+            confirmPlacementButton.onClick.AddListener(OnConfirmPlacementClicked);
+
+            // 좌/우 회전 — secondary cream 톤. 회전 아이콘(↺/↻) + 한글 라벨 병기.
+            // 두 버튼 모두 selectionRotateLeftButton / selectionRotateRightButton 으로 보관해
+            // UpdateSelectionPanel 의 AllowRotation 게이트가 그대로 동시 토글.
+            var rotateLeftButton = CreateButton(selectionPanelRoot.transform, "RotateLeftButton", "↺ 좌회전",
+                SecondaryColor, TextColor, new Vector2(SelectionButtonInnerWidth, SelectionButtonHeight), true, BorderColor);
+            rotateLeftButton.gameObject.AddComponent<LayoutElement>().preferredHeight = SelectionButtonHeight;
             rotateLeftButton.onClick.AddListener(RotateSelectedCounterClockwise);
             selectionRotateLeftButton = rotateLeftButton;
 
-            var rotateRightButton = CreateButton(selectionPanelRoot.transform, "RotateRightButton", "↻ 우",
-                SecondaryColor, TextColor, new Vector2(96f, 60f), true, BorderColor);
-            var rotateRightRect = (RectTransform)rotateRightButton.transform;
-            rotateRightRect.anchorMin = new Vector2(0.5f, 0.5f);
-            rotateRightRect.anchorMax = new Vector2(0.5f, 0.5f);
-            rotateRightRect.pivot = new Vector2(0.5f, 0.5f);
-            rotateRightRect.anchoredPosition = new Vector2(0f, 0f);
+            var rotateRightButton = CreateButton(selectionPanelRoot.transform, "RotateRightButton", "↻ 우회전",
+                SecondaryColor, TextColor, new Vector2(SelectionButtonInnerWidth, SelectionButtonHeight), true, BorderColor);
+            rotateRightButton.gameObject.AddComponent<LayoutElement>().preferredHeight = SelectionButtonHeight;
             rotateRightButton.onClick.AddListener(RotateSelectedClockwise);
             selectionRotateRightButton = rotateRightButton;
 
+            // 삭제 — danger red. 다른 버튼과 라운딩/높이 동일, 색상으로만 위험 액션 신호.
             var deleteButton = CreateButton(selectionPanelRoot.transform, "DeleteButton", "삭제",
-                Hex("#C14E4E"), Color.white, new Vector2(96f, 60f), false, BorderColor);
-            var deleteRect = (RectTransform)deleteButton.transform;
-            deleteRect.anchorMin = new Vector2(1f, 0.5f);
-            deleteRect.anchorMax = new Vector2(1f, 0.5f);
-            deleteRect.pivot = new Vector2(1f, 0.5f);
-            deleteRect.anchoredPosition = new Vector2(-16f, 0f);
+                Hex("#C14E4E"), Color.white, new Vector2(SelectionButtonInnerWidth, SelectionButtonHeight), false, BorderColor);
+            deleteButton.gameObject.AddComponent<LayoutElement>().preferredHeight = SelectionButtonHeight;
             deleteButton.onClick.AddListener(DeleteSelectedObject);
-        }
 
-        // 배치 확정 버튼 — 좌회전/우회전/삭제 패널 바로 위(16px gap) 에 별도 root 로 띄운다.
-        // pending placement(=신규로 인벤토리 추가됐고 아직 확정되지 않은 항목) 가 선택돼 있을
-        // 때만 활성화. 별도 root 로 분리한 이유: 기존 selectionPanel 의 360x84 layout / 3 버튼
-        // 절대좌표를 건드리지 않아 회귀 위험 최소화 + 확정된 오브젝트 선택 시엔 root 째로 비활성.
-        private void BuildConfirmPlacementButton()
-        {
-            confirmPlacementButtonRoot = CreateRectObject("ConfirmPlacementPanel", canvas.transform);
-            var rect = (RectTransform)confirmPlacementButtonRoot.transform;
-            // selectionPanel 과 동일 anchor (BottomMenuFraction, 가로 중앙) — 위로 100px 띄움.
-            // selectionPanel 자체가 anchoredPosition.y = 16, sizeDelta.y = 84 이므로
-            // 100 = 16 + 84 = 패널 상단 바로 위. 16px 추가 gap 까진 안 줘도 시각적 분리 충분.
-            rect.anchorMin = new Vector2(0.5f, BottomMenuFraction);
-            rect.anchorMax = new Vector2(0.5f, BottomMenuFraction);
-            rect.pivot = new Vector2(0.5f, 0f);
-            rect.sizeDelta = new Vector2(220f, 64f);
-            rect.anchoredPosition = new Vector2(0f, 116f);
-
-            // primary-action 색상 — 회전(secondary)/삭제(red) 와 시각적으로 구분.
-            confirmPlacementButton = CreateButton(
-                confirmPlacementButtonRoot.transform, "ConfirmButton", "✓ 배치 확정",
-                Hex("#3F8C5C"), Color.white, new Vector2(220f, 64f), false, BorderColor);
-            StretchToParent(((RectTransform)confirmPlacementButton.transform));
-            confirmPlacementButton.onClick.AddListener(OnConfirmPlacementClicked);
-
+            // 초기 상태 — 카드 자체를 비활성. 우상단 anchor 로 옮긴 이후 카드가 책장/대시보드 raycast
+            // 영역과 겹쳐서, BuildSelectionPanel ~ 첫 Update 사이 1프레임 race 만으로도 메인씬 클릭이
+            // BookshelfExperienceManager.IsPointerOverUi 에서 blocking hit 으로 잡혔다. Update 의
+            // UpdateSelectionPanel 이 진실의 원천이지만, race window 를 닫기 위해 시작은 inactive 로.
+            selectionPanelRoot.SetActive(false);
+            // pending placement 없을 땐 confirm 숨김. UpdateSelectionPanel 이 매 frame 재평가.
             confirmPlacementButtonRoot.SetActive(false);
         }
 
@@ -3442,10 +3707,11 @@ namespace App.Bootstrap
                 return;
             }
 
-            var bounds = ComputeRendererBounds(selectedObject);
-            if (bounds.HasValue && IsSpawnPositionBlockedAt(selectedObject, bounds.Value, selectedObject.transform.position))
+            // MR #133 — 바닥/벽 양쪽 동일 path 로 검증. UpdateSelectionPanel 이 disabled 처리하므로
+            // 정상 경로에선 여기까지 invalid 가 도달하지 않지만, 키보드/외부 트리거 방어로 재확인.
+            if (!EvaluateConfirmEnabled(selectedObject))
             {
-                Debug.Log($"[RoomEdit][Preview] 확정 거절 — '{selectedObject.name}' 현재 위치가 다른 오브젝트와 겹침.");
+                Debug.LogWarning($"[EditPlacement] confirm rejected object='{selectedObject.name}' reason='InvalidPlacement'");
                 ShowSaveStatusToast("배치 불가 — 다른 오브젝트와 겹칩니다", isError: true, durationSec: 2f);
                 return;
             }
@@ -3523,6 +3789,8 @@ namespace App.Bootstrap
                 return;
             }
 
+            DiagnoseEditUiBlockingMainSceneIfClicked();
+
             UpdateButtonVisibility();
             UpdateSelectionPanel();
             UpdateSaveStatusToast();
@@ -3542,6 +3810,54 @@ namespace App.Bootstrap
             {
                 HandleDecorationPopupOutsideClick();
             }
+
+            UpdatePlacementFootprint();
+        }
+
+        // 매 frame footprint UI visible/위치/색 갱신 (MR #134).
+        // 표시 조건: 편집 모드 활성 + 모달 닫힘 + 선택된 floor 오브젝트가 (pending OR drag 중) 일 때.
+        // 그 외엔 hide. 위치는 ComputeRendererBounds 의 world AABB 기준, 색은 EvaluateFloorPlacementValid
+        // 의 결과(기존 검증 로직 그대로 재사용). 매 frame 호출되지만 show/hide/색상 변화 시점에만 로그.
+        private void UpdatePlacementFootprint()
+        {
+            if (placementFootprint == null) return;
+
+            if (!IsEditModeActive || isUnsavedChangesModalOpen || selectedObject == null)
+            {
+                placementFootprint.Hide();
+                return;
+            }
+
+            bool isDragging = draggingObject == selectedObject;
+            bool isPending = pendingPlacements.Contains(selectedObject);
+            if (!isDragging && !isPending)
+            {
+                placementFootprint.Hide();
+                return;
+            }
+
+            // wall deco 는 바닥에 footprint 가 의미 없음 — 벽 표면에서 별도 visual feedback 이
+            // ApplyWallDecoValidityFeedback 으로 동작 중. floor 항목만 footprint UI 사용.
+            if (selectedObject.GetComponent<WallDecoMarker>() != null)
+            {
+                placementFootprint.Hide();
+                return;
+            }
+
+            var bounds = ComputeRendererBounds(selectedObject);
+            if (!bounds.HasValue)
+            {
+                placementFootprint.Hide();
+                return;
+            }
+
+            // 드래그 중엔 raw 타깃 위치 기준으로 검증 — clamp/resolve 로 실제 transform 은 valid 로
+            // 잡혀있어도 사용자가 벽/책장 쪽으로 밀고 있으면 빨강으로 보여줘야 한다. 드래그 아닌
+            // pending(spawn 직후 정지 상태) 은 transform.position 검증.
+            var probe = isDragging ? lastFloorDragRawCandidate : selectedObject.transform.position;
+            bool isValid = EvaluateFloorPlacementValid(selectedObject, probe, bounds, out var reason);
+
+            placementFootprint.Show(gameObject.scene, bounds.Value, isValid, reason, selectedObject.name);
         }
 
         // 편집 카메라 키/스크롤 입력 — A/D 회전, W/S 줌, 마우스 스크롤 줌. 텍스트 입력 포커스 중이거나
@@ -3669,12 +3985,76 @@ namespace App.Bootstrap
             {
                 editOverlayRoot.SetActive(IsEditModeActive);
             }
+            // CanvasGroup 게이트 — SetActive 와 별개로 raycast 차단을 명시 제어. 메인씬에서 어떤
+            // race 도 편집 UI 가 책장/대시보드 클릭을 가로채지 못하게 하드 가드.
+            if (editOverlayCanvasGroup != null)
+            {
+                editOverlayCanvasGroup.blocksRaycasts = IsEditModeActive;
+                editOverlayCanvasGroup.interactable = IsEditModeActive;
+            }
 
             // Force-exit edit mode if the player ends up in a focus mode some other way.
             if (IsEditModeActive && experienceManager != null && !inMainScene)
             {
                 ExitEditModeInternal();
             }
+        }
+
+        // 메인씬(IsEditModeActive=false) 에서 좌클릭 발생 시점에만 RaycastAll 을 한 번 돌려,
+        // RoomEditModeController 가 만든 편집 전용 UI(editOverlayRoot / selectionPanelRoot 하위)
+        // 가 책장/대시보드 클릭을 막고 있는지 검증한다. hit 이 있으면 [EditUiHit][WARN] 으로 어떤
+        // GameObject/canvas/raycastTarget 이 차단 원인인지 출력 — 회귀 발생 시 1차 진단 자료.
+        // 매 frame 이 아니라 click frame 한정이라 비용 거의 없음.
+        private void DiagnoseEditUiBlockingMainSceneIfClicked()
+        {
+            if (IsEditModeActive) return;
+            if (Mouse.current == null || !Mouse.current.leftButton.wasPressedThisFrame) return;
+            var es = EventSystem.current;
+            if (es == null) return;
+
+            var pointer = Mouse.current.position.ReadValue();
+            var pointerEvent = new PointerEventData(es) { position = pointer };
+            var hits = new List<RaycastResult>();
+            es.RaycastAll(pointerEvent, hits);
+
+            bool headerLogged = false;
+            for (int i = 0; i < hits.Count; i++)
+            {
+                var go = hits[i].gameObject;
+                if (go == null) continue;
+                if (!IsUnderEditOnlyRoot(go)) continue;
+
+                if (!headerLogged)
+                {
+                    Debug.LogWarning($"[EditUiHit][WARN] edit UI is blocking main scene while edit mode is inactive — pointer={pointer} hits={hits.Count}");
+                    headerLogged = true;
+                }
+                var canvas = go.GetComponentInParent<Canvas>();
+                var canvasName = canvas != null ? canvas.name : "<none>";
+                var renderMode = canvas != null ? canvas.renderMode.ToString() : "<n/a>";
+                var graphic = go.GetComponent<Graphic>();
+                var raycastTarget = graphic != null ? graphic.raycastTarget.ToString() : "<noGraphic>";
+                var canvasGroup = go.GetComponentInParent<CanvasGroup>();
+                var blocksRaycasts = canvasGroup != null ? canvasGroup.blocksRaycasts.ToString() : "<noGroup>";
+                Debug.LogWarning($"[EditUiHit][WARN] hit='{go.name}' canvas='{canvasName}' renderMode={renderMode} raycastTarget={raycastTarget} blocksRaycasts={blocksRaycasts}");
+            }
+        }
+
+        // editOverlayRoot 또는 selectionPanelRoot 하위인지 판정. decorationButtonRoot/popup 은
+        // 메인씬에서도 의도적으로 활성인 정상 UI 라 진단 대상에서 제외.
+        private bool IsUnderEditOnlyRoot(GameObject go)
+        {
+            var t = go.transform;
+            while (t != null)
+            {
+                var current = t.gameObject;
+                if (current == editOverlayRoot || current == selectionPanelRoot)
+                {
+                    return true;
+                }
+                t = t.parent;
+            }
+            return false;
         }
 
         private void UpdateSelectionPanel()
@@ -3686,6 +4066,13 @@ namespace App.Bootstrap
             if (selectionPanelRoot != null && selectionPanelRoot.activeSelf != shouldShow)
             {
                 selectionPanelRoot.SetActive(shouldShow);
+            }
+            // CanvasGroup 게이트 — shouldShow=false 면 blocksRaycasts/interactable 도 false. 카드의
+            // Background/Header/Divider Image 가 raycast 를 절대 못 막게 보장 (메인씬 회귀 차단).
+            if (selectionPanelCanvasGroup != null)
+            {
+                selectionPanelCanvasGroup.blocksRaycasts = shouldShow;
+                selectionPanelCanvasGroup.interactable = shouldShow;
             }
 
             // 회전 비활성 entry — wall deco marker.AllowRotation == false 면 좌/우 회전 버튼 모두 disabled.
@@ -3712,6 +4099,39 @@ namespace App.Bootstrap
             {
                 confirmPlacementButtonRoot.SetActive(shouldShowConfirm);
             }
+
+            // MR #133 — 현재 위치가 invalid 면 확정 버튼 disabled. 매 frame 평가하지만
+            // EvaluateConfirmEnabled 는 ComputeRendererBounds + Physics.OverlapBox 1회 (drag tick
+            // 과 동일 비용) 라 부담 없음.
+            if (shouldShowConfirm && confirmPlacementButton != null)
+            {
+                bool canConfirm = EvaluateConfirmEnabled(selectedObject);
+                if (confirmPlacementButton.interactable != canConfirm)
+                {
+                    confirmPlacementButton.interactable = canConfirm;
+                }
+            }
+        }
+
+        // 확정 버튼 활성화 판단 — 현재 transform 위치가 valid 한지 검사.
+        // 바닥 항목: ClampToFloorBounds + IsSpawnPositionBlockedAt.
+        // 벽 항목: WallObstructionRegistry.IsRectFreeOnWall.
+        // 양쪽 모두 기존 검증 로직을 그대로 재사용.
+        private bool EvaluateConfirmEnabled(GameObject go)
+        {
+            if (go == null) return false;
+            var bounds = ComputeRendererBounds(go);
+            if (!bounds.HasValue) return true;
+
+            var wallMarker = go.GetComponent<WallDecoMarker>();
+            if (wallMarker != null)
+            {
+                var rect = ProjectBoundsToWallRect(bounds.Value, wallMarker.CurrentWall);
+                var registry = EnsureWallObstructionRegistry();
+                return registry == null || registry.IsRectFreeOnWall(wallMarker.CurrentWall, rect);
+            }
+
+            return EvaluateFloorPlacementValid(go, go.transform.position, bounds, out _);
         }
 
         // 토스트 자동 숨김 — saveStatusToastHideTime 까지만 노출.
@@ -4247,9 +4667,37 @@ namespace App.Bootstrap
             // 메인뷰 카메라 컨트롤러가 다음 프레임에 보는 씬이 정상 상태이도록.
             RestoreWallVisibility("ExitEditModeInternal");
             EndCameraViewportEdit();
+            // 편집 UI raycast 즉시 차단 — SetActive 만으로는 다음 Update 까지 race window 가 남는다.
+            // CanvasGroup.blocksRaycasts/interactable=false 를 함께 set 해서 메인씬 클릭이 책장/
+            // 대시보드 focus 까지 도달하도록 보장. UpdateButtonVisibility/UpdateSelectionPanel 이
+            // 다음 frame 부터 같은 값을 재계산하므로 idempotent.
+            if (editOverlayCanvasGroup != null)
+            {
+                editOverlayCanvasGroup.blocksRaycasts = false;
+                editOverlayCanvasGroup.interactable = false;
+            }
             if (editOverlayRoot != null)
             {
                 editOverlayRoot.SetActive(false);
+            }
+            if (selectionPanelCanvasGroup != null)
+            {
+                selectionPanelCanvasGroup.blocksRaycasts = false;
+                selectionPanelCanvasGroup.interactable = false;
+            }
+            if (selectionPanelRoot != null)
+            {
+                selectionPanelRoot.SetActive(false);
+            }
+            if (confirmPlacementButtonRoot != null)
+            {
+                confirmPlacementButtonRoot.SetActive(false);
+            }
+            // footprint preview 는 3D mesh + LineRenderer 라 EventSystem raycast 는 안 받지만,
+            // 시각 잔류 방지 + 다음 EnterEditMode 가 깨끗한 상태에서 시작하도록 hide.
+            if (placementFootprint != null)
+            {
+                placementFootprint.Hide();
             }
 
             // Restore any localScale we overrode when entering edit mode so a
@@ -4381,6 +4829,13 @@ namespace App.Bootstrap
             RestoreWallVisibility("OnDestroy");
             EndCameraViewportEdit();
             RoomEditThemeFilter.Changed -= HandleThemeFilterChanged;
+            // MR #134 — footprint preview 의 runtime-생성 mesh/Material/GameObject 를 명시 destroy.
+            // hideFlags=HideAndDontSave 라 자산화는 안 되지만 instance leak 방지.
+            if (placementFootprint != null)
+            {
+                placementFootprint.Dispose();
+                placementFootprint = null;
+            }
         }
 
         // MR #120 simonjiho 리뷰 #6 반영 — 비정상 종료(scene unload, GameObject SetActive(false),
@@ -6273,11 +6728,13 @@ namespace App.Bootstrap
         {
             // includeInactive = true so a .glb whose visual root is
             // temporarily disabled still reports a usable AABB. UpdateDrag
-            // gates ClampToFloorBounds + ResolveBlockerCollisions on
-            // bounds.HasValue — without this the dragged object would
-            // skip BOTH the wall clamp and the blocker check whenever its
-            // renderer hierarchy contained an inactive node, so it could
-            // tunnel into walls / fixtures unconstrained.
+            // gates ClampToFloorBounds on bounds.HasValue — without this the
+            // dragged object would skip the room-wall clamp whenever its
+            // renderer hierarchy contained an inactive node, and could tunnel
+            // outside the playable footprint unconstrained.
+            // (Overlap with other objects is no longer resolved during drag —
+            // it is reported via EvaluateFloorPlacementValid for footprint
+            // coloring + confirm-button disable + FinishDrag rollback only.)
             var renderers = go.GetComponentsInChildren<Renderer>(true);
             if (renderers == null || renderers.Length == 0)
             {
@@ -6630,8 +7087,10 @@ namespace App.Bootstrap
         {
             draggingObject = target;
             dragLastValidPosition = target.transform.position;
-            // FinishDrag 가 epsilon 비교로 실제 이동 여부를 판별하기 위한 anchor.
+            // FinishDrag 가 epsilon 비교로 실제 이동 여부를 판별하기 위한 anchor + drop 시 invalid 면
+            // 기존(pending 아님) 오브젝트를 시작 pose 로 rollback 하는 anchor.
             dragStartPosition = target.transform.position;
+            dragStartRotation = target.transform.rotation;
 
             // Capture grab offset so the model doesn't snap its center under the
             // pointer at drag start — instead it stays where it was relative to
@@ -6656,6 +7115,16 @@ namespace App.Bootstrap
             EnsureDecorationRootColliders();
             RebuildBlockerRendererCache(target);
             ShowGrid();
+
+            // 새 드래그 — 배치 유효성 추적 초기화. UpdateDrag 첫 tick 에서 transition 으로 인식돼
+            // 시작 시 한 번 [EditPlacement] valid=... 로그가 남도록 dragValidStateInitialized=false.
+            dragValidStateInitialized = false;
+            dragLastPlacementValid = true;
+            dragLastInvalidReason = null;
+            // [EditDrag] dedup 도 동일하게 리셋 — 새 드래그 시작 첫 tick 에서 한 번 로그 남게.
+            dragLastEditDragLogInitialized = false;
+            // footprint 가 첫 frame 에 좌표 0,0,0 으로 깜빡이지 않도록 현재 위치를 초기 probe 로.
+            lastFloorDragRawCandidate = target.transform.position;
         }
 
         private void UpdateDrag(Camera camera, Vector2 pointer)
@@ -6701,18 +7170,115 @@ namespace App.Bootstrap
                 rawZ = playableMinZ + Mathf.Floor((rawZ - playableMinZ) / MinorGridStep) * MinorGridStep + MinorGridStep * 0.5f;
             }
 
-            var candidate = new Vector3(rawX, draggingObject.transform.position.y, rawZ);
+            var rawCandidate = new Vector3(rawX, draggingObject.transform.position.y, rawZ);
+            var candidate = rawCandidate;
             var currentPosition = draggingObject.transform.position;
             var bounds = ComputeRendererBounds(draggingObject);
+            // 새 UX(이번 변경) — 이동 검증과 배치 검증 분리.
+            //   movement gate (드래그 중) : ClampToFloorBounds 만. 방 경계 안에서는 다른 오브젝트와
+            //                              겹치는 위치로도 자유롭게 이동 가능.
+            //   placement gate (확정 시점) : EvaluateFloorPlacementValid 가 ClampToFloorBounds +
+            //                              IsSpawnPositionBlockedAt 둘 다 본다. footprint 색 / 확정
+            //                              버튼 disabled / FinishDrag rollback 결정에 사용.
+            // ResolveBlockerCollisions 호출은 의도적으로 제거 — 그게 슬라이딩/완전차단으로 이동을
+            // 막아서 사용자가 겹치는 영역을 지나갈 수 없었던 회귀의 원인.
             if (bounds.HasValue)
             {
                 candidate = ClampToFloorBounds(currentPosition, candidate, bounds.Value);
-                candidate = ResolveBlockerCollisions(currentPosition, candidate, bounds.Value);
             }
 
             draggingObject.transform.position = candidate;
             dragLastValidPosition = candidate;
+
+            // MR #134 — 오브젝트 본체 material 은 건드리지 않는다 (AC:HHP 스타일). raw 타깃 위치를
+            // 저장만 해두면 다음 Update 의 UpdatePlacementFootprint 가 footprint UI 색을 갱신한다.
+            // [EditPlacement] 로그는 검증 transition 시점 추적을 위해 그대로 유지.
+            lastFloorDragRawCandidate = rawCandidate;
+            bool isValid = EvaluateFloorPlacementValid(draggingObject, rawCandidate, bounds, out var invalidReason);
+            UpdatePlacementValidityState(draggingObject, isValid, invalidReason);
+            // 이동 검증/배치 검증 분리 추적 — moveAllowed 는 항상 inRoom (clamp 적용 결과 raw 와의 일치).
+            bool inRoom = bounds.HasValue
+                ? Mathf.Abs(rawCandidate.x - candidate.x) < 1e-4f && Mathf.Abs(rawCandidate.z - candidate.z) < 1e-4f
+                : true;
+            LogEditDragTransition(moveAllowed: inRoom, inRoom: inRoom, placementValid: isValid, reason: invalidReason);
         }
+
+        // 배치 유효성 평가 — 기존 검증 로직(ClampToFloorBounds / IsSpawnPositionBlockedAt)
+        // 을 재사용해 (valid, reason) 을 반환. drag tick / 확정 버튼 disabled 상태 양쪽에서 호출.
+        // bounds 가 없으면(렌더러 없음 등) 보수적으로 valid 처리 — 시각화 대상에서 제외.
+        private bool EvaluateFloorPlacementValid(GameObject go, Vector3 candidate, Bounds? cachedBounds, out string reason)
+        {
+            reason = null;
+            if (go == null) return true;
+            var b = cachedBounds ?? ComputeRendererBounds(go);
+            if (!b.HasValue) return true;
+
+            var bounds = b.Value;
+            var clamped = ClampToFloorBounds(candidate, candidate, bounds);
+            if (Mathf.Abs(clamped.x - candidate.x) > 1e-4f || Mathf.Abs(clamped.z - candidate.z) > 1e-4f)
+            {
+                reason = "OutOfRoom";
+                return false;
+            }
+            if (IsSpawnPositionBlockedAt(go, bounds, candidate))
+            {
+                reason = "OverlapWithObstacle";
+                return false;
+            }
+            return true;
+        }
+
+        // 이동 검증(moveAllowed/inRoom) 과 배치 검증(placementValid) 분리 추적.
+        // 사용자 spec: '드래그 이동 가능 여부' 와 '최종 배치 가능 여부' 를 구분된 신호로 출력.
+        // 매 frame 도배 방지 — 직전 tick 과 (moveAllowed, inRoom, placementValid, reason) 4-tuple
+        // 이 동일하면 skip. 새 드래그가 시작되면 BeginDrag 가 dragValidStateInitialized=false 로 리셋.
+        private bool dragLastMoveAllowed;
+        private bool dragLastInRoom;
+        private bool dragLastEditDragLogInitialized;
+        private void LogEditDragTransition(bool moveAllowed, bool inRoom, bool placementValid, string reason)
+        {
+            if (dragLastEditDragLogInitialized
+                && dragLastMoveAllowed == moveAllowed
+                && dragLastInRoom == inRoom
+                && dragLastPlacementValid == placementValid
+                && dragLastInvalidReason == reason)
+            {
+                return;
+            }
+            var reasonText = reason ?? "None";
+            Debug.Log($"[EditDrag] moveAllowed={moveAllowed} inRoom={inRoom} placementValid={placementValid} reason='{reasonText}'");
+            dragLastMoveAllowed = moveAllowed;
+            dragLastInRoom = inRoom;
+            dragLastEditDragLogInitialized = true;
+            // dragLastPlacementValid / dragLastInvalidReason 는 UpdatePlacementValidityState 가 별도로
+            // 갱신하지만, 이 helper 가 placementValid 를 인자로 받을 때 그 호출이 같은 frame 안 선후순서
+            // 어느 쪽이든 [EditDrag] 의 dedup 키는 자기 시점의 값으로 유지된다.
+        }
+
+        // 상태 전이(valid ↔ invalid) 시점에만 로그. 매 프레임 도배 방지.
+        private void UpdatePlacementValidityState(GameObject go, bool isValid, string reason)
+        {
+            if (dragValidStateInitialized && dragLastPlacementValid == isValid && dragLastInvalidReason == reason)
+            {
+                return;
+            }
+            var name = go != null ? go.name : "<null>";
+            if (isValid)
+            {
+                Debug.Log($"[EditPlacement] placement valid=True object='{name}'");
+            }
+            else
+            {
+                Debug.Log($"[EditPlacement] placement valid=False object='{name}' reason='{reason ?? "Unknown"}'");
+            }
+            dragLastPlacementValid = isValid;
+            dragLastInvalidReason = reason;
+            dragValidStateInitialized = true;
+        }
+
+        // (MR #134 — 바닥 배치 항목의 본체 색은 더 이상 빨갛게 칠하지 않는다. 검증 결과는
+        // PlacementFootprintPreview 의 바닥 footprint UI 에서 초록/빨강으로 표시. 본 메서드는
+        // 제거됨.)
 
         // Wall deco 드래그 — 마우스 raycast 로 hit 한 wall 의 surface 위치로 이동 + 회전.
         // 다른 wall 로 hit 옮겨가면 자동으로 wall 전환 (deco 회전도 새 wall 안쪽 면 향하게).
@@ -6728,15 +7294,15 @@ namespace App.Bootstrap
                 return;
             }
 
-            // candidate transform 임시 적용 → bounds 계산 → invalid 면 rollback.
-            // candidate 기준 bounds 정확히 측정해야 obstruction check 정확. transform
-            // 변경 후 Renderer.bounds 가 즉시 갱신되므로 1 프레임 안에 검사 + 필요 시 rollback.
-            var prevPosition = draggingObject.transform.position;
-            var prevRotation = draggingObject.transform.rotation;
-            var prevWall = marker.CurrentWall;
-
+            // 새 UX(이번 변경) — wall deco 도 floor 와 동일하게 이동 검증과 배치 검증 분리.
+            //   movement : 항상 hitPoint+rotation 적용. 책장/대시보드 영역 위로도 자유롭게 이동.
+            //   placement: registry.IsRectFreeOnWall 결과를 footprint feedback / FinishDrag rollback /
+            //              확정 버튼 disabled 에만 사용. 더 이상 위치 자체를 차단하지 않음.
+            // 이전 동작(invalid → prev pose 로 rollback)은 사용자가 obstruction 영역을 통과 못하게
+            // 하는 회귀였음.
             draggingObject.transform.position = hitPoint;
             draggingObject.transform.rotation = WallFacingRotation(newWall);
+            marker.CurrentWall = newWall;
 
             bool isFree = true;
             var bounds = ComputeRendererBounds(draggingObject);
@@ -6749,19 +7315,14 @@ namespace App.Bootstrap
 
             if (isFree)
             {
-                marker.CurrentWall = newWall;
                 dragLastValidPosition = hitPoint;
-            }
-            else
-            {
-                // 책장/대시보드 영역 진입 차단 — 마지막 valid 위치/회전 유지. 사용자가
-                // mouse 를 obstruction 밖으로 옮기면 다음 frame 에서 자동 follow.
-                draggingObject.transform.position = prevPosition;
-                draggingObject.transform.rotation = prevRotation;
-                marker.CurrentWall = prevWall;
             }
 
             ApplyWallDecoValidityFeedback(draggingObject, isFree);
+            // MR #133 — wall deco 도 동일한 [EditPlacement] 로그 경로로 통합.
+            UpdatePlacementValidityState(draggingObject, isFree, isFree ? null : "OverlapOnWall");
+            // 이동 검증/배치 검증 분리 추적 — wall 표면 hit 가 잡힌 시점이라 moveAllowed=true (방 안).
+            LogEditDragTransition(moveAllowed: true, inRoom: true, placementValid: isFree, reason: isFree ? null : "OverlapOnWall");
         }
 
         // World AABB → wall surface (u, v) Rect — WallObstructionRegistry 와 동일 좌표계.
@@ -6818,9 +7379,13 @@ namespace App.Bootstrap
 
         private void FinishDrag()
         {
-            // Position is always inside the room because UpdateDrag clamped it
-            // every frame, so we don't need to revert anywhere. Just close out
-            // the drag state and hide the grid overlay.
+            // 새 UX(이번 변경) — UpdateDrag 가 더 이상 ResolveBlockerCollisions 를 적용하지 않으므로
+            // drop 시점의 위치가 invalid(겹침)일 수 있다. 정책:
+            //   pending placement (신규로 인벤토리에서 추가됐고 아직 확정 안 됨)
+            //     → 그대로 둔다. 사용자가 다시 드래그하거나 위치를 바꿔서 valid 만들거나, 다른 곳에 둔
+            //       채로 confirm 버튼을 누름 (확정 버튼은 EvaluateConfirmEnabled 가 invalid 면 disable).
+            //   기존(이미 확정된) 오브젝트
+            //     → 시작 pose 로 rollback. "겹친 채로 commit" 회귀 차단.
             //
             // 이전 구현은 wasDragging 만 보고 SetDirty 를 항상 호출했다. 사용자가 마커를 단순
             // 선택만 해도 BeginDrag 가 같이 시작되므로 release 시 좌표 변화가 없어도 dirty 가 켜져서
@@ -6830,6 +7395,34 @@ namespace App.Bootstrap
             draggingObject = null;
             HideGrid();
             if (dragged == null) return;
+
+            // 1) drop 시점 placement 검증 — floor 와 wall 항목별 기존 검증 로직 그대로 재사용.
+            bool dropValid = EvaluateConfirmEnabled(dragged);
+            bool isPending = pendingPlacements.Contains(dragged);
+
+            // 2) 기존(non-pending) 오브젝트 + invalid drop → 시작 pose 로 rollback.
+            if (!dropValid && !isPending)
+            {
+                Debug.Log($"[EditDrag] drop invalid on existing object='{dragged.name}' → rollback to start pose");
+                dragged.transform.position = dragStartPosition;
+                dragged.transform.rotation = dragStartRotation;
+            }
+
+            // MR #134 — wall deco 만 기존 body tint feedback 유지 (Animal Crossing 스타일 footprint
+            // UI 는 floor 항목 전용). floor 는 본체 색을 건드리지 않으므로 release 시 복구할 게 없다.
+            // 단, 사용자가 invalid frame 에서 곧바로 release 하면 wall deco tint 가 빨강으로 남을
+            // 가능성이 있어 valid 로 한 번 정리.
+            var wallMarker = dragged.GetComponent<WallDecoMarker>();
+            if (wallMarker != null)
+            {
+                ApplyWallDecoValidityFeedback(dragged, true);
+            }
+            // 다음 Update 의 UpdatePlacementFootprint 가 selectedObject 가 더 이상 dragging 아니라는
+            // 조건으로 자동 hide 하지만, 비-pending 항목이면 release 직후엔 selectedObject 만 남아
+            // 조건 미달로 hide 가 호출됨. pending 항목이면 isPending=true 로 footprint 가 계속 보인다.
+            dragValidStateInitialized = false;
+            dragLastPlacementValid = true;
+            dragLastInvalidReason = null;
 
             // grid snap 단계(MinorGridStep ~ 0.1m) 보다 한참 작은 epsilon — 부동소수 잡음만 무시.
             const float MovementEpsilonSqr = 1e-6f;
@@ -7345,6 +7938,10 @@ namespace App.Bootstrap
                 Debug.Log(
                     $"[RoomEdit][Rotate] dir={direction} delta={signedDegrees:+#0;-#0;0}° from={prevYaw:0.#}° to={newYaw:0.#}° " +
                     $"result=reverted reason={revertReason} obj={selectedObject.name}");
+                // MR #133 — 회전 시도가 invalid 로 reverted 됐음을 placement 로그 채널에도 동일 형식으로 기록.
+                // 회전 자체는 즉시 revert 되어 시각 상태가 valid 로 유지되므로 별도 tint 변경은 없다.
+                var placementReason = revertReason == "out-of-room" ? "OutOfRoom" : "OverlapWithObstacle";
+                Debug.Log($"[EditPlacement] placement valid=False object='{selectedObject.name}' reason='{placementReason}' source='Rotate'");
                 return;
             }
 
