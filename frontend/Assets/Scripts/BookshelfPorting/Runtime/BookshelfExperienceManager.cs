@@ -1022,76 +1022,33 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            // [DIAG MR135] click 처리 흐름 진단 — 어느 gate 에서 bail 하는지 추적.
-            // Update 매 프레임 호출이라 전체 frame 로그는 너무 시끄러워서 leftButton.wasPressedThisFrame
-            // 일 때만 로그 출력. 검증 후 [DIAG MR135] 마커 일괄 제거.
-            bool clickThisFrame = Mouse.current.leftButton.wasPressedThisFrame;
-            if (clickThisFrame)
-            {
-                bool blockedByUi = IsPointerOverUi();
-                Debug.Log($"[DIAG MR135] click@{Mouse.current.position.ReadValue()} IsPointerOverUi={blockedByUi} CurrentFocusArea={CurrentFocusArea} CamTransitioning={(cameraController != null && cameraController.IsTransitioning)} useExternalDashboard={useExternalDashboardPanel}");
-                if (blockedByUi)
-                {
-                    DiagnoseIsPointerOverUiBlock();
-                    return;
-                }
-            }
-            else if (IsPointerOverUi())
+            if (IsPointerOverUi())
             {
                 return;
             }
 
-            if (!clickThisFrame)
+            if (!Mouse.current.leftButton.wasPressedThisFrame)
             {
                 return;
             }
 
-            bool hitNotebook = TryHitNotebook();
-            Debug.Log($"[DIAG MR135] TryHitNotebook={hitNotebook}");
-            if (hitNotebook)
+            if (TryHitNotebook())
             {
                 FocusNotebook();
                 return;
             }
 
-            bool hitGuestbook = TryHitGuestbookBoard();
-            Debug.Log($"[DIAG MR135] TryHitGuestbookBoard={hitGuestbook}");
-            if (hitGuestbook)
+            if (TryHitGuestbookBoard())
             {
                 FocusGuestbook();
                 return;
             }
 
-            bool hitBookshelf = (CurrentFocusArea != ExperienceFocusArea.Bookshelf) && TryHitBookshelf();
-            Debug.Log($"[DIAG MR135] TryHitBookshelf={hitBookshelf} (gate CurrentFocusArea != Bookshelf was {CurrentFocusArea != ExperienceFocusArea.Bookshelf})");
-            if (hitBookshelf)
+            if (CurrentFocusArea != ExperienceFocusArea.Bookshelf && TryHitBookshelf())
             {
                 FocusBookshelf();
                 return;
             }
-        }
-
-        // [DIAG MR135] IsPointerOverUi 가 true 반환할 때 어느 raycast hit 가 차단 사유였는지 출력.
-        // BookshelfExperienceManager.IsPointerOverBlockingEventSystemUi + DashboardRaycastFilter
-        // 의 분기를 풀어서 hit 별 이유 출력.
-        private static void DiagnoseIsPointerOverUiBlock()
-        {
-            if (Mouse.current == null || EventSystem.current == null) return;
-            var pointerScreen = Mouse.current.position.ReadValue();
-            var eventData = new PointerEventData(EventSystem.current) { position = pointerScreen };
-            var results = new List<RaycastResult>();
-            EventSystem.current.RaycastAll(eventData, results);
-            Debug.Log($"[DIAG MR135] RaycastAll hits={results.Count}");
-            for (int i = 0; i < results.Count; i++)
-            {
-                var hit = results[i].gameObject;
-                var moduleName = results[i].module != null ? results[i].module.GetType().Name : "<null>";
-                var moduleFullName = results[i].module != null ? results[i].module.GetType().FullName : "<null>";
-                bool blocking = DashboardRaycastFilter.IsBlockingRaycastResult(results[i], pointerScreen);
-                Debug.Log($"[DIAG MR135]   [{i}] hit='{(hit != null ? hit.name : "<null>")}' module={moduleName} moduleFull={moduleFullName} blocking={blocking}");
-            }
-            bool overInteractive = DashboardRaycastFilter.IsPointerOverInteractiveDashboard(pointerScreen);
-            Debug.Log($"[DIAG MR135] IsPointerOverInteractiveDashboard={overInteractive}");
         }
 
         // Resilience layer that re-applies the onboarding Step3 UI override

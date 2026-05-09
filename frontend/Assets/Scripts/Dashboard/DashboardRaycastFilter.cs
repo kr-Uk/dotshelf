@@ -74,7 +74,26 @@ namespace Dotshelf.Scripts.Dashboard
                 return false;
             }
 
+            // [Fix MR135] UI Toolkit WorldSpace UIDocument hit (WorldDocumentRaycaster) 는
+            // 본질적으로 월드 오브젝트의 일부 (대시보드 패널 등) 이라 클릭 = 월드 클릭으로 봐야
+            // 책장/노트북/대시보드 자체 포커싱이 동작. dev fix (697c92a) 가 RoomEditModeController
+            // 에는 같은 skip 을 넣었지만 BookshelfExperienceManager.IsPointerOverUi 는 이 필터 기반이라
+            // 빠져 있었음 → 모든 월드 클릭이 막히는 회귀. dashboard 자체 interaction 은 UI Toolkit
+            // 의 자체 입력 dispatch 가 처리해서 EventSystem 차단과는 별개.
+            if (IsUiToolkitWorldSpaceRaycast(result))
+            {
+                return false;
+            }
+
             return !IsNonBlockingWorldSpaceGraphicRaycast(result);
+        }
+
+        // WorldDocumentRaycaster = UI Toolkit world-space panel raycaster. PanelRaycaster
+        // (screen-space) 와 구분 — screen-space 는 진짜 HUD 차단 대상이라 skip 안 함.
+        private static bool IsUiToolkitWorldSpaceRaycast(RaycastResult result)
+        {
+            var moduleTypeName = result.module != null ? result.module.GetType().FullName : null;
+            return moduleTypeName == "UnityEngine.UIElements.WorldDocumentRaycaster";
         }
 
         public static bool IsPointerOverInteractiveDashboard(Vector2 pointerScreen)
