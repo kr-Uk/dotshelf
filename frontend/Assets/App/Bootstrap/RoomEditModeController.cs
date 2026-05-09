@@ -49,6 +49,14 @@ namespace App.Bootstrap
         private const float ButtonMargin = 32f;
         private const float ButtonStackGap = 12f;
 
+        // 우측 오브젝트 조작 카드 (BuildSelectionPanel) 디멘션. Save/Return column 보다 살짝 넓되
+        // 화면을 과하게 가리지 않도록 컴팩트. SelectionButtonInnerWidth = SelectionCardWidth - SelectionCardPadding*2.
+        private const float SelectionCardWidth = 144f;
+        private const int SelectionCardPadding = 12;
+        private const float SelectionCardSpacing = 8f;
+        private const float SelectionButtonInnerWidth = 120f;
+        private const float SelectionButtonHeight = 44f;
+
         // Placement defaults: in front of the bookshelf, on the floor (Floor surface y=0).
         // Bookshelf turntable sits around z>0.5, so place items in the open floor area.
         private static readonly Vector3 InventoryPlacementCenter = new Vector3(0f, 0.0f, -0.6f);
@@ -801,7 +809,6 @@ namespace App.Bootstrap
             BuildThemeApplyModeModal();
             BuildCustomizationLockedModal();
             BuildSelectionPanel();
-            BuildConfirmPlacementButton();
 
             placementFootprint = new PlacementFootprintPreview();
 
@@ -2928,85 +2935,97 @@ namespace App.Bootstrap
             cancelLockedButton.onClick.AddListener(HideCustomizationLockedModal);
         }
 
+        // 우측 세로 카드 — 헤더 + (배치 확정) + 좌회전/우회전/삭제. 따뜻한 베이지/크림톤 + 둥근 모서리 +
+        // 은은한 outline & shadow. VerticalLayoutGroup + ContentSizeFitter 로 confirm 토글 시 카드 높이 자동
+        // 재계산 (confirm 숨김 시 헤더 바로 아래에 회전/삭제 버튼이 자연스럽게 정렬). confirmPlacementButtonRoot
+        // 는 confirmPlacementButton.gameObject 그 자체를 가리켜 UpdateSelectionPanel 의 SetActive 토글이 그대로
+        // 동작 — 두 root SetActive 흐름의 의미를 보존하면서 시각적으로 단일 카드.
         private void BuildSelectionPanel()
         {
             selectionPanelRoot = CreateRectObject("SelectionPanel", canvas.transform);
             var rect = (RectTransform)selectionPanelRoot.transform;
-            // Anchor to the top edge of the bottom menu (BottomMenuFraction from
-            // bottom of canvas). Sits 16 units above so rotate/delete is reachable
-            // without overlapping the toolbar.
-            rect.anchorMin = new Vector2(0.5f, BottomMenuFraction);
-            rect.anchorMax = new Vector2(0.5f, BottomMenuFraction);
-            rect.pivot = new Vector2(0.5f, 0f);
-            // 너비 280 → 360: 좌회전/우회전/삭제 3버튼이 16px 마진 + 8px 간격으로 들어가는 폭.
-            rect.sizeDelta = new Vector2(360f, 84f);
-            rect.anchoredPosition = new Vector2(0f, 16f);
+            // 우상단 anchor + -ButtonMargin x-offset = 저장/돌아가기 column 과 동일 우측 정렬.
+            // 카드 height 는 ContentSizeFitter 가 자식 합산으로 결정 (sizeDelta.y 초기값은 무의미).
+            rect.anchorMin = new Vector2(1f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(1f, 1f);
+            rect.sizeDelta = new Vector2(SelectionCardWidth, 0f);
+            // 저장 버튼 bottom = -ButtonMargin - ButtonHeight - ButtonStackGap - ButtonHeight = -164.
+            // 24px gap → -188 (카드 top). pivot y=1 이라 카드 아래로 자라난다.
+            rect.anchoredPosition = new Vector2(-ButtonMargin, -188f);
 
+            // 카드 배경 — 반투명 크림 + 베이지 outline + 부드러운 그림자. LayoutElement.ignoreLayout=true 로
+            // VerticalLayoutGroup 가 stretch 한 background 를 자식 슬롯으로 셈하지 않게 가드.
             var bg = CreateImage(selectionPanelRoot.transform, "Background", WithAlpha(CardColor, 0.97f));
             bg.sprite = roundedRectSprite;
             bg.type = Image.Type.Sliced;
             StretchToParent(bg.rectTransform);
+            bg.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
             var outline = bg.gameObject.AddComponent<Outline>();
             outline.effectColor = WithAlpha(BorderColor, 0.95f);
             outline.effectDistance = new Vector2(1f, -1f);
+            var bgShadow = bg.gameObject.AddComponent<Shadow>();
+            bgShadow.effectColor = WithAlpha(TextColor, 0.10f);
+            bgShadow.effectDistance = new Vector2(0f, -3f);
 
-            // 좌/우 회전 분리 (이번 브랜치 핵심 변경) + WallDecoMarker.AllowRotation 가드 (origin/dev 합류).
-            // 두 버튼 모두 selectionRotateLeftButton / selectionRotateRightButton 으로 보관해서
-            // UpdateSelectionPanel 의 AllowRotation 체크가 동시 토글.
-            var rotateLeftButton = CreateButton(selectionPanelRoot.transform, "RotateLeftButton", "↺ 좌",
-                SecondaryColor, TextColor, new Vector2(96f, 60f), true, BorderColor);
-            var rotateLeftRect = (RectTransform)rotateLeftButton.transform;
-            rotateLeftRect.anchorMin = new Vector2(0f, 0.5f);
-            rotateLeftRect.anchorMax = new Vector2(0f, 0.5f);
-            rotateLeftRect.pivot = new Vector2(0f, 0.5f);
-            rotateLeftRect.anchoredPosition = new Vector2(16f, 0f);
+            var layout = selectionPanelRoot.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(SelectionCardPadding, SelectionCardPadding, SelectionCardPadding, SelectionCardPadding);
+            layout.spacing = SelectionCardSpacing;
+            layout.childAlignment = TextAnchor.UpperCenter;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+
+            var fitter = selectionPanelRoot.AddComponent<ContentSizeFitter>();
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+
+            // 헤더 — 인벤토리 카드의 muted 캡션 톤과 동일.
+            var header = CreateText(selectionPanelRoot.transform, "Header", "오브젝트 조작",
+                13f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center);
+            var headerLE = header.gameObject.AddComponent<LayoutElement>();
+            headerLE.preferredHeight = 22f;
+
+            // 헤더와 액션 버튼 사이 1px divider — outline 색을 한 단계 더 흐리게.
+            var divider = CreateImage(selectionPanelRoot.transform, "Divider", WithAlpha(BorderColor, 0.55f));
+            var dividerLE = divider.gameObject.AddComponent<LayoutElement>();
+            dividerLE.preferredHeight = 1f;
+            dividerLE.minHeight = 1f;
+
+            // 배치 확정 — primary green. confirmPlacementButtonRoot 를 GameObject 자체로 두면
+            // UpdateSelectionPanel 의 SetActive 토글이 VerticalLayoutGroup 의 child enable 토글이 되어
+            // 카드가 자동 reflow.
+            confirmPlacementButton = CreateButton(
+                selectionPanelRoot.transform, "ConfirmButton", "✓ 배치 확정",
+                Hex("#3F8C5C"), Color.white, new Vector2(SelectionButtonInnerWidth, SelectionButtonHeight), false, BorderColor);
+            confirmPlacementButtonRoot = confirmPlacementButton.gameObject;
+            var confirmLE = confirmPlacementButton.gameObject.AddComponent<LayoutElement>();
+            confirmLE.preferredHeight = SelectionButtonHeight;
+            confirmPlacementButton.onClick.AddListener(OnConfirmPlacementClicked);
+
+            // 좌/우 회전 — secondary cream 톤. 회전 아이콘(↺/↻) + 한글 라벨 병기.
+            // 두 버튼 모두 selectionRotateLeftButton / selectionRotateRightButton 으로 보관해
+            // UpdateSelectionPanel 의 AllowRotation 게이트가 그대로 동시 토글.
+            var rotateLeftButton = CreateButton(selectionPanelRoot.transform, "RotateLeftButton", "↺ 좌회전",
+                SecondaryColor, TextColor, new Vector2(SelectionButtonInnerWidth, SelectionButtonHeight), true, BorderColor);
+            rotateLeftButton.gameObject.AddComponent<LayoutElement>().preferredHeight = SelectionButtonHeight;
             rotateLeftButton.onClick.AddListener(RotateSelectedCounterClockwise);
             selectionRotateLeftButton = rotateLeftButton;
 
-            var rotateRightButton = CreateButton(selectionPanelRoot.transform, "RotateRightButton", "↻ 우",
-                SecondaryColor, TextColor, new Vector2(96f, 60f), true, BorderColor);
-            var rotateRightRect = (RectTransform)rotateRightButton.transform;
-            rotateRightRect.anchorMin = new Vector2(0.5f, 0.5f);
-            rotateRightRect.anchorMax = new Vector2(0.5f, 0.5f);
-            rotateRightRect.pivot = new Vector2(0.5f, 0.5f);
-            rotateRightRect.anchoredPosition = new Vector2(0f, 0f);
+            var rotateRightButton = CreateButton(selectionPanelRoot.transform, "RotateRightButton", "↻ 우회전",
+                SecondaryColor, TextColor, new Vector2(SelectionButtonInnerWidth, SelectionButtonHeight), true, BorderColor);
+            rotateRightButton.gameObject.AddComponent<LayoutElement>().preferredHeight = SelectionButtonHeight;
             rotateRightButton.onClick.AddListener(RotateSelectedClockwise);
             selectionRotateRightButton = rotateRightButton;
 
+            // 삭제 — danger red. 다른 버튼과 라운딩/높이 동일, 색상으로만 위험 액션 신호.
             var deleteButton = CreateButton(selectionPanelRoot.transform, "DeleteButton", "삭제",
-                Hex("#C14E4E"), Color.white, new Vector2(96f, 60f), false, BorderColor);
-            var deleteRect = (RectTransform)deleteButton.transform;
-            deleteRect.anchorMin = new Vector2(1f, 0.5f);
-            deleteRect.anchorMax = new Vector2(1f, 0.5f);
-            deleteRect.pivot = new Vector2(1f, 0.5f);
-            deleteRect.anchoredPosition = new Vector2(-16f, 0f);
+                Hex("#C14E4E"), Color.white, new Vector2(SelectionButtonInnerWidth, SelectionButtonHeight), false, BorderColor);
+            deleteButton.gameObject.AddComponent<LayoutElement>().preferredHeight = SelectionButtonHeight;
             deleteButton.onClick.AddListener(DeleteSelectedObject);
-        }
 
-        // 배치 확정 버튼 — 좌회전/우회전/삭제 패널 바로 위(16px gap) 에 별도 root 로 띄운다.
-        // pending placement(=신규로 인벤토리 추가됐고 아직 확정되지 않은 항목) 가 선택돼 있을
-        // 때만 활성화. 별도 root 로 분리한 이유: 기존 selectionPanel 의 360x84 layout / 3 버튼
-        // 절대좌표를 건드리지 않아 회귀 위험 최소화 + 확정된 오브젝트 선택 시엔 root 째로 비활성.
-        private void BuildConfirmPlacementButton()
-        {
-            confirmPlacementButtonRoot = CreateRectObject("ConfirmPlacementPanel", canvas.transform);
-            var rect = (RectTransform)confirmPlacementButtonRoot.transform;
-            // selectionPanel 과 동일 anchor (BottomMenuFraction, 가로 중앙) — 위로 100px 띄움.
-            // selectionPanel 자체가 anchoredPosition.y = 16, sizeDelta.y = 84 이므로
-            // 100 = 16 + 84 = 패널 상단 바로 위. 16px 추가 gap 까진 안 줘도 시각적 분리 충분.
-            rect.anchorMin = new Vector2(0.5f, BottomMenuFraction);
-            rect.anchorMax = new Vector2(0.5f, BottomMenuFraction);
-            rect.pivot = new Vector2(0.5f, 0f);
-            rect.sizeDelta = new Vector2(220f, 64f);
-            rect.anchoredPosition = new Vector2(0f, 116f);
-
-            // primary-action 색상 — 회전(secondary)/삭제(red) 와 시각적으로 구분.
-            confirmPlacementButton = CreateButton(
-                confirmPlacementButtonRoot.transform, "ConfirmButton", "✓ 배치 확정",
-                Hex("#3F8C5C"), Color.white, new Vector2(220f, 64f), false, BorderColor);
-            StretchToParent(((RectTransform)confirmPlacementButton.transform));
-            confirmPlacementButton.onClick.AddListener(OnConfirmPlacementClicked);
-
+            // 초기 상태 — pending placement 없으면 confirm 숨김. UpdateSelectionPanel 이 매 frame 재평가.
             confirmPlacementButtonRoot.SetActive(false);
         }
 
