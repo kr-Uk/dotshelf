@@ -47,12 +47,7 @@ namespace BookshelfPorting.Runtime
         private const int BookCoverBackDescriptionLineLength = 11;
         private const int BookSpineTitleCharacterLimit = 10;
         private const int BookSpineTitleFontSize = 30;
-        private const string HamhamAssetPath = "Assets/Meshy_AI_Hamham_0416082404_texture.glb";
-        private const string BookStackAssetPath = "Assets/Arts/Models/Props/book_stack.glb";
-        private const string RugAssetPath = "Assets/Arts/Models/Furniture/rug_natural.glb";
-        private const string LampAssetPath = "Assets/Arts/Models/Furniture/lamp_floor.glb";
         private const string TableNaturalAssetPath = "Assets/Arts/Models/Furniture/table_natural.glb";
-        private const string ClockHamhamAssetPath = "Assets/Arts/Models/Props/clock_hamham.glb";
         private const float DeskTargetWidthX = 0.54f;
         private const float DeskTargetHeightY = 0.41f;
         private const float DeskTargetDepthZ = 0.86f;
@@ -74,12 +69,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private Transform bookshelfTurntableRoot = null;
         [SerializeField] private Transform bookshelfRoot = null;
         [SerializeField] private Transform booksRoot = null;
-        [SerializeField] private GameObject hamhamModelAsset = null;
-        [SerializeField] private GameObject bookStackAsset = null;
-        [SerializeField] private GameObject rugAsset = null;
-        [SerializeField] private GameObject lampAsset = null;
         [SerializeField] private GameObject tableNaturalAsset = null;
-        [SerializeField] private GameObject clockHamhamAsset = null;
         [SerializeField] private GameObject notebookStationAsset = null;
         [SerializeField] private Texture2D qaBooksBaseMap = null;
         [SerializeField] private Texture2D qaBooksNormalMap = null;
@@ -587,13 +577,11 @@ namespace BookshelfPorting.Runtime
             DestroyBookEntitiesUnderBooksRoot();
         }
 
+        // roomRoot 자식 중 ClearRoomChildren() 가 destroy 하지 않을 이름들. 현재는 천장
+        // (테마 무관 공통 구조물) 만. 향후 spawn 단계가 추가되면 이 list 확장.
         private static readonly HashSet<string> PreservedRoomChildNames = new HashSet<string>
         {
-            "LampFloor",
-            "BookStack",
-            "RugNatural",
-            "Ceiling",
-            "ClockHamham"
+            "Ceiling"
         };
 
         private void ClearRoomChildren()
@@ -709,7 +697,6 @@ namespace BookshelfPorting.Runtime
 
             BuildGuestbookBoard();
             BuildNotebookStation();
-            EnsureRoomDecorations();
         }
 
         private const float CeilingThickness = 0.08f;
@@ -743,181 +730,6 @@ namespace BookshelfPorting.Runtime
             ceiling.GetComponent<MeshRenderer>().sharedMaterial = materialFactory.GetCeilingMaterial();
             DestroyImmediate(ceiling.GetComponent<Collider>());
             // generatedGeometry 등록 안 함 — 의도적. ClearGenerated() 가 강제 destroy 하지 않도록.
-        }
-
-        private static readonly Vector3 LampFloorLocalPosition = new Vector3(-1.05f, 0f, 1.05f);
-        private static readonly Quaternion LampFloorLocalRotation = Quaternion.Euler(0f, 35f, 0f);
-        private static readonly Vector3 LampFloorLocalScale = Vector3.one * 0.8f;
-
-        private static readonly Vector3 BookStackLocalPosition = new Vector3(-1.72f, 0f, -0.42f);
-        private static readonly Quaternion BookStackLocalRotation = Quaternion.Euler(0f, 18f, 0f);
-        private static readonly Vector3 BookStackLocalScale = Vector3.one * 0.2f;
-
-        private static readonly Vector3 RugNaturalLocalPosition = new Vector3(0.4f, 0.002f, -0.55f);
-        private static readonly Quaternion RugNaturalLocalRotation = Quaternion.identity;
-        private static readonly Vector3 RugNaturalLocalScale = Vector3.one * 0.6f;
-
-        private static readonly Vector3 ClockHamhamLocalPosition = new Vector3(-2.0f, 1.72f, -1.15f);
-        private static readonly Quaternion ClockHamhamLocalRotation = Quaternion.Euler(0f, 90f, 0f);
-        private const float ClockHamhamTargetMaxDimension = 0.38f;
-        private const float ClockHamhamAlignTopToY = 1.72f;
-
-        public void EnsureRoomDecorations()
-        {
-            EnsureRoots();
-            if (roomRoot == null)
-            {
-                return;
-            }
-
-            if (roomRoot.Find("LampFloor") == null)
-            {
-                SpawnDecoration(
-                    ref lampAsset, LampAssetPath, "LampFloor",
-                    LampFloorLocalPosition, LampFloorLocalRotation, LampFloorLocalScale,
-                    alignToFloor: true);
-            }
-
-            if (roomRoot.Find("BookStack") == null)
-            {
-                SpawnDecoration(
-                    ref bookStackAsset, BookStackAssetPath, "BookStack",
-                    BookStackLocalPosition, BookStackLocalRotation, BookStackLocalScale,
-                    alignToFloor: true);
-            }
-
-            if (roomRoot.Find("RugNatural") == null)
-            {
-                SpawnDecoration(
-                    ref rugAsset, RugAssetPath, "RugNatural",
-                    RugNaturalLocalPosition, RugNaturalLocalRotation, RugNaturalLocalScale,
-                    alignToFloor: false);
-            }
-
-            if (roomRoot.Find("ClockHamham") == null)
-            {
-                SpawnWallMountedDecoration(
-                    ref clockHamhamAsset, ClockHamhamAssetPath, "ClockHamham",
-                    ClockHamhamLocalPosition, ClockHamhamLocalRotation, ClockHamhamTargetMaxDimension,
-                    ClockHamhamAlignTopToY);
-            }
-        }
-
-        private void SpawnWallMountedDecoration(ref GameObject cachedAsset, string assetPath, string rootName, Vector3 localPosition, Quaternion localRotation, float targetMaxDimension, float? alignTopToY = null)
-        {
-            var asset = ResolveAsset(cachedAsset, assetPath);
-            if (asset == null)
-            {
-                return;
-            }
-
-            cachedAsset = asset;
-
-            var decoRoot = new GameObject(rootName);
-            decoRoot.transform.SetParent(roomRoot, false);
-            decoRoot.transform.localPosition = localPosition;
-            decoRoot.transform.localRotation = localRotation;
-            decoRoot.transform.localScale = Vector3.one;
-
-            var instance = Instantiate(asset, decoRoot.transform);
-            instance.name = asset.name;
-            instance.transform.localPosition = Vector3.zero;
-            instance.transform.localRotation = Quaternion.identity;
-            instance.transform.localScale = Vector3.one;
-
-            var bounds = CalculateLocalBoundsFromMeshes(decoRoot.transform);
-            if (bounds.size.sqrMagnitude > 0.0001f)
-            {
-                var maxDim = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
-                if (maxDim > 0.0001f)
-                {
-                    decoRoot.transform.localScale = Vector3.one * (targetMaxDimension / maxDim);
-                }
-            }
-
-            if (alignTopToY.HasValue)
-            {
-                var parentBounds = CalculateBoundsOfSubtreeInSpace(decoRoot.transform, roomRoot);
-                if (parentBounds.size.sqrMagnitude > 0.0001f)
-                {
-                    var yShift = alignTopToY.Value - parentBounds.max.y;
-                    var lp = decoRoot.transform.localPosition;
-                    decoRoot.transform.localPosition = new Vector3(lp.x, lp.y + yShift, lp.z);
-                }
-            }
-        }
-
-        private static Bounds CalculateBoundsOfSubtreeInSpace(Transform subtreeRoot, Transform coordinateSpace)
-        {
-            var hasBounds = false;
-            var bounds = new Bounds(Vector3.zero, Vector3.zero);
-            var meshFilters = subtreeRoot.GetComponentsInChildren<MeshFilter>(true);
-            for (var i = 0; i < meshFilters.Length; i++)
-            {
-                var mf = meshFilters[i];
-                if (mf == null || mf.sharedMesh == null)
-                {
-                    continue;
-                }
-
-                var localBounds = mf.sharedMesh.bounds;
-                var mft = mf.transform;
-                var lmin = localBounds.min;
-                var lmax = localBounds.max;
-                for (var cx = 0; cx < 2; cx++)
-                {
-                    var x = cx == 0 ? lmin.x : lmax.x;
-                    for (var cy = 0; cy < 2; cy++)
-                    {
-                        var y = cy == 0 ? lmin.y : lmax.y;
-                        for (var cz = 0; cz < 2; cz++)
-                        {
-                            var z = cz == 0 ? lmin.z : lmax.z;
-                            var worldPoint = mft.TransformPoint(new Vector3(x, y, z));
-                            var spacePoint = coordinateSpace.InverseTransformPoint(worldPoint);
-                            if (!hasBounds)
-                            {
-                                bounds = new Bounds(spacePoint, Vector3.zero);
-                                hasBounds = true;
-                            }
-                            else
-                            {
-                                bounds.Encapsulate(spacePoint);
-                            }
-                        }
-                    }
-                }
-            }
-
-            return bounds;
-        }
-
-        private void SpawnDecoration(ref GameObject cachedAsset, string assetPath, string rootName, Vector3 localPosition, Quaternion localRotation, Vector3 localScale, bool alignToFloor)
-        {
-            var asset = ResolveAsset(cachedAsset, assetPath);
-            if (asset == null)
-            {
-                return;
-            }
-
-            cachedAsset = asset;
-
-            var decoRoot = new GameObject(rootName);
-            decoRoot.transform.SetParent(roomRoot, false);
-            decoRoot.transform.localPosition = localPosition;
-            decoRoot.transform.localRotation = localRotation;
-            decoRoot.transform.localScale = localScale;
-
-            var instance = Instantiate(asset, decoRoot.transform);
-            instance.name = asset.name;
-            instance.transform.localPosition = Vector3.zero;
-            instance.transform.localRotation = Quaternion.identity;
-            instance.transform.localScale = Vector3.one;
-
-            if (alignToFloor)
-            {
-                AlignModelToFloor(decoRoot.transform, instance.transform);
-            }
         }
 
         private static GameObject ResolveAsset(GameObject asset, string assetPath)
@@ -1016,7 +828,6 @@ namespace BookshelfPorting.Runtime
                     state.ResetSections(bookshelfSections);
                 }
 
-                BuildHamhamDisplay();
                 return;
             }
 
@@ -1027,7 +838,6 @@ namespace BookshelfPorting.Runtime
             state.ResetSections(bookshelfSections);
             PopulateBookshelfVariant(activeBookshelfIndex);
             SetBookshelfAlpha(1f);
-            BuildHamhamDisplay();
         }
 
         private void BuildBookshelfShell(Transform shellRoot, List<ShelfSection> sections, bool includeFocusHitArea, Material wood)
@@ -1913,67 +1723,6 @@ namespace BookshelfPorting.Runtime
             box.GetComponent<MeshRenderer>().sharedMaterial = material;
             DestroyImmediate(box.GetComponent<Collider>());
             generatedGeometry.Add(box);
-        }
-
-        private void BuildHamhamDisplay()
-        {
-            var hamhamAsset = ResolveHamhamAsset();
-            if (hamhamAsset == null)
-            {
-                return;
-            }
-
-            var hamhamRoot = new GameObject("HamhamDisplay");
-            hamhamRoot.transform.SetParent(transform, false);
-            var bookshelfLocalPosition = transform.InverseTransformPoint(
-                bookshelfTurntableRoot.TransformPoint(GetBookshelfFrontSlotPosition()));
-            hamhamRoot.transform.localPosition = bookshelfLocalPosition + new Vector3(width * 0.5f + 0.42f, 0f, -0.05f);
-            hamhamRoot.transform.localRotation = Quaternion.Euler(0f, 152f, 0f);
-            hamhamRoot.transform.localScale = Vector3.one * 0.42f;
-            generatedGeometry.Add(hamhamRoot);
-
-            var instance = Instantiate(hamhamAsset, hamhamRoot.transform);
-            instance.name = hamhamAsset.name;
-            instance.transform.localPosition = Vector3.zero;
-            instance.transform.localRotation = Quaternion.identity;
-            instance.transform.localScale = Vector3.one;
-
-            AlignModelToFloor(hamhamRoot.transform, instance.transform);
-        }
-
-        private GameObject ResolveHamhamAsset()
-        {
-            if (hamhamModelAsset != null)
-            {
-                return hamhamModelAsset;
-            }
-
-#if UNITY_EDITOR
-            hamhamModelAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(HamhamAssetPath);
-#endif
-
-            return hamhamModelAsset;
-        }
-
-        private static void AlignModelToFloor(Transform root, Transform modelRoot)
-        {
-            var renderers = root.GetComponentsInChildren<Renderer>();
-            if (renderers == null || renderers.Length == 0)
-            {
-                return;
-            }
-
-            var bounds = renderers[0].bounds;
-            for (var i = 1; i < renderers.Length; i++)
-            {
-                if (renderers[i] != null)
-                {
-                    bounds.Encapsulate(renderers[i].bounds);
-                }
-            }
-
-            var minLocal = root.InverseTransformPoint(bounds.min);
-            modelRoot.localPosition -= new Vector3(0f, minLocal.y, 0f);
         }
 
         public bool ShowPreviousBookshelf()
