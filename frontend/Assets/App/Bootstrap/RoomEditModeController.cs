@@ -257,6 +257,10 @@ namespace App.Bootstrap
         private GameObject decorationButtonRoot;
         private GameObject decorationPopupRoot;
         private GameObject editOverlayRoot;
+        // CanvasGroup 게이트 — IsEditModeActive=false 일 때 blocksRaycasts/interactable=false 로 강제.
+        // SetActive race window 와 무관하게 메인씬에서 편집 UI 가 raycast 를 절대 못 막게 보장.
+        private CanvasGroup editOverlayCanvasGroup;
+        private CanvasGroup selectionPanelCanvasGroup;
         private GameObject bottomMenuRoot;
         private GameObject inventoryContentRoot;
         private GameObject returnButtonRoot;
@@ -1045,6 +1049,12 @@ namespace App.Bootstrap
         {
             editOverlayRoot = CreateRectObject("EditOverlay", canvas.transform);
             StretchToParent((RectTransform)editOverlayRoot.transform);
+
+            // CanvasGroup 게이트 — UpdateButtonVisibility 가 매 frame IsEditModeActive 따라
+            // blocksRaycasts/interactable 토글. SetActive 와 이중 안전망으로 메인씬 회귀 방지.
+            editOverlayCanvasGroup = editOverlayRoot.AddComponent<CanvasGroup>();
+            editOverlayCanvasGroup.blocksRaycasts = false;
+            editOverlayCanvasGroup.interactable = false;
 
             BuildBottomMenu(editOverlayRoot.transform);
             BuildPillarboxFills(editOverlayRoot.transform);
@@ -2954,8 +2964,16 @@ namespace App.Bootstrap
             // 24px gap → -188 (카드 top). pivot y=1 이라 카드 아래로 자라난다.
             rect.anchoredPosition = new Vector2(-ButtonMargin, -188f);
 
+            // CanvasGroup 게이트 — UpdateSelectionPanel 이 매 frame blocksRaycasts/interactable 를
+            // shouldShow 로 토글. SetActive 와 별개로 raycast 차단을 명시 제어해 메인씬 회귀 차단.
+            selectionPanelCanvasGroup = selectionPanelRoot.AddComponent<CanvasGroup>();
+            selectionPanelCanvasGroup.blocksRaycasts = false;
+            selectionPanelCanvasGroup.interactable = false;
+
             // 카드 배경 — 반투명 크림 + 베이지 outline + 부드러운 그림자. LayoutElement.ignoreLayout=true 로
             // VerticalLayoutGroup 가 stretch 한 background 를 자식 슬롯으로 셈하지 않게 가드.
+            // raycastTarget=true 유지 — 편집 모드에서 카드 padding/spacing 영역의 클릭이 뒤의 데코로
+            // 새지 않도록 background 가 click eat 한다 (CanvasGroup.blocksRaycasts=false 일 땐 자동 무력화).
             var bg = CreateImage(selectionPanelRoot.transform, "Background", WithAlpha(CardColor, 0.97f));
             bg.sprite = roundedRectSprite;
             bg.type = Image.Type.Sliced;
@@ -2981,14 +2999,17 @@ namespace App.Bootstrap
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
 
-            // 헤더 — 인벤토리 카드의 muted 캡션 톤과 동일.
+            // 헤더 — 인벤토리 카드의 muted 캡션 톤과 동일. 장식용이라 raycastTarget=false (Background 가
+            // 카드 영역 클릭을 이미 차단하므로 헤더는 raycast 안 받아도 됨).
             var header = CreateText(selectionPanelRoot.transform, "Header", "오브젝트 조작",
                 13f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center);
+            header.raycastTarget = false;
             var headerLE = header.gameObject.AddComponent<LayoutElement>();
             headerLE.preferredHeight = 22f;
 
-            // 헤더와 액션 버튼 사이 1px divider — outline 색을 한 단계 더 흐리게.
+            // 헤더와 액션 버튼 사이 1px divider — outline 색을 한 단계 더 흐리게. 장식용 raycastTarget=false.
             var divider = CreateImage(selectionPanelRoot.transform, "Divider", WithAlpha(BorderColor, 0.55f));
+            divider.raycastTarget = false;
             var dividerLE = divider.gameObject.AddComponent<LayoutElement>();
             dividerLE.preferredHeight = 1f;
             dividerLE.minHeight = 1f;
@@ -3025,7 +3046,12 @@ namespace App.Bootstrap
             deleteButton.gameObject.AddComponent<LayoutElement>().preferredHeight = SelectionButtonHeight;
             deleteButton.onClick.AddListener(DeleteSelectedObject);
 
-            // 초기 상태 — pending placement 없으면 confirm 숨김. UpdateSelectionPanel 이 매 frame 재평가.
+            // 초기 상태 — 카드 자체를 비활성. 우상단 anchor 로 옮긴 이후 카드가 책장/대시보드 raycast
+            // 영역과 겹쳐서, BuildSelectionPanel ~ 첫 Update 사이 1프레임 race 만으로도 메인씬 클릭이
+            // BookshelfExperienceManager.IsPointerOverUi 에서 blocking hit 으로 잡혔다. Update 의
+            // UpdateSelectionPanel 이 진실의 원천이지만, race window 를 닫기 위해 시작은 inactive 로.
+            selectionPanelRoot.SetActive(false);
+            // pending placement 없을 땐 confirm 숨김. UpdateSelectionPanel 이 매 frame 재평가.
             confirmPlacementButtonRoot.SetActive(false);
         }
 
@@ -3189,6 +3215,8 @@ namespace App.Bootstrap
             {
                 return;
             }
+
+            DiagnoseEditUiBlockingMainSceneIfClicked();
 
             UpdateButtonVisibility();
             UpdateSelectionPanel();
@@ -3384,12 +3412,76 @@ namespace App.Bootstrap
             {
                 editOverlayRoot.SetActive(IsEditModeActive);
             }
+            // CanvasGroup 게이트 — SetActive 와 별개로 raycast 차단을 명시 제어. 메인씬에서 어떤
+            // race 도 편집 UI 가 책장/대시보드 클릭을 가로채지 못하게 하드 가드.
+            if (editOverlayCanvasGroup != null)
+            {
+                editOverlayCanvasGroup.blocksRaycasts = IsEditModeActive;
+                editOverlayCanvasGroup.interactable = IsEditModeActive;
+            }
 
             // Force-exit edit mode if the player ends up in a focus mode some other way.
             if (IsEditModeActive && experienceManager != null && !inMainScene)
             {
                 ExitEditModeInternal();
             }
+        }
+
+        // 메인씬(IsEditModeActive=false) 에서 좌클릭 발생 시점에만 RaycastAll 을 한 번 돌려,
+        // RoomEditModeController 가 만든 편집 전용 UI(editOverlayRoot / selectionPanelRoot 하위)
+        // 가 책장/대시보드 클릭을 막고 있는지 검증한다. hit 이 있으면 [EditUiHit][WARN] 으로 어떤
+        // GameObject/canvas/raycastTarget 이 차단 원인인지 출력 — 회귀 발생 시 1차 진단 자료.
+        // 매 frame 이 아니라 click frame 한정이라 비용 거의 없음.
+        private void DiagnoseEditUiBlockingMainSceneIfClicked()
+        {
+            if (IsEditModeActive) return;
+            if (Mouse.current == null || !Mouse.current.leftButton.wasPressedThisFrame) return;
+            var es = EventSystem.current;
+            if (es == null) return;
+
+            var pointer = Mouse.current.position.ReadValue();
+            var pointerEvent = new PointerEventData(es) { position = pointer };
+            var hits = new List<RaycastResult>();
+            es.RaycastAll(pointerEvent, hits);
+
+            bool headerLogged = false;
+            for (int i = 0; i < hits.Count; i++)
+            {
+                var go = hits[i].gameObject;
+                if (go == null) continue;
+                if (!IsUnderEditOnlyRoot(go)) continue;
+
+                if (!headerLogged)
+                {
+                    Debug.LogWarning($"[EditUiHit][WARN] edit UI is blocking main scene while edit mode is inactive — pointer={pointer} hits={hits.Count}");
+                    headerLogged = true;
+                }
+                var canvas = go.GetComponentInParent<Canvas>();
+                var canvasName = canvas != null ? canvas.name : "<none>";
+                var renderMode = canvas != null ? canvas.renderMode.ToString() : "<n/a>";
+                var graphic = go.GetComponent<Graphic>();
+                var raycastTarget = graphic != null ? graphic.raycastTarget.ToString() : "<noGraphic>";
+                var canvasGroup = go.GetComponentInParent<CanvasGroup>();
+                var blocksRaycasts = canvasGroup != null ? canvasGroup.blocksRaycasts.ToString() : "<noGroup>";
+                Debug.LogWarning($"[EditUiHit][WARN] hit='{go.name}' canvas='{canvasName}' renderMode={renderMode} raycastTarget={raycastTarget} blocksRaycasts={blocksRaycasts}");
+            }
+        }
+
+        // editOverlayRoot 또는 selectionPanelRoot 하위인지 판정. decorationButtonRoot/popup 은
+        // 메인씬에서도 의도적으로 활성인 정상 UI 라 진단 대상에서 제외.
+        private bool IsUnderEditOnlyRoot(GameObject go)
+        {
+            var t = go.transform;
+            while (t != null)
+            {
+                var current = t.gameObject;
+                if (current == editOverlayRoot || current == selectionPanelRoot)
+                {
+                    return true;
+                }
+                t = t.parent;
+            }
+            return false;
         }
 
         private void UpdateSelectionPanel()
@@ -3401,6 +3493,13 @@ namespace App.Bootstrap
             if (selectionPanelRoot != null && selectionPanelRoot.activeSelf != shouldShow)
             {
                 selectionPanelRoot.SetActive(shouldShow);
+            }
+            // CanvasGroup 게이트 — shouldShow=false 면 blocksRaycasts/interactable 도 false. 카드의
+            // Background/Header/Divider Image 가 raycast 를 절대 못 막게 보장 (메인씬 회귀 차단).
+            if (selectionPanelCanvasGroup != null)
+            {
+                selectionPanelCanvasGroup.blocksRaycasts = shouldShow;
+                selectionPanelCanvasGroup.interactable = shouldShow;
             }
 
             // 회전 비활성 entry — wall deco marker.AllowRotation == false 면 좌/우 회전 버튼 모두 disabled.
@@ -3990,9 +4089,37 @@ namespace App.Bootstrap
             // 메인뷰 카메라 컨트롤러가 다음 프레임에 보는 씬이 정상 상태이도록.
             RestoreWallVisibility("ExitEditModeInternal");
             EndCameraViewportEdit();
+            // 편집 UI raycast 즉시 차단 — SetActive 만으로는 다음 Update 까지 race window 가 남는다.
+            // CanvasGroup.blocksRaycasts/interactable=false 를 함께 set 해서 메인씬 클릭이 책장/
+            // 대시보드 focus 까지 도달하도록 보장. UpdateButtonVisibility/UpdateSelectionPanel 이
+            // 다음 frame 부터 같은 값을 재계산하므로 idempotent.
+            if (editOverlayCanvasGroup != null)
+            {
+                editOverlayCanvasGroup.blocksRaycasts = false;
+                editOverlayCanvasGroup.interactable = false;
+            }
             if (editOverlayRoot != null)
             {
                 editOverlayRoot.SetActive(false);
+            }
+            if (selectionPanelCanvasGroup != null)
+            {
+                selectionPanelCanvasGroup.blocksRaycasts = false;
+                selectionPanelCanvasGroup.interactable = false;
+            }
+            if (selectionPanelRoot != null)
+            {
+                selectionPanelRoot.SetActive(false);
+            }
+            if (confirmPlacementButtonRoot != null)
+            {
+                confirmPlacementButtonRoot.SetActive(false);
+            }
+            // footprint preview 는 3D mesh + LineRenderer 라 EventSystem raycast 는 안 받지만,
+            // 시각 잔류 방지 + 다음 EnterEditMode 가 깨끗한 상태에서 시작하도록 hide.
+            if (placementFootprint != null)
+            {
+                placementFootprint.Hide();
             }
 
             // Restore any localScale we overrode when entering edit mode so a
