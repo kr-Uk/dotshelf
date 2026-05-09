@@ -291,7 +291,6 @@ namespace BookshelfPorting.Runtime
             }
 
             generator.NormalizeNotebookStationPlacement();
-            generator.EnsureRoomDecorations();
             AlignNotebookAnchor(notebookAnchor);
 
             if (Application.isPlaying)
