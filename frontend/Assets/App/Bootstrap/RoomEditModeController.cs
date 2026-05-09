@@ -317,6 +317,19 @@ namespace App.Bootstrap
         private bool gridSnapEnabled = true;
         private GameObject gridDisplayRoot;
 
+        // 배치 불가 영역 시각화(MR #133/#134) — 드래그 중 사용자의 raw 타깃 위치가 방 footprint
+        // 밖이거나 다른 blocker 와 겹치면 [EditPlacement] 로그 + 바닥 footprint UI 가 빨간색으로 전환.
+        // 오브젝트 본체 material 은 더 이상 빨강으로 칠하지 않는다(MR #134, AC:HHP 스타일). 검증
+        // 로직은 기존 ClampToFloorBounds / IsSpawnPositionBlockedAt / WallObstructionRegistry
+        // 를 그대로 재사용하고 결과만 시각/로그로 반영. 상태 전이 시점에만 로그를 남긴다.
+        private bool dragLastPlacementValid = true;
+        private string dragLastInvalidReason;
+        private bool dragValidStateInitialized;
+        // 드래그 중 사용자의 raw 타깃 위치(clamp/resolve 적용 전). UpdatePlacementFootprint 가
+        // 검증 probe 로 사용 — 실제 transform 은 항상 valid 로 잡혀있지만 사용자가 벽/책장 쪽으로
+        // 밀어붙이는 동안 raw 위치는 invalid. footprint 색상이 그 의도를 시각화.
+        private Vector3 lastFloorDragRawCandidate;
+
         // Runtime-derived playable area, populated when edit mode is entered
         // by scanning the actual scene geometry. The grid display, the floor
         // clamp, and any visual reference all read from these fields so the
@@ -506,6 +519,208 @@ namespace App.Bootstrap
             public Color OriginalColor;
         }
 
+        // 배치 미리보기 footprint UI (MR #134) — 오브젝트 본체 색을 건드리지 않고 바닥에
+        // 초록(valid)/빨강(invalid) Quad+Border 로 배치 가능 여부를 표시한다. Animal Crossing:
+        // Happy Home Paradise 의 가구 배치 UI 와 같은 방식. material/mesh 모두 hide 플래그로
+        // 자산화되지 않게 만들고 Dispose 에서 명시 destroy — Play Mode 종료 후 Scene/Prefab
+        // 에 잔류하지 않는다. drag/pending 양쪽에서 같은 인스턴스를 재사용 (중복 생성 방지).
+        private sealed class PlacementFootprintPreview
+        {
+            private static readonly Color ValidFillColor = new Color(0.35f, 0.95f, 0.50f, 0.30f);
+            private static readonly Color ValidBorderColor = new Color(0.20f, 0.85f, 0.40f, 0.95f);
+            private static readonly Color InvalidFillColor = new Color(1.00f, 0.45f, 0.45f, 0.32f);
+            private static readonly Color InvalidBorderColor = new Color(1.00f, 0.30f, 0.30f, 0.95f);
+
+            private const float FootprintY = FloorPlaneY + 0.01f; // 바닥 z-fight 회피.
+            private const float BorderLift = 0.001f;              // border 가 fill 위로 살짝 떠서 그려지도록.
+            private const float BorderWidth = 0.02f;
+            private const float MinSize = 0.05f;
+
+            private GameObject root;
+            private GameObject fillObject;
+            private GameObject borderObject;
+            private MeshRenderer fillRenderer;
+            private LineRenderer borderLine;
+            private Material fillMaterial;
+            private Material borderMaterial;
+            private Mesh quadMesh;
+
+            private bool isShown;
+            private bool? lastIsValid;
+            private string lastReason;
+            private string lastObjectName;
+
+            public bool IsShown => isShown;
+
+            public void Show(Scene scene, Bounds worldBounds, bool isValid, string reason, string objectName)
+            {
+                EnsureBuilt(scene);
+                ApplyTransform(worldBounds);
+                ApplyColor(isValid);
+
+                if (!isShown)
+                {
+                    if (root != null) root.SetActive(true);
+                    isShown = true;
+                    Debug.Log($"[EditFootprint] show object='{objectName ?? "<null>"}' valid={(isValid ? "True" : "False")}");
+                }
+                else if (lastIsValid != isValid || lastObjectName != objectName || lastReason != reason)
+                {
+                    if (isValid)
+                    {
+                        Debug.Log($"[EditFootprint] update object='{objectName ?? "<null>"}' valid=True");
+                    }
+                    else
+                    {
+                        Debug.Log($"[EditFootprint] update object='{objectName ?? "<null>"}' valid=False reason='{reason ?? "Unknown"}'");
+                    }
+                }
+
+                lastIsValid = isValid;
+                lastReason = reason;
+                lastObjectName = objectName;
+            }
+
+            public void Hide()
+            {
+                if (!isShown) return;
+                if (root != null) root.SetActive(false);
+                isShown = false;
+                lastIsValid = null;
+                lastReason = null;
+                lastObjectName = null;
+                Debug.Log("[EditFootprint] hide");
+            }
+
+            public void Dispose()
+            {
+                Hide();
+                if (root != null) UnityEngine.Object.Destroy(root);
+                if (fillMaterial != null) UnityEngine.Object.Destroy(fillMaterial);
+                if (borderMaterial != null) UnityEngine.Object.Destroy(borderMaterial);
+                if (quadMesh != null) UnityEngine.Object.Destroy(quadMesh);
+                root = null;
+                fillObject = null;
+                borderObject = null;
+                fillRenderer = null;
+                borderLine = null;
+                fillMaterial = null;
+                borderMaterial = null;
+                quadMesh = null;
+            }
+
+            private void EnsureBuilt(Scene scene)
+            {
+                if (root != null) return;
+
+                var shader = Shader.Find("Sprites/Default");
+                fillMaterial = new Material(shader)
+                {
+                    name = "FootprintFill",
+                    hideFlags = HideFlags.HideAndDontSave,
+                    color = ValidFillColor,
+                };
+                borderMaterial = new Material(shader)
+                {
+                    name = "FootprintBorder",
+                    hideFlags = HideFlags.HideAndDontSave,
+                    color = ValidBorderColor,
+                };
+
+                root = new GameObject("EditPlacementFootprint");
+                root.hideFlags = HideFlags.HideAndDontSave;
+                if (scene.IsValid()) SceneManager.MoveGameObjectToScene(root, scene);
+                root.SetActive(false);
+
+                quadMesh = BuildUnitQuadXZ();
+
+                fillObject = new GameObject("Fill");
+                fillObject.hideFlags = HideFlags.HideAndDontSave;
+                fillObject.transform.SetParent(root.transform, false);
+                var filter = fillObject.AddComponent<MeshFilter>();
+                filter.sharedMesh = quadMesh;
+                fillRenderer = fillObject.AddComponent<MeshRenderer>();
+                fillRenderer.sharedMaterial = fillMaterial;
+                fillRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                fillRenderer.receiveShadows = false;
+                fillRenderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+                fillRenderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+                fillRenderer.allowOcclusionWhenDynamic = false;
+
+                borderObject = new GameObject("Border");
+                borderObject.hideFlags = HideFlags.HideAndDontSave;
+                borderObject.transform.SetParent(root.transform, false);
+                borderLine = borderObject.AddComponent<LineRenderer>();
+                borderLine.useWorldSpace = true;
+                borderLine.positionCount = 5;
+                borderLine.loop = false;
+                borderLine.startWidth = BorderWidth;
+                borderLine.endWidth = BorderWidth;
+                borderLine.numCornerVertices = 0;
+                borderLine.numCapVertices = 0;
+                borderLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                borderLine.receiveShadows = false;
+                borderLine.material = borderMaterial;
+                borderLine.alignment = LineAlignment.View;
+            }
+
+            private void ApplyTransform(Bounds worldBounds)
+            {
+                var sx = Mathf.Max(MinSize, worldBounds.size.x);
+                var sz = Mathf.Max(MinSize, worldBounds.size.z);
+                var cx = worldBounds.center.x;
+                var cz = worldBounds.center.z;
+
+                fillObject.transform.position = new Vector3(cx, FootprintY, cz);
+                fillObject.transform.rotation = Quaternion.identity;
+                fillObject.transform.localScale = new Vector3(sx, 1f, sz);
+
+                var halfX = sx * 0.5f;
+                var halfZ = sz * 0.5f;
+                var y = FootprintY + BorderLift;
+                borderLine.SetPosition(0, new Vector3(cx - halfX, y, cz - halfZ));
+                borderLine.SetPosition(1, new Vector3(cx + halfX, y, cz - halfZ));
+                borderLine.SetPosition(2, new Vector3(cx + halfX, y, cz + halfZ));
+                borderLine.SetPosition(3, new Vector3(cx - halfX, y, cz + halfZ));
+                borderLine.SetPosition(4, new Vector3(cx - halfX, y, cz - halfZ));
+            }
+
+            private void ApplyColor(bool isValid)
+            {
+                fillMaterial.color = isValid ? ValidFillColor : InvalidFillColor;
+                borderMaterial.color = isValid ? ValidBorderColor : InvalidBorderColor;
+            }
+
+            private static Mesh BuildUnitQuadXZ()
+            {
+                var mesh = new Mesh
+                {
+                    name = "FootprintUnitQuad",
+                    hideFlags = HideFlags.HideAndDontSave,
+                };
+                mesh.vertices = new[]
+                {
+                    new Vector3(-0.5f, 0f, -0.5f),
+                    new Vector3( 0.5f, 0f, -0.5f),
+                    new Vector3( 0.5f, 0f,  0.5f),
+                    new Vector3(-0.5f, 0f,  0.5f),
+                };
+                mesh.triangles = new[] { 0, 2, 1, 0, 3, 2 };
+                mesh.uv = new[]
+                {
+                    new Vector2(0f, 0f),
+                    new Vector2(1f, 0f),
+                    new Vector2(1f, 1f),
+                    new Vector2(0f, 1f),
+                };
+                mesh.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
+                mesh.RecalculateBounds();
+                return mesh;
+            }
+        }
+
+        private PlacementFootprintPreview placementFootprint;
+
         // Auto-bootstrap ----------------------------------------------------------
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -587,6 +802,8 @@ namespace App.Bootstrap
             BuildCustomizationLockedModal();
             BuildSelectionPanel();
             BuildConfirmPlacementButton();
+
+            placementFootprint = new PlacementFootprintPreview();
 
             CloseDecorationPopupInternal();
             ExitEditModeInternal();
@@ -2872,10 +3089,11 @@ namespace App.Bootstrap
                 return;
             }
 
-            var bounds = ComputeRendererBounds(selectedObject);
-            if (bounds.HasValue && IsSpawnPositionBlockedAt(selectedObject, bounds.Value, selectedObject.transform.position))
+            // MR #133 — 바닥/벽 양쪽 동일 path 로 검증. UpdateSelectionPanel 이 disabled 처리하므로
+            // 정상 경로에선 여기까지 invalid 가 도달하지 않지만, 키보드/외부 트리거 방어로 재확인.
+            if (!EvaluateConfirmEnabled(selectedObject))
             {
-                Debug.Log($"[RoomEdit][Preview] 확정 거절 — '{selectedObject.name}' 현재 위치가 다른 오브젝트와 겹침.");
+                Debug.LogWarning($"[EditPlacement] confirm rejected object='{selectedObject.name}' reason='InvalidPlacement'");
                 ShowSaveStatusToast("배치 불가 — 다른 오브젝트와 겹칩니다", isError: true, durationSec: 2f);
                 return;
             }
@@ -2972,6 +3190,54 @@ namespace App.Bootstrap
             {
                 HandleDecorationPopupOutsideClick();
             }
+
+            UpdatePlacementFootprint();
+        }
+
+        // 매 frame footprint UI visible/위치/색 갱신 (MR #134).
+        // 표시 조건: 편집 모드 활성 + 모달 닫힘 + 선택된 floor 오브젝트가 (pending OR drag 중) 일 때.
+        // 그 외엔 hide. 위치는 ComputeRendererBounds 의 world AABB 기준, 색은 EvaluateFloorPlacementValid
+        // 의 결과(기존 검증 로직 그대로 재사용). 매 frame 호출되지만 show/hide/색상 변화 시점에만 로그.
+        private void UpdatePlacementFootprint()
+        {
+            if (placementFootprint == null) return;
+
+            if (!IsEditModeActive || isUnsavedChangesModalOpen || selectedObject == null)
+            {
+                placementFootprint.Hide();
+                return;
+            }
+
+            bool isDragging = draggingObject == selectedObject;
+            bool isPending = pendingPlacements.Contains(selectedObject);
+            if (!isDragging && !isPending)
+            {
+                placementFootprint.Hide();
+                return;
+            }
+
+            // wall deco 는 바닥에 footprint 가 의미 없음 — 벽 표면에서 별도 visual feedback 이
+            // ApplyWallDecoValidityFeedback 으로 동작 중. floor 항목만 footprint UI 사용.
+            if (selectedObject.GetComponent<WallDecoMarker>() != null)
+            {
+                placementFootprint.Hide();
+                return;
+            }
+
+            var bounds = ComputeRendererBounds(selectedObject);
+            if (!bounds.HasValue)
+            {
+                placementFootprint.Hide();
+                return;
+            }
+
+            // 드래그 중엔 raw 타깃 위치 기준으로 검증 — clamp/resolve 로 실제 transform 은 valid 로
+            // 잡혀있어도 사용자가 벽/책장 쪽으로 밀고 있으면 빨강으로 보여줘야 한다. 드래그 아닌
+            // pending(spawn 직후 정지 상태) 은 transform.position 검증.
+            var probe = isDragging ? lastFloorDragRawCandidate : selectedObject.transform.position;
+            bool isValid = EvaluateFloorPlacementValid(selectedObject, probe, bounds, out var reason);
+
+            placementFootprint.Show(gameObject.scene, bounds.Value, isValid, reason, selectedObject.name);
         }
 
         // 편집 카메라 키/스크롤 입력 — A/D 회전, W/S 줌, 마우스 스크롤 줌. 텍스트 입력 포커스 중이거나
@@ -3142,6 +3408,39 @@ namespace App.Bootstrap
             {
                 confirmPlacementButtonRoot.SetActive(shouldShowConfirm);
             }
+
+            // MR #133 — 현재 위치가 invalid 면 확정 버튼 disabled. 매 frame 평가하지만
+            // EvaluateConfirmEnabled 는 ComputeRendererBounds + Physics.OverlapBox 1회 (drag tick
+            // 과 동일 비용) 라 부담 없음.
+            if (shouldShowConfirm && confirmPlacementButton != null)
+            {
+                bool canConfirm = EvaluateConfirmEnabled(selectedObject);
+                if (confirmPlacementButton.interactable != canConfirm)
+                {
+                    confirmPlacementButton.interactable = canConfirm;
+                }
+            }
+        }
+
+        // 확정 버튼 활성화 판단 — 현재 transform 위치가 valid 한지 검사.
+        // 바닥 항목: ClampToFloorBounds + IsSpawnPositionBlockedAt.
+        // 벽 항목: WallObstructionRegistry.IsRectFreeOnWall.
+        // 양쪽 모두 기존 검증 로직을 그대로 재사용.
+        private bool EvaluateConfirmEnabled(GameObject go)
+        {
+            if (go == null) return false;
+            var bounds = ComputeRendererBounds(go);
+            if (!bounds.HasValue) return true;
+
+            var wallMarker = go.GetComponent<WallDecoMarker>();
+            if (wallMarker != null)
+            {
+                var rect = ProjectBoundsToWallRect(bounds.Value, wallMarker.CurrentWall);
+                var registry = EnsureWallObstructionRegistry();
+                return registry == null || registry.IsRectFreeOnWall(wallMarker.CurrentWall, rect);
+            }
+
+            return EvaluateFloorPlacementValid(go, go.transform.position, bounds, out _);
         }
 
         // 토스트 자동 숨김 — saveStatusToastHideTime 까지만 노출.
@@ -3806,6 +4105,13 @@ namespace App.Bootstrap
             RestoreWallVisibility("OnDestroy");
             EndCameraViewportEdit();
             RoomEditThemeFilter.Changed -= HandleThemeFilterChanged;
+            // MR #134 — footprint preview 의 runtime-생성 mesh/Material/GameObject 를 명시 destroy.
+            // hideFlags=HideAndDontSave 라 자산화는 안 되지만 instance leak 방지.
+            if (placementFootprint != null)
+            {
+                placementFootprint.Dispose();
+                placementFootprint = null;
+            }
         }
 
         // MR #120 simonjiho 리뷰 #6 반영 — 비정상 종료(scene unload, GameObject SetActive(false),
@@ -6081,6 +6387,14 @@ namespace App.Bootstrap
             EnsureDecorationRootColliders();
             RebuildBlockerRendererCache(target);
             ShowGrid();
+
+            // 새 드래그 — 배치 유효성 추적 초기화. UpdateDrag 첫 tick 에서 transition 으로 인식돼
+            // 시작 시 한 번 [EditPlacement] valid=... 로그가 남도록 dragValidStateInitialized=false.
+            dragValidStateInitialized = false;
+            dragLastPlacementValid = true;
+            dragLastInvalidReason = null;
+            // footprint 가 첫 frame 에 좌표 0,0,0 으로 깜빡이지 않도록 현재 위치를 초기 probe 로.
+            lastFloorDragRawCandidate = target.transform.position;
         }
 
         private void UpdateDrag(Camera camera, Vector2 pointer)
@@ -6126,7 +6440,8 @@ namespace App.Bootstrap
                 rawZ = playableMinZ + Mathf.Floor((rawZ - playableMinZ) / MinorGridStep) * MinorGridStep + MinorGridStep * 0.5f;
             }
 
-            var candidate = new Vector3(rawX, draggingObject.transform.position.y, rawZ);
+            var rawCandidate = new Vector3(rawX, draggingObject.transform.position.y, rawZ);
+            var candidate = rawCandidate;
             var currentPosition = draggingObject.transform.position;
             var bounds = ComputeRendererBounds(draggingObject);
             if (bounds.HasValue)
@@ -6137,7 +6452,64 @@ namespace App.Bootstrap
 
             draggingObject.transform.position = candidate;
             dragLastValidPosition = candidate;
+
+            // MR #134 — 오브젝트 본체 material 은 건드리지 않는다 (AC:HHP 스타일). raw 타깃 위치를
+            // 저장만 해두면 다음 Update 의 UpdatePlacementFootprint 가 footprint UI 색을 갱신한다.
+            // [EditPlacement] 로그는 검증 transition 시점 추적을 위해 그대로 유지.
+            lastFloorDragRawCandidate = rawCandidate;
+            bool isValid = EvaluateFloorPlacementValid(draggingObject, rawCandidate, bounds, out var invalidReason);
+            UpdatePlacementValidityState(draggingObject, isValid, invalidReason);
         }
+
+        // 배치 유효성 평가 — 기존 검증 로직(ClampToFloorBounds / IsSpawnPositionBlockedAt)
+        // 을 재사용해 (valid, reason) 을 반환. drag tick / 확정 버튼 disabled 상태 양쪽에서 호출.
+        // bounds 가 없으면(렌더러 없음 등) 보수적으로 valid 처리 — 시각화 대상에서 제외.
+        private bool EvaluateFloorPlacementValid(GameObject go, Vector3 candidate, Bounds? cachedBounds, out string reason)
+        {
+            reason = null;
+            if (go == null) return true;
+            var b = cachedBounds ?? ComputeRendererBounds(go);
+            if (!b.HasValue) return true;
+
+            var bounds = b.Value;
+            var clamped = ClampToFloorBounds(candidate, candidate, bounds);
+            if (Mathf.Abs(clamped.x - candidate.x) > 1e-4f || Mathf.Abs(clamped.z - candidate.z) > 1e-4f)
+            {
+                reason = "OutOfRoom";
+                return false;
+            }
+            if (IsSpawnPositionBlockedAt(go, bounds, candidate))
+            {
+                reason = "OverlapWithObstacle";
+                return false;
+            }
+            return true;
+        }
+
+        // 상태 전이(valid ↔ invalid) 시점에만 로그. 매 프레임 도배 방지.
+        private void UpdatePlacementValidityState(GameObject go, bool isValid, string reason)
+        {
+            if (dragValidStateInitialized && dragLastPlacementValid == isValid && dragLastInvalidReason == reason)
+            {
+                return;
+            }
+            var name = go != null ? go.name : "<null>";
+            if (isValid)
+            {
+                Debug.Log($"[EditPlacement] placement valid=True object='{name}'");
+            }
+            else
+            {
+                Debug.Log($"[EditPlacement] placement valid=False object='{name}' reason='{reason ?? "Unknown"}'");
+            }
+            dragLastPlacementValid = isValid;
+            dragLastInvalidReason = reason;
+            dragValidStateInitialized = true;
+        }
+
+        // (MR #134 — 바닥 배치 항목의 본체 색은 더 이상 빨갛게 칠하지 않는다. 검증 결과는
+        // PlacementFootprintPreview 의 바닥 footprint UI 에서 초록/빨강으로 표시. 본 메서드는
+        // 제거됨.)
 
         // Wall deco 드래그 — 마우스 raycast 로 hit 한 wall 의 surface 위치로 이동 + 회전.
         // 다른 wall 로 hit 옮겨가면 자동으로 wall 전환 (deco 회전도 새 wall 안쪽 면 향하게).
@@ -6187,6 +6559,8 @@ namespace App.Bootstrap
             }
 
             ApplyWallDecoValidityFeedback(draggingObject, isFree);
+            // MR #133 — wall deco 도 동일한 [EditPlacement] 로그 경로로 통합.
+            UpdatePlacementValidityState(draggingObject, isFree, isFree ? null : "OverlapOnWall");
         }
 
         // World AABB → wall surface (u, v) Rect — WallObstructionRegistry 와 동일 좌표계.
@@ -6255,6 +6629,22 @@ namespace App.Bootstrap
             draggingObject = null;
             HideGrid();
             if (dragged == null) return;
+
+            // MR #134 — wall deco 만 기존 body tint feedback 유지 (Animal Crossing 스타일 footprint
+            // UI 는 floor 항목 전용). floor 는 본체 색을 건드리지 않으므로 release 시 복구할 게 없다.
+            // 단, 사용자가 invalid frame 에서 곧바로 release 하면 wall deco tint 가 빨강으로 남을
+            // 가능성이 있어 valid 로 한 번 정리.
+            var wallMarker = dragged.GetComponent<WallDecoMarker>();
+            if (wallMarker != null)
+            {
+                ApplyWallDecoValidityFeedback(dragged, true);
+            }
+            // 다음 Update 의 UpdatePlacementFootprint 가 selectedObject 가 더 이상 dragging 아니라는
+            // 조건으로 자동 hide 하지만, 비-pending 항목이면 release 직후엔 selectedObject 만 남아
+            // 조건 미달로 hide 가 호출됨. pending 항목이면 isPending=true 로 footprint 가 계속 보인다.
+            dragValidStateInitialized = false;
+            dragLastPlacementValid = true;
+            dragLastInvalidReason = null;
 
             // grid snap 단계(MinorGridStep ~ 0.1m) 보다 한참 작은 epsilon — 부동소수 잡음만 무시.
             const float MovementEpsilonSqr = 1e-6f;
@@ -6770,6 +7160,10 @@ namespace App.Bootstrap
                 Debug.Log(
                     $"[RoomEdit][Rotate] dir={direction} delta={signedDegrees:+#0;-#0;0}° from={prevYaw:0.#}° to={newYaw:0.#}° " +
                     $"result=reverted reason={revertReason} obj={selectedObject.name}");
+                // MR #133 — 회전 시도가 invalid 로 reverted 됐음을 placement 로그 채널에도 동일 형식으로 기록.
+                // 회전 자체는 즉시 revert 되어 시각 상태가 valid 로 유지되므로 별도 tint 변경은 없다.
+                var placementReason = revertReason == "out-of-room" ? "OutOfRoom" : "OverlapWithObstacle";
+                Debug.Log($"[EditPlacement] placement valid=False object='{selectedObject.name}' reason='{placementReason}' source='Rotate'");
                 return;
             }
 
