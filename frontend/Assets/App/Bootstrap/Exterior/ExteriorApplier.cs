@@ -60,9 +60,21 @@ namespace App.Bootstrap.Exterior
         {
             if (asset == null) return;
 
+            // skybox/cubemap 변경 여부를 ApplyFarLayer 전에 측정 — Apply 후엔 RenderSettings 가
+            // 이미 갱신돼서 비교 불가. DynamicGI.UpdateEnvironment 는 skybox/cubemap 변경 시에만
+            // 호출 (모바일 hitch 50~100ms 회피, MR 142 review v1 #4).
+            bool environmentChanged =
+                RenderSettings.skybox != asset.SkyboxMaterial ||
+                RenderSettings.customReflectionTexture != (Texture)asset.CustomReflectionCubemap;
+
             ApplyFarLayer(asset);
             ApplySunOverride(asset);
             SpawnScenePrefab(asset);
+
+            if (environmentChanged)
+            {
+                DynamicGI.UpdateEnvironment();
+            }
 
             CurrentExterior = asset;
         }
@@ -106,9 +118,6 @@ namespace App.Bootstrap.Exterior
                 RenderSettings.fogStartDistance = asset.FogLinearStart;
                 RenderSettings.fogEndDistance = asset.FogLinearEnd;
             }
-
-            // skybox/ambient/reflection 변경 → ambient probe + reflection probe 재계산.
-            DynamicGI.UpdateEnvironment();
         }
 
         private void ApplySunOverride(ExteriorAsset asset)
