@@ -149,3 +149,9 @@ UI 변경은 코드 검사로 끝나지 않는다 — 사용자가 에디터에�
 - UXML/USS: `frontend/Assets/App/Features/*/Presentation/`, `frontend/Assets/UI Toolkit/`
 - 매칭 컨트롤러: 같은 디렉터리 또는 한 단계 위 `*ScreenController.cs`, `*View.cs`
 - 회귀 참고 커밋: `2a668fc` (flex-shrink 충돌로 캐러셀이 헤더 가림)
+
+## 알려진 미해결 이슈
+
+UXML/USS 자체와는 다른 layer (PanelSettings / 렌더링 path) 이지만, UI Toolkit 화면이 의도와 다르게 보일 때 먼저 의심해야 하는 케이스. 가설 기반 두드림 시간 낭비 회피 목적.
+
+- [`references/world-space-uidocument-dim.md`](references/world-space-uidocument-dim.md) — **MainRoomScene 의 dashboard 가 World-space UIDocument 라 의도된 sRGB 톤보다 dim 하게 그려지는 문제.** Unity 6.3 LTS + URP + World-space UIDocument 의 알려진 한계. PanelSettings 의 forceGammaRendering / ClearColor / TargetTexture (RT 우회) / Surface material Lit→Unlit / controller overridePanelSettings 가드 등 **6가지 fix 시도 모두 무효**. 다음 시도 시 1순위는 `MainRoomScene` 의 Camera `m_RenderPostProcessing: 1 → 0`. 진짜 fix 는 Unity 6.5 PanelRenderer 마이그레이션 또는 community RT 우회 라이브러리.
