@@ -1160,7 +1160,7 @@ namespace App.Bootstrap
             cardRect.anchorMin = new Vector2(0.5f, 0.5f);
             cardRect.anchorMax = new Vector2(0.5f, 0.5f);
             cardRect.pivot = new Vector2(0.5f, 0.5f);
-            cardRect.sizeDelta = new Vector2(680f, 280f);
+            cardRect.sizeDelta = new Vector2(820f, 280f);
             cardRect.anchoredPosition = Vector2.zero;
             var cardOutline = card.gameObject.AddComponent<Outline>();
             cardOutline.effectColor = WithAlpha(BorderColor, 0.95f);
@@ -1186,32 +1186,47 @@ namespace App.Bootstrap
             bodyRect.offsetMax = new Vector2(-32f, 0f);
 
             // 3 버튼 — 가로 배치. 좌: 저장하고 나가기 (primary), 가운데: 저장하지 않고 나가기 (danger),
-            // 우: 취소 (secondary).
-            var saveExitButton = CreateButton(card.transform, "SaveAndExitButton", "저장하고 나가기",
-                PrimaryColor, Color.white, new Vector2(196f, 56f), false, BorderColor);
-            var saveExitRect = (RectTransform)saveExitButton.transform;
-            saveExitRect.anchorMin = new Vector2(0.5f, 0f);
-            saveExitRect.anchorMax = new Vector2(0.5f, 0f);
-            saveExitRect.pivot = new Vector2(0.5f, 0f);
-            saveExitRect.anchoredPosition = new Vector2(-208f, 28f);
+            // 우: 취소 (secondary). HorizontalLayoutGroup + LayoutElement 로 정렬 — 이전 수동
+            // anchoredPosition 배치는 좁은 spacing(12px) + 좁은 가운데 버튼(196px) 으로 텍스트가
+            // 답답해 보였고, 해상도/카드 폭 변동에 취약했다. 이제 spacing 18 + LayoutElement
+            // preferredWidth 로 균형 정렬.
+            var buttonRow = CreateRectObject("ButtonRow", card.transform);
+            var buttonRowRect = (RectTransform)buttonRow.transform;
+            buttonRowRect.anchorMin = new Vector2(0f, 0f);
+            buttonRowRect.anchorMax = new Vector2(1f, 0f);
+            buttonRowRect.pivot = new Vector2(0.5f, 0f);
+            buttonRowRect.offsetMin = new Vector2(32f, 28f);
+            buttonRowRect.offsetMax = new Vector2(-32f, 28f + 56f);
+            var rowLayout = buttonRow.AddComponent<HorizontalLayoutGroup>();
+            rowLayout.childAlignment = TextAnchor.MiddleCenter;
+            rowLayout.spacing = 18f;
+            rowLayout.childControlWidth = false;
+            rowLayout.childControlHeight = false;
+            rowLayout.childForceExpandWidth = false;
+            rowLayout.childForceExpandHeight = false;
+
+            var saveExitButton = CreateButton(buttonRow.transform, "SaveAndExitButton", "저장하고 나가기",
+                PrimaryColor, Color.white, new Vector2(240f, 56f), false, BorderColor);
+            ApplyButtonLabelHorizontalMargin(saveExitButton, 18f);
+            var saveExitLayout = saveExitButton.gameObject.AddComponent<LayoutElement>();
+            saveExitLayout.preferredWidth = 240f;
+            saveExitLayout.preferredHeight = 56f;
             saveExitButton.onClick.AddListener(OnSaveAndExitClicked);
 
-            var discardExitButton = CreateButton(card.transform, "DiscardAndExitButton", "저장하지 않고 나가기",
-                Hex("#C14E4E"), Color.white, new Vector2(196f, 56f), false, BorderColor);
-            var discardExitRect = (RectTransform)discardExitButton.transform;
-            discardExitRect.anchorMin = new Vector2(0.5f, 0f);
-            discardExitRect.anchorMax = new Vector2(0.5f, 0f);
-            discardExitRect.pivot = new Vector2(0.5f, 0f);
-            discardExitRect.anchoredPosition = new Vector2(0f, 28f);
+            var discardExitButton = CreateButton(buttonRow.transform, "DiscardAndExitButton", "저장하지 않고 나가기",
+                Hex("#C14E4E"), Color.white, new Vector2(290f, 56f), false, BorderColor);
+            ApplyButtonLabelHorizontalMargin(discardExitButton, 20f);
+            var discardExitLayout = discardExitButton.gameObject.AddComponent<LayoutElement>();
+            discardExitLayout.preferredWidth = 290f;
+            discardExitLayout.preferredHeight = 56f;
             discardExitButton.onClick.AddListener(OnDiscardAndExitClicked);
 
-            var cancelButton = CreateButton(card.transform, "CancelButton", "취소",
-                CardColor, TextColor, new Vector2(140f, 56f), true, BorderColor);
-            var cancelRect = (RectTransform)cancelButton.transform;
-            cancelRect.anchorMin = new Vector2(0.5f, 0f);
-            cancelRect.anchorMax = new Vector2(0.5f, 0f);
-            cancelRect.pivot = new Vector2(0.5f, 0f);
-            cancelRect.anchoredPosition = new Vector2(180f, 28f);
+            var cancelButton = CreateButton(buttonRow.transform, "CancelButton", "취소",
+                CardColor, TextColor, new Vector2(170f, 56f), true, BorderColor);
+            ApplyButtonLabelHorizontalMargin(cancelButton, 18f);
+            var cancelLayout = cancelButton.gameObject.AddComponent<LayoutElement>();
+            cancelLayout.preferredWidth = 170f;
+            cancelLayout.preferredHeight = 56f;
             cancelButton.onClick.AddListener(OnCancelExitClicked);
 
             unsavedChangesModalRoot.SetActive(false);
@@ -8726,6 +8741,19 @@ namespace App.Bootstrap
             StretchToParent(text.rectTransform);
 
             return button;
+        }
+
+        // 버튼 Label 텍스트의 좌우 inset margin 을 부여한다. CreateButton 의 default 는
+        // StretchToParent 로 텍스트가 버튼 RectTransform 전체를 채우는데, 한글이 길면
+        // (예: "저장하지 않고 나가기") 좌우 경계까지 텍스트가 닿아 답답해 보인다.
+        // TMP_Text.margin 은 Vector4(left, top, right, bottom).
+        private static void ApplyButtonLabelHorizontalMargin(Button button, float horizontalMargin)
+        {
+            if (button == null) return;
+            var label = button.GetComponentInChildren<TMP_Text>(true);
+            if (label == null) return;
+            var m = label.margin;
+            label.margin = new Vector4(horizontalMargin, m.y, horizontalMargin, m.w);
         }
 
         private static void StretchToParent(RectTransform rect)
