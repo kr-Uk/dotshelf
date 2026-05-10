@@ -232,6 +232,12 @@ namespace App.Bootstrap
             public CustomizationCategory PlacementCategory;
             // 회전 허용 여부. default true. 창문처럼 회전 비활성 entry 는 false.
             public bool AllowRotation;
+            // 데코 종류(무엇인가) — NormalizeSpawnedScale 의 카테고리 표준 크기 lookup 키.
+            // None 이면 legacy canonical / 폴더 휴리스틱 fallback 으로 backward compatible.
+            public DecorationObjectKind Kind;
+            // 카테고리 표준 크기에 추가로 곱하는 등방 multiplier. 0=비활성, 1.0=기본,
+            // 0.8=80%, 1.2=120%. 비등방(X/Y/Z 개별) override 는 미래 확장.
+            public float ScaleMultiplierOverride;
         }
 
         // 인벤토리 동일 자산 1회 배치 제한용 캐시. Key 는 BuildInventoryKey 가 만든 stable
@@ -550,6 +556,12 @@ namespace App.Bootstrap
             private const float BorderLift = 0.001f;              // border 가 fill 위로 살짝 떠서 그려지도록.
             private const float BorderWidth = 0.02f;
             private const float MinSize = 0.05f;
+            // Unity 빌트인 layer 2 = "Ignore Raycast". BlockerLayerMask 의 ~(1<<5 | 1<<2)
+            // 와 직결되어 정책 동기화 필요 — 사용자 layer 이름 변경에 흔들리지 않게 정수
+            // 상수로 고정. 빌트인 layer index 는 Unity 가 보장.
+            // **fillObject / borderObject 에만 적용**. root 는 빈 GameObject (Renderer/Collider
+            // 없음) 이므로 layer 변경 불필요 — 자식 layer 가 raycast/OverlapBox 에 직접 보인다.
+            private const int IgnoreRaycastLayer = 2;
 
             private GameObject root;
             private GameObject fillObject;
@@ -643,14 +655,25 @@ namespace App.Bootstrap
                 };
 
                 root = new GameObject("EditPlacementFootprint");
-                root.hideFlags = HideFlags.HideAndDontSave;
+                // 회귀 fix — 이전엔 HideAndDontSave 였으나 비정상 종료(domain reload / Play 강제 stop)
+                // 시 stale root 가 DontDestroyOnLoad 에 살아남는 회귀에서 사용자가 Inspector 로 식별
+                // 못 하는 dead helper 가 됐다. DontSave 면 자산화는 여전히 막히지만 Hierarchy/Inspector
+                // 는 정상 — 회귀 시 사용자가 즉시 식별/삭제 가능 + 향후 디버깅에서 좌표/색 확인 용이.
+                root.hideFlags = HideFlags.DontSave;
                 if (scene.IsValid()) SceneManager.MoveGameObjectToScene(root, scene);
                 root.SetActive(false);
 
                 quadMesh = BuildUnitQuadXZ();
 
                 fillObject = new GameObject("Fill");
-                fillObject.hideFlags = HideFlags.HideAndDontSave;
+                fillObject.hideFlags = HideFlags.DontSave;
+                // 자기 자신이 blocker 로 잡히는 회귀 차단 — EnsureBlockerColliders 가 활성 씬의
+                // 모든 Renderer GO 에 BoxCollider 를 자동 부착하는데, fill quad 가 그 대상에 들어가
+                // OverlapBox 에 obstacle 로 잡혀 "Fill" hit 으로 확정 버튼 disable / 회전 revert 가
+                // 발생했다. BlockerLayerMask 가 IgnoreRaycast(layer 2) 를 제외하므로 layer 만 옮겨도
+                // OverlapBox 가 무시. **fillObject 한정** — placed decoration / inventory placement
+                // 본체에는 절대 적용하지 않는다 (선택 raycast 가 같은 layer 를 무시하면 선택 불가).
+                fillObject.layer = IgnoreRaycastLayer;
                 fillObject.transform.SetParent(root.transform, false);
                 var filter = fillObject.AddComponent<MeshFilter>();
                 filter.sharedMesh = quadMesh;
@@ -663,7 +686,10 @@ namespace App.Bootstrap
                 fillRenderer.allowOcclusionWhenDynamic = false;
 
                 borderObject = new GameObject("Border");
-                borderObject.hideFlags = HideFlags.HideAndDontSave;
+                borderObject.hideFlags = HideFlags.DontSave;
+                // fillObject 와 동일 이유 — border line 도 LineRenderer 로 잡힐 가능성에 대비.
+                // **borderObject 한정** — placed decoration 본체에는 절대 적용 X.
+                borderObject.layer = IgnoreRaycastLayer;
                 borderObject.transform.SetParent(root.transform, false);
                 borderLine = borderObject.AddComponent<LineRenderer>();
                 borderLine.useWorldSpace = true;
@@ -817,6 +843,23 @@ namespace App.Bootstrap
             BuildCustomizationLockedModal();
             BuildSelectionPanel();
 
+            // 회귀 cleanup — 이전 세션 비정상 종료(domain reload / Play 강제 stop) 로 footprint
+            // preview root 가 DontDestroyOnLoad 또는 다른 scene 에 stale 로 남은 경우 제거.
+            // PlacementFootprintPreview 는 lazy build 라 controller 가 새로 만들어진 시점엔
+            // root 도 새로 만들어야 정상. exact name match 로 다른 GameObject 오인 destroy 차단.
+            // FindObjectsByType 가 hideFlags 무관하게 잡아주므로 HideAndDontSave 잔류물도 식별.
+            var staleFootprints = GameObject.FindObjectsByType<GameObject>(
+                UnityEngine.FindObjectsInactive.Include, UnityEngine.FindObjectsSortMode.None);
+            for (var i = 0; i < staleFootprints.Length; i++)
+            {
+                var stale = staleFootprints[i];
+                if (stale != null && stale.name == "EditPlacementFootprint")
+                {
+                    Debug.Log($"[EditFootprint] cleanup stale root scene='{stale.scene.name}' hideFlags={stale.hideFlags}");
+                    UnityEngine.Object.Destroy(stale);
+                }
+            }
+
             placementFootprint = new PlacementFootprintPreview();
 
             CloseDecorationPopupInternal();
@@ -856,7 +899,15 @@ namespace App.Bootstrap
                         SourceAssetPath = entry.SourceAssetPath ?? string.Empty,
                         PlacementCategory = placement,
                         AllowRotation = entry.AllowRotation,
+                        Kind = entry.Kind,
+                        ScaleMultiplierOverride = entry.ScaleMultiplierOverride,
                     });
+                    // 회귀 진단 — catalog → InventoryEntry 매핑 결과를 1회 로그. AllowRotation 이
+                    // FloorDeco 에 false 로 새거나 Kind 가 None 으로 회귀했는지 즉시 식별 가능.
+                    Debug.Log(
+                        $"[EditCatalog] entry='{entry.DisplayName}' prefab='{entry.Prefab.name}' " +
+                        $"kind={entry.Kind} placement={placement} allowRotation={entry.AllowRotation} " +
+                        $"scaleOverride={entry.ScaleMultiplierOverride:0.##} sourcePath='{entry.SourceAssetPath}'");
                 }
             }
 
@@ -3819,7 +3870,11 @@ namespace App.Bootstrap
                 return;
             }
 
-            var bounds = ComputeRendererBounds(selectedObject);
+            // 회귀 fix — 시각 footprint 와 validation OverlapBox 가 동일 source 사용. 이전엔
+            // ComputeRendererBounds 가 책상 위 모니터/인형 머리/램프 갓 같은 상부 mesh 까지
+            // XZ AABB 에 포함시켜 preview 가 실제 floor footprint 보다 *작아 보이는데* validation
+            // 은 *큰 영역* 으로 검사 → 사용자가 "공간 충분해 보이는데 배치 불가" 회귀.
+            var bounds = ComputeFloorFootprintBounds(selectedObject);
             if (!bounds.HasValue)
             {
                 placementFootprint.Hide();
@@ -3831,6 +3886,16 @@ namespace App.Bootstrap
             // pending(spawn 직후 정지 상태) 은 transform.position 검증.
             var probe = isDragging ? lastFloorDragRawCandidate : selectedObject.transform.position;
             bool isValid = EvaluateFloorPlacementValid(selectedObject, probe, bounds, out var reason);
+
+#if UNITY_EDITOR
+            // 진단 — preview 와 validation 이 같은 footprint 를 보고 있는지 frame-by-frame 검증.
+            // size 가 다르면 즉시 식별 가능. 회귀 발견 후 #if UNITY_EDITOR 가드 안에 두므로 release 빌드
+            // 에는 영향 없음.
+            Debug.Log(
+                $"[EditFootprint] obj='{selectedObject.name}' previewCenterXZ=({bounds.Value.center.x:0.##},{bounds.Value.center.z:0.##}) " +
+                $"previewSizeXZ=({bounds.Value.size.x:0.##},{bounds.Value.size.z:0.##}) probe=({probe.x:0.##},{probe.z:0.##}) " +
+                $"valid={isValid} reason='{reason ?? "None"}'");
+#endif
 
             placementFootprint.Show(gameObject.scene, bounds.Value, isValid, reason, selectedObject.name);
         }
@@ -4058,9 +4123,16 @@ namespace App.Bootstrap
                 var marker = selectedObject.GetComponent<WallDecoMarker>();
                 if (marker != null && !marker.AllowRotation) allowRotation = false;
             }
+            // state-transition 시점 한 번만 [EditRotate] 게이트 진단 — 매 frame 도배 방지.
             if (selectionRotateLeftButton != null && selectionRotateLeftButton.interactable != allowRotation)
             {
                 selectionRotateLeftButton.interactable = allowRotation;
+                if (selectedObject != null)
+                {
+                    Debug.Log(
+                        $"[EditRotate] gate update obj={selectedObject.name} allowRotation={allowRotation} " +
+                        $"hasWallMarker={selectedObject.GetComponent<WallDecoMarker>() != null}");
+                }
             }
             if (selectionRotateRightButton != null && selectionRotateRightButton.interactable != allowRotation)
             {
@@ -4095,17 +4167,23 @@ namespace App.Bootstrap
         private bool EvaluateConfirmEnabled(GameObject go)
         {
             if (go == null) return false;
-            var bounds = ComputeRendererBounds(go);
-            if (!bounds.HasValue) return true;
 
             var wallMarker = go.GetComponent<WallDecoMarker>();
             if (wallMarker != null)
             {
-                var rect = ProjectBoundsToWallRect(bounds.Value, wallMarker.CurrentWall);
+                // wall deco 는 벽 면적 기준 — 전체 mesh AABB 가 wall registry rect 에 들어가는지 검사.
+                var rendererBounds = ComputeRendererBounds(go);
+                if (!rendererBounds.HasValue) return true;
+                var rect = ProjectBoundsToWallRect(rendererBounds.Value, wallMarker.CurrentWall);
                 var registry = EnsureWallObstructionRegistry();
                 return registry == null || registry.IsRectFreeOnWall(wallMarker.CurrentWall, rect);
             }
 
+            // 회귀 fix — floor 항목은 ComputeFloorFootprintBounds (preview 와 동일 source) 사용.
+            // 이전엔 ComputeRendererBounds 가 상부 mesh 까지 포함해 confirm 검사가 preview 보다
+            // 큰 영역을 검사 → 시각적으로 충분해 보이는데 confirm 비활성 회귀.
+            var bounds = ComputeFloorFootprintBounds(go);
+            if (!bounds.HasValue) return true;
             return EvaluateFloorPlacementValid(go, go.transform.position, bounds, out _);
         }
 
@@ -4509,6 +4587,14 @@ namespace App.Bootstrap
                 playableMinZ = minZ;
                 playableMaxZ = maxZ;
             }
+#if UNITY_EDITOR
+            // 진단 — playable bounds 가 좌하단(X<0, Z<0) 영역을 포함하는지 확인. 만약 playableMinX
+            // 또는 playableMinZ 가 0 이상이면 좌하단 영역 자체가 ClampToFloorBounds 에서 push-back
+            // → drag/rotate 가 그 영역으로 들어가지 못하는 회귀 가능.
+            Debug.Log($"[EditPlayable] refresh playableX=[{playableMinX:0.##},{playableMaxX:0.##}] " +
+                      $"playableZ=[{playableMinZ:0.##},{playableMaxZ:0.##}] " +
+                      $"floorFound={floorFound} backWallFrontZ={backWallFrontZ:0.##}");
+#endif
         }
 
         // True if `t` or any of its ancestors is named "BookshelfRoot" or
@@ -6200,11 +6286,18 @@ namespace App.Bootstrap
             go.name = $"Decoration_{SanitizeName(entry.DisplayName)}_{System.Guid.NewGuid():N}";
             go.transform.SetParent(placedItemsRoot.transform, true);
 
-            // Step 1 — uniform-scale the model so its largest XZ extent matches a
-            // sensible per-category target (small props ~0.5m, furniture ~1.2m).
-            // Aspect ratio is preserved (one scale factor on all axes), so models
-            // never appear squashed.
-            NormalizeSpawnedScale(go, entry.SourceAssetPath);
+            // Step 1 — uniform-scale the model so its measured bounds match a per-Kind
+            // target along the right axis. lookup chain (highest priority first):
+            //   (a) entry.ScaleMultiplierOverride * (Kind 표준 크기) — designer override
+            //   (b) Kind != None → DecorationSizeProfileTable lookup (target + axis)
+            //   (c) legacy CanonicalScaleByAssetFileName 정확매칭 dict (점진 폐기)
+            //   (d) 폴더 휴리스틱 (/Props/ 0.5m, /Furniture/ 1.2m) — backward compatible
+            // 등방 multiplier (모든 축에 동일 적용) 라 비율은 항상 보존된다.
+            NormalizeSpawnedScale(go, entry);
+            // 회귀 fix — transform.localScale 변경 직후 PhysX 의 collider transform 은 stale.
+            // 다음 step 의 TryFindClearSpawnPosition 이 Physics.OverlapBox 로 검사하므로 명시 sync
+            // 안 하면 self collider 가 새 scale 위치에 없는 상태로 hit 결과 부정확.
+            Physics.SyncTransforms();
 
             // Step 2 — initial X/Z layout: spread placements in a 3-wide grid
             // centered on the open floor area so multiple drops don't stack.
@@ -6225,9 +6318,12 @@ namespace App.Bootstrap
             // footprint when the inventory has 10+ items. Drag-time movement
             // doesn't use InventorySpawnMaxZ — the player can later drag an
             // item up to the bookshelf via the collider-based blocker check.
+            // 회귀 fix — clamp/spawn-overlap 검사 모두 ComputeFloorFootprintBounds (preview source)
+            // 사용. 이전엔 ComputeRendererBounds 라 책상 위 모니터 같은 상부 mesh 가 spawn 검사
+            // 영역에 포함돼 책상 옆 좁은 통로 spawn 이 false-positive blocker 로 reject 됐다.
             if (rendererBounds.HasValue)
             {
-                var spawnBounds = ComputeRendererBounds(go) ?? rendererBounds.Value;
+                var spawnBounds = ComputeFloorFootprintBounds(go) ?? rendererBounds.Value;
                 var pos = go.transform.position;
                 if (pos.z + spawnBounds.extents.z > InventorySpawnMaxZ)
                 {
@@ -6248,9 +6344,18 @@ namespace App.Bootstrap
             // for a clear cell; if none is available, abort the spawn.
             if (rendererBounds.HasValue)
             {
-                var spawnBounds = ComputeRendererBounds(go) ?? rendererBounds.Value;
+                var spawnBounds = ComputeFloorFootprintBounds(go) ?? rendererBounds.Value;
+                // 회귀 진단 — Kind 정규화 후 size 와 footprint 가 어떻게 나왔는지 spawn 시점에 한 번 출력.
+                Debug.Log(
+                    $"[EditPlacement] spawn obj='{entry.DisplayName}' kind={entry.Kind} " +
+                    $"placement={entry.PlacementCategory} scale={go.transform.localScale} " +
+                    $"boundsSize={spawnBounds.size} footprintXZ=({spawnBounds.size.x:0.##},{spawnBounds.size.z:0.##})");
                 if (!TryFindClearSpawnPosition(go, spawnBounds, go.transform.position, out var clearPosition))
                 {
+                    Debug.LogWarning(
+                        $"[EditPlacement] spawn rejected obj='{entry.DisplayName}' reason='NoClearRing' " +
+                        $"footprintXZ=({spawnBounds.size.x:0.##},{spawnBounds.size.z:0.##}) " +
+                        $"desiredPos={go.transform.position}");
                     Destroy(go);
                     return;
                 }
@@ -6341,27 +6446,59 @@ namespace App.Bootstrap
             return false;
         }
 
+        // floor 데코의 footprint 검사 시 Y 축 검사 두께 — 사실상 XZ 평면 검사로 만들어 "벽이나 천장
+        // obstacle 과의 Y 겹침" 으로 invalid 판정되는 회귀를 차단한다. 0.30m 면 책상/책장 아래
+        // 다리 부분은 hit, 벽은 isShell 이라 어차피 무시. 천장 시설은 검사면을 벗어나 hit 안 됨.
+        private const float FloorPlacementProbeHalfHeight = 0.30f;
+
         // True if a box the size of `spawnBounds` placed at `position` (in
         // world space) overlaps any non-self, non-shell, non-trigger
-        // collider. Mirrors the half-extent shaping used by the drag-time
-        // collision check so spawn and drag agree on what "blocked" means.
+        // collider. **호출 계약** — `spawnBounds` 는 ComputeFloorFootprintBounds 의 결과 (world
+        // AABB, 시각 footprint preview 와 동일 source). orientation 은 항상 identity 로 OverlapBox
+        // 호출 — 회전된 객체는 호출자가 ComputeFloorFootprintBounds 를 *회전 후* 다시 계산해서
+        // 새 World AABB 를 전달한다. 이렇게 하면 preview 사각형과 검증 영역이 **항상 동일**.
+        //
+        // 이전 구현 회귀 — `Quaternion orientation` 인자를 받아 OverlapBox 에 전달했으나, 회전 시
+        // World AABB 가 √2 배 부풀어 (45°) preview 와 어긋났다. minXZ heuristic 으로 deflate 했지만
+        // 여전히 preview 와 size 불일치. 단순화: orientation 인자 폐지, identity 로 통일.
         private static bool IsSpawnPositionBlockedAt(GameObject self, Bounds spawnBounds, Vector3 position)
         {
             var halfExtents = new Vector3(
                 Mathf.Max(0.005f, spawnBounds.extents.x),
-                Mathf.Max(0.005f, spawnBounds.extents.y - BlockerMargin),
+                FloorPlacementProbeHalfHeight,
                 Mathf.Max(0.005f, spawnBounds.extents.z));
 
             // spawnBounds.center is at the object's *current* world position.
             // Translate the center by the candidate-vs-current delta to query
-            // the box at the candidate position.
-            var sampleCenter = spawnBounds.center + (position - self.transform.position);
+            // the box at the candidate position. probe slab 의 Y 중심은 floor 위 probe height — 항상
+            // floor 를 기준으로 Y 검사 (객체 자체 Y 와 무관해 floor 인접 obstacle 만 잡힘).
+            var sampleCenter = new Vector3(
+                spawnBounds.center.x + (position.x - self.transform.position.x),
+                FloorPlaneY + FloorPlacementProbeHalfHeight,
+                spawnBounds.center.z + (position.z - self.transform.position.z));
             var hits = Physics.OverlapBox(sampleCenter, halfExtents, Quaternion.identity, BlockerLayerMask, QueryTriggerInteraction.Ignore);
+#if UNITY_EDITOR
+            // 진단 — preview 와 동일 size 인지 확인. ComputeFloorFootprintBounds 결과 size 그대로
+            // OverlapBox 에 전달되는지 frame-by-frame 검증.
+            Debug.Log(
+                $"[EditValidation] obj='{(self != null ? self.name : "<null>")}' validationCenterXZ=({sampleCenter.x:0.##},{sampleCenter.z:0.##}) " +
+                $"validationSizeXZ=({halfExtents.x * 2f:0.##},{halfExtents.z * 2f:0.##}) hits={hits.Length}");
+#endif
             for (var i = 0; i < hits.Length; i++)
             {
                 var hit = hits[i];
                 if (hit == null || hit.isTrigger) continue;
-                if (self != null && hit.transform.IsChildOf(self.transform)) continue;
+
+                // 강한 self filter — IsChildOf 외에 transform.root 와 attachedRigidbody 비교까지.
+                // GLB 가 nested rig 갖고 있거나 designer 가 BoxCollider 를 자식 sub-mesh 에 붙인 경우도
+                // 자기 자신은 절대 obstacle 로 잡히지 않게 한다.
+                if (self != null)
+                {
+                    if (hit.transform == self.transform) continue;
+                    if (hit.transform.IsChildOf(self.transform)) continue;
+                    if (hit.transform.root == self.transform.root && self.transform == self.transform.root) continue;
+                    if (hit.attachedRigidbody != null && hit.attachedRigidbody.gameObject == self) continue;
+                }
 
                 var isShell = false;
                 for (var t = hit.transform; t != null; t = t.parent)
@@ -6374,6 +6511,12 @@ namespace App.Bootstrap
                 }
                 if (isShell) continue;
 
+                // 진단 — 실제 차단을 만든 hit collider 를 출력. 사용자가 "충분해 보이는데" 라고 한
+                // 케이스에서 어떤 obstacle 이 잡히는지 즉시 식별.
+                Debug.Log(
+                    $"[EditMove] hit blocker='{hit.gameObject.name}' collider='{hit.GetType().Name}' " +
+                    $"hitPos={hit.bounds.center} hitSize={hit.bounds.size} " +
+                    $"selfName='{(self != null ? self.name : "<null>")}' isSelf=False");
                 return true;
             }
 
@@ -6389,34 +6532,66 @@ namespace App.Bootstrap
         // BookshelfGenerator uses for the same model in the scene), that
         // wins over the category heuristic so an inventory-spawned BookStack
         // ends up the same size as the BookStack already placed in the room.
-        private static void NormalizeSpawnedScale(GameObject go, string sourceAssetPath)
+        private static void NormalizeSpawnedScale(GameObject go, InventoryEntry entry)
         {
-            if (TryGetCanonicalScaleByAssetPath(sourceAssetPath, out var canonical))
+            // (a) Kind 가 알려져 있으면 표준 크기 + fit 축으로 등방 multiplier 산출, designer override 곱.
+            //     Override 가 0 이 아니면 추가 multiplier 로 해석 (1.0=기본, 0.8=80%, 1.2=120%).
+            if (entry.Kind != DecorationObjectKind.None &&
+                DecorationSizeProfileTable.TryGet(entry.Kind, out var profile))
+            {
+                var bounds = ComputeRendererBounds(go);
+                if (bounds.HasValue)
+                {
+                    var size = bounds.Value.size;
+                    var measured = SelectFitAxisLength(size, profile.Axis);
+                    if (measured > 0.0001f)
+                    {
+                        var baseMultiplier = profile.TargetMeters / measured;
+                        var overrideMultiplier = entry.ScaleMultiplierOverride > 0f ? entry.ScaleMultiplierOverride : 1f;
+                        var scaleMultiplier = Mathf.Clamp(baseMultiplier * overrideMultiplier, 0.05f, 20f);
+                        go.transform.localScale *= scaleMultiplier;
+                        return;
+                    }
+                }
+                // bounds 측정 실패 — Kind 기반 정규화 못 함. 다음 fallback 으로 진행.
+            }
+
+            // (b) Legacy canonical 정확매칭 dict (book_stack 0.2 등) — Kind 시스템 마이그레이션 전
+            //     기존 catalog 의 회귀 방지를 위해 유지. 모든 entry 가 Kind 를 채우면 자연스럽게 unused.
+            if (TryGetCanonicalScaleByAssetPath(entry.SourceAssetPath, out var canonical))
             {
                 go.transform.localScale = canonical;
                 return;
             }
 
-            var bounds = ComputeRendererBounds(go);
-            if (!bounds.HasValue)
+            // (c) 폴더 휴리스틱 — 가장 보수적인 fallback. backward compatible 핵심 경로.
+            var fallbackBounds = ComputeRendererBounds(go);
+            if (!fallbackBounds.HasValue)
             {
                 return;
             }
-
-            var size = bounds.Value.size;
-            var largestXZ = Mathf.Max(size.x, size.z);
+            var fallbackSize = fallbackBounds.Value.size;
+            var largestXZ = Mathf.Max(fallbackSize.x, fallbackSize.z);
             if (largestXZ < 0.0001f)
             {
                 return;
             }
+            var targetSize = ResolveTargetMeterSize(entry.SourceAssetPath);
+            var fallbackMultiplier = Mathf.Clamp(targetSize / largestXZ, 0.05f, 20f);
+            go.transform.localScale *= fallbackMultiplier;
+        }
 
-            var targetSize = ResolveTargetMeterSize(sourceAssetPath);
-            var scaleMultiplier = targetSize / largestXZ;
-            // Keep the multiplier within a sane range so a tiny mesh isn't blown
-            // up to room scale or a giant mesh shrunk to a speck even if its
-            // imported size is wildly off.
-            scaleMultiplier = Mathf.Clamp(scaleMultiplier, 0.05f, 20f);
-            go.transform.localScale *= scaleMultiplier;
+        // FitAxis 에 해당하는 bounds.size 성분 — LongestXZ 는 max(x,z), 나머지는 해당 축 그대로.
+        private static float SelectFitAxisLength(Vector3 boundsSize, DecorationFitAxis axis)
+        {
+            switch (axis)
+            {
+                case DecorationFitAxis.X:         return boundsSize.x;
+                case DecorationFitAxis.Y:         return boundsSize.y;
+                case DecorationFitAxis.Z:         return boundsSize.z;
+                case DecorationFitAxis.LongestXZ: default:
+                    return Mathf.Max(boundsSize.x, boundsSize.z);
+            }
         }
 
         private static bool TryGetCanonicalScaleByAssetPath(string sourceAssetPath, out Vector3 scale)
@@ -6705,17 +6880,89 @@ namespace App.Bootstrap
             // (Overlap with other objects is no longer resolved during drag —
             // it is reported via EvaluateFloorPlacementValid for footprint
             // coloring + confirm-button disable + FinishDrag rollback only.)
+            //
+            // 회귀 fix — 비대상 Renderer 가 bounds 에 끼어들어 ClampToFloorBounds 가 너무 빡빡해지고
+            // OBB 검사가 부풀려지는 회귀 차단:
+            //   - renderer.enabled == false : 디자이너가 명시적으로 끈 LOD/helper 메시. 시각/충돌 대상 X.
+            //   - !gameObject.activeInHierarchy : (root inactive 호환은 includeInactive=true 가 잡지만)
+            //     깊은 자식에서 비활성된 helper 는 footprint 무시.
+            //   - ParticleSystemRenderer : 파티클의 동적 bounds 가 매우 큼. 충돌 대상 X.
+            //   - TrailRenderer / LineRenderer : 마찬가지로 부풀림 원인.
+            //   - 첫 valid renderer 의 bounds 를 base 로 encapsulate — 비대상 renderer 가 첫 자리면
+            //     base 가 origin (0,0,0) 이라 모든 bounds 가 거대해지는 회귀 사례 차단.
             var renderers = go.GetComponentsInChildren<Renderer>(true);
             if (renderers == null || renderers.Length == 0)
             {
                 return null;
             }
-            var bounds = renderers[0].bounds;
-            for (var i = 1; i < renderers.Length; i++)
+            Bounds? aggregate = null;
+            int included = 0, skipped = 0;
+            for (var i = 0; i < renderers.Length; i++)
             {
-                bounds.Encapsulate(renderers[i].bounds);
+                var r = renderers[i];
+                if (r == null) { skipped++; continue; }
+                if (!r.enabled) { skipped++; continue; }
+                if (r.gameObject == null || !r.gameObject.activeInHierarchy) { skipped++; continue; }
+                if (r is ParticleSystemRenderer || r is TrailRenderer || r is LineRenderer) { skipped++; continue; }
+                // SkinnedMeshRenderer 가 첫 frame 에 sentinel bounds 를 반환할 수 있어 size 0 이면 skip.
+                var rb = r.bounds;
+                if (rb.size.sqrMagnitude < 1e-8f) { skipped++; continue; }
+                if (!aggregate.HasValue) aggregate = rb;
+                else { var b = aggregate.Value; b.Encapsulate(rb); aggregate = b; }
+                included++;
             }
-            return bounds;
+            if (!aggregate.HasValue && renderers.Length > 0)
+            {
+                // 모든 Renderer 가 필터됐으면 fallback — 첫 renderer.bounds 라도 반환해 회귀 (null) 회피.
+                aggregate = renderers[0].bounds;
+            }
+            return aggregate;
+        }
+
+        // 시각 footprint preview 와 placement validation 이 동일 영역을 검사하도록 만드는 단일 source.
+        // ComputeRendererBounds 와 차이 — 책상 위 모니터, 인형 머리, 램프 갓 같은 *상부* mesh 를
+        // XZ AABB 에 포함하지 않는다. 결과: preview 사각형 크기 = OverlapBox 검사 영역 = 사용자가
+        // 시각적으로 보는 floor footprint.
+        //
+        // 규칙 — Renderer.bounds.min.y < FloorFootprintHeightThreshold(0.6m) 인 mesh 만 encapsulate.
+        // 떠있는 wall deco 처럼 모든 mesh 가 floor 위에 떠있는 케이스는 가장 낮은 Renderer 의 XZ
+        // 사용 (호출부 wall deco 분기가 별도 처리하므로 fallback 진입 빈도 낮음).
+        //
+        // 결과 size.y 는 무의미 — XZ 만 placement 판정/시각화에 쓰인다. 호출부가 size.y 를 무시하고
+        // FloorPlacementProbeHalfHeight 로 별도의 Y slab 을 생성한다.
+        //
+        // ComputeRendererBounds 는 verticalOffset 계산 / Kind scale 정규화 / collider 합성 등 *전체*
+        // mesh size 가 필요한 경로에 그대로 유지 — 본 메서드는 placement 전용.
+        private const float FloorFootprintHeightThreshold = 0.6f;
+        private static Bounds? ComputeFloorFootprintBounds(GameObject go)
+        {
+            if (go == null) return null;
+            var renderers = go.GetComponentsInChildren<Renderer>(true);
+            if (renderers == null || renderers.Length == 0) return null;
+
+            Bounds? aggregate = null;
+            Renderer lowestRenderer = null;
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null) continue;
+                if (!r.enabled) continue;
+                if (r.gameObject == null || !r.gameObject.activeInHierarchy) continue;
+                if (r is ParticleSystemRenderer || r is TrailRenderer || r is LineRenderer) continue;
+                var rb = r.bounds;
+                if (rb.size.sqrMagnitude < 1e-8f) continue;
+                if (lowestRenderer == null || rb.min.y < lowestRenderer.bounds.min.y) lowestRenderer = r;
+                // 위로 떠있는 mesh (모니터/머리/갓) 는 footprint 비대상 — 시각도 검증도 무시.
+                if (rb.min.y > FloorFootprintHeightThreshold) continue;
+                if (!aggregate.HasValue) aggregate = rb;
+                else { var b = aggregate.Value; b.Encapsulate(rb); aggregate = b; }
+            }
+            if (!aggregate.HasValue && lowestRenderer != null)
+            {
+                // 모든 mesh 가 floor 위로 떠있음 — 가장 낮은 Renderer 의 XZ 사용 (보수적 fallback).
+                aggregate = lowestRenderer.bounds;
+            }
+            return aggregate;
         }
 
         private static string SanitizeName(string raw)
@@ -7006,7 +7253,16 @@ namespace App.Bootstrap
             // Anything that the canvas raycaster considers UI (bottom menu,
             // rotate / delete buttons, return button) just stops here.
             var overUi = IsPointerOverUi();
+#if UNITY_EDITOR
+            // 진단 강화 — pointer 의 화면 사분면(좌하단 회귀 영역 식별용) + UI hit 시 어떤 element 인지.
+            var screenW = Screen.width;
+            var screenH = Screen.height;
+            var quadrant = (pointer.x < screenW * 0.5f ? "L" : "R") + (pointer.y < screenH * 0.5f ? "B" : "T");
+            Debug.Log($"[EditPress] enter pointer={pointer} screen=({screenW}x{screenH}) quadrant={quadrant} " +
+                      $"overUi={overUi} editMode={IsEditModeActive} initialized={isInitialized} modalOpen={isUnsavedChangesModalOpen}");
+#else
             Debug.Log($"[EditPress] enter pointer={pointer} overUi={overUi} editMode={IsEditModeActive} initialized={isInitialized} modalOpen={isUnsavedChangesModalOpen}");
+#endif
             if (overUi)
             {
                 Debug.Log("[EditPress] blocked by IsPointerOverUi");
@@ -7023,28 +7279,62 @@ namespace App.Bootstrap
             }
 
             var ray = camera.ScreenPointToRay(pointer);
-            if (Physics.Raycast(ray, out var hit, 100f))
+#if UNITY_EDITOR
+            // 진단 — ray 자체 (origin/direction) + 카메라 위치. 좌하단 회귀에서 ray 가 의도한 floor
+            // 방향으로 가는지 확인 — 카메라 view rotation 회귀 시 ray 가 엉뚱한 방향일 가능성 식별.
+            Debug.Log($"[EditPress] ray origin={ray.origin} direction={ray.direction} cameraPos={camera.transform.position}");
+#endif
+            // 회귀 fix — 단일 Physics.Raycast 는 ray 의 *첫* collider 만 반환. 좌하단/책상 앞 영역
+            // 처럼 DecorationItemMarker 없는 fixture(책상·노트북·기타 helper) 가 placed decoration
+            // 위층에 collider 를 깔고 있으면 첫 hit 이 fixture → marker 미발견 → DeselectCurrentObject
+            // 로 빠져 그 영역의 인형/데코는 영원히 선택 불가 회귀.
+            // RaycastAll + 거리순 정렬로 모든 hit 을 훑어 marker 있는 첫 collider 를 선택. fixture
+            // collider 는 자연스럽게 통과. RaycastNonAlloc 은 buffer 관리 부담 + 빈도 낮은 click 경로
+            // 라 RaycastAll 의 GC 비용이 무시할만함.
+            var hits = Physics.RaycastAll(ray, 100f);
+            if (hits != null && hits.Length > 0)
             {
-                var marker = hit.collider.GetComponentInParent<DecorationItemMarker>();
-                Debug.Log($"[EditPress] hit='{hit.collider.name}' hitObject='{hit.collider.gameObject.name}' marker={(marker != null ? marker.name : "<null>")}");
-                if (marker != null)
+                System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+                for (var i = 0; i < hits.Length; i++)
                 {
-                    // Select first if it isn't already selected, then begin a drag
-                    // immediately. The same gesture (press + release without
-                    // movement) ends up as a no-op drag, which is fine — a click
-                    // on the already-selected object stays selected.
-                    if (selectedObject != marker.gameObject)
+                    var hit = hits[i];
+                    if (hit.collider == null) continue;
+                    var marker = hit.collider.GetComponentInParent<DecorationItemMarker>();
+#if UNITY_EDITOR
+                    // 진단 강화 — 좌하단 영역 selection 회귀 추적용. layer / collider 타입 / world bounds /
+                    // hierarchy path 까지 출력해 어떤 helper / fixture / placed 가 ray 를 가로막는지 식별.
+                    var col = hit.collider;
+                    var layerName = LayerMask.LayerToName(col.gameObject.layer);
+                    var path = BuildHierarchyPath(col.transform);
+                    Debug.Log($"[EditPress] hit[{i}] name='{col.name}' path='{path}' " +
+                              $"layer={col.gameObject.layer}({layerName}) colliderType={col.GetType().Name} " +
+                              $"distance={hit.distance:0.##} hitPoint={hit.point} colliderBounds={col.bounds} " +
+                              $"marker={(marker != null ? marker.name : "<null>")} " +
+                              $"isTrigger={col.isTrigger} enabled={col.enabled}");
+#else
+                    Debug.Log($"[EditPress] hit[{i}]='{hit.collider.name}' hitObject='{hit.collider.gameObject.name}' " +
+                              $"distance={hit.distance:0.##} marker={(marker != null ? marker.name : "<null>")}");
+#endif
+                    if (marker != null)
                     {
-                        SelectObject(marker.gameObject);
+                        // Select first if it isn't already selected, then begin a drag
+                        // immediately. The same gesture (press + release without
+                        // movement) ends up as a no-op drag, which is fine — a click
+                        // on the already-selected object stays selected.
+                        if (selectedObject != marker.gameObject)
+                        {
+                            SelectObject(marker.gameObject);
+                        }
+                        BeginDrag(marker.gameObject, ray);
+                        Debug.Log($"[EditPress] BeginDrag fired on '{marker.gameObject.name}' via hit[{i}]");
+                        return;
                     }
-                    BeginDrag(marker.gameObject, ray);
-                    Debug.Log($"[EditPress] BeginDrag fired on '{marker.gameObject.name}'");
-                    return;
                 }
+                Debug.Log($"[EditPress] {hits.Length} hit(s) but none has DecorationItemMarker → DeselectCurrentObject");
             }
             else
             {
-                Debug.Log("[EditPress] Physics.Raycast missed");
+                Debug.Log("[EditPress] Physics.RaycastAll missed");
             }
 
             Debug.Log("[EditPress] no draggable target → DeselectCurrentObject");
@@ -7065,7 +7355,8 @@ namespace App.Bootstrap
             // Capture grab offset so the model doesn't snap its center under the
             // pointer at drag start — instead it stays where it was relative to
             // where the player grabbed it.
-            if (TryRaycastFloorPlane(initialRay, out var grabPoint))
+            bool floorHit = TryRaycastFloorPlane(initialRay, out var grabPoint);
+            if (floorHit)
             {
                 dragGrabOffset = new Vector3(
                     target.transform.position.x - grabPoint.x,
@@ -7076,6 +7367,13 @@ namespace App.Bootstrap
             {
                 dragGrabOffset = Vector3.zero;
             }
+#if UNITY_EDITOR
+            // 진단 — BeginDrag 진입 + floor raycast 결과. 좌하단에서 floor raycast 가 실패하면
+            // grabOffset 이 0 으로 fallback → drag 시 객체가 pointer 로 점프하는 회귀 식별.
+            Debug.Log($"[EditDrag] BeginDrag target='{target.name}' startPos={dragStartPosition} " +
+                      $"floorHit={floorHit} grabPoint={(floorHit ? grabPoint.ToString() : "<miss>")} " +
+                      $"grabOffset={dragGrabOffset}");
+#endif
 
             // Re-run scene-shape detection in case any wall, fixture, or
             // decoration was added / moved / scaled since edit mode was
@@ -7143,7 +7441,11 @@ namespace App.Bootstrap
             var rawCandidate = new Vector3(rawX, draggingObject.transform.position.y, rawZ);
             var candidate = rawCandidate;
             var currentPosition = draggingObject.transform.position;
-            var bounds = ComputeRendererBounds(draggingObject);
+            // 회귀 fix — drag tick 도 preview/validation 과 동일 source 사용. ClampToFloorBounds 가
+            // preview 사각형 기준으로 동작 → 사용자가 시각적으로 본 footprint 가 방 밖으로 안 가면
+            // 드래그 가능. 이전엔 ComputeRendererBounds 라 책상 위 모니터 같은 상부 mesh 까지
+            // clamp 영역 계산에 포함됐다.
+            var bounds = ComputeFloorFootprintBounds(draggingObject);
             // 새 UX(이번 변경) — 이동 검증과 배치 검증 분리.
             //   movement gate (드래그 중) : ClampToFloorBounds 만. 방 경계 안에서는 다른 오브젝트와
             //                              겹치는 위치로도 자유롭게 이동 가능.
@@ -7171,6 +7473,37 @@ namespace App.Bootstrap
                 ? Mathf.Abs(rawCandidate.x - candidate.x) < 1e-4f && Mathf.Abs(rawCandidate.z - candidate.z) < 1e-4f
                 : true;
             LogEditDragTransition(moveAllowed: inRoom, inRoom: inRoom, placementValid: isValid, reason: invalidReason);
+            // 진단 — drag tick 의 핵심 수치 (state-transition 시점만, dedup 은 LogEditDragTransition 가 담당).
+            if (bounds.HasValue)
+            {
+                LogEditMoveTickIfChanged(draggingObject, candidate, bounds.Value, isValid, invalidReason);
+            }
+        }
+
+        // 매 frame 도배 방지 — 직전 출력과 (valid, reason, intCellX, intCellZ) 가 같으면 skip.
+        // grid snap 단계 (0.1m) 보다 큰 변화만 잡혀서 cursor 흔들림에 도배되지 않는다.
+        private bool _editMoveLogInitialized;
+        private bool _editMoveLogLastValid;
+        private string _editMoveLogLastReason;
+        private int _editMoveLogLastCellX, _editMoveLogLastCellZ;
+        private void LogEditMoveTickIfChanged(GameObject obj, Vector3 position, Bounds bounds, bool isValid, string reason)
+        {
+            int cellX = Mathf.RoundToInt(position.x * 10f);
+            int cellZ = Mathf.RoundToInt(position.z * 10f);
+            string r = reason ?? "None";
+            if (_editMoveLogInitialized && _editMoveLogLastValid == isValid && _editMoveLogLastReason == r &&
+                _editMoveLogLastCellX == cellX && _editMoveLogLastCellZ == cellZ)
+            {
+                return;
+            }
+            _editMoveLogLastValid = isValid;
+            _editMoveLogLastReason = r;
+            _editMoveLogLastCellX = cellX;
+            _editMoveLogLastCellZ = cellZ;
+            _editMoveLogInitialized = true;
+            Debug.Log(
+                $"[EditMove] obj='{obj.name}' position={position} valid={isValid} reason='{r}' " +
+                $"boundsSize={bounds.size} footprintXZ=({bounds.size.x:0.##},{bounds.size.z:0.##})");
         }
 
         // 배치 유효성 평가 — 기존 검증 로직(ClampToFloorBounds / IsSpawnPositionBlockedAt)
@@ -7180,7 +7513,10 @@ namespace App.Bootstrap
         {
             reason = null;
             if (go == null) return true;
-            var b = cachedBounds ?? ComputeRendererBounds(go);
+            // 회귀 fix — 호출자가 cachedBounds 를 안 주면 ComputeFloorFootprintBounds (preview 동일
+            // source) 로 계산. 이전 ComputeRendererBounds 는 위쪽 mesh 까지 포함해 preview 보다
+            // 큰 영역으로 검증했다.
+            var b = cachedBounds ?? ComputeFloorFootprintBounds(go);
             if (!b.HasValue) return true;
 
             var bounds = b.Value;
@@ -7424,6 +7760,19 @@ namespace App.Bootstrap
         // wall's front face rather than the far edge of the floor mesh.
         // Collision with bookshelf / furniture / other placed decorations is
         // handled separately by ResolveBlockerCollisions.
+        // 회귀 fix — footprint *edge* 가 visible grid edge 를 살짝 넘는 정도까지 허용.
+        // 이전엔 footprint center 가 [playableMin+extents, playableMax-extents] 정확히 안에
+        // 있어야 push-back 안 됐는데, 사용자가 grid 가장자리 셀에 객체를 놓으면:
+        //   (a) ComputeFloorFootprintBounds 가 mesh 의 모자/꼬리/그림자 plane 같은 옆 mesh 까지
+        //       포함해 footprint extents 가 visible mesh 보다 큼
+        //   (b) 부동소수 노이즈 / 회전 후 AABB 부풀림
+        //   (c) wall thickness(0.04m) 와 footprint edge 가 1mm 차이로 겹침
+        // 셋 중 어느 케이스든 footprint edge 가 grid edge 를 미세하게 넘어가 OutOfRoom 깜빡임.
+        // tolerance = 0.05m: wall thickness 0.04m 안쪽 + 1cm epsilon. wall 안쪽으로 5cm 까지
+        // footprint edge 가 들어가도 OK — 시각적으로는 grid 가장자리 셀에 들어간 상태로 인식.
+        // 실제 wall 너머로 큰 이탈은 여전히 차단 (extents 일부만 넘어가는 케이스만 허용).
+        private const float PlayableBoundsTolerance = 0.05f;
+
         private Vector3 ClampToFloorBounds(Vector3 currentPosition, Vector3 candidate, Bounds currentBounds)
         {
             // current bounds are in world space, anchored to the object's current
@@ -7433,10 +7782,12 @@ namespace App.Bootstrap
             var futureCenter = currentBounds.center + delta;
             var extents = currentBounds.extents;
 
-            var minCenterX = playableMinX + extents.x;
-            var maxCenterX = playableMaxX - extents.x;
-            var minCenterZ = playableMinZ + extents.z;
-            var maxCenterZ = playableMaxZ - extents.z;
+            // PlayableBoundsTolerance 만큼 effective playable 을 확장 — footprint edge 가 grid
+            // edge 를 5cm 까지 넘어가도 push-back 안 됨. 사용자 시점 "grid 셀에 닿은 만큼 OK".
+            var minCenterX = playableMinX + extents.x - PlayableBoundsTolerance;
+            var maxCenterX = playableMaxX - extents.x + PlayableBoundsTolerance;
+            var minCenterZ = playableMinZ + extents.z - PlayableBoundsTolerance;
+            var maxCenterZ = playableMaxZ - extents.z + PlayableBoundsTolerance;
 
             // Defensive: if the object is wider than the room (shouldn't happen
             // post-NormalizeSpawnedScale, but a tweaked catalog could), keep
@@ -7447,11 +7798,48 @@ namespace App.Bootstrap
             var clampedCenterX = Mathf.Clamp(futureCenter.x, minCenterX, maxCenterX);
             var clampedCenterZ = Mathf.Clamp(futureCenter.z, minCenterZ, maxCenterZ);
 
+#if UNITY_EDITOR
+            // 진단 — push-back 발생 시만 로그 (idle 시 도배 X). 어느 axis 가 어느 방향으로 넘어갔는지
+            // 명시 → 회귀 추적 시 "minX 측인지 maxZ 측인지" 즉시 식별. tolerance 가 적용된 effective
+            // bounds 도 함께 출력해 실제 clamp 기준선 확인.
+            if (Mathf.Abs(clampedCenterX - futureCenter.x) > 1e-4f || Mathf.Abs(clampedCenterZ - futureCenter.z) > 1e-4f)
+            {
+                var overflow = "";
+                if (futureCenter.x < minCenterX) overflow += " minX";
+                if (futureCenter.x > maxCenterX) overflow += " maxX";
+                if (futureCenter.z < minCenterZ) overflow += " minZ";
+                if (futureCenter.z > maxCenterZ) overflow += " maxZ";
+                Debug.Log($"[EditClamp] push-back overflow={overflow.Trim()} " +
+                          $"inputCenter=({futureCenter.x:0.###},{futureCenter.z:0.###}) " +
+                          $"clampedCenter=({clampedCenterX:0.###},{clampedCenterZ:0.###}) " +
+                          $"extents=({extents.x:0.###},{extents.z:0.###}) " +
+                          $"playableRaw X=[{playableMinX:0.###},{playableMaxX:0.###}] Z=[{playableMinZ:0.###},{playableMaxZ:0.###}] " +
+                          $"effectiveCenter X=[{minCenterX:0.###},{maxCenterX:0.###}] Z=[{minCenterZ:0.###},{maxCenterZ:0.###}] " +
+                          $"tolerance={PlayableBoundsTolerance:0.##}");
+            }
+#endif
+
             return new Vector3(
                 candidate.x + (clampedCenterX - futureCenter.x),
                 candidate.y,
                 candidate.z + (clampedCenterZ - futureCenter.z));
         }
+
+#if UNITY_EDITOR
+        // 진단 helper — collider hierarchy path 를 "/Root/Parent/Child" 형식으로 빌드.
+        // 좌하단 영역에서 어떤 prefab/fixture 의 어느 깊이 자식 collider 가 hit 되는지 식별.
+        private static string BuildHierarchyPath(Transform t)
+        {
+            if (t == null) return "<null>";
+            var sb = new System.Text.StringBuilder();
+            for (var cur = t; cur != null; cur = cur.parent)
+            {
+                if (sb.Length > 0) sb.Insert(0, '/');
+                sb.Insert(0, cur.name);
+            }
+            return sb.ToString();
+        }
+#endif
 
         // GameObjects whose renderers share the dragged object's resting
         // y=0 plane (floor / floor-wood) or sit above the room volume
@@ -7468,6 +7856,12 @@ namespace App.Bootstrap
             "Ceiling",
             "AlcoveCeiling",
             "DecorationDragGrid",
+            // PlacementFootprintPreview 의 root GameObject 이름 (line 651 "EditPlacementFootprint").
+            // EnsureBlockerCollidersRecursive 가 이 이름을 만나면 자식 traversal 종료 →
+            // Fill/Border quad 에 BoxCollider 자동 부착 차단. 1차 차단(IgnoreRaycastLayer) 보강의
+            // 2차 방어. **HashSet exact match (OrdinalIgnoreCase)** 라 placed decoration root
+            // (`Decoration_{Name}_{Guid}` 패턴) 와 절대 매치되지 않는다 — 선택/드래그 영향 X.
+            "EditPlacementFootprint",
         };
 
         // Reject candidate positions whose bounds would overlap any cached
@@ -7833,11 +8227,19 @@ namespace App.Bootstrap
             }
             selectedRendererTints.Clear();
             selectedObject = null;
+            // 회귀 fix — selectedObject 가 null 로 떨어지면 다음 Update 의 UpdatePlacementFootprint
+            // 가 어차피 Hide 하지만, 그 사이 1 frame 동안 빨간 footprint 가 잔류할 수 있다.
+            // 명시 호출로 즉시 정리 — 사용자가 deselect 직후 빨간 사각형이 잔상처럼 남는다고
+            // 보고한 회귀 차단. Hide 는 root.SetActive(false) 만 호출, idempotent 라 추가 호출 비용 X.
+            placementFootprint?.Hide();
         }
 
         // 좌회전(반시계방향) 45° — 버튼 핸들러용.
         private void RotateSelectedCounterClockwise()
         {
+            Debug.Log(
+                $"[EditRotate] button clicked direction=left selectedObject='{(selectedObject != null ? selectedObject.name : "<null>")}' " +
+                $"buttonInteractable={(selectionRotateLeftButton != null ? selectionRotateLeftButton.interactable.ToString() : "<null>")}");
             RotateSelectedBy(-SelectionRotateStepDegrees);
         }
 
@@ -7845,6 +8247,9 @@ namespace App.Bootstrap
         // 위에서 내려본 시점에서 시계방향 회전이다 (left-handed Y-up).
         private void RotateSelectedClockwise()
         {
+            Debug.Log(
+                $"[EditRotate] button clicked direction=right selectedObject='{(selectedObject != null ? selectedObject.name : "<null>")}' " +
+                $"buttonInteractable={(selectionRotateRightButton != null ? selectionRotateRightButton.interactable.ToString() : "<null>")}");
             RotateSelectedBy(SelectionRotateStepDegrees);
         }
 
@@ -7855,17 +8260,27 @@ namespace App.Bootstrap
         // (벽/책장/노트북/기존 배치) 와 겹치면 reverted.
         private void RotateSelectedBy(float signedDegrees)
         {
-            if (selectedObject == null) return;
+            if (selectedObject == null)
+            {
+                Debug.Log($"[EditRotate] aborted reason=selectedObject-null delta={signedDegrees:+#0;-#0;0}°");
+                return;
+            }
             // 모달 표시 중에는 회전 버튼 자체가 selection 패널과 함께 숨겨져 있어 클릭이 닿지 않지만,
             // 같은 프레임에 stale invocation 이 들어올 가능성에 대비해 방어.
-            if (isUnsavedChangesModalOpen) return;
+            if (isUnsavedChangesModalOpen)
+            {
+                Debug.Log($"[EditRotate] aborted reason=unsaved-modal-open obj={selectedObject.name}");
+                return;
+            }
 
             // entry-level allowRotation flag — 창문처럼 fixed orientation 이어야 하는
             // wall deco 는 회전 무시. UpdateSelectionPanel 에서 버튼도 disabled 상태이지만
             // 키보드/외부 트리거 가능성 방어.
             var wallMarker = selectedObject.GetComponent<WallDecoMarker>();
-            if (wallMarker != null && !wallMarker.AllowRotation)
+            bool allowRotation = !(wallMarker != null && !wallMarker.AllowRotation);
+            if (!allowRotation)
             {
+                Debug.Log($"[EditRotate] aborted reason=allowRotation-false obj={selectedObject.name} hasWallMarker={wallMarker != null}");
                 return;
             }
             // Don't rotate mid-drag — would invalidate the bounds-based placement
@@ -7878,25 +8293,115 @@ namespace App.Bootstrap
             var direction = signedDegrees >= 0f ? "CW" : "CCW";
             var prevRotation = selectedObject.transform.rotation;
             var prevYaw = prevRotation.eulerAngles.y;
+            var prevPosition = selectedObject.transform.position;
+
+            // 회귀 fix — "사용자 시점 제자리 회전".
+            // 문제: GLB 임포트 시 prefab pivot 이 mesh visual center 와 다르면 (예: pivot 이 mesh
+            // 한쪽 모서리, 발바닥, 또는 model export 원점) Transform.Rotate 가 transform.position 을
+            // 그대로 두더라도 mesh 가 pivot 주위로 sweep → 사용자가 보기엔 "옆으로 튀고", footprint
+            // center 도 sweep 따라 이동 → 이전엔 wall 에 닿는 좌하단 영역에서 회전 검증이 false
+            // positive 로 막혔다.
+            // 해결: 회전 *전* footprint center 를 anchor 로 캐시. 회전 후 새 footprint center 의
+            // XZ drift 만큼 transform.position 을 보정 → mesh visual center (footprint center) 가
+            // 회전 전과 동일한 XZ 에 머문다. Y 는 보정 안 함 (verticalOffset 유지: mesh.min.y == FloorY).
+            // RotateAround 미사용 — Rotate + 명시 position 보정 조합으로 의도가 명확.
+            var preFootprint = ComputeFloorFootprintBounds(selectedObject);
+            var preFootprintCenterXZ = preFootprint.HasValue
+                ? new Vector3(preFootprint.Value.center.x, prevPosition.y, preFootprint.Value.center.z)
+                : prevPosition;
+
+#if UNITY_EDITOR
+            Debug.Log($"[BeforeRotate] obj='{selectedObject.name}' worldPos={prevPosition} " +
+                      $"localPos={selectedObject.transform.localPosition} rotation={prevRotation.eulerAngles} " +
+                      $"footprintCenter={(preFootprint.HasValue ? preFootprint.Value.center.ToString() : "<null>")} " +
+                      $"footprintSize={(preFootprint.HasValue ? preFootprint.Value.size.ToString() : "<null>")}");
+#endif
 
             selectedObject.transform.Rotate(Vector3.up, signedDegrees, Space.World);
+            // 회귀 fix — 회전 직후 PhysX collider transform stale → 다음 IsSpawnPositionBlockedAt
+            // 가 잘못된 OverlapBox 결과를 받음. 명시 sync 로 검증 시점 collider 위치/회전 보정.
+            Physics.SyncTransforms();
             var newYaw = selectedObject.transform.rotation.eulerAngles.y;
 
-            string revertReason = null;
-            var rotatedBounds = ComputeRendererBounds(selectedObject);
-            if (rotatedBounds.HasValue)
+            // pivot offset 보정 — 회전 후 footprint center 가 회전 전 anchor 와 다르면 그 차이만큼
+            // transform.position 을 XZ 로 이동 → 시각적 제자리 회전. drift 가 거의 0 이면 (pivot 이
+            // mesh center 와 일치) no-op.
+            var midFootprint = ComputeFloorFootprintBounds(selectedObject);
+            Vector3 driftCorrection = Vector3.zero;
+            if (midFootprint.HasValue)
             {
-                var bounds = rotatedBounds.Value;
+                driftCorrection = new Vector3(
+                    preFootprintCenterXZ.x - midFootprint.Value.center.x,
+                    0f,
+                    preFootprintCenterXZ.z - midFootprint.Value.center.z);
+                if (driftCorrection.sqrMagnitude > 1e-8f)
+                {
+                    selectedObject.transform.position += driftCorrection;
+                    Physics.SyncTransforms();
+                }
+            }
+
+            string revertReason = null;
+            var postRotateFootprint = ComputeFloorFootprintBounds(selectedObject);
+#if UNITY_EDITOR
+            Debug.Log($"[AfterRotate] obj='{selectedObject.name}' worldPos={selectedObject.transform.position} " +
+                      $"localPos={selectedObject.transform.localPosition} rotation={selectedObject.transform.rotation.eulerAngles} " +
+                      $"footprintCenter={(postRotateFootprint.HasValue ? postRotateFootprint.Value.center.ToString() : "<null>")} " +
+                      $"footprintSize={(postRotateFootprint.HasValue ? postRotateFootprint.Value.size.ToString() : "<null>")} " +
+                      $"pivotDriftCorrection={driftCorrection}");
+#endif
+            if (postRotateFootprint.HasValue)
+            {
+                var bounds = postRotateFootprint.Value;
                 var pos = selectedObject.transform.position;
 
-                // 방 범위 밖으로 나갔는지 — ClampToFloorBounds 가 위치를 옮겨오면 회전으로 인해
-                // AABB 가 footprint 밖으로 삐져나간 케이스. 위치는 유지하고 회전만 되돌린다.
-                var clamped = ClampToFloorBounds(pos, pos, bounds);
-                if (Vector3.Distance(clamped, pos) > 1e-4f)
+                // 회귀 fix — 회전 후 OutOfRoom 판정을 *footprint center* 기준으로 단순화.
+                // 이전엔 ClampToFloorBounds 의 push-back distance 로 판정했는데, 회전 후 World AABB
+                // 가 √2 배까지 부풀어 (45° 회전 시) extents 일부가 5cm tolerance 를 초과 → push-back
+                // → false-positive OutOfRoom. 사용자 시점에서는 mesh 가 wall 을 뚫지 않으면 통과
+                // 해야 한다. 실제 wall 침범은 아래 IsSpawnPositionBlockedAt 의 wall collider hit
+                // (RoomShellExactNames 에 wall 이 없어 blocker 로 잡힘) 이 잡으므로 OutOfRoom 은
+                // center 가 raw playable + tolerance 밖일 때만 true. drag/spawn 은 ClampToFloorBounds
+                // 의 push-back 그대로 — drag 는 candidate 를 부드럽게 정지시키는 의미라 다른 정책.
+                var fpCenter = bounds.center;
+                bool outOfRoom =
+                    fpCenter.x < playableMinX - PlayableBoundsTolerance ||
+                    fpCenter.x > playableMaxX + PlayableBoundsTolerance ||
+                    fpCenter.z < playableMinZ - PlayableBoundsTolerance ||
+                    fpCenter.z > playableMaxZ + PlayableBoundsTolerance;
+                bool blocked = !outOfRoom && IsSpawnPositionBlockedAt(selectedObject, bounds, pos);
+#if UNITY_EDITOR
+                // 진단 — footprint min/max + center + extents + raw/effective playable + 어느 axis
+                // 가 얼마나 넘어갔는지. OutOfRoom 회귀 시 즉시 root cause 확인 가능.
+                string overflowAxis = "";
+                float overflowAmount = 0f;
+                if (outOfRoom)
+                {
+                    if (fpCenter.x < playableMinX - PlayableBoundsTolerance)
+                    { overflowAxis = "minX"; overflowAmount = (playableMinX - PlayableBoundsTolerance) - fpCenter.x; }
+                    else if (fpCenter.x > playableMaxX + PlayableBoundsTolerance)
+                    { overflowAxis = "maxX"; overflowAmount = fpCenter.x - (playableMaxX + PlayableBoundsTolerance); }
+                    else if (fpCenter.z < playableMinZ - PlayableBoundsTolerance)
+                    { overflowAxis = "minZ"; overflowAmount = (playableMinZ - PlayableBoundsTolerance) - fpCenter.z; }
+                    else if (fpCenter.z > playableMaxZ + PlayableBoundsTolerance)
+                    { overflowAxis = "maxZ"; overflowAmount = fpCenter.z - (playableMaxZ + PlayableBoundsTolerance); }
+                }
+                Debug.Log($"[EditRotateRoomCheck] obj='{selectedObject.name}' source=Rotate " +
+                          $"beforePos={prevPosition} afterPos={pos} " +
+                          $"beforeRot={prevYaw:0.#}° afterRot={newYaw:0.#}° " +
+                          $"footprintMin={bounds.min} footprintMax={bounds.max} " +
+                          $"footprintCenter={bounds.center} footprintExtents={bounds.extents} " +
+                          $"playableRaw X=[{playableMinX:0.###},{playableMaxX:0.###}] Z=[{playableMinZ:0.###},{playableMaxZ:0.###}] " +
+                          $"playableEffective X=[{playableMinX - PlayableBoundsTolerance:0.###},{playableMaxX + PlayableBoundsTolerance:0.###}] " +
+                          $"Z=[{playableMinZ - PlayableBoundsTolerance:0.###},{playableMaxZ + PlayableBoundsTolerance:0.###}] " +
+                          $"tolerance={PlayableBoundsTolerance:0.##}m outOfRoom={outOfRoom} " +
+                          $"exceededAxis='{overflowAxis}' exceededAmount={overflowAmount:0.###}m blocked={blocked}");
+#endif
+                if (outOfRoom)
                 {
                     revertReason = "out-of-room";
                 }
-                else if (IsSpawnPositionBlockedAt(selectedObject, bounds, pos))
+                else if (blocked)
                 {
                     revertReason = "blocker-overlap";
                 }
@@ -7904,10 +8409,16 @@ namespace App.Bootstrap
 
             if (revertReason != null)
             {
-                selectedObject.transform.rotation = prevRotation;
+                // revert: rotation + position 둘 다 회전 전으로 복원 (pivot 보정으로 position 이
+                // 이동했을 수 있으므로 명시적으로 prevPosition 복귀).
+                selectedObject.transform.SetPositionAndRotation(prevPosition, prevRotation);
+                Physics.SyncTransforms();
                 Debug.Log(
                     $"[RoomEdit][Rotate] dir={direction} delta={signedDegrees:+#0;-#0;0}° from={prevYaw:0.#}° to={newYaw:0.#}° " +
                     $"result=reverted reason={revertReason} obj={selectedObject.name}");
+                Debug.Log(
+                    $"[EditRotate] obj={selectedObject.name} allowRotation={allowRotation} " +
+                    $"before={prevYaw:0.#}° after={newYaw:0.#}° validation=fail reason={revertReason}");
                 // MR #133 — 회전 시도가 invalid 로 reverted 됐음을 placement 로그 채널에도 동일 형식으로 기록.
                 // 회전 자체는 즉시 revert 되어 시각 상태가 valid 로 유지되므로 별도 tint 변경은 없다.
                 var placementReason = revertReason == "out-of-room" ? "OutOfRoom" : "OverlapWithObstacle";
@@ -7918,6 +8429,9 @@ namespace App.Bootstrap
             Debug.Log(
                 $"[RoomEdit][Rotate] dir={direction} delta={signedDegrees:+#0;-#0;0}° from={prevYaw:0.#}° to={newYaw:0.#}° " +
                 $"result=ok obj={selectedObject.name}");
+            Debug.Log(
+                $"[EditRotate] obj={selectedObject.name} allowRotation={allowRotation} " +
+                $"before={prevYaw:0.#}° after={newYaw:0.#}° validation=ok");
             SetDirty($"RotateSelected/{direction}");
         }
 

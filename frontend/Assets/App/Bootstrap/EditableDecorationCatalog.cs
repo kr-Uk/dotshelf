@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using App.Domain.Decoration;
 using App.Infrastructure.Catalogs;
 using UnityEngine;
 
@@ -29,6 +30,14 @@ namespace App.Bootstrap
             // 회전 허용 여부. 창문 처럼 fixed orientation 이어야 하는 entry 는 false.
             // default true (Editor 신규 entry 가 회전 가능 — 일반 데코 기본 동작 유지).
             public bool AllowRotation = true;
+            // 카테고리(무엇인가) — Kind 별 표준 크기 lookup 키. None 이면 NormalizeSpawnedScale 이
+            // 다음 fallback (legacy canonical / 폴더 휴리스틱) 으로 진행해 backward compatible.
+            // 향후 DB/샵 인벤토리가 같은 enum 으로 메타데이터를 내려주면 그대로 합류 가능.
+            public DecorationObjectKind Kind = DecorationObjectKind.None;
+            // 카테고리 표준 크기에 추가로 곱하는 등방 multiplier. 0 = 비활성 (override 안 씀),
+            // 1.0 = 표준, 0.8 = 80%, 1.2 = 120%. 비등방 (X/Y/Z 개별) override 가 필요해지면
+            // 별도 필드로 확장 — 지금은 디자이너 실수 (비율 깨짐) 회피를 위해 단일 multiplier 만.
+            public float ScaleMultiplierOverride = 0f;
         }
 
         [SerializeField] private List<Entry> entries = new List<Entry>();
