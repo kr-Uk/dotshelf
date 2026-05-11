@@ -2774,9 +2774,12 @@ namespace App.Bootstrap
 
             // 3) native renderer 들 disable (visual hide, GameObject 자체는 유지 — collider/
             // 기능 컴포넌트 보존). 카테고리 매칭 transform 의 모든 자식 renderer 까지 hide —
-            // NotebookStation 같은 root 의 자식 (UnibodyBase/Trackpad 등) 은 prefix 매칭 안
-            // 되어 renderer 자체 검색만으론 missed. transform 단위로 매칭 후 GetComponentsInChildren
-            // 으로 자식까지 모두 hide → 노트북 visual 도 같이 사라짐.
+            // 단 **NotebookStation hierarchy 는 절대 hide 안 함**. 노트북은 고정 interactive
+            // 오브젝트 (클릭 시 dashboard UI) 라 Desk/Dashboard 등 어떤 mesh swap 에서도 visual
+            // 보존 필수. 과거엔 Dashboard 패턴의 GuestbookBoard 매칭 → 자식 scan 으로 NotebookStation
+            // 자식 (UnibodyBase/Trackpad) 도 같이 disable 되어 편집 모드 진입 시 노트북이 사라지는
+            // 회귀 발생. 매칭 transform 자체가 NotebookStation 인 경우는 Desk 패턴에서 이미 제외됐고,
+            // 부모 매칭 (GuestbookBoard) 경유 자식 disable 만 여기서 guard.
             var allTransforms = roomRoot.GetComponentsInChildren<Transform>(true);
             for (int i = 0; i < allTransforms.Length; i++)
             {
@@ -2785,6 +2788,7 @@ namespace App.Bootstrap
                 if (anchor == null) anchor = t; // primary 못 찾으면 첫 매칭 fallback
                 foreach (var r in t.GetComponentsInChildren<Renderer>(true))
                 {
+                    if (IsUnderNotebookStation(r.transform, t)) continue;
                     r.enabled = false;
                 }
             }
@@ -2899,6 +2903,22 @@ namespace App.Bootstrap
                 if (allTransforms[i].gameObject.name == name) return allTransforms[i];
             }
             return null;
+        }
+
+        // renderer 의 부모 체인 (matchedTransform 경계까지) 에 NotebookStation 이름의 transform 이
+        // 있는지 검사. 있으면 그 renderer 는 노트북 hierarchy 일부 → mesh swap 시 disable 금지.
+        // 노트북은 고정 interactive 오브젝트라 모든 카테고리 mesh swap 에서 visual 보존.
+        // (MR #157 review simonjiho #1: hardcoded 문자열 → RoomGameObjectPatterns.NotebookStation 상수 통일.)
+        private static bool IsUnderNotebookStation(Transform renderer, Transform matchedTransform)
+        {
+            var current = renderer;
+            while (current != null)
+            {
+                if (current.gameObject.name == Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.NotebookStation) return true;
+                if (current == matchedTransform) return false; // matched 까지 올라갔으면 노트북 부모 없었음
+                current = current.parent;
+            }
+            return false;
         }
 
         // 카테고리별 primary anchor — native 룸의 root transform. mesh swap 시 이 위치/회전을
@@ -3225,11 +3245,45 @@ namespace App.Bootstrap
                     }
                 }
             }
+
+            // (MR #157 review skh1205 #2): mesh swap 카테고리 (Desk/BookshelfSkin/DashboardSkin) 에서
+            // inventoryId 가 null/0 = "customize 안 됨" 이면 catalog Entries[0] fallback 으로 가지 말고
+            // **native 상태 유지**. 이전 정책 (Entries[0] fallback) 은 DeskCatalog Entries[0].AssetId=200030
+            // (Goodvibes Desk) 인 fresh session 에서 첫 reload 가 Goodvibes mesh swap 을 실행해 고정
+            // 노트북/테이블이 의도치 않게 바뀌던 회귀 fix.
+            //
+            // 정책:
+            //   - mesh swap 카테고리 + null/0: lastAppliedEntries 에 prev 가 있을 때만 (=이전에 swap
+            //     됐던 흔적 있을 때만) RestoreCategoryNativeMesh 호출. fresh session 매 reload 는 noop.
+            //   - 비-mesh-swap 카테고리 (Wallpaper/Floor/InteriorLight/ExteriorLight) 는 material/light
+            //     만 바뀌므로 Entries[0] fallback 유지 — 디자이너 의도된 default 외형.
+            if (entry == null && IsMeshSwapCategory(category))
+            {
+                if (lastAppliedEntries.ContainsKey(category)
+                    && themeApplier != null
+                    && themeApplier.RoomRoot != null)
+                {
+                    RestoreCategoryNativeMesh(category, themeApplier.RoomRoot);
+                }
+                lastAppliedEntries.Remove(category);
+                return;
+            }
             if (entry == null && catalog.Entries.Count > 0)
             {
                 entry = catalog.Entries[0];
             }
             if (entry == null) return;
+
+            // Idempotency: 이미 같은 entry 가 적용되어 있으면 visual 작업 skip.
+            // (MR #154 user 보고: 편집 모드 진입 시 ReloadRoomState 가 매번 ApplyCategoryById 호출 →
+            //  catalog Entries[0] fallback → ApplyCategoryMeshSwap 가 native 메시 destroy/respawn 회귀 fix.)
+            //
+            // 직접 user 클릭 / ApplyThemeDefaultEntries 같은 다른 호출 경로는 ApplyEntryVisual 을
+            // 직접 호출하므로 이 guard 영향 없음.
+            if (lastAppliedEntries.TryGetValue(category, out var prevId) && prevId == entry.AssetId)
+            {
+                return;
+            }
 
             ApplyEntryVisual(category, entry);
             if (entry.AssetId > 0) lastAppliedEntries[category] = entry.AssetId;

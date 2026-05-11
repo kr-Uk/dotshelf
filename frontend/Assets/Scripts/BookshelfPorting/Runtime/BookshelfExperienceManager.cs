@@ -1420,13 +1420,19 @@ namespace BookshelfPorting.Runtime
 
         public void CloseNotebookFocus()
         {
+            // (MR #157 review skh1205 #1 / simonjiho #2): CanStartCameraFocus 가드를 외부에서
+            // 먼저 확인 — FocusMainViewImmediate 내부 가드 fail 시 카메라 이동은 skip 되는데
+            // NotifyFocusExited 만 호출되어 "카메라는 노트북에 남아있는데 UI 는 focus 종료" race
+            // (재진입 / immersive state 불일치) 가 열리던 회귀. 이전 동작 (가드 fail 시 둘 다 skip) 복원.
             if (!CanStartCameraFocus())
             {
                 return;
             }
 
-            CancelPendingNotebookFocusRequest();
-            cameraController.MoveToMode(CameraMode.Overview);
+            // 책장/노트북/대시보드 포커스 복귀 시점 통일 — 항상 MainView (책장을 바라보는 시점) 로
+            // 복귀. FocusMainViewImmediate 가 CancelPendingNotebookFocusRequest + MoveToMainView +
+            // SyncFromCameraMode 내장 (내부 CanStartCameraFocus 가드는 redundant 지만 무해).
+            FocusMainViewImmediate();
             notebookUiSceneLoader?.NotifyFocusExited();
         }
 
@@ -4482,7 +4488,10 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            FocusQuarterView();
+            // 노트북/대시보드 (Guestbook) 포커스 종료 → 책장과 동일하게 MainView (책장 바라보는 시점) 로 복귀.
+            // 이전엔 FocusQuarterView 라 시점 일관성 깨졌음 (책장은 MainView, 노트북/대시보드는 QuarterView).
+            // 명시 user choice (F1 단축키, 햄버거 메뉴 QuarterView 버튼) 는 별도 경로라 영향 없음.
+            FocusMainView();
         }
 
         private void RememberBookshelfReturnMainViewMode()
