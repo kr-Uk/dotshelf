@@ -942,6 +942,7 @@ namespace BookshelfPorting.Runtime
         {
             EnsureEventSystem();
             EnsureHud();
+            EnsureExternalDashboardPanelWired();
         }
 
         private void Start()
@@ -1191,6 +1192,13 @@ namespace BookshelfPorting.Runtime
 
         private void OnEnable()
         {
+            // 신규 가입 path 에서 BookshelfExperienceManager 의 prefab override 가 안 적용되어
+            // externalDashboardPanel/useExternalDashboardPanel 이 default(null/false) 인 회귀 방어.
+            // 재로그인 path 와 비교 진단 (DiagDashboardRace) 로 case 별 SerializeField 값이 다른 게
+            // 확인됨 — root cause (왜 prefab override 가 case 별 다르게 적용되나) 는 별도 추적, 본 fix 는
+            // fast-path fallback 으로 즉시 회복.
+            EnsureExternalDashboardPanelWired();
+
             if (cameraController != null)
             {
                 cameraController.ModeChanged += HandleCameraModeChanged;
@@ -1202,6 +1210,35 @@ namespace BookshelfPorting.Runtime
             {
                 bookshelfGenerator.BookshelfSwitchStateChanged += HandleBookshelfSwitchStateChanged;
                 bookshelfGenerator.Generated += HandleBookshelfGenerated;
+            }
+        }
+
+        private void EnsureExternalDashboardPanelWired()
+        {
+            if (externalDashboardPanel != null && useExternalDashboardPanel)
+            {
+                return;
+            }
+
+            if (externalDashboardPanel == null)
+            {
+                // DashboardSceneInstaller 는 DashboardScreenPanel prefab 의 root 에 attach 되어 있어
+                // installer 의 GameObject = panel root 와 동일. inactive 포함해 scene 검색.
+                // prefab asset 은 FindObjectsByType 결과에 안 들어오므로 안전.
+                var installers = FindObjectsByType<DashboardSceneInstaller>(
+                    FindObjectsInactive.Include, FindObjectsSortMode.None);
+                if (installers.Length > 0 && installers[0] != null)
+                {
+                    externalDashboardPanel = installers[0].gameObject;
+                    UnityEngine.Debug.LogWarning(
+                        $"[BookshelfExperienceManager] externalDashboardPanel auto-wired to '{externalDashboardPanel.name}'. " +
+                        "Scene prefab override missing (regression on new-signup path); fast-path fallback engaged.");
+                }
+            }
+
+            if (externalDashboardPanel != null && !useExternalDashboardPanel)
+            {
+                useExternalDashboardPanel = true;
             }
         }
 
