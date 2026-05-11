@@ -175,6 +175,12 @@ namespace BookshelfPorting.Runtime
 
         public event System.Action BookshelfSwitchStateChanged;
 
+        // Generate() 가 한 사이클 끝났음을 알리는 신호. 첫 generate / 재generate / ClearGenerated 후 재호출
+        // 모두에서 발사된다. 첫 generate 끝나야 GuestbookBoardHitArea 가 attach 되므로, 외부에서
+        // DashboardScreenPanel 같이 hitArea 에 의존하는 mount 작업을 이 시점에 trigger 해야 race 없이
+        // 동작한다 (#114 후속, 신규 가입 직후 빈 액자 회귀 관련).
+        public event System.Action Generated;
+
         public void Configure(BookshelfState bookshelfState, MaterialFactory factory)
         {
             state = bookshelfState;
@@ -424,6 +430,10 @@ namespace BookshelfPorting.Runtime
             BuildRoom();
             BuildBookshelf();
             NormalizeNotebookStationPlacement();
+
+            // 첫 generate 후 GuestbookBoardHitArea 가 막 attach 된 시점.
+            // BookshelfExperienceManager 가 신규 가입 race 회복용으로 이 신호를 듣는다.
+            Generated?.Invoke();
         }
 
         public void ApplyBookCatalogDataToExistingBooks()

@@ -886,6 +886,7 @@ namespace BookshelfPorting.Runtime
             if (bookshelfGenerator != null)
             {
                 bookshelfGenerator.BookshelfSwitchStateChanged -= HandleBookshelfSwitchStateChanged;
+                bookshelfGenerator.Generated -= HandleBookshelfGenerated;
             }
 
             state = bookshelfState;
@@ -906,6 +907,7 @@ namespace BookshelfPorting.Runtime
                 if (bookshelfGenerator != null)
                 {
                     bookshelfGenerator.BookshelfSwitchStateChanged += HandleBookshelfSwitchStateChanged;
+                    bookshelfGenerator.Generated += HandleBookshelfGenerated;
                 }
             }
         }
@@ -951,6 +953,8 @@ namespace BookshelfPorting.Runtime
                 {
                     bookshelfGenerator.BookshelfSwitchStateChanged -= HandleBookshelfSwitchStateChanged;
                     bookshelfGenerator.BookshelfSwitchStateChanged += HandleBookshelfSwitchStateChanged;
+                    bookshelfGenerator.Generated -= HandleBookshelfGenerated;
+                    bookshelfGenerator.Generated += HandleBookshelfGenerated;
                 }
             }
 
@@ -1197,6 +1201,7 @@ namespace BookshelfPorting.Runtime
             if (bookshelfGenerator != null)
             {
                 bookshelfGenerator.BookshelfSwitchStateChanged += HandleBookshelfSwitchStateChanged;
+                bookshelfGenerator.Generated += HandleBookshelfGenerated;
             }
         }
 
@@ -1211,6 +1216,7 @@ namespace BookshelfPorting.Runtime
             if (bookshelfGenerator != null)
             {
                 bookshelfGenerator.BookshelfSwitchStateChanged -= HandleBookshelfSwitchStateChanged;
+                bookshelfGenerator.Generated -= HandleBookshelfGenerated;
             }
 
             DetachNotebookApiCallbacks();
@@ -3407,14 +3413,23 @@ namespace BookshelfPorting.Runtime
 
             RefreshHud();
 
-            // 신규 가입 직후엔 OnEnable 시점에 BookshelfGenerator 가 아직 책장을 generate 하지 않아
-            // FindFirstObjectByType<GuestbookBoardHitArea>() == null → MountExternalDashboardPanel false
-            // → external DashboardScreenPanel 이 SetActive(false) 로 hide 되고 controller.OnEnable 자체가
-            // 안 발사돼 빈 액자만 보이는 회귀가 있었다. 책장 switch state 변경은 BookshelfGenerator 가
-            // 책장을 generate / swap 한 직후 (= hitArea 가 막 attach 된 시점)에 발사되므로, 이 타이밍에
-            // panel 위치/활성 상태를 한 번 더 sync 해주면 첫 mount race 를 그대로 회복할 수 있다.
-            // SyncExternalDashboardPanelPresentation 자체에 useExternalDashboardPanel/null 가드가
-            // 들어있어 정상 케이스에 부수효과 없음 (idempotent).
+            // 책장 swap (a→b 등) 시점에도 GuestbookBoardHitArea 의 transform 이 갱신될 수 있어
+            // DashboardScreenPanel mount 위치/scale 을 재계산. SyncExternalDashboardPanelPresentation
+            // 자체에 useExternalDashboardPanel/null 가드가 들어있어 정상 케이스에 부수효과 없음 (idempotent).
+            // 첫 generate race 는 Generated 이벤트로 별도 회복 (HandleBookshelfGenerated).
+            SyncExternalDashboardPanelPresentation();
+        }
+
+        private void HandleBookshelfGenerated()
+        {
+            // 신규 가입 직후 BookshelfExperienceManager.OnEnable 시점에 BookshelfGenerator.Generate() 가
+            // 아직 호출되지 않아 FindFirstObjectByType<GuestbookBoardHitArea>() == null →
+            // MountExternalDashboardPanel false → externalDashboardPanel.SetActive(false) →
+            // DashboardScreenController.OnEnable 자체가 발사되지 않는 race 가 있었다 (빈 액자 회귀).
+            //
+            // BookshelfGenerator.Generate() 가 완료되면 BuildGuestbookBoard() 내부에서 hitArea 가 막
+            // AddComponent 된 시점이라, 여기서 panel mount 를 재시도하면 깨끗하게 회복된다.
+            // 기존 유저 재로그인 케이스는 OnEnable 시점에 이미 mount 가 성공한 상태라 부수효과 없음 (idempotent).
             SyncExternalDashboardPanelPresentation();
         }
 
