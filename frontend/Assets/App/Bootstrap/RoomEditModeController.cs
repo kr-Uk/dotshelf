@@ -379,6 +379,12 @@ namespace App.Bootstrap
         private Camera editModeCamera;
         private Rect savedCameraRect;
         private bool savedCameraRectValid;
+        // 편집 모드 진입 시 카메라 배경(clearFlags + backgroundColor) 캐싱 — 벽 fade 시 방 바깥이
+        // skybox/기본 회색으로 비치는 것을 막기 위해 진입 중에는 SolidColor + black 으로 강제하고,
+        // 종료 시 메인룸 setting(skybox 등) 으로 원복. rect/pose 캐싱과 같은 라이프사이클.
+        private CameraClearFlags savedCameraClearFlags;
+        private Color savedCameraBackgroundColor;
+        private bool savedCameraBackgroundValid;
 
         // 동물의 숲 해피홈 계열 편집 UX — 자유 orbit + 미니 큐브 UI 조합.
         //
@@ -4873,6 +4879,14 @@ namespace App.Bootstrap
             savedCameraRectValid = true;
             ApplyEditModeCameraRect();
 
+            // 카메라 배경 캐싱 + 검은색 강제 — 벽 fade 로 방 바깥이 보일 때 skybox/기본 회색 대신
+            // 검은색이 깔리도록. rect 와 같이 진입 시 캐싱 → 종료 시 원복.
+            savedCameraClearFlags = camera.clearFlags;
+            savedCameraBackgroundColor = camera.backgroundColor;
+            savedCameraBackgroundValid = true;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = Color.black;
+
             // EnterEditMode 가 직전에 SnapToMainView 를 호출했으므로 여기 pose 가 메인뷰 기준
             // 좌표 — Default 프리셋 target 이자 Exit 시 복구점. 프리셋 인덱스는 0 으로 리셋.
             savedCameraPosition = camera.transform.position;
@@ -4924,10 +4938,17 @@ namespace App.Bootstrap
                 {
                     editModeCamera.transform.SetPositionAndRotation(savedCameraPosition, savedCameraRotation);
                 }
+                // 카메라 배경 원복 — 메인룸 skybox/기존 backgroundColor 로 복귀.
+                if (savedCameraBackgroundValid)
+                {
+                    editModeCamera.clearFlags = savedCameraClearFlags;
+                    editModeCamera.backgroundColor = savedCameraBackgroundColor;
+                }
             }
             editModeCamera = null;
             savedCameraRectValid = false;
             savedCameraPoseValid = false;
+            savedCameraBackgroundValid = false;
             cameraPresetTargetActive = false;
         }
 
