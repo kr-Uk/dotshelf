@@ -71,10 +71,16 @@ namespace App.Bootstrap
         // Fallback room footprint, used only if RefreshPlayableBounds can't
         // find the named scene geometry (Floor / LeftWall / RightWall /
         // BackWall_*). Real bounds at runtime are populated by that method
-        // when edit mode starts. Values match BookshelfGenerator의 RoomWidth(5)
-        // 기준 벽 visible 면 ±2.45. Z 축은 변경 안 함 — RoomDepth=5 그대로.
-        private const float FloorMinX = -2.45f;
-        private const float FloorMaxX = 2.45f;
+        // when edit mode starts.
+        //
+        // BookshelfGenerator (RoomWidth=5): LeftWall 중심 X = -5*0.5+0.05 = -2.45,
+        // 벽 두께 0.08 → 안쪽 면(playable inner edge) = -2.45 + 0.04 = -2.41.
+        // FloorMin/MaxX 는 wall center 가 아닌 inner face 기준 (MR #147 review Finding 3).
+        // Z 축은 RoomDepth=5 와 별개로 BookshelfGenerator 의 BackWall 위치(Z=1.45) 가
+        // 책장 alcove 때문에 비대칭이라 ±2.4 fallback 유지 — RefreshPlayableBounds 가
+        // 정확한 BackWall strip 의 Z 를 읽어 덮어씀.
+        private const float FloorMinX = -2.41f;
+        private const float FloorMaxX = 2.41f;
         private const float FloorMinZ = -2.4f;
         private const float FloorMaxZ = 2.4f;
 
@@ -4102,6 +4108,17 @@ namespace App.Bootstrap
             // 맞춰 두면 외부에서 이 필드를 읽을 때 stale 값이 보이지 않음.
             cameraPresetTargetPosition = targetPos;
             cameraPresetTargetRotation = targetRot;
+
+            // wall fade catch-up — multi-key 진입이 edit mode 의 첫 입력이라 ClassifyByOrbit 결과가
+            // currentCameraPreset 에 아직 반영 안 됐을 가능성. preset 분류가 바뀐 경우에만 갱신
+            // (idempotent — 같으면 ApplyWallVisibilityForCurrentView 의 change-detection 이 skip).
+            // (MR #147 review #2: HaltCameraInputResidual 에서 wall fade stale 가능성 fix.)
+            var nextPreset = isInDefaultView ? CameraPreset.Default : ClassifyByOrbit();
+            if (nextPreset != currentCameraPreset)
+            {
+                currentCameraPreset = nextPreset;
+                ApplyWallVisibilityForCurrentView("HaltResidual");
+            }
         }
 
         // EventSystem 의 currentSelectedGameObject 가 InputField/TMP_InputField 컴포넌트를 가지면
@@ -4914,11 +4931,16 @@ namespace App.Bootstrap
         }
 
         // Shrink the main camera's viewport rect so it renders only into the area
-        // above the bottom menu. We do NOT touch clearFlags, backgroundColor, FOV,
-        // transform, post-processing, or any Volume — only camera.rect. The bottom
-        // fraction is computed from the BottomMenu's actual on-screen pixel height
-        // so the boundary aligns exactly with the menu's top edge regardless of
-        // device aspect or canvas scaler match factor.
+        // above the bottom menu, AND apply edit-mode camera background override
+        // (clearFlags=SolidColor + backgroundColor=black) so wall fade reveals show
+        // black instead of the main-room skybox/gradient. Both rect and the background
+        // override are restored on EndCameraViewportEdit via the matching saved* fields.
+        // FOV / post-processing / Volume 은 건드리지 않음. The bottom fraction is
+        // computed from the BottomMenu's actual on-screen pixel height so the
+        // boundary aligns exactly with the menu's top edge regardless of device
+        // aspect or canvas scaler match factor.
+        // (MR #147 review Finding 5: 이전 주석은 "clearFlags/backgroundColor 안 건드림"
+        // 이었으나 검은 배경 override 추가로 실제 동작과 어긋났던 부분 정리.)
         private void BeginCameraViewportEdit()
         {
             var camera = ResolveSceneCamera();

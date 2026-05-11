@@ -681,7 +681,7 @@ MonoBehaviour:
   roomRightWallX: 2.45
   roomFrontWallZ: -2.05
   roomBackWallZ: 1.41
-  roomPhysicsDepth: 4.2
+  roomPhysicsDepth: 5
   roomWallHeight: 2.8
   roomWallThickness: 0.08
   dragWallSkin: 0.015
