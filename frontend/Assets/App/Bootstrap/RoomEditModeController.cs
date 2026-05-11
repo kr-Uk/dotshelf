@@ -1024,10 +1024,10 @@ namespace App.Bootstrap
 #endif
 
         // Map toolbar category → which inventory entries to surface. "전체" lists every
-        // catalog entry; "가구" surfaces anything coming from Assets/Arts/Models/Props
-        // (and the Furniture sibling folder) per spec; the remaining categories are
-        // wireframe placeholders for now and intentionally show an empty list until
-        // their content pipelines exist.
+        // catalog entry; "가구" / "소품" 등 카테고리 분류는 catalog entry 의 PlacementCategory /
+        // Kind 메타데이터로 결정 (이전엔 Assets/Arts/Models/{Furniture,Props}/ 폴더 경로 기반이었으나
+        // GLB 평탄화 이후 폴더 의미 없음). 남은 카테고리들은 wireframe placeholders 라
+        // content pipeline 생기기 전까지 빈 list 의도.
         private static bool MatchesCategory(InventoryEntry entry, string categoryKey)
         {
             switch (categoryKey)

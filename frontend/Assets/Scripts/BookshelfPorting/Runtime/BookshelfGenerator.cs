@@ -50,7 +50,7 @@ namespace BookshelfPorting.Runtime
         private const int BookCoverBackDescriptionLineLength = 11;
         private const int BookSpineTitleCharacterLimit = 10;
         private const int BookSpineTitleFontSize = 30;
-        private const string TableNaturalAssetPath = "Assets/Arts/Models/Furniture/table_natural.glb";
+        private const string TableNaturalAssetPath = "Assets/Arts/Models/table_natural.glb";
         private const float DeskTargetWidthX = 0.54f;
         private const float DeskTargetHeightY = 0.41f;
         private const float DeskTargetDepthZ = 0.86f;
