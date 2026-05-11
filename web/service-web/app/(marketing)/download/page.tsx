@@ -20,7 +20,7 @@ type Build = {
 };
 
 const LAUNCHER_WIN_URL: string | null =
-  "https://dotshelf.digital/launcher/windows/DotShelfLauncher-0.1.0.exe";
+  "https://cdn.dotshelf.digital/windows/DotShelfLauncher-0.1.0.exe";
 
 const DOWNLOADS: Record<"mac" | "win", Build[]> = {
   mac: [],
