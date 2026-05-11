@@ -71,10 +71,16 @@ namespace App.Bootstrap
         // Fallback room footprint, used only if RefreshPlayableBounds can't
         // find the named scene geometry (Floor / LeftWall / RightWall /
         // BackWall_*). Real bounds at runtime are populated by that method
-        // when edit mode starts. Values match MainScene.unity Floor's
-        // pre-wall-thickness footprint as a safe default.
-        private const float FloorMinX = -2.0f;
-        private const float FloorMaxX = 2.0f;
+        // when edit mode starts.
+        //
+        // BookshelfGenerator (RoomWidth=5): LeftWall 중심 X = -5*0.5+0.05 = -2.45,
+        // 벽 두께 0.08 → 안쪽 면(playable inner edge) = -2.45 + 0.04 = -2.41.
+        // FloorMin/MaxX 는 wall center 가 아닌 inner face 기준 (MR #147 review Finding 3).
+        // Z 축은 RoomDepth=5 와 별개로 BookshelfGenerator 의 BackWall 위치(Z=1.45) 가
+        // 책장 alcove 때문에 비대칭이라 ±2.4 fallback 유지 — RefreshPlayableBounds 가
+        // 정확한 BackWall strip 의 Z 를 읽어 덮어씀.
+        private const float FloorMinX = -2.41f;
+        private const float FloorMaxX = 2.41f;
         private const float FloorMinZ = -2.4f;
         private const float FloorMaxZ = 2.4f;
 
@@ -379,6 +385,12 @@ namespace App.Bootstrap
         private Camera editModeCamera;
         private Rect savedCameraRect;
         private bool savedCameraRectValid;
+        // 편집 모드 진입 시 카메라 배경(clearFlags + backgroundColor) 캐싱 — 벽 fade 시 방 바깥이
+        // skybox/기본 회색으로 비치는 것을 막기 위해 진입 중에는 SolidColor + black 으로 강제하고,
+        // 종료 시 메인룸 setting(skybox 등) 으로 원복. rect/pose 캐싱과 같은 라이프사이클.
+        private CameraClearFlags savedCameraClearFlags;
+        private Color savedCameraBackgroundColor;
+        private bool savedCameraBackgroundValid;
 
         // 동물의 숲 해피홈 계열 편집 UX — 자유 orbit + 미니 큐브 UI 조합.
         //
@@ -423,16 +435,54 @@ namespace App.Bootstrap
         private const float DefaultOrbitYaw = 25f;
         private const float DefaultOrbitPitch = 18f;
         private const float DefaultOrbitDistance = 4.2f;
-        // 클램프 — 벽면 포커스 close-up (0.5m, 거의 벽에 붙은 상태) 부터 룸 전체 overview (8m) 까지.
-        // 이전 Min=2.0 은 벽면 포커스 distance=1.5 가 clamp 에 막혀 broad view 가 되던 회귀 원인.
+        // Absolute hard limit — 어떤 시점에서도 이 범위를 벗어나지 못함. 시점별 SerializeField
+        // (editZoomMin/Max...) 가 더 좁은 범위를 정의하면 그 값이 우선 적용된다. const 는 시점별
+        // 값이 미설정/이상값일 때 fallback + 안전 가드 역할.
         private const float MinOrbitDistance = 0.5f;
         private const float MaxOrbitDistance = 8.0f;
         private const float OrbitMinPitch = 5f;
         private const float OrbitMaxPitch = 89f;
-        // A/D 회전 속도 (deg/sec), W/S 줌 속도 (m/sec), 스크롤 줌 감도 (m/scroll-tick).
+        // A/D 회전 속도 (deg/sec). 줌 속도/감도는 디자이너 튜닝을 위해 SerializeField 로 노출 (아래).
         private const float OrbitYawSpeed = 90f;
-        private const float ZoomKeySpeed = 3.0f;
-        private const float ZoomScrollSensitivity = 0.6f;
+
+        // 편집 모드 줌 튜닝 — 시점(CameraPreset) 별 (min, max) 분리. 동물의 숲 해피홈 식
+        // "벽면 포커스 시점은 좁고 일정한 거리, 사선/탑다운은 방 전체가 보이는 거리" 정책.
+        // 마우스 휠/W/S 모두 같은 clamp(GetOrbitDistanceRangeForPreset 결과) 를 사용하므로
+        // 입력 종류에 따른 회귀 없음. 메인룸/책장/노트북 포커스 카메라는 이 controller 와 무관 →
+        // 영향 없음.
+        [SerializeField, Range(0.5f, 5.0f)] private float editZoomKeySpeed = 3.0f;
+        [SerializeField, Range(0.1f, 2.0f)] private float editZoomScrollSensitivity = 0.6f;
+        [SerializeField] private float editZoomMinDefault = 2.0f;
+        [SerializeField] private float editZoomMaxDefault = 6.0f;
+        [SerializeField] private float editZoomMinWallFocus = 1.5f;
+        [SerializeField] private float editZoomMaxWallFocus = 4.5f;
+        [SerializeField] private float editZoomMinTopDown = 3.5f;
+        [SerializeField] private float editZoomMaxTopDown = 7.0f;
+
+        // 시점별 줌 (min, max) 반환. SerializeField 값을 hard limit (MinOrbitDistance,
+        // MaxOrbitDistance) 안으로 클램프 — 디자이너가 인스펙터에서 0 또는 큰 값 실수 입력해도
+        // 안전. min > max 인 경우 (잘못된 인스펙터 값) 도 swap 으로 방어.
+        private (float min, float max) GetOrbitDistanceRangeForPreset(CameraPreset preset)
+        {
+            float rawMin, rawMax;
+            switch (preset)
+            {
+                case CameraPreset.TopDown:
+                    rawMin = editZoomMinTopDown; rawMax = editZoomMaxTopDown; break;
+                case CameraPreset.Front:
+                case CameraPreset.Back:
+                case CameraPreset.LeftAngle:
+                case CameraPreset.RightAngle:
+                    rawMin = editZoomMinWallFocus; rawMax = editZoomMaxWallFocus; break;
+                case CameraPreset.Default:
+                default:
+                    rawMin = editZoomMinDefault; rawMax = editZoomMaxDefault; break;
+            }
+            float min = Mathf.Clamp(rawMin, MinOrbitDistance, MaxOrbitDistance);
+            float max = Mathf.Clamp(rawMax, MinOrbitDistance, MaxOrbitDistance);
+            if (min > max) (min, max) = (max, min);
+            return (min, max);
+        }
 
         // 한 프레임 내에서 99% 도달하는 시간(초). 작을수록 빠른 추격, 클수록 부드러움.
         private const float CameraPresetLerpTimeConstant = 0.18f;
@@ -1160,7 +1210,7 @@ namespace App.Bootstrap
             cardRect.anchorMin = new Vector2(0.5f, 0.5f);
             cardRect.anchorMax = new Vector2(0.5f, 0.5f);
             cardRect.pivot = new Vector2(0.5f, 0.5f);
-            cardRect.sizeDelta = new Vector2(680f, 280f);
+            cardRect.sizeDelta = new Vector2(820f, 280f);
             cardRect.anchoredPosition = Vector2.zero;
             var cardOutline = card.gameObject.AddComponent<Outline>();
             cardOutline.effectColor = WithAlpha(BorderColor, 0.95f);
@@ -1186,32 +1236,47 @@ namespace App.Bootstrap
             bodyRect.offsetMax = new Vector2(-32f, 0f);
 
             // 3 버튼 — 가로 배치. 좌: 저장하고 나가기 (primary), 가운데: 저장하지 않고 나가기 (danger),
-            // 우: 취소 (secondary).
-            var saveExitButton = CreateButton(card.transform, "SaveAndExitButton", "저장하고 나가기",
-                PrimaryColor, Color.white, new Vector2(196f, 56f), false, BorderColor);
-            var saveExitRect = (RectTransform)saveExitButton.transform;
-            saveExitRect.anchorMin = new Vector2(0.5f, 0f);
-            saveExitRect.anchorMax = new Vector2(0.5f, 0f);
-            saveExitRect.pivot = new Vector2(0.5f, 0f);
-            saveExitRect.anchoredPosition = new Vector2(-208f, 28f);
+            // 우: 취소 (secondary). HorizontalLayoutGroup + LayoutElement 로 정렬 — 이전 수동
+            // anchoredPosition 배치는 좁은 spacing(12px) + 좁은 가운데 버튼(196px) 으로 텍스트가
+            // 답답해 보였고, 해상도/카드 폭 변동에 취약했다. 이제 spacing 18 + LayoutElement
+            // preferredWidth 로 균형 정렬.
+            var buttonRow = CreateRectObject("ButtonRow", card.transform);
+            var buttonRowRect = (RectTransform)buttonRow.transform;
+            buttonRowRect.anchorMin = new Vector2(0f, 0f);
+            buttonRowRect.anchorMax = new Vector2(1f, 0f);
+            buttonRowRect.pivot = new Vector2(0.5f, 0f);
+            buttonRowRect.offsetMin = new Vector2(32f, 28f);
+            buttonRowRect.offsetMax = new Vector2(-32f, 28f + 56f);
+            var rowLayout = buttonRow.AddComponent<HorizontalLayoutGroup>();
+            rowLayout.childAlignment = TextAnchor.MiddleCenter;
+            rowLayout.spacing = 18f;
+            rowLayout.childControlWidth = false;
+            rowLayout.childControlHeight = false;
+            rowLayout.childForceExpandWidth = false;
+            rowLayout.childForceExpandHeight = false;
+
+            var saveExitButton = CreateButton(buttonRow.transform, "SaveAndExitButton", "저장하고 나가기",
+                PrimaryColor, Color.white, new Vector2(240f, 56f), false, BorderColor);
+            ApplyButtonLabelHorizontalMargin(saveExitButton, 18f);
+            var saveExitLayout = saveExitButton.gameObject.AddComponent<LayoutElement>();
+            saveExitLayout.preferredWidth = 240f;
+            saveExitLayout.preferredHeight = 56f;
             saveExitButton.onClick.AddListener(OnSaveAndExitClicked);
 
-            var discardExitButton = CreateButton(card.transform, "DiscardAndExitButton", "저장하지 않고 나가기",
-                Hex("#C14E4E"), Color.white, new Vector2(196f, 56f), false, BorderColor);
-            var discardExitRect = (RectTransform)discardExitButton.transform;
-            discardExitRect.anchorMin = new Vector2(0.5f, 0f);
-            discardExitRect.anchorMax = new Vector2(0.5f, 0f);
-            discardExitRect.pivot = new Vector2(0.5f, 0f);
-            discardExitRect.anchoredPosition = new Vector2(0f, 28f);
+            var discardExitButton = CreateButton(buttonRow.transform, "DiscardAndExitButton", "저장하지 않고 나가기",
+                Hex("#C14E4E"), Color.white, new Vector2(290f, 56f), false, BorderColor);
+            ApplyButtonLabelHorizontalMargin(discardExitButton, 20f);
+            var discardExitLayout = discardExitButton.gameObject.AddComponent<LayoutElement>();
+            discardExitLayout.preferredWidth = 290f;
+            discardExitLayout.preferredHeight = 56f;
             discardExitButton.onClick.AddListener(OnDiscardAndExitClicked);
 
-            var cancelButton = CreateButton(card.transform, "CancelButton", "취소",
-                CardColor, TextColor, new Vector2(140f, 56f), true, BorderColor);
-            var cancelRect = (RectTransform)cancelButton.transform;
-            cancelRect.anchorMin = new Vector2(0.5f, 0f);
-            cancelRect.anchorMax = new Vector2(0.5f, 0f);
-            cancelRect.pivot = new Vector2(0.5f, 0f);
-            cancelRect.anchoredPosition = new Vector2(180f, 28f);
+            var cancelButton = CreateButton(buttonRow.transform, "CancelButton", "취소",
+                CardColor, TextColor, new Vector2(170f, 56f), true, BorderColor);
+            ApplyButtonLabelHorizontalMargin(cancelButton, 18f);
+            var cancelLayout = cancelButton.gameObject.AddComponent<LayoutElement>();
+            cancelLayout.preferredWidth = 170f;
+            cancelLayout.preferredHeight = 56f;
             cancelButton.onClick.AddListener(OnCancelExitClicked);
 
             unsavedChangesModalRoot.SetActive(false);
@@ -3911,30 +3976,52 @@ namespace App.Bootstrap
             float dt = Time.unscaledDeltaTime;
             bool changed = false;
 
-            // A/D — yaw 좌우 회전 (방 중심 orbit). +A 좌측, +D 우측.
-            float yawInput = 0f;
+            // 키보드 카메라 입력 — **정확히 1개 키만 눌렸을 때만 동작**. W/S/A/D 중 2개 이상
+            // 동시에 눌리면 줌·회전 모두 차단하고, 진행 중인 lerp 잔상까지 즉시 snap 으로 제거.
+            //
+            //   pressedCount == 1 → 해당 동작 (W=줌인, S=줌아웃, A=좌회전, D=우회전)
+            //   pressedCount == 0 → 입력 없음 — 이전 단일 키로 마감된 orbit 값으로 lerp 자연 settle 진행
+            //   pressedCount >= 2 → orbit yaw/pitch/distance delta 0 + HaltCameraInputResidual 로
+            //                       카메라 transform 을 현재 orbit target 으로 즉시 snap.
+            //                       이렇게 하면 LateUpdate 의 exponential smoothing 이 zero-gap 이라
+            //                       프레임당 추가 이동량 0 → "관성 잔상" 없음.
+            //
+            // 마우스 휠 줌은 별도 경로(아래 Mouse.scroll) 라 멀티키 게이팅과 무관 — 정상 동작.
             var kb = Keyboard.current;
-            if (kb != null)
+            bool wPressed = kb != null && kb.wKey.isPressed;
+            bool sPressed = kb != null && kb.sKey.isPressed;
+            bool aPressed = kb != null && kb.aKey.isPressed;
+            bool dPressed = kb != null && kb.dKey.isPressed;
+            int pressedCount =
+                (wPressed ? 1 : 0) + (sPressed ? 1 : 0) +
+                (aPressed ? 1 : 0) + (dPressed ? 1 : 0);
+
+            float yawInput = 0f;
+            float zoomInput = 0f;
+
+            if (pressedCount == 1)
             {
-                if (kb.aKey.isPressed) yawInput -= 1f;
-                if (kb.dKey.isPressed) yawInput += 1f;
+                if (wPressed)      zoomInput = -1f;
+                else if (sPressed) zoomInput = +1f;
+                else if (aPressed) yawInput  = -1f;
+                else if (dPressed) yawInput  = +1f;
             }
+            else if (pressedCount >= 2)
+            {
+                // orbit 상태(yaw/pitch/distance) 는 직전 단일 키 입력으로 마감된 값 보존 — 키를
+                // 떼면 그 자리에서 자연스럽게 멈춤. 카메라 transform 만 즉시 target 으로 snap 해서
+                // LateUpdate lerp 의 settling drift 를 끊는다.
+                HaltCameraInputResidual();
+            }
+
             if (Mathf.Abs(yawInput) > 0.001f)
             {
                 orbitYaw += yawInput * OrbitYawSpeed * dt;
                 changed = true;
             }
-
-            // W/S — zoom (W=확대=distance 줄임, S=축소=distance 늘림).
-            float zoomInput = 0f;
-            if (kb != null)
-            {
-                if (kb.wKey.isPressed) zoomInput -= 1f;
-                if (kb.sKey.isPressed) zoomInput += 1f;
-            }
             if (Mathf.Abs(zoomInput) > 0.001f)
             {
-                orbitDistance += zoomInput * ZoomKeySpeed * dt;
+                orbitDistance += zoomInput * editZoomKeySpeed * dt;
                 changed = true;
             }
 
@@ -3952,7 +4039,7 @@ namespace App.Bootstrap
                         // line-step 환경 fallback.
                         normalized = Mathf.Sign(scrollY);
                     }
-                    orbitDistance -= normalized * ZoomScrollSensitivity;
+                    orbitDistance -= normalized * editZoomScrollSensitivity;
                     changed = true;
                 }
             }
@@ -3967,17 +4054,19 @@ namespace App.Bootstrap
                 DeriveOrbitFromSavedPose();
                 // 위에서 누적된 입력 delta 도 다시 적용 — DeriveOrbitFromSavedPose 가 yaw 등을 덮어썼으므로.
                 if (Mathf.Abs(yawInput) > 0.001f) orbitYaw += yawInput * OrbitYawSpeed * dt;
-                if (Mathf.Abs(zoomInput) > 0.001f) orbitDistance += zoomInput * ZoomKeySpeed * dt;
+                if (Mathf.Abs(zoomInput) > 0.001f) orbitDistance += zoomInput * editZoomKeySpeed * dt;
             }
 
-            // 클램프 + 변경 후처리.
-            orbitDistance = Mathf.Clamp(orbitDistance, MinOrbitDistance, MaxOrbitDistance);
+            // 클램프 + 변경 후처리. orbitPitch 먼저 clamp → ClassifyByOrbit (pitch 65° 임계값 사용)
+            // → 시점별 (min,max) 로 distance clamp. 입력 종류(W/S/스크롤) 무관 같은 clamp 기준.
             orbitPitch = Mathf.Clamp(orbitPitch, OrbitMinPitch, OrbitMaxPitch);
             isInDefaultView = false;
             cameraPresetTargetActive = true;
 
             // wall fade 카테고리 갱신 — quadrant 가 바뀐 경우만 ApplyWallVisibilityForPreset 호출.
             currentCameraPreset = ClassifyByOrbit();
+            var (zMin, zMax) = GetOrbitDistanceRangeForPreset(currentCameraPreset);
+            orbitDistance = Mathf.Clamp(orbitDistance, zMin, zMax);
             ApplyWallVisibilityForCurrentView("OrbitInput");
 
             if (Mathf.Abs(yawInput) > 0.001f)
@@ -3987,6 +4076,48 @@ namespace App.Bootstrap
             if (Mathf.Abs(zoomInput) > 0.001f || (mouse != null && Mathf.Abs(mouse.scroll.ReadValue().y) > 0.01f))
             {
                 Debug.Log($"[RoomEdit][Camera] orbit 줌 distance={orbitDistance:0.##}m");
+            }
+        }
+
+        // 키보드 W/S/A/D 중 2개 이상 동시 입력 감지 시 호출 — 진행 중인 LateUpdate 의 exponential
+        // smoothing lerp 잔상을 끊는다. 카메라 transform 을 현재 orbit target 으로 즉시 snap 하면
+        // 다음 프레임 LateUpdate 의 Vector3.Lerp(current, target, t) 가 zero-gap 이 되어 추가 움직임 0.
+        //
+        // **orbit 상태(yaw/pitch/distance) 는 건드리지 않는다** — 직전 단일 키 입력으로 마감된
+        // 값 그대로 보존해야, 사용자가 키를 떼고 다시 단일 키 누르면 그 자리에서 자연스럽게 이어감.
+        // Default 모드에선 orbit 미파생 상태이므로 savedCameraPose 로 snap.
+        private void HaltCameraInputResidual()
+        {
+            if (editModeCamera == null) return;
+
+            Vector3 targetPos;
+            Quaternion targetRot;
+            if (isInDefaultView && savedCameraPoseValid)
+            {
+                targetPos = savedCameraPosition;
+                targetRot = savedCameraRotation;
+            }
+            else
+            {
+                ComputeOrbitPose(out targetPos, out targetRot);
+            }
+
+            editModeCamera.transform.SetPositionAndRotation(targetPos, targetRot);
+            // LateUpdate 가 다음 프레임에 다시 같은 target 을 계산해 lerp 하지만 gap 이 0 이라 noop.
+            // cameraPresetTargetPosition/Rotation 도 동기화 — LateUpdate 에서 재계산되지만 명시적으로
+            // 맞춰 두면 외부에서 이 필드를 읽을 때 stale 값이 보이지 않음.
+            cameraPresetTargetPosition = targetPos;
+            cameraPresetTargetRotation = targetRot;
+
+            // wall fade catch-up — multi-key 진입이 edit mode 의 첫 입력이라 ClassifyByOrbit 결과가
+            // currentCameraPreset 에 아직 반영 안 됐을 가능성. preset 분류가 바뀐 경우에만 갱신
+            // (idempotent — 같으면 ApplyWallVisibilityForCurrentView 의 change-detection 이 skip).
+            // (MR #147 review #2: HaltCameraInputResidual 에서 wall fade stale 가능성 fix.)
+            var nextPreset = isInDefaultView ? CameraPreset.Default : ClassifyByOrbit();
+            if (nextPreset != currentCameraPreset)
+            {
+                currentCameraPreset = nextPreset;
+                ApplyWallVisibilityForCurrentView("HaltResidual");
             }
         }
 
@@ -4800,11 +4931,16 @@ namespace App.Bootstrap
         }
 
         // Shrink the main camera's viewport rect so it renders only into the area
-        // above the bottom menu. We do NOT touch clearFlags, backgroundColor, FOV,
-        // transform, post-processing, or any Volume — only camera.rect. The bottom
-        // fraction is computed from the BottomMenu's actual on-screen pixel height
-        // so the boundary aligns exactly with the menu's top edge regardless of
-        // device aspect or canvas scaler match factor.
+        // above the bottom menu, AND apply edit-mode camera background override
+        // (clearFlags=SolidColor + backgroundColor=black) so wall fade reveals show
+        // black instead of the main-room skybox/gradient. Both rect and the background
+        // override are restored on EndCameraViewportEdit via the matching saved* fields.
+        // FOV / post-processing / Volume 은 건드리지 않음. The bottom fraction is
+        // computed from the BottomMenu's actual on-screen pixel height so the
+        // boundary aligns exactly with the menu's top edge regardless of device
+        // aspect or canvas scaler match factor.
+        // (MR #147 review Finding 5: 이전 주석은 "clearFlags/backgroundColor 안 건드림"
+        // 이었으나 검은 배경 override 추가로 실제 동작과 어긋났던 부분 정리.)
         private void BeginCameraViewportEdit()
         {
             var camera = ResolveSceneCamera();
@@ -4817,6 +4953,14 @@ namespace App.Bootstrap
             savedCameraRect = camera.rect;
             savedCameraRectValid = true;
             ApplyEditModeCameraRect();
+
+            // 카메라 배경 캐싱 + 검은색 강제 — 벽 fade 로 방 바깥이 보일 때 skybox/기본 회색 대신
+            // 검은색이 깔리도록. rect 와 같이 진입 시 캐싱 → 종료 시 원복.
+            savedCameraClearFlags = camera.clearFlags;
+            savedCameraBackgroundColor = camera.backgroundColor;
+            savedCameraBackgroundValid = true;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = Color.black;
 
             // EnterEditMode 가 직전에 SnapToMainView 를 호출했으므로 여기 pose 가 메인뷰 기준
             // 좌표 — Default 프리셋 target 이자 Exit 시 복구점. 프리셋 인덱스는 0 으로 리셋.
@@ -4869,10 +5013,17 @@ namespace App.Bootstrap
                 {
                     editModeCamera.transform.SetPositionAndRotation(savedCameraPosition, savedCameraRotation);
                 }
+                // 카메라 배경 원복 — 메인룸 skybox/기존 backgroundColor 로 복귀.
+                if (savedCameraBackgroundValid)
+                {
+                    editModeCamera.clearFlags = savedCameraClearFlags;
+                    editModeCamera.backgroundColor = savedCameraBackgroundColor;
+                }
             }
             editModeCamera = null;
             savedCameraRectValid = false;
             savedCameraPoseValid = false;
+            savedCameraBackgroundValid = false;
             cameraPresetTargetActive = false;
         }
 
@@ -4928,7 +5079,8 @@ namespace App.Bootstrap
                     orbitYaw = 0f;
                     orbitPitch = 89f;
                     var roomSpan = Mathf.Max(playableMaxX - playableMinX, playableMaxZ - playableMinZ);
-                    orbitDistance = Mathf.Clamp(roomSpan * 1.1f, MinOrbitDistance, MaxOrbitDistance);
+                    var (tdMin, tdMax) = GetOrbitDistanceRangeForPreset(CameraPreset.TopDown);
+                    orbitDistance = Mathf.Clamp(roomSpan * 1.1f, tdMin, tdMax);
                     break;
                 }
                 case CameraPreset.Front:
@@ -4955,7 +5107,8 @@ namespace App.Bootstrap
                 default:
                     return;
             }
-            orbitDistance = Mathf.Clamp(orbitDistance, MinOrbitDistance, MaxOrbitDistance);
+            var (cubeMin, cubeMax) = GetOrbitDistanceRangeForPreset(face);
+            orbitDistance = Mathf.Clamp(orbitDistance, cubeMin, cubeMax);
             orbitPitch = Mathf.Clamp(orbitPitch, OrbitMinPitch, OrbitMaxPitch);
 
             isInDefaultView = false;
@@ -5821,6 +5974,19 @@ namespace App.Bootstrap
 
         // 프리셋별 어떤 벽 그룹을 fade 시킬지 — hard-coded 매핑이 dot-product 동적 결정보다
         // 예측 가능하고 디버깅하기 쉬워서 의도적으로 단순화. preset 추가 시 여기만 손대면 됨.
+        //
+        // **정책**: "카메라쪽(opposite-of-focus) 벽 fade" — wall-focus preset 에서 카메라는 방
+        // 안쪽으로 들어와 focus 벽(=orbitCenter 가 놓인 벽)을 정면으로 본다. focus 벽은 사용자가
+        // deco 를 보려는 대상이라 절대 fade 금지 (이전 회귀 — LeftAngle 에서 LeftWall 이 fade 되어
+        // 사용자가 보려던 벽이 alpha=0.18 로 흐려졌던 버그). 대신 카메라 반대편(=카메라 뒤편)
+        // 벽 1장을 fade 해서 Animal Crossing dollhouse 식 "그 면을 봤을 때 반대측 벽이 사라지는" UX 유지.
+        //
+        // 매핑 표 (line 5003-5006 yaw + line 5711-5714 orbitCenter 기반, 카메라가 방 내부에 위치):
+        //   preset       | focus (orbitCenter)         | 카메라 offset 방향  | 카메라쪽 wall → fade
+        //   Front        | BackWall  (+Z, 책장)         | -Z                 | FrontWall (-Z, 가상 벽 — prefab 렌더러 없음 → 사실상 noop)
+        //   Back         | FrontWall (-Z, 가상)         | +Z                 | BackWall  (+Z, strip 3개)
+        //   LeftAngle    | LeftWall  (-X)               | +X                 | RightWall (+X)
+        //   RightAngle   | RightWall (+X)               | -X                 | LeftWall  (-X)
         private static bool ShouldFadeWall(WallGroup group, CameraPreset preset)
         {
             switch (preset)
@@ -5830,13 +5996,17 @@ namespace App.Bootstrap
                 case CameraPreset.TopDown:
                     return true;  // 모든 벽 + 천장 fade — 위에서 내려보면 둘 다 시야 차단.
                 case CameraPreset.Front:
+                    // focus=BackWall(책장 정면). 카메라쪽=FrontWall(가상 — 매칭 렌더러 없어 noop).
+                    return group == WallGroup.Front;
                 case CameraPreset.Back:
+                    // focus=FrontWall(가상). 카메라쪽=BackWall(strip 3개) — 카메라 뒤편 fade.
+                    return group == WallGroup.Back;
                 case CameraPreset.LeftAngle:
+                    // focus=LeftWall(정면 시야 — opaque 유지 필수). 카메라쪽=RightWall(+X).
+                    return group == WallGroup.Right;
                 case CameraPreset.RightAngle:
-                    // 큐브 면 클릭 = 카메라가 방 안쪽에서 해당 벽을 본다 (inside view). 다른 벽들은
-                    // 카메라 frustum 측면/뒤에 있으므로 occlusion 없음 → fade 불필요. 타깃 벽도 opaque
-                    // 유지해야 사용자가 "벽면 배치 오브젝트" 를 인식 가능.
-                    return false;
+                    // focus=RightWall(정면 시야 — opaque 유지 필수). 카메라쪽=LeftWall(-X).
+                    return group == WallGroup.Left;
                 default:
                     return false;
             }
@@ -5847,15 +6017,42 @@ namespace App.Bootstrap
             if (!wallVisibilityCollected) return;
 
             int faded = 0, restored = 0;
+            // 매핑 검증 로그용 — fade 적용된 실제 GameObject 이름을 모아서 ShouldFadeWall 의 표대로
+            // 동작하는지 화면 없이도 한눈에 확인. 회귀 시 어느 벽이 잘못 fade 됐는지 즉시 식별.
+            var fadedNames = new List<string>(wallRendererCaches.Count);
             for (int i = 0; i < wallRendererCaches.Count; i++)
             {
                 var cache = wallRendererCaches[i];
                 if (cache.Renderer == null) continue;
                 bool shouldFade = ShouldFadeWall(cache.Group, preset);
                 ApplyWallFadeState(cache, shouldFade);
-                if (shouldFade) faded++; else restored++;
+                if (shouldFade)
+                {
+                    faded++;
+                    fadedNames.Add(cache.Renderer.gameObject.name);
+                }
+                else
+                {
+                    restored++;
+                }
             }
-            Debug.Log($"[RoomEdit][WallFade] preset={preset} faded={faded} kept-opaque={restored} alpha={Mathf.Clamp01(wallFadeAlpha):0.00}");
+            // target-group 라벨 — ShouldFadeWall 매핑 표의 expected fade 대상. 실제 names 와 대조해
+            // mismatch (예: LeftAngle 인데 LeftWall 이 fade 됐다 = focus 벽 fade 회귀) 즉시 검출.
+            string targetGroupLabel = preset switch
+            {
+                CameraPreset.Default    => "(없음)",
+                CameraPreset.TopDown    => "All+Ceiling",
+                CameraPreset.Front      => "Front (카메라쪽, 가상)",
+                CameraPreset.Back       => "Back (카메라쪽)",
+                CameraPreset.LeftAngle  => "Right (카메라쪽)",
+                CameraPreset.RightAngle => "Left (카메라쪽)",
+                _ => "?",
+            };
+            string fadedNamesJoined = fadedNames.Count == 0 ? "(없음)" : string.Join(",", fadedNames);
+            Debug.Log(
+                $"[RoomEdit][WallFade] preset={preset} target-group={targetGroupLabel} " +
+                $"faded={faded} names=[{fadedNamesJoined}] kept-opaque={restored} " +
+                $"alpha={Mathf.Clamp01(wallFadeAlpha):0.00}");
         }
 
         // shouldFade=true 면 instance material 만들어서 transparent + alpha 적용,
@@ -8726,6 +8923,19 @@ namespace App.Bootstrap
             StretchToParent(text.rectTransform);
 
             return button;
+        }
+
+        // 버튼 Label 텍스트의 좌우 inset margin 을 부여한다. CreateButton 의 default 는
+        // StretchToParent 로 텍스트가 버튼 RectTransform 전체를 채우는데, 한글이 길면
+        // (예: "저장하지 않고 나가기") 좌우 경계까지 텍스트가 닿아 답답해 보인다.
+        // TMP_Text.margin 은 Vector4(left, top, right, bottom).
+        private static void ApplyButtonLabelHorizontalMargin(Button button, float horizontalMargin)
+        {
+            if (button == null) return;
+            var label = button.GetComponentInChildren<TMP_Text>(true);
+            if (label == null) return;
+            var m = label.margin;
+            label.margin = new Vector4(horizontalMargin, m.y, horizontalMargin, m.w);
         }
 
         private static void StretchToParent(RectTransform rect)

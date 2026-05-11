@@ -18,7 +18,10 @@ namespace BookshelfPorting.Runtime
 
         private const int InitialBookshelfCount = 3;
         private const float BookshelfAnchorZ = 1.285f;
-        private const float RoomWidth = 4.2f;
+        // RoomWidth(X) 와 RoomDepth(Z) 를 5×5 정사각형으로 유지. 이전엔 4.2×5 였으나
+        // X 축 확장으로 Floor/LeftWall/RightWall/Ceiling/BackWall strip 모두 자동 재배치.
+        // 좌/우 벽 위치는 `-RoomWidth*0.5 + 0.05 = -2.45` / `+2.45` 로 갱신됨.
+        private const float RoomWidth = 5f;
         private const float RoomDepth = 5f;
         private const float RoomHeight = 2.8f;
         private const float BackWallZ = 1.45f;
@@ -3678,7 +3681,12 @@ namespace BookshelfPorting.Runtime
         {
             var guestbook = new GameObject("GuestbookBoard");
             guestbook.transform.SetParent(roomRoot, false);
-            guestbook.transform.localPosition = new Vector3(-1.995f, 1.18f, 0.12f);
+            // LeftWall inner face X = wall center(-RoomWidth*0.5 + 0.05, line 694) + thickness*0.5(0.04).
+            // 0.015 inset 으로 guestbook 표면이 벽 안쪽에 살짝 떠 있음. RoomWidth 변경 시 자동 따라감.
+            // (MR #147 review Finding 1: 이전 -1.995 hardcode 가 4.2 폭 기준이라 5 폭에서 벽에서 0.4m 떠 있던 회귀 fix.)
+            const float GuestbookInsetFromInnerFace = 0.015f;
+            var guestbookX = -RoomWidth * 0.5f + 0.05f + BackWallThickness * 0.5f + GuestbookInsetFromInnerFace;
+            guestbook.transform.localPosition = new Vector3(guestbookX, 1.18f, 0.12f);
             guestbook.transform.localRotation = Quaternion.identity;
             generatedGeometry.Add(guestbook);
 

@@ -41,11 +41,15 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float invalidDropBoundaryBounciness = 0.18f;
         [SerializeField] private float invalidDropFriction = 0.4f;
         [SerializeField] private float roomFloorY = 0f;
-        [SerializeField] private float roomLeftWallX = -2.01f;
-        [SerializeField] private float roomRightWallX = 2.01f;
+        // 5×5 룸 기준 좌/우 벽 X 좌표 — BookshelfGenerator.RoomWidth=5 → 벽 visible 면 ±2.45.
+        // RuntimeSystems.prefab 의 override 값도 같이 갱신 필요.
+        [SerializeField] private float roomLeftWallX = -2.45f;
+        [SerializeField] private float roomRightWallX = 2.45f;
         [SerializeField] private float roomFrontWallZ = -2.05f;
         [SerializeField] private float roomBackWallZ = 1.41f;
-        [SerializeField] private float roomPhysicsDepth = 4.2f;
+        // BookshelfGenerator.RoomDepth=5 와 일관 — 이전 4.2 는 RoomWidth 시절 잔존값이라 visible
+        // floor 와 physics collider Z 범위 mismatch 가 있었음 (MR #147 review: 시각/물리 mismatch).
+        [SerializeField] private float roomPhysicsDepth = 5f;
         [SerializeField] private float roomWallHeight = 2.8f;
         [SerializeField] private float roomWallThickness = 0.08f;
         [SerializeField] private float dragWallSkin = 0.015f;
