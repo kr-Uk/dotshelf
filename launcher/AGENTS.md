@@ -93,10 +93,10 @@ private const string DefaultManifestUrl = "https://dotshelf.digital/launcher/win
 private const string DefaultEventsUrl   = "https://dotshelf.digital/launcher/windows/events.json";
 ```
 
-prod 정적 호스팅:
-- 호스트 디렉터리: `/opt/dotshelf/launcher/windows/` (prod EC2 `3.38.240.110`)
-- 컨테이너 마운트: `/var/www/dotshelf-launcher/`
-- nginx location: `/launcher/` → `default.conf` 의 `dotshelf.digital` server block 참고
+prod 정적 호스팅 (2026-05-11 ~ Cloudflare R2 로 이전):
+- 실제 파일: Cloudflare R2 버킷 `dotshelf-launcher`, 공개 URL `https://cdn.dotshelf.digital/windows/...`
+- 업로드: `.gitlab-ci.yml` `launcher:publish` 잡에서 `aws s3 cp` (S3 호환 API)
+- 기존 0.1.0 런처는 위 상수가 `dotshelf.digital` 로 하드코딩 → EC2 nginx 가 `/launcher/windows/*` 를 cdn.dotshelf.digital 로 `301 redirect`. 다음 런처 버전부터 위 상수를 `https://cdn.dotshelf.digital/windows/...` 로 갈아끼우고, 모든 사용자 교체 완료되면 EC2 redirect 블록 제거.
 
 로컬에서 테스트하고 싶으면 잠깐 위 상수를 `http://127.0.0.1:8080/...` 으로 바꾸고 아래 "로컬 manifest 서버 실행" 절차를 따른다. 커밋 전 반드시 운영 URL 로 되돌릴 것.
 
