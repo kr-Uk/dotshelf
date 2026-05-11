@@ -36,7 +36,10 @@ export type AdminAction =
   | "ops.maintenance_toggle"
   | "ops.role_assign"
   // 감사 로그
-  | "audit.export";
+  | "audit.export"
+  // 에셋 운영
+  | "asset.manage"
+  | "asset.publish";
 
 const ALL_ROLES: AdminRole[] = [
   "super_admin",
@@ -85,6 +88,9 @@ export const ROLE_ALLOW: Record<AdminAction, AdminRole[]> = {
   "ops.role_assign": SUPER_ONLY,
   // 감사
   "audit.export": ["super_admin"],
+  // 에셋 운영 — BE의 requireAdmin 도 super_admin 만 통과시키므로 일치시킨다.
+  "asset.manage": SUPER_ONLY,
+  "asset.publish": SUPER_ONLY,
 };
 
 export type NavKey =
@@ -94,6 +100,7 @@ export type NavKey =
   | "moderation"
   | "settlements"
   | "users"
+  | "assets"
   | "stats"
   | "operations"
   | "audit";
@@ -105,6 +112,7 @@ export const ROLE_NAV_ACCESS: Record<NavKey, AdminRole[]> = {
   moderation: ["super_admin", "moderator", "cs", "read_only"],
   settlements: ["super_admin", "settlement", "read_only"],
   users: ["super_admin", "moderator", "cs", "read_only"],
+  assets: ["super_admin", "read_only"],
   stats: ALL_ROLES,
   operations: ["super_admin", "cs", "read_only"],
   audit: ["super_admin", "read_only"],
