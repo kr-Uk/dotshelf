@@ -175,6 +175,35 @@ class AuthIntegrationTest {
         assertThat(refreshTokenRepository.findAll()).isEmpty();
     }
 
+    @Test
+    @DisplayName("탈퇴한 소셜 계정 재로그인은 사용자를 재활성화하고 온보딩 대상자로 응답한다")
+    void socialLogin_deletedAccountReactivatesForOnboarding() throws Exception {
+        given(socialTokenVerifierRegistry.verify(any(), any(), any(), any(), any(), any()))
+                .willReturn(new SocialUserInfo(SocialProvider.GOOGLE, "google-reactivate", "reactivate@example.com", "reactivate", null));
+
+        String body = """
+                {"provider":"GOOGLE","tokenType":"ACCESS_TOKEN","token":"provider-token"}
+                """;
+        mockMvc.perform(post("/v1/auth/social-login").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.newUser").value(true));
+
+        var user = userRepository.findByEmail("reactivate@example.com").orElseThrow();
+        user.completeOnboarding();
+        user.delete();
+
+        mockMvc.perform(post("/v1/auth/social-login").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.newUser").value(true))
+                .andExpect(jsonPath("$.result.onboarded").value(false));
+
+        assertThat(user.getStatus()).isEqualTo("ACTIVE");
+        assertThat(user.getDeletedAt()).isNull();
+        assertThat(user.isOnboarded()).isFalse();
+        assertThat(userRepository.findAll()).hasSize(1);
+        assertThat(socialAccountRepository.findAll()).hasSize(1);
+    }
+
     private void socialLogin(String provider, String token) throws Exception {
         mockMvc.perform(post("/v1/auth/social-login")
                         .contentType(MediaType.APPLICATION_JSON)

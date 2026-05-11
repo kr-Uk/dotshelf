@@ -175,6 +175,13 @@ namespace BookshelfPorting.Runtime
             Edit
         }
 
+        private enum FirstBookshelfTutorialMode
+        {
+            None,
+            CreateFirstShelf,
+            FeatureGuide
+        }
+
         private readonly struct BookReportMutationSnapshot
         {
             public readonly string ReadingRecordId;
@@ -498,7 +505,15 @@ namespace BookshelfPorting.Runtime
         private Text firstBookshelfTutorialMessageText;
         private Text firstBookshelfTutorialStepsText;
         private Button firstBookshelfTutorialAddButton;
+        private Button emptyBookshelfAddButton;
         private bool isFirstBookshelfTutorialOpen;
+        private FirstBookshelfTutorialMode firstBookshelfTutorialMode = FirstBookshelfTutorialMode.None;
+        private bool pendingFirstBookshelfFeatureGuide;
+        private bool hasCompletedFirstBookshelfFeatureGuide;
+        private bool isFirstBookshelfCreateInProgress;
+        private bool isBookshelfCreateRequestInFlight;
+        private bool isEmptyBookshelfTutorialEntryPending;
+        private int firstBookshelfFeatureGuideStepIndex;
         private Button addBookshelfButton;
         private Button openBookshelfNameEditButton;
         private Button openBookshelfDesignButton;
@@ -927,6 +942,12 @@ namespace BookshelfPorting.Runtime
 
         public void NotifyBookshelfApiSynced()
         {
+            if (bookshelfGenerator != null)
+            {
+                isFirstBookshelfCreateInProgress = false;
+                isBookshelfCreateRequestInFlight = false;
+            }
+
             RefreshBookshelfIndexIndicator(CurrentFocusArea == ExperienceFocusArea.Bookshelf && (state == null || !state.IsViewingBook));
             RefreshHud();
         }
@@ -1569,6 +1590,7 @@ namespace BookshelfPorting.Runtime
         public void OpenSectionAlignmentPanel(ShelfSection section)
         {
             if (section == null ||
+                section.isAdvertisementSection ||
                 sectionEditPanel == null ||
                 !IsBookshelfEditMode ||
                 (bookshelfGenerator != null && bookshelfGenerator.IsBookshelfSwitching) ||
@@ -1654,7 +1676,10 @@ namespace BookshelfPorting.Runtime
 
         private void RequestServerBookSnapshot(BookEntity book)
         {
-            if (book == null || bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            if (book == null ||
+                book.isDecoration ||
+                bookshelfApiSyncController == null ||
+                !bookshelfApiSyncController.IsServerSyncEnabled)
             {
                 return;
             }
@@ -2100,6 +2125,7 @@ namespace BookshelfPorting.Runtime
             var retryKey = BuildMutationRetryKey("책 삭제", book);
             if (!CanStartBookshelfApiMutation())
             {
+                isFirstBookshelfCreateInProgress = false;
                 if (usesHttpApiMode)
                 {
                     RefreshServerStateAfterMutationFailure(
@@ -2507,6 +2533,12 @@ namespace BookshelfPorting.Runtime
 
         private void SyncBookshelfCreateOrRefresh(string name, string operationName)
         {
+            if (isBookshelfCreateRequestInFlight)
+            {
+                RefreshHud();
+                return;
+            }
+
             if (!CanStartBookshelfApiMutation())
             {
                 if (usesHttpApiMode)
@@ -2519,20 +2551,40 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            isBookshelfCreateRequestInFlight = usesHttpApiMode;
+            RefreshHud();
+
+            if (bookshelfGenerator != null &&
+                bookshelfGenerator.BookshelfCount <= 0 &&
+                pendingFirstBookshelfFeatureGuide)
+            {
+                isFirstBookshelfCreateInProgress = true;
+            }
+
             var retryKey = BuildMutationRetryKey(operationName, name);
             if (!bookshelfApiSyncController.CreateBookshelf(
                     name,
                     () =>
                     {
+                        isFirstBookshelfCreateInProgress = false;
+                        isBookshelfCreateRequestInFlight = false;
                         ClearPendingMutationRetry(retryKey);
                         ShowBookshelfTransientStatus("책장 저장 완료", "새 책장이 서버에 저장되었습니다.", false);
+                        RefreshHud();
                     },
-                    error => RefreshServerStateAfterMutationFailure(
-                        operationName,
-                        error,
-                        () => SyncBookshelfCreateOrRefresh(name, operationName),
-                        retryKey)))
+                    error =>
+                    {
+                        isFirstBookshelfCreateInProgress = false;
+                        isBookshelfCreateRequestInFlight = false;
+                        RefreshServerStateAfterMutationFailure(
+                            operationName,
+                            error,
+                            () => SyncBookshelfCreateOrRefresh(name, operationName),
+                            retryKey);
+                    }))
             {
+                isFirstBookshelfCreateInProgress = false;
+                isBookshelfCreateRequestInFlight = false;
                 RefreshServerStateAfterMutationFailure(
                     operationName,
                     "책장 추가 요청을 시작할 수 없습니다.",
@@ -3460,6 +3512,8 @@ namespace BookshelfPorting.Runtime
                 CloseGuestbookPanel();
             }
 
+            isEmptyBookshelfTutorialEntryPending = false;
+
             RefreshHud();
         }
 
@@ -3524,6 +3578,9 @@ namespace BookshelfPorting.Runtime
 
             addBookshelfButton = CreateButton(canvasObject.transform, "AddBookshelfButton", "책장 추가", new Vector2(-128f, -68f), AddBookshelf, new Vector2(92f, 34f), new Vector2(0.5f, 1f));
             addBookshelfButton.GetComponentInChildren<Text>().fontSize = 14;
+
+            emptyBookshelfAddButton = CreateButton(canvasObject.transform, "EmptyBookshelfAddButton", "+\n책장 추가", Vector2.zero, AddEmptyBookshelfFromPlaceholder, new Vector2(150f, 150f), new Vector2(0.5f, 0.5f));
+            emptyBookshelfAddButton.gameObject.SetActive(false);
 
             openBookshelfNameEditButton = CreateButton(canvasObject.transform, "OpenBookshelfNameEditButton", "이름 변경", new Vector2(0f, -68f), OpenBookshelfNameEditPanel, new Vector2(128f, 34f), new Vector2(0.5f, 1f));
             openBookshelfNameEditButton.GetComponentInChildren<Text>().fontSize = 14;
@@ -4553,6 +4610,7 @@ namespace BookshelfPorting.Runtime
             RefreshFloatingBookRatingChoicePanel();
             RefreshDeleteResultDialog();
             RefreshFirstBookshelfTutorialPanel();
+            RefreshEmptyBookshelfAddButton();
         }
 
         private void ApplyResponsiveFocusOverlayLayout(bool force = false)
@@ -6272,6 +6330,62 @@ namespace BookshelfPorting.Runtime
             RefreshBookshelfIndexDots(displayIndex, totalCount);
         }
 
+        private void RequestEmptyBookshelfTutorialEntry()
+        {
+            if (!ShouldEnterEmptyBookshelfTutorial())
+            {
+                return;
+            }
+
+            isEmptyBookshelfTutorialEntryPending = true;
+            TryEnterEmptyBookshelfTutorialFocus();
+        }
+
+        private void TryEnterEmptyBookshelfTutorialFocus()
+        {
+            if (!isEmptyBookshelfTutorialEntryPending)
+            {
+                return;
+            }
+
+            if (!ShouldEnterEmptyBookshelfTutorial())
+            {
+                isEmptyBookshelfTutorialEntryPending = false;
+                return;
+            }
+
+            if (CurrentFocusArea == ExperienceFocusArea.Bookshelf)
+            {
+                isEmptyBookshelfTutorialEntryPending = false;
+                return;
+            }
+
+            if (CurrentFocusArea != ExperienceFocusArea.QuarterView || !CanStartCameraFocus())
+            {
+                return;
+            }
+
+            FocusBookshelf();
+        }
+
+        private bool ShouldEnterEmptyBookshelfTutorial()
+        {
+            return bookshelfGenerator != null &&
+                   bookshelfGenerator.BookshelfCount <= 0 &&
+                   CanMutateOwnedBookshelf() &&
+                   !isFirstBookshelfCreateInProgress &&
+                   !isBookAddPlacementSelectionActive &&
+                   !isBookSearchPanelOpen &&
+                   !isBookPlacementEditorOpen &&
+                   !HasOpenBookshelfModal() &&
+                   !isDeleteResultDialogOpen &&
+                   !isBookReviewWritePanelOpen &&
+                   !isBookReportWritePanelOpen &&
+                   !isBookReportReadPanelOpen &&
+                   activeEditSection == null &&
+                   (state == null || (!state.IsViewingBook && state.ActiveDraggedBook == null));
+        }
+
         private void RefreshFirstBookshelfTutorialPanel()
         {
             if (firstBookshelfTutorialPanel == null || firstBookshelfTutorialBackdrop == null)
@@ -6279,8 +6393,10 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var shouldShow = ShouldShowFirstBookshelfTutorial();
+            var mode = ResolveFirstBookshelfTutorialMode();
+            var shouldShow = mode != FirstBookshelfTutorialMode.None;
             isFirstBookshelfTutorialOpen = shouldShow;
+            firstBookshelfTutorialMode = mode;
             firstBookshelfTutorialBackdrop.SetActive(shouldShow);
             firstBookshelfTutorialPanel.SetActive(shouldShow);
             if (!shouldShow)
@@ -6288,6 +6404,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            ApplyFirstBookshelfTutorialContent(mode);
             SuppressBookshelfModalBackgroundHud();
             firstBookshelfTutorialBackdrop.transform.SetAsLastSibling();
             firstBookshelfTutorialPanel.transform.SetAsLastSibling();
@@ -6338,21 +6455,13 @@ namespace BookshelfPorting.Runtime
                 true);
         }
 
-        private bool ShouldShowFirstBookshelfTutorial()
+        private FirstBookshelfTutorialMode ResolveFirstBookshelfTutorialMode()
         {
-            if (bookshelfGenerator == null ||
-                bookshelfGenerator.BookshelfCount > 0 ||
-                CurrentFocusArea != ExperienceFocusArea.Bookshelf ||
-                !CanMutateOwnedBookshelf())
-            {
-                return false;
-            }
+            return FirstBookshelfTutorialMode.None;
+        }
 
-            if (state != null && (state.IsViewingBook || state.ActiveDraggedBook != null))
-            {
-                return false;
-            }
-
+        private bool CanShowFirstBookshelfTutorialOverCurrentUi()
+        {
             return !isBookshelfNameEditPanelOpen &&
                    !isBookshelfDeleteConfirmPanelOpen &&
                    !isBookshelfDesignPanelOpen &&
@@ -6371,6 +6480,111 @@ namespace BookshelfPorting.Runtime
                    activeEditSection == null;
         }
 
+        private bool ShouldShowFirstBookshelfFeatureGuide()
+        {
+            return pendingFirstBookshelfFeatureGuide &&
+                   !hasCompletedFirstBookshelfFeatureGuide &&
+                   bookshelfGenerator != null &&
+                   bookshelfGenerator.BookshelfCount > 0;
+        }
+
+        private void ApplyFirstBookshelfTutorialContent(FirstBookshelfTutorialMode mode)
+        {
+            if (mode == FirstBookshelfTutorialMode.FeatureGuide)
+            {
+                var step = Mathf.Clamp(firstBookshelfFeatureGuideStepIndex, 0, 2);
+                if (firstBookshelfTutorialTitleText != null)
+                {
+                    firstBookshelfTutorialTitleText.text = "책장에서 할 수 있는 일";
+                }
+
+                if (firstBookshelfTutorialMessageText != null)
+                {
+                    firstBookshelfTutorialMessageText.text = "첫 책장이 준비되었습니다. 아래 안내를 끝까지 확인한 뒤 책장 사용을 시작할 수 있습니다.";
+                }
+
+                if (firstBookshelfTutorialStepsText != null)
+                {
+                    firstBookshelfTutorialStepsText.text = step switch
+                    {
+                        0 => "1/3  하단의 추가 버튼으로 책을 검색하고 원하는 칸에 꽂을 수 있습니다.",
+                        1 => "2/3  책을 클릭하면 읽음 상태, 리뷰, 좋아요, 독후감을 관리할 수 있습니다.",
+                        _ => "3/3  편집에서 책장 이름, 공개 범위, 디자인을 관리할 수 있습니다."
+                    };
+                }
+
+                if (firstBookshelfTutorialAddButton != null)
+                {
+                    firstBookshelfTutorialAddButton.onClick.RemoveAllListeners();
+                    firstBookshelfTutorialAddButton.onClick.AddListener(AdvanceFirstBookshelfFeatureGuide);
+                    SetButtonLabel(firstBookshelfTutorialAddButton, step < 2 ? "다음" : "시작하기");
+                }
+
+                return;
+            }
+
+            if (firstBookshelfTutorialTitleText != null)
+            {
+                firstBookshelfTutorialTitleText.text = "첫 책장을 만들어볼까요?";
+            }
+
+            if (firstBookshelfTutorialMessageText != null)
+            {
+                firstBookshelfTutorialMessageText.text = "아직 책장이 없습니다. 책장은 책을 전시하고 정리하는 기본 공간입니다. 먼저 책장 하나를 만들고 이름을 정해보세요.";
+            }
+
+            if (firstBookshelfTutorialStepsText != null)
+            {
+                firstBookshelfTutorialStepsText.text = "1. 책장 추가\n2. 책장 이름 정하기\n3. 검색 또는 추가에서 첫 책 꽂기";
+            }
+
+            if (firstBookshelfTutorialAddButton != null)
+            {
+                firstBookshelfTutorialAddButton.onClick.RemoveAllListeners();
+                firstBookshelfTutorialAddButton.onClick.AddListener(AddFirstBookshelfFromTutorial);
+                SetButtonLabel(firstBookshelfTutorialAddButton, "책장 추가하기");
+            }
+        }
+
+        private void QueueFirstBookshelfFeatureGuide()
+        {
+            if (hasCompletedFirstBookshelfFeatureGuide)
+            {
+                return;
+            }
+
+            pendingFirstBookshelfFeatureGuide = true;
+            firstBookshelfFeatureGuideStepIndex = 0;
+            if (onboardingAutoOpenBookAddRoutine != null)
+            {
+                StopCoroutine(onboardingAutoOpenBookAddRoutine);
+                onboardingAutoOpenBookAddRoutine = null;
+            }
+        }
+
+        private void AdvanceFirstBookshelfFeatureGuide()
+        {
+            if (firstBookshelfTutorialMode != FirstBookshelfTutorialMode.FeatureGuide)
+            {
+                return;
+            }
+
+            if (firstBookshelfFeatureGuideStepIndex < 2)
+            {
+                firstBookshelfFeatureGuideStepIndex++;
+            }
+            else
+            {
+                pendingFirstBookshelfFeatureGuide = false;
+                hasCompletedFirstBookshelfFeatureGuide = true;
+                firstBookshelfFeatureGuideStepIndex = 0;
+                firstBookshelfTutorialMode = FirstBookshelfTutorialMode.None;
+                isFirstBookshelfTutorialOpen = false;
+            }
+
+            RefreshHud();
+        }
+
         private void AddFirstBookshelfFromTutorial()
         {
             if (bookshelfGenerator == null || !CanMutateOwnedBookshelf())
@@ -6379,6 +6593,98 @@ namespace BookshelfPorting.Runtime
             }
 
             isFirstBookshelfTutorialOpen = false;
+            QueueFirstBookshelfFeatureGuide();
+            isFirstBookshelfCreateInProgress = true;
+            if (!IsBookshelfEditMode)
+            {
+                SetBookshelfEditMode(true);
+            }
+
+            AddBookshelf();
+            if (bookshelfGenerator.BookshelfCount > 0)
+            {
+                OpenBookshelfNameEditPanel();
+            }
+        }
+
+        private void RefreshEmptyBookshelfAddButton()
+        {
+            if (emptyBookshelfAddButton == null)
+            {
+                return;
+            }
+
+            var shouldShow = ShouldShowEmptyBookshelfAddButton();
+            emptyBookshelfAddButton.gameObject.SetActive(shouldShow);
+            if (!shouldShow)
+            {
+                return;
+            }
+
+            var canvasSize = GetHudCanvasSize();
+            var buttonSize = Mathf.Clamp(Mathf.Min(canvasSize.x, canvasSize.y) * 0.15f, 118f, 172f);
+            SetHudComponentRect(
+                emptyBookshelfAddButton,
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                Vector2.zero,
+                new Vector2(buttonSize, buttonSize));
+            StyleHudButton(
+                emptyBookshelfAddButton,
+                new Color32(255, 248, 236, 232),
+                new Color32(255, 255, 255, 250),
+                new Color32(224, 219, 214, 170),
+                Mathf.RoundToInt(Mathf.Clamp(buttonSize * 0.18f, 20f, 28f)),
+                new Color32(63, 47, 38, 255),
+                true);
+
+            var label = GetButtonLabelText(emptyBookshelfAddButton);
+            if (label != null)
+            {
+                label.alignment = TextAnchor.MiddleCenter;
+                label.lineSpacing = 1.0f;
+                StretchTextToParent(label);
+            }
+        }
+
+        private bool ShouldShowEmptyBookshelfAddButton()
+        {
+            return bookshelfGenerator != null &&
+                   bookshelfGenerator.BookshelfCount <= 0 &&
+                   !isFirstBookshelfCreateInProgress &&
+                   CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                   CanMutateOwnedBookshelf() &&
+                   !isFirstBookshelfTutorialOpen &&
+                   !isBookshelfNameEditPanelOpen &&
+                   !isBookshelfDeleteConfirmPanelOpen &&
+                   !isBookshelfDesignPanelOpen &&
+                   !isBookAddPanelOpen &&
+                   !isBookAddConfirmPanelOpen &&
+                   !isBookshelfManagePanelOpen &&
+                   !isBookshelfUnsavedConfirmPanelOpen &&
+                   !isDeleteResultDialogOpen &&
+                   !isBookSearchPanelOpen &&
+                   !isBookAddPlacementSelectionActive &&
+                   !isBookEditPanelOpen &&
+                   !isBookPlacementEditorOpen &&
+                   !isBookReportWritePanelOpen &&
+                   !isBookReportReadPanelOpen &&
+                   !isBookReviewWritePanelOpen &&
+                   activeEditSection == null &&
+                   (state == null || (!state.IsViewingBook && state.ActiveDraggedBook == null));
+        }
+
+        private void AddEmptyBookshelfFromPlaceholder()
+        {
+            if (isBookshelfCreateRequestInFlight ||
+                bookshelfGenerator == null ||
+                !CanMutateOwnedBookshelf())
+            {
+                return;
+            }
+
+            QueueFirstBookshelfFeatureGuide();
+            isFirstBookshelfCreateInProgress = true;
             if (!IsBookshelfEditMode)
             {
                 SetBookshelfEditMode(true);
@@ -6427,6 +6733,10 @@ namespace BookshelfPorting.Runtime
             var canDeleteBookshelf = shouldShowEditControls && bookshelfGenerator.BookshelfCount > 1;
 
             addBookshelfButton.gameObject.SetActive(false);
+            if (emptyBookshelfAddButton != null)
+            {
+                emptyBookshelfAddButton.gameObject.SetActive(false);
+            }
 
             openBookAddButton.gameObject.SetActive(false);
 
@@ -6640,6 +6950,11 @@ namespace BookshelfPorting.Runtime
             if (openBookshelfDesignButton != null)
             {
                 openBookshelfDesignButton.gameObject.SetActive(false);
+            }
+
+            if (emptyBookshelfAddButton != null)
+            {
+                emptyBookshelfAddButton.gameObject.SetActive(false);
             }
         }
 
@@ -7999,14 +8314,21 @@ namespace BookshelfPorting.Runtime
                 shelfManageRenameButton.interactable = CanMutateBookshelfCollection() && bookshelfGenerator.BookshelfCount > 0;
             }
 
+            var canAddManagedShelf = CanMutateBookshelfCollection() && !isBookshelfCreateRequestInFlight;
             StyleHudButton(
                 shelfManageAddButton,
-                new Color32(238, 248, 241, 235),
-                new Color32(247, 255, 250, 255),
+                canAddManagedShelf ? new Color32(238, 248, 241, 235) : new Color32(236, 231, 224, 210),
+                canAddManagedShelf ? new Color32(247, 255, 250, 255) : new Color32(236, 231, 224, 210),
                 new Color32(224, 219, 214, 140),
                 13,
-                new Color32(53, 94, 73, 255),
-                true);
+                canAddManagedShelf ? new Color32(53, 94, 73, 255) : new Color32(142, 132, 122, 255),
+                canAddManagedShelf);
+            SetButtonLabel(shelfManageAddButton, isBookshelfCreateRequestInFlight ? "추가 중" : "추가");
+            if (shelfManageAddButton != null)
+            {
+                shelfManageAddButton.interactable = canAddManagedShelf;
+            }
+
             var canDeleteManagedShelf = CanMutateBookshelfCollection() && bookshelfGenerator.BookshelfCount > 1;
             StyleDeleteActionButton(shelfManageDeleteButton, canDeleteManagedShelf, false, 13);
             if (shelfManageDeleteButton != null)
@@ -8025,7 +8347,9 @@ namespace BookshelfPorting.Runtime
 
             if (bookshelfManageStatusText != null)
             {
-                bookshelfManageStatusText.text = bookshelfManageDragSourceIndex >= 0 &&
+                bookshelfManageStatusText.text = isBookshelfCreateRequestInFlight
+                    ? "새 책장을 서버에 저장하는 중입니다. 완료될 때까지 추가 버튼을 사용할 수 없습니다."
+                    : bookshelfManageDragSourceIndex >= 0 &&
                                                  bookshelfManageDragTargetIndex >= 0 &&
                                                  bookshelfManageDragSourceIndex < bookshelfGenerator.BookshelfCount &&
                                                  bookshelfManageDragTargetIndex < bookshelfGenerator.BookshelfCount
@@ -8111,15 +8435,29 @@ namespace BookshelfPorting.Runtime
 
         private void AddBookshelfFromManagePanel()
         {
-            if (!CanMutateBookshelfCollection() || bookshelfGenerator == null)
+            if (isBookshelfCreateRequestInFlight ||
+                !CanMutateBookshelfCollection() ||
+                bookshelfGenerator == null)
             {
                 return;
+            }
+
+            var isFirstBookshelf = bookshelfGenerator.BookshelfCount <= 0;
+            if (isFirstBookshelf)
+            {
+                QueueFirstBookshelfFeatureGuide();
+                isFirstBookshelfCreateInProgress = true;
             }
 
             if (usesHttpApiMode)
             {
                 if (!EnsureBookshelfApiMutationReady("책장 추가"))
                 {
+                    if (isFirstBookshelf)
+                    {
+                        isFirstBookshelfCreateInProgress = false;
+                    }
+
                     RefreshHud();
                     return;
                 }
@@ -8133,10 +8471,19 @@ namespace BookshelfPorting.Runtime
 
             if (bookshelfGenerator.AddBookshelf())
             {
+                if (isFirstBookshelf)
+                {
+                    isFirstBookshelfCreateInProgress = false;
+                }
+
                 MarkBookshelfEditDirty();
                 SyncBookshelfCreateOrRefresh(bookshelfGenerator.DisplayBookshelfName, "책장 추가");
                 isBookshelfManagePanelOpen = true;
                 RefreshHud();
+            }
+            else if (isFirstBookshelf)
+            {
+                isFirstBookshelfCreateInProgress = false;
             }
         }
 
@@ -8706,18 +9053,20 @@ namespace BookshelfPorting.Runtime
                                              bookshelfGenerator != null &&
                                              bookshelfGenerator.BookshelfCount > 0 &&
                                              !CanUseBookshelfServerPlacement(bookshelfGenerator.DisplayBookshelfIndex);
-            var showEmpty = isBookshelfFocused &&
-                            !isViewingBook &&
-                            !isDraggingBook &&
-                            !IsBookshelfEditMode &&
-                            !isBookAddPlacementSelectionActive &&
-                            !isBookSearchPanelOpen &&
-                            !isBookPlacementEditorOpen &&
-                            !HasOpenBookshelfModal() &&
-                            bookshelfGenerator != null &&
-                            bookshelfGenerator.ActiveBookshelfBookCount == 0;
+            var hasNoBookshelves = bookshelfGenerator != null && bookshelfGenerator.BookshelfCount <= 0;
+            var canShowEmptyState = isBookshelfFocused &&
+                                    !isViewingBook &&
+                                    !isDraggingBook &&
+                                    !IsBookshelfEditMode &&
+                                    !isBookAddPlacementSelectionActive &&
+                                    !isBookSearchPanelOpen &&
+                                    !isBookPlacementEditorOpen &&
+                                    !HasOpenBookshelfModal() &&
+                                    bookshelfGenerator != null;
+            var showNoBookshelf = canShowEmptyState && hasNoBookshelves;
+            var showEmpty = canShowEmptyState && !hasNoBookshelves && bookshelfGenerator.ActiveBookshelfBookCount == 0;
             var showSwitching = isBookshelfFocused && isSwitching;
-            var show = showPlacementSelection || showPendingRetries || showTransient || showServerPlacementPending || showEmpty || showSwitching;
+            var show = showPlacementSelection || showPendingRetries || showTransient || showServerPlacementPending || showNoBookshelf || showEmpty || showSwitching;
             bookshelfStatusPanel.SetActive(show);
             if (!show)
             {
@@ -8736,7 +9085,9 @@ namespace BookshelfPorting.Runtime
                                 ? bookshelfTransientStatusTitle
                                 : showServerPlacementPending
                                     ? "책장 저장 중"
-                                    : "빈 책장";
+                                    : showNoBookshelf
+                                        ? "첫 책장 필요"
+                                        : "빈 책장";
                 bookshelfStatusTitleText.color = (showPendingRetries || showTransient && bookshelfTransientStatusIsError)
                     ? new Color32(112, 46, 42, 255)
                     : showTransient
@@ -8770,6 +9121,10 @@ namespace BookshelfPorting.Runtime
                 {
                     bookshelfStatusMessageText.text = "새 책장/섹션 정보를 서버에서 불러오는 중입니다. 완료되면 책을 추가할 수 있습니다.";
                 }
+                else if (showNoBookshelf)
+                {
+                    bookshelfStatusMessageText.text = "아직 책장이 없습니다. 화면 가운데 + 버튼이나 아래 버튼으로 첫 책장을 추가하세요.";
+                }
                 else
                 {
                     var sectionCount = bookshelfGenerator != null ? bookshelfGenerator.ActiveBookshelfSectionCount : 0;
@@ -8782,7 +9137,7 @@ namespace BookshelfPorting.Runtime
 
             if (bookshelfStatusAddButton != null)
             {
-                var showActionButton = showPlacementSelection || showPendingRetries || showTransient || showServerPlacementPending || showEmpty;
+                var showActionButton = showPlacementSelection || showPendingRetries || showTransient || showServerPlacementPending || showNoBookshelf || showEmpty;
                 bookshelfStatusAddButton.gameObject.SetActive(showActionButton);
                 if (showActionButton)
                 {
@@ -8803,12 +9158,16 @@ namespace BookshelfPorting.Runtime
                     {
                         bookshelfStatusAddButton.onClick.AddListener(ShowBookshelfServerPlacementPending);
                     }
+                    else if (showNoBookshelf)
+                    {
+                        bookshelfStatusAddButton.onClick.AddListener(AddEmptyBookshelfFromPlaceholder);
+                    }
                     else
                     {
                         bookshelfStatusAddButton.onClick.AddListener(OpenBookAddFromStatusPanel);
                     }
 
-                    SetButtonLabel(bookshelfStatusAddButton, showPlacementSelection ? "취소" : showPendingRetries ? "전체 재시도" : showTransient ? "닫기" : showServerPlacementPending ? "새로고침" : "책 추가");
+                    SetButtonLabel(bookshelfStatusAddButton, showPlacementSelection ? "취소" : showPendingRetries ? "전체 재시도" : showTransient ? "닫기" : showServerPlacementPending ? "새로고침" : showNoBookshelf ? "책장 추가" : "책 추가");
                 }
 
                 StyleHudButton(
@@ -9991,9 +10350,16 @@ namespace BookshelfPorting.Runtime
 
         private void AddBookshelf()
         {
-            if (!CanMutateBookshelfCollection())
+            if (isBookshelfCreateRequestInFlight || !CanMutateBookshelfCollection())
             {
                 return;
+            }
+
+            var isFirstBookshelf = bookshelfGenerator != null && bookshelfGenerator.BookshelfCount <= 0;
+            if (isFirstBookshelf)
+            {
+                QueueFirstBookshelfFeatureGuide();
+                isFirstBookshelfCreateInProgress = true;
             }
 
             CloseBookshelfNameEditPanel();
@@ -10010,6 +10376,11 @@ namespace BookshelfPorting.Runtime
             {
                 if (!EnsureBookshelfApiMutationReady("책장 추가"))
                 {
+                    if (isFirstBookshelf)
+                    {
+                        isFirstBookshelfCreateInProgress = false;
+                    }
+
                     RefreshHud();
                     return;
                 }
@@ -10022,9 +10393,18 @@ namespace BookshelfPorting.Runtime
 
             if (bookshelfGenerator.AddBookshelf())
             {
+                if (isFirstBookshelf)
+                {
+                    isFirstBookshelfCreateInProgress = false;
+                }
+
                 MarkBookshelfEditDirty();
                 SyncBookshelfCreateOrRefresh(bookshelfGenerator.DisplayBookshelfName, "책장 추가");
                 RefreshHud();
+            }
+            else if (isFirstBookshelf)
+            {
+                isFirstBookshelfCreateInProgress = false;
             }
         }
 
@@ -10211,7 +10591,9 @@ namespace BookshelfPorting.Runtime
         private bool CanUseOwnerBookActions()
         {
             return CanMutateOwnedBookshelf() &&
-                   CurrentFocusArea == ExperienceFocusArea.Bookshelf;
+                   CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                   (ActiveDetailBook == null || !ActiveDetailBook.isDecoration) &&
+                   (state == null || state.ActiveViewedBook == null || !state.ActiveViewedBook.isDecoration);
         }
 
         private void RefreshBookshelfIndexDots(int displayIndex, int totalCount)

@@ -34,6 +34,13 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 11
     ScaleMultiplierOverride: 0
+  - DisplayName: Dashboard Natural
+    Prefab: {fileID: -8098169881513260187, guid: 8d50791400c5e4b45a072e9b6e41807f, type: 3}
+    SourceAssetPath: Assets/Arts/Models/Props/dashboard_natural.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
   - DisplayName: Doll Hamham
     Prefab: {fileID: -8098169881513260187, guid: 4f9ca772872790543895cc1371706137, type: 3}
     SourceAssetPath: Assets/Arts/Models/doll_hamham.glb
