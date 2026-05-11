@@ -211,8 +211,8 @@ namespace App.Features.Notebook.Presentation
         private const int FallbackSortingOrder = -320;
         private const int DashboardInitializationRetryFrames = 30;
         private const int MaxSpaceThumbnailTextureCacheCount = 32;
-        private const int MaxRemoteSpaceThumbnailWidth = 1920;
-        private const int MaxRemoteSpaceThumbnailHeight = 1080;
+        private const int MaxRemoteSpaceThumbnailWidth = 2048;
+        private const int MaxRemoteSpaceThumbnailHeight = 1152;
         private const float RecommendWheelScrollScale = 56f;
         private const int SearchResultPageSize = 48;
         private const int MarketBookPageSize = 48;
@@ -2234,7 +2234,7 @@ namespace App.Features.Notebook.Presentation
             var card = new VisualElement { name = $"space-{space.Id}" };
             card.style.width = Length.Percent(48.6f);
             card.style.minWidth = 300;
-            card.style.minHeight = 344;
+            card.style.minHeight = 0;
             card.style.marginRight = 10;
             card.style.marginBottom = 10;
             card.style.paddingLeft = 0;
@@ -2248,7 +2248,8 @@ namespace App.Features.Notebook.Presentation
             card.RegisterCallback<ClickEvent>(_ => ShowToast($"공간 상세로 이동 · {space.Title}"));
 
             var thumbnail = new VisualElement { name = "space-thumbnail" };
-            thumbnail.style.height = 146;
+            thumbnail.style.minHeight = 169;
+            thumbnail.style.aspectRatio = 16f / 9f;
             thumbnail.style.flexShrink = 0;
             thumbnail.style.overflow = Overflow.Hidden;
             BuildSpaceThumbnail(thumbnail, space);
@@ -2261,7 +2262,7 @@ namespace App.Features.Notebook.Presentation
             shade.style.right = 0;
             shade.style.top = 0;
             shade.style.bottom = 0;
-            shade.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.18f);
+            shade.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, HasRemoteSpacePhoto(space) ? 0f : 0.18f);
             thumbnail.Add(shade);
 
             var photoBadge = Text("공간 사진", 9, Surface, FontStyle.Bold);
@@ -2304,19 +2305,10 @@ namespace App.Features.Notebook.Presentation
             titleBox.style.minWidth = 0;
             top.Add(titleBox);
 
-            var mood = Text(space.Mood, 10, AccentDeep, FontStyle.Bold);
-            mood.style.letterSpacing = 1.3f;
-            mood.style.minHeight = 18;
-            titleBox.Add(mood);
-
-            var title = Text(space.Title, 18, Ink, FontStyle.Bold);
-            title.style.whiteSpace = WhiteSpace.Normal;
-            title.style.minHeight = 48;
-            title.style.maxHeight = 52;
-            titleBox.Add(title);
-
-            var owner = Text(space.Owner, 12, SoftInk, FontStyle.Normal);
-            owner.style.marginTop = 2;
+            var owner = Text(space.Owner, 18, Ink, FontStyle.Bold);
+            owner.style.whiteSpace = WhiteSpace.Normal;
+            owner.style.minHeight = 42;
+            owner.style.maxHeight = 48;
             titleBox.Add(owner);
 
             var avatar = Text(space.Owner.Substring(0, 1), 16, Surface, FontStyle.Bold);
@@ -2327,13 +2319,6 @@ namespace App.Features.Notebook.Presentation
             avatar.style.backgroundColor = space.AccentColor;
             Round(avatar, 21);
             top.Add(avatar);
-
-            var description = Text(space.Description, 12, SoftInk, FontStyle.Normal);
-            description.style.whiteSpace = WhiteSpace.Normal;
-            description.style.minHeight = 46;
-            description.style.maxHeight = 50;
-            description.style.marginTop = 12;
-            content.Add(description);
 
             var stats = Row("space-stats");
             stats.style.marginTop = 10;
@@ -6750,6 +6735,11 @@ namespace App.Features.Notebook.Presentation
             }
         }
 
+        private static bool HasRemoteSpacePhoto(SpaceViewModel space)
+        {
+            return space != null && !string.IsNullOrWhiteSpace(space.ThumbnailUrl);
+        }
+
         private IEnumerator LoadSpaceThumbnailTexture(string url, VisualElement thumbnail)
         {
             using (var request = UnityWebRequestTexture.GetTexture(url))
@@ -6866,6 +6856,8 @@ namespace App.Features.Notebook.Presentation
             thumbnail.style.backgroundColor = Color.clear;
             thumbnail.style.backgroundImage = new StyleBackground(texture);
             thumbnail.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Cover);
+            thumbnail.style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Center);
+            thumbnail.style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center);
             thumbnail.Q<VisualElement>("space-thumbnail-fallback")?.RemoveFromHierarchy();
         }
 

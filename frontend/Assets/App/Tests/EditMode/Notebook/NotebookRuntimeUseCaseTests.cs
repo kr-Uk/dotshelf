@@ -67,7 +67,7 @@ namespace App.Tests.EditMode.Notebook
         }
 
         [Test]
-        public void UploadMySpaceThumbnail_DelegatesImageAndContentType()
+        public void UploadMySpaceThumbnail_DelegatesPngImageAndReturnsThumbnailUrl()
         {
             var repo = new FakeNotebookRuntimeRepository();
             var useCase = new NotebookRuntimeUseCase(repo);
@@ -76,13 +76,14 @@ namespace App.Tests.EditMode.Notebook
 
             useCase.UploadMySpaceThumbnail(
                 image,
-                "image/jpeg",
+                "image/png",
                 result => captured = result,
                 _ => Assert.Fail("should not error"));
 
             Assert.IsNotNull(captured);
             Assert.AreSame(image, repo.LastThumbnailBytes);
-            Assert.AreEqual("image/jpeg", repo.LastThumbnailContentType);
+            Assert.AreEqual("image/png", repo.LastThumbnailContentType);
+            Assert.AreEqual("https://cdn.test/spaces/10/thumbnail/mock.png", captured.ThumbnailUrl);
         }
 
         private sealed class FakeNotebookRuntimeRepository : INotebookRuntimeRepository
@@ -120,7 +121,13 @@ namespace App.Tests.EditMode.Notebook
             {
                 LastThumbnailBytes = imageBytes;
                 LastThumbnailContentType = contentType;
-                onSuccess?.Invoke(new NotebookSpaceThumbnailUploadResult { SpaceId = 10L, ThumbnailKey = "spaces/10/thumbnail/mock.jpg" });
+                onSuccess?.Invoke(new NotebookSpaceThumbnailUploadResult
+                {
+                    SpaceId = 10L,
+                    ThumbnailKey = "spaces/10/thumbnail/mock.png",
+                    ThumbnailUrl = "https://cdn.test/spaces/10/thumbnail/mock.png",
+                    LayoutVersion = 2L
+                });
             }
 
             public void LoadDefaultShelfTarget(Action<NotebookShelfTarget> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookShelfTarget());
