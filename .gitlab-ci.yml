@@ -321,7 +321,9 @@ launcher:publish:
     - job: launcher:build
       artifacts: true
   before_script:
-    - apk add --no-cache openssh-client rsync curl jq aws-cli
+    # coreutils: Alpine busybox 의 sort 는 -V (version sort) 미지원, head 도 -n -K 미지원.
+    # R2 cleanup 단계의 SemVer 정렬 + "최근 3개 빼고" 슬라이스에 GNU sort/head 필요.
+    - apk add --no-cache openssh-client rsync curl jq aws-cli coreutils
     - mkdir -p ~/.ssh && chmod 700 ~/.ssh
     - printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
@@ -368,6 +370,46 @@ launcher:publish:
     - jq -e '.packageUrl, .latestVersion, .sha256' /tmp/redirected-latest.json > /dev/null
     - curl -fL --max-redirs 5 "https://dotshelf.digital/launcher/windows/events.json" -o /tmp/redirected-events.json
     - jq -e '.' /tmp/redirected-events.json > /dev/null
+    # --- R2 retention: 최근 3개 버전만 유지 ---
+    # 새 빌드가 위에서 이미 업로드된 후 호출되므로 "현재 + 직전 2개" 가 살아남는다.
+    # 동일 버전 재배포 (idempotent overwrite) 에선 삭제 대상 없음.
+    #
+    # 안전망 (MR #148 리뷰 응답):
+    # 1. GNU sort 우선 확인 — busybox 가 PATH 앞쪽이면 'sort -V' silent 실패 위험.
+    #    coreutils apk add 했어도 PATH 순서가 다른 환경에서 회귀 방지.
+    # 2. SemVer 파일명만 grep — 임시 / .sha256 / .json / 공백 포함 파일이
+    #    같은 prefix 로 우연히 들어와도 정렬/삭제 대상에서 제외. manifest 보호.
+    # 3. cleanup 대상을 명시 로그 — silent 삭제 0건 vs 의도된 retention 구분 가능,
+    #    첫 사이클에서 cleanup 의도 확인 친화.
+    - |
+      sort --version 2>/dev/null | head -1 | grep -q "GNU" || {
+        echo "ERROR: GNU sort 가 PATH 에 없습니다 (busybox 가 우선시되는 환경). coreutils 패키지 확인."
+        exit 1
+      }
+      cleanup_r2() {
+        prefix="$1"
+        base="${prefix##*/}"
+        # SemVer 파일명만 매치 — '^<base><x.y.z>\.(exe|zip)$'. manifest (.json) 절대 매치 안 됨.
+        aws --endpoint-url "$R2_LAUNCHER_ENDPOINT" s3 ls "s3://$R2_LAUNCHER_BUCKET/$prefix" \
+          | awk '{print $NF}' \
+          | grep -E "^${base}[0-9]+\\.[0-9]+\\.[0-9]+\\.(exe|zip)$" \
+          | sort -V > /tmp/retention-all.txt || true
+        echo "  [retention] '$prefix' SemVer 후보:"
+        sed 's/^/    /' /tmp/retention-all.txt
+        head -n -3 /tmp/retention-all.txt > /tmp/retention-rm.txt || true
+        if [ -s /tmp/retention-rm.txt ]; then
+          echo "  [retention] 상위 3개 유지, 나머지 삭제:"
+          while read -r f; do
+            [ -z "$f" ] && continue
+            echo "    - s3://$R2_LAUNCHER_BUCKET/windows/$f"
+            aws --endpoint-url "$R2_LAUNCHER_ENDPOINT" s3 rm "s3://$R2_LAUNCHER_BUCKET/windows/$f"
+          done < /tmp/retention-rm.txt
+        else
+          echo "  [retention] 보관 3개 이하 — 삭제 대상 없음"
+        fi
+      }
+      cleanup_r2 "windows/DotShelfLauncher-"
+      cleanup_r2 "windows/Dotshelf-"
   environment:
     name: launcher-prod
     url: https://cdn.dotshelf.digital/windows/latest.json
