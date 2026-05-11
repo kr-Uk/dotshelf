@@ -31,12 +31,12 @@ namespace BookshelfPorting.Runtime
         private string firstItemsLoadFailureMessage;
         private bool isBookshelfSkinCatalogLoading;
         private const int RoomThumbnailCaptureWidth = 2048;
-        private const int RoomThumbnailCaptureHeight = 576;
+        private const int RoomThumbnailCaptureHeight = 1152;
         private const int RoomThumbnailMaxUploadBytes = 2 * 1024 * 1024;
         private const float RoomThumbnailCaptureFieldOfViewScale = 0.74f;
         private const float RoomThumbnailCapturePitchDownDegrees = 3.0f;
         private const int RoomThumbnailCaptureSettleFrames = 3;
-        private const float RoomThumbnailRefreshWaitTimeoutSeconds = 6f;
+        private const float RoomThumbnailRefreshWaitTimeoutSeconds = 10f;
         private const string RoomThumbnailPngContentType = "image/png";
         private const string RoomThumbnailJpegContentType = "image/jpeg";
         private static readonly int[] RoomThumbnailJpegQualities = { 92, 86, 80, 72, 64 };
@@ -1314,35 +1314,48 @@ namespace BookshelfPorting.Runtime
                 pendingThumbnailUploadSucceeded = null;
                 pendingThumbnailUploadFailed = null;
 
-                yield return WaitForRoomThumbnailCaptureReady();
+                var captureReady = false;
+                yield return WaitForRoomThumbnailCaptureReady(ready => captureReady = ready);
 
-                CapturedRoomThumbnail thumbnail = default;
-                try
+                if (!captureReady)
                 {
-                    thumbnail = CaptureMainViewThumbnail();
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[BookshelfApiSync] Room thumbnail capture failed: {ex.Message}");
-                    nextOnFailed?.Invoke("Room thumbnail capture failed.");
-                }
-
-                if (thumbnail.Bytes == null || thumbnail.Bytes.Length == 0)
-                {
-                    nextOnFailed?.Invoke("Room thumbnail image was empty.");
+                    nextOnFailed?.Invoke("Room thumbnail capture skipped because bookshelf refresh did not finish.");
                 }
                 else
                 {
-                    var completed = false;
-                    UploadCapturedRoomThumbnail(
-                        thumbnail,
-                        nextOnSucceeded,
-                        nextOnFailed,
-                        () => completed = true);
-
-                    while (!completed)
+                    CapturedRoomThumbnail thumbnail = default;
+                    var captureFailed = false;
+                    try
                     {
-                        yield return null;
+                        thumbnail = CaptureMainViewThumbnail();
+                    }
+                    catch (Exception ex)
+                    {
+                        captureFailed = true;
+                        Debug.LogWarning($"[BookshelfApiSync] Room thumbnail capture failed: {ex.Message}");
+                        nextOnFailed?.Invoke("Room thumbnail capture failed.");
+                    }
+
+                    if (!captureFailed)
+                    {
+                        if (thumbnail.Bytes == null || thumbnail.Bytes.Length == 0)
+                        {
+                            nextOnFailed?.Invoke("Room thumbnail image was empty.");
+                        }
+                        else
+                        {
+                            var completed = false;
+                            UploadCapturedRoomThumbnail(
+                                thumbnail,
+                                nextOnSucceeded,
+                                nextOnFailed,
+                                () => completed = true);
+
+                            while (!completed)
+                            {
+                                yield return null;
+                            }
+                        }
                     }
                 }
 
@@ -1358,7 +1371,7 @@ namespace BookshelfPorting.Runtime
             isThumbnailUploading = false;
         }
 
-        private IEnumerator WaitForRoomThumbnailCaptureReady()
+        private IEnumerator WaitForRoomThumbnailCaptureReady(Action<bool> onCompleted)
         {
             var deadline = Time.realtimeSinceStartup + RoomThumbnailRefreshWaitTimeoutSeconds;
             while (isRefreshing && Time.realtimeSinceStartup < deadline)
@@ -1368,7 +1381,9 @@ namespace BookshelfPorting.Runtime
 
             if (isRefreshing)
             {
-                Debug.LogWarning("[BookshelfApiSync] Room thumbnail capture continued before bookshelf refresh completed due to timeout.");
+                Debug.LogWarning("[BookshelfApiSync] Room thumbnail capture skipped because bookshelf refresh did not complete within timeout.");
+                onCompleted?.Invoke(false);
+                yield break;
             }
 
             for (var frame = 0; frame < RoomThumbnailCaptureSettleFrames; frame++)
@@ -1377,6 +1392,7 @@ namespace BookshelfPorting.Runtime
             }
 
             yield return new WaitForEndOfFrame();
+            onCompleted?.Invoke(true);
         }
 
         private void UploadCapturedRoomThumbnail(
@@ -1428,7 +1444,7 @@ namespace BookshelfPorting.Runtime
 
         private static bool IsRefreshableThumbnailUploadAuthError(NotebookApiError error)
         {
-            var code = error?.Code;
+            var code = error?.Code?.Trim();
             return string.Equals(code, "A003", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(code, "TOKEN_EXPIRED", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(code, "UNAUTHORIZED", StringComparison.OrdinalIgnoreCase);
@@ -1498,6 +1514,7 @@ namespace BookshelfPorting.Runtime
                 return new CapturedRoomThumbnail(pngBytes, RoomThumbnailPngContentType);
             }
 
+            pngBytes = null;
             return EncodeRoomThumbnailJpeg(texture);
         }
 

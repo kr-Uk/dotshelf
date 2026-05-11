@@ -212,7 +212,7 @@ namespace App.Features.Notebook.Presentation
         private const int DashboardInitializationRetryFrames = 30;
         private const int MaxSpaceThumbnailTextureCacheCount = 32;
         private const int MaxRemoteSpaceThumbnailWidth = 2048;
-        private const int MaxRemoteSpaceThumbnailHeight = 1080;
+        private const int MaxRemoteSpaceThumbnailHeight = 1152;
         private const float RecommendWheelScrollScale = 56f;
         private const int SearchResultPageSize = 48;
         private const int MarketBookPageSize = 48;
