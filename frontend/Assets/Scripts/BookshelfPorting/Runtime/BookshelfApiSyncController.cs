@@ -35,6 +35,8 @@ namespace BookshelfPorting.Runtime
         private const int RoomThumbnailMaxUploadBytes = 2 * 1024 * 1024;
         private const float RoomThumbnailCaptureFieldOfViewScale = 0.74f;
         private const float RoomThumbnailCapturePitchDownDegrees = 3.0f;
+        private const int RoomThumbnailCaptureSettleFrames = 3;
+        private const float RoomThumbnailRefreshWaitTimeoutSeconds = 6f;
         private const string RoomThumbnailPngContentType = "image/png";
         private const string RoomThumbnailJpegContentType = "image/jpeg";
         private static readonly int[] RoomThumbnailJpegQualities = { 92, 86, 80, 72, 64 };
@@ -1312,7 +1314,7 @@ namespace BookshelfPorting.Runtime
                 pendingThumbnailUploadSucceeded = null;
                 pendingThumbnailUploadFailed = null;
 
-                yield return new WaitForEndOfFrame();
+                yield return WaitForRoomThumbnailCaptureReady();
 
                 CapturedRoomThumbnail thumbnail = default;
                 try
@@ -1354,6 +1356,27 @@ namespace BookshelfPorting.Runtime
             }
 
             isThumbnailUploading = false;
+        }
+
+        private IEnumerator WaitForRoomThumbnailCaptureReady()
+        {
+            var deadline = Time.realtimeSinceStartup + RoomThumbnailRefreshWaitTimeoutSeconds;
+            while (isRefreshing && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            if (isRefreshing)
+            {
+                Debug.LogWarning("[BookshelfApiSync] Room thumbnail capture continued before bookshelf refresh completed due to timeout.");
+            }
+
+            for (var frame = 0; frame < RoomThumbnailCaptureSettleFrames; frame++)
+            {
+                yield return null;
+            }
+
+            yield return new WaitForEndOfFrame();
         }
 
         private void UploadCapturedRoomThumbnail(
