@@ -15,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.dotshelf.domain.auth.dto.AuthDtos.GuestMigrationRequest;
 import com.dotshelf.domain.auth.dto.AuthDtos.SocialLoginRequest;
@@ -128,6 +129,57 @@ class AuthServiceTest {
     }
 
     @Test
+    @DisplayName("온보딩 완료 사용자라도 활성 책장이 없으면 로그인 응답은 온보딩 대상으로 내려간다")
+    void socialLogin_onboardedUserWithoutBookshelf_returnsOnboardingRequired() {
+        SocialLoginRequest request = socialLoginRequest();
+        SocialUserInfo socialUser = socialUser();
+        User user = TestFixtures.user(1L, "tester");
+        user.completeOnboarding();
+        given(socialTokenVerifierRegistry.verify(
+                request.provider(), request.tokenType(), request.token(), request.redirectUri(), request.nonce(), request.codeVerifier()
+        )).willReturn(socialUser);
+        given(socialAccountRepository.findByProviderAndProviderUserId(SocialProvider.GOOGLE, "google-1"))
+                .willReturn(Optional.of(TestFixtures.socialAccount(1L, SocialProvider.GOOGLE, "google-1")));
+        given(userService.getUser(1L)).willReturn(user);
+        given(spaceService.hasActiveBookshelf(1L)).willReturn(false);
+        stubTokenIssue(1L, "access", "refresh");
+
+        var response = authService.socialLogin(request);
+
+        assertThat(response.newUser()).isFalse();
+        assertThat(response.onboarded()).isFalse();
+        then(spaceService).should().hasActiveBookshelf(1L);
+    }
+
+    @Test
+    @DisplayName("탈퇴한 소셜 계정 로그인은 기존 사용자를 활성화하고 온보딩 대상으로 응답한다")
+    void socialLogin_deletedSocialAccount_reactivatesUserForOnboarding() {
+        SocialLoginRequest request = socialLoginRequest();
+        SocialUserInfo socialUser = socialUser();
+        User user = TestFixtures.user(1L, "tester");
+        user.delete();
+        given(socialTokenVerifierRegistry.verify(
+                request.provider(), request.tokenType(), request.token(), request.redirectUri(), request.nonce(), request.codeVerifier()
+        )).willReturn(socialUser);
+        given(socialAccountRepository.findByProviderAndProviderUserId(SocialProvider.GOOGLE, "google-1"))
+                .willReturn(Optional.of(TestFixtures.socialAccount(1L, SocialProvider.GOOGLE, "google-1")));
+        given(userService.getUser(1L)).willReturn(user);
+        given(notificationSettingRepository.findByUserId(1L)).willReturn(Optional.empty());
+        stubTokenIssue(1L, "access", "refresh");
+
+        var response = authService.socialLogin(request);
+
+        assertThat(response.newUser()).isTrue();
+        assertThat(response.onboarded()).isFalse();
+        assertThat(user.getStatus()).isEqualTo("ACTIVE");
+        assertThat(user.getDeletedAt()).isNull();
+        assertThat(user.getNickname()).isEqualTo("tester");
+        assertThat(user.getLastLoginAt()).isNotNull();
+        then(spaceService).should().ensureDefaultSpace(1L);
+        then(notificationSettingRepository).should().save(any(UserNotificationSetting.class));
+    }
+
+    @Test
     @DisplayName("refresh token은 기존 토큰을 revoke하고 새 refresh token id로 rotation한다")
     void refresh_activeToken_rotatesRefreshToken() {
         AuthRefreshToken oldToken = TestFixtures.refreshToken(10L, 1L, "old-refresh");
@@ -146,6 +198,44 @@ class AuthServiceTest {
         assertThat(response.accessToken()).isEqualTo("new-access");
         assertThat(oldToken.getRevokedAt()).isNotNull();
         assertThat(oldToken.getReplacedByTokenId()).isEqualTo(11L);
+    }
+
+    @Test
+    @DisplayName("탈퇴한 사용자의 refresh token은 새 토큰을 발급하지 않고 거절한다")
+    void refresh_deletedUser_rejectsToken() {
+        AuthRefreshToken oldToken = TestFixtures.refreshToken(10L, 1L, "old-refresh");
+        User user = TestFixtures.user(1L, "tester");
+        user.delete();
+        given(jwtTokenProvider.parseRefreshUserId("old-refresh")).willReturn(1L);
+        given(refreshTokenRepository.findByTokenHash("old-refresh")).willReturn(Optional.of(oldToken));
+        given(userService.getUser(1L)).willReturn(user);
+
+        assertThatThrownBy(() -> authService.refresh(new TokenRefreshRequest("old-refresh")))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_TOKEN);
+
+        then(jwtTokenProvider).should().parseRefreshUserId("old-refresh");
+        then(jwtTokenProvider).shouldHaveNoMoreInteractions();
+    }
+
+    @Test
+    @DisplayName("세션 무효화 이전에 발급된 refresh token은 재활성화 후에도 거절한다")
+    void refresh_sessionInvalidatedToken_rejectsToken() {
+        AuthRefreshToken oldToken = TestFixtures.refreshToken(10L, 1L, "old-refresh");
+        User user = TestFixtures.user(1L, "tester");
+        ReflectionTestUtils.setField(user, "sessionInvalidatedAt", oldToken.getIssuedAt().plusSeconds(1));
+        given(jwtTokenProvider.parseRefreshUserId("old-refresh")).willReturn(1L);
+        given(refreshTokenRepository.findByTokenHash("old-refresh")).willReturn(Optional.of(oldToken));
+        given(userService.getUser(1L)).willReturn(user);
+
+        assertThatThrownBy(() -> authService.refresh(new TokenRefreshRequest("old-refresh")))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_TOKEN);
+
+        then(jwtTokenProvider).should().parseRefreshUserId("old-refresh");
+        then(jwtTokenProvider).shouldHaveNoMoreInteractions();
     }
 
     @Test

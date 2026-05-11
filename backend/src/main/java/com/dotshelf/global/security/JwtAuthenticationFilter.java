@@ -70,6 +70,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private void validateSession(AccessTokenClaims tokenClaims) {
         UserRepository.SessionInvalidationView user = userRepository.findSessionInvalidationById(tokenClaims.userId())
                 .orElseThrow(() -> new CustomException(ErrorCode.INVALID_TOKEN));
+        if ("DELETED".equalsIgnoreCase(user.getStatus()) || user.getDeletedAt() != null) {
+            throw new CustomException(ErrorCode.INVALID_TOKEN);
+        }
+
         Instant sessionInvalidatedAt = user.getSessionInvalidatedAt();
         if (sessionInvalidatedAt != null && tokenClaims.issuedAt().isBefore(sessionInvalidatedAt)) {
             throw new CustomException(ErrorCode.INVALID_TOKEN);

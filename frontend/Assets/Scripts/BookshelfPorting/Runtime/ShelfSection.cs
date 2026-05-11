@@ -23,6 +23,7 @@ namespace BookshelfPorting.Runtime
         public float frontBoundZ;
         public float backBoundZ;
         public ShelfSectionAlignment alignment = ShelfSectionAlignment.Left;
+        public bool isAdvertisementSection;
         public readonly List<BookEntity> books = new List<BookEntity>();
 
         public float Width => rightBound - leftBound;
@@ -53,7 +54,7 @@ namespace BookshelfPorting.Runtime
 
         public bool CanFit(BookEntity book, float padding)
         {
-            if (book == null)
+            if (isAdvertisementSection || book == null)
             {
                 return false;
             }

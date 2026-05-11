@@ -552,7 +552,9 @@ MonoBehaviour:
   floorBaseMapTiling: {x: 3, y: 3}
   bookshelfSmoothness: 0.42
   floorSmoothness: 0.28
+  ceilingSmoothness: 0.05
   wallColor: {r: 0.93, g: 0.9, b: 0.84, a: 1}
+  ceilingColor: {r: 0.96, g: 0.95, b: 0.93, a: 1}
   whiteboardFrameColor: {r: 0.34, g: 0.26, b: 0.18, a: 1}
   whiteboardSurfaceColor: {r: 0.96, g: 0.97, b: 0.95, a: 1}
   ghostColor: {r: 0.25, g: 0.85, b: 1, a: 0.25}
@@ -575,12 +577,7 @@ MonoBehaviour:
   bookshelfTurntableRoot: {fileID: 578021679114453871}
   bookshelfRoot: {fileID: 4351691916442734672}
   booksRoot: {fileID: 3662584421223578447}
-  hamhamModelAsset: {fileID: -8098169881513260187, guid: 85cf86ba931eb5846ade8653807db8fd, type: 3}
-  bookStackAsset: {fileID: -8098169881513260187, guid: c762a71677879be41a5a565fdad2dc71, type: 3}
-  rugAsset: {fileID: -8098169881513260187, guid: a68c359f967d6064685b042697219e3d, type: 3}
-  lampAsset: {fileID: -8098169881513260187, guid: 6386ddd70e8d2e7439c1961311c3bb2f, type: 3}
   tableNaturalAsset: {fileID: -8098169881513260187, guid: 6e5e1cd8910cedc468a37ef0c772b180, type: 3}
-  clockHamhamAsset: {fileID: -8098169881513260187, guid: fdf1809f3a17b11449a355503137638d, type: 3}
   notebookStationAsset: {fileID: 7370849177019216503, guid: a9f31b23f6eb8a34c93a0c44f7e994ff, type: 3}
   qaBooksBaseMap: {fileID: 2800000, guid: f0e44eb8f2942b9408ac537a26b9f908, type: 3}
   qaBooksNormalMap: {fileID: 2800000, guid: 0d19b33d6e0d94a4097e5daaa08a5d48, type: 3}
@@ -605,6 +602,13 @@ MonoBehaviour:
   addBookPlacementGuideColor: {r: 0.3, g: 0.58, b: 0.47, a: 0.78}
   addBookPlacementGhostColor: {r: 0.3, g: 0.58, b: 0.47, a: 0.24}
   randomSeed: 7
+  advertisementBookPrefab: {fileID: 6156902042414624892, guid: 804b03257239a6d43902dbab519aa185, type: 3}
+  advertisementBookLocalEulerAngles: {x: 0, y: 180, z: 0}
+  advertisementBookSectionHeightRatio: 0.78
+  advertisementBookSectionWidthRatio: 0.52
+  advertisementBookSectionDepthRatio: 0.82
+  advertisementBookBottomInset: 0.014
+  advertisementBookFrontInset: 0.014
 --- !u!114 &8646103123008295061
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -730,6 +734,7 @@ MonoBehaviour:
   dataStore: {fileID: 7485675297398986964}
   bookshelfApiSyncController: {fileID: 1210491958176595673}
   notebookScreenController: {fileID: 0}
+  notebookUiSceneLoader: {fileID: 0}
   useExternalDashboardPanel: 1
   externalDashboardPanel: {fileID: 0}
   guestbookOwnerMode: 1
