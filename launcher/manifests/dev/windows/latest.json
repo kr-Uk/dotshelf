@@ -1,11 +1,11 @@
 {
-    "latestVersion":  "0.1.1",
+    "latestVersion":  "0.1.2",
     "mandatory":  false,
-    "packageUrl":  "https://cdn.dotshelf.digital/windows/Dotshelf-0.1.1.zip",
-    "sha256":  "D9DE4B111B6478A2B3E37ED8EA4E8B866D8C396C5BAE845A07C6EEC41648268F",
+    "packageUrl":  "https://cdn.dotshelf.digital/windows/Dotshelf-0.1.2.zip",
+    "sha256":  "8FB507BAC864729141343E9C4F1468FA36115E9963AE3DC94516C72BA2A8EBFA",
     "entrypoint":  "Dotshelf.exe",
     "minLauncherVersion":  "0.1.0",
     "releaseNotes":  [
-                         "Unity 빌드 자동화 첫 적용"
+                         "0.1.2"
                      ]
 }
