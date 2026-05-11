@@ -2,12 +2,19 @@
   "schemaVersion": 1,
   "banners": [
     {
+      "id": "v0.1.2-release",
+      "type": "update",
+      "title": "0.1.2 업데이트 — 룸 외부 풍경 추가",
+      "linkUrl": "https://dotshelf.digital/changelog/0.1.2",
+      "displayTo": "2026-06-11T23:59:59+09:00"
+    },
+    {
       "id": "spring-2026",
       "type": "event",
       "title": "봄맞이 책장 꾸미기 챌린지 — 한정 테마 지급",
       "linkUrl": "https://dotshelf.digital/events/spring-2026",
-      "displayFrom": "2099-01-01T00:00:00+09:00",
-      "displayTo": "2099-12-31T23:59:59+09:00"
+      "displayFrom": "2026-04-15T00:00:00+09:00",
+      "displayTo": "2026-06-30T23:59:59+09:00"
     }
   ]
 }

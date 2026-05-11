@@ -7,22 +7,12 @@ const PERIOD = {
   to: "2026.06.30",
 };
 
+// 한정 테마 실제 자산 + 인벤토리 지급 path 가 backend 에 아직 없는 상태라 카드는
+// placeholder 단일 톤으로 노출. 실 테마 ready 후 별도 PR 에서 카드 내용 갱신.
 const THEMES = [
-  {
-    name: "벚꽃 책장",
-    sub: "Cherry Bloom Shelf",
-    body: "분홍빛 잎이 흩날리는 책장 테마. 봄 한 철만 제공됩니다.",
-  },
-  {
-    name: "새벽 정원",
-    sub: "Dawn Garden",
-    body: "이슬 머금은 풀잎과 부드러운 햇살이 깔린 책장.",
-  },
-  {
-    name: "유채꽃 길",
-    sub: "Canola Path",
-    body: "노란 유채꽃이 펼쳐진 외부 배경 + 책장 액센트.",
-  },
+  { sub: "Theme 01" },
+  { sub: "Theme 02" },
+  { sub: "Theme 03" },
 ];
 
 const STEPS = [
@@ -87,12 +77,12 @@ function Themes() {
         ── 지급 테마
       </div>
       <h2 className="serif text-[30px] sm:text-[38px] text-charcoal mb-10">
-        기간 한정 봄 테마 3종.
+        곧 공개될 한정 테마.
       </h2>
       <div className="grid md:grid-cols-3 gap-5">
         {THEMES.map((t) => (
           <div
-            key={t.name}
+            key={t.sub}
             className="rounded-2xl border border-beige bg-cream/70 p-6 shadow-warm-sm"
           >
             <div className="w-full aspect-[4/3] rounded-xl bg-beige-soft/60 border border-beige mb-5 flex items-center justify-center text-paper-muted">
@@ -100,13 +90,10 @@ function Themes() {
                 preview soon
               </span>
             </div>
-            <div className="serif text-[20px] text-charcoal">{t.name}</div>
-            <div className="mono text-[11px] text-paper-muted mt-1">
-              {t.sub}
+            <div className="mono text-[11px] text-paper-muted">{t.sub}</div>
+            <div className="serif text-[18px] text-charcoal/60 mt-2">
+              안내 예정
             </div>
-            <p className="text-[14px] text-charcoal/75 leading-[1.7] mt-3">
-              {t.body}
-            </p>
           </div>
         ))}
       </div>
