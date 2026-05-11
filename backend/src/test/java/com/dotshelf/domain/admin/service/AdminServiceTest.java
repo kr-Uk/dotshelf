@@ -492,6 +492,28 @@ class AdminServiceTest {
     }
 
     @Test
+    @DisplayName("ACTIVATE 액션은 soft deleted 사용자의 deletedAt을 지워 인증 상태와 맞춘다")
+    void actUser_activateDeletedUser_clearsDeletedAt() {
+        stubAdmin();
+        User target = TestFixtures.user(2L, "target");
+        target.delete();
+        given(userService.getUser(2L)).willReturn(target);
+        stubUserDetailDependencies(2L);
+
+        var response = adminService.actUser(
+                1L,
+                2L,
+                new UserActionRequest("activate", "복구", null, null),
+                "127.0.0.1"
+        );
+
+        assertThat(response.state()).isEqualTo("ACTIVE");
+        assertThat(target.getStatus()).isEqualTo("ACTIVE");
+        assertThat(target.getDeletedAt()).isNull();
+        then(adminAuditLogRepository).should().save(any(AdminAuditLog.class));
+    }
+
+    @Test
     @DisplayName("ANONYMIZE 액션은 사용자 개인정보를 지우고 DELETED 상태로 응답한다")
     void actUser_anonymize_deletesPersonalFields() {
         stubAdmin();

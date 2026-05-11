@@ -18,7 +18,11 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
     interface SessionInvalidationView {
         Long getId();
 
+        String getStatus();
+
         Instant getSessionInvalidatedAt();
+
+        Instant getDeletedAt();
     }
 
     boolean existsByNickname(String nickname);
@@ -28,7 +32,10 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
     Optional<User> findByEmail(String email);
 
     @Query("""
-            select u.id as id, u.sessionInvalidatedAt as sessionInvalidatedAt
+            select u.id as id,
+                   u.status as status,
+                   u.sessionInvalidatedAt as sessionInvalidatedAt,
+                   u.deletedAt as deletedAt
             from User u
             where u.id = :id
             """)
