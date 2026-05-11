@@ -8,6 +8,10 @@ namespace Dotshelf.Scripts.RoomTheme
     public static class RoomGameObjectPatterns
     {
         public const string Floor = "Floor";
+        // 고정 interactive 오브젝트 — Desk/Dashboard mesh swap 에서 hide 금지 대상.
+        // RoomEditModeController.IsUnderNotebookStation 이 부모 체인 탐색 시 이 상수와 비교.
+        // (MR #157 review simonjiho #1: hardcoded 문자열 통일 — prefab 이름 변경 시 silent break 방지.)
+        public const string NotebookStation = "NotebookStation";
         public static readonly string[] Wall = { "LeftWall", "RightWall", "BackWall", "FrontWall" };
         public static readonly string[] Bookshelf = { "BookshelfRoot", "Bookshelf_" };
         // **NotebookStation 은 Desk 매칭에서 의도적으로 제외**. 노트북은 고정 interactive 오브젝트
