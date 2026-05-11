@@ -3467,11 +3467,6 @@ namespace BookshelfPorting.Runtime
             // BookshelfGenerator.Generate() 가 완료되면 BuildGuestbookBoard() 내부에서 hitArea 가 막
             // AddComponent 된 시점이라, 여기서 panel mount 를 재시도하면 깨끗하게 회복된다.
             // 기존 유저 재로그인 케이스는 OnEnable 시점에 이미 mount 가 성공한 상태라 부수효과 없음 (idempotent).
-            UnityEngine.Debug.Log(
-                $"[DiagDashboardRace][BookshelfExperienceManager] HandleBookshelfGenerated invoked. " +
-                $"useExternalDashboardPanel={useExternalDashboardPanel} " +
-                $"externalDashboardPanel={(externalDashboardPanel != null ? externalDashboardPanel.name : "null")} " +
-                $"CurrentFocusArea={CurrentFocusArea}");
             SyncExternalDashboardPanelPresentation();
         }
 
@@ -12698,15 +12693,9 @@ namespace BookshelfPorting.Runtime
         {
             if (!useExternalDashboardPanel || externalDashboardPanel == null)
             {
-                UnityEngine.Debug.Log(
-                    $"[DiagDashboardRace][BookshelfExperienceManager] SyncExternalDashboardPanelPresentation: guard hit. " +
-                    $"useExternalDashboardPanel={useExternalDashboardPanel} externalDashboardPanel={(externalDashboardPanel != null ? externalDashboardPanel.name : "null")}");
                 return;
             }
 
-            UnityEngine.Debug.Log(
-                $"[DiagDashboardRace][BookshelfExperienceManager] SyncExternalDashboardPanelPresentation: " +
-                $"calling SetExternalDashboardPanelPresentation(isFocused={CurrentFocusArea == ExperienceFocusArea.Guestbook}).");
             SetExternalDashboardPanelPresentation(CurrentFocusArea == ExperienceFocusArea.Guestbook);
         }
 
@@ -12714,14 +12703,12 @@ namespace BookshelfPorting.Runtime
         {
             if (externalDashboardPanel == null)
             {
-                UnityEngine.Debug.Log("[DiagDashboardRace][BookshelfExperienceManager] MountExternalDashboardPanel: externalDashboardPanel==null → false.");
                 return false;
             }
 
             var dynamicHitArea = FindFirstObjectByType<GuestbookBoardHitArea>();
             if (dynamicHitArea == null)
             {
-                UnityEngine.Debug.Log("[DiagDashboardRace][BookshelfExperienceManager] MountExternalDashboardPanel: FindFirstObjectByType<GuestbookBoardHitArea>()==null → false.");
                 return false;
             }
 
@@ -12735,9 +12722,6 @@ namespace BookshelfPorting.Runtime
             panelTransform.rotation = dynamicHitArea.transform.rotation * ExternalDashboardPanelLocalRotation;
             var panelScale = ResolveExternalDashboardPanelScale(dynamicHitArea);
             panelTransform.localScale = new Vector3(-panelScale, panelScale, panelScale);
-            UnityEngine.Debug.Log(
-                $"[DiagDashboardRace][BookshelfExperienceManager] MountExternalDashboardPanel OK. hitArea={dynamicHitArea.gameObject.name} " +
-                $"panelActiveSelf(before)={externalDashboardPanel.activeSelf}");
             return true;
         }
 
