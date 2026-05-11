@@ -35,6 +35,10 @@ public class ApiResponse<T> {
         return new ApiResponse<>(HttpStatus.OK.value(), true, message, "SUCCESS", data);
     }
 
+    public static <T> ApiResponse<T> created(T data) {
+        return new ApiResponse<>(HttpStatus.CREATED.value(), true, "요청이 성공했습니다.", "SUCCESS", data);
+    }
+
     public static ApiResponse<Void> success() {
         return new ApiResponse<>(HttpStatus.OK.value(), true, "요청이 성공했습니다.", "SUCCESS", null);
     }

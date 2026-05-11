@@ -14,6 +14,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.dotshelf.domain.asset.entity.AssetCategory;
 import com.dotshelf.domain.asset.entity.UserAssetInventory;
+import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.support.TestFixtures;
 
 @DataJpaTest
@@ -63,6 +64,51 @@ class AssetRepositoryTest {
         var result = assetRepository.findByCategoryIdAndIsActiveTrue(category.getId(), PageRequest.of(0, 10));
 
         assertThat(result.getContent()).extracting("code").containsExactly(active.getCode());
+    }
+
+    @Test
+    @DisplayName("에셋 검색은 컬렉션, 타입, 키워드, 보유 필터를 함께 적용한다")
+    void searchActive_filtersByCollectionTypeKeywordAndOwned() {
+        var category = assetCategoryRepository.save(TestFixtures.assetCategory("FURNITURE"));
+        Asset ownedChair = assetRepository.save(Asset.builder()
+                .categoryId(category.getId())
+                .code("DEEP_SEA_CHAIR")
+                .name("깊은바다 의자")
+                .assetScope("SPACE")
+                .assetType("CHAIR")
+                .collectionCode("DEEP_SEA")
+                .pricePages(10)
+                .build());
+        assetRepository.save(Asset.builder()
+                .categoryId(category.getId())
+                .code("DEEP_SEA_DESK")
+                .name("깊은바다 책상")
+                .assetScope("SPACE")
+                .assetType("DESK_SET")
+                .collectionCode("DEEP_SEA")
+                .pricePages(10)
+                .build());
+        assetRepository.save(Asset.builder()
+                .categoryId(category.getId())
+                .code("GOOD_VIBES_CHAIR")
+                .name("산뜻 의자")
+                .assetScope("SPACE")
+                .assetType("CHAIR")
+                .collectionCode("GOOD_VIBES")
+                .pricePages(10)
+                .build());
+        inventoryRepository.save(TestFixtures.inventory(null, 1L, ownedChair.getId()));
+
+        var result = assetRepository.searchActive(
+                1L,
+                category.getId(),
+                "CHAIR",
+                "DEEP_SEA",
+                "의자",
+                true,
+                PageRequest.of(0, 10));
+
+        assertThat(result.getContent()).extracting(Asset::getCode).containsExactly("DEEP_SEA_CHAIR");
     }
 
     @Test
