@@ -1,5 +1,7 @@
 package com.dotshelf.domain.asset.service;
 
+import java.util.List;
+
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -9,19 +11,27 @@ import org.springframework.transaction.annotation.Transactional;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetListResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryListResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AssetCollectionResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AssetFilterResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetPurchaseResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AssetTypeResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.DownloadFileResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.DownloadManifestResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.ThemeContentItemResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.InventoryResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.ThemeContentsResponse;
 import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.entity.AssetCategory;
 import com.dotshelf.domain.asset.entity.AssetPurchase;
 import com.dotshelf.domain.asset.entity.AssetWishlist;
+import com.dotshelf.domain.asset.entity.ThemeAssetItem;
 import com.dotshelf.domain.asset.entity.UserAssetInventory;
 import com.dotshelf.domain.asset.repository.AssetCategoryRepository;
 import com.dotshelf.domain.asset.repository.AssetPurchaseRepository;
 import com.dotshelf.domain.asset.repository.AssetRepository;
 import com.dotshelf.domain.asset.repository.AssetWishlistRepository;
+import com.dotshelf.domain.asset.repository.ThemeAssetItemRepository;
 import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
 import com.dotshelf.domain.payment.entity.PageWallet;
 import com.dotshelf.domain.payment.repository.PageWalletRepository;
@@ -43,6 +53,7 @@ public class AssetService {
 
     private final AssetRepository assetRepository;
     private final AssetCategoryRepository assetCategoryRepository;
+    private final ThemeAssetItemRepository themeAssetItemRepository;
     private final UserAssetInventoryRepository inventoryRepository;
     private final AssetWishlistRepository wishlistRepository;
     private final AssetPurchaseRepository assetPurchaseRepository;
@@ -56,6 +67,18 @@ public class AssetService {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     public AssetListResponse getAssets(Long userId, String category, String sort, int limit) {
+        return getAssets(userId, category, null, null, null, null, sort, limit);
+    }
+
+    public AssetListResponse getAssets(
+            Long userId,
+            String category,
+            String collection,
+            String type,
+            String keyword,
+            Boolean owned,
+            String sort,
+            int limit) {
         Pageable pageable = PageRequest.of(0, Math.min(limit, 50), resolveSort(sort));
         Long categoryId = null;
         if (category != null && !category.isBlank()) {
@@ -64,9 +87,14 @@ public class AssetService {
                     .orElse(null);
         }
         Long currentUserId = userId;
-        return new AssetListResponse((categoryId == null
-                ? assetRepository.findByIsActiveTrue(pageable)
-                : assetRepository.findByCategoryIdAndIsActiveTrue(categoryId, pageable)).stream()
+        return new AssetListResponse(assetRepository.searchActive(
+                        currentUserId,
+                        categoryId,
+                        normalizeBlank(type),
+                        normalizeBlank(collection),
+                        normalizeBlank(keyword),
+                        owned,
+                        pageable).stream()
                 .map(asset -> AssetResponse.from(asset, isOwned(currentUserId, asset.getId()), isWished(currentUserId, asset.getId())))
                 .toList());
     }
@@ -86,9 +114,15 @@ public class AssetService {
      */
     public ThemeContentsResponse getThemeContents(Long themeAssetId) {
         Asset theme = getAsset(themeAssetId);
+        List<ThemeContentItemResponse> children = themeContentItems(themeAssetId).stream()
+                .map(item -> {
+                    Asset child = getAsset(item.getChildAssetId());
+                    return ThemeContentItemResponse.from(item, child);
+                })
+                .toList();
         String json = theme.getCompatibleTargets();
         if (json == null || json.isBlank()) {
-            return emptyThemeContents(theme.getId());
+            return emptyThemeContents(theme.getId(), children);
         }
         try {
             JsonNode node = OBJECT_MAPPER.readTree(json);
@@ -100,18 +134,19 @@ public class AssetService {
                     asLong(node.get("dashboard")),
                     asLong(node.get("interiorLight")),
                     asLong(node.get("exteriorLight")),
-                    asLong(node.get("bookshelfSkinDefault"))
+                    asLong(node.get("bookshelfSkinDefault")),
+                    children
             );
         } catch (Exception ex) {
             // admin-web 자산 등록 UI 합류 전까지 raw DB 입력으로 들어오므로 형식 어긋남이
             // 잠재적. 모든 필드 null로 폴백하되 raw + 예외 함께 남겨 admin이 추적 가능하게.
             log.warn("Theme contents JSON parse failed: assetId={}, raw={}", themeAssetId, json, ex);
-            return emptyThemeContents(theme.getId());
+            return emptyThemeContents(theme.getId(), children);
         }
     }
 
-    private static ThemeContentsResponse emptyThemeContents(Long themeAssetId) {
-        return new ThemeContentsResponse(themeAssetId, null, null, null, null, null, null, null);
+    private static ThemeContentsResponse emptyThemeContents(Long themeAssetId, List<ThemeContentItemResponse> children) {
+        return new ThemeContentsResponse(themeAssetId, null, null, null, null, null, null, null, children);
     }
 
     private static Long asLong(JsonNode node) {
@@ -126,6 +161,34 @@ public class AssetService {
         return new AssetCategoryListResponse(assetCategoryRepository.findByIsActiveTrueOrderByDisplayOrderAsc().stream()
                 .map(AssetCategoryResponse::from)
                 .toList());
+    }
+
+    public AssetFilterResponse getFilters() {
+        return new AssetFilterResponse(
+                assetRepository.findActiveCollectionCodes().stream()
+                        .map(AssetCollectionResponse::from)
+                        .toList(),
+                assetRepository.findActiveAssetTypes().stream()
+                        .map(AssetTypeResponse::from)
+                        .toList()
+        );
+    }
+
+    public DownloadManifestResponse getDownloadManifest(Long userId, Long assetId) {
+        Long currentUserId = userService.requireUserId(userId);
+        Asset root = getAsset(assetId);
+        if (!inventoryRepository.existsByUserIdAndAssetId(currentUserId, assetId)) {
+            throw new CustomException(ErrorCode.ASSET_NOT_OWNED);
+        }
+
+        List<DownloadFileResponse> files;
+        if ("THEME".equalsIgnoreCase(root.getAssetType())) {
+            files = buildThemeDownloadFiles(root);
+        } else {
+            ensureDownloadable(root);
+            files = List.of(DownloadFileResponse.from(root, root.getAssetType(), true, null));
+        }
+        return DownloadManifestResponse.of(root, files);
     }
 
     @Transactional
@@ -183,12 +246,42 @@ public class AssetService {
                 .orElseThrow(() -> new CustomException(ErrorCode.ASSET_NOT_FOUND));
     }
 
+    private List<DownloadFileResponse> buildThemeDownloadFiles(Asset theme) {
+        List<ThemeAssetItem> items = themeContentItems(theme.getId());
+        if (items.isEmpty()) {
+            ensureDownloadable(theme);
+            return List.of(DownloadFileResponse.from(theme, "THEME", true, null));
+        }
+        return items.stream()
+                .map(item -> {
+                    Asset child = getAsset(item.getChildAssetId());
+                    ensureDownloadable(child);
+                    return DownloadFileResponse.from(child, item.getRole(), item.isRequired(), item.getTransformJson());
+                })
+                .toList();
+    }
+
+    private List<ThemeAssetItem> themeContentItems(Long themeAssetId) {
+        List<ThemeAssetItem> items = themeAssetItemRepository.findByThemeAssetIdOrderBySortOrderAscIdAsc(themeAssetId);
+        return items == null ? List.of() : items;
+    }
+
+    private void ensureDownloadable(Asset asset) {
+        if (asset.getAssetUrl() == null || asset.getAssetUrl().isBlank()) {
+            throw new CustomException(ErrorCode.ASSET_FILE_NOT_READY);
+        }
+    }
+
     private boolean isOwned(Long userId, Long assetId) {
         return userId != null && inventoryRepository.existsByUserIdAndAssetId(userId, assetId);
     }
 
     private boolean isWished(Long userId, Long assetId) {
         return userId != null && wishlistRepository.existsByUserIdAndAssetId(userId, assetId);
+    }
+
+    private static String normalizeBlank(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 
     private Sort resolveSort(String sort) {

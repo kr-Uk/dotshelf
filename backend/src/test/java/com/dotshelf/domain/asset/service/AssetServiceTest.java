@@ -25,6 +25,7 @@ import com.dotshelf.domain.asset.repository.AssetCategoryRepository;
 import com.dotshelf.domain.asset.repository.AssetPurchaseRepository;
 import com.dotshelf.domain.asset.repository.AssetRepository;
 import com.dotshelf.domain.asset.repository.AssetWishlistRepository;
+import com.dotshelf.domain.asset.repository.ThemeAssetItemRepository;
 import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
 import com.dotshelf.domain.payment.entity.PageWallet;
 import com.dotshelf.domain.payment.repository.PageWalletRepository;
@@ -41,6 +42,9 @@ class AssetServiceTest {
 
     @Mock
     private AssetCategoryRepository assetCategoryRepository;
+
+    @Mock
+    private ThemeAssetItemRepository themeAssetItemRepository;
 
     @Mock
     private UserAssetInventoryRepository inventoryRepository;
@@ -187,5 +191,50 @@ class AssetServiceTest {
         assertThat(response.items())
                 .extracting(item -> item.assetId())
                 .containsExactly(10L, 11L);
+    }
+
+    @Test
+    @DisplayName("단일 에셋 다운로드 manifest는 보유 여부를 검증하고 파일 메타데이터를 반환한다")
+    void getDownloadManifest_ownedAsset_returnsFile() {
+        Asset asset = Asset.builder()
+                .categoryId(1L)
+                .code("deep-sea-chair")
+                .name("깊은바다 의자")
+                .assetScope("SPACE")
+                .assetType("CHAIR")
+                .collectionCode("DEEP_SEA")
+                .assetUrl("https://cdn.test/assets/chair.glb")
+                .contentType("model/gltf-binary")
+                .fileSize(100L)
+                .fileHash("sha256:test")
+                .version(3)
+                .build();
+        TestFixtures.setId(asset, 10L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(assetRepository.findById(10L)).willReturn(Optional.of(asset));
+        given(inventoryRepository.existsByUserIdAndAssetId(1L, 10L)).willReturn(true);
+
+        var response = assetService.getDownloadManifest(1L, 10L);
+
+        assertThat(response.collectionCode()).isEqualTo("DEEP_SEA");
+        assertThat(response.files()).singleElement()
+                .satisfies(file -> {
+                    assertThat(file.assetId()).isEqualTo(10L);
+                    assertThat(file.url()).isEqualTo("https://cdn.test/assets/chair.glb");
+                    assertThat(file.version()).isEqualTo(3);
+                });
+    }
+
+    @Test
+    @DisplayName("다운로드 manifest는 보유하지 않은 에셋이면 ASSET_NOT_OWNED를 던진다")
+    void getDownloadManifest_notOwned_throwsException() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(assetRepository.findById(10L)).willReturn(Optional.of(TestFixtures.asset(10L, 1L, "chair", 0)));
+        given(inventoryRepository.existsByUserIdAndAssetId(1L, 10L)).willReturn(false);
+
+        assertThatThrownBy(() -> assetService.getDownloadManifest(1L, 10L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ASSET_NOT_OWNED);
     }
 }
