@@ -3406,6 +3406,16 @@ namespace BookshelfPorting.Runtime
             }
 
             RefreshHud();
+
+            // 신규 가입 직후엔 OnEnable 시점에 BookshelfGenerator 가 아직 책장을 generate 하지 않아
+            // FindFirstObjectByType<GuestbookBoardHitArea>() == null → MountExternalDashboardPanel false
+            // → external DashboardScreenPanel 이 SetActive(false) 로 hide 되고 controller.OnEnable 자체가
+            // 안 발사돼 빈 액자만 보이는 회귀가 있었다. 책장 switch state 변경은 BookshelfGenerator 가
+            // 책장을 generate / swap 한 직후 (= hitArea 가 막 attach 된 시점)에 발사되므로, 이 타이밍에
+            // panel 위치/활성 상태를 한 번 더 sync 해주면 첫 mount race 를 그대로 회복할 수 있다.
+            // SyncExternalDashboardPanelPresentation 자체에 useExternalDashboardPanel/null 가드가
+            // 들어있어 정상 케이스에 부수효과 없음 (idempotent).
+            SyncExternalDashboardPanelPresentation();
         }
 
         private void SyncFromCameraMode(CameraMode mode)
