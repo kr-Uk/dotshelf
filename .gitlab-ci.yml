@@ -96,6 +96,24 @@ variables:
         - backend/deploy/app/docker-compose.yml
         - backend/deploy/prod/nginx/conf.d/**/*
 
+.service-web-build-rules:
+  # service-web 빌드 검증 (tsc + eslint + next build). MR 이벤트 + dev/master 푸시에서
+  # web/service-web/**/* 변경 시 가동. MR #150 리뷰 응답으로 신규 — 이전엔 launcher:build
+  # 만 잡혔고 service-web 코드 변경이 MR pipeline gate 를 통과 못 했음 (Finding 2/3).
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - web/service-web/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      changes:
+        - web/service-web/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      changes:
+        - web/service-web/**/*
+        - .gitlab-ci.yml
+
 .launcher-build-rules:
   rules:
     - if: '$CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "dev"'
@@ -220,6 +238,21 @@ launcher:build:
       - launcher/manifests/dev/windows/latest.json
       - launcher/manifests/dev/windows/events.json
     expire_in: 1 week
+
+service-web:build:
+  # MR/푸시 gate — tsc + eslint + next build. 배포 잡 (service-web:deploy /
+  # service-web:test-deploy) 는 호스트에서 docker compose build 로 재빌드하므로
+  # 여기서 만든 .next 산출물은 사용 안 함. 순수 검증용.
+  extends: .service-web-build-rules
+  stage: build
+  image: node:22-alpine
+  before_script:
+    - cd web/service-web
+  script:
+    - npm ci --no-audit --no-fund
+    - npx tsc --noEmit
+    - npm run lint
+    - npm run build
 
 backend:deploy:
   extends: .deploy-rules
