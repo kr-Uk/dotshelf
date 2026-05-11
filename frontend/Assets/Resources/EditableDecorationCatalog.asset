@@ -18,96 +18,68 @@ MonoBehaviour:
     SourceAssetPath: Assets/Arts/Models/Props/book_stack.glb
     PlacementCategory: 0
     AllowRotation: 1
-    Kind: 11
-    ScaleMultiplierOverride: 0
   - DisplayName: Clock Hamham
     Prefab: {fileID: -8098169881513260187, guid: fdf1809f3a17b11449a355503137638d, type: 3}
     SourceAssetPath: Assets/Arts/Models/Props/clock_hamham.glb
     PlacementCategory: 0
     AllowRotation: 1
-    Kind: 11
-    ScaleMultiplierOverride: 0
   - DisplayName: Dashboard Natural
     Prefab: {fileID: -8098169881513260187, guid: 8d50791400c5e4b45a072e9b6e41807f, type: 3}
     SourceAssetPath: Assets/Arts/Models/Props/dashboard_natural.glb
     PlacementCategory: 0
     AllowRotation: 1
-    Kind: 11
-    ScaleMultiplierOverride: 0
   - DisplayName: Doll Hamham
     Prefab: {fileID: -8098169881513260187, guid: 4f9ca772872790543895cc1371706137, type: 3}
     SourceAssetPath: Assets/Arts/Models/Props/doll_hamham.glb
     PlacementCategory: 0
     AllowRotation: 1
-    Kind: 11
-    ScaleMultiplierOverride: 0
   - DisplayName: Goodvibes Bed
     Prefab: {fileID: -8098169881513260187, guid: e1f2a3b4c5d6789012345678abcdef01, type: 3}
     SourceAssetPath: Assets/Arts/Models/Furniture/GoodVibes/GoodVibes_Bed.glb
     PlacementCategory: 0
     AllowRotation: 1
-    Kind: 5
-    ScaleMultiplierOverride: 0
   - DisplayName: Goodvibes Desk
     Prefab: {fileID: -8098169881513260187, guid: e2f3a4b5c6d7890123456789abcdef02, type: 3}
     SourceAssetPath: Assets/Arts/Models/Furniture/GoodVibes/GoodVibes_Desk.glb
     PlacementCategory: 0
     AllowRotation: 1
-    Kind: 1
-    ScaleMultiplierOverride: 0
   - DisplayName: Goodvibes Monitor
     Prefab: {fileID: -8098169881513260187, guid: e3f4a5b6c7d8901234567890abcdef03, type: 3}
     SourceAssetPath: Assets/Arts/Models/Furniture/GoodVibes/GoodVibes_Monitor.glb
     PlacementCategory: 0
     AllowRotation: 1
-    Kind: 10
-    ScaleMultiplierOverride: 0
   - DisplayName: Goodvibes Neonsign
     Prefab: {fileID: -8098169881513260187, guid: e4f5a6b7c8d9012345678901abcdef04, type: 3}
     SourceAssetPath: Assets/Arts/Models/Furniture/GoodVibes/GoodVibes_NeonSign.glb
-    PlacementCategory: 9
-    AllowRotation: 0
-    Kind: 11
-    ScaleMultiplierOverride: 0
+    PlacementCategory: 0
+    AllowRotation: 1
   - DisplayName: Goodvibes Rug
     Prefab: {fileID: -8098169881513260187, guid: e6f7a8b9c0d1234567890123abcdef06, type: 3}
     SourceAssetPath: Assets/Arts/Models/Props/GoodVibes/GoodVibes_Rug.glb
     PlacementCategory: 0
     AllowRotation: 1
-    Kind: 6
-    ScaleMultiplierOverride: 0
   - DisplayName: Goodvibes Toastpillow
     Prefab: {fileID: -8098169881513260187, guid: e5f6a7b8c9d0123456789012abcdef05, type: 3}
     SourceAssetPath: Assets/Arts/Models/Props/GoodVibes/GoodVibes_ToastPillow.glb
     PlacementCategory: 0
     AllowRotation: 1
-    Kind: 9
-    ScaleMultiplierOverride: 0
   - DisplayName: Goodvibes Window
     Prefab: {fileID: -8098169881513260187, guid: 8cf9f41845bae4aa1a85afdf0405e751, type: 3}
     SourceAssetPath: Assets/Arts/Models/Window/GoodVibes_Window.glb
-    PlacementCategory: 9
-    AllowRotation: 0
-    Kind: 12
-    ScaleMultiplierOverride: 0
+    PlacementCategory: 0
+    AllowRotation: 1
   - DisplayName: Lamp Floor
     Prefab: {fileID: -8098169881513260187, guid: 6386ddd70e8d2e7439c1961311c3bb2f, type: 3}
     SourceAssetPath: Assets/Arts/Models/Furniture/lamp_floor.glb
     PlacementCategory: 0
     AllowRotation: 1
-    Kind: 7
-    ScaleMultiplierOverride: 0
   - DisplayName: Rug Natural
     Prefab: {fileID: -8098169881513260187, guid: a68c359f967d6064685b042697219e3d, type: 3}
     SourceAssetPath: Assets/Arts/Models/Furniture/rug_natural.glb
     PlacementCategory: 0
     AllowRotation: 1
-    Kind: 6
-    ScaleMultiplierOverride: 0
   - DisplayName: Table Natural
     Prefab: {fileID: -8098169881513260187, guid: 6e5e1cd8910cedc468a37ef0c772b180, type: 3}
     SourceAssetPath: Assets/Arts/Models/Furniture/table_natural.glb
     PlacementCategory: 0
     AllowRotation: 1
-    Kind: 1
-    ScaleMultiplierOverride: 0
