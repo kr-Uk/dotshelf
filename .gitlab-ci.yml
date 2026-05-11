@@ -415,10 +415,28 @@ launcher:publish:
     # 3. cleanup 대상을 명시 로그 — silent 삭제 0건 vs 의도된 retention 구분 가능,
     #    첫 사이클에서 cleanup 의도 확인 친화.
     - |
-      sort --version 2>/dev/null | head -1 | grep -q "GNU" || {
-        echo "ERROR: GNU sort 가 PATH 에 없습니다 (busybox 가 우선시되는 환경). coreutils 패키지 확인."
+      # GNU sort / head 동작 직접 검증. 'sort --version | grep GNU' 식 출력 매치는
+      # PATH / busybox alias / coreutils 패키지 변형에 따라 false negative 발생 (MR #150
+      # 머지 후 CI fail — busybox sort 가 --version 출력 안 함 → grep 0건 → exit).
+      # 실제로 SemVer 정렬과 negative head 가 동작하는지 동작 자체로 판정 — 환경 가정 0.
+      SORT_TEST=$(printf "0.1.0\n0.1.10\n0.1.2\n" | sort -V 2>/dev/null | tr '\n' ' ')
+      if [ "$SORT_TEST" != "0.1.0 0.1.2 0.1.10 " ]; then
+        echo "ERROR: 'sort -V' 가 SemVer 정렬을 못 합니다 (busybox 가 PATH 우선?)."
+        echo "  expected: '0.1.0 0.1.2 0.1.10 '"
+        echo "  got:      '$SORT_TEST'"
+        echo "  PATH=$PATH"
+        echo "  which sort: $(command -v sort)"
+        echo "  /usr/bin/sort 직접 시도:"
+        printf "0.1.0\n0.1.10\n0.1.2\n" | /usr/bin/sort -V 2>&1 || true
         exit 1
-      }
+      fi
+      HEAD_TEST=$(printf "1\n2\n3\n4\n5\n" | head -n -2 2>/dev/null | tr '\n' ' ')
+      if [ "$HEAD_TEST" != "1 2 3 " ]; then
+        echo "ERROR: 'head -n -K' 가 동작 안 합니다 (busybox head 일 가능성)."
+        echo "  expected: '1 2 3 '"
+        echo "  got:      '$HEAD_TEST'"
+        exit 1
+      fi
       cleanup_r2() {
         prefix="$1"
         base="${prefix##*/}"
