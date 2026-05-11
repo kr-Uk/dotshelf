@@ -68,8 +68,11 @@ if ($Target -eq "launcher") {
     Edit-File -Path $csproj -OldPattern '<AssemblyVersion>[\d.]+</AssemblyVersion>' -NewLine "<AssemblyVersion>$NewVersion.0</AssemblyVersion>" -Regex $true
     Edit-File -Path $csproj -OldPattern '<FileVersion>[\d.]+</FileVersion>' -NewLine "<FileVersion>$NewVersion.0</FileVersion>" -Regex $true
 
-    $page = "web/service-web/app/(marketing)/download/page.tsx"
-    Edit-File -Path $page -OldPattern '"https://dotshelf\.digital/launcher/windows/DotShelfLauncher-[\d.]+\.exe"' -NewLine "`"https://dotshelf.digital/launcher/windows/DotShelfLauncher-$NewVersion.exe`"" -Regex $true
+    # LAUNCHER_WIN_URL 은 web/service-web/lib/launcher-download.ts 의 단일 const
+    # (MR #148 리뷰 응답으로 page.tsx 에서 분리 — 마케팅 헤더가 page module 전체를
+    # bundle 에 끌어들이던 회귀 차단). 파일 안 occurrence 1건만 정확 매치.
+    $lib = "web/service-web/lib/launcher-download.ts"
+    Edit-File -Path $lib -OldPattern 'DotShelfLauncher-[\d.]+\.exe' -NewLine "DotShelfLauncher-$NewVersion.exe" -Regex $true
 
     Write-Host
     Write-Host "다음 단계:"
