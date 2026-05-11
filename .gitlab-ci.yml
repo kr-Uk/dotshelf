@@ -59,15 +59,25 @@ variables:
         - backend/deploy/prod/nginx/conf.d/**/*
 
 .service-web-rules:
-  # service-web prod 배포: master 트리거만.
+  # service-web prod 배포: 출시 전 단계라 dev=prod 단일 스테이지 (admin-web 패턴과 동일).
+  # master 트리거 휴면이라 dev 머지 한 번으로 dotshelf.digital 까지 도달해야 banner linkUrl
+  # 의 prod URL 들 (/changelog/X, /events/X) 이 살아남는다. v1.0 출시 시점에 master 트리거
+  # 활성화하면서 다시 master 전용으로 좁힐 예정.
   rules:
-    - if: '$CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_COMMIT_BRANCH == "dev"'
       changes:
         - web/service-web/**/*
         - .gitlab-ci.yml
         - .ci/**/*
         # service 컨테이너 정의(compose) 또는 root vhost(nginx) 만 변경된 경우에도
         # service-web:deploy 가 돌아 컨테이너 재빌드/기동까지 가도록 rule 에 포함.
+        - backend/deploy/app/docker-compose.yml
+        - backend/deploy/prod/nginx/conf.d/**/*
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      changes:
+        - web/service-web/**/*
+        - .gitlab-ci.yml
+        - .ci/**/*
         - backend/deploy/app/docker-compose.yml
         - backend/deploy/prod/nginx/conf.d/**/*
 
@@ -305,9 +315,13 @@ service-web:deploy:
   extends: .service-web-rules
   stage: deploy
   image: alpine:3.20
-  needs:
-    - job: launcher:publish
-      optional: true
+  # needs 부재 — 이전엔 launcher:publish 가 LAUNCHER_WIN_URL 의 새 .exe hash 를 R2 에
+  # 먼저 올린 뒤 service-web 가 그 hash 가리키도록 ordering 했지만, 본 MR (#155) 부터는
+  # launcher:publish 가 events.json publish 전에 service-web:deploy 끝나길 기다리는
+  # 역방향 의존이 critical (events banner linkUrl 의 prod URL 200 보장) — 양쪽 의존
+  # 동시 유지 시 circular. download race 는 .exe upload 가 30초로 짧고 retention 으로
+  # 옛 hash 가 R2 에 살아있어 mitigation 가능, events race 는 service-web build 가
+  # 2~5분 으로 길어 사용자 영향 더 큼. 따라서 events 방향만 유지.
   before_script:
     - apk add --no-cache openssh-client rsync curl bash
     - mkdir -p ~/.ssh && chmod 700 ~/.ssh
@@ -353,6 +367,14 @@ launcher:publish:
   needs:
     - job: launcher:build
       artifacts: true
+    # events.json 의 banner linkUrl 이 가리키는 prod 페이지 (/changelog/*, /events/*) 가
+    # 사용자 R2 cache TTL 안에 도달하지 못하면 사용자가 banner 클릭 → 404 회귀 (MR #155
+    # 리뷰 must-fix #1). service-web:deploy 가 끝난 뒤 events.json 을 R2 publish 해서
+    # 사용자가 새 banner 받는 시점엔 prod 페이지가 이미 존재하도록 sequence 보장.
+    # optional:true — service-web 변경 없는 launcher 전용 머지에서 service-web:deploy
+    # 가 트리거 안 돼도 launcher:publish 는 그대로 진행.
+    - job: service-web:deploy
+      optional: true
   before_script:
     # coreutils: Alpine busybox 의 sort 는 -V (version sort) 미지원, head 도 -n -K 미지원.
     # R2 cleanup 단계의 SemVer 정렬 + "최근 3개 빼고" 슬라이스에 GNU sort/head 필요.
