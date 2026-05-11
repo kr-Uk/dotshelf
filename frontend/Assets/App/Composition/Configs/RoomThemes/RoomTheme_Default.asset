@@ -22,14 +22,24 @@ MonoBehaviour:
   floorMaterial: {fileID: 0}
   bookshelfMaterial: {fileID: 0}
   furnitureMaterial: {fileID: 0}
+  deskTopMaterial: {fileID: 0}
+  chairMaterial: {fileID: 0}
+  dashboardMaterial: {fileID: 0}
   accentMaterial: {fileID: 0}
-  exteriorLightColor: {r: 1, g: 1, b: 1, a: 1}
-  exteriorLightKelvin: 6500
-  exteriorLightIntensity: 1
   interiorLightColor: {r: 1, g: 1, b: 1, a: 1}
   interiorLightKelvin: 6500
   ambientTint: {r: 1, g: 1, b: 1, a: 1}
   ambientIntensity: 1
+  exteriorLightColor: {r: 1, g: 1, b: 1, a: 1}
+  exteriorLightKelvin: 6500
+  exteriorLightIntensity: 1
+  defaultExterior: {fileID: 11400000, guid: 41b8aa5c74d014cbf9b737c20d2bf7e0, type: 2}
+  allowsCustomization: 1
+  isLocalPreview: 0
   accentPrimary: {r: 0.84705883, g: 0.8, b: 0.7372549, a: 1}
   accentSecondary: {r: 0.4862745, g: 0.41568628, b: 0.3372549, a: 1}
   accentTertiary: {r: 1, g: 1, b: 1, a: 1}
+  defaultEntries: []
+  bookshelfDecoSpecs: []
+  floorDecoSpecs: []
+  wallDecoSpecs: []

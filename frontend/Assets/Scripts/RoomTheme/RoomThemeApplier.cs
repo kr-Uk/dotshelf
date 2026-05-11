@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using App.Bootstrap.Exterior;
 using App.Infrastructure.Catalogs;
 using BookshelfPorting.Runtime;
 using UnityEngine;
@@ -13,8 +14,15 @@ namespace Dotshelf.Scripts.RoomTheme
         [SerializeField] private Transform roomRoot;
         [Tooltip("책장/가구 색상 분기. 새 머티리얼이 우선 적용되고 이건 fallback tint.")]
         [SerializeField] private MaterialFactory materialFactory;
-        [Tooltip("테마별 색온도/색을 적용할 메인 라이트.")]
+        [Tooltip("테마별 색온도/색을 적용할 메인 라이트. exteriorApplier 가 wired 되어 있고 " +
+                 "theme.DefaultExterior 가 있으면 ExteriorApplier 가 이 light 을 갱신 (RoomThemeApplier 직접 갱신 skip).")]
         [SerializeField] private Light directionalLight;
+
+        [Tooltip("Tier 1.5+: theme.DefaultExterior 가 있으면 RoomThemeApplier 가 sun/ambient 직접 처리하지 않고 " +
+                 "이 ExteriorApplier 에 위임 (skybox/ambient/fog/reflection/sun/scenePrefab 모두 흡수). " +
+                 "null 이거나 theme.DefaultExterior 가 null 이면 fallback 으로 RoomThemeAsset 의 " +
+                 "ExteriorLight*/ambient* 직접 적용. 노션 페이지: 'Exterior 통합 시스템 (260510)'.")]
+        [SerializeField] private ExteriorApplier exteriorApplier;
 
         [Header("Theme deco")]
         [Tooltip("테마 적용 시 spawn된 deco의 부모. 비워두면 Apply 첫 호출 시 자식 'ThemeDecoRoot' 자동 생성. " +
@@ -353,11 +361,21 @@ namespace Dotshelf.Scripts.RoomTheme
 
         private void ApplyLighting(RoomThemeAsset theme)
         {
+            // Tier 1.5+: theme.DefaultExterior (ExteriorAsset) 가 있고 exteriorApplier 가 wired 면
+            // ExteriorAsset 시스템에 위임. ExteriorApplier.Apply 가 sun/skybox/ambient/fog/reflection/
+            // scenePrefab 을 통합 처리한다. 이 경로에서는 RoomThemeApplier 가 sun/ambient 를 직접 만지지 않음.
+            if (theme.DefaultExterior != null && exteriorApplier != null)
+            {
+                exteriorApplier.Apply(theme.DefaultExterior);
+                return;
+            }
+
+            // Fallback (Tier 1.5 이전 동작 호환, Tier 2 에서 제거 예정):
+            // theme.DefaultExterior 가 null 인 RoomTheme (default/Natural/Classic 등 미마이그레이션 자산)
+            // 또는 exteriorApplier 미wiring 시 RoomTheme.ExteriorLight* + ambient* 를 직접 적용.
+            //
             // 외부조명 = 씬의 Directional Light. 항시 동작 — 창문 유무와 무관.
             // 창문 prefab 은 cutout shader 로 이 빛을 mesh 로 시각화할 뿐이고, 빛 자체는 별도 컴포넌트.
-            // 즉 창문 없는 테마도 자연광은 들어오고, 창문 있는 테마는 cutout 으로 빛이 통과되어 보임.
-            // RoomThemeAsset의 ExteriorLight* 값이 적용된다. (Legacy DirectionalLight* 프로퍼티는
-            // ExteriorLight*에 alias.)
             if (directionalLight != null)
             {
                 directionalLight.color = theme.ExteriorLightColor;

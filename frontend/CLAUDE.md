@@ -86,6 +86,7 @@ trivial 한 변경(오타, 한 줄 fix)은 위 순서를 생략하고 바로 진
 - `docs/phase-00-report.md` ~ `docs/phase-03-report.md` — 페이즈별 진행 기록. 새 페이즈는 동일 포맷으로 추가한다.
 - `docs/unity-git-convention.md` — 커밋 메시지 규약 (`[UNITY] Feat:`, `[UNITY] Fix:` 등).
 - `docs/progress-audit.md` — 현재까지의 진척 감사.
+- `docs/exterior-conventions.md` — Exterior(창밖 환경) 옵션 디자이너 contract. 좌표계/거리 zone(근 5~15m / 중 20~80m / 원 skybox)/금지사항/5단계 신규 옵션 만들기. ExteriorAsset SO + scenePrefab 작업 전 필독. 노션 [Exterior 통합 시스템 (260510)](https://www.notion.so/35c69b2a131a816da21ccdc908f39b6d) 도 참고.
 - `SOCIAL_LOGIN_SETUP.md`, `ANDROID_DEBUG_KEYSTORE.md` — 외부 통합 설정.
 
 ## 프로젝트 로컬 스킬
