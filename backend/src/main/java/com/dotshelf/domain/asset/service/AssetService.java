@@ -1,6 +1,9 @@
 package com.dotshelf.domain.asset.service;
 
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -51,6 +54,8 @@ import lombok.extern.slf4j.Slf4j;
 @Transactional(readOnly = true)
 public class AssetService {
 
+    private static final int MAX_ASSET_LIST_SIZE = 50;
+
     private final AssetRepository assetRepository;
     private final AssetCategoryRepository assetCategoryRepository;
     private final ThemeAssetItemRepository themeAssetItemRepository;
@@ -79,14 +84,14 @@ public class AssetService {
             Boolean owned,
             String sort,
             int limit) {
-        Pageable pageable = PageRequest.of(0, Math.min(limit, 50), resolveSort(sort));
+        Pageable pageable = PageRequest.of(0, Math.min(limit, MAX_ASSET_LIST_SIZE), resolveSort(sort));
         Long categoryId = null;
         if (category != null && !category.isBlank()) {
             categoryId = assetCategoryRepository.findByCode(category)
                     .map(AssetCategory::getId)
                     .orElse(null);
         }
-        Long currentUserId = userId;
+        Long currentUserId = owned == null ? userId : userService.requireUserId(userId);
         return new AssetListResponse(assetRepository.searchActive(
                         currentUserId,
                         categoryId,
@@ -114,12 +119,7 @@ public class AssetService {
      */
     public ThemeContentsResponse getThemeContents(Long themeAssetId) {
         Asset theme = getAsset(themeAssetId);
-        List<ThemeContentItemResponse> children = themeContentItems(themeAssetId).stream()
-                .map(item -> {
-                    Asset child = getAsset(item.getChildAssetId());
-                    return ThemeContentItemResponse.from(item, child);
-                })
-                .toList();
+        List<ThemeContentItemResponse> children = themeContentResponses(themeAssetId);
         String json = theme.getCompatibleTargets();
         if (json == null || json.isBlank()) {
             return emptyThemeContents(theme.getId(), children);
@@ -247,21 +247,50 @@ public class AssetService {
     }
 
     private List<DownloadFileResponse> buildThemeDownloadFiles(Asset theme) {
-        List<ThemeAssetItem> items = themeContentItems(theme.getId());
+        List<ThemeAssetItem> items = themeAssetItems(theme.getId());
         if (items.isEmpty()) {
             ensureDownloadable(theme);
             return List.of(DownloadFileResponse.from(theme, "THEME", true, null));
         }
+        Map<Long, Asset> childrenById = childAssetsById(items);
         return items.stream()
                 .map(item -> {
-                    Asset child = getAsset(item.getChildAssetId());
+                    Asset child = childAsset(childrenById, item);
                     ensureDownloadable(child);
                     return DownloadFileResponse.from(child, item.getRole(), item.isRequired(), item.getTransformJson());
                 })
                 .toList();
     }
 
-    private List<ThemeAssetItem> themeContentItems(Long themeAssetId) {
+    private List<ThemeContentItemResponse> themeContentResponses(Long themeAssetId) {
+        List<ThemeAssetItem> items = themeAssetItems(themeAssetId);
+        if (items.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Asset> childrenById = childAssetsById(items);
+        return items.stream()
+                .map(item -> ThemeContentItemResponse.from(item, childAsset(childrenById, item)))
+                .toList();
+    }
+
+    private Map<Long, Asset> childAssetsById(List<ThemeAssetItem> items) {
+        List<Long> childIds = items.stream()
+                .map(ThemeAssetItem::getChildAssetId)
+                .distinct()
+                .toList();
+        return assetRepository.findAllById(childIds).stream()
+                .collect(Collectors.toMap(Asset::getId, Function.identity()));
+    }
+
+    private Asset childAsset(Map<Long, Asset> childrenById, ThemeAssetItem item) {
+        Asset child = childrenById.get(item.getChildAssetId());
+        if (child == null) {
+            throw new CustomException(ErrorCode.ASSET_NOT_FOUND);
+        }
+        return child;
+    }
+
+    private List<ThemeAssetItem> themeAssetItems(Long themeAssetId) {
         List<ThemeAssetItem> items = themeAssetItemRepository.findByThemeAssetIdOrderBySortOrderAscIdAsc(themeAssetId);
         return items == null ? List.of() : items;
     }

@@ -59,6 +59,7 @@ public enum ErrorCode {
     ASSET_NOT_OWNED(HttpStatus.FORBIDDEN, "AS006", "보유하지 않은 에셋입니다."),
     ASSET_FILE_NOT_READY(HttpStatus.CONFLICT, "AS007", "다운로드할 에셋 파일이 준비되지 않았습니다."),
     ASSET_PUBLISH_NOT_READY(HttpStatus.CONFLICT, "AS008", "에셋 본체와 썸네일을 모두 업로드해야 공개할 수 있습니다."),
+    ASSET_VERSION_DOWNGRADE(HttpStatus.CONFLICT, "AS009", "에셋 버전은 현재 버전보다 커야 합니다."),
 
     // Payment
     PAYMENT_ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "P001", "결제 주문을 찾을 수 없습니다."),

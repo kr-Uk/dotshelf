@@ -240,6 +240,40 @@ class AdminAssetServiceTest {
     }
 
     @Test
+    @DisplayName("번들 confirm은 명시 버전이 현재 버전 이하이면 ASSET_VERSION_DOWNGRADE를 던진다")
+    void confirmBundle_versionDowngrade_throwsException() {
+        Asset asset = assetWithVersion(5);
+        givenAdminAndAsset(asset);
+        String key = "assets/asset-code/bundle/new.bundle";
+        given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("application/octet-stream", 4096L));
+        given(s3StorageService.publicUrl(key)).willReturn("https://cdn.test/" + key);
+
+        assertThatThrownBy(() -> adminAssetService.confirmBundle(
+                1L,
+                10L,
+                new AdminAssetConfirmRequest(key, "sha256:new", 3),
+                "127.0.0.1"))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ASSET_VERSION_DOWNGRADE);
+
+        assertThat(asset.getVersion()).isEqualTo(5);
+        then(adminAuditLogRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("이미 공개된 에셋 publish는 감사 로그를 추가하지 않고 현재 상태를 반환한다")
+    void publishAsset_alreadyActive_returnsWithoutAudit() {
+        Asset asset = assetWithUrls();
+        givenAdminAndAsset(asset);
+
+        var response = adminAssetService.publishAsset(1L, 10L, "127.0.0.1");
+
+        assertThat(response.active()).isTrue();
+        then(adminAuditLogRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
     @DisplayName("프리뷰 confirm은 다른 asset prefix의 key면 STORAGE_INVALID_KEY를 던진다")
     void confirmPreviewImage_wrongPrefix_throwsInvalidKey() {
         givenAdminAndAsset(assetWithUrls());
@@ -329,6 +363,22 @@ class AdminAssetServiceTest {
                 .assetType("WALLPAPER")
                 .assetUrl("https://old.test/bundle")
                 .previewImageUrl("https://old.test/preview.png")
+                .pricePages(100)
+                .build();
+        TestFixtures.setId(asset, 10L);
+        return asset;
+    }
+
+    private Asset assetWithVersion(int version) {
+        Asset asset = Asset.builder()
+                .categoryId(1L)
+                .code("asset-code")
+                .name("asset name")
+                .assetScope("SPACE")
+                .assetType("WALLPAPER")
+                .assetUrl("https://old.test/bundle")
+                .previewImageUrl("https://old.test/preview.png")
+                .version(version)
                 .pricePages(100)
                 .build();
         TestFixtures.setId(asset, 10L);

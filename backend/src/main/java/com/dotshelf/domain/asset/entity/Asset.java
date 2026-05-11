@@ -3,6 +3,8 @@ package com.dotshelf.domain.asset.entity;
 import java.time.LocalDateTime;
 
 import com.dotshelf.global.common.BaseEntity;
+import com.dotshelf.global.error.CustomException;
+import com.dotshelf.global.error.ErrorCode;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -155,6 +157,9 @@ public class Asset extends BaseEntity {
     }
 
     public void updateBundle(String assetUrl, String contentType, long fileSize, String fileHash, Integer version) {
+        if (version != null && version <= this.version) {
+            throw new CustomException(ErrorCode.ASSET_VERSION_DOWNGRADE);
+        }
         this.assetUrl = assetUrl;
         this.contentType = contentType;
         this.fileSize = fileSize;

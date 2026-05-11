@@ -132,6 +132,9 @@ public class AdminAssetService {
         if (isBlank(asset.getAssetUrl()) || isBlank(asset.getPreviewImageUrl())) {
             throw new CustomException(ErrorCode.ASSET_PUBLISH_NOT_READY);
         }
+        if (asset.isActive()) {
+            return AdminAssetResponse.from(asset);
+        }
         boolean before = asset.isActive();
         asset.publish();
         writeAudit(actor, AUDIT_ACTION_PUBLISH, asset.getId(), String.valueOf(before), "true", ipAddress);
