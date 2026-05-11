@@ -19,6 +19,21 @@ namespace App.Infrastructure.Catalogs
     }
 
     /// <summary>
+    /// 테마 적용 시 자동으로 set 할 카테고리별 default entry assetId.
+    /// 예: 산뜻 테마에 (Desk, 201) 등록하면 테마 적용 시 DeskCatalog.assetId=201 entry
+    /// (GoodVibes_Desk) 가 자동으로 swap. 사용자가 추후 다른 entry 선택하면 그것이 우선.
+    /// 이로써 테마 적용 = 카테고리별 default 자산 일괄 적용 시스템 (mesh swap 통합).
+    /// </summary>
+    [Serializable]
+    public sealed class CategoryDefault
+    {
+        [SerializeField] private CustomizationCategory category;
+        [SerializeField] private long assetId;
+        public CustomizationCategory Category => category;
+        public long AssetId => assetId;
+    }
+
+    /// <summary>
     /// 테마 적용 시 RoomThemeApplier가 자동 spawn할 deco 1개.
     /// prefab을 themeDecoRoot(또는 wallSide 매칭 wall transform) 자식으로 instantiate하고
     /// local 트랜스폼 적용.
@@ -77,10 +92,21 @@ namespace App.Infrastructure.Catalogs
         [SerializeField] private Color ambientTint = Color.white;
         [SerializeField, Range(0f, 2f)] private float ambientIntensity = 1f;
 
-        [Header("Exterior lighting (외부 — 자연광/창문)")]
+        [Header("Exterior lighting (외부 — 자연광/창문) — DEPRECATED (Tier 1.5+)")]
+        [Tooltip("v1.0 외부조명 단독 카테고리 분리 안의 잔존 필드 — Tier 1.5+ 부터 defaultExterior(ExteriorAsset) 가 sun/ambient 까지 흡수. " +
+                 "defaultExterior == null 일 때만 RoomThemeApplier 가 fallback 으로 사용. Tier 2 에서 제거 예정. " +
+                 "참고 노션 페이지: 'Exterior 통합 시스템 (260510)'.")]
         [SerializeField] private Color exteriorLightColor = Color.white;
         [SerializeField, Range(2700f, 8000f)] private float exteriorLightKelvin = 6500f;
         [SerializeField, Range(0f, 4f)] private float exteriorLightIntensity = 1f;
+
+        [Header("Exterior — 통합 외부 환경 (Tier 1.5+)")]
+        [Tooltip("이 테마의 default 외부 환경 자산. " +
+                 "skybox + 자연광 + 풍경 prefab + ambient/fog/reflection 모두 흡수한 ExteriorAsset SO. " +
+                 "RoomThemeApplier 가 테마 적용 시 ExteriorApplier 에 forwarding. " +
+                 "null 이면 위 ExteriorLight* 필드 + ambientTint/Intensity 를 fallback 으로 직접 적용 " +
+                 "(Tier 2 에서 fallback 제거).")]
+        [SerializeField] private ExteriorAsset defaultExterior;
 
         [Header("Customization 권한 — 전체 테마 자산일 때만 의미")]
         [SerializeField] private bool allowsCustomization = true;
@@ -93,6 +119,11 @@ namespace App.Infrastructure.Catalogs
         [SerializeField] private Color accentPrimary = Color.white;
         [SerializeField] private Color accentSecondary = Color.white;
         [SerializeField] private Color accentTertiary = Color.white;
+
+        [Header("Theme default entries (자동 카테고리 swap)")]
+        [Tooltip("테마 적용 시 자동으로 set 할 카테고리별 default assetId. 예: 산뜻 테마 = " +
+                 "Desk:201 (GoodVibes_Desk). 사용자 선택이 우선이라 placement 후 override 가능.")]
+        [SerializeField] private CategoryDefault[] defaultEntries;
 
         [Header("Theme deco placement (RoomThemeApplier 자동 spawn)")]
         [Tooltip("책장 섹션 내부 배치 deco. 빈 list면 spawn 안 함.")]
@@ -128,6 +159,8 @@ namespace App.Infrastructure.Catalogs
         public float ExteriorLightKelvin => exteriorLightKelvin;
         public float ExteriorLightIntensity => exteriorLightIntensity;
 
+        public ExteriorAsset DefaultExterior => defaultExterior;
+
         public bool AllowsCustomization => allowsCustomization;
         public bool IsLocalPreview => isLocalPreview;
 
@@ -135,6 +168,7 @@ namespace App.Infrastructure.Catalogs
         public Color AccentSecondary => accentSecondary;
         public Color AccentTertiary => accentTertiary;
 
+        public IReadOnlyList<CategoryDefault> DefaultEntries => defaultEntries;
         public IReadOnlyList<RoomThemeDecoSpec> BookshelfDecoSpecs => bookshelfDecoSpecs;
         public IReadOnlyList<RoomThemeDecoSpec> FloorDecoSpecs => floorDecoSpecs;
         public IReadOnlyList<RoomThemeDecoSpec> WallDecoSpecs => wallDecoSpecs;

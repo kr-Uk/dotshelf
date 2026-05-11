@@ -28,6 +28,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 100032
     displayName: "\uC678\uBD80\uC870\uBA85 Noon 6500K"
     description: 
@@ -42,6 +50,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 100033
     displayName: "\uC678\uBD80\uC870\uBA85 Evening 3500K"
     description: 
@@ -56,6 +72,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 200021
     displayName: "Natural \uC678\uBD80\uC870\uBA85"
     description: 
@@ -70,6 +94,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 200022
     displayName: "Classic \uC678\uBD80\uC870\uBA85"
     description: 
@@ -84,6 +116,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 200023
     displayName: "Modern \uC678\uBD80\uC870\uBA85"
     description: 
@@ -98,6 +138,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 200024
     displayName: "Vintage \uC678\uBD80\uC870\uBA85"
     description: 
@@ -112,6 +160,14 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
   - assetId: 200025
     displayName: "Pastel \uC678\uBD80\uC870\uBA85"
     description: 
@@ -126,3 +182,11 @@ MonoBehaviour:
     placementAnchor: {x: 0, y: 0, z: 0}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}

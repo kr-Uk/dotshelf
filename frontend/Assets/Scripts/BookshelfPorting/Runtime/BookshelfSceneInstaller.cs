@@ -177,11 +177,17 @@ namespace BookshelfPorting.Runtime
                 apiTimeoutSeconds,
                 apiConfig != null && apiConfig.EnableVerboseLog);
 
-            // In RealApi mode, the bookshelf must not fall back to hardcoded/local catalog data.
-            // If no token is available, API sync skips authenticated requests and
-            // the server bookshelf remains empty until login completes.
-            // (MR #88 replaced the IsGuestSession gate.)
-            var useServerBookshelf = usesHttpApi;
+            // [Fix] dev/quick-entry 또는 token 미보유 상태에서 책장이 빈 채로 렌더링되는
+            // 회귀 복구. dev 머지 (NO-ISSUE 책장/도서 API 연동) 가 useServerBookshelf 를
+            // 항상 true 로 강제했지만, 그러면 BookshelfGenerator 가 useServerBookshelfSnapshots=true
+            // 로 동작해 server snapshot 도착 전엔 bookshelfCount=0 → 룸이 책장 없이 표시됨.
+            // [DEV] 빠른 입장은 server token 이 없어 RefreshFromServer 가 무한 skip 되므로
+            // server snapshot 이 영영 안 옴 → 빈 책장.
+            //
+            // token 보유 여부로 다시 가드 — token 있으면 server snapshot 기반으로,
+            // 없으면 local catalog (InitialBookshelfCount=10) 으로 fallback. 운영에서는
+            // 항상 token 보유라 정상 server 흐름 그대로, dev/quick-entry 만 local 로 안전 fallback.
+            var useServerBookshelf = usesHttpApi && apiManager.HasAccessToken;
 
             var loadBooksUseCase = new LoadMyBookshelfBooksUseCase(CreateBookCatalogRepository(
                 apiBaseUrl,
@@ -285,7 +291,6 @@ namespace BookshelfPorting.Runtime
             }
 
             generator.NormalizeNotebookStationPlacement();
-            generator.EnsureRoomDecorations();
             AlignNotebookAnchor(notebookAnchor);
 
             if (Application.isPlaying)

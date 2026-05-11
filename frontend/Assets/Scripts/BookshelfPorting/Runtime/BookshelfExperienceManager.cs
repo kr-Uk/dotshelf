@@ -14528,6 +14528,11 @@ namespace BookshelfPorting.Runtime
             return DashboardRaycastFilter.IsPointerOverInteractiveDashboard(pointerScreen);
         }
 
+        // origin/dev 의 의도된 동작 — RaycastAll 결과를 DashboardRaycastFilter.IsBlockingRaycastResult
+        // 가 분류한다. 그 필터는 WorldSpaceRaycastPassthrough 마커가 붙은 WorldSpace 캔버스 hit
+        // (guestbookPreviewPanel / guestbookPanel 등) 은 non-blocking 으로 처리해 메인룸 클릭이
+        // 통과되도록 보장. 마커가 없는 WorldSpace 캔버스(활성 dashboard 등) 와 ScreenSpace UI 는
+        // 정상 차단.
         private static bool IsPointerOverBlockingEventSystemUi(Vector2 pointerScreen)
         {
             var eventSystem = EventSystem.current;

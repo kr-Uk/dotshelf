@@ -84,7 +84,10 @@ elseif ($Target -eq "unity") {
     Edit-File -Path $proj -OldPattern '(?m)^  bundleVersion: [\d.]+$' -NewLine "  bundleVersion: $NewVersion" -Regex $true
 
     $manifest = "launcher/manifests/dev/windows/latest.json"
-    Edit-File -Path $manifest -OldPattern '"latestVersion": "[\d.]+"' -NewLine "`"latestVersion`": `"$NewVersion`"" -Regex $true
+    # PS5.1 ConvertTo-Json 은 ":" 뒤에 두 칸 스페이스를 박는다 — publish-unity.ps1 step 3
+    # 가 manifest 를 ConvertFrom-Json/ConvertTo-Json 으로 다시 직렬화하면서 spacing 이
+    # 두 칸으로 굳었다. 정규식이 한 칸만 매치하면 0.1.1 이후 bump 가 throw 한다 → \s+.
+    Edit-File -Path $manifest -OldPattern '"latestVersion":\s+"[\d.]+"' -NewLine "`"latestVersion`": `"$NewVersion`"" -Regex $true
     Edit-File -Path $manifest -OldPattern 'Dotshelf-[\d.]+\.zip' -NewLine "Dotshelf-$NewVersion.zip" -Regex $true
 
     $page = "web/service-web/app/(marketing)/download/page.tsx"
