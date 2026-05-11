@@ -426,6 +426,10 @@ namespace BookshelfPorting.Runtime
                 LoadBookCatalog();
             }
 
+            // [DiagDashboardRace] BookshelfGenerator.Generate 가 실제로 호출됐는지 추적.
+            // 신규 가입 빈 액자 회귀가 fix 후에도 재현되어 진단 로그 추가. 원인 좁히면 제거.
+            UnityEngine.Debug.Log("[DiagDashboardRace][BookshelfGenerator] Generate() start.");
+
             ClearGenerated();
             BuildRoom();
             BuildBookshelf();
@@ -433,6 +437,11 @@ namespace BookshelfPorting.Runtime
 
             // 첫 generate 후 GuestbookBoardHitArea 가 막 attach 된 시점.
             // BookshelfExperienceManager 가 신규 가입 race 회복용으로 이 신호를 듣는다.
+            int subscribers = Generated?.GetInvocationList()?.Length ?? 0;
+            var hitAreaProbe = FindFirstObjectByType<GuestbookBoardHitArea>();
+            UnityEngine.Debug.Log(
+                $"[DiagDashboardRace][BookshelfGenerator] Generate() done. Generated subscribers={subscribers} " +
+                $"hitAreaProbe={(hitAreaProbe != null ? hitAreaProbe.gameObject.name : "null")}");
             Generated?.Invoke();
         }
 
