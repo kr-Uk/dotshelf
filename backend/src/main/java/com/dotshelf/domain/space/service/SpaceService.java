@@ -623,6 +623,11 @@ public class SpaceService {
         findOrCreateMySpace(userId);
     }
 
+    public boolean hasActiveBookshelf(Long userId) {
+        return spaceRepository.findByOwnerUserIdAndDeletedAtIsNull(userId).stream()
+                .anyMatch(space -> bookshelfRepository.countBySpaceIdAndStatus(space.getId(), "ACTIVE") > 0L);
+    }
+
     @Transactional
     public Space findOrCreateMySpace(Long userId) {
         return spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(userId)

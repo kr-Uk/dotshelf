@@ -129,6 +129,29 @@ class AuthServiceTest {
     }
 
     @Test
+    @DisplayName("온보딩 완료 사용자라도 활성 책장이 없으면 로그인 응답은 온보딩 대상으로 내려간다")
+    void socialLogin_onboardedUserWithoutBookshelf_returnsOnboardingRequired() {
+        SocialLoginRequest request = socialLoginRequest();
+        SocialUserInfo socialUser = socialUser();
+        User user = TestFixtures.user(1L, "tester");
+        user.completeOnboarding();
+        given(socialTokenVerifierRegistry.verify(
+                request.provider(), request.tokenType(), request.token(), request.redirectUri(), request.nonce(), request.codeVerifier()
+        )).willReturn(socialUser);
+        given(socialAccountRepository.findByProviderAndProviderUserId(SocialProvider.GOOGLE, "google-1"))
+                .willReturn(Optional.of(TestFixtures.socialAccount(1L, SocialProvider.GOOGLE, "google-1")));
+        given(userService.getUser(1L)).willReturn(user);
+        given(spaceService.hasActiveBookshelf(1L)).willReturn(false);
+        stubTokenIssue(1L, "access", "refresh");
+
+        var response = authService.socialLogin(request);
+
+        assertThat(response.newUser()).isFalse();
+        assertThat(response.onboarded()).isFalse();
+        then(spaceService).should().hasActiveBookshelf(1L);
+    }
+
+    @Test
     @DisplayName("탈퇴한 소셜 계정 로그인은 기존 사용자를 활성화하고 온보딩 대상으로 응답한다")
     void socialLogin_deletedSocialAccount_reactivatesUserForOnboarding() {
         SocialLoginRequest request = socialLoginRequest();

@@ -170,7 +170,7 @@ namespace BookshelfPorting.Runtime
         public int DisplayBookshelfIndex => IsBookshelfSwitching && pendingBookshelfIndex >= 0 ? pendingBookshelfIndex : activeBookshelfIndex;
         public string DisplayBookshelfName => GetBookshelfName(DisplayBookshelfIndex);
         public int ActiveBookshelfBookCount => CountBooks(bookshelfSections);
-        public int ActiveBookshelfSectionCount => bookshelfSections.Count;
+        public int ActiveBookshelfSectionCount => CountUserBookSections(bookshelfSections);
         public int ActiveBookshelfOccupiedSectionCount => CountOccupiedSections(bookshelfSections);
         public int ActiveBookshelfEmptySectionCount => Mathf.Max(0, ActiveBookshelfSectionCount - ActiveBookshelfOccupiedSectionCount);
         public BookshelfThemeStyle ActiveBookshelfDesignStyle => GetBookshelfDesignStyle(DisplayBookshelfIndex);
@@ -2944,12 +2944,7 @@ namespace BookshelfPorting.Runtime
                 var source = books[i];
                 var row = Mathf.Clamp(source.Row, 0, rows - 1);
                 var column = Mathf.Clamp(source.Column, 0, columns - 1);
-                if (IsAdvertisementSection(row, column))
-                {
-                    continue;
-                }
-
-                var section = FindSectionSnapshotByGrid(snapshot, row, column);
+                var section = ResolveServerBookSectionSnapshot(snapshot, row, column, source);
                 if (section == null)
                 {
                     continue;
@@ -2973,7 +2968,7 @@ namespace BookshelfPorting.Runtime
                     source.BookshelfItemId,
                     source.UserBookId,
                     shelf.BookshelfId,
-                    source.SectionId,
+                    section.SectionId,
                     source.ReadingRecordId,
                     source.ReportVisibility,
                     source.ReportTitle,
@@ -3011,6 +3006,59 @@ namespace BookshelfPorting.Runtime
         private static string GetSectionMapKey(int row, int column)
         {
             return $"{row}:{column}";
+        }
+
+        private SectionLayoutSnapshot ResolveServerBookSectionSnapshot(
+            BookshelfLayoutSnapshot snapshot,
+            int row,
+            int column,
+            BookshelfRuntimeBookSnapshot source)
+        {
+            if (!IsAdvertisementSection(row, column))
+            {
+                return FindSectionSnapshotByGrid(snapshot, row, column);
+            }
+
+            var fallback = FindNearestAvailableUserSectionSnapshot(snapshot, row, column);
+            if (fallback == null)
+            {
+                Debug.LogWarning(
+                    $"[Bookshelf] Server book at reserved advertisement section could not be relocated: bookId={source?.BookId} itemId={source?.BookshelfItemId}");
+                return null;
+            }
+
+            Debug.LogWarning(
+                $"[Bookshelf] Server book at reserved advertisement section was relocated to row={fallback.Row}, column={fallback.Column}: bookId={source?.BookId} itemId={source?.BookshelfItemId}");
+            return fallback;
+        }
+
+        private SectionLayoutSnapshot FindNearestAvailableUserSectionSnapshot(BookshelfLayoutSnapshot snapshot, int row, int column)
+        {
+            if (snapshot == null)
+            {
+                return null;
+            }
+
+            SectionLayoutSnapshot best = null;
+            var bestScore = int.MaxValue;
+            for (var i = 0; i < snapshot.Sections.Count; i++)
+            {
+                var section = snapshot.Sections[i];
+                if (section == null || IsAdvertisementSection(section.Row, section.Column))
+                {
+                    continue;
+                }
+
+                var distance = Mathf.Abs(section.Row - row) + Mathf.Abs(section.Column - column);
+                var score = section.Books.Count * 100 + distance;
+                if (score < bestScore)
+                {
+                    best = section;
+                    bestScore = score;
+                }
+            }
+
+            return best;
         }
 
         private static string CreateServerBookKey(int variantIndex, BookshelfRuntimeBookSnapshot source, int fallbackSlot)
@@ -3849,6 +3897,26 @@ namespace BookshelfPorting.Runtime
             return count;
         }
 
+        private static int CountUserBookSections(List<ShelfSection> sections)
+        {
+            if (sections == null)
+            {
+                return 0;
+            }
+
+            var count = 0;
+            for (var i = 0; i < sections.Count; i++)
+            {
+                var section = sections[i];
+                if (section != null && !section.isAdvertisementSection)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
         private static int CountOccupiedSections(List<ShelfSection> sections)
         {
             if (sections == null)
@@ -3860,7 +3928,7 @@ namespace BookshelfPorting.Runtime
             for (var i = 0; i < sections.Count; i++)
             {
                 var section = sections[i];
-                if (section == null)
+                if (section == null || section.isAdvertisementSection)
                 {
                     continue;
                 }

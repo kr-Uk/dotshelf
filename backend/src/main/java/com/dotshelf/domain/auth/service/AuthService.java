@@ -243,8 +243,12 @@ public class AuthService {
                 "Bearer",
                 jwtTokenProvider.getAccessTokenValiditySeconds(),
                 newUser,
-                user.isOnboarded()
+                isOnboardingComplete(user)
         );
+    }
+
+    private boolean isOnboardingComplete(User user) {
+        return user.isOnboarded() && spaceService.hasActiveBookshelf(user.getId());
     }
 
     private TokenPair issueTokens(Long userId) {

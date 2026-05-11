@@ -92,6 +92,8 @@ public class User extends BaseEntity {
         if ("DELETED".equalsIgnoreCase(status)) {
             this.deletedAt = Instant.now();
             invalidateSessions();
+        } else if ("ACTIVE".equalsIgnoreCase(status)) {
+            this.deletedAt = null;
         }
     }
 

@@ -942,12 +942,6 @@ namespace BookshelfPorting.Runtime
 
         public void NotifyBookshelfApiSynced()
         {
-            if (bookshelfGenerator != null)
-            {
-                isFirstBookshelfCreateInProgress = false;
-                isBookshelfCreateRequestInFlight = false;
-            }
-
             RefreshBookshelfIndexIndicator(CurrentFocusArea == ExperienceFocusArea.Bookshelf && (state == null || !state.IsViewingBook));
             RefreshHud();
         }
