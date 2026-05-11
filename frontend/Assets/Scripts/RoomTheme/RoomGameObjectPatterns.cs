@@ -10,7 +10,11 @@ namespace Dotshelf.Scripts.RoomTheme
         public const string Floor = "Floor";
         public static readonly string[] Wall = { "LeftWall", "RightWall", "BackWall", "FrontWall" };
         public static readonly string[] Bookshelf = { "BookshelfRoot", "Bookshelf_" };
-        public static readonly string[] Desk = { "DeskRoot", "NotebookStation", "Desk_" };
+        // **NotebookStation 은 Desk 매칭에서 의도적으로 제외**. 노트북은 고정 interactive 오브젝트
+        // (클릭 시 dashboard UI 진입) 라 Desk 테마 mesh swap 의 영향을 받으면 안 됨. 과거 매칭에
+        // 포함됐을 땐 ApplyCategoryMeshSwap 가 NotebookStation 자식 renderer 까지 disable 해서
+        // 편집 모드 진입 시 노트북이 사라지거나 다른 형태로 보이는 회귀 발생.
+        public static readonly string[] Desk = { "DeskRoot", "Desk_" };
         public static readonly string[] Dashboard = { "DashboardScreenPanel", "GuestbookBoard", "Dashboard_" };
 
         // BackWall 자체는 BookshelfGenerator.BuildBackWallAlcove 가 책장 alcove 때문에
