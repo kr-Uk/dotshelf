@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e95b1e48f2d4a4e9ebc318c298f5e1a5, type: 3}
+  m_Name: Exterior_Default
+  m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Catalogs.ExteriorAsset
+  assetId: 0
+  code: EXT_DEFAULT
+  displayName: "\uAE30\uBCF8"
+  description: "\uAE30\uBCF8 \uC678\uBD80 \uD658\uACBD \u2014 \uD30C\uB780 \uD558\uB298\uACFC
+    \uCD08\uB85D \uD3C9\uC6D0"
+  previewSprite: {fileID: 0}
+  themeTag: 
+  isLocalPreview: 1
+  allowsCustomization: 1
+  skyboxMaterial: {fileID: 2100000, guid: 963fa748114434fec9b6e2f23301590e, type: 2}
+  ambientMode: 0
+  ambientFlatColor: {r: 0.5, g: 0.5, b: 0.55, a: 1}
+  ambientSkyColor: {r: 0.7, g: 0.8, b: 1, a: 1}
+  ambientEquatorColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  ambientGroundColor: {r: 0.3, g: 0.3, b: 0.25, a: 1}
+  ambientIntensity: 1
+  customReflectionCubemap: {fileID: 0}
+  reflectionIntensity: 1
+  useFog: 0
+  fogMode: 3
+  fogColor: {r: 0.5, g: 0.5, b: 0.55, a: 1}
+  fogDensity: 0.01
+  fogLinearStart: 10
+  fogLinearEnd: 100
+  scenePrefab: {fileID: 2139688988738878327, guid: ea7c0e73fb2e8460ea5ef65d5815b39f, type: 3}
+  overrideSun: 1
+  useColorTemperature: 1
+  sunColor: {r: 1, g: 1, b: 1, a: 1}
+  sunKelvin: 5500
+  sunIntensity: 1
+  sunRotationEuler: {x: 50, y: -30, z: 0}
+  sunShadows: 2
+  sunShadowStrength: 0.7
+  timeVariants: []
+  maxAdditionalRealtimeLights: 4
+  maxActiveParticleSystems: 2
+  targetBundleSizeMb: 15

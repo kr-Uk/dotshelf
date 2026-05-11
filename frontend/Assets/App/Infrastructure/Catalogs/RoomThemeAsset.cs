@@ -92,10 +92,21 @@ namespace App.Infrastructure.Catalogs
         [SerializeField] private Color ambientTint = Color.white;
         [SerializeField, Range(0f, 2f)] private float ambientIntensity = 1f;
 
-        [Header("Exterior lighting (외부 — 자연광/창문)")]
+        [Header("Exterior lighting (외부 — 자연광/창문) — DEPRECATED (Tier 1.5+)")]
+        [Tooltip("v1.0 외부조명 단독 카테고리 분리 안의 잔존 필드 — Tier 1.5+ 부터 defaultExterior(ExteriorAsset) 가 sun/ambient 까지 흡수. " +
+                 "defaultExterior == null 일 때만 RoomThemeApplier 가 fallback 으로 사용. Tier 2 에서 제거 예정. " +
+                 "참고 노션 페이지: 'Exterior 통합 시스템 (260510)'.")]
         [SerializeField] private Color exteriorLightColor = Color.white;
         [SerializeField, Range(2700f, 8000f)] private float exteriorLightKelvin = 6500f;
         [SerializeField, Range(0f, 4f)] private float exteriorLightIntensity = 1f;
+
+        [Header("Exterior — 통합 외부 환경 (Tier 1.5+)")]
+        [Tooltip("이 테마의 default 외부 환경 자산. " +
+                 "skybox + 자연광 + 풍경 prefab + ambient/fog/reflection 모두 흡수한 ExteriorAsset SO. " +
+                 "RoomThemeApplier 가 테마 적용 시 ExteriorApplier 에 forwarding. " +
+                 "null 이면 위 ExteriorLight* 필드 + ambientTint/Intensity 를 fallback 으로 직접 적용 " +
+                 "(Tier 2 에서 fallback 제거).")]
+        [SerializeField] private ExteriorAsset defaultExterior;
 
         [Header("Customization 권한 — 전체 테마 자산일 때만 의미")]
         [SerializeField] private bool allowsCustomization = true;
@@ -147,6 +158,8 @@ namespace App.Infrastructure.Catalogs
         public Color ExteriorLightColor => exteriorLightColor;
         public float ExteriorLightKelvin => exteriorLightKelvin;
         public float ExteriorLightIntensity => exteriorLightIntensity;
+
+        public ExteriorAsset DefaultExterior => defaultExterior;
 
         public bool AllowsCustomization => allowsCustomization;
         public bool IsLocalPreview => isLocalPreview;

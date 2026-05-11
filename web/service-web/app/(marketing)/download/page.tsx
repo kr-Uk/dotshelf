@@ -5,8 +5,8 @@ import { useState } from "react";
 import { Icon } from "@/components/marketing/icon";
 
 const RELEASE = {
-  version: "0.1.1",
-  date: "2026년 5월 8일",
+  version: "0.1.2",
+  date: "2026년 5월 11일",
   size: "런처 약 69 MB · 본체 별도 다운로드",
   channel: "Beta",
 };
@@ -20,7 +20,7 @@ type Build = {
 };
 
 const LAUNCHER_WIN_URL: string | null =
-  "https://dotshelf.digital/launcher/windows/DotShelfLauncher-0.1.0.exe";
+  "https://cdn.dotshelf.digital/windows/DotShelfLauncher-0.1.0.exe";
 
 const DOWNLOADS: Record<"mac" | "win", Build[]> = {
   mac: [],
