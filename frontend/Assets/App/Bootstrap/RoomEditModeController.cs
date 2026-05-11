@@ -423,16 +423,54 @@ namespace App.Bootstrap
         private const float DefaultOrbitYaw = 25f;
         private const float DefaultOrbitPitch = 18f;
         private const float DefaultOrbitDistance = 4.2f;
-        // 클램프 — 벽면 포커스 close-up (0.5m, 거의 벽에 붙은 상태) 부터 룸 전체 overview (8m) 까지.
-        // 이전 Min=2.0 은 벽면 포커스 distance=1.5 가 clamp 에 막혀 broad view 가 되던 회귀 원인.
+        // Absolute hard limit — 어떤 시점에서도 이 범위를 벗어나지 못함. 시점별 SerializeField
+        // (editZoomMin/Max...) 가 더 좁은 범위를 정의하면 그 값이 우선 적용된다. const 는 시점별
+        // 값이 미설정/이상값일 때 fallback + 안전 가드 역할.
         private const float MinOrbitDistance = 0.5f;
         private const float MaxOrbitDistance = 8.0f;
         private const float OrbitMinPitch = 5f;
         private const float OrbitMaxPitch = 89f;
-        // A/D 회전 속도 (deg/sec), W/S 줌 속도 (m/sec), 스크롤 줌 감도 (m/scroll-tick).
+        // A/D 회전 속도 (deg/sec). 줌 속도/감도는 디자이너 튜닝을 위해 SerializeField 로 노출 (아래).
         private const float OrbitYawSpeed = 90f;
-        private const float ZoomKeySpeed = 3.0f;
-        private const float ZoomScrollSensitivity = 0.6f;
+
+        // 편집 모드 줌 튜닝 — 시점(CameraPreset) 별 (min, max) 분리. 동물의 숲 해피홈 식
+        // "벽면 포커스 시점은 좁고 일정한 거리, 사선/탑다운은 방 전체가 보이는 거리" 정책.
+        // 마우스 휠/W/S 모두 같은 clamp(GetOrbitDistanceRangeForPreset 결과) 를 사용하므로
+        // 입력 종류에 따른 회귀 없음. 메인룸/책장/노트북 포커스 카메라는 이 controller 와 무관 →
+        // 영향 없음.
+        [SerializeField, Range(0.5f, 5.0f)] private float editZoomKeySpeed = 3.0f;
+        [SerializeField, Range(0.1f, 2.0f)] private float editZoomScrollSensitivity = 0.6f;
+        [SerializeField] private float editZoomMinDefault = 2.0f;
+        [SerializeField] private float editZoomMaxDefault = 6.0f;
+        [SerializeField] private float editZoomMinWallFocus = 1.5f;
+        [SerializeField] private float editZoomMaxWallFocus = 4.5f;
+        [SerializeField] private float editZoomMinTopDown = 3.5f;
+        [SerializeField] private float editZoomMaxTopDown = 7.0f;
+
+        // 시점별 줌 (min, max) 반환. SerializeField 값을 hard limit (MinOrbitDistance,
+        // MaxOrbitDistance) 안으로 클램프 — 디자이너가 인스펙터에서 0 또는 큰 값 실수 입력해도
+        // 안전. min > max 인 경우 (잘못된 인스펙터 값) 도 swap 으로 방어.
+        private (float min, float max) GetOrbitDistanceRangeForPreset(CameraPreset preset)
+        {
+            float rawMin, rawMax;
+            switch (preset)
+            {
+                case CameraPreset.TopDown:
+                    rawMin = editZoomMinTopDown; rawMax = editZoomMaxTopDown; break;
+                case CameraPreset.Front:
+                case CameraPreset.Back:
+                case CameraPreset.LeftAngle:
+                case CameraPreset.RightAngle:
+                    rawMin = editZoomMinWallFocus; rawMax = editZoomMaxWallFocus; break;
+                case CameraPreset.Default:
+                default:
+                    rawMin = editZoomMinDefault; rawMax = editZoomMaxDefault; break;
+            }
+            float min = Mathf.Clamp(rawMin, MinOrbitDistance, MaxOrbitDistance);
+            float max = Mathf.Clamp(rawMax, MinOrbitDistance, MaxOrbitDistance);
+            if (min > max) (min, max) = (max, min);
+            return (min, max);
+        }
 
         // 한 프레임 내에서 99% 도달하는 시간(초). 작을수록 빠른 추격, 클수록 부드러움.
         private const float CameraPresetLerpTimeConstant = 0.18f;
@@ -3949,7 +3987,7 @@ namespace App.Bootstrap
             }
             if (Mathf.Abs(zoomInput) > 0.001f)
             {
-                orbitDistance += zoomInput * ZoomKeySpeed * dt;
+                orbitDistance += zoomInput * editZoomKeySpeed * dt;
                 changed = true;
             }
 
@@ -3967,7 +4005,7 @@ namespace App.Bootstrap
                         // line-step 환경 fallback.
                         normalized = Mathf.Sign(scrollY);
                     }
-                    orbitDistance -= normalized * ZoomScrollSensitivity;
+                    orbitDistance -= normalized * editZoomScrollSensitivity;
                     changed = true;
                 }
             }
@@ -3982,17 +4020,19 @@ namespace App.Bootstrap
                 DeriveOrbitFromSavedPose();
                 // 위에서 누적된 입력 delta 도 다시 적용 — DeriveOrbitFromSavedPose 가 yaw 등을 덮어썼으므로.
                 if (Mathf.Abs(yawInput) > 0.001f) orbitYaw += yawInput * OrbitYawSpeed * dt;
-                if (Mathf.Abs(zoomInput) > 0.001f) orbitDistance += zoomInput * ZoomKeySpeed * dt;
+                if (Mathf.Abs(zoomInput) > 0.001f) orbitDistance += zoomInput * editZoomKeySpeed * dt;
             }
 
-            // 클램프 + 변경 후처리.
-            orbitDistance = Mathf.Clamp(orbitDistance, MinOrbitDistance, MaxOrbitDistance);
+            // 클램프 + 변경 후처리. orbitPitch 먼저 clamp → ClassifyByOrbit (pitch 65° 임계값 사용)
+            // → 시점별 (min,max) 로 distance clamp. 입력 종류(W/S/스크롤) 무관 같은 clamp 기준.
             orbitPitch = Mathf.Clamp(orbitPitch, OrbitMinPitch, OrbitMaxPitch);
             isInDefaultView = false;
             cameraPresetTargetActive = true;
 
             // wall fade 카테고리 갱신 — quadrant 가 바뀐 경우만 ApplyWallVisibilityForPreset 호출.
             currentCameraPreset = ClassifyByOrbit();
+            var (zMin, zMax) = GetOrbitDistanceRangeForPreset(currentCameraPreset);
+            orbitDistance = Mathf.Clamp(orbitDistance, zMin, zMax);
             ApplyWallVisibilityForCurrentView("OrbitInput");
 
             if (Mathf.Abs(yawInput) > 0.001f)
@@ -4943,7 +4983,8 @@ namespace App.Bootstrap
                     orbitYaw = 0f;
                     orbitPitch = 89f;
                     var roomSpan = Mathf.Max(playableMaxX - playableMinX, playableMaxZ - playableMinZ);
-                    orbitDistance = Mathf.Clamp(roomSpan * 1.1f, MinOrbitDistance, MaxOrbitDistance);
+                    var (tdMin, tdMax) = GetOrbitDistanceRangeForPreset(CameraPreset.TopDown);
+                    orbitDistance = Mathf.Clamp(roomSpan * 1.1f, tdMin, tdMax);
                     break;
                 }
                 case CameraPreset.Front:
@@ -4970,7 +5011,8 @@ namespace App.Bootstrap
                 default:
                     return;
             }
-            orbitDistance = Mathf.Clamp(orbitDistance, MinOrbitDistance, MaxOrbitDistance);
+            var (cubeMin, cubeMax) = GetOrbitDistanceRangeForPreset(face);
+            orbitDistance = Mathf.Clamp(orbitDistance, cubeMin, cubeMax);
             orbitPitch = Mathf.Clamp(orbitPitch, OrbitMinPitch, OrbitMaxPitch);
 
             isInDefaultView = false;
@@ -5836,6 +5878,19 @@ namespace App.Bootstrap
 
         // 프리셋별 어떤 벽 그룹을 fade 시킬지 — hard-coded 매핑이 dot-product 동적 결정보다
         // 예측 가능하고 디버깅하기 쉬워서 의도적으로 단순화. preset 추가 시 여기만 손대면 됨.
+        //
+        // **정책**: "카메라쪽(opposite-of-focus) 벽 fade" — wall-focus preset 에서 카메라는 방
+        // 안쪽으로 들어와 focus 벽(=orbitCenter 가 놓인 벽)을 정면으로 본다. focus 벽은 사용자가
+        // deco 를 보려는 대상이라 절대 fade 금지 (이전 회귀 — LeftAngle 에서 LeftWall 이 fade 되어
+        // 사용자가 보려던 벽이 alpha=0.18 로 흐려졌던 버그). 대신 카메라 반대편(=카메라 뒤편)
+        // 벽 1장을 fade 해서 Animal Crossing dollhouse 식 "그 면을 봤을 때 반대측 벽이 사라지는" UX 유지.
+        //
+        // 매핑 표 (line 5003-5006 yaw + line 5711-5714 orbitCenter 기반, 카메라가 방 내부에 위치):
+        //   preset       | focus (orbitCenter)         | 카메라 offset 방향  | 카메라쪽 wall → fade
+        //   Front        | BackWall  (+Z, 책장)         | -Z                 | FrontWall (-Z, 가상 벽 — prefab 렌더러 없음 → 사실상 noop)
+        //   Back         | FrontWall (-Z, 가상)         | +Z                 | BackWall  (+Z, strip 3개)
+        //   LeftAngle    | LeftWall  (-X)               | +X                 | RightWall (+X)
+        //   RightAngle   | RightWall (+X)               | -X                 | LeftWall  (-X)
         private static bool ShouldFadeWall(WallGroup group, CameraPreset preset)
         {
             switch (preset)
@@ -5845,13 +5900,17 @@ namespace App.Bootstrap
                 case CameraPreset.TopDown:
                     return true;  // 모든 벽 + 천장 fade — 위에서 내려보면 둘 다 시야 차단.
                 case CameraPreset.Front:
+                    // focus=BackWall(책장 정면). 카메라쪽=FrontWall(가상 — 매칭 렌더러 없어 noop).
+                    return group == WallGroup.Front;
                 case CameraPreset.Back:
+                    // focus=FrontWall(가상). 카메라쪽=BackWall(strip 3개) — 카메라 뒤편 fade.
+                    return group == WallGroup.Back;
                 case CameraPreset.LeftAngle:
+                    // focus=LeftWall(정면 시야 — opaque 유지 필수). 카메라쪽=RightWall(+X).
+                    return group == WallGroup.Right;
                 case CameraPreset.RightAngle:
-                    // 큐브 면 클릭 = 카메라가 방 안쪽에서 해당 벽을 본다 (inside view). 다른 벽들은
-                    // 카메라 frustum 측면/뒤에 있으므로 occlusion 없음 → fade 불필요. 타깃 벽도 opaque
-                    // 유지해야 사용자가 "벽면 배치 오브젝트" 를 인식 가능.
-                    return false;
+                    // focus=RightWall(정면 시야 — opaque 유지 필수). 카메라쪽=LeftWall(-X).
+                    return group == WallGroup.Left;
                 default:
                     return false;
             }
@@ -5862,15 +5921,42 @@ namespace App.Bootstrap
             if (!wallVisibilityCollected) return;
 
             int faded = 0, restored = 0;
+            // 매핑 검증 로그용 — fade 적용된 실제 GameObject 이름을 모아서 ShouldFadeWall 의 표대로
+            // 동작하는지 화면 없이도 한눈에 확인. 회귀 시 어느 벽이 잘못 fade 됐는지 즉시 식별.
+            var fadedNames = new List<string>(wallRendererCaches.Count);
             for (int i = 0; i < wallRendererCaches.Count; i++)
             {
                 var cache = wallRendererCaches[i];
                 if (cache.Renderer == null) continue;
                 bool shouldFade = ShouldFadeWall(cache.Group, preset);
                 ApplyWallFadeState(cache, shouldFade);
-                if (shouldFade) faded++; else restored++;
+                if (shouldFade)
+                {
+                    faded++;
+                    fadedNames.Add(cache.Renderer.gameObject.name);
+                }
+                else
+                {
+                    restored++;
+                }
             }
-            Debug.Log($"[RoomEdit][WallFade] preset={preset} faded={faded} kept-opaque={restored} alpha={Mathf.Clamp01(wallFadeAlpha):0.00}");
+            // target-group 라벨 — ShouldFadeWall 매핑 표의 expected fade 대상. 실제 names 와 대조해
+            // mismatch (예: LeftAngle 인데 LeftWall 이 fade 됐다 = focus 벽 fade 회귀) 즉시 검출.
+            string targetGroupLabel = preset switch
+            {
+                CameraPreset.Default    => "(없음)",
+                CameraPreset.TopDown    => "All+Ceiling",
+                CameraPreset.Front      => "Front (카메라쪽, 가상)",
+                CameraPreset.Back       => "Back (카메라쪽)",
+                CameraPreset.LeftAngle  => "Right (카메라쪽)",
+                CameraPreset.RightAngle => "Left (카메라쪽)",
+                _ => "?",
+            };
+            string fadedNamesJoined = fadedNames.Count == 0 ? "(없음)" : string.Join(",", fadedNames);
+            Debug.Log(
+                $"[RoomEdit][WallFade] preset={preset} target-group={targetGroupLabel} " +
+                $"faded={faded} names=[{fadedNamesJoined}] kept-opaque={restored} " +
+                $"alpha={Mathf.Clamp01(wallFadeAlpha):0.00}");
         }
 
         // shouldFade=true 면 instance material 만들어서 transparent + alpha 적용,
