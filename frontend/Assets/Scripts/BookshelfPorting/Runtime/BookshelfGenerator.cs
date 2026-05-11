@@ -18,7 +18,10 @@ namespace BookshelfPorting.Runtime
 
         private const int InitialBookshelfCount = 3;
         private const float BookshelfAnchorZ = 1.285f;
-        private const float RoomWidth = 4.2f;
+        // RoomWidth(X) 와 RoomDepth(Z) 를 5×5 정사각형으로 유지. 이전엔 4.2×5 였으나
+        // X 축 확장으로 Floor/LeftWall/RightWall/Ceiling/BackWall strip 모두 자동 재배치.
+        // 좌/우 벽 위치는 `-RoomWidth*0.5 + 0.05 = -2.45` / `+2.45` 로 갱신됨.
+        private const float RoomWidth = 5f;
         private const float RoomDepth = 5f;
         private const float RoomHeight = 2.8f;
         private const float BackWallZ = 1.45f;

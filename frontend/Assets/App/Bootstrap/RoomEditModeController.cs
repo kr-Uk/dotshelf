@@ -71,10 +71,10 @@ namespace App.Bootstrap
         // Fallback room footprint, used only if RefreshPlayableBounds can't
         // find the named scene geometry (Floor / LeftWall / RightWall /
         // BackWall_*). Real bounds at runtime are populated by that method
-        // when edit mode starts. Values match MainScene.unity Floor's
-        // pre-wall-thickness footprint as a safe default.
-        private const float FloorMinX = -2.0f;
-        private const float FloorMaxX = 2.0f;
+        // when edit mode starts. Values match BookshelfGenerator의 RoomWidth(5)
+        // 기준 벽 visible 면 ±2.45. Z 축은 변경 안 함 — RoomDepth=5 그대로.
+        private const float FloorMinX = -2.45f;
+        private const float FloorMaxX = 2.45f;
         private const float FloorMinZ = -2.4f;
         private const float FloorMaxZ = 2.4f;
 
