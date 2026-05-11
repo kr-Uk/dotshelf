@@ -56,6 +56,29 @@ public interface AssetRepository extends JpaRepository<Asset, Long> {
             @Param("owned") Boolean owned,
             Pageable pageable);
 
+    /**
+     * 운영자 콘솔 전용 검색. draft/비활성 자산까지 포함하므로 active 파라미터로
+     * 명시적으로 필터링한다. 사용자용 searchActive 와 달리 owned/userId 의존이 없다.
+     */
+    @Query("""
+            select asset
+            from Asset asset
+            where (:active is null or asset.isActive = :active)
+              and (:assetType is null or upper(asset.assetType) = upper(:assetType))
+              and (:collectionCode is null or upper(asset.collectionCode) = upper(:collectionCode))
+              and (
+                    :keyword is null
+                    or lower(asset.name) like lower(concat('%', :keyword, '%'))
+                    or lower(asset.code) like lower(concat('%', :keyword, '%'))
+                  )
+            """)
+    Page<Asset> searchForAdmin(
+            @Param("active") Boolean active,
+            @Param("assetType") String assetType,
+            @Param("collectionCode") String collectionCode,
+            @Param("keyword") String keyword,
+            Pageable pageable);
+
     @Query("""
             select distinct asset.collectionCode
             from Asset asset

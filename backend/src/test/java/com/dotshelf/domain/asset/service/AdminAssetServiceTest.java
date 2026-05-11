@@ -9,6 +9,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +19,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 import com.dotshelf.domain.admin.entity.AdminAuditLog;
 import com.dotshelf.domain.admin.repository.AdminAuditLogRepository;
@@ -344,6 +349,119 @@ class AdminAssetServiceTest {
                 .isEqualTo(ErrorCode.FORBIDDEN);
 
         then(assetRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("운영자 list는 active 필터와 keyword 를 repository 에 전달하고 다음 cursor 를 응답한다")
+    void searchAssets_returnsPagedItems() {
+        User admin = TestFixtures.user(1L, "admin");
+        admin.changeRole("ADMIN");
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(userService.getUser(1L)).willReturn(admin);
+
+        Asset asset = assetWithUrls();
+        Page<Asset> page = new PageImpl<>(
+                List.of(asset),
+                PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "updatedAt", "id")),
+                30);
+        given(assetRepository.searchForAdmin(eq(true), eq("WALLPAPER"), eq(null), eq("name"), any(PageRequest.class)))
+                .willReturn(page);
+
+        var response = adminAssetService.searchAssets(1L, "", "WALLPAPER", "name", true, null, 20);
+
+        assertThat(response.items()).hasSize(1);
+        assertThat(response.items().get(0).id()).isEqualTo(10L);
+        assertThat(response.items().get(0).hasAssetUrl()).isTrue();
+        assertThat(response.items().get(0).hasPreviewImage()).isTrue();
+        assertThat(response.nextCursor()).isEqualTo("20");
+        assertThat(response.totalCount()).isEqualTo(30L);
+    }
+
+    @Test
+    @DisplayName("관리자가 아니면 list 호출도 FORBIDDEN")
+    void searchAssets_nonAdmin_throwsForbidden() {
+        User user = TestFixtures.user(1L, "member");
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(userService.getUser(1L)).willReturn(user);
+
+        assertThatThrownBy(() -> adminAssetService.searchAssets(1L, null, null, null, null, null, 20))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        then(assetRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("getAssetDetail 은 admin 검증 후 본체/프리뷰 URL 까지 포함된 응답을 반환한다")
+    void getAssetDetail_returnsAdminResponse() {
+        givenAdminAndAsset(assetWithUrls());
+
+        var response = adminAssetService.getAssetDetail(1L, 10L);
+
+        assertThat(response.id()).isEqualTo(10L);
+        assertThat(response.assetUrl()).isEqualTo("https://old.test/bundle");
+        assertThat(response.previewImageUrl()).isEqualTo("https://old.test/preview.png");
+    }
+
+    @Test
+    @DisplayName("프리뷰 번들 업로드 URL 은 .glb 만 허용하고 preview-bundle prefix 의 키를 발급한다")
+    void createPreviewBundleUploadUrl_validGlb_returnsPresignedUrl() {
+        givenAdminAndAsset(assetWithUrls());
+        given(s3StorageService.presignPut(
+                anyString(),
+                eq("model/gltf-binary"),
+                eq(1024L),
+                eq(Duration.ofSeconds(300))))
+                .willAnswer(invocation -> new PresignedPut("https://upload.test/preview-bundle", invocation.getArgument(0), 300));
+
+        var response = adminAssetService.createPreviewBundleUploadUrl(
+                1L,
+                10L,
+                new AdminAssetUploadUrlRequest("model/gltf-binary", 1024L));
+
+        assertThat(response.key()).startsWith("assets/asset-code/preview-bundle/");
+        assertThat(response.key()).endsWith(".glb");
+        assertThat(response.uploadUrl()).isEqualTo("https://upload.test/preview-bundle");
+    }
+
+    @Test
+    @DisplayName("프리뷰 번들 업로드 URL 은 application/octet-stream 등은 거부한다 (.glb 만 허용)")
+    void createPreviewBundleUploadUrl_invalidContentType_throws() {
+        givenAdminAndAsset(assetWithUrls());
+
+        assertThatThrownBy(() -> adminAssetService.createPreviewBundleUploadUrl(
+                1L,
+                10L,
+                new AdminAssetUploadUrlRequest("application/octet-stream", 1024L)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+
+        then(s3StorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("프리뷰 번들 confirm 은 prefix/메타데이터를 검증하고 previewBundleUrl/Size/Hash 를 갱신한다")
+    void confirmPreviewBundle_validObject_updatesPreviewBundleFields() {
+        Asset asset = assetWithUrls();
+        givenAdminAndAsset(asset);
+        String key = "assets/asset-code/preview-bundle/abc.glb";
+        given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("model/gltf-binary", 512L));
+        given(s3StorageService.publicUrl(key)).willReturn("https://cdn.test/" + key);
+
+        var response = adminAssetService.confirmPreviewBundle(
+                1L,
+                10L,
+                new AdminAssetConfirmRequest(key, "sha256:preview", null),
+                "127.0.0.1");
+
+        assertThat(response.previewBundleUrl()).isEqualTo("https://cdn.test/" + key);
+        assertThat(response.previewBundleContentType()).isEqualTo("model/gltf-binary");
+        assertThat(response.previewBundleSize()).isEqualTo(512L);
+        assertThat(response.previewBundleHash()).isEqualTo("sha256:preview");
+        // 본체 정보는 그대로 — preview bundle 은 본체와 독립
+        assertThat(response.assetUrl()).isEqualTo("https://old.test/bundle");
     }
 
     private void givenAdminAndAsset(Asset asset) {

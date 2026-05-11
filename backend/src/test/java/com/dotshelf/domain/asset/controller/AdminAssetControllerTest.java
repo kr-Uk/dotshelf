@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -20,7 +21,12 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.time.Instant;
+import java.util.List;
+
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetCreateRequest;
+import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetListItemResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetListResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetUpdateRequest;
 import com.dotshelf.domain.asset.service.AdminAssetService;
@@ -100,6 +106,40 @@ class AdminAssetControllerTest {
     }
 
     @Test
+    @DisplayName("에셋 목록 조회는 쿼리 파라미터를 그대로 서비스로 전달한다")
+    void searchAssets_passesQueryParams() throws Exception {
+        AdminAssetListItemResponse item = new AdminAssetListItemResponse(
+                10L, "DEEP_SEA_CHAIR_001", "깊은바다 의자", "CHAIR", "DEEP_SEA",
+                "NORMAL", 1, 300, true, true, false, false, Instant.parse("2026-05-11T00:00:00Z"));
+        given(adminAssetService.searchAssets(eq(1L), eq("DEEP_SEA"), eq("CHAIR"), eq("의자"), eq(false), eq(null), eq(20)))
+                .willReturn(new AdminAssetListResponse(List.of(item), null, 1L));
+
+        mockMvc.perform(get("/v1/admin/assets")
+                        .header("X-Test-Admin-User-Id", "1")
+                        .param("collection", "DEEP_SEA")
+                        .param("type", "CHAIR")
+                        .param("q", "의자")
+                        .param("active", "false")
+                        .param("limit", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items[0].id").value(10))
+                .andExpect(jsonPath("$.result.items[0].hasAssetUrl").value(true))
+                .andExpect(jsonPath("$.result.totalCount").value(1));
+    }
+
+    @Test
+    @DisplayName("에셋 상세 조회는 path assetId를 서비스로 전달한다")
+    void getAsset_passesAssetId() throws Exception {
+        given(adminAssetService.getAssetDetail(1L, 10L)).willReturn(response(false));
+
+        mockMvc.perform(get("/v1/admin/assets/10")
+                        .header("X-Test-Admin-User-Id", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.id").value(10))
+                .andExpect(jsonPath("$.result.assetUrl").value("https://cdn.test/chair.glb"));
+    }
+
+    @Test
     @DisplayName("에셋 공개는 path assetId와 current userId를 서비스로 전달한다")
     void publishAsset_passesAssetIdAndCurrentUser() throws Exception {
         given(adminAssetService.publishAsset(1L, 10L, "127.0.0.1")).willReturn(response(true));
@@ -125,6 +165,10 @@ class AdminAssetControllerTest {
                 "DEEP_SEA",
                 "https://cdn.test/chair.glb",
                 "https://cdn.test/chair.png",
+                null, // previewBundleUrl
+                null, // previewBundleContentType
+                null, // previewBundleSize
+                null, // previewBundleHash
                 "model/gltf-binary",
                 100L,
                 "sha256:test",

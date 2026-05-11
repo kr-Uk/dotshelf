@@ -1,10 +1,14 @@
 package com.dotshelf.domain.asset.service;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,10 +16,14 @@ import com.dotshelf.domain.admin.entity.AdminAuditLog;
 import com.dotshelf.domain.admin.repository.AdminAuditLogRepository;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetConfirmRequest;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetCreateRequest;
+import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetListItemResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetListResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetUpdateRequest;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetUploadUrlRequest;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetUploadUrlResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryListResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryResponse;
 import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.entity.AssetCategory;
 import com.dotshelf.domain.asset.repository.AssetCategoryRepository;
@@ -51,6 +59,7 @@ public class AdminAssetService {
     private static final String AUDIT_ACTION_PUBLISH = "PUBLISH_ASSET";
     private static final String AUDIT_ACTION_BUNDLE = "UPDATE_ASSET_BUNDLE";
     private static final String AUDIT_ACTION_PREVIEW_IMAGE = "UPDATE_ASSET_PREVIEW_IMAGE";
+    private static final String AUDIT_ACTION_PREVIEW_BUNDLE = "UPDATE_ASSET_PREVIEW_BUNDLE";
     private static final String DEFAULT_ASSET_SCOPE = "SPACE";
 
     // 본체는 Unity AssetBundle / 압축 번들이 들어온다. content-type 은 클라가 신뢰성 있게 못 정해서
@@ -67,12 +76,72 @@ public class AdminAssetService {
             "image/png", "png",
             "image/webp", "webp");
 
+    // 저폴리 3D 프리뷰는 .glb 만 받는다. wasm gltfpack 결과나 디자이너가 직접 만든 LOD2 정도.
+    // 본체 200MB 와 비교해서 20MB 한도로 충분 (gltfpack 결과는 보통 100KB 미만).
+    private static final long MAX_PREVIEW_BUNDLE_SIZE_BYTES = 20L * 1024 * 1024;
+    private static final Set<String> ALLOWED_PREVIEW_BUNDLE_TYPES = Set.of(
+            "model/gltf-binary");
+
+    private static final int DEFAULT_LIST_LIMIT = 20;
+    private static final int MAX_LIST_LIMIT = 100;
+
     private final AssetRepository assetRepository;
     private final AssetCategoryRepository assetCategoryRepository;
     private final UserService userService;
     private final AdminAuditLogRepository adminAuditLogRepository;
     private final S3StorageService s3StorageService;
     private final S3StorageProperties s3StorageProperties;
+
+    /**
+     * 관리자 콘솔 리스트. draft / 비활성까지 포함하므로 사용자 API 와 다른 경로.
+     * 정렬은 updatedAt DESC — 최근 손댄 에셋이 위로 오게 한다.
+     */
+    public AdminAssetListResponse searchAssets(
+            Long userId,
+            String collectionCode,
+            String assetType,
+            String keyword,
+            Boolean active,
+            String cursor,
+            int limit) {
+        requireAdmin(userId);
+        int validLimit = validateLimit(limit);
+        int start = parseCursor(cursor);
+        PageRequest request = PageRequest.of(
+                start / validLimit,
+                validLimit,
+                Sort.by(Sort.Direction.DESC, "updatedAt", "id"));
+        Page<Asset> page = assetRepository.searchForAdmin(
+                active,
+                normalizeBlank(assetType),
+                normalizeBlank(collectionCode),
+                normalizeBlank(keyword),
+                request);
+        List<AdminAssetListItemResponse> items = page.getContent().stream()
+                .map(AdminAssetListItemResponse::from)
+                .toList();
+        String nextCursor = page.hasNext()
+                ? String.valueOf((page.getNumber() + 1) * page.getSize())
+                : null;
+        return new AdminAssetListResponse(items, nextCursor, page.getTotalElements());
+    }
+
+    public AdminAssetResponse getAssetDetail(Long userId, Long assetId) {
+        requireAdmin(userId);
+        return AdminAssetResponse.from(getAsset(assetId));
+    }
+
+    /**
+     * 사용자 카탈로그용 AssetService#getCategories 는 isActive=true 만 노출하지만,
+     * 운영자 콘솔은 비활성 카테고리도 새 에셋 등록에 쓸 수 있어야 해서 별도 메서드를 둔다.
+     */
+    public AssetCategoryListResponse listCategories(Long userId) {
+        requireAdmin(userId);
+        return new AssetCategoryListResponse(
+                assetCategoryRepository.findAll().stream()
+                        .map(AssetCategoryResponse::from)
+                        .toList());
+    }
 
     @Transactional
     public AdminAssetResponse createAsset(Long userId, AdminAssetCreateRequest request, String ipAddress) {
@@ -214,6 +283,45 @@ public class AdminAssetService {
     }
 
     /**
+     * 저폴리 3D 미리보기 번들 (.glb) 업로드 URL. admin-web 은 본체 PUT 직후
+     * wasm gltfpack 으로 저폴리화한 결과를 이 엔드포인트로 올린다.
+     */
+    public AdminAssetUploadUrlResponse createPreviewBundleUploadUrl(Long userId, Long assetId, AdminAssetUploadUrlRequest request) {
+        requireAdmin(userId);
+        Asset asset = getAsset(assetId);
+
+        if (!ALLOWED_PREVIEW_BUNDLE_TYPES.contains(request.contentType())) {
+            throw new CustomException(ErrorCode.STORAGE_INVALID_CONTENT_TYPE);
+        }
+        if (request.byteLength() > MAX_PREVIEW_BUNDLE_SIZE_BYTES) {
+            throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
+        }
+        String key = "assets/" + asset.getCode() + "/preview-bundle/" + UUID.randomUUID() + ".glb";
+        PresignedPut presigned = s3StorageService.presignPut(
+                key,
+                request.contentType(),
+                request.byteLength(),
+                Duration.ofSeconds(s3StorageProperties.presignTtlSeconds()));
+        return AdminAssetUploadUrlResponse.from(presigned);
+    }
+
+    @Transactional
+    public AdminAssetResponse confirmPreviewBundle(Long userId, Long assetId, AdminAssetConfirmRequest request, String ipAddress) {
+        User actor = requireAdmin(userId);
+        Asset asset = getAsset(assetId);
+        ObjectMetadata metadata = verifyConfirmedObject(
+                request.key(),
+                "assets/" + asset.getCode() + "/preview-bundle/",
+                ALLOWED_PREVIEW_BUNDLE_TYPES::contains,
+                MAX_PREVIEW_BUNDLE_SIZE_BYTES);
+        String before = asset.getPreviewBundleUrl();
+        String after = s3StorageService.publicUrl(request.key());
+        asset.updatePreviewBundle(after, metadata.contentType(), metadata.contentLength(), request.fileHash());
+        writeAudit(actor, AUDIT_ACTION_PREVIEW_BUNDLE, asset.getId(), before, after, ipAddress);
+        return AdminAssetResponse.from(asset);
+    }
+
+    /**
      * presigned PUT 의 confirm 단계 공통 검증.
      *   1) key prefix 가 본 도메인 영역인지 (다른 자산/카테고리 객체 confirm 차단)
      *   2) headObject 로 객체 실존 확인
@@ -292,5 +400,23 @@ public class AdminAssetService {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static int parseCursor(String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return 0;
+        }
+        try {
+            return Math.max(0, Integer.parseInt(cursor));
+        } catch (NumberFormatException exception) {
+            return 0;
+        }
+    }
+
+    private static int validateLimit(int limit) {
+        if (limit <= 0) {
+            return DEFAULT_LIST_LIMIT;
+        }
+        return Math.min(limit, MAX_LIST_LIMIT);
     }
 }
