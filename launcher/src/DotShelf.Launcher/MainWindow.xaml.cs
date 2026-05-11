@@ -761,6 +761,18 @@ public partial class MainWindow : Window
 
             StatusText.Text = $"설치됨 {installedState.InstalledVersion} · 최신 빌드 {manifest.LatestVersion}";
             ApplyUiState(LauncherUiState.UpdateAvailable);
+
+            // mandatory:true 면 사용자 클릭 없이 자동으로 업데이트 진행.
+            // BeginInvoke 로 다음 펌프 차례에 호출 — 현재 메서드의 finally(SetBusy(false)) 가
+            // 먼저 정리된 뒤 ActionButton_Click 의 RunActionAsync 가 깨끗한 SetBusy(true) 사이클로 시작.
+            if (manifest.Mandatory)
+            {
+                Log("필수 업데이트가 감지되어 자동으로 진행합니다.");
+                // fire-and-forget: DispatcherOperation 결과는 무시 — async void 핸들러를
+                // 다음 펌프 차례에 발동시키는 게 목적이고 현재 메서드는 finally 로 빠진다.
+                _ = Dispatcher.BeginInvoke(new Action(() =>
+                    ActionButton_Click(this, new RoutedEventArgs())));
+            }
         }
         catch (LauncherVersionNotSupportedException exception)
         {
@@ -894,12 +906,15 @@ public partial class MainWindow : Window
     {
         currentUiState = uiState;
 
+        // mandatory:true 면 사용자가 업데이트를 우회할 수 없도록 "이번 버전 그대로 실행" 링크를 숨긴다.
+        // (자동 트리거는 RefreshLauncherStateAsync 에서 별도로 발동)
+        var mandatoryUpdate = uiState == LauncherUiState.UpdateAvailable && latestManifest?.Mandatory == true;
         var showAction = uiState is LauncherUiState.NotInstalled or LauncherUiState.UpdateAvailable or LauncherUiState.Error;
         var showLaunch = uiState is LauncherUiState.Ready or LauncherUiState.OfflineReady;
         var showDelete = uiState is LauncherUiState.Ready or LauncherUiState.OfflineReady or LauncherUiState.UpdateAvailable;
         var showRunning = uiState == LauncherUiState.Running;
         var showError = uiState == LauncherUiState.Error;
-        var showKeepCurrent = uiState == LauncherUiState.UpdateAvailable;
+        var showKeepCurrent = uiState == LauncherUiState.UpdateAvailable && !mandatoryUpdate;
 
         ActionButton.Visibility = showAction ? Visibility.Visible : Visibility.Collapsed;
         LaunchButton.Visibility = showLaunch ? Visibility.Visible : Visibility.Collapsed;
@@ -926,7 +941,7 @@ public partial class MainWindow : Window
         CtaCaption.Text = uiState switch
         {
             LauncherUiState.NotInstalled => "디스크 1.2 GB 필요",
-            LauncherUiState.UpdateAvailable => "",
+            LauncherUiState.UpdateAvailable => mandatoryUpdate ? "필수 업데이트" : "",
             LauncherUiState.Ready or LauncherUiState.OfflineReady =>
                 latestManifest != null ? $"v{latestManifest.LatestVersion}" : "",
             LauncherUiState.Running => "창을 닫아도 계속 실행됩니다",

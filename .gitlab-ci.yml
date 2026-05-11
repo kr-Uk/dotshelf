@@ -96,6 +96,24 @@ variables:
         - backend/deploy/app/docker-compose.yml
         - backend/deploy/prod/nginx/conf.d/**/*
 
+.service-web-build-rules:
+  # service-web 빌드 검증 (tsc + eslint + next build). MR 이벤트 + dev/master 푸시에서
+  # web/service-web/**/* 변경 시 가동. MR #150 리뷰 응답으로 신규 — 이전엔 launcher:build
+  # 만 잡혔고 service-web 코드 변경이 MR pipeline gate 를 통과 못 했음 (Finding 2/3).
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - web/service-web/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      changes:
+        - web/service-web/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      changes:
+        - web/service-web/**/*
+        - .gitlab-ci.yml
+
 .launcher-build-rules:
   rules:
     - if: '$CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "dev"'
@@ -221,6 +239,21 @@ launcher:build:
       - launcher/manifests/dev/windows/events.json
     expire_in: 1 week
 
+service-web:build:
+  # MR/푸시 gate — tsc + eslint + next build. 배포 잡 (service-web:deploy /
+  # service-web:test-deploy) 는 호스트에서 docker compose build 로 재빌드하므로
+  # 여기서 만든 .next 산출물은 사용 안 함. 순수 검증용.
+  extends: .service-web-build-rules
+  stage: build
+  image: node:22-alpine
+  before_script:
+    - cd web/service-web
+  script:
+    - npm ci --no-audit --no-fund
+    - npx tsc --noEmit
+    - npm run lint
+    - npm run build
+
 backend:deploy:
   extends: .deploy-rules
   stage: deploy
@@ -321,7 +354,9 @@ launcher:publish:
     - job: launcher:build
       artifacts: true
   before_script:
-    - apk add --no-cache openssh-client rsync curl jq aws-cli
+    # coreutils: Alpine busybox 의 sort 는 -V (version sort) 미지원, head 도 -n -K 미지원.
+    # R2 cleanup 단계의 SemVer 정렬 + "최근 3개 빼고" 슬라이스에 GNU sort/head 필요.
+    - apk add --no-cache openssh-client rsync curl jq aws-cli coreutils
     - mkdir -p ~/.ssh && chmod 700 ~/.ssh
     - printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
     - chmod 600 ~/.ssh/id_ed25519
@@ -368,6 +403,64 @@ launcher:publish:
     - jq -e '.packageUrl, .latestVersion, .sha256' /tmp/redirected-latest.json > /dev/null
     - curl -fL --max-redirs 5 "https://dotshelf.digital/launcher/windows/events.json" -o /tmp/redirected-events.json
     - jq -e '.' /tmp/redirected-events.json > /dev/null
+    # --- R2 retention: 최근 3개 버전만 유지 ---
+    # 새 빌드가 위에서 이미 업로드된 후 호출되므로 "현재 + 직전 2개" 가 살아남는다.
+    # 동일 버전 재배포 (idempotent overwrite) 에선 삭제 대상 없음.
+    #
+    # 안전망 (MR #148 리뷰 응답):
+    # 1. GNU sort 우선 확인 — busybox 가 PATH 앞쪽이면 'sort -V' silent 실패 위험.
+    #    coreutils apk add 했어도 PATH 순서가 다른 환경에서 회귀 방지.
+    # 2. SemVer 파일명만 grep — 임시 / .sha256 / .json / 공백 포함 파일이
+    #    같은 prefix 로 우연히 들어와도 정렬/삭제 대상에서 제외. manifest 보호.
+    # 3. cleanup 대상을 명시 로그 — silent 삭제 0건 vs 의도된 retention 구분 가능,
+    #    첫 사이클에서 cleanup 의도 확인 친화.
+    - |
+      # GNU sort / head 동작 직접 검증. 'sort --version | grep GNU' 식 출력 매치는
+      # PATH / busybox alias / coreutils 패키지 변형에 따라 false negative 발생 (MR #150
+      # 머지 후 CI fail — busybox sort 가 --version 출력 안 함 → grep 0건 → exit).
+      # 실제로 SemVer 정렬과 negative head 가 동작하는지 동작 자체로 판정 — 환경 가정 0.
+      SORT_TEST=$(printf "0.1.0\n0.1.10\n0.1.2\n" | sort -V 2>/dev/null | tr '\n' ' ')
+      if [ "$SORT_TEST" != "0.1.0 0.1.2 0.1.10 " ]; then
+        echo "ERROR: 'sort -V' 가 SemVer 정렬을 못 합니다 (busybox 가 PATH 우선?)."
+        echo "  expected: '0.1.0 0.1.2 0.1.10 '"
+        echo "  got:      '$SORT_TEST'"
+        echo "  PATH=$PATH"
+        echo "  which sort: $(command -v sort)"
+        echo "  /usr/bin/sort 직접 시도:"
+        printf "0.1.0\n0.1.10\n0.1.2\n" | /usr/bin/sort -V 2>&1 || true
+        exit 1
+      fi
+      HEAD_TEST=$(printf "1\n2\n3\n4\n5\n" | head -n -2 2>/dev/null | tr '\n' ' ')
+      if [ "$HEAD_TEST" != "1 2 3 " ]; then
+        echo "ERROR: 'head -n -K' 가 동작 안 합니다 (busybox head 일 가능성)."
+        echo "  expected: '1 2 3 '"
+        echo "  got:      '$HEAD_TEST'"
+        exit 1
+      fi
+      cleanup_r2() {
+        prefix="$1"
+        base="${prefix##*/}"
+        # SemVer 파일명만 매치 — '^<base><x.y.z>\.(exe|zip)$'. manifest (.json) 절대 매치 안 됨.
+        aws --endpoint-url "$R2_LAUNCHER_ENDPOINT" s3 ls "s3://$R2_LAUNCHER_BUCKET/$prefix" \
+          | awk '{print $NF}' \
+          | grep -E "^${base}[0-9]+\\.[0-9]+\\.[0-9]+\\.(exe|zip)$" \
+          | sort -V > /tmp/retention-all.txt || true
+        echo "  [retention] '$prefix' SemVer 후보:"
+        sed 's/^/    /' /tmp/retention-all.txt
+        head -n -3 /tmp/retention-all.txt > /tmp/retention-rm.txt || true
+        if [ -s /tmp/retention-rm.txt ]; then
+          echo "  [retention] 상위 3개 유지, 나머지 삭제:"
+          while read -r f; do
+            [ -z "$f" ] && continue
+            echo "    - s3://$R2_LAUNCHER_BUCKET/windows/$f"
+            aws --endpoint-url "$R2_LAUNCHER_ENDPOINT" s3 rm "s3://$R2_LAUNCHER_BUCKET/windows/$f"
+          done < /tmp/retention-rm.txt
+        else
+          echo "  [retention] 보관 3개 이하 — 삭제 대상 없음"
+        fi
+      }
+      cleanup_r2 "windows/DotShelfLauncher-"
+      cleanup_r2 "windows/Dotshelf-"
   environment:
     name: launcher-prod
     url: https://cdn.dotshelf.digital/windows/latest.json

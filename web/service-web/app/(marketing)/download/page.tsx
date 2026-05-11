@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Icon } from "@/components/marketing/icon";
+import { LAUNCHER_WIN_URL } from "@/lib/launcher-download";
 
 const RELEASE = {
   version: "0.1.2",
@@ -18,9 +19,6 @@ type Build = {
   recommended: boolean;
   href: string | null;
 };
-
-const LAUNCHER_WIN_URL: string | null =
-  "https://cdn.dotshelf.digital/windows/DotShelfLauncher-0.1.0.exe";
 
 const DOWNLOADS: Record<"mac" | "win", Build[]> = {
   mac: [],

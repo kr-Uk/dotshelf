@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
 import java.util.List;
 import java.util.Optional;
@@ -20,11 +21,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.entity.AssetPurchase;
 import com.dotshelf.domain.asset.entity.AssetWishlist;
+import com.dotshelf.domain.asset.entity.ThemeAssetItem;
 import com.dotshelf.domain.asset.entity.UserAssetInventory;
 import com.dotshelf.domain.asset.repository.AssetCategoryRepository;
 import com.dotshelf.domain.asset.repository.AssetPurchaseRepository;
 import com.dotshelf.domain.asset.repository.AssetRepository;
 import com.dotshelf.domain.asset.repository.AssetWishlistRepository;
+import com.dotshelf.domain.asset.repository.ThemeAssetItemRepository;
 import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
 import com.dotshelf.domain.payment.entity.PageWallet;
 import com.dotshelf.domain.payment.repository.PageWalletRepository;
@@ -41,6 +44,9 @@ class AssetServiceTest {
 
     @Mock
     private AssetCategoryRepository assetCategoryRepository;
+
+    @Mock
+    private ThemeAssetItemRepository themeAssetItemRepository;
 
     @Mock
     private UserAssetInventoryRepository inventoryRepository;
@@ -187,5 +193,123 @@ class AssetServiceTest {
         assertThat(response.items())
                 .extracting(item -> item.assetId())
                 .containsExactly(10L, 11L);
+    }
+
+    @Test
+    @DisplayName("단일 에셋 다운로드 manifest는 보유 여부를 검증하고 파일 메타데이터를 반환한다")
+    void getDownloadManifest_ownedAsset_returnsFile() {
+        Asset asset = Asset.builder()
+                .categoryId(1L)
+                .code("deep-sea-chair")
+                .name("깊은바다 의자")
+                .assetScope("SPACE")
+                .assetType("CHAIR")
+                .collectionCode("DEEP_SEA")
+                .assetUrl("https://cdn.test/assets/chair.glb")
+                .contentType("model/gltf-binary")
+                .fileSize(100L)
+                .fileHash("sha256:test")
+                .version(3)
+                .build();
+        TestFixtures.setId(asset, 10L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(assetRepository.findById(10L)).willReturn(Optional.of(asset));
+        given(inventoryRepository.existsByUserIdAndAssetId(1L, 10L)).willReturn(true);
+
+        var response = assetService.getDownloadManifest(1L, 10L);
+
+        assertThat(response.collectionCode()).isEqualTo("DEEP_SEA");
+        assertThat(response.files()).singleElement()
+                .satisfies(file -> {
+                    assertThat(file.assetId()).isEqualTo(10L);
+                    assertThat(file.url()).isEqualTo("https://cdn.test/assets/chair.glb");
+                    assertThat(file.version()).isEqualTo(3);
+                });
+    }
+
+    @Test
+    @DisplayName("테마 다운로드 manifest는 child asset을 배치 조회해 파일 목록을 만든다")
+    void getDownloadManifest_ownedTheme_returnsChildFilesWithBatchQuery() {
+        Asset theme = Asset.builder()
+                .categoryId(1L)
+                .code("deep-sea-theme")
+                .name("깊은바다 테마")
+                .assetScope("SPACE")
+                .assetType("THEME")
+                .collectionCode("DEEP_SEA")
+                .build();
+        Asset chair = downloadableAsset(10L, "deep-sea-chair", "CHAIR", "https://cdn.test/chair.glb");
+        Asset desk = downloadableAsset(11L, "deep-sea-desk", "DESK", "https://cdn.test/desk.glb");
+        TestFixtures.setId(theme, 100L);
+        ThemeAssetItem chairItem = ThemeAssetItem.builder()
+                .themeAssetId(100L)
+                .childAssetId(10L)
+                .role("CHAIR")
+                .sortOrder(1)
+                .build();
+        ThemeAssetItem deskItem = ThemeAssetItem.builder()
+                .themeAssetId(100L)
+                .childAssetId(11L)
+                .role("DESK")
+                .sortOrder(2)
+                .build();
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(assetRepository.findById(100L)).willReturn(Optional.of(theme));
+        given(inventoryRepository.existsByUserIdAndAssetId(1L, 100L)).willReturn(true);
+        given(themeAssetItemRepository.findByThemeAssetIdOrderBySortOrderAscIdAsc(100L))
+                .willReturn(List.of(chairItem, deskItem));
+        given(assetRepository.findAllById(List.of(10L, 11L))).willReturn(List.of(chair, desk));
+
+        var response = assetService.getDownloadManifest(1L, 100L);
+
+        assertThat(response.files())
+                .extracting(file -> file.code())
+                .containsExactly("deep-sea-chair", "deep-sea-desk");
+        then(assetRepository).should().findAllById(List.of(10L, 11L));
+        then(assetRepository).should(never()).findById(10L);
+        then(assetRepository).should(never()).findById(11L);
+    }
+
+    @Test
+    @DisplayName("다운로드 manifest는 보유하지 않은 에셋이면 ASSET_NOT_OWNED를 던진다")
+    void getDownloadManifest_notOwned_throwsException() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(assetRepository.findById(10L)).willReturn(Optional.of(TestFixtures.asset(10L, 1L, "chair", 0)));
+        given(inventoryRepository.existsByUserIdAndAssetId(1L, 10L)).willReturn(false);
+
+        assertThatThrownBy(() -> assetService.getDownloadManifest(1L, 10L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ASSET_NOT_OWNED);
+    }
+
+    @Test
+    @DisplayName("owned 필터는 인증 사용자 없이 요청하면 UNAUTHORIZED를 던진다")
+    void getAssets_ownedFilterWithoutUser_throwsUnauthorized() {
+        given(userService.requireUserId(null)).willThrow(new CustomException(ErrorCode.UNAUTHORIZED));
+
+        assertThatThrownBy(() -> assetService.getAssets(null, null, null, null, null, true, "popular", 20))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+        then(assetRepository).shouldHaveNoInteractions();
+    }
+
+    private Asset downloadableAsset(Long id, String code, String assetType, String assetUrl) {
+        Asset asset = Asset.builder()
+                .categoryId(1L)
+                .code(code)
+                .name(code)
+                .assetScope("SPACE")
+                .assetType(assetType)
+                .assetUrl(assetUrl)
+                .contentType("model/gltf-binary")
+                .fileSize(100L)
+                .fileHash("sha256:" + code)
+                .version(2)
+                .build();
+        TestFixtures.setId(asset, id);
+        return asset;
     }
 }

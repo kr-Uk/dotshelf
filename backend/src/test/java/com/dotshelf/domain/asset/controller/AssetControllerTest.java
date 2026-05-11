@@ -23,9 +23,14 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryListResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetCategoryResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AssetCollectionResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AssetFilterResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetListResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetPurchaseResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.AssetResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.AssetTypeResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.DownloadFileResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.DownloadManifestResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.InventoryItemResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.InventoryResponse;
 import com.dotshelf.domain.asset.dto.AssetDtos.ThemeContentsResponse;
@@ -54,32 +59,36 @@ class AssetControllerTest {
     @Test
     @DisplayName("에셋 목록은 category, sort, limit, userId를 서비스로 전달한다")
     void getAssets_passesQueryAndCurrentUser() throws Exception {
-        given(assetService.getAssets(1L, "wallpaper", "recent", 12))
+        given(assetService.getAssets(1L, "wallpaper", "DEEP_SEA", "CHAIR", "의자", true, "recent", 12))
                 .willReturn(new AssetListResponse(List.of(assetResponse(10L))));
 
         mockMvc.perform(get("/v1/assets")
                         .header("X-Test-Admin-User-Id", "1")
                         .param("category", "wallpaper")
+                        .param("collection", "DEEP_SEA")
+                        .param("type", "CHAIR")
+                        .param("q", "의자")
+                        .param("owned", "true")
                         .param("sort", "recent")
                         .param("limit", "12"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.result.assets[0].id").value(10));
 
-        then(assetService).should().getAssets(1L, "wallpaper", "recent", 12);
+        then(assetService).should().getAssets(1L, "wallpaper", "DEEP_SEA", "CHAIR", "의자", true, "recent", 12);
     }
 
     @Test
     @DisplayName("에셋 목록은 기본 sort와 limit을 적용한다")
     void getAssets_usesDefaultQueryValues() throws Exception {
-        given(assetService.getAssets(eq(1L), eq(null), eq("popular"), anyInt()))
+        given(assetService.getAssets(eq(1L), eq(null), eq(null), eq(null), eq(null), eq(null), eq("popular"), anyInt()))
                 .willReturn(new AssetListResponse(List.of()));
 
         mockMvc.perform(get("/v1/assets").header("X-Test-Admin-User-Id", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.assets").isArray());
 
-        then(assetService).should().getAssets(1L, null, "popular", 20);
+        then(assetService).should().getAssets(1L, null, null, null, null, null, "popular", 20);
     }
 
     @Test
@@ -115,6 +124,20 @@ class AssetControllerTest {
         mockMvc.perform(get("/v1/assets/categories"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.categories[0].code").value("WALLPAPER"));
+    }
+
+    @Test
+    @DisplayName("필터 목록은 컬렉션과 에셋 타입을 응답 envelope로 감싼다")
+    void getFilters_wrapsResponse() throws Exception {
+        given(assetService.getFilters())
+                .willReturn(new AssetFilterResponse(
+                        List.of(new AssetCollectionResponse("DEEP_SEA", "DEEP_SEA")),
+                        List.of(new AssetTypeResponse("CHAIR", "CHAIR"))));
+
+        mockMvc.perform(get("/v1/assets/filters"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.collections[0].code").value("DEEP_SEA"))
+                .andExpect(jsonPath("$.result.types[0].code").value("CHAIR"));
     }
 
     @Test
@@ -157,6 +180,36 @@ class AssetControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.purchaseId").value(99))
                 .andExpect(jsonPath("$.result.inventoryId").value(88));
+    }
+
+    @Test
+    @DisplayName("다운로드 manifest 조회는 current userId와 assetId를 서비스로 전달한다")
+    void getDownloadManifest_passesUserAndAssetId() throws Exception {
+        given(assetService.getDownloadManifest(1L, 10L))
+                .willReturn(new DownloadManifestResponse(
+                        10L,
+                        "CHAIR",
+                        "DEEP_SEA",
+                        2,
+                        List.of(new DownloadFileResponse(
+                                10L,
+                                "chair",
+                                "chair",
+                                "CHAIR",
+                                "CHAIR",
+                                "https://cdn.test/chair.glb",
+                                "model/gltf-binary",
+                                100L,
+                                "sha256:test",
+                                2,
+                                true,
+                                null))));
+
+        mockMvc.perform(get("/v1/assets/10/download-manifest").header("X-Test-Admin-User-Id", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.files[0].url").value("https://cdn.test/chair.glb"));
+
+        then(assetService).should().getDownloadManifest(1L, 10L);
     }
 
     private AssetResponse assetResponse(Long id) {

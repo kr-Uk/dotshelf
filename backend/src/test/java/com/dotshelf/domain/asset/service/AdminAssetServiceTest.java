@@ -21,9 +21,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dotshelf.domain.admin.entity.AdminAuditLog;
 import com.dotshelf.domain.admin.repository.AdminAuditLogRepository;
+import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetCreateRequest;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetConfirmRequest;
 import com.dotshelf.domain.asset.dto.AssetDtos.AdminAssetUploadUrlRequest;
 import com.dotshelf.domain.asset.entity.Asset;
+import com.dotshelf.domain.asset.repository.AssetCategoryRepository;
 import com.dotshelf.domain.asset.repository.AssetRepository;
 import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.service.UserService;
@@ -42,6 +44,9 @@ class AdminAssetServiceTest {
     private AssetRepository assetRepository;
 
     @Mock
+    private AssetCategoryRepository assetCategoryRepository;
+
+    @Mock
     private UserService userService;
 
     @Mock
@@ -56,10 +61,54 @@ class AdminAssetServiceTest {
     void setUp() {
         adminAssetService = new AdminAssetService(
                 assetRepository,
+                assetCategoryRepository,
                 userService,
                 adminAuditLogRepository,
                 s3StorageService,
                 new S3StorageProperties("bucket", "ap-northeast-2", "", "", "https://cdn.test", 300, 1800));
+    }
+
+    @Test
+    @DisplayName("에셋 생성은 관리자 권한, 코드 중복, 카테고리를 검증하고 비공개 에셋을 만든다")
+    void createAsset_validRequest_createsDraftAsset() {
+        User admin = TestFixtures.user(1L, "admin");
+        admin.changeRole("ADMIN");
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(userService.getUser(1L)).willReturn(admin);
+        given(assetRepository.existsByCode("DEEP_SEA_CHAIR_001")).willReturn(false);
+        given(assetCategoryRepository.findByCode("FURNITURE"))
+                .willReturn(Optional.of(TestFixtures.assetCategory("FURNITURE")));
+        given(assetRepository.save(any(Asset.class))).willAnswer(invocation -> {
+            Asset asset = invocation.getArgument(0);
+            TestFixtures.setId(asset, 20L);
+            return asset;
+        });
+        ArgumentCaptor<Asset> assetCaptor = ArgumentCaptor.forClass(Asset.class);
+
+        var response = adminAssetService.createAsset(
+                1L,
+                new AdminAssetCreateRequest(
+                        "DEEP_SEA_CHAIR_001",
+                        "깊은바다 의자",
+                        "FURNITURE",
+                        "CHAIR",
+                        "DEEP_SEA",
+                        "NORMAL",
+                        null,
+                        300,
+                        "DotShelf",
+                        "DotShelf Studio",
+                        null,
+                        true,
+                        false),
+                "127.0.0.1");
+
+        assertThat(response.id()).isEqualTo(20L);
+        assertThat(response.collectionCode()).isEqualTo("DEEP_SEA");
+        assertThat(response.active()).isFalse();
+        then(assetRepository).should().save(assetCaptor.capture());
+        assertThat(assetCaptor.getValue().getAssetScope()).isEqualTo("SPACE");
+        assertThat(assetCaptor.getValue().getPricePages()).isEqualTo(300);
     }
 
     @Test
@@ -83,6 +132,26 @@ class AdminAssetServiceTest {
         assertThat(response.key()).startsWith("assets/asset-code/bundle/");
         assertThat(response.key()).endsWith(".zip");
         assertThat(response.expiresInSeconds()).isEqualTo(1800L);
+    }
+
+    @Test
+    @DisplayName("GLB 본체 업로드 URL은 model/gltf-binary를 허용하고 glb 확장자를 사용한다")
+    void createBundleUploadUrl_validGlb_returnsGlbKey() {
+        givenAdminAndAsset(assetWithUrls());
+        given(s3StorageService.presignPut(
+                anyString(),
+                eq("model/gltf-binary"),
+                eq(2048L),
+                eq(Duration.ofSeconds(1800))))
+                .willAnswer(invocation -> new PresignedPut("https://upload.test/glb", invocation.getArgument(0), 1800));
+
+        var response = adminAssetService.createBundleUploadUrl(
+                1L,
+                10L,
+                new AdminAssetUploadUrlRequest("model/gltf-binary", 2048L));
+
+        assertThat(response.key()).startsWith("assets/asset-code/bundle/");
+        assertThat(response.key()).endsWith(".glb");
     }
 
     @Test
@@ -157,6 +226,9 @@ class AdminAssetServiceTest {
 
         assertThat(response.assetUrl()).isEqualTo("https://cdn.test/" + key);
         assertThat(asset.getAssetUrl()).isEqualTo("https://cdn.test/" + key);
+        assertThat(asset.getContentType()).isEqualTo("application/octet-stream");
+        assertThat(asset.getFileSize()).isEqualTo(4096L);
+        assertThat(asset.getVersion()).isEqualTo(2);
         then(adminAuditLogRepository).should().save(auditCaptor.capture());
         assertThat(auditCaptor.getValue().getActorUserId()).isEqualTo(1L);
         assertThat(auditCaptor.getValue().getAction()).isEqualTo("UPDATE_ASSET_BUNDLE");
@@ -165,6 +237,40 @@ class AdminAssetServiceTest {
         assertThat(auditCaptor.getValue().getBeforePayload()).isEqualTo("https://old.test/bundle");
         assertThat(auditCaptor.getValue().getAfterPayload()).isEqualTo("https://cdn.test/" + key);
         assertThat(auditCaptor.getValue().getIpAddress()).isEqualTo("127.0.0.1");
+    }
+
+    @Test
+    @DisplayName("번들 confirm은 명시 버전이 현재 버전 이하이면 ASSET_VERSION_DOWNGRADE를 던진다")
+    void confirmBundle_versionDowngrade_throwsException() {
+        Asset asset = assetWithVersion(5);
+        givenAdminAndAsset(asset);
+        String key = "assets/asset-code/bundle/new.bundle";
+        given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("application/octet-stream", 4096L));
+        given(s3StorageService.publicUrl(key)).willReturn("https://cdn.test/" + key);
+
+        assertThatThrownBy(() -> adminAssetService.confirmBundle(
+                1L,
+                10L,
+                new AdminAssetConfirmRequest(key, "sha256:new", 3),
+                "127.0.0.1"))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ASSET_VERSION_DOWNGRADE);
+
+        assertThat(asset.getVersion()).isEqualTo(5);
+        then(adminAuditLogRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("이미 공개된 에셋 publish는 감사 로그를 추가하지 않고 현재 상태를 반환한다")
+    void publishAsset_alreadyActive_returnsWithoutAudit() {
+        Asset asset = assetWithUrls();
+        givenAdminAndAsset(asset);
+
+        var response = adminAssetService.publishAsset(1L, 10L, "127.0.0.1");
+
+        assertThat(response.active()).isTrue();
+        then(adminAuditLogRepository).shouldHaveNoInteractions();
     }
 
     @Test
@@ -257,6 +363,22 @@ class AdminAssetServiceTest {
                 .assetType("WALLPAPER")
                 .assetUrl("https://old.test/bundle")
                 .previewImageUrl("https://old.test/preview.png")
+                .pricePages(100)
+                .build();
+        TestFixtures.setId(asset, 10L);
+        return asset;
+    }
+
+    private Asset assetWithVersion(int version) {
+        Asset asset = Asset.builder()
+                .categoryId(1L)
+                .code("asset-code")
+                .name("asset name")
+                .assetScope("SPACE")
+                .assetType("WALLPAPER")
+                .assetUrl("https://old.test/bundle")
+                .previewImageUrl("https://old.test/preview.png")
+                .version(version)
                 .pricePages(100)
                 .build();
         TestFixtures.setId(asset, 10L);

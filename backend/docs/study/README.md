@@ -12,6 +12,7 @@ push 단위 변경분에 대한 한국어 학습 노트. 무엇을 / 왜 / 어�
 
 | 날짜 | 브랜치 | 문서 | 핵심 내용 |
 |------|--------|------|----------|
+| 2026-05-11 | `feat/be/assetsdown` | [`2026-05-11-feat-be-assetsdown.md`](./2026-05-11-feat-be-assetsdown.md) | S3 기반 Unity 에셋 등록/필터/다운로드 manifest API와 테마 child asset 매핑 구현 |
 | 2026-05-07 | `feat/be/testcode` | [`2026-05-07-feat-be-testcode.md`](./2026-05-07-feat-be-testcode.md) | 백엔드 테스트 인프라와 Jacoco 85% gate, 도메인별 Controller/Service/Repository/Integration 테스트 보강 |
 | 2026-04-20 | `chore/be/deploy-infra` | [`2026-04-20-chore-be-deploy-infra.md`](./2026-04-20-chore-be-deploy-infra.md) | EC2 배포 파이프라인 + Cloudflare + GitLab CI 골격 구축 |
 | 2026-04-21 | `feat/be/refactoring` | [`2026-04-21-feat-be-refactoring.md`](./2026-04-21-feat-be-refactoring.md) | Swagger / JWT / Cursor / UTC 4-구멍 보강, patterns.md 공식화 |

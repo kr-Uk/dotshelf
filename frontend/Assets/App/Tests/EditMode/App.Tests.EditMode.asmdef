@@ -4,6 +4,8 @@
   "references": [
     "App.Domain",
     "App.Application",
+    "App.Features",
+    "App.Infrastructure",
     "UnityEngine.TestRunner",
     "UnityEditor.TestRunner"
   ],

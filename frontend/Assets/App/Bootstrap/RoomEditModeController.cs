@@ -1024,10 +1024,12 @@ namespace App.Bootstrap
 #endif
 
         // Map toolbar category → which inventory entries to surface. "전체" lists every
-        // catalog entry; "가구" / "소품" 등 카테고리 분류는 catalog entry 의 PlacementCategory /
-        // Kind 메타데이터로 결정 (이전엔 Assets/Arts/Models/{Furniture,Props}/ 폴더 경로 기반이었으나
-        // GLB 평탄화 이후 폴더 의미 없음). 남은 카테고리들은 wireframe placeholders 라
+        // catalog entry; "가구" 탭은 바닥 placement 가능한 모든 항목 (이전 /Props/ + /Furniture/
+        // 폴더 의미와 동일). 분류는 PlacementCategory 메타데이터로 결정 — GLB 평탄화(MR #154)
+        // 이후 폴더 경로 기반은 무효. 남은 카테고리들은 wireframe placeholders 라
         // content pipeline 생기기 전까지 빈 list 의도.
+        // (MR #154 review #2: 주석은 metadata 기반인데 코드는 여전히 path 기반이라 평탄화 후
+        // FURNITURE 탭이 비는 회귀 fix.)
         private static bool MatchesCategory(InventoryEntry entry, string categoryKey)
         {
             switch (categoryKey)
@@ -1035,9 +1037,10 @@ namespace App.Bootstrap
                 case "ALL":
                     return true;
                 case "FURNITURE":
-                    var path = entry.SourceAssetPath ?? string.Empty;
-                    return path.IndexOf("/Props/", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                           path.IndexOf("/Furniture/", StringComparison.OrdinalIgnoreCase) >= 0;
+                    // WallDeco (창문/네온사인) 와 BookshelfDeco 는 별도 placement → 가구 탭 제외.
+                    // 나머지 (Wallpaper loader fallback → FloorDeco 포함, FloorDeco 자체)는 바닥 데코로 surface.
+                    return entry.PlacementCategory != CustomizationCategory.WallDeco
+                        && entry.PlacementCategory != CustomizationCategory.BookshelfDeco;
                 default:
                     return false;
             }
@@ -3340,6 +3343,35 @@ namespace App.Bootstrap
             return null;
         }
 
+        // 평탄화(MR #154) 이전 저장본 호환 alias — 사용자 layout JSON 의 InventoryKey 에 박힌 old
+        // path (예: "path:Assets/Arts/Models/Props/book_stack.glb") 가 새 평탄 경로
+        // ("path:Assets/Arts/Models/book_stack.glb") 와 매칭되도록 lookup table.
+        //
+        // (MR #154 review #3: SourceAssetPath 가 저장 key 라 단순 이동으로도 사용자 layout 복원
+        // 실패하는 회귀 fix. TryFindInventoryEntryByKey 에서 한 번 통과 → catalog 새 key 로
+        // 재매칭 → SaveDecorationsUseCase 다음 저장 시 자동 마이그레이션.)
+        //
+        // 장기적으로는 SourceAssetPath 대신 catalog stable id / Unity GUID 기반 key 로 전환하는 게
+        // 정공법 — 그 전까지 alias map 이 호환 layer.
+        private static readonly Dictionary<string, string> LegacyInventoryKeyAliases =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "path:Assets/Arts/Models/Props/book_stack.glb",                        "path:Assets/Arts/Models/book_stack.glb" },
+                { "path:Assets/Arts/Models/Props/clock_hamham.glb",                      "path:Assets/Arts/Models/clock_hamham.glb" },
+                { "path:Assets/Arts/Models/Props/dashboard_natural.glb",                 "path:Assets/Arts/Models/dashboard_natural.glb" },
+                { "path:Assets/Arts/Models/Props/doll_hamham.glb",                       "path:Assets/Arts/Models/doll_hamham.glb" },
+                { "path:Assets/Arts/Models/Furniture/lamp_floor.glb",                    "path:Assets/Arts/Models/lamp_floor.glb" },
+                { "path:Assets/Arts/Models/Furniture/rug_natural.glb",                   "path:Assets/Arts/Models/rug_natural.glb" },
+                { "path:Assets/Arts/Models/Furniture/table_natural.glb",                 "path:Assets/Arts/Models/table_natural.glb" },
+                { "path:Assets/Arts/Models/Furniture/GoodVibes/GoodVibes_Bed.glb",       "path:Assets/Arts/Models/GoodVibes_Bed.glb" },
+                { "path:Assets/Arts/Models/Furniture/GoodVibes/GoodVibes_Desk.glb",      "path:Assets/Arts/Models/GoodVibes_Desk.glb" },
+                { "path:Assets/Arts/Models/Furniture/GoodVibes/GoodVibes_Monitor.glb",   "path:Assets/Arts/Models/GoodVibes_Monitor.glb" },
+                { "path:Assets/Arts/Models/Furniture/GoodVibes/GoodVibes_NeonSign.glb",  "path:Assets/Arts/Models/GoodVibes_NeonSign.glb" },
+                { "path:Assets/Arts/Models/Props/GoodVibes/GoodVibes_Rug.glb",           "path:Assets/Arts/Models/GoodVibes_Rug.glb" },
+                { "path:Assets/Arts/Models/Props/GoodVibes/GoodVibes_ToastPillow.glb",   "path:Assets/Arts/Models/GoodVibes_ToastPillow.glb" },
+                { "path:Assets/Arts/Models/Window/GoodVibes_Window.glb",                 "path:Assets/Arts/Models/GoodVibes_Window.glb" },
+            };
+
         // 캐시에 키가 있고 GameObject 가 살아있으면 true. 죽은 reference 는 lazy-clean.
         private bool IsInventoryKeyPlaced(string key)
         {
@@ -5408,10 +5440,16 @@ namespace App.Bootstrap
 
         // InventoryKey 로 inventoryEntries 에서 매칭. BuildInventoryKey 가 일관된 prefix 를 발행하므로
         // 단순 string 비교로 충분.
+        // 추가로 평탄화(MR #154) 이전 저장본 호환 — old path key 면 LegacyInventoryKeyAliases 로
+        // 새 평탄 경로 key 로 매핑 후 매칭. 한 번 매칭되면 다음 저장 시 새 key 로 자동 갱신.
         private bool TryFindInventoryEntryByKey(string key, out InventoryEntry entry)
         {
             if (!string.IsNullOrEmpty(key))
             {
+                if (LegacyInventoryKeyAliases.TryGetValue(key, out var aliased))
+                {
+                    key = aliased;
+                }
                 for (int i = 0; i < inventoryEntries.Count; i++)
                 {
                     if (BuildInventoryKey(inventoryEntries[i]) == key)
@@ -7049,20 +7087,13 @@ namespace App.Bootstrap
             bc.isTrigger = false;
         }
 
+        // Kind=None + canonical 매칭도 없는 edge case 의 마지막 fallback. 평탄화(MR #154) 이전엔
+        // /Props/ → 0.5m, /Furniture/ → 1.2m 폴더 휴리스틱이었는데 평탄 구조에선 폴더 의미가
+        // 없어졌으므로 항상 Generic 0.8m 반환. Kind 별 표준 크기는 NormalizeSpawnedScale 의
+        // 우선 lookup 에서 결정되며 이 함수는 그 외 fallback 만 담당.
+        // (MR #154 review #6: /Props//Furniture/ dead code 정리.)
         private static float ResolveTargetMeterSize(string sourceAssetPath)
         {
-            if (string.IsNullOrEmpty(sourceAssetPath))
-            {
-                return DefaultGenericTargetSizeMeters;
-            }
-            if (sourceAssetPath.IndexOf("/Props/", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return DefaultPropTargetSizeMeters;
-            }
-            if (sourceAssetPath.IndexOf("/Furniture/", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return DefaultFurnitureTargetSizeMeters;
-            }
             return DefaultGenericTargetSizeMeters;
         }
 
