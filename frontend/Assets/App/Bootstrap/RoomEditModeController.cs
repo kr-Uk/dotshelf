@@ -3970,26 +3970,48 @@ namespace App.Bootstrap
             float dt = Time.unscaledDeltaTime;
             bool changed = false;
 
-            // A/D — yaw 좌우 회전 (방 중심 orbit). +A 좌측, +D 우측.
-            float yawInput = 0f;
+            // 키보드 카메라 입력 — **정확히 1개 키만 눌렸을 때만 동작**. W/S/A/D 중 2개 이상
+            // 동시에 눌리면 줌·회전 모두 차단하고, 진행 중인 lerp 잔상까지 즉시 snap 으로 제거.
+            //
+            //   pressedCount == 1 → 해당 동작 (W=줌인, S=줌아웃, A=좌회전, D=우회전)
+            //   pressedCount == 0 → 입력 없음 — 이전 단일 키로 마감된 orbit 값으로 lerp 자연 settle 진행
+            //   pressedCount >= 2 → orbit yaw/pitch/distance delta 0 + HaltCameraInputResidual 로
+            //                       카메라 transform 을 현재 orbit target 으로 즉시 snap.
+            //                       이렇게 하면 LateUpdate 의 exponential smoothing 이 zero-gap 이라
+            //                       프레임당 추가 이동량 0 → "관성 잔상" 없음.
+            //
+            // 마우스 휠 줌은 별도 경로(아래 Mouse.scroll) 라 멀티키 게이팅과 무관 — 정상 동작.
             var kb = Keyboard.current;
-            if (kb != null)
+            bool wPressed = kb != null && kb.wKey.isPressed;
+            bool sPressed = kb != null && kb.sKey.isPressed;
+            bool aPressed = kb != null && kb.aKey.isPressed;
+            bool dPressed = kb != null && kb.dKey.isPressed;
+            int pressedCount =
+                (wPressed ? 1 : 0) + (sPressed ? 1 : 0) +
+                (aPressed ? 1 : 0) + (dPressed ? 1 : 0);
+
+            float yawInput = 0f;
+            float zoomInput = 0f;
+
+            if (pressedCount == 1)
             {
-                if (kb.aKey.isPressed) yawInput -= 1f;
-                if (kb.dKey.isPressed) yawInput += 1f;
+                if (wPressed)      zoomInput = -1f;
+                else if (sPressed) zoomInput = +1f;
+                else if (aPressed) yawInput  = -1f;
+                else if (dPressed) yawInput  = +1f;
             }
+            else if (pressedCount >= 2)
+            {
+                // orbit 상태(yaw/pitch/distance) 는 직전 단일 키 입력으로 마감된 값 보존 — 키를
+                // 떼면 그 자리에서 자연스럽게 멈춤. 카메라 transform 만 즉시 target 으로 snap 해서
+                // LateUpdate lerp 의 settling drift 를 끊는다.
+                HaltCameraInputResidual();
+            }
+
             if (Mathf.Abs(yawInput) > 0.001f)
             {
                 orbitYaw += yawInput * OrbitYawSpeed * dt;
                 changed = true;
-            }
-
-            // W/S — zoom (W=확대=distance 줄임, S=축소=distance 늘림).
-            float zoomInput = 0f;
-            if (kb != null)
-            {
-                if (kb.wKey.isPressed) zoomInput -= 1f;
-                if (kb.sKey.isPressed) zoomInput += 1f;
             }
             if (Mathf.Abs(zoomInput) > 0.001f)
             {
@@ -4049,6 +4071,37 @@ namespace App.Bootstrap
             {
                 Debug.Log($"[RoomEdit][Camera] orbit 줌 distance={orbitDistance:0.##}m");
             }
+        }
+
+        // 키보드 W/S/A/D 중 2개 이상 동시 입력 감지 시 호출 — 진행 중인 LateUpdate 의 exponential
+        // smoothing lerp 잔상을 끊는다. 카메라 transform 을 현재 orbit target 으로 즉시 snap 하면
+        // 다음 프레임 LateUpdate 의 Vector3.Lerp(current, target, t) 가 zero-gap 이 되어 추가 움직임 0.
+        //
+        // **orbit 상태(yaw/pitch/distance) 는 건드리지 않는다** — 직전 단일 키 입력으로 마감된
+        // 값 그대로 보존해야, 사용자가 키를 떼고 다시 단일 키 누르면 그 자리에서 자연스럽게 이어감.
+        // Default 모드에선 orbit 미파생 상태이므로 savedCameraPose 로 snap.
+        private void HaltCameraInputResidual()
+        {
+            if (editModeCamera == null) return;
+
+            Vector3 targetPos;
+            Quaternion targetRot;
+            if (isInDefaultView && savedCameraPoseValid)
+            {
+                targetPos = savedCameraPosition;
+                targetRot = savedCameraRotation;
+            }
+            else
+            {
+                ComputeOrbitPose(out targetPos, out targetRot);
+            }
+
+            editModeCamera.transform.SetPositionAndRotation(targetPos, targetRot);
+            // LateUpdate 가 다음 프레임에 다시 같은 target 을 계산해 lerp 하지만 gap 이 0 이라 noop.
+            // cameraPresetTargetPosition/Rotation 도 동기화 — LateUpdate 에서 재계산되지만 명시적으로
+            // 맞춰 두면 외부에서 이 필드를 읽을 때 stale 값이 보이지 않음.
+            cameraPresetTargetPosition = targetPos;
+            cameraPresetTargetRotation = targetRot;
         }
 
         // EventSystem 의 currentSelectedGameObject 가 InputField/TMP_InputField 컴포넌트를 가지면
