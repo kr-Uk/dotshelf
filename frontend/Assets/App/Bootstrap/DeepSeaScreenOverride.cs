@@ -3,8 +3,12 @@ using UnityEngine;
 
 namespace App.Bootstrap
 {
-    // DeepSea 테마 (assetId=300030) 의 노트북 화면 fit (ScreenSaverCanvas + AdImage)
-    // single orchestrator.
+    // 노트북 화면 (ScreenSaverCanvas + AdImage) RectTransform override single orchestrator.
+    //
+    // History: 처음엔 DeepSea (assetId=300030) 전용 — monitor 모드 화면 fit 용. 이후 Vintage
+    // (assetId=200031) 같은 non-monitor desk skin 도 ScreenSaverCanvas 고정 RectTransform 이
+    // 필요해져 일반화. 클래스 이름은 유지하되 동작은 entry flag (OverrideScreenSaverCanvasTransform /
+    // StretchCanvasAdImageOnDesk) 기반으로 generic. 향후 rename 가능.
     //
     // 책임:
     //   - 활성/비활성 lifecycle 관리. 테마 적용 시 Activate, 테마 전환 시 Deactivate.
@@ -15,14 +19,15 @@ namespace App.Bootstrap
     //
     // 비활성/다른 테마 보호:
     //   - ReapplyIfActive 는 active 가 아니면 즉시 no-op.
-    //   - Activate 는 entry.AssetId != DeepSeaAssetId 면 무시.
-    //   - 다른 테마의 native ScreenSaverCanvas / AdImage 동작은 절대 건드리지 않는다.
+    //   - Activate 는 entry 의 OverrideScreenSaverCanvasTransform / StretchCanvasAdImageOnDesk
+    //     둘 다 false 면 무시 → flag 안 박힌 테마 (GoodVibes 등) 의 native canvas 동작 보존.
     //
     // CameraFocusPoint / Notebook 클릭/포커스 로직 변경 없음:
     //   - ScreenSaverCanvas 와 AdImage 의 RectTransform 만 수정.
     //   - Screen.transform / CameraFocusPoint / NotebookHitArea / 카메라 이동/포커스 로직은 unaffected.
     public static class DeepSeaScreenOverride
     {
+        // 호환용 상수 — 외부에서 referencing 할 수 있어 유지. 새 코드는 entry flag 로 판단.
         public const long DeepSeaAssetId = 300030L;
 
         // 활성화된 DeepSea entry 의 reference. Activate 시 set, Deactivate 시 null.
@@ -35,17 +40,16 @@ namespace App.Bootstrap
         public static long ActiveAssetId => s_entry != null ? s_entry.AssetId : 0L;
         public static CustomizationEntry ActiveEntry => s_entry;
 
-        // 외부에서 호출 (DeskVisualSkinApplier.AlignNotebookScreenToMonitor 마지막).
+        // 외부에서 호출 — monitor 모드: DeskVisualSkinApplier.AlignNotebookScreenToMonitor 마지막.
+        // non-monitor 모드: DeskVisualSkinApplier.TryAttach 마지막 (Vintage 같이 lock 없이 ScreenSaverCanvas
+        // RectTransform 만 고정해야 하는 entry).
+        //
         // 활성 등록 + 즉시 reapply + Screen 에 ScreenSaverCanvasOverrideGuard 부착.
-        // entry.AssetId != DeepSeaAssetId 또는 필수 플래그가 꺼져 있으면 활성화 skip.
+        // entry 의 OverrideScreenSaverCanvasTransform / StretchCanvasAdImageOnDesk 둘 다 false 면
+        // 등록 skip — flag 안 박힌 테마 (GoodVibes 등) 는 native canvas 동작 보존.
         public static void RegisterActive(Transform roomRoot, CustomizationEntry entry, string reason)
         {
             if (entry == null || roomRoot == null) return;
-            if (entry.AssetId != DeepSeaAssetId)
-            {
-                // DeepSea 가 아닌 entry 에서 호출되면 무시. 다른 테마는 native 동작 보존.
-                return;
-            }
             if (!entry.OverrideScreenSaverCanvasTransform && !entry.StretchCanvasAdImageOnDesk)
             {
                 // entry 가 둘 다 비활성이면 override 할 게 없음. skip.
@@ -128,6 +132,12 @@ namespace App.Bootstrap
 
         // ScreenSaverCanvas (Screen 자식) 의 RectTransform 을 entry 값으로 강제 set.
         // 반환: 실제 적용 성공 여부.
+        //
+        // anchor/pivot:
+        //   - OverrideScreenSaverCanvasAnchors=true 일 때만 anchorMin/Max/pivot set.
+        //   - false (DeepSea 기존 entry) 면 Unity RectTransform default (0.5, 0.5) 유지 — 회귀 0.
+        //   - sizeDelta 와 anchor 는 같이 set 해야 의도된 좌표계가 만들어짐 (anchorMin==anchorMax 면
+        //     sizeDelta 가 width/height, stretch 면 padding).
         public static bool ApplyDeepSeaScreenCanvasOverride(Transform screen, CustomizationEntry entry, string reason)
         {
             if (screen == null || entry == null) return false;
@@ -140,6 +150,18 @@ namespace App.Bootstrap
                 return false;
             }
 
+            var rect = screenSaverCanvas.GetComponent<RectTransform>();
+
+            // anchor/pivot 먼저 — sizeDelta 의 의미는 anchor 에 따라 달라지므로 anchor 가 먼저 잡혀야 함.
+            // Unity 의 RectTransform 은 anchor/pivot 변경 시 자동으로 anchoredPosition / sizeDelta 를 재계산
+            // 하지 않으므로 (mode 가 inspector 의 RectTransform Tool 에서만 동작) raw set 으로 다 덮어쓴다.
+            if (rect != null && entry.OverrideScreenSaverCanvasAnchors)
+            {
+                rect.anchorMin = entry.ScreenSaverCanvasAnchorMin;
+                rect.anchorMax = entry.ScreenSaverCanvasAnchorMax;
+                rect.pivot = entry.ScreenSaverCanvasPivot;
+            }
+
             screenSaverCanvas.localPosition = entry.ScreenSaverCanvasLocalPosition;
             screenSaverCanvas.localEulerAngles = entry.ScreenSaverCanvasLocalRotation;
 
@@ -147,12 +169,22 @@ namespace App.Bootstrap
             if (scale.sqrMagnitude < 1e-10f) scale = Vector3.one;
             screenSaverCanvas.localScale = scale;
 
-            var rect = screenSaverCanvas.GetComponent<RectTransform>();
             var sizeDelta = entry.ScreenSaverCanvasSizeDelta;
             bool applySizeDelta = sizeDelta.sqrMagnitude > 1e-4f;
             if (rect != null && applySizeDelta)
             {
                 rect.sizeDelta = sizeDelta;
+            }
+
+            // verification log — Inspector 에서 동일 수치인지 검증 가능하도록 final RectTransform 값을
+            // entryAssetId 와 함께 출력. assetId 200031=Vintage / 300030=DeepSea / etc.
+            if (rect != null)
+            {
+                Debug.Log($"[ScreenCanvasVerify] entryAssetId={entry.AssetId} reason={reason} " +
+                          $"anchoredPosition={rect.anchoredPosition3D} localPosition={rect.localPosition} " +
+                          $"sizeDelta={rect.sizeDelta} anchorMin={rect.anchorMin} anchorMax={rect.anchorMax} pivot={rect.pivot} " +
+                          $"localEulerAngles={rect.localEulerAngles} localScale={rect.localScale} " +
+                          $"overrideAnchors={entry.OverrideScreenSaverCanvasAnchors}");
             }
             return true;
         }

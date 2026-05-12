@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using App.Application.Notebook;
+using App.Bootstrap;
 using Dotshelf.Scripts.Dashboard;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -1515,7 +1516,13 @@ namespace BookshelfPorting.Runtime
 
             if (notebookScreenController != null && notebookScreenController.ScreenTransform != null)
             {
-                cameraController.MoveToNotebookScreen(notebookScreenController.ScreenTransform);
+                // 노트북 포커스 카메라 mode — 현재 적용된 desk skin (테마) 에 따라 다름.
+                // ScreenAnchorBaked (default, vintage 등) = CameraFocusPoint baked offset 사용,
+                // ScreenForwardGeometry (DeepSea monitor 모드) = screen.forward geometry 사용.
+                // mode 는 DeskVisualSkinApplier.TryAttach 가 entry 의 NotebookFocusCameraMode 로 push,
+                // ClearSkin 이 default 로 reset.
+                var notebookFocusMode = NotebookFocusCameraModeRegistry.Current;
+                cameraController.MoveToNotebookScreen(notebookScreenController.ScreenTransform, notebookFocusMode);
                 return;
             }
 

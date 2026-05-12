@@ -305,6 +305,27 @@ namespace App.Bootstrap
                 Debug.LogWarning($"[DeskSkin] LAPTOP XZ DRIFTED — laptopDelta=({laptopDelta.x:F4},{laptopDelta.y:F4},{laptopDelta.z:F4}) entryAssetId={entry.AssetId}. " +
                                  "X / Z 는 native anchor 유지여야 정상 — Desk transform 자체가 흔들리지 않았는지 확인.");
             }
+
+            // 노트북 포커스 카메라 mode 라우팅 — entry 의 mode (int) 를 registry 에 push.
+            // FocusNotebook 시점에 Manager 가 registry.Current 를 읽어 CameraController 에 전달.
+            // entry 가 default (0 = ScreenAnchorBaked) 면 vintage / 일반 laptop 처럼 baked offset 사용,
+            // 1 (ScreenForwardGeometry) 이면 DeepSea 처럼 screen.forward geometry 사용.
+            NotebookFocusCameraModeRegistry.SetFromEntryInt(entry.NotebookFocusCameraMode, $"DeskSkin:{source}:assetId={entry.AssetId}");
+
+            // ScreenSaverCanvas RectTransform override 등록 — non-monitor 모드 (Vintage 같이
+            // lockNotebookStationToMonitor 가 꺼져 있어 AlignNotebookScreenToMonitor 가 호출되지 않는
+            // entry) 도 ScreenSaverCanvas 를 고정 RectTransform 으로 강제할 수 있게 여기서 등록.
+            // monitor 모드는 AlignNotebookScreenToMonitor 가 마지막에 RegisterActive 를 또 호출 (즉시
+            // reapply 가 idempotent 이라 중복 호출 안전 — 같은 entry 면 Initialize 가 cache reset
+            // 안 하고 그냥 reapply).
+            // entry flag 가 둘 다 false 면 RegisterActive 내부에서 skip — GoodVibes 등 native canvas
+            // 유지 테마에 영향 없음.
+            if (!entry.LockNotebookStationToMonitor &&
+                (entry.OverrideScreenSaverCanvasTransform || entry.StretchCanvasAdImageOnDesk))
+            {
+                DeepSeaScreenOverride.RegisterActive(roomRoot, entry, $"theme_apply:non_monitor:{source}");
+            }
+
             return true;
         }
 
@@ -493,6 +514,11 @@ namespace App.Bootstrap
             {
                 Debug.Log($"[DeskSkinRestore] entryAssetId=- visualExists={exists} functionalDeskPreserved=true laptopRestored={(notebookTransform != null ? "true" : "false")} source={source ?? "ClearSkin"}");
             }
+
+            // 노트북 포커스 카메라 mode reset — desk skin 해제되면 native procedural laptop 로 돌아
+            // 가므로 ScreenAnchorBaked (CameraFocusPoint baked offset) 가 정답. 다음 desk skin 적용
+            // 시 TryAttach 가 다시 덮어씀.
+            NotebookFocusCameraModeRegistry.ResetToDefault($"ClearSkin:{source ?? "unknown"}");
         }
 
         private static void ClearSkinUnder(Transform deskTransform, Transform notebookTransform)

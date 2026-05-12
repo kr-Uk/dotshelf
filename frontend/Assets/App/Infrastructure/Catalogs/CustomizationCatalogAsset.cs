@@ -184,6 +184,34 @@ namespace App.Infrastructure.Catalogs
                  "예: (800, 450).")]
         [SerializeField] private Vector2 screenSaverCanvasSizeDelta;
 
+        [Header("Desk 전용 — ScreenSaverCanvas anchor/pivot override")]
+        [Tooltip("true 면 아래 anchorMin/anchorMax/pivot 값을 ScreenSaverCanvas RectTransform 에 강제 적용. " +
+                 "false (default) 면 NotebookScreenController.CreateCanvas 가 만든 Unity RectTransform 기본값 " +
+                 "(anchorMin=anchorMax=pivot=(0.5,0.5)) 유지. anchor 가 stretch 가 아닌 fixed 위치라 " +
+                 "anchoredPosition 의 좌표계가 anchorMin/Max 에 따라 달라지므로, anchored 변경 시 같이 박을 것. " +
+                 "예: Vintage — anchorMin=(0,0) anchorMax=(0,0) pivot=(0.5,0.5) — 부모 좌하단 기준 + canvas " +
+                 "중심에 pivot. DeepSea 는 이 flag 가 꺼져 있어 영향 없음.")]
+        [SerializeField] private bool overrideScreenSaverCanvasAnchors;
+        [Tooltip("overrideScreenSaverCanvasAnchors=true 일 때 RectTransform.anchorMin 으로 set.")]
+        [SerializeField] private Vector2 screenSaverCanvasAnchorMin = new Vector2(0.5f, 0.5f);
+        [Tooltip("overrideScreenSaverCanvasAnchors=true 일 때 RectTransform.anchorMax 로 set.")]
+        [SerializeField] private Vector2 screenSaverCanvasAnchorMax = new Vector2(0.5f, 0.5f);
+        [Tooltip("overrideScreenSaverCanvasAnchors=true 일 때 RectTransform.pivot 으로 set.")]
+        [SerializeField] private Vector2 screenSaverCanvasPivot = new Vector2(0.5f, 0.5f);
+
+        [Header("Desk 전용 — 노트북 포커스 카메라 진입 mode")]
+        [Tooltip("FocusNotebook 진입 시 CameraController.MoveToNotebookScreen 이 사용할 mode (int). " +
+                 "BookshelfPorting.Runtime.NotebookFocusCameraMode enum 의 정수값과 1:1 매핑.\n" +
+                 "  0 = ScreenAnchorBaked (default / vintage / 기본 procedural laptop). Screen 자식 " +
+                 "CameraFocusPoint 의 prefab-baked offset 사용. laptop 슬랜트 framing 에 fit. " +
+                 "테이블 높이가 달라도 CameraFocusPoint 가 Screen-local 좌표라 Screen 따라가서 자동 적응.\n" +
+                 "  1 = ScreenForwardGeometry (DeepSea monitor 모드). screen.forward × world distance 로 " +
+                 "geometry-driven derive. AlignNotebookScreenToMonitor 로 Screen 이 upright 회전된 " +
+                 "monitor 모드 desk 에 fit.\n" +
+                 "신규 desk entry 는 monitor 모드 (hideLaptopRenderers + lockNotebookStationToMonitor) 면 " +
+                 "1 로, 일반 laptop-on-desk 면 0 (default) 으로 박기.")]
+        [SerializeField] private int notebookFocusCameraMode;
+
         public long AssetId => assetId;
         public string DisplayName => displayName;
         public string Description => description;
@@ -227,6 +255,11 @@ namespace App.Infrastructure.Catalogs
         public Vector3 ScreenSaverCanvasLocalRotation => screenSaverCanvasLocalRotation;
         public Vector3 ScreenSaverCanvasLocalScale => screenSaverCanvasLocalScale;
         public Vector2 ScreenSaverCanvasSizeDelta => screenSaverCanvasSizeDelta;
+        public bool OverrideScreenSaverCanvasAnchors => overrideScreenSaverCanvasAnchors;
+        public Vector2 ScreenSaverCanvasAnchorMin => screenSaverCanvasAnchorMin;
+        public Vector2 ScreenSaverCanvasAnchorMax => screenSaverCanvasAnchorMax;
+        public Vector2 ScreenSaverCanvasPivot => screenSaverCanvasPivot;
+        public int NotebookFocusCameraMode => notebookFocusCameraMode;
     }
 
     /// <summary>

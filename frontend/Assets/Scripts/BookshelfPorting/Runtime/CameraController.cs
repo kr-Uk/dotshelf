@@ -13,6 +13,31 @@ namespace BookshelfPorting.Runtime
         Notebook
     }
 
+    // 노트북 포커스 진입 시 camera pose 산출 방식. 테마별 desk skin 의 Screen 변환 양상이 달라
+    // 같은 식이 모든 case 에 맞지 않음 — 테마/desk entry 별로 골라 쓰기 위한 mode.
+    //
+    //   ScreenAnchorBaked       — 기존 (vintage / 기본 procedural laptop) 경로. Screen 자식
+    //                             CameraFocusPoint (Screen-local (0, -0.58, 0.024)) 의 prefab-baked
+    //                             offset 을 그대로 camera position 으로 사용. laptop 슬랜트 기준이라
+    //                             native laptop 화면 정면 framing 에 fit. monitor 모드처럼 Screen 이
+    //                             upright 으로 회전된 desk skin 에서는 camera 가 화면 아래로 떨어져
+    //                             올려다보는 어색한 각도가 됨 — 그런 desk 는 ScreenForwardGeometry.
+    //
+    //   ScreenForwardGeometry   — DeepSea monitor 모드용 신규 경로. screen.forward × notebookFocusDistance
+    //                             단위 vector × world distance 로 camera 배치 → Screen 의 lossyScale /
+    //                             position / rotation 이 어떻게 바뀌어도 일정한 체감 거리/각도.
+    //                             AlignNotebookScreenToMonitor 가 Screen.rotation 을 monitor 정면과
+    //                             align 시켜 둔 경우에만 의도대로 작동.
+    //
+    // 향후 테마 추가 시 — 테이블 높이/laptop slant 가 native 와 비슷하면 ScreenAnchorBaked, monitor
+    // 처럼 upright + scale 변화가 크면 ScreenForwardGeometry. 디자이너가 desk 카탈로그 entry 의
+    // notebookFocusCameraMode 필드로 선택.
+    public enum NotebookFocusCameraMode
+    {
+        ScreenAnchorBaked = 0,
+        ScreenForwardGeometry = 1,
+    }
+
     public class CameraController : MonoBehaviour
     {
         [SerializeField] private Camera targetCamera = null;
@@ -397,7 +422,14 @@ namespace BookshelfPorting.Runtime
             return true;
         }
 
+        // 무인자 오버로드 — 기존 호출자 호환. mode 미지정 시 ScreenAnchorBaked (vintage / 기본
+        // procedural laptop) 로 진입. 새 호출자는 mode 를 명시.
         public void MoveToNotebookScreen(Transform screenTransform)
+        {
+            MoveToNotebookScreen(screenTransform, NotebookFocusCameraMode.ScreenAnchorBaked);
+        }
+
+        public void MoveToNotebookScreen(Transform screenTransform, NotebookFocusCameraMode mode)
         {
             if (screenTransform == null)
             {
@@ -410,13 +442,6 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            // 책장(MoveToMode Frontal) / 대시보드(MoveToWhiteboardSurface) 와 같은 geometry-driven 패턴.
-            // 기존 path 는 CameraFocusPoint 자식 (Screen-local (0, -0.58, 0.024)) 의 baked offset 을 그대로
-            // camera position 으로 썼는데, 이 offset 은 laptop 슬랜트 기준 — DeepSea monitor 모드 (Screen.rotation
-            // = monitorTransform.rotation, upright) 에서는 camera 가 monitor 아래쪽 0.58m 에 떨어져 화면을
-            // 올려다보는 어색한 각도가 나옴. 새 path 는 surface 기하학에서 직접 derive 해 어떤 Screen 변환
-            // (테마별 lossyScale / position / rotation 변경) 에도 같은 체감 거리/각도 보장.
-            //
             // Snapshot the screen geometry before events/UI updates run — camera transition must never
             // re-read a Transform that may be reconfigured during fade.
             var screenCenterTransform = screenTransform.Find("ScreenCenter");
@@ -424,14 +449,26 @@ namespace BookshelfPorting.Runtime
                 ? screenCenterTransform.position
                 : screenTransform.TransformPoint(new Vector3(0f, 0.068f, 0.014f));
 
-            // screen.forward = 화면 정면 (display-out normal). camera 는 그 방향에서 notebookFocusDistance
-            // 만큼 떨어진 위치에 배치 — MoveToWhiteboardSurface 의 surface-local offset 패턴과 동일하지만
-            // 단위 vector × world distance 로 lossyScale 영향 제거. native laptop / DeepSea monitor 모두
-            // Screen.forward 가 display normal 과 align (DeskVisualSkinApplier.AlignNotebookScreenToMonitor
-            // 가 monitor 모드에서 Screen.rotation = monitorTransform.rotation × notebookScreenLocalRotation 으로
-            // 보정) 되어 있어 같은 식이 두 case 모두 화면 정면을 향함.
-            var distance = Mathf.Max(0.05f, notebookFocusDistance);
-            var cameraPosition = lookTarget + screenTransform.forward * distance;
+            Vector3 cameraPosition;
+            if (mode == NotebookFocusCameraMode.ScreenForwardGeometry)
+            {
+                // DeepSea monitor 모드 — screen.forward × world distance. AlignNotebookScreenToMonitor
+                // 가 Screen.rotation 을 monitor 정면과 align 해 두므로 screen.forward 가 display normal.
+                // 단위 vector × distance 라 Screen.lossyScale 변화에 영향 안 받음.
+                var distance = Mathf.Max(0.05f, notebookFocusDistance);
+                cameraPosition = lookTarget + screenTransform.forward * distance;
+            }
+            else
+            {
+                // ScreenAnchorBaked (default / vintage / 기본 procedural laptop) — Screen 자식
+                // CameraFocusPoint 의 prefab-baked offset 을 그대로 camera position 으로 사용.
+                // laptop 슬랜트 기준이라 native laptop 화면 정면 framing 에 fit. CameraFocusPoint
+                // 가 없으면 BookshelfGenerator 의 native offset (0, -0.58, 0.024) 로 fallback.
+                var cameraFocusPoint = screenTransform.Find("CameraFocusPoint");
+                cameraPosition = cameraFocusPoint != null
+                    ? cameraFocusPoint.position
+                    : screenTransform.TransformPoint(new Vector3(0f, -0.58f, 0.024f));
+            }
 
             var lookDirection = lookTarget - cameraPosition;
             if (lookDirection.sqrMagnitude <= 0.0001f)

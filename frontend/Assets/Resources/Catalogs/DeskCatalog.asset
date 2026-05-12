@@ -84,6 +84,7 @@ MonoBehaviour:
     screenSaverCanvasLocalRotation: {x: -187.307, y: 0, z: -180}
     screenSaverCanvasLocalScale: {x: 0.0005316375, y: 0.0005324333, z: 0.0005}
     screenSaverCanvasSizeDelta: {x: 800, y: 450}
+    notebookFocusCameraMode: 1
   - assetId: 200031
     displayName: "빈티지 책상"
     description: "Vintage 테마 전용 책상. DeskVisualSkinApplier 가 functional Desk transform 위에 visual overlay 로 부착. preserveSkinNativeScale=true 라 GLB 의 native world scale 을 base 로, placementScale (0.5, 0.5, 0.4) 를 multiplier 로 곱해 최종 world 크기 결정. placementRotation (0, 90, 0) 으로 Y 축 90도 회전. 위치는 XZ 중심 + Y bottom-align 으로 functional desk 자리에 정렬. laptop y 는 회전·축소된 skin top 을 자동 추적해 상판 위 안착. legacy placementAnchor / overrideNotebookStation 등은 새 경로에서 사용 안 함."
@@ -108,3 +109,12 @@ MonoBehaviour:
     monitorScale: {x: 1, y: 1, z: 1}
     skinScaleMultiplier: {x: 1, y: 1, z: 1}
     preserveSkinNativeScale: 1
+    overrideScreenSaverCanvasTransform: 1
+    screenSaverCanvasLocalPosition: {x: -0.002, y: -0.017, z: 0.014}
+    screenSaverCanvasLocalRotation: {x: -90.06, y: -180, z: 0}
+    screenSaverCanvasLocalScale: {x: 0.0005, y: 0.0004, z: 0.0005}
+    screenSaverCanvasSizeDelta: {x: 800, y: 450}
+    overrideScreenSaverCanvasAnchors: 1
+    screenSaverCanvasAnchorMin: {x: 0, y: 0}
+    screenSaverCanvasAnchorMax: {x: 0, y: 0}
+    screenSaverCanvasPivot: {x: 0.5, y: 0.5}

@@ -81,8 +81,10 @@ namespace App.Bootstrap
                 return;
             }
 
-            // (3) transform divergence 감지 — FadeCanvas 등이 canvas localScale 을 reset 했거나
-            //     AdImage 가 native 값으로 돌아간 경우.
+            // (3) transform divergence 감지 — FadeCanvas / ApplyCanvasPresentation 등이 canvas
+            //     localPosition/Rotation/Scale 을 native 로 reset 했거나 AdImage 가 native 값으로 돌아간 경우.
+            //     OverrideScreenSaverCanvasAnchors=true 인 entry (예: Vintage) 는 anchor/pivot 도 검사
+            //     — Unity RectTransform default (0.5, 0.5) 로 reset 됐는지 catch.
             bool divergent = false;
             if (trackedEntry.OverrideScreenSaverCanvasTransform)
             {
@@ -93,6 +95,15 @@ namespace App.Bootstrap
                     cachedCanvas.localScale != targetScale)
                 {
                     divergent = true;
+                }
+                if (!divergent && trackedEntry.OverrideScreenSaverCanvasAnchors && cachedCanvasRect != null)
+                {
+                    if (cachedCanvasRect.anchorMin != trackedEntry.ScreenSaverCanvasAnchorMin ||
+                        cachedCanvasRect.anchorMax != trackedEntry.ScreenSaverCanvasAnchorMax ||
+                        cachedCanvasRect.pivot != trackedEntry.ScreenSaverCanvasPivot)
+                    {
+                        divergent = true;
+                    }
                 }
             }
             if (!divergent && trackedEntry.StretchCanvasAdImageOnDesk && cachedAdImageRect != null)
