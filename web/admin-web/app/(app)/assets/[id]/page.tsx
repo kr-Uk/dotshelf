@@ -444,8 +444,13 @@ function UploadCard({
   const [phase, setPhase] = useState<string | null>(null);
 
   const uploadAndConfirm = async (file: File) => {
-    if (!allowedTypes.includes(file.type)) {
-      toast.error(`허용되지 않은 형식입니다: ${file.type || "unknown"}`);
+    // 브라우저가 .glb 같은 확장자의 MIME 을 OS 별로 모르거나 비워서 반환할 때가 있어 (특히 Windows)
+    // 파일 확장자 기반 fallback 으로 보정한다. 보정 후에도 미매치면 그때 reject.
+    const contentType = resolveContentType(file);
+    if (!allowedTypes.includes(contentType)) {
+      toast.error(
+        `허용되지 않은 형식입니다: ${contentType || file.type || "unknown"}`,
+      );
       return;
     }
     if (file.size > maxBytes) {
@@ -466,12 +471,12 @@ function UploadCard({
       const presigned = await api<AdminAssetUploadUrl>(uploadPath, {
         method: "POST",
         body: JSON.stringify({
-          contentType: file.type,
+          contentType,
           byteLength: file.size,
         }),
       });
 
-      await putToS3(presigned.uploadUrl, file, setProgress);
+      await putToS3(presigned.uploadUrl, file, contentType, setProgress);
 
       const confirmPath =
         kind === "bundle"
@@ -605,15 +610,31 @@ function Field({
   );
 }
 
+// 브라우저 (특히 Windows) 가 .glb / .bundle 같은 확장자의 MIME type 을 모르고 빈 string 으로
+// 반환하는 경우가 있어 파일명 확장자로 fallback 매핑한다. BE 의 ALLOWED_BUNDLE_TYPES /
+// ALLOWED_PREVIEW_IMAGE_TYPES 에 맞춰 같은 키를 돌려준다.
+function resolveContentType(file: File): string {
+  if (file.type) return file.type;
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith(".glb")) return "model/gltf-binary";
+  if (lower.endsWith(".zip")) return "application/zip";
+  if (lower.endsWith(".bundle")) return "application/octet-stream";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "";
+}
+
 function putToS3(
   url: string,
   file: File,
+  contentType: string,
   onProgress: (percent: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
-    xhr.setRequestHeader("Content-Type", file.type);
+    xhr.setRequestHeader("Content-Type", contentType);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {
         const percent = Math.round((event.loaded / event.total) * 100);
@@ -678,7 +699,7 @@ async function generateAndUploadPreviewBundle(
       }),
     },
   );
-  await putToS3(presigned.uploadUrl, previewFile, () => {});
+  await putToS3(presigned.uploadUrl, previewFile, previewFile.type, () => {});
   await api<AdminAssetDetail>(`/assets/${assetId}/preview-bundle`, {
     method: "PATCH",
     body: JSON.stringify({ key: presigned.key }),
