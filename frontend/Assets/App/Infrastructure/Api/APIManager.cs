@@ -40,27 +40,51 @@ namespace App.Infrastructure.Api
 
         private void Awake()
         {
-            if (Instance != null && Instance != this)
-            {
-                Destroy(gameObject);
-                return;
-            }
-
-            Instance = this;
-
             // 회귀 방지망 — APIManager 가 다른 시스템 prefab (예: RuntimeSystems → 'BookshelfSystems')
             // 의 root 에 attach 되면 DontDestroyOnLoad(gameObject) 가 root 전체를 DDOL 로 이동시켜
             // scene reload 시 BookshelfExperienceManager / state / canvas 등 옛 인스턴스가 통째로
             // 살아남는다 (재로그인 회귀: 옛 BEM 의 stale SerializeField → MissingReferenceException +
             // 책장 오버레이 button 비표시 + dashboard 빈 액자). 정상 prefab 구성은 APIManager 를
             // 단독 host GameObject 에 두는 것 (RuntimeSystems prefab 에서 child 로 분리). 본 가드는
-            // 그 구성이 미래에 회귀해도 자동으로 DDOL 을 차단하는 안전망 — 컴포넌트 수가 Transform +
-            // APIManager (== 2) 일 때만 DDOL. 그 외 (= 다른 시스템과 co-located) 는 scene 라이프사이클
-            // 그대로 따른다. 다음 scene 진입 시 새 APIManager 가 prefab 의 일부로 다시 instantiated 되고
-            // HydrateAccessTokenFromAuthSession 가 PlayerPrefs 에서 token 복구.
+            // 그 구성이 미래에 회귀해도 자동으로 DDOL/Destroy 영향을 root 로 확대하지 않도록 한다 —
+            // 컴포넌트 수가 Transform + APIManager (== 2) 면 단독 host, 그 외는 co-located.
             var componentCount = GetComponents<Component>().Length;
-            if (componentCount <= 2)
+            var isCoLocatedWithOtherSystems = componentCount > 2;
+
+            // duplicate 처리 — 이미 살아있는 Instance 가 있으면 자기 자신을 제거.
+            // 단독 host duplicate 라면 GameObject 통째로 destroy 안전. co-located 라면 component 만
+            // destroy 해서 root 의 다른 시스템 (BEM/state/canvas 등) 을 보호 (review Finding 2 반영).
+            if (Instance != null && Instance != this)
             {
+                if (isCoLocatedWithOtherSystems)
+                {
+                    Debug.LogWarning(
+                        $"[APIManager] duplicate on co-located host '{gameObject.name}' " +
+                        $"(componentCount={componentCount}) — component-only destroy 로 root 보호. " +
+                        "Prefab 분리 회귀 의심 — 정상 구성은 APIManager 단독 host GameObject 입니다.");
+                    Destroy(this);
+                }
+                else
+                {
+                    Destroy(gameObject);
+                }
+                return;
+            }
+
+            Instance = this;
+
+            // co-located 면 DDOL skip — scene 라이프사이클 그대로. 다음 scene 진입 시 새 APIManager
+            // 가 prefab 의 일부로 다시 instantiated 되고 HydrateAccessTokenFromAuthSession 가
+            // PlayerPrefs 에서 token 복구.
+            // 단독 host 면 DDOL — 단 DDOL 은 root GameObject 만 받으므로 child 로 attach 되어 있으면
+            // 먼저 root 로 분리 (review Finding 1 반영). prefab 에서 child host 로 두어도 본 가드가
+            // 자동으로 root 분리 + DDOL 보장.
+            if (!isCoLocatedWithOtherSystems)
+            {
+                if (transform.parent != null)
+                {
+                    transform.SetParent(null, worldPositionStays: true);
+                }
                 DontDestroyOnLoad(gameObject);
             }
             else
