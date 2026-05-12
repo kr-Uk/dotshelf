@@ -188,6 +188,20 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 7
     ScaleMultiplierOverride: 0
+  - DisplayName: Meshy Ai Pastel 16 Cubby Cabin 0512011805 Texture
+    Prefab: {fileID: 6156902042414624892, guid: ea53231e651d3734ba625d3d26728f3a, type: 3}
+    SourceAssetPath: Assets/Arts/Models/Bookshelves/Meshy_AI_Pastel_16_Cubby_Cabin_0512011805_texture.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
+  - DisplayName: Meshy Ai Underwater Shell Grid 0512011829 Texture
+    Prefab: {fileID: 7983643115131895607, guid: fd1d1dbd3b8b8d340815e957939d7410, type: 3}
+    SourceAssetPath: Assets/Arts/Models/Bookshelves/Meshy_AI_Underwater_Shell_Grid_0512011829_texture.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
   - DisplayName: Rug Natural
     Prefab: {fileID: -8098169881513260187, guid: a68c359f967d6064685b042697219e3d, type: 3}
     SourceAssetPath: Assets/Arts/Models/rug_natural.glb

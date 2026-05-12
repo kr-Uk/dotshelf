@@ -3635,6 +3635,16 @@ namespace App.Bootstrap
                 }
 
                 DeskVisualSkinApplier.TryAttach(entry, roomRoot, "ApplyCategoryMeshSwap");
+                // theme swap 직후 — 편집 모드 진입 후 desk skin 을 바꾸면 ApplyCanvasPresentation /
+                // FadeCanvas 등 부수 효과로 ScreenSaverCanvas / DashboardCanvas 가 SetActive(true)
+                // 로 돌아갈 가능성이 있어, suppression 이 active 면 즉시 다시 hide. 비활성이면 no-op.
+                // 어떤 테마 (Vintage / DeepSea / GoodVibes 등) 든 편집 모드에서는 노트북 클릭으로
+                // FocusNotebook 진입이 안 되도록 visual + click 동시 차단.
+                var experienceManagerForReassert = ResolveExperienceManager();
+                if (experienceManagerForReassert != null)
+                {
+                    experienceManagerForReassert.ReassertNotebookScreenSuppressionIfActive($"theme_apply:assetId={entry.AssetId}");
+                }
                 var monitorTransform = ApplyMonitorMeshSwap(roomRoot, entry);
 
                 // LockNotebookStationToMonitor=true (예: DeepSea + GoodVibes_Monitor 조합) 인 경우
@@ -4047,6 +4057,13 @@ namespace App.Bootstrap
                 // native renderer enable + laptop native localPosition 복원. marker 가 attach
                 // 시 캡처한 데이터로 처리.
                 DeskVisualSkinApplier.ClearSkin(roomRoot, "RestoreCategoryNativeMesh");
+                // ClearSkin 직후 — TryAttach 와 같은 이유로 suppression 재확인 (편집 모드 도중 테마
+                // 해제 케이스).
+                var experienceManagerForReassert = ResolveExperienceManager();
+                if (experienceManagerForReassert != null)
+                {
+                    experienceManagerForReassert.ReassertNotebookScreenSuppressionIfActive("theme_clear");
+                }
 
                 // legacy MeshSwap_Desk (roomRoot 자식) 잔존물도 정리 — 이전 경로 출신
                 wasDeskMeshSwapPresent = FindChildByName(roomRoot, $"MeshSwap_{CustomizationCategory.Desk}") != null;

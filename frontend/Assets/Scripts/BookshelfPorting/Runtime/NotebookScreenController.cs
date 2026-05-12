@@ -125,6 +125,9 @@ namespace BookshelfPorting.Runtime
         private CanvasGroup screenSaverCanvasGroup;
         private CanvasGroup dashboardCanvasGroup;
         private Coroutine transitionRoutine;
+        // 편집 모드 등에서 SetSceneInteractionSuppressed(true) 호출 시 true. theme swap 후 reassert
+        // hook 이 이 flag 를 읽어 canvas 가 다시 active 로 돌아가지 않게 보장.
+        private bool sceneInteractionSuppressed;
         [SerializeField] private Image screenSaverImage;
         [SerializeField] private Sprite[] adImages;
         [SerializeField] private bool useRandomAd;
@@ -225,6 +228,7 @@ namespace BookshelfPorting.Runtime
         // 상태 진입 자체가 차단됨.
         public void SetSceneInteractionSuppressed(bool suppressed)
         {
+            sceneInteractionSuppressed = suppressed;
             if (suppressed)
             {
                 if (screenSaverCanvas != null) screenSaverCanvas.gameObject.SetActive(false);
@@ -241,7 +245,30 @@ namespace BookshelfPorting.Runtime
                     dashboardCanvas.gameObject.SetActive(currentState == NotebookUiState.Dashboard);
                 }
             }
+            Debug.Log($"[NotebookFocusBlock] SetSceneInteractionSuppressed suppressed={suppressed} " +
+                      $"screenSaverActive={(screenSaverCanvas != null ? screenSaverCanvas.gameObject.activeSelf : false)} " +
+                      $"dashboardActive={(dashboardCanvas != null ? dashboardCanvas.gameObject.activeSelf : false)} currentState={currentState}");
         }
+
+        // 편집 모드 진입 후 theme swap 등으로 canvas state 가 다시 흔들렸을 때 외부 (예: DeskVisualSkinApplier
+        // 의 theme 적용 직후) 에서 호출해 suppress 상태 재확인용. 현재 suppression 이 active 면 두 canvas
+        // 를 다시 SetActive(false). 비활성이면 no-op (정상 상태 유지).
+        public void ReassertSceneInteractionSuppressionIfActive(string reason)
+        {
+            if (!sceneInteractionSuppressed) return;
+            if (screenSaverCanvas != null && screenSaverCanvas.gameObject.activeSelf)
+            {
+                screenSaverCanvas.gameObject.SetActive(false);
+                Debug.Log($"[NotebookFocusBlock] reasserted ScreenSaverCanvas SetActive(false) reason={reason}");
+            }
+            if (dashboardCanvas != null && dashboardCanvas.gameObject.activeSelf)
+            {
+                dashboardCanvas.gameObject.SetActive(false);
+                Debug.Log($"[NotebookFocusBlock] reasserted DashboardCanvas SetActive(false) reason={reason}");
+            }
+        }
+
+        public bool IsSceneInteractionSuppressed => sceneInteractionSuppressed;
 
         private void Awake()
         {

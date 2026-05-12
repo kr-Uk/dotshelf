@@ -913,6 +913,15 @@ namespace BookshelfPorting.Runtime
             notebookScreenController?.SetSceneInteractionSuppressed(suppressed);
         }
 
+        // theme swap (DeskVisualSkinApplier.TryAttach) 처럼 편집 모드 도중에 NotebookScreenController 의
+        // canvas state 가 흔들릴 수 있는 외부 hook 에서 호출. suppress 가 active 면 canvas 를 다시 SetActive(false)
+        // — 비활성이면 no-op. 편집 모드 진입 후 어떤 테마든 theme swap 직후 ScreenSaverCanvas 가 다시
+        // 보이거나 click 가능 상태로 돌아가지 않도록 보장.
+        public void ReassertNotebookScreenSuppressionIfActive(string reason)
+        {
+            notebookScreenController?.ReassertSceneInteractionSuppressionIfActive(reason);
+        }
+
         public void Configure(
             BookshelfState bookshelfState,
             CameraController controller,
@@ -1507,6 +1516,17 @@ namespace BookshelfPorting.Runtime
 
         public void FocusNotebook()
         {
+            // Edit-mode / scene-interaction suppression catch-all — entry path 무관 (raycast hit,
+            // F4 shortcut, AdImage Button.onClick, 미래 호출자) 어디서 들어와도 함수 진입부에서 차단.
+            // raycast 경로는 Update 단의 AreSceneInteractionsSuppressed 가드로 이미 차단되지만, 다른
+            // 경로 (canvas SetActive(false) 이어도 GraphicRaycaster 가 미세하게 deferred fire 하거나
+            // 외부 코드에서 직접 FocusNotebook() 호출하는 케이스) 까지 한 번에 막기 위함. 테마 무관 정책.
+            if (AreSceneInteractionsSuppressed)
+            {
+                Debug.Log("[NotebookFocusBlock] FocusNotebook suppressed — edit/scene interaction lock active. entry=public_FocusNotebook");
+                return;
+            }
+
             if (TryPromptUnsavedBookshelfChanges(FocusNotebookImmediate))
             {
                 return;
@@ -1517,6 +1537,15 @@ namespace BookshelfPorting.Runtime
 
         private void FocusNotebookImmediate()
         {
+            // FocusNotebook 공개 진입점에서 이미 가드하지만 TryPromptUnsavedBookshelfChanges 가 delegate
+            // 로 비동기 호출하는 경로 (모달 확인 후 FocusNotebookImmediate 재진입) 에서 edit 진입 race 가
+            // 발생할 수 있어 한 번 더 가드. 중복 비용은 bool 체크 1회.
+            if (AreSceneInteractionsSuppressed)
+            {
+                Debug.Log("[NotebookFocusBlock] FocusNotebookImmediate suppressed — edit/scene interaction lock active. entry=immediate");
+                return;
+            }
+
             if (!CanStartCameraFocus())
             {
                 return;
