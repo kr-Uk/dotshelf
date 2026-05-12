@@ -80,7 +80,7 @@ class AdminAssetServiceTest {
         admin.changeRole("ADMIN");
         given(userService.requireUserId(1L)).willReturn(1L);
         given(userService.getUser(1L)).willReturn(admin);
-        given(assetRepository.existsByCode("DEEP_SEA_CHAIR_001")).willReturn(false);
+        given(assetRepository.existsByCode("DEEPSEA_CHAIR_001")).willReturn(false);
         given(assetCategoryRepository.findByCode("FURNITURE"))
                 .willReturn(Optional.of(TestFixtures.assetCategory("FURNITURE")));
         given(assetRepository.save(any(Asset.class))).willAnswer(invocation -> {
@@ -93,11 +93,11 @@ class AdminAssetServiceTest {
         var response = adminAssetService.createAsset(
                 1L,
                 new AdminAssetCreateRequest(
-                        "DEEP_SEA_CHAIR_001",
+                        "DEEPSEA_CHAIR_001",
                         "깊은바다 의자",
                         "FURNITURE",
                         "CHAIR",
-                        "DEEP_SEA",
+                        "DEEPSEA",
                         "NORMAL",
                         null,
                         300,
@@ -109,7 +109,7 @@ class AdminAssetServiceTest {
                 "127.0.0.1");
 
         assertThat(response.id()).isEqualTo(20L);
-        assertThat(response.collectionCode()).isEqualTo("DEEP_SEA");
+        assertThat(response.collectionCode()).isEqualTo("DEEPSEA");
         assertThat(response.active()).isFalse();
         then(assetRepository).should().save(assetCaptor.capture());
         assertThat(assetCaptor.getValue().getAssetScope()).isEqualTo("SPACE");
@@ -134,7 +134,7 @@ class AdminAssetServiceTest {
                 new AdminAssetUploadUrlRequest("application/zip", 1024L));
 
         assertThat(response.uploadUrl()).isEqualTo("https://upload.test/bundle");
-        assertThat(response.key()).startsWith("assets/asset-code/bundle/");
+        assertThat(response.key()).startsWith("assets/FANTASY/CHAIR_001/bundle/");
         assertThat(response.key()).endsWith(".zip");
         assertThat(response.expiresInSeconds()).isEqualTo(1800L);
     }
@@ -155,7 +155,7 @@ class AdminAssetServiceTest {
                 10L,
                 new AdminAssetUploadUrlRequest("model/gltf-binary", 2048L));
 
-        assertThat(response.key()).startsWith("assets/asset-code/bundle/");
+        assertThat(response.key()).startsWith("assets/FANTASY/CHAIR_001/bundle/");
         assertThat(response.key()).endsWith(".glb");
     }
 
@@ -208,7 +208,7 @@ class AdminAssetServiceTest {
                 new AdminAssetUploadUrlRequest("image/webp", 2048L));
 
         assertThat(response.uploadUrl()).isEqualTo("https://upload.test/preview");
-        assertThat(response.key()).startsWith("assets/asset-code/preview/");
+        assertThat(response.key()).startsWith("assets/FANTASY/CHAIR_001/preview/");
         assertThat(response.key()).endsWith(".webp");
         assertThat(response.expiresInSeconds()).isEqualTo(300L);
     }
@@ -218,7 +218,7 @@ class AdminAssetServiceTest {
     void confirmBundle_validObject_updatesAssetUrlAndWritesAudit() {
         Asset asset = assetWithUrls();
         givenAdminAndAsset(asset);
-        String key = "assets/asset-code/bundle/new.bundle";
+        String key = "assets/FANTASY/CHAIR_001/bundle/new.bundle";
         given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("application/octet-stream", 4096L));
         given(s3StorageService.publicUrl(key)).willReturn("https://cdn.test/" + key);
         ArgumentCaptor<AdminAuditLog> auditCaptor = ArgumentCaptor.forClass(AdminAuditLog.class);
@@ -249,7 +249,7 @@ class AdminAssetServiceTest {
     void confirmBundle_versionDowngrade_throwsException() {
         Asset asset = assetWithVersion(5);
         givenAdminAndAsset(asset);
-        String key = "assets/asset-code/bundle/new.bundle";
+        String key = "assets/FANTASY/CHAIR_001/bundle/new.bundle";
         given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("application/octet-stream", 4096L));
         given(s3StorageService.publicUrl(key)).willReturn("https://cdn.test/" + key);
 
@@ -299,7 +299,7 @@ class AdminAssetServiceTest {
     @DisplayName("프리뷰 confirm은 S3 contentType이 이미지 화이트리스트 밖이면 STORAGE_INVALID_CONTENT_TYPE을 던진다")
     void confirmPreviewImage_invalidContentType_throwsInvalidContentType() {
         givenAdminAndAsset(assetWithUrls());
-        String key = "assets/asset-code/preview/a.png";
+        String key = "assets/FANTASY/CHAIR_001/preview/a.png";
         given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("text/plain", 10L));
 
         assertThatThrownBy(() -> adminAssetService.confirmPreviewImage(
@@ -318,7 +318,7 @@ class AdminAssetServiceTest {
     @DisplayName("프리뷰 confirm은 S3 객체 크기가 한도를 넘으면 STORAGE_FILE_TOO_LARGE를 던진다")
     void confirmPreviewImage_tooLarge_throwsFileTooLarge() {
         givenAdminAndAsset(assetWithUrls());
-        String key = "assets/asset-code/preview/a.png";
+        String key = "assets/FANTASY/CHAIR_001/preview/a.png";
         given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("image/png", 5L * 1024 * 1024 + 1));
 
         assertThatThrownBy(() -> adminAssetService.confirmPreviewImage(
@@ -420,7 +420,7 @@ class AdminAssetServiceTest {
                 10L,
                 new AdminAssetUploadUrlRequest("model/gltf-binary", 1024L));
 
-        assertThat(response.key()).startsWith("assets/asset-code/preview-bundle/");
+        assertThat(response.key()).startsWith("assets/FANTASY/CHAIR_001/preview-bundle/");
         assertThat(response.key()).endsWith(".glb");
         assertThat(response.uploadUrl()).isEqualTo("https://upload.test/preview-bundle");
     }
@@ -446,7 +446,7 @@ class AdminAssetServiceTest {
     void confirmPreviewBundle_validObject_updatesPreviewBundleFields() {
         Asset asset = assetWithUrls();
         givenAdminAndAsset(asset);
-        String key = "assets/asset-code/preview-bundle/abc.glb";
+        String key = "assets/FANTASY/CHAIR_001/preview-bundle/abc.glb";
         given(s3StorageService.headObject(key)).willReturn(new ObjectMetadata("model/gltf-binary", 512L));
         given(s3StorageService.publicUrl(key)).willReturn("https://cdn.test/" + key);
 
@@ -464,6 +464,52 @@ class AdminAssetServiceTest {
         assertThat(response.assetUrl()).isEqualTo("https://old.test/bundle");
     }
 
+    @Test
+    @DisplayName("에셋 생성은 code 형식이 어긋나면 ASSET_CODE_FORMAT_INVALID 를 던진다")
+    void createAsset_invalidCodeShape_throwsAssetCodeFormatInvalid() {
+        User admin = TestFixtures.user(1L, "admin");
+        admin.changeRole("ADMIN");
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(userService.getUser(1L)).willReturn(admin);
+
+        // theme 만 있고 sub-code 없음 / 소문자 / 슬래시 / 시작 또는 끝 underscore / 단일 토큰 (underscore 없음)
+        // - DEEP_SEA_CHAIR_001 은 regex 통과는 하지만(theme=DEEP/sub=SEA_CHAIR_001) 운영상 의도와 다르므로
+        //   FE 정책으로 막고, BE regex 는 형식만 본다. 여기서는 형식이 명확히 깨진 케이스만 검증.
+        List<String> invalidCodes = List.of(
+                "NOUNDERSCORE",
+                "FANTASY_",
+                "_CHAIR_001",
+                "fantasy_chair",
+                "FANTASY/CHAIR",
+                "FANTASY__CHAIR");
+
+        for (String invalid : invalidCodes) {
+            assertThatThrownBy(() -> adminAssetService.createAsset(
+                    1L,
+                    new AdminAssetCreateRequest(
+                            invalid,
+                            "이름",
+                            "FURNITURE",
+                            "CHAIR",
+                            null,
+                            "NORMAL",
+                            null,
+                            0,
+                            null,
+                            null,
+                            null,
+                            true,
+                            false),
+                    "127.0.0.1"))
+                    .as("invalid code: %s", invalid)
+                    .isInstanceOf(CustomException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.ASSET_CODE_FORMAT_INVALID);
+        }
+
+        then(assetRepository).should(org.mockito.Mockito.never()).save(any(Asset.class));
+    }
+
     private void givenAdminAndAsset(Asset asset) {
         User admin = TestFixtures.user(1L, "admin");
         admin.changeRole("ADMIN");
@@ -475,7 +521,7 @@ class AdminAssetServiceTest {
     private Asset assetWithUrls() {
         Asset asset = Asset.builder()
                 .categoryId(1L)
-                .code("asset-code")
+                .code("FANTASY_CHAIR_001")
                 .name("asset name")
                 .assetScope("SPACE")
                 .assetType("WALLPAPER")
@@ -490,7 +536,7 @@ class AdminAssetServiceTest {
     private Asset assetWithVersion(int version) {
         Asset asset = Asset.builder()
                 .categoryId(1L)
-                .code("asset-code")
+                .code("FANTASY_CHAIR_001")
                 .name("asset name")
                 .assetScope("SPACE")
                 .assetType("WALLPAPER")
