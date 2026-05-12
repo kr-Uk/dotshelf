@@ -163,7 +163,7 @@ public class ReadingRecordService {
     @Transactional
     public void delete(Long userId, Long recordId) {
         Long currentUserId = userService.requireUserId(userId);
-        validateOwner(userId, recordId);
+        validateOwner(currentUserId, recordId);
         getRecordEntity(recordId).delete();
         spaceService.findOrCreateMySpace(currentUserId).decreaseReadingRecordCount();
     }

@@ -1387,7 +1387,6 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void OnEditClicked()
         {
-            Debug.Log($"[Dashboard] OnEditClicked — dashboardEditModalRoot={dashboardEditModalRoot != null}, currentSnapshot={currentSnapshot != null}, interactionEnabled={interactionEnabled}");
             OpenDashboardEditModal();
         }
 
