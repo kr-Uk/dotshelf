@@ -1753,8 +1753,6 @@ namespace App.Bootstrap
                 }
             }
 
-            SetStep3LoadingCoverVisible(false);
-            yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
             var readyDeadline = Time.unscaledTime + MainViewReadyTimeoutSeconds;
             while (Time.unscaledTime < readyDeadline)
             {
@@ -1778,6 +1776,11 @@ namespace App.Bootstrap
                     step3TransitionRoutine = null;
                     yield break;
                 }
+            }
+            else
+            {
+                SetStep3LoadingCoverVisible(false);
+                yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
             }
 
             SetStep3OverlayStatus("책장 포커스 화면으로 이동 중입니다.");
@@ -1825,6 +1828,7 @@ namespace App.Bootstrap
             }
             else
             {
+                SetStep3LoadingCoverVisible(false);
                 SetStep3OverlayStatus("책장 포커스 연결을 확인해주세요.");
                 Debug.LogWarning("[OnboardingDemo] Failed to complete bookshelf focus transition using existing scene flow before the Step 3 timeout.");
             }
@@ -1888,7 +1892,16 @@ namespace App.Bootstrap
                    cameraController != null &&
                    cameraController.isActiveAndEnabled &&
                    !cameraController.IsTransitioning &&
+                   IsInitialBookshelfRefreshComplete() &&
                    (bookshelfGenerator == null || !bookshelfGenerator.IsBookshelfSwitching);
+        }
+
+        private static bool IsInitialBookshelfRefreshComplete()
+        {
+            var syncController = UnityEngine.Object.FindFirstObjectByType<BookshelfApiSyncController>(FindObjectsInactive.Include);
+            return syncController == null ||
+                   !syncController.IsServerSyncEnabled ||
+                   syncController.HasCompletedInitialRefresh;
         }
 
         private void RefreshStep3CompletionGate(bool force)

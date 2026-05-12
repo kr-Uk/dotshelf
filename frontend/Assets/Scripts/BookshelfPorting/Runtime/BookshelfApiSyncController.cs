@@ -27,6 +27,10 @@ namespace BookshelfPorting.Runtime
         private Action<NotebookSpaceThumbnailUploadResult> pendingThumbnailUploadSucceeded;
         private Action<string> pendingThumbnailUploadFailed;
         private Action<bool, string> refreshCompletion;
+        private readonly List<Action<bool, string>> queuedRefreshCompletions = new List<Action<bool, string>>();
+        private bool hasCompletedInitialRefresh;
+        private bool lastInitialRefreshSucceeded;
+        private string lastInitialRefreshMessage;
         private int itemsLoadFailureCount;
         private string firstItemsLoadFailureMessage;
         private bool isBookshelfSkinCatalogLoading;
@@ -54,7 +58,25 @@ namespace BookshelfPorting.Runtime
 
         public bool IsRefreshing => isRefreshing;
 
+        public bool HasCompletedInitialRefresh => hasCompletedInitialRefresh;
+
         public bool HasAccessToken => APIManager.Instance != null && APIManager.Instance.HasAccessToken;
+
+        public void WaitForInitialRefresh(Action<bool, string> onCompleted)
+        {
+            if (onCompleted == null)
+            {
+                return;
+            }
+
+            if (hasCompletedInitialRefresh)
+            {
+                onCompleted(lastInitialRefreshSucceeded, lastInitialRefreshMessage);
+                return;
+            }
+
+            RefreshFromServer(onCompleted);
+        }
 
         public void Configure(
             NotebookApiClient apiClient,
@@ -82,13 +104,16 @@ namespace BookshelfPorting.Runtime
         {
             if (!IsConfigured)
             {
-                onCompleted?.Invoke(false, "책장 API 동기화가 아직 준비되지 않았습니다.");
+                CompleteRefreshWithoutRequest(onCompleted, false, "책장 API 동기화가 아직 준비되지 않았습니다.");
                 return;
             }
 
             if (isRefreshing)
             {
-                onCompleted?.Invoke(false, "책장 새로고침이 이미 진행 중입니다.");
+                if (onCompleted != null)
+                {
+                    queuedRefreshCompletions.Add(onCompleted);
+                }
                 return;
             }
 
@@ -98,7 +123,7 @@ namespace BookshelfPorting.Runtime
             // until login instead of falling back to local catalog data.
             if (APIManager.Instance == null || !APIManager.Instance.HasAccessToken)
             {
-                onCompleted?.Invoke(false, "로그인 정보가 없어 책장 새로고침을 건너뜁니다.");
+                CompleteRefreshWithoutRequest(onCompleted, false, "로그인 정보가 없어 책장 새로고침을 건너뜁니다.");
                 return;
             }
 
@@ -134,6 +159,14 @@ namespace BookshelfPorting.Runtime
             refreshCompletion = onCompleted;
             itemsLoadFailureCount = 0;
             firstItemsLoadFailureMessage = null;
+        }
+
+        private void CompleteRefreshWithoutRequest(Action<bool, string> onCompleted, bool success, string message)
+        {
+            hasCompletedInitialRefresh = true;
+            lastInitialRefreshSucceeded = success;
+            lastInitialRefreshMessage = message;
+            onCompleted?.Invoke(success, message);
         }
 
         // External entry point for "visit another user's space" flows
@@ -1802,16 +1835,27 @@ namespace BookshelfPorting.Runtime
             }
 
             isRefreshing = false;
+            hasCompletedInitialRefresh = true;
+            lastInitialRefreshSucceeded = completionSuccess;
+            lastInitialRefreshMessage = completionMessage;
             if (!success && !string.IsNullOrWhiteSpace(message))
             {
                 Debug.LogWarning($"Bookshelf API refresh skipped: {message}");
             }
 
             var completion = refreshCompletion;
+            var queuedCompletions = queuedRefreshCompletions.Count > 0
+                ? queuedRefreshCompletions.ToArray()
+                : Array.Empty<Action<bool, string>>();
+            queuedRefreshCompletions.Clear();
             refreshCompletion = null;
             itemsLoadFailureCount = 0;
             firstItemsLoadFailureMessage = null;
             completion?.Invoke(completionSuccess, completionMessage);
+            for (var i = 0; i < queuedCompletions.Length; i++)
+            {
+                queuedCompletions[i]?.Invoke(completionSuccess, completionMessage);
+            }
         }
 
         private static void ApplyUserBookResponse(BookEntity book, UserBookResponseDto response)

@@ -19,10 +19,12 @@ namespace App.Bootstrap
     {
         private const int CanvasSortingOrder = 7000;
         private const float MinCoverDurationSeconds = 0.25f;
-        private const float MaxCoverDurationSeconds = 8f;
+        private const float MaxCoverDurationSeconds = 20f;
 
         private static readonly Color BackgroundColor = new Color(0.96f, 0.94f, 0.90f, 1f);
         private static readonly Color TextColor = new Color(0.18f, 0.14f, 0.09f, 1f);
+        private bool hasRequestedInitialBookshelfRefresh;
+        private bool initialBookshelfRefreshCompleted;
 
         public static void Show(string message = "메인 화면으로 이동 중입니다.")
         {
@@ -99,10 +101,11 @@ namespace App.Bootstrap
         }
 
         // Stays visible until: MainScene is the active scene, the bookshelf
-        // experience manager has been instantiated, and at least one render
-        // frame has elapsed. A short minimum-duration prevents flicker on very
-        // fast loads; a generous max-duration is just a safety net so a stuck
-        // load eventually clears the cover instead of trapping the player.
+        // experience manager has been instantiated, and the first bookshelf API
+        // refresh has completed or intentionally skipped. A short
+        // minimum-duration prevents flicker on very fast loads; a generous
+        // max-duration is just a safety net so a stuck load eventually clears
+        // the cover instead of trapping the player.
         private IEnumerator WaitForMainSceneAndDestroy()
         {
             var startTime = Time.unscaledTime;
@@ -110,12 +113,10 @@ namespace App.Bootstrap
 
             while (Time.unscaledTime < deadline)
             {
-                var inMain = SceneManager.GetActiveScene().name == SceneKeys.Main;
-                var managerReady = inMain &&
-                                   FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include) != null;
+                var mainSceneReady = IsMainSceneReadyForReveal();
                 var minDurationElapsed = (Time.unscaledTime - startTime) >= MinCoverDurationSeconds;
 
-                if (inMain && managerReady && minDurationElapsed)
+                if (mainSceneReady && minDurationElapsed)
                 {
                     break;
                 }
@@ -130,6 +131,39 @@ namespace App.Bootstrap
             yield return null;
 
             Destroy(gameObject);
+        }
+
+        private bool IsMainSceneReadyForReveal()
+        {
+            if (SceneManager.GetActiveScene().name != SceneKeys.Main)
+            {
+                return false;
+            }
+
+            var manager = FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+            if (manager == null)
+            {
+                return false;
+            }
+
+            var sync = FindFirstObjectByType<BookshelfApiSyncController>(FindObjectsInactive.Include);
+            if (sync == null || !sync.IsServerSyncEnabled)
+            {
+                return true;
+            }
+
+            if (sync.HasCompletedInitialRefresh || initialBookshelfRefreshCompleted)
+            {
+                return true;
+            }
+
+            if (!hasRequestedInitialBookshelfRefresh)
+            {
+                hasRequestedInitialBookshelfRefresh = true;
+                sync.WaitForInitialRefresh((_, _) => initialBookshelfRefreshCompleted = true);
+            }
+
+            return false;
         }
     }
 }

@@ -947,8 +947,47 @@ namespace BookshelfPorting.Runtime
 
         public void NotifyBookshelfApiSynced()
         {
+            ClearFirstBookshelfCreationPromptIfShelfExists();
             RefreshBookshelfIndexIndicator(CurrentFocusArea == ExperienceFocusArea.Bookshelf && (state == null || !state.IsViewingBook));
             RefreshHud();
+        }
+
+        private bool HasAnyBookshelf()
+        {
+            return bookshelfGenerator != null && bookshelfGenerator.BookshelfCount > 0;
+        }
+
+        private bool IsInitialBookshelfApiSyncPending()
+        {
+            return usesHttpApiMode &&
+                   bookshelfApiSyncController != null &&
+                   bookshelfApiSyncController.IsServerSyncEnabled &&
+                   !bookshelfApiSyncController.HasCompletedInitialRefresh;
+        }
+
+        private void ClearFirstBookshelfCreationPromptIfShelfExists()
+        {
+            if (!HasAnyBookshelf())
+            {
+                return;
+            }
+
+            isEmptyBookshelfTutorialEntryPending = false;
+            if (firstBookshelfTutorialMode != FirstBookshelfTutorialMode.CreateFirstShelf)
+            {
+                return;
+            }
+
+            firstBookshelfTutorialMode = FirstBookshelfTutorialMode.None;
+            isFirstBookshelfTutorialOpen = false;
+            if (firstBookshelfTutorialBackdrop != null)
+            {
+                firstBookshelfTutorialBackdrop.SetActive(false);
+            }
+            if (firstBookshelfTutorialPanel != null)
+            {
+                firstBookshelfTutorialPanel.SetActive(false);
+            }
         }
 
         public void NotifyBookPlacementCommitted(BookEntity book)
@@ -4595,6 +4634,7 @@ namespace BookshelfPorting.Runtime
             RefreshBookPlacementEditor();
             ApplyResponsiveFocusOverlayLayout(true);
             RefreshDeleteResultDialog();
+            ClearFirstBookshelfCreationPromptIfShelfExists();
             RequestEmptyBookshelfTutorialEntry();
             RefreshFirstBookshelfTutorialPanel();
             RefreshEmptyBookshelfAddButton();
@@ -6326,6 +6366,7 @@ namespace BookshelfPorting.Runtime
         {
             return bookshelfGenerator != null &&
                    bookshelfGenerator.BookshelfCount <= 0 &&
+                   !IsInitialBookshelfApiSyncPending() &&
                    CanMutateOwnedBookshelf() &&
                    !isFirstBookshelfCreateInProgress &&
                    !isBookAddPlacementSelectionActive &&
@@ -6411,6 +6452,11 @@ namespace BookshelfPorting.Runtime
 
         private FirstBookshelfTutorialMode ResolveFirstBookshelfTutorialMode()
         {
+            if (HasAnyBookshelf() && firstBookshelfTutorialMode == FirstBookshelfTutorialMode.CreateFirstShelf)
+            {
+                return FirstBookshelfTutorialMode.None;
+            }
+
             if (!CanShowFirstBookshelfTutorialOverCurrentUi())
             {
                 return FirstBookshelfTutorialMode.None;
@@ -6621,6 +6667,7 @@ namespace BookshelfPorting.Runtime
         {
             return bookshelfGenerator != null &&
                    bookshelfGenerator.BookshelfCount <= 0 &&
+                   !IsInitialBookshelfApiSyncPending() &&
                    !isFirstBookshelfCreateInProgress &&
                    CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
                    CanMutateOwnedBookshelf() &&
@@ -9017,7 +9064,9 @@ namespace BookshelfPorting.Runtime
                                              bookshelfGenerator != null &&
                                              bookshelfGenerator.BookshelfCount > 0 &&
                                              !CanUseBookshelfServerPlacement(bookshelfGenerator.DisplayBookshelfIndex);
-            var hasNoBookshelves = bookshelfGenerator != null && bookshelfGenerator.BookshelfCount <= 0;
+            var hasNoBookshelves = bookshelfGenerator != null &&
+                                   bookshelfGenerator.BookshelfCount <= 0 &&
+                                   !IsInitialBookshelfApiSyncPending();
             var canShowEmptyState = isBookshelfFocused &&
                                     !isViewingBook &&
                                     !isDraggingBook &&
