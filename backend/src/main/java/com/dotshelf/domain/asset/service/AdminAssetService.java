@@ -146,6 +146,7 @@ public class AdminAssetService {
     @Transactional
     public AdminAssetResponse createAsset(Long userId, AdminAssetCreateRequest request, String ipAddress) {
         User actor = requireAdmin(userId);
+        requireValidCodeShape(request.code());
         if (assetRepository.existsByCode(request.code())) {
             throw new CustomException(ErrorCode.ASSET_CODE_ALREADY_EXISTS);
         }
@@ -221,7 +222,7 @@ public class AdminAssetService {
             throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
         }
         String extension = resolveBundleExtension(request.contentType());
-        String key = "assets/" + asset.getCode() + "/bundle/" + UUID.randomUUID() + "." + extension;
+        String key = "assets/" + codeToS3Prefix(asset.getCode()) + "/bundle/" + UUID.randomUUID() + "." + extension;
         PresignedPut presigned = s3StorageService.presignPut(
                 key,
                 request.contentType(),
@@ -236,7 +237,7 @@ public class AdminAssetService {
         Asset asset = getAsset(assetId);
         ObjectMetadata metadata = verifyConfirmedObject(
                 request.key(),
-                "assets/" + asset.getCode() + "/bundle/",
+                "assets/" + codeToS3Prefix(asset.getCode()) + "/bundle/",
                 ALLOWED_BUNDLE_TYPES::contains,
                 MAX_BUNDLE_SIZE_BYTES);
         String before = asset.getAssetUrl();
@@ -257,7 +258,7 @@ public class AdminAssetService {
             throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
         }
         String extension = ALLOWED_PREVIEW_IMAGE_TYPES.get(request.contentType());
-        String key = "assets/" + asset.getCode() + "/preview/" + UUID.randomUUID() + "." + extension;
+        String key = "assets/" + codeToS3Prefix(asset.getCode()) + "/preview/" + UUID.randomUUID() + "." + extension;
         PresignedPut presigned = s3StorageService.presignPut(
                 key,
                 request.contentType(),
@@ -272,7 +273,7 @@ public class AdminAssetService {
         Asset asset = getAsset(assetId);
         verifyConfirmedObject(
                 request.key(),
-                "assets/" + asset.getCode() + "/preview/",
+                "assets/" + codeToS3Prefix(asset.getCode()) + "/preview/",
                 ALLOWED_PREVIEW_IMAGE_TYPES::containsKey,
                 MAX_PREVIEW_IMAGE_SIZE_BYTES);
         String before = asset.getPreviewImageUrl();
@@ -296,7 +297,7 @@ public class AdminAssetService {
         if (request.byteLength() > MAX_PREVIEW_BUNDLE_SIZE_BYTES) {
             throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
         }
-        String key = "assets/" + asset.getCode() + "/preview-bundle/" + UUID.randomUUID() + ".glb";
+        String key = "assets/" + codeToS3Prefix(asset.getCode()) + "/preview-bundle/" + UUID.randomUUID() + ".glb";
         PresignedPut presigned = s3StorageService.presignPut(
                 key,
                 request.contentType(),
@@ -311,7 +312,7 @@ public class AdminAssetService {
         Asset asset = getAsset(assetId);
         ObjectMetadata metadata = verifyConfirmedObject(
                 request.key(),
-                "assets/" + asset.getCode() + "/preview-bundle/",
+                "assets/" + codeToS3Prefix(asset.getCode()) + "/preview-bundle/",
                 ALLOWED_PREVIEW_BUNDLE_TYPES::contains,
                 MAX_PREVIEW_BUNDLE_SIZE_BYTES);
         String before = asset.getPreviewBundleUrl();
@@ -388,6 +389,29 @@ public class AdminAssetService {
             return "glb";
         }
         return "bundle";
+    }
+
+    /**
+     * Asset.code 를 S3 키 prefix 로 변환. 첫 underscore 에서 잘라 테마/sub-code 두 폴더로 분리한다.
+     * 예: "FANTASY_CHAIR_001" → "FANTASY/CHAIR_001" → s3://.../assets/FANTASY/CHAIR_001/bundle/...
+     * 어드민 폼이 항상 "TEMA_SUB" 형식으로 채워주지만 잘못된 입력 방어용으로 첫 _ 가 없거나
+     * sub-code 가 비면 reject. 테마 코드 자체에 underscore 가 들어가면 split 위치가 깨지므로
+     * 테마 코드는 단일 단어 (영문/숫자만) 로 운영한다 — admin-web 의 ThemeTagInput 이 그 제약을 강제.
+     */
+    private static String codeToS3Prefix(String code) {
+        requireValidCodeShape(code);
+        int idx = code.indexOf('_');
+        return code.substring(0, idx) + "/" + code.substring(idx + 1);
+    }
+
+    private static void requireValidCodeShape(String code) {
+        if (code == null) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
+        int idx = code.indexOf('_');
+        if (idx <= 0 || idx >= code.length() - 1) {
+            throw new CustomException(ErrorCode.INVALID_INPUT);
+        }
     }
 
     private static String defaultString(String value, String fallback) {
