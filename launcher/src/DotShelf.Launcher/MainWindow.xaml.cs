@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     private LauncherManifest? latestManifest;
     private LauncherInstallState? installedState;
     private LauncherUiState currentUiState = LauncherUiState.Checking;
+    private LauncherView currentLauncherView = LauncherView.Library;
     private int lastLoggedProgressPercent = -1;
     private string lastLoggedProgressMessage = "";
     private DateTimeOffset lastLoggedProgressAt = DateTimeOffset.MinValue;
@@ -78,6 +79,15 @@ public partial class MainWindow : Window
         Error
     }
 
+    // 상단 nav 의 라이브러리/뉴스/설정 탭. PDF #4 의 placeholder 였던 nav 가
+    // 실제 view 전환으로 동작 (MR #173 — 뉴스/설정 view 신규).
+    private enum LauncherView
+    {
+        Library,
+        News,
+        Settings
+    }
+
     private sealed class FallingGameItem
     {
         public required FrameworkElement Element { get; init; }
@@ -99,6 +109,7 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         Log("런처 상태를 확인합니다.");
+        ShowView(LauncherView.Library);
         await RefreshLauncherStateAsync();
         await RefreshBannersAsync();
     }
@@ -1052,6 +1063,11 @@ public partial class MainWindow : Window
         }
 
         UpdateBannerUi();
+        // News view 가 이미 떠 있던 시점에 새 events.json 이 도착하면 즉시 반영.
+        if (currentLauncherView == LauncherView.News)
+        {
+            RebuildNewsList();
+        }
     }
 
     private bool IsBannerDisplayable(EventBanner banner, DateTimeOffset now)
@@ -1193,5 +1209,155 @@ public partial class MainWindow : Window
     private static Brush BrushFromHex(string hex)
     {
         return (Brush)new BrushConverter().ConvertFromString(hex)!;
+    }
+
+    // ===== Top nav (라이브러리 / 뉴스 / 설정) view switching =====
+    // PDF #4 의 placeholder 보고 응답 — TextBlock 만 있고 클릭 핸들러 0 이던 상단 nav 를
+    // 실제 view 전환으로 동작하게.
+
+    private void NavLibrary_Click(object sender, MouseButtonEventArgs e) => ShowView(LauncherView.Library);
+    private void NavNews_Click(object sender, MouseButtonEventArgs e) => ShowView(LauncherView.News);
+    private void NavSettings_Click(object sender, MouseButtonEventArgs e) => ShowView(LauncherView.Settings);
+
+    private void ShowView(LauncherView view)
+    {
+        currentLauncherView = view;
+
+        LibraryView.Visibility = view == LauncherView.Library ? Visibility.Visible : Visibility.Collapsed;
+        NewsView.Visibility = view == LauncherView.News ? Visibility.Visible : Visibility.Collapsed;
+        SettingsView.Visibility = view == LauncherView.Settings ? Visibility.Visible : Visibility.Collapsed;
+
+        NavLibraryUnderline.Visibility = view == LauncherView.Library ? Visibility.Visible : Visibility.Collapsed;
+        NavNewsUnderline.Visibility = view == LauncherView.News ? Visibility.Visible : Visibility.Collapsed;
+        NavSettingsUnderline.Visibility = view == LauncherView.Settings ? Visibility.Visible : Visibility.Collapsed;
+
+        var inkTitle = (Brush)FindResource("InkTitleBrush");
+        var inkBody = (Brush)FindResource("InkBodyBrush");
+        NavLibraryText.Foreground = view == LauncherView.Library ? inkTitle : inkBody;
+        NavNewsText.Foreground = view == LauncherView.News ? inkTitle : inkBody;
+        NavSettingsText.Foreground = view == LauncherView.Settings ? inkTitle : inkBody;
+        NavLibraryText.FontWeight = view == LauncherView.Library ? FontWeights.SemiBold : FontWeights.Normal;
+        NavNewsText.FontWeight = view == LauncherView.News ? FontWeights.SemiBold : FontWeights.Normal;
+        NavSettingsText.FontWeight = view == LauncherView.Settings ? FontWeights.SemiBold : FontWeights.Normal;
+
+        // 진입 시점에 view 데이터 갱신 — banner / install state 가 그 사이 바뀌었을 수 있어.
+        if (view == LauncherView.News) RebuildNewsList();
+        else if (view == LauncherView.Settings) RefreshSettingsView();
+    }
+
+    private void RebuildNewsList()
+    {
+        NewsListPanel.Children.Clear();
+        if (activeBanners.Count == 0)
+        {
+            NewsListPanel.Children.Add(new TextBlock
+            {
+                Text = "표시할 공지가 없습니다.",
+                Foreground = (Brush)FindResource("InkMuteBrush"),
+                FontSize = 13,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 48, 0, 0)
+            });
+            return;
+        }
+        foreach (var banner in activeBanners)
+        {
+            NewsListPanel.Children.Add(CreateNewsCard(banner));
+        }
+    }
+
+    private Border CreateNewsCard(EventBanner banner)
+    {
+        // banner.Type 별 badge 색 — hero banner 의 hardcoded badge 와 일관.
+        var (badgeText, badgeBg, badgeFg) = banner.Type switch
+        {
+            "update" => ("업데이트", "#2A8A6E", "#FFFFFF"),
+            "event" => ("이벤트", "#9F6B3F", "#FFFFFF"),
+            "notice" => ("공지", "#7A5C3F", "#FFFFFF"),
+            _ => ("콜라보", "#E7C679", "#2A2018"),
+        };
+
+        var hasLink = !string.IsNullOrWhiteSpace(banner.LinkUrl)
+            && Uri.TryCreate(banner.LinkUrl, UriKind.Absolute, out var linkUri)
+            && linkUri.Scheme == Uri.UriSchemeHttps;
+
+        var card = new Border
+        {
+            Background = (Brush)FindResource("CardBrush"),
+            BorderBrush = (Brush)FindResource("StrokeBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(20),
+            Margin = new Thickness(0, 0, 0, 12),
+            Cursor = hasLink ? System.Windows.Input.Cursors.Hand : System.Windows.Input.Cursors.Arrow,
+        };
+
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var badge = new Border
+        {
+            Background = BrushFromHex(badgeBg),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(8, 3, 8, 3),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Child = new TextBlock
+            {
+                Text = badgeText,
+                Foreground = BrushFromHex(badgeFg),
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+            },
+        };
+        Grid.SetRow(badge, 0);
+        grid.Children.Add(badge);
+
+        var title = new TextBlock
+        {
+            Text = banner.Title,
+            Foreground = (Brush)FindResource("InkTitleBrush"),
+            FontSize = 15,
+            FontWeight = FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 10, 0, 0),
+        };
+        Grid.SetRow(title, 1);
+        grid.Children.Add(title);
+
+        card.Child = grid;
+
+        if (hasLink)
+        {
+            // BannerClickArea_MouseLeftButtonUp 와 동일한 HTTPS-only 가드 + UseShellExecute 패턴.
+            card.MouseLeftButtonUp += (_, _) =>
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo { FileName = banner.LinkUrl, UseShellExecute = true });
+                }
+                catch (Exception ex)
+                {
+                    Log($"링크를 열지 못했습니다: {ex.Message}");
+                }
+            };
+        }
+
+        return card;
+    }
+
+    private void RefreshSettingsView()
+    {
+        SettingsInstallPathText.Text = string.IsNullOrWhiteSpace(settings.InstallRoot)
+            ? "(아직 설정되지 않음)"
+            : settings.InstallRoot;
+
+        SettingsLauncherVersionText.Text = $"런처 버전: v{GetCurrentLauncherVersion()}";
+
+        SettingsInstalledVersionText.Text = installedState != null
+            && !string.IsNullOrWhiteSpace(installedState.InstalledVersion)
+            && packageInstaller.HasInstalledExecutable(installedState)
+                ? $"설치된 본체: v{installedState.InstalledVersion}"
+                : "설치된 본체: (설치되지 않음)";
     }
 }
