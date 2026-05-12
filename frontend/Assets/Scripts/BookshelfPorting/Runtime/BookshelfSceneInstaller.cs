@@ -457,10 +457,69 @@ namespace BookshelfPorting.Runtime
             return controllers != null && controllers.Length > 0;
         }
 
+        // BookshelfSceneInstaller.InstallIntoActiveScene 한 사이클에 FindOrCreateRoot 가 system 별 N 회
+        // 호출되는데, fallback path (active scene roots + children traversal) 가 발사되면 매 호출마다
+        // O(scene_size) 비용이 누적 → mid-large scene 에서 startup latency 영향. 한 사이클 내 같은
+        // 이름은 같은 GameObject 를 가리키므로 cache 로 traversal 1 회로 amortize. MR !159 review #2 응답.
+        // - Unity null 비교 (`== null`) 가 destroyed object 도 처리하므로 stale reference 안전.
+        // - scene reload 시 cache 의 GameObject 가 destroy 되면 다음 lookup 에서 fallback 재발사 → 재충전.
+        private static readonly System.Collections.Generic.Dictionary<string, GameObject> rootCache
+            = new System.Collections.Generic.Dictionary<string, GameObject>();
+
         private static GameObject FindOrCreateRoot(string name)
         {
+            if (rootCache.TryGetValue(name, out var cached) && cached != null)
+            {
+                return cached;
+            }
+
             var existing = GameObject.Find(name);
-            return existing != null ? existing : new GameObject(name);
+            if (existing != null)
+            {
+                rootCache[name] = existing;
+                return existing;
+            }
+
+            // GameObject.Find 는 inactive root / inactive parent 의 자식을 못 찾는다.
+            // 신규 가입 path 에서 BookshelfSystems prefab 인스턴스가 onboarding flow 를 거치며
+            // inactive 또는 hidden hierarchy 상태로 들어가면, 이 메서드는 못 찾고 동명 빈 GameObject
+            // 를 신생시켜 후속 GetOrAddComponent 들이 새 컴포넌트 (SerializeField default 값) 를
+            // attach 한다 → BookshelfExperienceManager.externalDashboardPanel / useExternalDashboardPanel
+            // 이 prefab override (panel ref / true) 를 잃고 default (null / false) 로 들어가
+            // 대시보드 패널이 영영 mount 되지 않는 회귀가 발생했다 (#114 후속).
+            //
+            // active scene 의 모든 root + 자식을 inactive 포함해 순회하여 기존 prefab 인스턴스를
+            // 우선 회복하고, 그래도 없을 때만 신생.
+            var scene = SceneManager.GetActiveScene();
+            if (scene.IsValid())
+            {
+                var roots = scene.GetRootGameObjects();
+                for (int i = 0; i < roots.Length; i++)
+                {
+                    var root = roots[i];
+                    if (root == null) continue;
+                    if (root.name == name)
+                    {
+                        rootCache[name] = root;
+                        return root;
+                    }
+
+                    var transforms = root.GetComponentsInChildren<Transform>(true);
+                    for (int j = 0; j < transforms.Length; j++)
+                    {
+                        if (transforms[j] != null && transforms[j].gameObject.name == name)
+                        {
+                            var go = transforms[j].gameObject;
+                            rootCache[name] = go;
+                            return go;
+                        }
+                    }
+                }
+            }
+
+            var created = new GameObject(name);
+            rootCache[name] = created;
+            return created;
         }
 
         private static GameObject FindOrCreateChild(Transform parent, string name)
