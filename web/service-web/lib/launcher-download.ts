@@ -7,4 +7,4 @@
 // bump-version.ps1 -Target launcher 가 여기 파일명만 갱신한다 — page.tsx 의
 // 다른 occurrence 와 충돌하지 않는 single source of truth.
 export const LAUNCHER_WIN_URL: string | null =
-  "https://cdn.dotshelf.digital/windows/DotShelfLauncher-0.1.3.exe";
+  "https://cdn.dotshelf.digital/windows/DotShelfLauncher-0.1.4.exe";
