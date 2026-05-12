@@ -12,6 +12,8 @@ public interface BookshelfItemRepository extends JpaRepository<BookshelfItem, Lo
 
     List<BookshelfItem> findByBookshelfIdAndStatusOrderByBookshelfSectionIdAscSlotNoAsc(Long bookshelfId, String status);
 
+    List<BookshelfItem> findByBookshelfIdInAndStatus(Collection<Long> bookshelfIds, String status);
+
     Optional<BookshelfItem> findByUserBookIdAndStatus(Long userBookId, String status);
 
     List<BookshelfItem> findByUserBookIdInAndStatus(Collection<Long> userBookIds, String status);

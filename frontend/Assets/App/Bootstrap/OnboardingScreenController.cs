@@ -133,6 +133,10 @@ namespace App.Bootstrap
         private bool isStep3CompletionReady;
         private float nextStep3CompletionGateRefreshAt;
         private Coroutine step3TransitionRoutine;
+        private BookshelfExperienceManager cachedBookshelfExperienceManager;
+        private CameraController cachedCameraController;
+        private BookshelfGenerator cachedBookshelfGenerator;
+        private BookshelfApiSyncController cachedBookshelfApiSyncController;
 
         private sealed class OnboardingBookshelfProvisioningContext
         {
@@ -1673,16 +1677,21 @@ namespace App.Bootstrap
 
             if (SceneManager.GetActiveScene().name != SceneKeys.Main)
             {
+                ResetCachedMainSceneDependencies();
                 return false;
             }
 
-            experienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
-            if (experienceManager == null)
+            if (cachedBookshelfExperienceManager == null)
             {
-                BookshelfAutoBootstrap.BootstrapScene();
-                experienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                cachedBookshelfExperienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                if (cachedBookshelfExperienceManager == null)
+                {
+                    BookshelfAutoBootstrap.BootstrapScene();
+                    cachedBookshelfExperienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                }
             }
 
+            experienceManager = cachedBookshelfExperienceManager;
             return experienceManager != null;
         }
 
@@ -1753,8 +1762,6 @@ namespace App.Bootstrap
                 }
             }
 
-            SetStep3LoadingCoverVisible(false);
-            yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
             var readyDeadline = Time.unscaledTime + MainViewReadyTimeoutSeconds;
             while (Time.unscaledTime < readyDeadline)
             {
@@ -1778,6 +1785,11 @@ namespace App.Bootstrap
                     step3TransitionRoutine = null;
                     yield break;
                 }
+            }
+            else
+            {
+                SetStep3LoadingCoverVisible(false);
+                yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
             }
 
             SetStep3OverlayStatus("책장 포커스 화면으로 이동 중입니다.");
@@ -1825,6 +1837,7 @@ namespace App.Bootstrap
             }
             else
             {
+                SetStep3LoadingCoverVisible(false);
                 SetStep3OverlayStatus("책장 포커스 연결을 확인해주세요.");
                 Debug.LogWarning("[OnboardingDemo] Failed to complete bookshelf focus transition using existing scene flow before the Step 3 timeout.");
             }
@@ -1863,22 +1876,37 @@ namespace App.Bootstrap
 
             if (SceneManager.GetActiveScene().name != SceneKeys.Main)
             {
+                ResetCachedMainSceneDependencies();
                 return false;
             }
 
-            experienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
-            if (experienceManager == null)
+            if (cachedBookshelfExperienceManager == null)
             {
-                BookshelfAutoBootstrap.BootstrapScene();
-                experienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                cachedBookshelfExperienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                if (cachedBookshelfExperienceManager == null)
+                {
+                    BookshelfAutoBootstrap.BootstrapScene();
+                    cachedBookshelfExperienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                }
             }
 
-            cameraController = UnityEngine.Object.FindFirstObjectByType<CameraController>(FindObjectsInactive.Include);
-            bookshelfGenerator = UnityEngine.Object.FindFirstObjectByType<BookshelfGenerator>(FindObjectsInactive.Include);
+            if (cachedCameraController == null)
+            {
+                cachedCameraController = UnityEngine.Object.FindFirstObjectByType<CameraController>(FindObjectsInactive.Include);
+            }
+
+            if (cachedBookshelfGenerator == null)
+            {
+                cachedBookshelfGenerator = UnityEngine.Object.FindFirstObjectByType<BookshelfGenerator>(FindObjectsInactive.Include);
+            }
+
+            experienceManager = cachedBookshelfExperienceManager;
+            cameraController = cachedCameraController;
+            bookshelfGenerator = cachedBookshelfGenerator;
             return experienceManager != null && cameraController != null;
         }
 
-        private static bool IsMainViewReadyForBookshelfFocus(
+        private bool IsMainViewReadyForBookshelfFocus(
             BookshelfExperienceManager experienceManager,
             CameraController cameraController,
             BookshelfGenerator bookshelfGenerator)
@@ -1888,7 +1916,29 @@ namespace App.Bootstrap
                    cameraController != null &&
                    cameraController.isActiveAndEnabled &&
                    !cameraController.IsTransitioning &&
+                   IsInitialBookshelfRefreshComplete() &&
                    (bookshelfGenerator == null || !bookshelfGenerator.IsBookshelfSwitching);
+        }
+
+        private bool IsInitialBookshelfRefreshComplete()
+        {
+            if (cachedBookshelfApiSyncController == null)
+            {
+                cachedBookshelfApiSyncController = UnityEngine.Object.FindFirstObjectByType<BookshelfApiSyncController>(FindObjectsInactive.Include);
+            }
+
+            var syncController = cachedBookshelfApiSyncController;
+            return syncController == null ||
+                   !syncController.IsServerSyncEnabled ||
+                   syncController.HasCompletedInitialRefresh;
+        }
+
+        private void ResetCachedMainSceneDependencies()
+        {
+            cachedBookshelfExperienceManager = null;
+            cachedCameraController = null;
+            cachedBookshelfGenerator = null;
+            cachedBookshelfApiSyncController = null;
         }
 
         private void RefreshStep3CompletionGate(bool force)
@@ -1922,15 +1972,20 @@ namespace App.Bootstrap
             }
         }
 
-        private static bool HasOnboardingBookshelf()
+        private bool HasOnboardingBookshelf()
         {
             if (SceneManager.GetActiveScene().name != SceneKeys.Main)
             {
+                ResetCachedMainSceneDependencies();
                 return false;
             }
 
-            var bookshelfGenerator = UnityEngine.Object.FindFirstObjectByType<BookshelfGenerator>(FindObjectsInactive.Include);
-            return bookshelfGenerator != null && bookshelfGenerator.BookshelfCount > 0;
+            if (cachedBookshelfGenerator == null)
+            {
+                cachedBookshelfGenerator = UnityEngine.Object.FindFirstObjectByType<BookshelfGenerator>(FindObjectsInactive.Include);
+            }
+
+            return cachedBookshelfGenerator != null && cachedBookshelfGenerator.BookshelfCount > 0;
         }
 
         private static bool IsCameraTransitioning(CameraController cameraController)

@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.dotshelf.domain.book.entity.Book;
 import com.dotshelf.domain.book.repository.BookRepository;
 import com.dotshelf.domain.book.repository.UserBookRepository;
 import com.dotshelf.domain.bookshelf.repository.BookshelfItemRepository;
@@ -169,6 +170,37 @@ class BookBookshelfIntegrationTest extends IntegrationTestSupport {
 
         assertThat(bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(space.getId(), "ACTIVE")).isEmpty();
         assertThat(sectionRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("bookshelf render includes book description")
+    void getItems_includesBookDescription() throws Exception {
+        var user = userRepository.saveAndFlush(TestFixtures.user("description-render"));
+        var space = spaceRepository.saveAndFlush(TestFixtures.space(null, user.getId()));
+        var book = bookRepository.saveAndFlush(Book.builder()
+                .isbn13("9780000000001")
+                .title("Description Book")
+                .author("author")
+                .publisher("publisher")
+                .description("Book render description")
+                .build());
+
+        createBookshelf(user.getId(), space.getId(), "description shelf");
+        var shelf = bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(space.getId(), "ACTIVE").getFirst();
+        var section = sectionRepository.findByBookshelfIdOrderByRowNoAscColumnNoAsc(shelf.getId()).getFirst();
+
+        mockMvc.perform(post("/v1/bookshelves/{bookshelfId}/books", shelf.getId())
+                        .header(TEST_USER_HEADER, user.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"bookId":%d,"sectionId":%d,"slotNo":1}
+                                """.formatted(book.getId(), section.getId())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/v1/bookshelves/{bookshelfId}/items", shelf.getId())
+                        .header(TEST_USER_HEADER, user.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items[0].book.description").value("Book render description"));
     }
 
     @Test
