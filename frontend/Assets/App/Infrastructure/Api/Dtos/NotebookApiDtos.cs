@@ -1585,6 +1585,9 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("skinInventoryId")]
         public long? SkinInventoryId { get; set; }
+
+        [JsonProperty("clearSkinInventory")]
+        public bool? ClearSkinInventory { get; set; }
     }
 
     [Serializable]

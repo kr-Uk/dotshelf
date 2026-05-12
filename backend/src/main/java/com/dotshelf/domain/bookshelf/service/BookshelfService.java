@@ -59,6 +59,7 @@ public class BookshelfService {
     private static final int RESERVED_AD_ROW = SECTION_ROWS - 1;
     private static final int RESERVED_AD_COLUMN = SECTION_COLUMNS - 1;
     private static final String ACTIVE = "ACTIVE";
+    private static final String ASSET_TYPE_BOOKSHELF_SKIN = "BOOKSHELF_SKIN";
 
     private final BookshelfRepository bookshelfRepository;
     private final BookshelfSectionRepository sectionRepository;
@@ -138,6 +139,13 @@ public class BookshelfService {
     public BookshelfResponse update(Long userId, Long bookshelfId, UpdateBookshelfRequest request) {
         Long currentUserId = userService.requireUserId(userId);
         Bookshelf bookshelf = getOwnedBookshelf(currentUserId, bookshelfId);
+        if (Boolean.TRUE.equals(request.clearSkinInventory())) {
+            bookshelf.update(request.name(), request.description(), request.visibilityScope(), null);
+            bookshelf.resetSkin();
+            return BookshelfResponse.from(bookshelf);
+        }
+
+        verifyBookshelfSkinInventory(currentUserId, request.skinInventoryId());
         bookshelf.update(request.name(), request.description(), request.visibilityScope(), request.skinInventoryId());
         return BookshelfResponse.from(bookshelf);
     }
@@ -345,6 +353,19 @@ public class BookshelfService {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
         return inventory;
+    }
+
+    private void verifyBookshelfSkinInventory(Long userId, Long skinInventoryId) {
+        if (skinInventoryId == null) {
+            return;
+        }
+
+        UserAssetInventory inventory = getOwnedInventory(userId, skinInventoryId);
+        Asset asset = assetRepository.findById(inventory.getAssetId())
+                .orElseThrow(() -> new CustomException(ErrorCode.ASSET_NOT_FOUND));
+        if (!ASSET_TYPE_BOOKSHELF_SKIN.equalsIgnoreCase(asset.getAssetType())) {
+            throw new CustomException(ErrorCode.CATEGORY_INVENTORY_TYPE_MISMATCH);
+        }
     }
 
     private Map<Long, UserBook> userBooksById(List<BookshelfItem> items) {

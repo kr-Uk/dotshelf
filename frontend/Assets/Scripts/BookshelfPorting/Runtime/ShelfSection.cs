@@ -19,6 +19,7 @@ namespace BookshelfPorting.Runtime
         public float rightBound;
         public float shelfTopY;
         public float sectionHeight;
+        public float bookYOffset;
         public float frontZ;
         public float frontBoundZ;
         public float backBoundZ;
@@ -29,6 +30,7 @@ namespace BookshelfPorting.Runtime
         public float Width => rightBound - leftBound;
         public float Depth => backBoundZ - frontBoundZ;
         public Vector3 Center => new Vector3((leftBound + rightBound) * 0.5f, shelfTopY + sectionHeight * 0.5f, frontZ);
+        public float BookBaseY => shelfTopY + bookYOffset;
 
         public ShelfSection(
             int row,

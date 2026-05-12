@@ -30,6 +30,7 @@ import com.dotshelf.domain.auth.repository.GuestMigrationImportRepository;
 import com.dotshelf.domain.auth.repository.UserSocialAccountRepository;
 import com.dotshelf.domain.auth.service.social.SocialTokenVerifierRegistry;
 import com.dotshelf.domain.auth.service.social.SocialUserInfo;
+import com.dotshelf.domain.asset.service.AssetService;
 import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.entity.UserNotificationSetting;
@@ -61,6 +62,9 @@ class AuthServiceTest {
 
     @Mock
     private SpaceService spaceService;
+
+    @Mock
+    private AssetService assetService;
 
     @Mock
     private UserNotificationSettingRepository notificationSettingRepository;
@@ -100,6 +104,7 @@ class AuthServiceTest {
         then(notificationSettingRepository).should().save(settingCaptor.capture());
         assertThat(settingCaptor.getValue().getUserId()).isEqualTo(1L);
         then(spaceService).should().ensureDefaultSpace(1L);
+        then(assetService).should().grantDefaultBookshelfSkins(1L);
         then(socialAccountRepository).should().save(accountCaptor.capture());
         assertThat(accountCaptor.getValue().getProvider()).isEqualTo(SocialProvider.GOOGLE);
         assertThat(accountCaptor.getValue().getProviderUserId()).isEqualTo("google-1");
@@ -126,6 +131,7 @@ class AuthServiceTest {
         then(userRepository).shouldHaveNoInteractions();
         then(notificationSettingRepository).shouldHaveNoInteractions();
         then(spaceService).shouldHaveNoInteractions();
+        then(assetService).shouldHaveNoInteractions();
     }
 
     @Test
@@ -176,6 +182,7 @@ class AuthServiceTest {
         assertThat(user.getNickname()).isEqualTo("tester");
         assertThat(user.getLastLoginAt()).isNotNull();
         then(spaceService).should().ensureDefaultSpace(1L);
+        then(assetService).should().grantDefaultBookshelfSkins(1L);
         then(notificationSettingRepository).should().save(any(UserNotificationSetting.class));
     }
 

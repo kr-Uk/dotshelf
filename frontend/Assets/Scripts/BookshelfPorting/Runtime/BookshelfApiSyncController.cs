@@ -131,8 +131,12 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            RefreshBookshelfSkinCatalog();
             BeginRefresh(onCompleted);
+            RefreshBookshelfSkinCatalog(RefreshOwnSpaceBookshelves);
+        }
+
+        private void RefreshOwnSpaceBookshelves()
+        {
             client.GetMySpace(
                 space =>
                 {
@@ -332,13 +336,16 @@ namespace BookshelfPorting.Runtime
                 return false;
             }
 
+            var style = generator.GetBookshelfDesignStyle(index);
+            var clearSkinInventory = style == BookshelfThemeStyle.Default;
             client.UpdateBookshelf(
                 bookshelfId,
                 new UpdateBookshelfRequestDto
                 {
                     Name = generator.GetBookshelfName(index),
                     VisibilityScope = ToApiVisibility(generator.GetBookshelfVisibility(index)),
-                    SkinInventoryId = BookshelfSkinResolver.ResolveInventoryId(generator.GetBookshelfDesignStyle(index))
+                    SkinInventoryId = clearSkinInventory ? null : BookshelfSkinResolver.ResolveInventoryId(style),
+                    ClearSkinInventory = clearSkinInventory
                 },
                 _ => onSucceeded?.Invoke(),
                 error =>
@@ -1241,10 +1248,17 @@ namespace BookshelfPorting.Runtime
                 error => Debug.LogWarning($"Asset inventory load failed: {FormatError(error)}"));
         }
 
-        public void RefreshBookshelfSkinCatalog()
+        public void RefreshBookshelfSkinCatalog(Action onCompleted = null)
         {
-            if (!CanUseServerApi || isBookshelfSkinCatalogLoading)
+            if (!CanUseServerApi)
             {
+                onCompleted?.Invoke();
+                return;
+            }
+
+            if (isBookshelfSkinCatalogLoading)
+            {
+                StartCoroutine(CompleteAfterBookshelfSkinCatalogLoad(onCompleted));
                 return;
             }
 
@@ -1261,19 +1275,32 @@ namespace BookshelfPorting.Runtime
                         {
                             isBookshelfSkinCatalogLoading = false;
                             BookshelfSkinResolver.RegisterApiAssets(assetsResponse, inventory);
+                            onCompleted?.Invoke();
                         },
                         error =>
                         {
                             isBookshelfSkinCatalogLoading = false;
                             BookshelfSkinResolver.RegisterApiAssets(assetsResponse, null);
                             Debug.LogWarning($"Bookshelf skin inventory load failed: {FormatError(error)}");
+                            onCompleted?.Invoke();
                         });
                 },
                 error =>
                 {
                     isBookshelfSkinCatalogLoading = false;
                     Debug.LogWarning($"Bookshelf skin catalog load failed: {FormatError(error)}");
+                    onCompleted?.Invoke();
                 });
+        }
+
+        private IEnumerator CompleteAfterBookshelfSkinCatalogLoad(Action onCompleted)
+        {
+            while (isBookshelfSkinCatalogLoading)
+            {
+                yield return null;
+            }
+
+            onCompleted?.Invoke();
         }
 
         public void AddInteriorObjectToActiveShelf(long assetInventoryId, ShelfSection section, int slotNo = 1)
@@ -2365,24 +2392,9 @@ namespace BookshelfPorting.Runtime
 
         private static BookshelfThemeStyle ResolveStyleFromEntry(object entry, int index)
         {
-            var key = ResolveEntryDisplayName(entry);
-            if (!string.IsNullOrWhiteSpace(key))
+            if (TryResolveStyleByKeyword(ResolveEntryDisplayName(entry), out var style))
             {
-                key = key.Trim().ToLowerInvariant();
-                if (key.Contains("dark") || key.Contains("black") || key.Contains("night"))
-                {
-                    return BookshelfThemeStyle.Dark;
-                }
-
-                if (key.Contains("warm") || key.Contains("wood") || key.Contains("brown"))
-                {
-                    return BookshelfThemeStyle.Warm;
-                }
-
-                if (key.Contains("default") || key.Contains("basic") || key.Contains("ivory") || key.Contains("white"))
-                {
-                    return BookshelfThemeStyle.Default;
-                }
+                return style;
             }
 
             return index switch
@@ -2395,24 +2407,9 @@ namespace BookshelfPorting.Runtime
 
         private static BookshelfThemeStyle ResolveStyleFromKey(string code, string name, int index)
         {
-            var key = $"{code} {name}";
-            if (!string.IsNullOrWhiteSpace(key))
+            if (TryResolveStyleByKeyword($"{code} {name}", out var style))
             {
-                key = key.Trim().ToLowerInvariant();
-                if (key.Contains("dark") || key.Contains("black") || key.Contains("night"))
-                {
-                    return BookshelfThemeStyle.Dark;
-                }
-
-                if (key.Contains("warm") || key.Contains("wood") || key.Contains("brown"))
-                {
-                    return BookshelfThemeStyle.Warm;
-                }
-
-                if (key.Contains("default") || key.Contains("basic") || key.Contains("ivory") || key.Contains("white"))
-                {
-                    return BookshelfThemeStyle.Default;
-                }
+                return style;
             }
 
             return index switch
@@ -2421,6 +2418,36 @@ namespace BookshelfPorting.Runtime
                 2 => BookshelfThemeStyle.Dark,
                 _ => BookshelfThemeStyle.Default
             };
+        }
+
+        private static bool TryResolveStyleByKeyword(string key, out BookshelfThemeStyle style)
+        {
+            style = BookshelfThemeStyle.Default;
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                key = key.Trim().ToLowerInvariant();
+                if (key.Contains("dark") || key.Contains("black") || key.Contains("night") ||
+                    key.Contains("underwater") || key.Contains("shell") || key.Contains("ocean") || key.Contains("sea"))
+                {
+                    style = BookshelfThemeStyle.Dark;
+                    return true;
+                }
+
+                if (key.Contains("warm") || key.Contains("wood") || key.Contains("brown") ||
+                    key.Contains("pastel") || key.Contains("cabin"))
+                {
+                    style = BookshelfThemeStyle.Warm;
+                    return true;
+                }
+
+                if (key.Contains("default") || key.Contains("basic") || key.Contains("ivory") || key.Contains("white"))
+                {
+                    style = BookshelfThemeStyle.Default;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void WarnMissingStyle(BookshelfThemeStyle style)
