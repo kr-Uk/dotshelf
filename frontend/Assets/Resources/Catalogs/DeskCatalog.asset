@@ -65,7 +65,7 @@ MonoBehaviour:
     monitorScale: {x: 0.3, y: 0.3, z: 0.3}
   - assetId: 200031
     displayName: "빈티지 책상"
-    description: "Vintage 테마 전용 책상. DeskVisualSkinApplier 가 functional Desk transform 위에 visual overlay 로 부착, functional bounds 자동 fit 후 skinScaleMultiplier 로 가로 70% / 세로 50% / 깊이 50% 미세 조정. laptop 은 skin top 자동 추적. legacy placementAnchor/Scale/NotebookStation* 필드는 새 경로에서 사용 안 함 (back-compat 잔존)."
+    description: "Vintage 테마 전용 책상. DeskVisualSkinApplier 가 functional Desk transform 위에 visual overlay 로 부착. preserveSkinNativeScale=true 라 GLB 의 native world scale 을 base 로, placementScale (0.5, 0.5, 0.4) 를 multiplier 로 곱해 최종 world 크기 결정. placementRotation (0, 90, 0) 으로 Y 축 90도 회전. 위치는 XZ 중심 + Y bottom-align 으로 functional desk 자리에 정렬. laptop y 는 회전·축소된 skin top 을 자동 추적해 상판 위 안착. legacy placementAnchor / overrideNotebookStation 등은 새 경로에서 사용 안 함."
     previewSprite: {fileID: 0}
     themeTag: Vintage
     isLocalPreview: 0
@@ -75,8 +75,8 @@ MonoBehaviour:
     colorTemperatureKelvin: 6500
     prefab: {fileID: -8098169881513260187, guid: a2b781486c47bc348a186474f5773a08, type: 3}
     placementAnchor: {x: -1.31, y: 0.496, z: -0.36}
-    placementRotation: {x: 0, y: -90, z: 0}
-    placementScale: {x: 0.6, y: 0.6, z: 0.6}
+    placementRotation: {x: 0, y: 90, z: 0}
+    placementScale: {x: 0.5, y: 0.5, z: 0.4}
     overrideNotebookStation: 1
     notebookStationPosition: {x: 0.323, y: -0.349, z: -0.41}
     notebookStationRotation: {x: 0, y: 90, z: 0}
@@ -85,4 +85,5 @@ MonoBehaviour:
     monitorPosition: {x: 0, y: 0, z: 0}
     monitorRotation: {x: 0, y: 0, z: 0}
     monitorScale: {x: 1, y: 1, z: 1}
-    skinScaleMultiplier: {x: 0.7, y: 0.5, z: 0.5}
+    skinScaleMultiplier: {x: 1, y: 1, z: 1}
+    preserveSkinNativeScale: 1

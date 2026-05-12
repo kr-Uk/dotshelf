@@ -14517,7 +14517,18 @@ namespace BookshelfPorting.Runtime
             notebookScreenController.Configure(
                 screenTransform,
                 Camera.main,
-                () => notebookScreenController.ReturnToScreenSaver(),
+                // onCloseDashboard — dashboard header 의 X (NotebookToolkitController.cs:1134) 콜백.
+                // 사용자 의도: "X 한 번 = 노트북 focus 종료 = 메인 view 복귀". 이전 wiring 은
+                // ReturnToScreenSaver 만 호출해 노트북 focus 안에 머물면서 UI 만 screen saver 로
+                // 전환했는데, screen saver 의 ad 이미지를 다시 누르면 FocusNotebook → ActivateDashboard
+                // 로 되돌아가 사용자 시각에서 "X → 대시보드로 다시 이동" 으로 보이는 회귀가 발생.
+                // ReturnToScreenSaver 를 먼저 호출해 다음 진입 시 screen saver 부터 보이도록 reset
+                // 한 뒤 CloseNotebookFocus 로 camera 를 메인 view 로 빼낸다.
+                () =>
+                {
+                    notebookScreenController.ReturnToScreenSaver();
+                    CloseNotebookFocus();
+                },
                 CloseNotebookFocus,
                 FocusNotebook,
                 searchNotebookBooksUseCase,

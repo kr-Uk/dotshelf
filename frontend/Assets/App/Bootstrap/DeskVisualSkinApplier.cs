@@ -12,10 +12,16 @@ namespace App.Bootstrap
     //     interaction / NotebookHitArea collider / NotebookScreenController / NotebookStation
     //     자체의 GuestbookBoard-local 위치 모두 그대로 유지.
     //   - skin prefab 은 Desk 자식으로 instantiate, 이름 = SkinChildName.
-    //   - functional desk bounds (Desk 자식 renderer 중 Notebook subtree 제외) 를 reference 로
-    //     비등방 scale + bounds-center 정렬. pivot-agnostic — bottom-center / mesh-center / 임의
-    //     좌표 어느 쪽이든 동일하게 정렬. entry.PlacementAnchor / PlacementScale 은 무시 (designer
-    //     hardcoded 값이 prefab raw 크기에 따라 어긋남이 회귀 원인이었음).
+    //   - 크기 정책 두 갈래:
+    //       (a) entry.PreserveSkinNativeScale == false (default) — functional desk bounds 에
+    //           비등방 auto-fit + bounds-center 정렬 + entry.SkinScaleMultiplier 적용. GLB 의
+    //           raw 종횡비 무시하고 functional desk 와 같은 크기로 강제 정렬.
+    //       (b) entry.PreserveSkinNativeScale == true — auto-fit/multiplier 모두 skip,
+    //           localScale=one 유지 (GLB 의 원본 모델 크기/비율 그대로). 위치는 XZ 중심을 functional
+    //           desk 의 XZ 중심에 맞추고 Y bottom 을 functional bottom 에 맞춰 floor 에 자연스럽게
+    //           놓음. vintage_table 처럼 GLB 가 이미 적절한 크기로 제작된 자산에 사용.
+    //     두 경우 모두 pivot-agnostic (bottom-center / mesh-center / 임의 좌표 어느 쪽이든 동일).
+    //     entry.PlacementAnchor 는 두 경로 모두에서 사용 안 함.
     //   - skin 의 모든 Collider 는 disable — laptop NotebookHitArea 의 raycast / focus / drag
     //     판정을 가리지 않음.
     //   - Desk 자식 기존 mesh Renderer 들은 attach 시점에 disable 하고 marker 에 저장, clear 시
@@ -77,30 +83,51 @@ namespace App.Bootstrap
             var laptopBeforeWorld = notebookTransform.position;
 
             // skin instantiate as child of functional Desk transform.
-            // localPosition=zero / rotation=zero / scale=one 으로 reset 후 아래에서 scale 적용 +
-            // bounds-center 정렬 translation 으로 functional desk envelope 와 정확히 일치시킴.
-            // entry.PlacementAnchor / PlacementRotation / PlacementScale 은 사용 안 함 (designer
-            // hardcoded 값이 prefab raw 크기에 따라 어긋남이 vintage 회귀 원인이었음).
+            // localPosition=zero 으로 reset (아래 bounds-translation 으로 재정렬).
+            // localRotation: preserveNative 모드에서 entry.PlacementRotation 적용 (예: vintage_table
+            // (0, 90, 0) 으로 Y 축 90도). false 모드에선 zero (auto-fit 계산 단순화).
+            // localScale 은 아래 분기에서 결정.
+            // entry.PlacementAnchor 는 두 모드 모두에서 사용 안 함.
             var go = Object.Instantiate(entry.Prefab, deskTransform);
             go.name = DeskVisualSkin.SkinChildName;
             go.transform.localPosition = Vector3.zero;
-            go.transform.localEulerAngles = Vector3.zero;
-            go.transform.localScale = Vector3.one;
+
+            bool preserveNative = entry.PreserveSkinNativeScale;
+            go.transform.localEulerAngles = preserveNative ? entry.PlacementRotation : Vector3.zero;
 
             DisableAllColliders(go);
 
-            // 비등방 scale — functional bounds size 에 정확히 fit. skin GLB 의 raw 종횡비가
-            // 어떻든 width/height/depth 각각 functional 과 일치. 그 위에 entry.SkinScaleMultiplier
-            // 를 componentwise 곱해 디자이너 fine-tune 적용 (예: vintage_table (0.7, 0.5, 0.5)
-            // — auto-fit 으로 functional 과 같아진 크기를 가로 70% / 높이·깊이 50% 로 축소).
-            // multiplier 가 (1,1,1) 또는 zero 면 auto-fit 결과 그대로.
+            // scale 결정 — preserveSkinNativeScale 분기.
+            //   (a) false (default): functional bounds 비등방 auto-fit × SkinScaleMultiplier.
+            //       parent lossyScale 은 functional bounds 자체에 이미 반영되어 있어 추가 보정 불필요.
+            //   (b) true: GLB 의 world 크기 (= prefab 을 scene root 에 떨궜을 때 보이는 크기) 를
+            //       base 로, entry.PlacementScale (override multiplier) 를 곱한 값으로 만든다.
+            //       PlacementScale 이 (1,1,1) 또는 zero 면 native 그대로, 아니면 디자이너가
+            //       Inspector 에서 잡은 비율로 미세 조정 (예: vintage_table (0.5, 0.5, 0.4)).
+            //
+            //       parent (Desk transform) 의 lossyScale 이 1 이 아니면 그냥 localScale=multiplier
+            //       로 set 하면 world scale = parent.lossyScale × multiplier 로 왜곡되므로, prefab
+            //       root 의 authored localScale × multiplier 를 parent.lossyScale 로 역보정 set:
+            //       worldScale = parent.lossyScale × ((prefab.localScale × multiplier) / parent.lossyScale)
+            //                   = prefab.localScale × multiplier (= 의도된 world 크기).
             var skinBoundsBefore = ComputeRendererBoundsSafe(go);
             Vector3 scaleFactor = Vector3.one;
             Vector3 multiplier = SanitizeMultiplier(entry.SkinScaleMultiplier);
-            if (skinBoundsBefore.HasValue &&
-                skinBoundsBefore.Value.size.x > 1e-4f &&
-                skinBoundsBefore.Value.size.y > 1e-4f &&
-                skinBoundsBefore.Value.size.z > 1e-4f)
+            Vector3 placementScaleOverride = SanitizeMultiplier(entry.PlacementScale);
+            if (preserveNative)
+            {
+                var prefabRootScale = entry.Prefab.transform.localScale;
+                var parentLossy = deskTransform.lossyScale;
+                scaleFactor = new Vector3(
+                    SafeInvScale(prefabRootScale.x * placementScaleOverride.x, parentLossy.x),
+                    SafeInvScale(prefabRootScale.y * placementScaleOverride.y, parentLossy.y),
+                    SafeInvScale(prefabRootScale.z * placementScaleOverride.z, parentLossy.z));
+                go.transform.localScale = scaleFactor;
+            }
+            else if (skinBoundsBefore.HasValue &&
+                     skinBoundsBefore.Value.size.x > 1e-4f &&
+                     skinBoundsBefore.Value.size.y > 1e-4f &&
+                     skinBoundsBefore.Value.size.z > 1e-4f)
             {
                 scaleFactor = new Vector3(
                     Mathf.Clamp((functionalBounds.Value.size.x / skinBoundsBefore.Value.size.x) * multiplier.x, 0.01f, 100f),
@@ -108,15 +135,35 @@ namespace App.Bootstrap
                     Mathf.Clamp((functionalBounds.Value.size.z / skinBoundsBefore.Value.size.z) * multiplier.z, 0.01f, 100f));
                 go.transform.localScale = scaleFactor;
             }
+            else
+            {
+                go.transform.localScale = Vector3.one;
+            }
 
-            // bounds-center 정렬 translation — scale 적용 직후 측정한 skin 의 world-space renderer
-            // bounds.center 를 functional bounds.center 와 일치시킨다. pivot-agnostic 정렬.
-            // BookshelfVisualSkinApplier 와 동일 패턴.
+            // 위치 정렬 — preserveSkinNativeScale 분기.
+            //   (a) false: bounds-center 풀 정렬 (XYZ 모두 functional center 와 일치). pivot-agnostic.
+            //   (b) true: XZ 중심을 functional center.xz 에, Y bottom 을 functional bottom 에
+            //       align. GLB 가 큰 경우에도 floor 아래로 묻히지 않고 책상 위치 위로 올라옴.
+            //       이게 "table 이 floor 에 자연스럽게 놓이고 desk 자리 중심에 정렬" 동작.
             var skinBoundsAfterScale = ComputeRendererBoundsSafe(go);
             Vector3 worldOffset = Vector3.zero;
             if (skinBoundsAfterScale.HasValue && skinBoundsAfterScale.Value.size.sqrMagnitude > 1e-8f)
             {
-                worldOffset = functionalBounds.Value.center - skinBoundsAfterScale.Value.center;
+                Vector3 desiredCenter;
+                if (preserveNative)
+                {
+                    // bounds.min.y 를 functional.min.y 에 맞추도록 desired center.y 계산.
+                    // desiredMinY = functional.min.y → desiredCenter.y = desiredMinY + skin.size.y * 0.5
+                    desiredCenter = new Vector3(
+                        functionalBounds.Value.center.x,
+                        functionalBounds.Value.min.y + skinBoundsAfterScale.Value.size.y * 0.5f,
+                        functionalBounds.Value.center.z);
+                }
+                else
+                {
+                    desiredCenter = functionalBounds.Value.center;
+                }
+                worldOffset = desiredCenter - skinBoundsAfterScale.Value.center;
                 go.transform.position += worldOffset;
             }
             var skinBoundsAfter = ComputeRendererBoundsSafe(go);
@@ -150,13 +197,17 @@ namespace App.Bootstrap
             var laptopAfterWorld = notebookTransform.position;
             var laptopDelta = laptopAfterWorld - laptopBeforeWorld;
 
+            float tableTopWorldY = skinBoundsAfter.HasValue ? skinBoundsAfter.Value.max.y : functionalBounds.Value.max.y;
+
+            var skinWorldScale = go.transform.lossyScale;
             Debug.Log($"[DeskSkin] entryAssetId={entry.AssetId} prefab={entry.Prefab.name} deskRoot={deskTransform.name} notebook={notebookTransform.name} " +
+                      $"preserveSkinNativeScale={preserveNative} placementRotation={entry.PlacementRotation} placementScaleOverride={placementScaleOverride} " +
+                      $"prefabRootLocalScale={entry.Prefab.transform.localScale} deskLossyScale={deskTransform.lossyScale} skinWorldScale={skinWorldScale} " +
                       $"functionalDeskBounds=(center={functionalBounds.Value.center}, size={functionalBounds.Value.size}) " +
                       $"skinBoundsBefore={(skinBoundsBefore.HasValue ? skinBoundsBefore.Value.size.ToString() : "null")} " +
-                      $"skinBoundsAfter={(skinBoundsAfter.HasValue ? skinBoundsAfter.Value.size.ToString() : "null")} " +
-                      $"skinBoundsCenter={(skinBoundsAfter.HasValue ? skinBoundsAfter.Value.center.ToString() : "null")} " +
+                      $"finalSkinBounds=(center={(skinBoundsAfter.HasValue ? skinBoundsAfter.Value.center.ToString() : "null")}, size={(skinBoundsAfter.HasValue ? skinBoundsAfter.Value.size.ToString() : "null")}) " +
                       $"scaleFactor=({scaleFactor.x:F3},{scaleFactor.y:F3},{scaleFactor.z:F3}) multiplier=({multiplier.x:F3},{multiplier.y:F3},{multiplier.z:F3}) worldOffset={worldOffset} " +
-                      $"deskTopLocalY={deskTopLocalY:F4} laptopBottomOffset={LaptopBottomOffset:F4} " +
+                      $"tableTopWorldY={tableTopWorldY:F4} deskTopLocalY={deskTopLocalY:F4} laptopBottomOffset={LaptopBottomOffset:F4} " +
                       $"laptopBeforeWorld={laptopBeforeWorld} laptopAfterWorld={laptopAfterWorld} laptopDelta={laptopDelta} source={source}");
 
             // X / Z 변위는 0 이어야 정상 (Y 만 의도된 변화). 회귀 가드.
@@ -309,6 +360,15 @@ namespace App.Bootstrap
             float y = Mathf.Abs(m.y) < 1e-4f ? 1f : m.y;
             float z = Mathf.Abs(m.z) < 1e-4f ? 1f : m.z;
             return new Vector3(x, y, z);
+        }
+
+        // preserveSkinNativeScale 분기에서 parent.lossyScale 을 역보정해 world scale = prefabRoot
+        // 을 만드는 helper. parent.lossy 0 / 매우 작은 값 / 음수 모두 안전 처리 (분모 폭주/부호
+        // 반전 방지). 일반 desk hierarchy 에선 1 근방이라 그대로 통과.
+        private static float SafeInvScale(float prefabRoot, float parentLossy)
+        {
+            float denom = Mathf.Abs(parentLossy) < 1e-6f ? 1f : parentLossy;
+            return prefabRoot / denom;
         }
 
         private static bool IsDescendantOf(Transform t, Transform ancestor)

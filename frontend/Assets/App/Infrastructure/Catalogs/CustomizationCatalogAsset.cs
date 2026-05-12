@@ -91,10 +91,18 @@ namespace App.Infrastructure.Catalogs
         [Header("Desk 전용 — Skin scale multiplier (auto-fit 위 fine-tune)")]
         [Tooltip("DeskVisualSkinApplier 가 functional desk bounds 에 자동 fit 한 scale 위에 추가로 " +
                  "componentwise 곱하는 multiplier. (1,1,1) 또는 zero 면 multiplier 적용 안 함 (auto-fit " +
-                 "결과 그대로). 예: vintage_table 처럼 GLB 의 raw 종횡비가 functional desk 와 다른 자산을 " +
-                 "디자이너가 (0.7, 0.5, 0.5) 같은 비율로 미세 조정. laptop y 는 skin 의 새 top 을 기준으로 " +
-                 "자동 따라감 (수동 조정 불필요).")]
+                 "결과 그대로). preserveSkinNativeScale=true 면 multiplier 도 무시 (raw GLB scale 유지). " +
+                 "laptop y 는 skin 의 새 top 을 기준으로 자동 따라감 (수동 조정 불필요).")]
         [SerializeField] private Vector3 skinScaleMultiplier = Vector3.one;
+
+        [Header("Desk 전용 — Skin native scale 보존")]
+        [Tooltip("true 면 DeskVisualSkinApplier 가 functional desk bounds 에 강제로 맞추는 auto-fit " +
+                 "을 skip 하고 GLB 의 raw localScale=one (원본 모델 크기/비율) 그대로 유지한다. 위치만 " +
+                 "functional desk bottom (XZ 중심 + Y bottom-align) 으로 정렬해 책상이 floor 에 자연스럽게 " +
+                 "놓이게 한다. laptop y 는 skin 의 실제 top 을 측정해 그 위에 올림. 예: vintage_table 처럼 " +
+                 "GLB 가 이미 적절한 크기로 export 된 자산. false (default) 면 기존 auto-fit + skinScaleMultiplier " +
+                 "동작.")]
+        [SerializeField] private bool preserveSkinNativeScale;
 
         public long AssetId => assetId;
         public string DisplayName => displayName;
@@ -121,6 +129,7 @@ namespace App.Infrastructure.Catalogs
         public Vector3 MonitorRotation => monitorRotation;
         public Vector3 MonitorScale => monitorScale;
         public Vector3 SkinScaleMultiplier => skinScaleMultiplier;
+        public bool PreserveSkinNativeScale => preserveSkinNativeScale;
     }
 
     /// <summary>
