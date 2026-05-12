@@ -186,6 +186,9 @@ class SpaceServiceTest {
         assertThat(response.followingCount()).isEqualTo(3L);
         assertThat(response.weeklyVisitorCount()).isEqualTo(9L);
         assertThat(response.ownerNickname()).isEqualTo("owner");
+        assertThat(response.bookshelfCount()).isEqualTo(0L);
+        assertThat(response.bookCount()).isEqualTo(0L);
+        assertThat(response.readingRecordCount()).isEqualTo(0L);
     }
 
     @Test
