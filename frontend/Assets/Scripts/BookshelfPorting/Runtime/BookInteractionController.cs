@@ -401,12 +401,12 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            shelfBookPointerTravel += delta.magnitude;
             if (!CanInteractWithShelfBooks())
             {
                 return;
             }
 
-            shelfBookPointerTravel += delta.magnitude;
             if (draggingBook == null && shelfBookPointerTravel > dragStartThresholdPixels)
             {
                 BeginDrag(pressedBook);
@@ -545,7 +545,8 @@ namespace BookshelfPorting.Runtime
                    generator != null &&
                    !generator.IsBookshelfSwitching &&
                    !IsBookshelfWorldInputBlocked() &&
-                   !IsBookAddPlacementSelectionActive();
+                   !IsBookAddPlacementSelectionActive() &&
+                   CanRearrangeShelfBooks();
         }
 
         private bool IsBookshelfEditMode()
@@ -561,6 +562,11 @@ namespace BookshelfPorting.Runtime
         private bool IsBookshelfWorldInputBlocked()
         {
             return experienceManager != null && experienceManager.IsBookshelfWorldInputBlocked;
+        }
+
+        private bool CanRearrangeShelfBooks()
+        {
+            return experienceManager == null || experienceManager.CanRearrangeShelfBooks;
         }
 
         private bool IsBookshelfFocusActive()
@@ -1155,6 +1161,11 @@ namespace BookshelfPorting.Runtime
 
         private void BeginDrag(BookEntity book)
         {
+            if (book == null || !CanInteractWithShelfBooks())
+            {
+                return;
+            }
+
             ResetBookHoverHint();
             DisableDropPhysics(book);
             if (generator != null && generator.BooksRoot != null && book.transform.parent != generator.BooksRoot)
@@ -1205,6 +1216,24 @@ namespace BookshelfPorting.Runtime
             var movedBook = draggingBook;
             var returnSection = originalSectionBeforeDrag;
             var returnIndex = originalIndexBeforeDrag;
+            if (!CanRearrangeShelfBooks())
+            {
+                if (ghostPreview != null)
+                {
+                    ghostPreview.SetActive(false);
+                }
+
+                ResetDragLayoutPreview(true);
+                draggingBook = null;
+                originalSectionBeforeDrag = null;
+                originalIndexBeforeDrag = -1;
+                pendingDropAfterBookshelfSwitch = false;
+                shelfBookPointerTravel = 0f;
+                ResetEdgeSwitchDwell();
+                HandleInvalidDrop(movedBook, returnSection, returnIndex);
+                return;
+            }
+
             var localPosition = generator.BooksRoot.parent.InverseTransformPoint(draggingBook.transform.position);
             var destination = state.FindAvailableDropSection(localPosition, draggingBook);
             var insertIndex = destination != null ? state.ComputeDropInsertIndex(localPosition, destination, draggingBook) : 0;

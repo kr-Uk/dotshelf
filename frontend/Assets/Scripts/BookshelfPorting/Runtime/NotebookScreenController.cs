@@ -210,6 +210,7 @@ namespace BookshelfPorting.Runtime
 
         public Transform ScreenTransform { get; private set; }
         public event Action BookAddedToShelfThroughApi;
+        public event Action<long> SpaceVisitRequested;
 
         private void Awake()
         {
@@ -325,6 +326,11 @@ namespace BookshelfPorting.Runtime
         {
             openDashboardOnShow = false;
             SetState(NotebookUiState.Dashboard, animate);
+        }
+
+        public void OpenOtherSpacesTab()
+        {
+            toolkitController?.OpenOtherSpacesTab();
         }
 
         public void ReturnToScreenSaver(bool animate = true)
@@ -531,12 +537,14 @@ namespace BookshelfPorting.Runtime
             if (subscribedToolkitController != null)
             {
                 subscribedToolkitController.BookAddedToShelfThroughApi -= HandleToolkitBookAddedToShelfThroughApi;
+                subscribedToolkitController.SpaceVisitRequested -= HandleToolkitSpaceVisitRequested;
             }
 
             subscribedToolkitController = toolkitController;
             if (subscribedToolkitController != null)
             {
                 subscribedToolkitController.BookAddedToShelfThroughApi += HandleToolkitBookAddedToShelfThroughApi;
+                subscribedToolkitController.SpaceVisitRequested += HandleToolkitSpaceVisitRequested;
             }
         }
 
@@ -545,11 +553,17 @@ namespace BookshelfPorting.Runtime
             BookAddedToShelfThroughApi?.Invoke();
         }
 
+        private void HandleToolkitSpaceVisitRequested(long spaceId)
+        {
+            SpaceVisitRequested?.Invoke(spaceId);
+        }
+
         private void OnDestroy()
         {
             if (subscribedToolkitController != null)
             {
                 subscribedToolkitController.BookAddedToShelfThroughApi -= HandleToolkitBookAddedToShelfThroughApi;
+                subscribedToolkitController.SpaceVisitRequested -= HandleToolkitSpaceVisitRequested;
                 subscribedToolkitController = null;
             }
         }

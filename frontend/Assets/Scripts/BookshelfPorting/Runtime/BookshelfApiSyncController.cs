@@ -22,6 +22,7 @@ namespace BookshelfPorting.Runtime
         private long? currentSpaceId;
         private bool configured;
         private bool isRefreshing;
+        private bool isViewingOtherUserSpace;
         private bool isThumbnailUploading;
         private bool thumbnailUploadPending;
         private Action<NotebookSpaceThumbnailUploadResult> pendingThumbnailUploadSucceeded;
@@ -53,6 +54,8 @@ namespace BookshelfPorting.Runtime
         public bool IsServerSyncEnabled => CanUseServerApi;
 
         public bool IsRefreshing => isRefreshing;
+
+        public bool IsViewingOtherUserSpace => isViewingOtherUserSpace;
 
         public bool HasAccessToken => APIManager.Instance != null && APIManager.Instance.HasAccessToken;
 
@@ -108,12 +111,11 @@ namespace BookshelfPorting.Runtime
                 space =>
                 {
                     currentSpaceId = space?.Id;
-                    // Forward to the visitor overlay so it can hide on own
-                    // space (the common case here — GetMySpace always returns
-                    // the local user's space). When a future "visit other
-                    // user's space" flow lands it should call SetCurrentSpace
-                    // directly with the GET /v1/spaces/{spaceId} response.
-                    SpaceVisitorOverlayController.Instance?.SetCurrentSpace(space);
+                    SetViewingOtherUserSpace(false);
+                    ApplyRoomVisuals(space, false);
+                    // The main room is not a visitor-action surface; those
+                    // actions live on notebook space cards.
+                    SpaceVisitorOverlayController.Instance?.HideOverlay();
                     if (!currentSpaceId.HasValue || currentSpaceId.Value <= 0)
                     {
                         FinishRefresh(false, "내 공간 정보를 찾을 수 없습니다.");
@@ -141,22 +143,24 @@ namespace BookshelfPorting.Runtime
         // resolve the spaceId — this method does NOT take a hardcoded ID.
         // Pipeline mirrors RefreshFromServer except it hits /v1/spaces/{id}
         // instead of /v1/spaces/me, then routes the response through the
-        // same overlay forward + bookshelf load + visit record path.
+        // same room-visual + bookshelf load + visit record path.
         //
         // Own-space detection: SpaceResponse.OwnerUserId == AuthSession.UserId.
-        public void EnterSpaceById(long spaceId)
+        public void EnterSpaceById(long spaceId, Action<bool, string> onCompleted = null)
         {
             if (!IsConfigured || isRefreshing)
             {
+                onCompleted?.Invoke(false, "책장 API 동기화가 준비되지 않았습니다.");
                 return;
             }
             if (spaceId <= 0)
             {
                 Debug.LogWarning($"[BookshelfApiSync] EnterSpaceById ignored — invalid spaceId={spaceId}.");
+                onCompleted?.Invoke(false, "공간 정보를 불러올 수 없습니다.");
                 return;
             }
 
-            BeginRefresh(null);
+            BeginRefresh(onCompleted);
             client.GetSpace(
                 spaceId,
                 space =>
@@ -168,11 +172,12 @@ namespace BookshelfPorting.Runtime
                     }
 
                     currentSpaceId = space.Id;
-                    // Forward to overlay regardless of own/other — it
-                    // self-hides for own space and self-shows for other
-                    // user. Same hook BookshelfApiSyncController already
-                    // uses on /v1/spaces/me responses.
-                    SpaceVisitorOverlayController.Instance?.SetCurrentSpace(space);
+                    var isOtherUserSpace = !IsOwnSpace(space.OwnerUserId);
+                    SetViewingOtherUserSpace(isOtherUserSpace);
+                    ApplyRoomVisuals(space, isOtherUserSpace);
+                    // The notebook card owns follow/like/visit actions. The
+                    // visited room itself stays read-only and inspection-only.
+                    SpaceVisitorOverlayController.Instance?.HideOverlay();
 
                     if (!IsOwnSpace(space.OwnerUserId))
                     {
@@ -194,6 +199,28 @@ namespace BookshelfPorting.Runtime
                         $"[BookshelfApiSync] GetSpace({spaceId}) failed: code={error?.Code} message={error?.Message}");
                     FinishRefresh(false, "공간 정보를 불러오지 못했습니다.");
                 });
+        }
+
+        private void SetViewingOtherUserSpace(bool value)
+        {
+            isViewingOtherUserSpace = value;
+        }
+
+        private static void ApplyRoomVisuals(SpaceResponseDto space, bool isReadOnlyPreview)
+        {
+            if (space == null)
+            {
+                return;
+            }
+
+            var roomEditModeController = FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
+            if (roomEditModeController == null)
+            {
+                return;
+            }
+
+            roomEditModeController.SetReadOnlySpacePreview(isReadOnlyPreview);
+            roomEditModeController.ApplyServerSpaceVisuals(space);
         }
 
         private bool IsOwnSpace(long ownerUserId)

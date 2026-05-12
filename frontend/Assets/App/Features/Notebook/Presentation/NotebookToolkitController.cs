@@ -362,6 +362,7 @@ namespace App.Features.Notebook.Presentation
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
         private NotebookRuntimeUseCase notebookRuntimeUseCase;
         public event Action BookAddedToShelfThroughApi;
+        public event Action<long> SpaceVisitRequested;
         private BookViewModel[] marketBooks = Array.Empty<BookViewModel>();
         private BookViewModel[] recommendedBooks = Array.Empty<BookViewModel>();
         private BookViewModel[] searchResults = Array.Empty<BookViewModel>();
@@ -563,6 +564,24 @@ namespace App.Features.Notebook.Presentation
 
             StartDashboardInitializationRetry(showVersion);
             return false;
+        }
+
+        public void OpenOtherSpacesTab()
+        {
+            activeHeaderTab = HeaderTabs[1];
+            searchPageOpen = false;
+            CloseBookDetail();
+            CloseSocialListPanel();
+            pageIndex = 0;
+            if (pageScrollView != null)
+            {
+                pageScrollView.scrollOffset = Vector2.zero;
+            }
+
+            if (initialized)
+            {
+                RefreshAll();
+            }
         }
 
         public bool OpenAdvertisedBookDetail(string preferredTitle = null)
@@ -1851,7 +1870,7 @@ namespace App.Features.Notebook.Presentation
             priceColumn.Add(priceLabel);
 
             bookDetailPrice = Text(string.Empty, 21, AccentDeep, FontStyle.Bold);
-            bookDetailPrice.style.marginTop = 4;
+            bookDetailPrice.style.marginTop = 1;
             priceColumn.Add(bookDetailPrice);
 
             bookDetailAddButton = TextButton("구매하고 책장에 추가", true);
@@ -2189,6 +2208,28 @@ namespace App.Features.Notebook.Presentation
             RequestSpaces(otherSpacesQuery);
         }
 
+        private void RequestSpaceVisit(SpaceViewModel space)
+        {
+            if (space == null)
+            {
+                return;
+            }
+
+            if (space.IsOwnSpace)
+            {
+                ShowToast("내 공간은 방 화면에서 바로 확인할 수 있습니다.");
+                return;
+            }
+
+            if (!long.TryParse(space.Id, out var spaceId) || spaceId <= 0)
+            {
+                ShowToast("공간 정보를 불러올 수 없습니다.");
+                return;
+            }
+
+            SpaceVisitRequested?.Invoke(spaceId);
+        }
+
         private string GetOtherSpacesStatusText()
         {
             if (otherSpacesLoading)
@@ -2245,7 +2286,7 @@ namespace App.Features.Notebook.Presentation
             card.style.overflow = Overflow.Hidden;
             Round(card, 18);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.10f));
-            card.RegisterCallback<ClickEvent>(_ => ShowToast($"공간 상세로 이동 · {space.Title}"));
+            card.RegisterCallback<ClickEvent>(_ => RequestSpaceVisit(space));
 
             var thumbnail = new VisualElement { name = "space-thumbnail" };
             thumbnail.style.minHeight = 169;
@@ -2285,7 +2326,7 @@ namespace App.Features.Notebook.Presentation
             visitOverlay.style.height = 30;
             visitOverlay.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.94f);
             visitOverlay.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
-            visitOverlay.clicked += () => ShowToast($"공간으로 이동합니다 · {space.Title}");
+            visitOverlay.clicked += () => RequestSpaceVisit(space);
             thumbnail.Add(visitOverlay);
 
             var content = new VisualElement { name = "space-card-content" };
@@ -2311,7 +2352,7 @@ namespace App.Features.Notebook.Presentation
             owner.style.maxHeight = 48;
             titleBox.Add(owner);
 
-            var avatar = Text(space.Owner.Substring(0, 1), 16, Surface, FontStyle.Bold);
+            var avatar = Text(InitialOf(space.Owner, "U"), 16, Surface, FontStyle.Bold);
             avatar.style.width = 42;
             avatar.style.height = 42;
             avatar.style.flexShrink = 0;
@@ -2342,7 +2383,7 @@ namespace App.Features.Notebook.Presentation
             visit.style.height = 34;
             visit.style.marginRight = 8;
             visit.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
-            visit.clicked += () => ShowToast($"공간으로 이동합니다 · {space.Title}");
+            visit.clicked += () => RequestSpaceVisit(space);
             actions.Add(visit);
 
             var follow = TextButton(string.Empty, false);
@@ -3669,7 +3710,7 @@ namespace App.Features.Notebook.Presentation
             Round(row, 14);
             Border(row, Rgba(0x0E, 0x1D, 0x2A, 0.06f));
 
-            var avatar = Text(FirstText(user?.Nickname, "U").Substring(0, 1), 15, Surface, FontStyle.Bold);
+            var avatar = Text(InitialOf(user?.Nickname, "U"), 15, Surface, FontStyle.Bold);
             avatar.style.width = 38;
             avatar.style.height = 38;
             avatar.style.flexShrink = 0;
@@ -5397,11 +5438,12 @@ namespace App.Features.Notebook.Presentation
             info.style.marginLeft = 8;
             info.style.flexGrow = 1f;
             info.style.minWidth = 0;
-            info.style.paddingTop = 2;
+            info.style.paddingTop = 0;
             card.Add(info);
 
             var badgeRow = Row("badges");
             badgeRow.style.height = 22;
+            badgeRow.style.marginTop = -2;
             badgeRow.style.alignItems = Align.Center;
             info.Add(badgeRow);
 
@@ -5421,30 +5463,30 @@ namespace App.Features.Notebook.Presentation
             badgeRow.Add(genre);
 
             var title = Text(book.Title, 12, Ink, FontStyle.Bold);
-            title.style.marginTop = 4;
+            title.style.marginTop = 2;
             title.style.whiteSpace = WhiteSpace.Normal;
-            title.style.minHeight = 24;
-            title.style.maxHeight = 30;
+            title.style.minHeight = 21;
+            title.style.maxHeight = 28;
             info.Add(title);
 
             var byline = Text($"{book.Author} · {book.Publisher}", 10, SoftInk, FontStyle.Normal);
-            byline.style.marginTop = 2;
-            byline.style.minHeight = 16;
+            byline.style.marginTop = 0;
+            byline.style.minHeight = 15;
             byline.style.whiteSpace = WhiteSpace.Normal;
             info.Add(byline);
 
             var stats = Row("ranking-stats");
-            stats.style.marginTop = 4;
-            stats.style.minHeight = 18;
+            stats.style.marginTop = 2;
+            stats.style.minHeight = 16;
             stats.style.alignItems = Align.Center;
             info.Add(stats);
 
             var rating = Text($"★ {book.Rating:0.0}", 9, AccentDeep, FontStyle.Normal);
-            rating.style.marginRight = 10;
+            rating.style.marginRight = 7;
             stats.Add(rating);
 
             var reviews = Text($"리뷰 {book.Reviews:N0}", 9, Ink, FontStyle.Normal);
-            reviews.style.marginRight = 10;
+            reviews.style.marginRight = 7;
             stats.Add(reviews);
 
             var views = Text($"조회 {book.Views:N0}", 9, Ink, FontStyle.Normal);
@@ -6542,6 +6584,12 @@ namespace App.Features.Notebook.Presentation
             }
 
             return string.Empty;
+        }
+
+        private static string InitialOf(string value, string fallback)
+        {
+            var text = FirstText(value, fallback, "U");
+            return text.Length > 0 ? text.Substring(0, 1) : "U";
         }
 
         private static long? ResolveServerBookId(NotebookBookSearchItem dto)
