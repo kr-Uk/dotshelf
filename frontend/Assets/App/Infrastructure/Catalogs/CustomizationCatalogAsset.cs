@@ -104,6 +104,41 @@ namespace App.Infrastructure.Catalogs
                  "동작.")]
         [SerializeField] private bool preserveSkinNativeScale;
 
+        [Header("Desk 전용 — Skin localPosition 직접 override (Desk-local)")]
+        [Tooltip("preserveSkinNativeScale=true 일 때 DeskVisualSkinApplier 의 bounds-based 위치 정렬 (XZ " +
+                 "center / Y bottom-align) 대신 이 값을 skin GameObject 의 localPosition (Desk transform " +
+                 "기준) 으로 직접 사용. zero 면 bounds-based 정렬 유지 (default). 디자이너가 Unity Inspector " +
+                 "에서 skin transform 을 시각적으로 잡은 좌표를 그대로 박을 때 사용 — 예: deepsea_desk 처럼 " +
+                 "GLB pivot/bounds 가 평범하지 않아 bounds 정렬이 어색한 경우.")]
+        [SerializeField] private Vector3 skinLocalPositionOverride;
+
+        [Header("Desk 전용 — Laptop hierarchy renderer 숨김 (monitor 모드)")]
+        [Tooltip("true 면 Desk skin attach 시 Notebook GameObject (= laptop) 자식의 모든 Renderer (laptop " +
+                 "body + 화면 mesh ScreenLid/BlackBezel/DisplayPanel 등) 를 disable. 테마 전환 시 enable " +
+                 "원복. Canvas UI 는 CanvasRenderer 라 영향 없음 → ScreenSaverCanvas / DashboardCanvas 만 " +
+                 "남아 monitor 화면처럼 보임. lockNotebookStationToMonitor=true 와 짝으로 사용 — " +
+                 "NotebookStation 이 monitor 위치로 이동한 상태에서 laptop mesh 가 monitor 와 시각 충돌하는 " +
+                 "걸 해소. 예: DeepSea 테마 (GoodVibes_Monitor 단독 사용).")]
+        [SerializeField] private bool hideLaptopRenderers;
+
+        [Header("Desk 전용 — Notebook/Screen transform override (monitor 화면 fit)")]
+        [Tooltip("monitor 모드 (hideLaptopRenderers + lockNotebookStationToMonitor) 에서 " +
+                 "Notebook/Screen GameObject 의 localPosition 을 이 값으로 override. zero (default) 면 " +
+                 "native (procedural 노트북의 (0, 0.114, -0.154)) 유지. ScreenSaverCanvas / DashboardCanvas " +
+                 "는 Screen 자식이라 Screen transform 을 옮기면 함께 따라감 — monitor 디스플레이 면 위치/" +
+                 "방향에 정확히 맞추는 용도. 디자이너가 Inspector 에서 런타임 튜닝 후 값 박기.")]
+        [SerializeField] private Vector3 notebookScreenLocalPosition;
+        [Tooltip("monitor 모드에서 Notebook/Screen 의 localEulerAngles override. zero (default) 면 " +
+                 "native (procedural 의 (-99.5, 0, 0) — 노트북 디스플레이 각도) 유지. " +
+                 "Inspector 의 native 값을 명시 적용하려면 (-99.5, 0, 0) 박으면 됨. monitor 화면의 normal " +
+                 "방향과 일치시키려면 monitor 의 forward 와 같은 Euler 박기.")]
+        [SerializeField] private Vector3 notebookScreenLocalRotation;
+        [Tooltip("monitor 모드에서 Notebook/Screen 의 localScale 에 componentwise 곱하는 multiplier. " +
+                 "(1,1,1) 또는 zero (default) 면 multiplier 적용 안 함 (native scale 유지). Canvas " +
+                 "world 크기는 Screen.lossyScale × CanvasScale 에 비례하므로, monitor 화면 면적을 채우려면 " +
+                 "이 값을 키워야 함. 예: (3, 3, 1) 로 Canvas 가로/세로 3배.")]
+        [SerializeField] private Vector3 notebookScreenScaleMultiplier = Vector3.one;
+
         public long AssetId => assetId;
         public string DisplayName => displayName;
         public string Description => description;
@@ -130,6 +165,11 @@ namespace App.Infrastructure.Catalogs
         public Vector3 MonitorScale => monitorScale;
         public Vector3 SkinScaleMultiplier => skinScaleMultiplier;
         public bool PreserveSkinNativeScale => preserveSkinNativeScale;
+        public Vector3 SkinLocalPositionOverride => skinLocalPositionOverride;
+        public bool HideLaptopRenderers => hideLaptopRenderers;
+        public Vector3 NotebookScreenLocalPosition => notebookScreenLocalPosition;
+        public Vector3 NotebookScreenLocalRotation => notebookScreenLocalRotation;
+        public Vector3 NotebookScreenScaleMultiplier => notebookScreenScaleMultiplier;
     }
 
     /// <summary>

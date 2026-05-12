@@ -114,15 +114,21 @@ namespace App.Bootstrap
             Vector3 scaleFactor = Vector3.one;
             Vector3 multiplier = SanitizeMultiplier(entry.SkinScaleMultiplier);
             Vector3 placementScaleOverride = SanitizeMultiplier(entry.PlacementScale);
+            bool multiplierApplied = false;
             if (preserveNative)
             {
+                // preserveNative target worldScale = prefab.localScale × placementScaleOverride × multiplier.
+                // 이전 버그: multiplier (SkinScaleMultiplier) 가 분기에서 누락 → DeepSea (multiplier=3,3,3 +
+                // placementScaleOverride=1,1,1) 에서 multiplier 가 무시되어 raw size 그대로 나옴. 두 필드 모두
+                // 곱하면 placementScale 만 쓰는 vintage_table (multiplier=1,1,1) 도 회귀 없음.
                 var prefabRootScale = entry.Prefab.transform.localScale;
                 var parentLossy = deskTransform.lossyScale;
                 scaleFactor = new Vector3(
-                    SafeInvScale(prefabRootScale.x * placementScaleOverride.x, parentLossy.x),
-                    SafeInvScale(prefabRootScale.y * placementScaleOverride.y, parentLossy.y),
-                    SafeInvScale(prefabRootScale.z * placementScaleOverride.z, parentLossy.z));
+                    SafeInvScale(prefabRootScale.x * placementScaleOverride.x * multiplier.x, parentLossy.x),
+                    SafeInvScale(prefabRootScale.y * placementScaleOverride.y * multiplier.y, parentLossy.y),
+                    SafeInvScale(prefabRootScale.z * placementScaleOverride.z * multiplier.z, parentLossy.z));
                 go.transform.localScale = scaleFactor;
+                multiplierApplied = true;
             }
             else if (skinBoundsBefore.HasValue &&
                      skinBoundsBefore.Value.size.x > 1e-4f &&
@@ -134,26 +140,32 @@ namespace App.Bootstrap
                     Mathf.Clamp((functionalBounds.Value.size.y / skinBoundsBefore.Value.size.y) * multiplier.y, 0.01f, 100f),
                     Mathf.Clamp((functionalBounds.Value.size.z / skinBoundsBefore.Value.size.z) * multiplier.z, 0.01f, 100f));
                 go.transform.localScale = scaleFactor;
+                multiplierApplied = true;
             }
             else
             {
                 go.transform.localScale = Vector3.one;
             }
 
-            // 위치 정렬 — preserveSkinNativeScale 분기.
-            //   (a) false: bounds-center 풀 정렬 (XYZ 모두 functional center 와 일치). pivot-agnostic.
-            //   (b) true: XZ 중심을 functional center.xz 에, Y bottom 을 functional bottom 에
-            //       align. GLB 가 큰 경우에도 floor 아래로 묻히지 않고 책상 위치 위로 올라옴.
-            //       이게 "table 이 floor 에 자연스럽게 놓이고 desk 자리 중심에 정렬" 동작.
+            // 위치 정렬 — 우선순위:
+            //   (1) preserveNative=true && entry.SkinLocalPositionOverride != zero → 디자이너 직접
+            //       지정 localPosition (Desk-local) 그대로 set. bounds-based 정렬 skip.
+            //   (2) preserveNative=true (override 없음) → XZ 중심 functional.center.xz + Y bottom 을
+            //       functional.min.y 에 맞춤 (floor 자연 안착).
+            //   (3) preserveNative=false → bounds-center 풀 정렬 (auto-fit 결과를 functional center 에 맞춤).
             var skinBoundsAfterScale = ComputeRendererBoundsSafe(go);
             Vector3 worldOffset = Vector3.zero;
-            if (skinBoundsAfterScale.HasValue && skinBoundsAfterScale.Value.size.sqrMagnitude > 1e-8f)
+            Vector3 localPositionOverride = entry.SkinLocalPositionOverride;
+            bool usedLocalPositionOverride = preserveNative && localPositionOverride.sqrMagnitude > 1e-10f;
+            if (usedLocalPositionOverride)
+            {
+                go.transform.localPosition = localPositionOverride;
+            }
+            else if (skinBoundsAfterScale.HasValue && skinBoundsAfterScale.Value.size.sqrMagnitude > 1e-8f)
             {
                 Vector3 desiredCenter;
                 if (preserveNative)
                 {
-                    // bounds.min.y 를 functional.min.y 에 맞추도록 desired center.y 계산.
-                    // desiredMinY = functional.min.y → desiredCenter.y = desiredMinY + skin.size.y * 0.5
                     desiredCenter = new Vector3(
                         functionalBounds.Value.center.x,
                         functionalBounds.Value.min.y + skinBoundsAfterScale.Value.size.y * 0.5f,
@@ -177,36 +189,134 @@ namespace App.Bootstrap
             // native desk renderer hide — Notebook subtree 는 제외 (laptop 시각 보존).
             HideNativeDeskRenderers(deskTransform, notebookTransform, marker);
 
+            // monitor 모드 — entry.HideLaptopRenderers=true 면 Notebook hierarchy 의 모든 Renderer 를
+            // 추가로 disable. lockNotebookStationToMonitor=true 와 짝으로 사용 — NotebookStation 이
+            // monitor 위로 이동한 상태에서 laptop body / 화면 mesh 가 monitor 와 시각 충돌하는 걸 해소.
+            // Canvas UI 는 Renderer 가 아니라 CanvasRenderer 라 hide 대상에서 자동 제외 → ScreenSaverCanvas
+            // / DashboardCanvas (그 안의 dashboard UI) 만 monitor 화면 위치에 남는다.
+            // marker.HiddenLaptopRenderers 에 캡처 → ClearSkinUnder 에서 enable 원복.
+            int laptopRenderersHidden = 0;
+            if (entry.HideLaptopRenderers && notebookTransform != null)
+            {
+                laptopRenderersHidden = HideLaptopHierarchyRenderers(notebookTransform, marker);
+            }
+
+            // monitor 화면 fit — entry 의 notebookScreen* override 로 Notebook/Screen 의 transform 을
+            // 디자이너 지정 값으로 set. ScreenSaverCanvas / DashboardCanvas 는 Screen 자식이라 같이
+            // 따라감. native (procedural 노트북의 (0, 0.114, -0.154) / Euler (-99.5, 0, 0)) 는 marker
+            // 에 캡처 후 ClearSkinUnder 에서 복원.
+            Transform screenTransform = null;
+            Vector3 finalScreenLocalPos = Vector3.zero;
+            Vector3 finalScreenLocalEuler = Vector3.zero;
+            Vector3 finalScreenLocalScale = Vector3.one;
+            bool screenOverrideApplied = false;
+            if (notebookTransform != null)
+            {
+                for (int i = 0; i < notebookTransform.childCount; i++)
+                {
+                    var c = notebookTransform.GetChild(i);
+                    if (c.gameObject.name == "Screen") { screenTransform = c; break; }
+                }
+            }
+            if (screenTransform != null)
+            {
+                // native 캡처 — 첫 진입에만 의미. 같은 marker 가 재사용되면 이미 has=true 라 skip.
+                marker.NativeScreenLocalPosition = screenTransform.localPosition;
+                marker.NativeScreenLocalRotation = screenTransform.localRotation;
+                marker.NativeScreenLocalScale = screenTransform.localScale;
+                marker.HasNativeScreenCapture = true;
+
+                var screenScaleMult = SanitizeMultiplier(entry.NotebookScreenScaleMultiplier);
+                bool hasAnyOverride =
+                    entry.NotebookScreenLocalPosition.sqrMagnitude > 1e-10f ||
+                    entry.NotebookScreenLocalRotation.sqrMagnitude > 1e-10f ||
+                    (screenScaleMult - Vector3.one).sqrMagnitude > 1e-10f;
+                if (hasAnyOverride)
+                {
+                    if (entry.NotebookScreenLocalPosition.sqrMagnitude > 1e-10f)
+                        screenTransform.localPosition = entry.NotebookScreenLocalPosition;
+                    if (entry.NotebookScreenLocalRotation.sqrMagnitude > 1e-10f)
+                        screenTransform.localEulerAngles = entry.NotebookScreenLocalRotation;
+                    screenTransform.localScale = new Vector3(
+                        marker.NativeScreenLocalScale.x * screenScaleMult.x,
+                        marker.NativeScreenLocalScale.y * screenScaleMult.y,
+                        marker.NativeScreenLocalScale.z * screenScaleMult.z);
+                    screenOverrideApplied = true;
+                }
+                finalScreenLocalPos = screenTransform.localPosition;
+                finalScreenLocalEuler = screenTransform.localEulerAngles;
+                finalScreenLocalScale = screenTransform.localScale;
+            }
+
             // laptop Y 재정렬 — skin world top 을 Desk-local 로 변환 후 LaptopBottomOffset 더함.
             // X / Z 는 native 그대로 보존 (놓이는 평면 anchor 의 designer 의도 유지).
+            //
+            // LockNotebookStationToMonitor=true 인 entry (예: DeepSea) 는 NotebookStation 자체가
+            // MeshSwap_DeskMonitor 위로 이동하므로 (RoomEditModeController.ApplyNotebookStationPlacement
+            // 가 monitor anchor 기준 SetPositionAndRotation) laptop 의 Desk-local Y 를 desk skin top
+            // 으로 옮기면 NotebookStation 이동 후 laptop 이 monitor 화면에서 어긋남. 이 경우엔
+            // laptop native localPosition 그대로 두고 NotebookStation 의 entry.NotebookStation* 값으로
+            // 모니터 화면 align 을 위임.
             float deskTopLocalY = 0f;
-            if (skinBoundsAfter.HasValue)
+            bool laptopYAdjusted = false;
+            if (!entry.LockNotebookStationToMonitor)
             {
-                var deskTopWorld = new Vector3(notebookTransform.position.x, skinBoundsAfter.Value.max.y, notebookTransform.position.z);
-                deskTopLocalY = deskTransform.InverseTransformPoint(deskTopWorld).y;
+                if (skinBoundsAfter.HasValue)
+                {
+                    var deskTopWorld = new Vector3(notebookTransform.position.x, skinBoundsAfter.Value.max.y, notebookTransform.position.z);
+                    deskTopLocalY = deskTransform.InverseTransformPoint(deskTopWorld).y;
+                }
+                else
+                {
+                    var deskTopWorld = new Vector3(notebookTransform.position.x, functionalBounds.Value.max.y, notebookTransform.position.z);
+                    deskTopLocalY = deskTransform.InverseTransformPoint(deskTopWorld).y;
+                }
+                float newLaptopLocalY = deskTopLocalY + LaptopBottomOffset;
+                notebookTransform.localPosition = new Vector3(nativeLaptopLocal.x, newLaptopLocalY, nativeLaptopLocal.z);
+                laptopYAdjusted = true;
             }
-            else
-            {
-                // skin bounds 못 잡으면 functional bounds 의 max.y 로 fallback
-                var deskTopWorld = new Vector3(notebookTransform.position.x, functionalBounds.Value.max.y, notebookTransform.position.z);
-                deskTopLocalY = deskTransform.InverseTransformPoint(deskTopWorld).y;
-            }
-            float newLaptopLocalY = deskTopLocalY + LaptopBottomOffset;
-            notebookTransform.localPosition = new Vector3(nativeLaptopLocal.x, newLaptopLocalY, nativeLaptopLocal.z);
 
             var laptopAfterWorld = notebookTransform.position;
             var laptopDelta = laptopAfterWorld - laptopBeforeWorld;
 
             float tableTopWorldY = skinBoundsAfter.HasValue ? skinBoundsAfter.Value.max.y : functionalBounds.Value.max.y;
 
-            var skinWorldScale = go.transform.lossyScale;
+            var finalLocalScale = go.transform.localScale;
+            var finalWorldScale = go.transform.lossyScale;
+
+            // monitor 화면 fit 진단용 metric — Canvas 가 결국 어디에 어떤 크기로 떠 있는지 직접 측정.
+            // ScreenSaverCanvas / DashboardCanvas 는 Screen 자식 (런타임 생성) 이라 Screen.position +
+            // CanvasSize × CanvasScale × Screen.lossyScale 로 world 면적이 결정됨.
+            Vector3 finalScreenCanvasPosition = Vector3.zero;
+            Vector3 finalScreenCanvasRotation = Vector3.zero;
+            Vector3 finalScreenCanvasScale = Vector3.zero;
+            Vector3 cameraFocusForward = Vector3.zero;
+            if (screenTransform != null)
+            {
+                finalScreenCanvasPosition = screenTransform.position;
+                finalScreenCanvasRotation = screenTransform.eulerAngles;
+                finalScreenCanvasScale = screenTransform.lossyScale;
+                cameraFocusForward = screenTransform.forward;
+            }
+
             Debug.Log($"[DeskSkin] entryAssetId={entry.AssetId} prefab={entry.Prefab.name} deskRoot={deskTransform.name} notebook={notebookTransform.name} " +
                       $"preserveSkinNativeScale={preserveNative} placementRotation={entry.PlacementRotation} placementScaleOverride={placementScaleOverride} " +
-                      $"prefabRootLocalScale={entry.Prefab.transform.localScale} deskLossyScale={deskTransform.lossyScale} skinWorldScale={skinWorldScale} " +
+                      $"skinLocalPositionOverride={localPositionOverride} usedLocalPositionOverride={usedLocalPositionOverride} " +
+                      $"lockNotebookStationToMonitor={entry.LockNotebookStationToMonitor} laptopYAdjusted={laptopYAdjusted} " +
+                      $"hideLaptopRenderers={entry.HideLaptopRenderers} laptopRenderersHidden={laptopRenderersHidden} " +
+                      $"screenOverrideApplied={screenOverrideApplied} " +
+                      $"finalScreenLocal=(pos={finalScreenLocalPos}, eul={finalScreenLocalEuler}, scale={finalScreenLocalScale}) " +
+                      $"finalScreenCanvasPosition={finalScreenCanvasPosition} finalScreenCanvasRotation={finalScreenCanvasRotation} finalScreenCanvasScale={finalScreenCanvasScale} cameraFocusForward={cameraFocusForward} " +
+                      $"prefabRootLocalScale={entry.Prefab.transform.localScale} deskLossyScale={deskTransform.lossyScale} " +
+                      $"multiplier=({multiplier.x:F3},{multiplier.y:F3},{multiplier.z:F3}) multiplierApplied={multiplierApplied} " +
+                      $"scaleFactor=({scaleFactor.x:F3},{scaleFactor.y:F3},{scaleFactor.z:F3}) " +
+                      $"finalLocalScale=({finalLocalScale.x:F3},{finalLocalScale.y:F3},{finalLocalScale.z:F3}) " +
+                      $"finalWorldScale=({finalWorldScale.x:F3},{finalWorldScale.y:F3},{finalWorldScale.z:F3}) " +
+                      $"skinWorldScale={finalWorldScale} " +
                       $"functionalDeskBounds=(center={functionalBounds.Value.center}, size={functionalBounds.Value.size}) " +
                       $"skinBoundsBefore={(skinBoundsBefore.HasValue ? skinBoundsBefore.Value.size.ToString() : "null")} " +
                       $"finalSkinBounds=(center={(skinBoundsAfter.HasValue ? skinBoundsAfter.Value.center.ToString() : "null")}, size={(skinBoundsAfter.HasValue ? skinBoundsAfter.Value.size.ToString() : "null")}) " +
-                      $"scaleFactor=({scaleFactor.x:F3},{scaleFactor.y:F3},{scaleFactor.z:F3}) multiplier=({multiplier.x:F3},{multiplier.y:F3},{multiplier.z:F3}) worldOffset={worldOffset} " +
+                      $"worldOffset={worldOffset} " +
                       $"tableTopWorldY={tableTopWorldY:F4} deskTopLocalY={deskTopLocalY:F4} laptopBottomOffset={LaptopBottomOffset:F4} " +
                       $"laptopBeforeWorld={laptopBeforeWorld} laptopAfterWorld={laptopAfterWorld} laptopDelta={laptopDelta} source={source}");
 
@@ -244,7 +354,7 @@ namespace App.Bootstrap
             var marker = existing.GetComponent<DeskVisualSkin>();
             if (marker != null)
             {
-                // hidden native renderer 복원
+                // hidden native desk renderer 복원
                 var hidden = marker.HiddenFunctionalRenderers;
                 for (int i = 0; i < hidden.Count; i++)
                 {
@@ -253,10 +363,36 @@ namespace App.Bootstrap
                 }
                 hidden.Clear();
 
+                // hidden laptop hierarchy renderer 복원 (monitor 모드용)
+                var hiddenLaptop = marker.HiddenLaptopRenderers;
+                for (int i = 0; i < hiddenLaptop.Count; i++)
+                {
+                    var r = hiddenLaptop[i];
+                    if (r != null) r.enabled = true;
+                }
+                hiddenLaptop.Clear();
+
                 // laptop native localPosition 복원 — attach 시 캡처한 값으로 정확히 되돌림.
                 if (marker.HasNativeLaptopCapture && notebookTransform != null)
                 {
                     notebookTransform.localPosition = marker.NativeLaptopLocalPosition;
+                }
+
+                // Notebook/Screen native transform 복원 — monitor 모드에서 override 했을 경우.
+                if (marker.HasNativeScreenCapture && notebookTransform != null)
+                {
+                    Transform screen = null;
+                    for (int i = 0; i < notebookTransform.childCount; i++)
+                    {
+                        var c = notebookTransform.GetChild(i);
+                        if (c.gameObject.name == "Screen") { screen = c; break; }
+                    }
+                    if (screen != null)
+                    {
+                        screen.localPosition = marker.NativeScreenLocalPosition;
+                        screen.localRotation = marker.NativeScreenLocalRotation;
+                        screen.localScale = marker.NativeScreenLocalScale;
+                    }
                 }
             }
             // FQN — App.Application namespace 와 충돌 회피.
@@ -332,6 +468,25 @@ namespace App.Bootstrap
                 else { var aa = acc.Value; aa.Encapsulate(b); acc = aa; }
             }
             return acc;
+        }
+
+        // monitor 모드 — Notebook hierarchy 전체의 mesh Renderer 를 disable. Particle/Trail/Line 은
+        // 제외 (효과용). Canvas UI 는 CanvasRenderer 라 Renderer 검색 결과에 안 들어옴 → 자동 보존.
+        // 반환: hide 한 renderer 수 (로그 / 진단용).
+        private static int HideLaptopHierarchyRenderers(Transform notebookTransform, DeskVisualSkin marker)
+        {
+            var renderers = notebookTransform.GetComponentsInChildren<Renderer>(true);
+            int hidden = 0;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null || !r.enabled) continue;
+                if (r is ParticleSystemRenderer || r is TrailRenderer || r is LineRenderer) continue;
+                r.enabled = false;
+                marker.HiddenLaptopRenderers.Add(r);
+                hidden++;
+            }
+            return hidden;
         }
 
         // attach 시 native desk renderer hide — Notebook subtree + skin 본인 + 비활성 / particle

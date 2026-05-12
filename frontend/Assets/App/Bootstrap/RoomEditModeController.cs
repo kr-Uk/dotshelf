@@ -1893,10 +1893,31 @@ namespace App.Bootstrap
             {
                 return cached;
             }
-            var loaded = Resources.Load<CustomizationCatalogAsset>($"Catalogs/{category}Catalog");
+            var path = $"Catalogs/{category}Catalog";
+            var loaded = Resources.Load<CustomizationCatalogAsset>(path);
             if (loaded != null)
             {
                 categoryCatalogCache[category] = loaded;
+                // 어느 Resources path 에서 몇 개 entry 를 가진 catalog SO 가 로드됐는지 한 줄 로그.
+                // Resources.Load 는 같은 path 의 첫 매칭 asset 만 로드 (여러 개 있을 수 없지만 사용자가
+                // 의심 시 곧장 확인 가능). entries.Count + 첫 몇 개 assetId 로 stale cache 도 검증.
+                var entries = loaded.Entries;
+                var assetIds = new System.Text.StringBuilder();
+                if (entries != null)
+                {
+                    int max = System.Math.Min(entries.Count, 8);
+                    for (int i = 0; i < max; i++)
+                    {
+                        if (i > 0) assetIds.Append(',');
+                        assetIds.Append(entries[i] != null ? entries[i].AssetId.ToString() : "null");
+                    }
+                    if (entries.Count > max) assetIds.Append(",...");
+                }
+                Debug.Log($"[CatalogLoad] category={category} Resources.Load(\"{path}\") → instanceId={loaded.GetInstanceID()} name={loaded.name} entries.Count={(entries?.Count ?? 0)} assetIds=[{assetIds}]");
+            }
+            else
+            {
+                Debug.LogWarning($"[CatalogLoad] category={category} Resources.Load(\"{path}\") → null. Resources/Catalogs/{category}Catalog.asset 존재/import 확인.");
             }
             return loaded;
         }
@@ -3468,6 +3489,22 @@ namespace App.Bootstrap
         private void ApplyEntryVisual(CustomizationCategory category, CustomizationEntry entry)
         {
             Debug.Log($"[ApplyEntryVisual] enter category={category} entry.AssetId={(entry != null ? entry.AssetId : -1)} entry.Prefab={(entry != null && entry.Prefab != null ? entry.Prefab.name : "null")} isMeshSwap={IsMeshSwapCategory(category)}");
+
+            // Desk 카테고리는 새 DeskVisualSkinApplier 가 참조하는 fields 가 다양하므로, 실제 Unity 가
+            // YAML 에서 deserialize 한 값을 한 줄로 dump. 사용자가 catalog asset 을 외부 편집했는데
+            // Unity 가 reimport 안 해서 in-memory SO 가 stale 인 경우 (가장 흔한 회귀 원인) 를 즉시
+            // 판별 가능. 값이 catalog YAML 과 다르면 → Project window 에서 DeskCatalog.asset 우클릭 →
+            // Reimport 필요. 같으면 → DeskVisualSkinApplier / NotebookPlacement 다른 곳에서 덮어쓰기.
+            if (category == CustomizationCategory.Desk && entry != null)
+            {
+                Debug.Log($"[DeskEntryDump] assetId={entry.AssetId} themeTag={entry.ThemeTag} prefab={(entry.Prefab != null ? entry.Prefab.name : "null")} " +
+                          $"placementAnchor={entry.PlacementAnchor} placementRotation={entry.PlacementRotation} placementScale={entry.PlacementScale} " +
+                          $"overrideNotebookStation={entry.OverrideNotebookStation} lockNotebookStationToMonitor={entry.LockNotebookStationToMonitor} " +
+                          $"notebookStationPosition={entry.NotebookStationPosition} notebookStationRotation={entry.NotebookStationRotation} notebookStationScale={entry.NotebookStationScale} " +
+                          $"monitorPrefab={(entry.MonitorPrefab != null ? entry.MonitorPrefab.name : "null")} monitorPosition={entry.MonitorPosition} monitorRotation={entry.MonitorRotation} monitorScale={entry.MonitorScale} " +
+                          $"skinScaleMultiplier={entry.SkinScaleMultiplier} preserveSkinNativeScale={entry.PreserveSkinNativeScale} skinLocalPositionOverride={entry.SkinLocalPositionOverride} hideLaptopRenderers={entry.HideLaptopRenderers} " +
+                          $"notebookScreenLocalPosition={entry.NotebookScreenLocalPosition} notebookScreenLocalRotation={entry.NotebookScreenLocalRotation} notebookScreenScaleMultiplier={entry.NotebookScreenScaleMultiplier}");
+            }
             if (themeApplier == null)
             {
                 themeApplier = FindFirstObjectByType<Dotshelf.Scripts.RoomTheme.RoomThemeApplier>();
@@ -3591,7 +3628,20 @@ namespace App.Bootstrap
                 }
 
                 DeskVisualSkinApplier.TryAttach(entry, roomRoot, "ApplyCategoryMeshSwap");
-                ApplyMonitorMeshSwap(roomRoot, entry);
+                var monitorTransform = ApplyMonitorMeshSwap(roomRoot, entry);
+
+                // LockNotebookStationToMonitor=true (예: DeepSea + GoodVibes_Monitor 조합) 인 경우
+                // NotebookStation 전체 transform 을 monitor 위로 옮긴다. 이렇게 해야 NotebookStation 의
+                // 자손인 Notebook/Screen/CameraFocusPoint/ScreenSaverCanvas 가 모두 따라가서 노트북 화면
+                // (camera focus + screen saver canvas) 이 monitor 의 디스플레이 패널에 align 됨.
+                // DeskVisualSkinApplier 가 이 case 에서 laptop Y 조정을 skip 하므로 native laptop
+                // localPosition 그대로인 상태에서 NotebookStation 이 옮겨가 monitor 화면과 일관성 유지.
+                // 기존 nativeNotebookStationLocalPos 캡처/복원 로직 (ApplyNotebookStationPlacement 내부 +
+                // RestoreNotebookStationPosition) 은 그대로라 테마 전환 시 native 복귀 보장.
+                if (entry.OverrideNotebookStation && entry.LockNotebookStationToMonitor && monitorTransform != null)
+                {
+                    ApplyNotebookStationPlacement(roomRoot, entry, monitorTransform);
+                }
                 return;
             }
 

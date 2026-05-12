@@ -25,8 +25,21 @@ namespace App.Bootstrap
 
         [SerializeField] private long entryAssetId;
         [SerializeField] private List<Renderer> hiddenFunctionalRenderers = new List<Renderer>();
+        // Notebook hierarchy (laptop body + 화면 mesh) 의 Renderer 들. entry.HideLaptopRenderers=true 일
+        // 때 DeskVisualSkinApplier 가 attach 시 disable 한 후 여기에 캡처 → ClearSkinUnder 가 enable
+        // 원복. Canvas UI 는 CanvasRenderer 라 이 리스트에 안 들어감 → monitor 모드에서 dashboard /
+        // screen saver UI 만 살아남음.
+        [SerializeField] private List<Renderer> hiddenLaptopRenderers = new List<Renderer>();
         [SerializeField] private Vector3 nativeLaptopLocalPosition;
         [SerializeField] private bool hasNativeLaptopCapture;
+
+        // Notebook/Screen transform 의 native (override 적용 전) 값. monitor 모드에서 entry 의
+        // notebookScreen* override 가 적용되면 Screen 의 localPos/Rot/Scale 이 변경되는데, 테마
+        // 전환 시 native 로 정확히 복원해야 procedural 노트북 다시 보일 때 디스플레이 각도가 안 깨짐.
+        [SerializeField] private Vector3 nativeScreenLocalPosition;
+        [SerializeField] private Quaternion nativeScreenLocalRotation = Quaternion.identity;
+        [SerializeField] private Vector3 nativeScreenLocalScale = Vector3.one;
+        [SerializeField] private bool hasNativeScreenCapture;
 
         public long EntryAssetId
         {
@@ -35,6 +48,7 @@ namespace App.Bootstrap
         }
 
         public List<Renderer> HiddenFunctionalRenderers => hiddenFunctionalRenderers;
+        public List<Renderer> HiddenLaptopRenderers => hiddenLaptopRenderers;
 
         public Vector3 NativeLaptopLocalPosition
         {
@@ -46,6 +60,30 @@ namespace App.Bootstrap
         {
             get => hasNativeLaptopCapture;
             set => hasNativeLaptopCapture = value;
+        }
+
+        public Vector3 NativeScreenLocalPosition
+        {
+            get => nativeScreenLocalPosition;
+            set => nativeScreenLocalPosition = value;
+        }
+
+        public Quaternion NativeScreenLocalRotation
+        {
+            get => nativeScreenLocalRotation;
+            set => nativeScreenLocalRotation = value;
+        }
+
+        public Vector3 NativeScreenLocalScale
+        {
+            get => nativeScreenLocalScale;
+            set => nativeScreenLocalScale = value;
+        }
+
+        public bool HasNativeScreenCapture
+        {
+            get => hasNativeScreenCapture;
+            set => hasNativeScreenCapture = value;
         }
     }
 }
