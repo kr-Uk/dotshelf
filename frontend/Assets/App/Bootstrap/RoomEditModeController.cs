@@ -2792,12 +2792,15 @@ namespace App.Bootstrap
                     r.enabled = false;
                 }
             }
+            if (anchor != null && !IsSameOrChildOf(anchor, roomRoot))
+            {
+                SetRenderersEnabled(anchor, false);
+            }
             if (anchor == null)
             {
                 Debug.LogWarning($"[RoomEditModeController] {category} mesh swap — native anchor 못 찾음, prefab spawn skip.");
                 return;
             }
-
             // 4) prefab spawn — entry.PlacementAnchor/Rotation/Scale 을 world 로 직접 해석.
             // 사용자가 Unity scene 에서 시각으로 잡은 transform 값을 catalog Inspector 에 그대로
             // 입력 가능. native anchor 위치 무시 — 책상별 크기/높이 자유 fit.
@@ -2810,9 +2813,13 @@ namespace App.Bootstrap
             //    OverrideNotebookStation=true 면 entry 의 NotebookStation* 값 적용. false 면 native.
             if (category == CustomizationCategory.Desk)
             {
-                ApplyNotebookStationPlacement(roomRoot, entry);
                 // Monitor sub-prefab — 책상의 일부로 함께 spawn (사용자 placement 불가, 고정).
-                ApplyMonitorMeshSwap(roomRoot, entry);
+                var monitor = ApplyMonitorMeshSwap(roomRoot, entry);
+                ApplyNotebookStationPlacement(roomRoot, entry, monitor);
+            }
+            else if (category == CustomizationCategory.DashboardSkin)
+            {
+                ApplyDashboardBoardPlacement(roomRoot, entry);
             }
         }
 
@@ -2832,7 +2839,7 @@ namespace App.Bootstrap
         // Desk entry 의 monitorPrefab spawn — book 책상 mesh swap 의 일부. 별도 GameObject (이름
         // MeshSwap_DeskMonitor) 로 roomRoot 자식. 다음 desk 적용 또는 RestoreCategoryNativeMesh 시
         // 같이 정리.
-        private void ApplyMonitorMeshSwap(Transform roomRoot, CustomizationEntry entry)
+        private Transform ApplyMonitorMeshSwap(Transform roomRoot, CustomizationEntry entry)
         {
             // 이전 monitor swap 정리
             const string monitorSwapName = "MeshSwap_DeskMonitor";
@@ -2846,12 +2853,13 @@ namespace App.Bootstrap
                 }
             }
 
-            if (entry.MonitorPrefab == null) return;
+            if (entry.MonitorPrefab == null) return null;
 
             var go = Instantiate(entry.MonitorPrefab, roomRoot);
             go.name = monitorSwapName;
             go.transform.SetPositionAndRotation(entry.MonitorPosition, Quaternion.Euler(entry.MonitorRotation));
             go.transform.localScale = entry.MonitorScale != Vector3.zero ? entry.MonitorScale : Vector3.one;
+            return go.transform;
         }
 
         // NotebookStation 의 원래 transform 보존용 — 첫 swap 호출 시 저장, restore 시 복원.
@@ -2859,9 +2867,9 @@ namespace App.Bootstrap
         private Quaternion? nativeNotebookStationLocalRot;
         private Vector3? nativeNotebookStationLocalScale;
 
-        private void ApplyNotebookStationPlacement(Transform roomRoot, CustomizationEntry entry)
+        private void ApplyNotebookStationPlacement(Transform roomRoot, CustomizationEntry entry, Transform monitorAnchor = null)
         {
-            var notebookStation = FindChildByName(roomRoot, "NotebookStation");
+            var notebookStation = FindNotebookStation(roomRoot);
             if (notebookStation == null) return;
             // 첫 호출 시 native 보존
             if (!nativeNotebookStationLocalPos.HasValue)
@@ -2880,19 +2888,109 @@ namespace App.Bootstrap
             }
             // override — entry 값을 NotebookStation 의 부모 (GuestbookBoard) 기준 local 로 적용.
             // Inspector 의 Transform 은 default Local 이므로 사용자 캡처값 그대로 박힘.
-            notebookStation.localPosition = entry.NotebookStationPosition;
-            notebookStation.localRotation = Quaternion.Euler(entry.NotebookStationRotation);
+            var resolvedMonitorAnchor = monitorAnchor != null ? monitorAnchor : FindDeskMonitor(roomRoot);
+            if (ShouldLockNotebookStationToMonitor(entry) && resolvedMonitorAnchor != null)
+            {
+                var worldPosition = resolvedMonitorAnchor.TransformPoint(entry.NotebookStationPosition);
+                var worldRotation = resolvedMonitorAnchor.rotation * Quaternion.Euler(entry.NotebookStationRotation);
+                notebookStation.SetPositionAndRotation(worldPosition, worldRotation);
+                notebookStation.localScale = entry.NotebookStationScale != Vector3.zero ? entry.NotebookStationScale : Vector3.one;
+                return;
+            }
+
+            if (IsSameOrChildOf(notebookStation, roomRoot))
+            {
+                notebookStation.localPosition = entry.NotebookStationPosition;
+                notebookStation.localRotation = Quaternion.Euler(entry.NotebookStationRotation);
+            }
+            else
+            {
+                var dashboardBoard = FindDashboardBoard(roomRoot);
+                if (dashboardBoard != null)
+                {
+                    var worldPosition = dashboardBoard.TransformPoint(entry.NotebookStationPosition);
+                    var worldRotation = dashboardBoard.rotation * Quaternion.Euler(entry.NotebookStationRotation);
+                    notebookStation.SetPositionAndRotation(worldPosition, worldRotation);
+                }
+                else
+                {
+                    notebookStation.SetPositionAndRotation(entry.NotebookStationPosition, Quaternion.Euler(entry.NotebookStationRotation));
+                }
+            }
             notebookStation.localScale = entry.NotebookStationScale != Vector3.zero ? entry.NotebookStationScale : Vector3.one;
+        }
+
+        private static bool ShouldLockNotebookStationToMonitor(CustomizationEntry entry)
+        {
+            return entry != null
+                && entry.MonitorPrefab != null
+                && entry.LockNotebookStationToMonitor;
         }
 
         private void RestoreNotebookStationPosition(Transform roomRoot)
         {
             if (!nativeNotebookStationLocalPos.HasValue) return;
-            var notebookStation = FindChildByName(roomRoot, "NotebookStation");
+            var notebookStation = FindNotebookStation(roomRoot);
             if (notebookStation == null) return;
             notebookStation.localPosition = nativeNotebookStationLocalPos.Value;
             notebookStation.localRotation = nativeNotebookStationLocalRot ?? Quaternion.identity;
             notebookStation.localScale = nativeNotebookStationLocalScale ?? Vector3.one;
+        }
+
+        private Vector3? nativeDashboardBoardLocalPos;
+        private Quaternion? nativeDashboardBoardLocalRot;
+        private Vector3? nativeDashboardBoardLocalScale;
+
+        private void ApplyDashboardBoardPlacement(Transform roomRoot, CustomizationEntry entry)
+        {
+            var dashboardBoard = FindDashboardBoard(roomRoot);
+            if (dashboardBoard == null) return;
+            if (!nativeDashboardBoardLocalPos.HasValue)
+            {
+                nativeDashboardBoardLocalPos = dashboardBoard.localPosition;
+                nativeDashboardBoardLocalRot = dashboardBoard.localRotation;
+                nativeDashboardBoardLocalScale = dashboardBoard.localScale;
+            }
+            if (!entry.OverrideNotebookStation)
+            {
+                RestoreDashboardBoardPlacement(roomRoot);
+                return;
+            }
+
+            dashboardBoard.localPosition = entry.NotebookStationPosition;
+            dashboardBoard.localRotation = Quaternion.Euler(entry.NotebookStationRotation);
+            dashboardBoard.localScale = entry.NotebookStationScale != Vector3.zero ? entry.NotebookStationScale : Vector3.one;
+            SyncDashboardPanelToBoard(dashboardBoard);
+            ReapplyActiveDeskOverlay(roomRoot);
+        }
+
+        private void RestoreDashboardBoardPlacement(Transform roomRoot)
+        {
+            if (!nativeDashboardBoardLocalPos.HasValue) return;
+            var dashboardBoard = FindDashboardBoard(roomRoot);
+            if (dashboardBoard == null) return;
+            dashboardBoard.localPosition = nativeDashboardBoardLocalPos.Value;
+            dashboardBoard.localRotation = nativeDashboardBoardLocalRot ?? Quaternion.identity;
+            dashboardBoard.localScale = nativeDashboardBoardLocalScale ?? Vector3.one;
+            SyncDashboardPanelToBoard(dashboardBoard);
+        }
+
+        private static void SyncDashboardPanelToBoard(Transform dashboardBoard)
+        {
+            if (dashboardBoard == null) return;
+            var hitArea = FindChildByName(dashboardBoard, "GuestbookHitArea") ?? dashboardBoard;
+            var panel = FindSceneTransformByName("DashboardScreenPanel");
+            if (panel == null) return;
+            DashboardPanelLayout.Mount(panel, hitArea);
+        }
+
+        private void ReapplyActiveDeskOverlay(Transform roomRoot)
+        {
+            if (!lastAppliedEntries.TryGetValue(CustomizationCategory.Desk, out var deskAssetId)) return;
+            var deskCatalog = LoadCategoryCatalog(CustomizationCategory.Desk);
+            var deskEntry = deskCatalog != null ? deskCatalog.FindByAssetId(deskAssetId) : null;
+            if (deskEntry == null || !deskEntry.OverrideNotebookStation) return;
+            ApplyNotebookStationPlacement(roomRoot, deskEntry, FindDeskMonitor(roomRoot));
         }
 
         private static Transform FindChildByName(Transform root, string name)
@@ -2930,15 +3028,81 @@ namespace App.Bootstrap
             {
                 case CustomizationCategory.Desk:           primaryName = "DeskRoot"; break;
                 case CustomizationCategory.BookshelfSkin:  primaryName = "BookshelfRoot"; break;
-                case CustomizationCategory.DashboardSkin:  primaryName = "DashboardScreenPanel"; break;
+                case CustomizationCategory.DashboardSkin:  primaryName = "GuestbookBoard"; break;
                 default: return null;
             }
-            var allTransforms = roomRoot.GetComponentsInChildren<Transform>(true);
-            for (int i = 0; i < allTransforms.Length; i++)
+
+            var anchor = FindChildByName(roomRoot, primaryName);
+            if (anchor != null) return anchor;
+
+            if (category == CustomizationCategory.DashboardSkin)
             {
-                if (allTransforms[i].gameObject.name == primaryName) return allTransforms[i];
+                anchor = FindSceneTransformByName("GuestbookBoard");
+                if (anchor != null) return anchor;
+                anchor = FindSceneTransformByName("DashboardScreenPanel");
+                if (anchor != null) return anchor;
+            }
+
+            return FindSceneTransformByName(primaryName);
+        }
+
+        private static Transform FindSceneTransformByName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            var scene = SceneManager.GetActiveScene();
+            if (!scene.IsValid()) return null;
+
+            var roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                var root = roots[i];
+                if (root == null) continue;
+                if (root.name == name) return root.transform;
+
+                var transforms = root.GetComponentsInChildren<Transform>(true);
+                for (int j = 0; j < transforms.Length; j++)
+                {
+                    var t = transforms[j];
+                    if (t != null && t.gameObject.name == name) return t;
+                }
             }
             return null;
+        }
+
+        private static Transform FindNotebookStation(Transform roomRoot)
+        {
+            return FindChildByName(roomRoot, "NotebookStation") ?? FindSceneTransformByName("NotebookStation");
+        }
+
+        private static Transform FindDeskMonitor(Transform roomRoot)
+        {
+            return FindChildByName(roomRoot, "MeshSwap_DeskMonitor") ?? FindSceneTransformByName("MeshSwap_DeskMonitor");
+        }
+
+        private static Transform FindDashboardBoard(Transform roomRoot)
+        {
+            return FindChildByName(roomRoot, "GuestbookBoard") ?? FindSceneTransformByName("GuestbookBoard");
+        }
+
+        private static bool IsSameOrChildOf(Transform child, Transform root)
+        {
+            if (child == null || root == null) return false;
+            var current = child;
+            while (current != null)
+            {
+                if (current == root) return true;
+                current = current.parent;
+            }
+            return false;
+        }
+
+        private static void SetRenderersEnabled(Transform root, bool enabled)
+        {
+            if (root == null) return;
+            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                renderer.enabled = enabled;
+            }
         }
 
         // mesh swap 복원 — native renderer 들 enable + spawned mesh swap 정리 + Desk 의 경우
@@ -2948,6 +3112,7 @@ namespace App.Bootstrap
             if (category == CustomizationCategory.Desk)
             {
                 RestoreNotebookStationPosition(roomRoot);
+                SetRenderersEnabled(FindNotebookStation(roomRoot), true);
                 // monitor sub-prefab 정리
                 const string monitorSwapName = "MeshSwap_DeskMonitor";
                 for (int i = roomRoot.childCount - 1; i >= 0; i--)
@@ -2959,6 +3124,10 @@ namespace App.Bootstrap
                         else DestroyImmediate(child.gameObject);
                     }
                 }
+            }
+            else if (category == CustomizationCategory.DashboardSkin)
+            {
+                RestoreDashboardBoardPlacement(roomRoot);
             }
             string swapName = $"MeshSwap_{category}";
             for (int i = roomRoot.childCount - 1; i >= 0; i--)
@@ -2980,6 +3149,11 @@ namespace App.Bootstrap
                 {
                     r.enabled = true;
                 }
+            }
+            var externalAnchor = FindPrimaryAnchor(roomRoot, category);
+            if (externalAnchor != null && !IsSameOrChildOf(externalAnchor, roomRoot))
+            {
+                SetRenderersEnabled(externalAnchor, true);
             }
         }
 

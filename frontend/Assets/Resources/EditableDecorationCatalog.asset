@@ -34,6 +34,90 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 11
     ScaleMultiplierOverride: 0
+  - DisplayName: Deepsea Aquarium
+    Prefab: {fileID: -8098169881513260187, guid: 633a6965f54189f4894a0acfc5f102c7, type: 3}
+    SourceAssetPath: Assets/Arts/Models/deepsea_aquarium.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 3.5
+  - DisplayName: Deepsea Bed
+    Prefab: {fileID: -8098169881513260187, guid: 3c9abeaaec3af2b4aa5f371a39a5a66f, type: 3}
+    SourceAssetPath: Assets/Arts/Models/deepsea_bed.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 5
+    ScaleMultiplierOverride: 0
+  - DisplayName: Deepsea Board
+    Prefab: {fileID: -8098169881513260187, guid: 0019d394fd84f4d45a30e6b5dfae0f4c, type: 3}
+    SourceAssetPath: Assets/Arts/Models/deepsea_board.glb
+    PlacementCategory: 9
+    AllowRotation: 0
+    Kind: 11
+    ScaleMultiplierOverride: 0
+  - DisplayName: Deepsea Chair
+    Prefab: {fileID: -8098169881513260187, guid: cfb805f65fdf0b041bd07b983816d5a8, type: 3}
+    SourceAssetPath: Assets/Arts/Models/deepsea_chair.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 2
+    ScaleMultiplierOverride: 0
+  - DisplayName: Deepsea Coral
+    Prefab: {fileID: -8098169881513260187, guid: c5b8897eaa4651d42a2fca3c7b9c73f2, type: 3}
+    SourceAssetPath: Assets/Arts/Models/deepsea_coral.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 1.3
+  - DisplayName: Deepsea Coral2
+    Prefab: {fileID: -8098169881513260187, guid: 17a80653c85e90a4f9f2146ee9622df4, type: 3}
+    SourceAssetPath: Assets/Arts/Models/deepsea_coral2.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 1.4
+  - DisplayName: Deepsea Desk
+    Prefab: {fileID: -8098169881513260187, guid: 5a4a18c84d5cbba449957b9886f2e23d, type: 3}
+    SourceAssetPath: Assets/Arts/Models/deepsea_desk.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 1
+    ScaleMultiplierOverride: 0
+  - DisplayName: Deepsea Dolphin
+    Prefab: {fileID: -8098169881513260187, guid: df959cf8c66228e4bb4c31df06d96633, type: 3}
+    SourceAssetPath: Assets/Arts/Models/deepsea_dolphin.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 1.7
+  - DisplayName: Deepsea Dreamlamp
+    Prefab: {fileID: -8098169881513260187, guid: 2dfa169bd912e9840b97fb3080976139, type: 3}
+    SourceAssetPath: Assets/Arts/Models/deepsea_dreamlamp.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 7
+    ScaleMultiplierOverride: 0
+  - DisplayName: Deepsea Shark
+    Prefab: {fileID: -8098169881513260187, guid: a8947f853731f4d409eccca3530417a1, type: 3}
+    SourceAssetPath: Assets/Arts/Models/deepsea_shark.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 1.7
+  - DisplayName: Deepsea Shelf
+    Prefab: {fileID: -8098169881513260187, guid: c793007ec016eac41aa4472bad324b4c, type: 3}
+    SourceAssetPath: Assets/Arts/Models/deepsea_shelf.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 3
+    ScaleMultiplierOverride: 0
+  - DisplayName: Deepsea Shell
+    Prefab: {fileID: -8098169881513260187, guid: 7b6bec135cc82f348a39b6320834fe63, type: 3}
+    SourceAssetPath: Assets/Arts/Models/deepsea_shell.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
   - DisplayName: Doll Hamham
     Prefab: {fileID: -8098169881513260187, guid: 4f9ca772872790543895cc1371706137, type: 3}
     SourceAssetPath: Assets/Arts/Models/doll_hamham.glb

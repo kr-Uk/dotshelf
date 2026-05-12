@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b8208becc61d44fd921ccd9cf39c6c8, type: 3}
+  m_Name: DashboardSkinCatalog
+  m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Catalogs.CustomizationCatalogAsset
+  category: 3
+  entries:
+  - assetId: 300040
+    displayName: "\uAE4A\uC740\uBC14\uB2E4 \uB300\uC2DC\uBCF4\uB4DC"
+    description: "\uAE4A\uC740\uBC14\uB2E4 \uD14C\uB9C8 \uC804\uC6A9 \uB300\uC2DC\uBCF4\uB4DC
+      \uBCF4\uB4DC. \uAE30\uC874 GuestbookBoard \uC704\uCE58\uB97C \uAD50\uCCB4\uD55C\uB2E4."
+    previewSprite: {fileID: 0}
+    themeTag: DeepSea
+    isLocalPreview: 1
+    materials: []
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: -8098169881513260187, guid: 0019d394fd84f4d45a30e6b5dfae0f4c, type: 3}
+    placementAnchor: {x: -2.38, y: 1.497, z: 0.12}
+    placementRotation: {x: 0, y: 90, z: 0}
+    placementScale: {x: 0.73, y: 0.72, z: 0.18}
+    overrideNotebookStation: 1
+    notebookStationPosition: {x: -2.38, y: 1.497, z: 0.12}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
