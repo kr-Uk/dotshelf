@@ -91,12 +91,16 @@ public class UserService {
         // 프로필 이미지 URL 은 본 메서드로 변경하지 않는다 — S3 업로드/confirm 흐름으로만 갱신.
         // 닉네임/소개만 갱신하고 기존 이미지 URL 은 그대로 보존.
         user.updateProfile(request.nickname(), user.getProfileImageUrl(), request.introduction());
+        completeOnboarding(user);
         return UserProfileResponse.from(user);
     }
 
     @Transactional
     public void completeOnboardingIfNeeded(Long userId) {
-        User user = getUser(requireUserId(userId));
+        completeOnboarding(getUser(requireUserId(userId)));
+    }
+
+    private static void completeOnboarding(User user) {
         if (!user.isOnboarded()) {
             user.completeOnboarding();
         }

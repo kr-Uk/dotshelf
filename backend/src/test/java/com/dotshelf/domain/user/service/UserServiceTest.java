@@ -73,8 +73,8 @@ class UserServiceTest {
     private UserService userService;
 
     @Test
-    @DisplayName("프로필 수정은 닉네임과 소개만 바꾸고 온보딩 완료 상태를 바꾸지 않는다")
-    void updateMe_validRequest_updatesProfileOnly() {
+    @DisplayName("프로필 수정은 기존 클라이언트 호환을 위해 온보딩 완료 상태를 세운다")
+    void updateMe_validRequest_updatesProfileAndCompletesOnboarding() {
         User user = TestFixtures.user(1L, "old");
         given(userRepository.findById(1L)).willReturn(Optional.of(user));
         given(userRepository.existsByNickname("new")).willReturn(false);
@@ -82,7 +82,7 @@ class UserServiceTest {
         var response = userService.updateMe(1L, new UpdateProfileRequest("new", "intro"));
 
         assertThat(response.nickname()).isEqualTo("new");
-        assertThat(response.onboarded()).isFalse();
+        assertThat(response.onboarded()).isTrue();
         assertThat(user.getProfileImageUrl()).isEqualTo("https://example.com/old.png");
         assertThat(user.getIntroduction()).isEqualTo("intro");
     }
