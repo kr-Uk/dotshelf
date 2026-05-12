@@ -56,6 +56,18 @@ BE 배포 검증, 로그 확인, 환경변수/시크릿 누락 디버깅, DB 상
 - **새 스킬 추가 시**: 해당 sub-project의 `.claude/skills/<name>/SKILL.md` 작성 → `./scripts/sync-claude-skills.sh` 실행 → 변경 git add/commit
 - **Windows 사용자**: `git config core.symlinks true` + Developer Mode 활성화 필요 (or WSL/Git Bash 사용). 미설정 시 심링크가 text 파일로 변환됨.
 
+### MR 생성 시 이슈 / Atlassian 연결 확인
+
+사용자가 MR 생성을 요청하면 (push 전 또는 push 후) **연결할 Jira 이슈 번호를 먼저 묻는다**. 대답 받기 전 `NO-ISSUE` 로 진행하지 말 것 — 사후에 이슈를 별도 갱신해야 하는 후속 노이즈가 발생한다.
+
+- **이슈 번호 받은 경우**: MR 제목/본문/commit 메시지에 일관되게 포함. 본문의 `## Issue 번호` 섹션에 `[<KEY> — <summary>](<jira-url>)` 형태로 링크.
+- **사용자가 명시적으로 "NO-ISSUE"라고 답한 경우만**: `NO-ISSUE` 로 진행 OK.
+- **이슈는 있는데 번호를 모르겠다고 하는 경우**: Atlassian MCP 가 연결되어 있으면 `searchJiraIssuesUsingJql` 또는 assignee 기반 검색으로 후보 제시.
+
+**Atlassian MCP 미연결 시**: 이슈 이름 수정 / 상태 transition / 댓글 추가 등 후속 작업이 불가하므로, 사용자에게 **연결을 명시적으로 권장**한다. 예: *"Atlassian MCP 가 연결돼 있으면 Jira 이슈 summary 자동 갱신 / status transition / MR 머지 시 자동 close 같은 후속 작업이 가능해요. 연결 권장합니다."*
+
+**정책 적용 사례**: [MR !170](https://lab.ssafy.com/s14-final/S14P31F206/-/merge_requests/170) — 재로그인 책장 회귀 fix 시 처음에 `NO-ISSUE` 로 commit/push 후 사용자가 따로 Jira 이슈 번호와 summary 갱신을 요청 → 본문 description 재update 라운드 발생. 처음부터 물었으면 한 번에 끝났을 케이스.
+
 ## 디폴트 정책 (하위 CLAUDE.md가 없을 때만)
 
 - 파괴적 작업(`rm -rf`, `git reset --hard`, `git push --force`, 대량 overwrite, 파일 삭제 등)은 실행 전 사용자에게 컨펌.
