@@ -60,6 +60,10 @@ namespace BookshelfPorting.Runtime
 
         public bool HasCompletedInitialRefresh => hasCompletedInitialRefresh;
 
+        public bool LastInitialRefreshSucceeded => lastInitialRefreshSucceeded;
+
+        public string LastInitialRefreshMessage => lastInitialRefreshMessage;
+
         public bool HasAccessToken => APIManager.Instance != null && APIManager.Instance.HasAccessToken;
 
         public void WaitForInitialRefresh(Action<bool, string> onCompleted)

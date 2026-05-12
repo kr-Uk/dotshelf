@@ -14,6 +14,14 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dotshelf.domain.book.entity.UserBook;
+import com.dotshelf.domain.book.repository.UserBookRepository;
+import com.dotshelf.domain.bookshelf.entity.Bookshelf;
+import com.dotshelf.domain.bookshelf.entity.BookshelfItem;
+import com.dotshelf.domain.bookshelf.repository.BookshelfItemRepository;
+import com.dotshelf.domain.bookshelf.repository.BookshelfRepository;
+import com.dotshelf.domain.space.entity.Space;
+import com.dotshelf.domain.space.repository.SpaceRepository;
 import com.dotshelf.domain.user.dto.UserDtos.FeedSettingRequest;
 import com.dotshelf.domain.user.dto.UserDtos.FeedSettingResponse;
 import com.dotshelf.domain.user.dto.UserDtos.NicknameAvailabilityResponse;
@@ -53,12 +61,18 @@ public class UserService {
 
     // 프로필 이미지 — 너무 큰 파일은 막되 카메라 원본(보통 3~4MB)은 받을 수 있도록 5MB.
     private static final long MAX_PROFILE_IMAGE_SIZE_BYTES = 5L * 1024 * 1024;
+    private static final String ACTIVE = "ACTIVE";
+    private static final String DELETED = "DELETED";
     private static final Map<String, String> ALLOWED_PROFILE_IMAGE_TYPES = Map.of(
             "image/jpeg", "jpg",
             "image/png", "png",
             "image/webp", "webp");
 
     private final UserRepository userRepository;
+    private final SpaceRepository spaceRepository;
+    private final BookshelfRepository bookshelfRepository;
+    private final BookshelfItemRepository bookshelfItemRepository;
+    private final UserBookRepository userBookRepository;
     private final FollowRepository followRepository;
     private final UserBlockRepository userBlockRepository;
     private final UserNotificationSettingRepository notificationSettingRepository;
@@ -108,7 +122,32 @@ public class UserService {
 
     @Transactional
     public void deleteMe(Long userId) {
-        getUser(requireUserId(userId)).delete();
+        Long currentUserId = requireUserId(userId);
+        removeShelfDataForWithdrawal(currentUserId);
+        getUser(currentUserId).delete();
+    }
+
+    private void removeShelfDataForWithdrawal(Long userId) {
+        List<Space> spaces = spaceRepository.findByOwnerUserIdAndDeletedAtIsNull(userId);
+        List<Long> spaceIds = spaces.stream()
+                .map(Space::getId)
+                .toList();
+        List<Bookshelf> bookshelves = spaceIds.stream()
+                .flatMap(spaceId -> bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(spaceId, ACTIVE).stream())
+                .toList();
+        List<Long> bookshelfIds = bookshelves.stream()
+                .map(Bookshelf::getId)
+                .toList();
+
+        if (!bookshelfIds.isEmpty()) {
+            bookshelfItemRepository.findByBookshelfIdInAndStatus(bookshelfIds, ACTIVE)
+                    .forEach(BookshelfItem::remove);
+        }
+
+        bookshelves.forEach(Bookshelf::delete);
+        spaces.forEach(Space::delete);
+        userBookRepository.findByUserIdAndStorageStatusNot(userId, DELETED)
+                .forEach(UserBook::delete);
     }
 
     /**
