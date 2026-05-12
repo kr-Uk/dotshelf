@@ -203,6 +203,11 @@ namespace App.Bootstrap
                 hasRequestedInitialBookshelfRefresh = true;
                 sync.WaitForInitialRefresh((succeeded, message) =>
                 {
+                    if (this == null)
+                    {
+                        return;
+                    }
+
                     initialBookshelfRefreshCompleted = true;
                     initialBookshelfRefreshFailed = !succeeded;
                     initialBookshelfRefreshMessage = message;

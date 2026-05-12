@@ -127,14 +127,18 @@ public class UserService {
         getUser(currentUserId).delete();
     }
 
+    // Account withdrawal is a soft-delete flow. This cleanup is intentionally
+    // scoped to the user's personal room/bookshelf state so re-login starts
+    // from onboarding without resurrecting stale shelves; social identity and
+    // broader account-owned records are handled by the user lifecycle policy.
     private void removeShelfDataForWithdrawal(Long userId) {
         List<Space> spaces = spaceRepository.findByOwnerUserIdAndDeletedAtIsNull(userId);
         List<Long> spaceIds = spaces.stream()
                 .map(Space::getId)
                 .toList();
-        List<Bookshelf> bookshelves = spaceIds.stream()
-                .flatMap(spaceId -> bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(spaceId, ACTIVE).stream())
-                .toList();
+        List<Bookshelf> bookshelves = spaceIds.isEmpty()
+                ? List.of()
+                : bookshelfRepository.findBySpaceIdInAndStatusOrderBySpaceIdAscDisplayOrderAsc(spaceIds, ACTIVE);
         List<Long> bookshelfIds = bookshelves.stream()
                 .map(Bookshelf::getId)
                 .toList();

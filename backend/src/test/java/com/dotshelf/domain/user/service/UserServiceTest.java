@@ -293,7 +293,7 @@ class UserServiceTest {
         UserBook userBook = TestFixtures.userBook(50L, user.getId(), 60L);
 
         given(spaceRepository.findByOwnerUserIdAndDeletedAtIsNull(user.getId())).willReturn(List.of(space));
-        given(bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(space.getId(), "ACTIVE"))
+        given(bookshelfRepository.findBySpaceIdInAndStatusOrderBySpaceIdAscDisplayOrderAsc(List.of(space.getId()), "ACTIVE"))
                 .willReturn(List.of(bookshelf));
         given(bookshelfItemRepository.findByBookshelfIdInAndStatus(List.of(bookshelf.getId()), "ACTIVE"))
                 .willReturn(List.of(item));
