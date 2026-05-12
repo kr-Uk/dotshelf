@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -146,6 +147,7 @@ public class AdminAssetService {
     @Transactional
     public AdminAssetResponse createAsset(Long userId, AdminAssetCreateRequest request, String ipAddress) {
         User actor = requireAdmin(userId);
+        requireValidCodeShape(request.code());
         if (assetRepository.existsByCode(request.code())) {
             throw new CustomException(ErrorCode.ASSET_CODE_ALREADY_EXISTS);
         }
@@ -221,7 +223,7 @@ public class AdminAssetService {
             throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
         }
         String extension = resolveBundleExtension(request.contentType());
-        String key = "assets/" + asset.getCode() + "/bundle/" + UUID.randomUUID() + "." + extension;
+        String key = "assets/" + codeToS3Prefix(asset.getCode()) + "/bundle/" + UUID.randomUUID() + "." + extension;
         PresignedPut presigned = s3StorageService.presignPut(
                 key,
                 request.contentType(),
@@ -236,7 +238,7 @@ public class AdminAssetService {
         Asset asset = getAsset(assetId);
         ObjectMetadata metadata = verifyConfirmedObject(
                 request.key(),
-                "assets/" + asset.getCode() + "/bundle/",
+                "assets/" + codeToS3Prefix(asset.getCode()) + "/bundle/",
                 ALLOWED_BUNDLE_TYPES::contains,
                 MAX_BUNDLE_SIZE_BYTES);
         String before = asset.getAssetUrl();
@@ -257,7 +259,7 @@ public class AdminAssetService {
             throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
         }
         String extension = ALLOWED_PREVIEW_IMAGE_TYPES.get(request.contentType());
-        String key = "assets/" + asset.getCode() + "/preview/" + UUID.randomUUID() + "." + extension;
+        String key = "assets/" + codeToS3Prefix(asset.getCode()) + "/preview/" + UUID.randomUUID() + "." + extension;
         PresignedPut presigned = s3StorageService.presignPut(
                 key,
                 request.contentType(),
@@ -272,7 +274,7 @@ public class AdminAssetService {
         Asset asset = getAsset(assetId);
         verifyConfirmedObject(
                 request.key(),
-                "assets/" + asset.getCode() + "/preview/",
+                "assets/" + codeToS3Prefix(asset.getCode()) + "/preview/",
                 ALLOWED_PREVIEW_IMAGE_TYPES::containsKey,
                 MAX_PREVIEW_IMAGE_SIZE_BYTES);
         String before = asset.getPreviewImageUrl();
@@ -296,7 +298,7 @@ public class AdminAssetService {
         if (request.byteLength() > MAX_PREVIEW_BUNDLE_SIZE_BYTES) {
             throw new CustomException(ErrorCode.STORAGE_FILE_TOO_LARGE);
         }
-        String key = "assets/" + asset.getCode() + "/preview-bundle/" + UUID.randomUUID() + ".glb";
+        String key = "assets/" + codeToS3Prefix(asset.getCode()) + "/preview-bundle/" + UUID.randomUUID() + ".glb";
         PresignedPut presigned = s3StorageService.presignPut(
                 key,
                 request.contentType(),
@@ -311,7 +313,7 @@ public class AdminAssetService {
         Asset asset = getAsset(assetId);
         ObjectMetadata metadata = verifyConfirmedObject(
                 request.key(),
-                "assets/" + asset.getCode() + "/preview-bundle/",
+                "assets/" + codeToS3Prefix(asset.getCode()) + "/preview-bundle/",
                 ALLOWED_PREVIEW_BUNDLE_TYPES::contains,
                 MAX_PREVIEW_BUNDLE_SIZE_BYTES);
         String before = asset.getPreviewBundleUrl();
@@ -388,6 +390,35 @@ public class AdminAssetService {
             return "glb";
         }
         return "bundle";
+    }
+
+    /**
+     * Asset.code 를 S3 키 prefix 로 변환. 첫 underscore 에서 잘라 테마/sub-code 두 폴더로 분리한다.
+     * 예: "FANTASY_CHAIR_001" → "FANTASY/CHAIR_001" → s3://.../assets/FANTASY/CHAIR_001/bundle/...
+     * 어드민 폼이 정규화하지만 BE 도 직접 호출 방어용으로 같은 규칙을 강제한다 (requireValidCodeShape).
+     */
+    private static String codeToS3Prefix(String code) {
+        requireValidCodeShape(code);
+        int idx = code.indexOf('_');
+        return code.substring(0, idx) + "/" + code.substring(idx + 1);
+    }
+
+    /**
+     * 에셋 코드 형식 강제.
+     * <ul>
+     *   <li>theme(첫 토큰): 영문 대문자/숫자만, underscore 금지 — split 기준점이라 단일 단어여야 함</li>
+     *   <li>sub-code(나머지): 영문 대문자/숫자, underscore 는 토큰 사이에만 (연속/끝 underscore 금지)</li>
+     * </ul>
+     * 예) FANTASY_CHAIR_001 ✓, DEEPSEA_LAMP ✓, DEEP_SEA_CHAIR_001 ✗ (theme 에 _, theme 이 DEEP 으로 잘림),
+     *     fantasy_chair ✗ (소문자), FANTASY_ ✗ (sub 빔), FANTASY/CHAIR ✗ (허용 외 문자).
+     */
+    private static final Pattern ASSET_CODE_PATTERN = Pattern.compile(
+            "^[A-Z0-9]+_[A-Z0-9]+(_[A-Z0-9]+)*$");
+
+    private static void requireValidCodeShape(String code) {
+        if (code == null || !ASSET_CODE_PATTERN.matcher(code).matches()) {
+            throw new CustomException(ErrorCode.ASSET_CODE_FORMAT_INVALID);
+        }
     }
 
     private static String defaultString(String value, String fallback) {
