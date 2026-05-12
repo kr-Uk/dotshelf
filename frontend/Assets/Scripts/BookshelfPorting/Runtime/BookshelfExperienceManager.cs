@@ -677,6 +677,12 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private bool useExternalDashboardPanel = false;
         [Tooltip("GuestbookBoard 자리에 띄울 새 dashboard prefab 인스턴스. 보통 scene root에 두고 코드가 reparent.")]
         [SerializeField] private GameObject externalDashboardPanel;
+
+        // SerializeField 의도 보존: useExternalDashboardPanel 자체는 Inspector 가 박은 값을 그대로 유지하고,
+        // 회귀 fallback 으로만 켜는 runtime override flag 를 분리. 두 값을 모두 보고 효과 판정
+        // (ShouldUseExternalDashboardPanel). MR !159 review #3 응답.
+        private bool runtimeUseExternalDashboardPanel;
+        private bool ShouldUseExternalDashboardPanel => useExternalDashboardPanel || runtimeUseExternalDashboardPanel;
         private UnityEngine.UIElements.VisualElement focusedDashboardPressedElement;
 
         [SerializeField] private bool guestbookOwnerMode = true;
@@ -981,7 +987,7 @@ namespace BookshelfPorting.Runtime
             // UI Toolkit이 자체 입력 처리. BookshelfExperienceManager의 자체 raycast가
             // dashboard 안 클릭을 가로채지 않도록 input 처리 skip.
             // (focus 진입/이탈은 다른 hit area 또는 ESC로 처리됨.)
-            if (useExternalDashboardPanel && CurrentFocusArea == ExperienceFocusArea.Guestbook)
+            if (ShouldUseExternalDashboardPanel && CurrentFocusArea == ExperienceFocusArea.Guestbook)
             {
                 HandleFocusedDashboardPanelFallbackInput();
                 return;
@@ -1208,14 +1214,18 @@ namespace BookshelfPorting.Runtime
 
             if (bookshelfGenerator != null)
             {
+                // -= 먼저 해 duplicate subscribe 방지. Configure / Start 가 먼저 wire 한 같은 generator 가
+                // 그대로 들어와도 핸들러가 두 번 발사되지 않게 idempotent 보장. MR !159 review #2 응답.
+                bookshelfGenerator.BookshelfSwitchStateChanged -= HandleBookshelfSwitchStateChanged;
                 bookshelfGenerator.BookshelfSwitchStateChanged += HandleBookshelfSwitchStateChanged;
+                bookshelfGenerator.Generated -= HandleBookshelfGenerated;
                 bookshelfGenerator.Generated += HandleBookshelfGenerated;
             }
         }
 
         private void EnsureExternalDashboardPanelWired()
         {
-            if (externalDashboardPanel != null && useExternalDashboardPanel)
+            if (externalDashboardPanel != null && ShouldUseExternalDashboardPanel)
             {
                 return;
             }
@@ -1227,6 +1237,12 @@ namespace BookshelfPorting.Runtime
                 // prefab asset 은 FindObjectsByType 결과에 안 들어오므로 안전.
                 var installers = FindObjectsByType<DashboardSceneInstaller>(
                     FindObjectsInactive.Include, FindObjectsSortMode.None);
+                if (installers.Length > 1)
+                {
+                    UnityEngine.Debug.LogWarning(
+                        $"[BookshelfExperienceManager] DashboardSceneInstaller instance count={installers.Length} (>1). " +
+                        $"Wiring first (name='{installers[0]?.gameObject.name}'). Scene 중복 점검 권고.");
+                }
                 if (installers.Length > 0 && installers[0] != null)
                 {
                     externalDashboardPanel = installers[0].gameObject;
@@ -1236,9 +1252,11 @@ namespace BookshelfPorting.Runtime
                 }
             }
 
-            if (externalDashboardPanel != null && !useExternalDashboardPanel)
+            // SerializeField (useExternalDashboardPanel) 는 Inspector 의도 그대로 보존하고
+            // runtime override flag 만 켠다. 두 값의 or = ShouldUseExternalDashboardPanel.
+            if (externalDashboardPanel != null && !ShouldUseExternalDashboardPanel)
             {
-                useExternalDashboardPanel = true;
+                runtimeUseExternalDashboardPanel = true;
             }
         }
 
@@ -12207,7 +12225,7 @@ namespace BookshelfPorting.Runtime
 
         private void EnsureGuestbookBoardUi()
         {
-            if (useExternalDashboardPanel)
+            if (ShouldUseExternalDashboardPanel)
             {
                 SetExternalDashboardPanelPresentation(CurrentFocusArea == ExperienceFocusArea.Guestbook);
                 return;
@@ -12606,7 +12624,7 @@ namespace BookshelfPorting.Runtime
         {
             // (v1.0 dashboard 통합) 외부 prefab 모드면 우리 DashboardScreenPanel만 토글.
             // 월드 보드가 생성된 뒤에는 매 프레임 위치를 보정해 방 뷰에서도 항상 보이게 둔다.
-            if (useExternalDashboardPanel)
+            if (ShouldUseExternalDashboardPanel)
             {
                 SetExternalDashboardPanelPresentation(isFocused);
                 return;
@@ -12691,7 +12709,7 @@ namespace BookshelfPorting.Runtime
 
         private void SyncExternalDashboardPanelPresentation()
         {
-            if (!useExternalDashboardPanel || externalDashboardPanel == null)
+            if (!ShouldUseExternalDashboardPanel || externalDashboardPanel == null)
             {
                 return;
             }

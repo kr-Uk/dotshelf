@@ -457,11 +457,26 @@ namespace BookshelfPorting.Runtime
             return controllers != null && controllers.Length > 0;
         }
 
+        // BookshelfSceneInstaller.InstallIntoActiveScene 한 사이클에 FindOrCreateRoot 가 system 별 N 회
+        // 호출되는데, fallback path (active scene roots + children traversal) 가 발사되면 매 호출마다
+        // O(scene_size) 비용이 누적 → mid-large scene 에서 startup latency 영향. 한 사이클 내 같은
+        // 이름은 같은 GameObject 를 가리키므로 cache 로 traversal 1 회로 amortize. MR !159 review #2 응답.
+        // - Unity null 비교 (`== null`) 가 destroyed object 도 처리하므로 stale reference 안전.
+        // - scene reload 시 cache 의 GameObject 가 destroy 되면 다음 lookup 에서 fallback 재발사 → 재충전.
+        private static readonly System.Collections.Generic.Dictionary<string, GameObject> rootCache
+            = new System.Collections.Generic.Dictionary<string, GameObject>();
+
         private static GameObject FindOrCreateRoot(string name)
         {
+            if (rootCache.TryGetValue(name, out var cached) && cached != null)
+            {
+                return cached;
+            }
+
             var existing = GameObject.Find(name);
             if (existing != null)
             {
+                rootCache[name] = existing;
                 return existing;
             }
 
@@ -483,20 +498,28 @@ namespace BookshelfPorting.Runtime
                 {
                     var root = roots[i];
                     if (root == null) continue;
-                    if (root.name == name) return root;
+                    if (root.name == name)
+                    {
+                        rootCache[name] = root;
+                        return root;
+                    }
 
                     var transforms = root.GetComponentsInChildren<Transform>(true);
                     for (int j = 0; j < transforms.Length; j++)
                     {
                         if (transforms[j] != null && transforms[j].gameObject.name == name)
                         {
-                            return transforms[j].gameObject;
+                            var go = transforms[j].gameObject;
+                            rootCache[name] = go;
+                            return go;
                         }
                     }
                 }
             }
 
-            return new GameObject(name);
+            var created = new GameObject(name);
+            rootCache[name] = created;
+            return created;
         }
 
         private static GameObject FindOrCreateChild(Transform parent, string name)
