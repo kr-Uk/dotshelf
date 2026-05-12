@@ -310,26 +310,58 @@
                                    Margin="10,0,0,0" VerticalAlignment="Center" />
 
                         <StackPanel Orientation="Horizontal" Margin="32,0,0,0" VerticalAlignment="Center">
-                            <Grid>
-                                <TextBlock Text="라이브러리"
+                            <Grid x:Name="NavLibrary" Cursor="Hand"
+                                  Background="Transparent"
+                                  MouseLeftButtonUp="NavLibrary_Click">
+                                <TextBlock x:Name="NavLibraryText"
+                                           Text="라이브러리"
                                            Foreground="{StaticResource InkTitleBrush}"
                                            FontSize="13" FontWeight="SemiBold"
                                            VerticalAlignment="Center" />
-                                <Border VerticalAlignment="Bottom"
+                                <Border x:Name="NavLibraryUnderline"
+                                        VerticalAlignment="Bottom"
                                         HorizontalAlignment="Center"
                                         Width="18" Height="2"
                                         CornerRadius="1"
                                         Background="{StaticResource BrandBrush}"
                                         Margin="0,0,0,-12" />
                             </Grid>
-                            <TextBlock Text="뉴스"
-                                       Foreground="{StaticResource InkBodyBrush}"
-                                       FontSize="13"
-                                       Margin="22,0,0,0" VerticalAlignment="Center" />
-                            <TextBlock Text="설정"
-                                       Foreground="{StaticResource InkBodyBrush}"
-                                       FontSize="13"
-                                       Margin="22,0,0,0" VerticalAlignment="Center" />
+                            <Grid x:Name="NavNews" Cursor="Hand"
+                                  Background="Transparent"
+                                  Margin="22,0,0,0"
+                                  MouseLeftButtonUp="NavNews_Click">
+                                <TextBlock x:Name="NavNewsText"
+                                           Text="뉴스"
+                                           Foreground="{StaticResource InkBodyBrush}"
+                                           FontSize="13"
+                                           VerticalAlignment="Center" />
+                                <Border x:Name="NavNewsUnderline"
+                                        Visibility="Collapsed"
+                                        VerticalAlignment="Bottom"
+                                        HorizontalAlignment="Center"
+                                        Width="18" Height="2"
+                                        CornerRadius="1"
+                                        Background="{StaticResource BrandBrush}"
+                                        Margin="0,0,0,-12" />
+                            </Grid>
+                            <Grid x:Name="NavSettings" Cursor="Hand"
+                                  Background="Transparent"
+                                  Margin="22,0,0,0"
+                                  MouseLeftButtonUp="NavSettings_Click">
+                                <TextBlock x:Name="NavSettingsText"
+                                           Text="설정"
+                                           Foreground="{StaticResource InkBodyBrush}"
+                                           FontSize="13"
+                                           VerticalAlignment="Center" />
+                                <Border x:Name="NavSettingsUnderline"
+                                        Visibility="Collapsed"
+                                        VerticalAlignment="Bottom"
+                                        HorizontalAlignment="Center"
+                                        Width="18" Height="2"
+                                        CornerRadius="1"
+                                        Background="{StaticResource BrandBrush}"
+                                        Margin="0,0,0,-12" />
+                            </Grid>
                         </StackPanel>
                     </StackPanel>
 
@@ -539,8 +571,9 @@
                     </Grid>
                 </Border>
 
-                <!-- ============ MAIN COLUMN ============ -->
-                <Grid Grid.Column="1" Margin="28,16,28,16">
+                <!-- ============ MAIN COLUMN — Library view (기본). News/Settings 는 같은
+                       cell 에 Collapsed 로 깔려있고 상단 nav 클릭 시 토글된다. ============ -->
+                <Grid x:Name="LibraryView" Grid.Column="1" Margin="28,16,28,16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -959,6 +992,131 @@
                             </Grid>
                         </Border>
                     </Grid>
+                </Grid>
+
+                <!-- ============ NEWS VIEW — 상단 nav '뉴스' 클릭 시 토글. events.json 의
+                       모든 banner 를 리스트로 (만료 포함). C# 코드 비하인드가 NewsListPanel
+                       에 동적으로 카드 추가. ============ -->
+                <Grid x:Name="NewsView" Grid.Column="1" Margin="28,16,28,16" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="뉴스"
+                               Foreground="{StaticResource InkTitleBrush}"
+                               FontSize="22" FontWeight="Bold"
+                               Margin="0,0,0,16" />
+                    <ScrollViewer Grid.Row="1"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="NewsListPanel">
+                            <TextBlock x:Name="NewsEmptyState"
+                                       Text="표시할 공지가 없습니다."
+                                       Foreground="{StaticResource InkMuteBrush}"
+                                       FontSize="13"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,48,0,0" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- ============ SETTINGS VIEW — 상단 nav '설정' 클릭 시 토글. 설치 위치
+                       표시·변경 + 앱 삭제. 기존 햄버거 메뉴 (drawer overlay) 에도 같은
+                       기능이 있지만 사용자 직관상 'NAV → 설정' 경로 노출 위해 정식 view 로
+                       복제. 핸들러는 동일 (ChooseInstallLocationButton_Click /
+                       DeleteButton_Click). ============ -->
+                <Grid x:Name="SettingsView" Grid.Column="1" Margin="28,16,28,16" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="설정"
+                               Foreground="{StaticResource InkTitleBrush}"
+                               FontSize="22" FontWeight="Bold"
+                               Margin="0,0,0,16" />
+                    <ScrollViewer Grid.Row="1"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <!-- 설치 위치 -->
+                            <Border Background="{StaticResource CardBrush}"
+                                    BorderBrush="{StaticResource StrokeBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="20" Margin="0,0,0,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="설치 위치"
+                                                   Foreground="{StaticResource InkTitleBrush}"
+                                                   FontWeight="SemiBold" FontSize="14" />
+                                        <TextBlock x:Name="SettingsInstallPathText"
+                                                   Text="(불러오는 중...)"
+                                                   Foreground="{StaticResource InkBodyBrush}"
+                                                   FontSize="12"
+                                                   Margin="0,6,0,0"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="변경"
+                                            VerticalAlignment="Center"
+                                            Padding="16,6"
+                                            Click="ChooseInstallLocationButton_Click" />
+                                </Grid>
+                            </Border>
+
+                            <!-- 앱 삭제 -->
+                            <Border Background="{StaticResource CardBrush}"
+                                    BorderBrush="{StaticResource StrokeBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="20" Margin="0,0,0,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="DotShelf 앱 삭제"
+                                                   Foreground="{StaticResource InkTitleBrush}"
+                                                   FontWeight="SemiBold" FontSize="14" />
+                                        <TextBlock Text="설치된 모든 버전과 설정을 한 번에 정리합니다."
+                                                   Foreground="{StaticResource InkBodyBrush}"
+                                                   FontSize="12"
+                                                   Margin="0,6,0,0"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="삭제"
+                                            VerticalAlignment="Center"
+                                            Padding="16,6"
+                                            Click="DeleteButton_Click" />
+                                </Grid>
+                            </Border>
+
+                            <!-- 정보 -->
+                            <Border Background="{StaticResource CardBrush}"
+                                    BorderBrush="{StaticResource StrokeBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="20" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="런처 정보"
+                                               Foreground="{StaticResource InkTitleBrush}"
+                                               FontWeight="SemiBold" FontSize="14" />
+                                    <TextBlock x:Name="SettingsLauncherVersionText"
+                                               Text="런처 버전: (불러오는 중...)"
+                                               Foreground="{StaticResource InkBodyBrush}"
+                                               FontSize="12" Margin="0,6,0,0" />
+                                    <TextBlock x:Name="SettingsInstalledVersionText"
+                                               Text="설치된 본체: (불러오는 중...)"
+                                               Foreground="{StaticResource InkBodyBrush}"
+                                               FontSize="12" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
 
                 <!-- ===== Drawer overlay (slides over main column when toggled) ===== -->
