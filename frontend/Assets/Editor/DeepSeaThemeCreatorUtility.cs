@@ -204,6 +204,7 @@ namespace Dotshelf.EditorTools
             SetVector(entry, "placementRotation", new Vector3(0f, 270f, 0f));
             SetVector(entry, "placementScale", new Vector3(0.8f, 0.8f, 0.8f));
             SetBool(entry, "overrideNotebookStation", true);
+            SetBool(entry, "lockNotebookStationToMonitor", true);
             SetVector(entry, "notebookStationPosition", new Vector3(0f, -0.012f, 0f));
             SetVector(entry, "notebookStationRotation", Vector3.zero);
             SetVector(entry, "notebookStationScale", new Vector3(0.3f, 0.3f, 0.3f));
@@ -256,6 +257,7 @@ namespace Dotshelf.EditorTools
             SetVector(entry, "placementRotation", new Vector3(0f, 180f, 0f));
             SetVector(entry, "placementScale", new Vector3(0.86f, 0.86f, 0.55f));
             SetBool(entry, "overrideNotebookStation", false);
+            SetBool(entry, "lockNotebookStationToMonitor", false);
             SetVector(entry, "notebookStationPosition", Vector3.zero);
             SetVector(entry, "notebookStationRotation", Vector3.zero);
             SetVector(entry, "notebookStationScale", Vector3.one);
@@ -308,6 +310,7 @@ namespace Dotshelf.EditorTools
             SetVector(entry, "placementRotation", new Vector3(0f, 90f, 0f));
             SetVector(entry, "placementScale", new Vector3(0.73f, 0.72f, 0.18f));
             SetBool(entry, "overrideNotebookStation", true);
+            SetBool(entry, "lockNotebookStationToMonitor", false);
             SetVector(entry, "notebookStationPosition", new Vector3(-2.382f, 1.497f, 0.12f));
             SetVector(entry, "notebookStationRotation", Vector3.zero);
             SetVector(entry, "notebookStationScale", Vector3.one);
@@ -403,6 +406,7 @@ namespace Dotshelf.EditorTools
             var dashboardBoard = FindSceneGameObject("GuestbookBoard");
             var entry = entries.GetArrayElementAtIndex(index);
             SetBool(entry, "overrideNotebookStation", true);
+            SetBool(entry, "lockNotebookStationToMonitor", monitorObject != null);
             if (monitorObject != null)
             {
                 SetVector(entry, "notebookStationPosition", monitorObject.transform.InverseTransformPoint(sceneObject.transform.position));
@@ -444,6 +448,7 @@ namespace Dotshelf.EditorTools
 
             var entry = entries.GetArrayElementAtIndex(index);
             SetBool(entry, "overrideNotebookStation", true);
+            SetBool(entry, "lockNotebookStationToMonitor", false);
             SetVector(entry, "notebookStationPosition", boardObject.transform.position);
             SetVector(entry, "notebookStationRotation", Vector3.zero);
             SetVector(entry, "notebookStationScale", Vector3.one);

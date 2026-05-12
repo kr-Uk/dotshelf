@@ -2920,7 +2920,7 @@ namespace App.Bootstrap
         {
             return entry != null
                 && entry.MonitorPrefab != null
-                && string.Equals(entry.ThemeTag, "DeepSea", StringComparison.OrdinalIgnoreCase);
+                && entry.LockNotebookStationToMonitor;
         }
 
         private void RestoreNotebookStationPosition(Transform roomRoot)
@@ -2936,12 +2936,6 @@ namespace App.Bootstrap
         private Vector3? nativeDashboardBoardLocalPos;
         private Quaternion? nativeDashboardBoardLocalRot;
         private Vector3? nativeDashboardBoardLocalScale;
-        private const float DashboardPanelFallbackWorldScale = 0.00060f;
-        private const float DashboardPanelHorizontalInset = 0.10f;
-        private const float DashboardPanelVerticalInset = 0.06f;
-        private static readonly Vector3 DashboardPanelSurfaceOffset = new Vector3(0.003f, 0f, 0f);
-        private static readonly Quaternion DashboardPanelLocalRotation = Quaternion.Euler(0f, 90f, 0f);
-        private static readonly Vector2 DashboardPanelReferenceSize = new Vector2(1920f, 1080f);
 
         private void ApplyDashboardBoardPlacement(Transform roomRoot, CustomizationEntry entry)
         {
@@ -2983,28 +2977,7 @@ namespace App.Bootstrap
             var hitArea = FindChildByName(dashboardBoard, "GuestbookHitArea") ?? dashboardBoard;
             var panel = FindSceneTransformByName("DashboardScreenPanel");
             if (panel == null) return;
-            if (panel.parent != null)
-            {
-                panel.SetParent(null, true);
-            }
-
-            panel.position = hitArea.TransformPoint(DashboardPanelSurfaceOffset);
-            panel.rotation = hitArea.rotation * DashboardPanelLocalRotation;
-            var panelScale = ResolveDashboardPanelScale(hitArea);
-            panel.localScale = new Vector3(-panelScale, panelScale, panelScale);
-        }
-
-        private static float ResolveDashboardPanelScale(Transform hitArea)
-        {
-            if (hitArea == null) return DashboardPanelFallbackWorldScale;
-            var collider = hitArea.GetComponent<BoxCollider>();
-            if (collider == null) return DashboardPanelFallbackWorldScale;
-
-            var usableWidth = Mathf.Max(0.1f, collider.size.z - DashboardPanelHorizontalInset);
-            var usableHeight = Mathf.Max(0.1f, collider.size.y - DashboardPanelVerticalInset);
-            var scaleByWidth = usableWidth / DashboardPanelReferenceSize.x;
-            var scaleByHeight = usableHeight / DashboardPanelReferenceSize.y;
-            return Mathf.Min(scaleByWidth, scaleByHeight);
+            DashboardPanelLayout.Mount(panel, hitArea);
         }
 
         private void ReapplyActiveDeskOverlay(Transform roomRoot)
@@ -3056,13 +3029,22 @@ namespace App.Bootstrap
         private static Transform FindSceneTransformByName(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return null;
-            var transforms = Resources.FindObjectsOfTypeAll<Transform>();
-            for (int i = 0; i < transforms.Length; i++)
+            var scene = SceneManager.GetActiveScene();
+            if (!scene.IsValid()) return null;
+
+            var roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
             {
-                var t = transforms[i];
-                if (t == null || t.gameObject == null) continue;
-                if (!t.gameObject.scene.IsValid()) continue;
-                if (t.gameObject.name == name) return t;
+                var root = roots[i];
+                if (root == null) continue;
+                if (root.name == name) return root.transform;
+
+                var transforms = root.GetComponentsInChildren<Transform>(true);
+                for (int j = 0; j < transforms.Length; j++)
+                {
+                    var t = transforms[j];
+                    if (t != null && t.gameObject.name == name) return t;
+                }
             }
             return null;
         }

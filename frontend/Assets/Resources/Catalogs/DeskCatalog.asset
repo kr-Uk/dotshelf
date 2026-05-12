@@ -31,6 +31,7 @@ MonoBehaviour:
     placementRotation: {x: 0, y: -90, z: 0}
     placementScale: {x: 0.6, y: 0.6, z: 0.6}
     overrideNotebookStation: 1
+    lockNotebookStationToMonitor: 0
     notebookStationPosition: {x: 0.323, y: -0.349, z: -0.41}
     notebookStationRotation: {x: 0, y: 90, z: 0}
     notebookStationScale: {x: 0.3, y: 0.3, z: 0.3}
@@ -54,6 +55,7 @@ MonoBehaviour:
     placementRotation: {x: -0, y: 270, z: 0}
     placementScale: {x: 0.8, y: 0.8, z: 0.8}
     overrideNotebookStation: 1
+    lockNotebookStationToMonitor: 1
     notebookStationPosition: {x: 0, y: -0.012, z: 0}
     notebookStationRotation: {x: 0, y: 0, z: 0}
     notebookStationScale: {x: 0.3, y: 0.3, z: 0.3}

@@ -53,9 +53,6 @@ namespace BookshelfPorting.Runtime
         private const int GuestbookMaxPinnedNotes = 96;
         private const float GuestbookPageFadeDuration = 0.18f;
         private const float GuestbookBoardPadding = 32f;
-        private const float ExternalDashboardPanelFallbackWorldScale = 0.00060f;
-        private const float ExternalDashboardPanelHorizontalInset = 0.10f;
-        private const float ExternalDashboardPanelVerticalInset = 0.06f;
         private const float GuestbookNoteToPaginationGap = 28f;
         private const float GuestbookPaginationHeight = 40f;
         private const float GuestbookPaginationToPanelGap = 24f;
@@ -92,10 +89,6 @@ namespace BookshelfPorting.Runtime
         private static readonly Vector2 GuestbookBoardSize = new(1380f, 960f);
         private static readonly Vector2 GuestbookPreviewCardSize = new(248f, 142f);
         private static readonly Vector2 GuestbookFocusedNoteBaseSize = new(246f, 156f);
-        private static readonly Vector3 ExternalDashboardPanelSurfaceOffset = new(0.003f, 0f, 0f);
-        private static readonly Quaternion ExternalDashboardPanelLocalRotation = Quaternion.Euler(0f, 90f, 0f);
-        // Flip local X so the room-facing UI Toolkit panel reads left-to-right on the board.
-        private static readonly Vector2 ExternalDashboardPanelReferenceSize = new(1920f, 1080f);
         private static readonly Vector2[] GuestbookPreviewOffsets =
         {
             new Vector2(-336f, 154f),
@@ -12652,36 +12645,8 @@ namespace BookshelfPorting.Runtime
             }
 
             var panelTransform = externalDashboardPanel.transform;
-            if (panelTransform.parent != null)
-            {
-                panelTransform.SetParent(null, true);
-            }
-
-            panelTransform.position = dynamicHitArea.transform.TransformPoint(ExternalDashboardPanelSurfaceOffset);
-            panelTransform.rotation = dynamicHitArea.transform.rotation * ExternalDashboardPanelLocalRotation;
-            var panelScale = ResolveExternalDashboardPanelScale(dynamicHitArea);
-            panelTransform.localScale = new Vector3(-panelScale, panelScale, panelScale);
+            DashboardPanelLayout.Mount(panelTransform, dynamicHitArea.transform);
             return true;
-        }
-
-        private static float ResolveExternalDashboardPanelScale(GuestbookBoardHitArea dynamicHitArea)
-        {
-            if (dynamicHitArea == null)
-            {
-                return ExternalDashboardPanelFallbackWorldScale;
-            }
-
-            var collider = dynamicHitArea.GetComponent<BoxCollider>();
-            if (collider == null)
-            {
-                return ExternalDashboardPanelFallbackWorldScale;
-            }
-
-            var usableWidth = Mathf.Max(0.1f, collider.size.z - ExternalDashboardPanelHorizontalInset);
-            var usableHeight = Mathf.Max(0.1f, collider.size.y - ExternalDashboardPanelVerticalInset);
-            var scaleByWidth = usableWidth / ExternalDashboardPanelReferenceSize.x;
-            var scaleByHeight = usableHeight / ExternalDashboardPanelReferenceSize.y;
-            return Mathf.Min(scaleByWidth, scaleByHeight);
         }
 
         private void SeedGuestbookNotes()

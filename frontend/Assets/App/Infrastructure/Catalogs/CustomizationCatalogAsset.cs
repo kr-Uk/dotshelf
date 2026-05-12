@@ -71,7 +71,9 @@ namespace App.Infrastructure.Catalogs
         [Tooltip("true 면 Desk swap 시 NotebookStation 의 transform 을 아래 값들로 override. " +
                  "false 면 native 그대로. 다른 책상 모델 적용 시 모니터 화면/클릭 인터랙션 위치 fit.")]
         [SerializeField] private bool overrideNotebookStation;
-        [Tooltip("NotebookStation 의 기준 localPosition. DeepSea 처럼 monitorPrefab 이 있는 모니터 고정 테마는 monitor 기준, 그 외에는 GuestbookBoard 기준으로 적용.")]
+        [Tooltip("true 면 NotebookStation 을 MeshSwap_DeskMonitor local 기준으로 배치. false 면 기존 GuestbookBoard/native 기준.")]
+        [SerializeField] private bool lockNotebookStationToMonitor;
+        [Tooltip("Desk 카테고리에서는 NotebookStation 기준 좌표. DashboardSkin 카테고리에서는 DashboardBoard 자체 transform.")]
         [SerializeField] private Vector3 notebookStationPosition;
         [Tooltip("NotebookStation 의 localRotation (부모 기준 Euler). transform.localRotation 으로 적용.")]
         [SerializeField] private Vector3 notebookStationRotation;
@@ -102,6 +104,7 @@ namespace App.Infrastructure.Catalogs
         public Vector3 PlacementRotation => placementRotation;
         public Vector3 PlacementScale => placementScale;
         public bool OverrideNotebookStation => overrideNotebookStation;
+        public bool LockNotebookStationToMonitor => lockNotebookStationToMonitor;
         public Vector3 NotebookStationPosition => notebookStationPosition;
         public Vector3 NotebookStationRotation => notebookStationRotation;
         public Vector3 NotebookStationScale => notebookStationScale;
