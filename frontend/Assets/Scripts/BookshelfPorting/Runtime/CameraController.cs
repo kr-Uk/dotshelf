@@ -24,6 +24,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float moveDuration = 0.4f;
         [SerializeField] private float overviewFieldOfView = 52f;
         [SerializeField] private float whiteboardFieldOfView = 38f;
+        [SerializeField] private float whiteboardFocusDistance = 1.45f;
         [SerializeField] private float notebookFieldOfView = 24f;
         [SerializeField] private float notebookTransitionDuration = 0.75f;
         [SerializeField] private float frontalDefaultFieldOfView = 60f;
@@ -216,6 +217,44 @@ namespace BookshelfPorting.Runtime
             }
 
             StartSingleSegmentTransition(targetPosition, targetRotation, targetFieldOfView, moveDuration);
+        }
+
+        public void MoveToWhiteboardSurface(Transform surfaceTransform)
+        {
+            if (surfaceTransform == null)
+            {
+                MoveToMode(CameraMode.Whiteboard);
+                return;
+            }
+
+            if (!EnsureCameraResolved())
+            {
+                return;
+            }
+
+            var center = Vector3.zero;
+            var collider = surfaceTransform.GetComponent<BoxCollider>();
+            if (collider != null)
+            {
+                center = collider.center;
+            }
+
+            var targetPosition = surfaceTransform.TransformPoint(center + new Vector3(Mathf.Max(0.2f, whiteboardFocusDistance), 0f, 0f));
+            var lookTarget = surfaceTransform.TransformPoint(center);
+            var lookDirection = lookTarget - targetPosition;
+            if (lookDirection.sqrMagnitude <= 0.0001f)
+            {
+                MoveToMode(CameraMode.Whiteboard);
+                return;
+            }
+
+            CurrentMode = CameraMode.Whiteboard;
+            ModeChanged?.Invoke(CameraMode.Whiteboard);
+            StartSingleSegmentTransition(
+                targetPosition,
+                Quaternion.LookRotation(lookDirection.normalized, Vector3.up),
+                whiteboardFieldOfView,
+                moveDuration);
         }
 
         // MainView entry points -------------------------------------------------

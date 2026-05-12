@@ -1343,7 +1343,8 @@ namespace BookshelfPorting.Runtime
             CancelPendingNotebookFocusRequest();
             CancelBookPlacementEdit(false);
             SetBookshelfEditMode(false);
-            cameraController.MoveToMode(CameraMode.Whiteboard);
+            var guestbookHitArea = FindFirstObjectByType<GuestbookBoardHitArea>(FindObjectsInactive.Include);
+            cameraController.MoveToWhiteboardSurface(guestbookHitArea != null ? guestbookHitArea.transform : null);
         }
 
         public void FocusNotebook()

@@ -15,8 +15,10 @@ MonoBehaviour:
   category: 4
   entries:
   - assetId: 200030
-    displayName: "산뜻 책상"
-    description: "GoodVibes 테마 전용 화이트 모던니즈 책상. 노트북/인터렉션은 native NotebookStation 그대로 유지."
+    displayName: "\uC0B0\uB73B \uCC45\uC0C1"
+    description: "GoodVibes \uD14C\uB9C8 \uC804\uC6A9 \uD654\uC774\uD2B8 \uBAA8\uB358\uB2C8\uC988
+      \uCC45\uC0C1. \uB178\uD2B8\uBD81/\uC778\uD130\uB809\uC158\uC740 native NotebookStation
+      \uADF8\uB300\uB85C \uC720\uC9C0."
     previewSprite: {fileID: 0}
     themeTag: GoodVibes
     isLocalPreview: 0
@@ -34,5 +36,28 @@ MonoBehaviour:
     notebookStationScale: {x: 0.3, y: 0.3, z: 0.3}
     monitorPrefab: {fileID: -8098169881513260187, guid: e3f4a5b6c7d8901234567890abcdef03, type: 3}
     monitorPosition: {x: -1.672, y: 0.831, z: -0.29}
+    monitorRotation: {x: 0, y: 90, z: 0}
+    monitorScale: {x: 0.3, y: 0.3, z: 0.3}
+  - assetId: 300030
+    displayName: "\uAE4A\uC740\uBC14\uB2E4 \uCC45\uC0C1"
+    description: "\uAE4A\uC740\uBC14\uB2E4 \uD14C\uB9C8 \uC804\uC6A9 \uCC45\uC0C1.
+      \uD14C\uB9C8 \uC801\uC6A9 \uC2DC \uAE30\uBCF8 \uCC45\uC0C1\uC73C\uB85C \uAD50\uCCB4\uB41C\uB2E4."
+    previewSprite: {fileID: 0}
+    themeTag: DeepSea
+    isLocalPreview: 1
+    materials: []
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: -8098169881513260187, guid: 5a4a18c84d5cbba449957b9886f2e23d, type: 3}
+    placementAnchor: {x: -2.03, y: 0.35, z: -0.36}
+    placementRotation: {x: -0, y: 270, z: 0}
+    placementScale: {x: 0.8, y: 0.8, z: 0.8}
+    overrideNotebookStation: 1
+    notebookStationPosition: {x: 0, y: -0.012, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 0.3, y: 0.3, z: 0.3}
+    monitorPrefab: {fileID: -8098169881513260187, guid: e3f4a5b6c7d8901234567890abcdef03, type: 3}
+    monitorPosition: {x: -2.004, y: 0.932, z: -0.29}
     monitorRotation: {x: 0, y: 90, z: 0}
     monitorScale: {x: 0.3, y: 0.3, z: 0.3}
