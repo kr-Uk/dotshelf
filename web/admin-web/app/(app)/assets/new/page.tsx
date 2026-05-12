@@ -17,14 +17,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/common/page-header";
 import { api, ApiError } from "@/lib/api";
 import type {
@@ -33,35 +25,44 @@ import type {
   AdminAssetDetail,
 } from "@/lib/types";
 
+type Placement = "floor" | "wall" | "";
+
+// 어드민에서 클릭으로 빠르게 붙일 수 있는 추천 테마.
+// 칩 라벨은 한국어, 실제 themes 배열/S3 prefix 에는 영문 code 가 들어간다.
+// 테마 code 에는 underscore 금지 — code 의 첫 _ 가 BE 의 S3 키 split 기준점이라
+// 테마 자체에 _ 가 들어가면 경로가 깨진다 (예: DEEP_SEA_CHAIR_001 → DEEP/SEA_CHAIR_001).
+const THEME_OPTIONS: { code: string; label: string }[] = [
+  { code: "DEEPSEA", label: "바다" },
+  { code: "FANTASY", label: "판타지" },
+  { code: "VINTAGE", label: "빈티지" },
+  { code: "UNIVERSE", label: "우주" },
+  { code: "FOREST", label: "숲" },
+  { code: "SPOOKY", label: "공포" },
+  { code: "DEFAULT", label: "기본" },
+];
+
 interface FormState {
-  code: string;
-  name: string;
-  categoryCode: string;
-  assetType: string;
-  collectionCode: string;
-  tier: string;
-  assetScope: string;
+  theme: string;
+  subCode: string;
+  placement: Placement;
   pricePages: string;
-  creator: string;
   supplier: string;
-  compatibleTargets: string;
-  allowsCustomization: boolean;
 }
 
 const INITIAL_FORM: FormState = {
-  code: "",
-  name: "",
-  categoryCode: "",
-  assetType: "",
-  collectionCode: "",
-  tier: "NORMAL",
-  assetScope: "SPACE",
+  theme: "",
+  subCode: "",
+  placement: "",
   pricePages: "0",
-  creator: "",
   supplier: "",
-  compatibleTargets: "",
-  allowsCustomization: true,
 };
+
+// BE 필수 필드 중 폼에 안 보이는 것들. assetType 은 Unity 카탈로그에 표시되는
+// 분류이지만 운영자가 신경 쓰지 않기로 해서 generic 값으로 고정. tier/assetScope 도 동일 처리.
+// 카테고리는 categoriesQuery 로딩 후 첫 항목을 default 로 쓴다.
+const DEFAULT_ASSET_TYPE = "ASSET";
+const DEFAULT_TIER = "NORMAL";
+const DEFAULT_ASSET_SCOPE = "SPACE";
 
 export default function NewAssetPage() {
   const router = useRouter();
@@ -101,29 +102,42 @@ export default function NewAssetPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  // 식별자(sub-code)는 영문 대문자/숫자/언더스코어만 허용. 입력값을 자동으로 대문자 변환하고
+  // 다른 문자는 떨어내서 BE 의 S3 키 split 규칙을 항상 만족하도록 강제한다.
+  const updateSubCode = (raw: string) => {
+    const normalized = raw.toUpperCase().replace(/[^A-Z0-9_]/g, "");
+    updateField("subCode", normalized);
+  };
+
+  const defaultCategoryCode = categoriesQuery.data?.[0]?.code ?? "";
   const canSubmit =
-    form.code.trim().length > 0 &&
-    form.name.trim().length > 0 &&
-    form.categoryCode.length > 0 &&
-    form.assetType.trim().length > 0 &&
+    form.theme.length > 0 &&
+    form.subCode.length > 0 &&
+    !form.subCode.startsWith("_") &&
+    !form.subCode.endsWith("_") &&
+    form.placement.length > 0 &&
+    defaultCategoryCode.length > 0 &&
     !createMutation.isPending;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
     const parsedPrice = Number(form.pricePages);
+    const fullCode = `${form.theme}_${form.subCode}`;
     const payload: AdminAssetCreateInput = {
-      code: form.code.trim(),
-      name: form.name.trim(),
-      categoryCode: form.categoryCode,
-      assetType: form.assetType.trim().toUpperCase(),
-      collectionCode: form.collectionCode.trim() || null,
-      tier: form.tier.trim() || null,
-      assetScope: form.assetScope.trim() || null,
+      code: fullCode,
+      // 한국어 표시 이름을 별도로 받지 않는다 — 운영자가 영문 식별자만으로 충분.
+      // Unity 카탈로그에 사용자 친화적인 이름이 필요해지면 그때 한국어 입력 칸 부활.
+      name: form.subCode,
+      categoryCode: defaultCategoryCode,
+      assetType: DEFAULT_ASSET_TYPE,
+      collectionCode: null,
+      tier: DEFAULT_TIER,
+      assetScope: DEFAULT_ASSET_SCOPE,
       pricePages: Number.isFinite(parsedPrice) ? parsedPrice : 0,
-      creator: form.creator.trim() || null,
+      creator: null,
       supplier: form.supplier.trim() || null,
-      compatibleTargets: form.compatibleTargets.trim() || null,
-      allowsCustomization: form.allowsCustomization,
+      compatibleTargets: serializeCompatibleTargets(form.theme, form.placement),
+      allowsCustomization: true,
       active: false,
     };
     createMutation.mutate(payload);
@@ -145,98 +159,45 @@ export default function NewAssetPage() {
         <CardHeader>
           <CardTitle>메타데이터</CardTitle>
           <CardDescription>
-            code는 한 번 정해지면 바꿀 수 없어 S3 키 prefix가 됩니다. 영문 대문자/숫자/언더스코어 권장.
+            테마와 식별자가 정해지면 S3 저장 경로가 자동으로 결정됩니다.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-5">
+          <Field label="테마" required>
+            <ThemeSelector
+              value={form.theme}
+              onChange={(value) => updateField("theme", value)}
+            />
+          </Field>
+
+          <Field label="식별자 (영문)" required>
+            <Input
+              placeholder="CHAIR_001"
+              value={form.subCode}
+              onChange={(e) => updateSubCode(e.target.value)}
+              maxLength={70}
+              className="font-mono"
+            />
+          </Field>
+
+          <Field label="S3 저장 경로">
+            <S3PathPreview theme={form.theme} subCode={form.subCode} />
+          </Field>
+
+          <Field label="배치 (placement)" required>
+            <PlacementToggle
+              value={form.placement}
+              onChange={(value) => updateField("placement", value)}
+            />
+          </Field>
+
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="code (식별자)" required>
-              <Input
-                placeholder="DEEP_SEA_CHAIR_001"
-                value={form.code}
-                onChange={(e) => updateField("code", e.target.value)}
-                maxLength={80}
-              />
-            </Field>
-            <Field label="이름" required>
-              <Input
-                placeholder="깊은바다 의자"
-                value={form.name}
-                onChange={(e) => updateField("name", e.target.value)}
-                maxLength={100}
-              />
-            </Field>
-
-            <Field label="카테고리" required>
-              <Select
-                value={form.categoryCode || undefined}
-                onValueChange={(value) =>
-                  updateField("categoryCode", value ?? "")
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue
-                    placeholder={
-                      categoriesQuery.isLoading
-                        ? "카테고리 불러오는 중…"
-                        : "카테고리 선택"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {(categoriesQuery.data ?? []).map((category) => (
-                    <SelectItem key={category.code} value={category.code}>
-                      {category.name} · {category.code}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="에셋 타입 (assetType)" required>
-              <Input
-                placeholder="CHAIR / WALLPAPER / THEME 등"
-                value={form.assetType}
-                onChange={(e) => updateField("assetType", e.target.value)}
-              />
-            </Field>
-
-            <Field label="컬렉션 코드">
-              <Input
-                placeholder="DEEP_SEA (선택)"
-                value={form.collectionCode}
-                onChange={(e) => updateField("collectionCode", e.target.value)}
-                maxLength={80}
-              />
-            </Field>
             <Field label="가격 (페이지)">
               <Input
                 type="number"
                 min={0}
                 value={form.pricePages}
                 onChange={(e) => updateField("pricePages", e.target.value)}
-              />
-            </Field>
-
-            <Field label="등급 (tier)">
-              <Input
-                placeholder="NORMAL / RARE / EVENT"
-                value={form.tier}
-                onChange={(e) => updateField("tier", e.target.value)}
-              />
-            </Field>
-            <Field label="배치 범위 (assetScope)">
-              <Input
-                placeholder="SPACE / PROFILE 등"
-                value={form.assetScope}
-                onChange={(e) => updateField("assetScope", e.target.value)}
-              />
-            </Field>
-
-            <Field label="크리에이터">
-              <Input
-                placeholder="DotShelf (선택)"
-                value={form.creator}
-                onChange={(e) => updateField("creator", e.target.value)}
               />
             </Field>
             <Field label="공급자">
@@ -246,29 +207,6 @@ export default function NewAssetPage() {
                 onChange={(e) => updateField("supplier", e.target.value)}
               />
             </Field>
-          </div>
-
-          <div className="mt-4 grid gap-3">
-            <Field label="호환 정보 (compatibleTargets, JSON 문자열)">
-              <Textarea
-                placeholder='{"placement": ["floor"], "themes": ["DEEP_SEA"]}'
-                rows={3}
-                value={form.compatibleTargets}
-                onChange={(e) =>
-                  updateField("compatibleTargets", e.target.value)
-                }
-              />
-            </Field>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.allowsCustomization}
-                onChange={(e) =>
-                  updateField("allowsCustomization", e.target.checked)
-                }
-              />
-              테마 적용 후 일부 카테고리 변경 허용 (allowsCustomization)
-            </label>
           </div>
         </CardContent>
       </Card>
@@ -309,6 +247,99 @@ function Field({
         ) : null}
       </Label>
       {children}
+    </div>
+  );
+}
+
+// 폼의 테마/배치 선택값을 BE 의 compatibleTargets JSON 컬럼 포맷으로 직렬화.
+// Unity 클라이언트가 아직 이 키를 읽고 있지는 않지만, 후속 PR 에서 활성화될 때
+// 데이터가 이미 쌓여 있도록 미리 형식을 정해둔다. 둘 다 비면 null 을 돌려준다.
+function serializeCompatibleTargets(
+  theme: string,
+  placement: Placement,
+): string | null {
+  const payload: Record<string, string[]> = {};
+  if (theme) payload.themes = [theme];
+  if (placement) payload.placement = [placement];
+  return Object.keys(payload).length > 0 ? JSON.stringify(payload) : null;
+}
+
+function ThemeSelector({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {THEME_OPTIONS.map((opt) => {
+        const active = value === opt.code;
+        return (
+          <Button
+            key={opt.code}
+            type="button"
+            variant={active ? "default" : "outline"}
+            size="sm"
+            onClick={() => onChange(active ? "" : opt.code)}
+            title={opt.code}
+          >
+            {opt.label}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PlacementToggle({
+  value,
+  onChange,
+}: {
+  value: Placement;
+  onChange: (next: Placement) => void;
+}) {
+  const options: { code: Exclude<Placement, "">; label: string }[] = [
+    { code: "floor", label: "바닥" },
+    { code: "wall", label: "벽" },
+  ];
+  return (
+    <div className="flex gap-2">
+      {options.map((opt) => {
+        const active = value === opt.code;
+        return (
+          <Button
+            key={opt.code}
+            type="button"
+            variant={active ? "default" : "outline"}
+            size="sm"
+            onClick={() => onChange(active ? "" : opt.code)}
+          >
+            {opt.label}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
+function S3PathPreview({
+  theme,
+  subCode,
+}: {
+  theme: string;
+  subCode: string;
+}) {
+  if (!theme || !subCode) {
+    return (
+      <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+        테마와 식별자를 모두 입력하면 저장 경로가 표시됩니다.
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs font-mono break-all">
+      assets/<span className="font-semibold text-foreground">{theme}/{subCode}</span>/bundle/...
     </div>
   );
 }
