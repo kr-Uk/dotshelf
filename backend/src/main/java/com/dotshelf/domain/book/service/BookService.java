@@ -37,6 +37,7 @@ import com.dotshelf.domain.bookshelf.entity.BookshelfItem;
 import com.dotshelf.domain.bookshelf.repository.BookshelfItemRepository;
 import com.dotshelf.domain.bookshelf.service.BookshelfService;
 import com.dotshelf.domain.notification.event.NotificationEvents.BookAdded;
+import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.common.ToggleResponse;
 import com.dotshelf.global.error.CustomException;
@@ -68,6 +69,7 @@ public class BookService {
     private final UserBookRepository userBookRepository;
     private final BookshelfItemRepository bookshelfItemRepository;
     private final BookshelfService bookshelfService;
+    private final SpaceService spaceService;
     private final UserService userService;
     private final ApplicationEventPublisher eventPublisher;
     private final KakaoBookSearchClient kakaoBookSearchClient;
@@ -212,6 +214,7 @@ public class BookService {
                 .displayStyle(displayStyle)
                 .build());
         if (isNewShelfAddition(createdUserBook, previousStorageStatus, activeItem.isPresent())) {
+            spaceService.findOrCreateMySpace(currentUserId).increaseBookCount();
             eventPublisher.publishEvent(new BookAdded(currentUserId, userBook.getId(), book.getTitle()));
         }
         return UserBookResponse.from(userBook, item);
@@ -250,9 +253,13 @@ public class BookService {
     public UserBookResponse archive(Long userId, Long userBookId) {
         Long currentUserId = userService.requireUserId(userId);
         UserBook userBook = getOwnedUserBook(currentUserId, userBookId);
+        boolean wasOnShelf = "ON_SHELF".equalsIgnoreCase(userBook.getStorageStatus());
         userBook.archive();
         bookshelfItemRepository.findByUserBookIdAndStatus(userBookId, "ACTIVE")
                 .ifPresent(BookshelfItem::remove);
+        if (wasOnShelf) {
+            spaceService.findOrCreateMySpace(currentUserId).decreaseBookCount();
+        }
         return UserBookResponse.from(userBook);
     }
 
@@ -260,9 +267,13 @@ public class BookService {
     public void delete(Long userId, Long userBookId) {
         Long currentUserId = userService.requireUserId(userId);
         UserBook userBook = getOwnedUserBook(currentUserId, userBookId);
+        boolean wasOnShelf = "ON_SHELF".equalsIgnoreCase(userBook.getStorageStatus());
         userBook.delete();
         bookshelfItemRepository.findByUserBookIdAndStatus(userBookId, "ACTIVE")
                 .ifPresent(BookshelfItem::remove);
+        if (wasOnShelf) {
+            spaceService.findOrCreateMySpace(currentUserId).decreaseBookCount();
+        }
     }
 
     public UserBookListResponse getArchived(Long userId) {

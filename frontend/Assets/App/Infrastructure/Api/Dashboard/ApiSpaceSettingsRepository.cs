@@ -17,15 +17,21 @@ namespace App.Infrastructure.Api.Dashboard
 
         public void UpdateIntroduction(string introduction, Action onSuccess, Action<DashboardApiError> onError)
         {
-            UpdateProfileRequestDto request = new UpdateProfileRequestDto
-            {
-                Introduction = introduction ?? string.Empty
-            };
-
-            client.UpdateMe(
-                request,
-                onSuccess: _ => onSuccess?.Invoke(),
-                onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
+            client.GetMe(
+                onSuccess: currentProfile =>
+                {
+                    UpdateProfileRequestDto request = new UpdateProfileRequestDto
+                    {
+                        Nickname = currentProfile.Nickname,
+                        ProfileImageUrl = currentProfile.ProfileImageUrl,
+                        Introduction = introduction ?? string.Empty
+                    };
+                    client.UpdateMe(
+                        request,
+                        onSuccess: _ => onSuccess?.Invoke(),
+                        onError: err => onError?.Invoke(DashboardDtoMapper.MapError(err)));
+                },
+                onError: err => onError?.Invoke(DashboardDtoMapper.MapError(err)));
         }
 
         public void UpdateGuestbookVisibility(VisibilityScope scope, Action onSuccess, Action<DashboardApiError> onError)
