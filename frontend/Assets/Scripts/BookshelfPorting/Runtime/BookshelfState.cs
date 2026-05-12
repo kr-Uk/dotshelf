@@ -549,7 +549,7 @@ namespace BookshelfPorting.Runtime
                     book,
                     new Vector3(
                         x + footprint * 0.5f,
-                        section.shelfTopY + book.height * sectionScale * 0.5f,
+                        section.BookBaseY + book.height * sectionScale * 0.5f,
                         section.GetFrontAlignedBookCenterZ(book, sectionScale, shelfFrontInset)),
                     BookFootprintUtility.GetVisualRotation(book.orientation),
                     book.BaseLocalScale * sectionScale));

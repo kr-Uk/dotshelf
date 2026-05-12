@@ -55,6 +55,10 @@ import lombok.extern.slf4j.Slf4j;
 public class AssetService {
 
     private static final int MAX_ASSET_LIST_SIZE = 50;
+    private static final List<String> DEFAULT_BOOKSHELF_SKIN_CODES = List.of(
+            "BOOKSHELF_PASTEL_CABIN_SKIN",
+            "BOOKSHELF_UNDERWATER_SHELL_SKIN"
+    );
 
     private final AssetRepository assetRepository;
     private final AssetCategoryRepository assetCategoryRepository;
@@ -155,6 +159,19 @@ public class AssetService {
 
     public InventoryResponse getInventory(Long userId) {
         return InventoryResponse.from(inventoryRepository.findByUserId(userService.requireUserId(userId)));
+    }
+
+    @Transactional
+    public void grantDefaultBookshelfSkins(Long userId) {
+        if (userId == null) {
+            return;
+        }
+
+        for (String code : DEFAULT_BOOKSHELF_SKIN_CODES) {
+            assetRepository.findByCode(code)
+                    .filter(Asset::isActive)
+                    .ifPresent(asset -> grantDefaultAssetIfMissing(userId, asset));
+        }
     }
 
     public AssetCategoryListResponse getCategories() {
@@ -303,6 +320,18 @@ public class AssetService {
 
     private boolean isOwned(Long userId, Long assetId) {
         return userId != null && inventoryRepository.existsByUserIdAndAssetId(userId, assetId);
+    }
+
+    private void grantDefaultAssetIfMissing(Long userId, Asset asset) {
+        if (inventoryRepository.existsByUserIdAndAssetId(userId, asset.getId())) {
+            return;
+        }
+
+        inventoryRepository.save(UserAssetInventory.builder()
+                .userId(userId)
+                .assetId(asset.getId())
+                .grantType("DEFAULT")
+                .build());
     }
 
     private boolean isWished(Long userId, Long assetId) {
