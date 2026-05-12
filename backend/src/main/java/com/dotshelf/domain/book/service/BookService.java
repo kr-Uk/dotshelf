@@ -145,7 +145,6 @@ public class BookService {
     public UserBookResponse addToShelf(Long userId, Long bookshelfId, AddBookToShelfRequest request) {
         Long currentUserId = userService.requireUserId(userId);
         bookshelfService.getOwnedBookshelf(currentUserId, bookshelfId);
-        bookshelfService.requireSectionInBookshelf(bookshelfId, request.sectionId());
         Book book = getBookEntity(request.bookId());
         return placeBookOnShelf(
                 currentUserId,
@@ -162,7 +161,6 @@ public class BookService {
     public UserBookResponse addKakaoBookToShelf(Long userId, Long bookshelfId, AddKakaoBookToShelfRequest request) {
         Long currentUserId = userService.requireUserId(userId);
         bookshelfService.getOwnedBookshelf(currentUserId, bookshelfId);
-        bookshelfService.requireSectionInBookshelf(bookshelfId, request.sectionId());
         Book book = findOrCreateBook(request);
         return placeBookOnShelf(
                 currentUserId,
@@ -185,6 +183,13 @@ public class BookService {
             String displayStyle
     ) {
         Optional<UserBook> existingUserBook = userBookRepository.findByUserIdAndBookId(currentUserId, book.getId());
+        Optional<BookshelfItem> activeItem = existingUserBook
+                .flatMap(userBook -> bookshelfItemRepository.findByUserBookIdAndStatus(userBook.getId(), ACTIVE));
+        bookshelfService.requireAvailablePlacement(
+                bookshelfId,
+                sectionId,
+                slotNo,
+                activeItem.map(BookshelfItem::getId).orElse(null));
         boolean createdUserBook = existingUserBook.isEmpty();
         UserBook userBook = existingUserBook
                 .orElseGet(() -> {
@@ -196,7 +201,6 @@ public class BookService {
                 });
         String previousStorageStatus = createdUserBook ? null : userBook.getStorageStatus();
         userBook.placeOnShelf();
-        Optional<BookshelfItem> activeItem = bookshelfItemRepository.findByUserBookIdAndStatus(userBook.getId(), "ACTIVE");
         activeItem.ifPresent(BookshelfItem::remove);
         BookshelfItem item = bookshelfItemRepository.save(BookshelfItem.builder()
                 .bookshelfId(bookshelfId)
@@ -229,7 +233,6 @@ public class BookService {
     public UserBookResponse move(Long userId, Long userBookId, MoveUserBookRequest request) {
         Long currentUserId = userService.requireUserId(userId);
         bookshelfService.getOwnedBookshelf(currentUserId, request.bookshelfId());
-        bookshelfService.requireSectionInBookshelf(request.bookshelfId(), request.sectionId());
         UserBook userBook = getOwnedUserBook(currentUserId, userBookId);
         userBook.placeOnShelf();
         BookshelfItem item = bookshelfItemRepository.findByUserBookIdAndStatus(userBookId, "ACTIVE")
@@ -238,6 +241,7 @@ public class BookService {
                         .itemType("BOOK")
                         .userBookId(userBookId)
                         .build()));
+        bookshelfService.requireAvailablePlacement(request.bookshelfId(), request.sectionId(), request.slotNo(), item.getId());
         item.move(request.bookshelfId(), request.sectionId(), request.slotNo(), request.facingDirection(), request.displayStyle());
         return UserBookResponse.from(userBook, item);
     }
@@ -298,16 +302,24 @@ public class BookService {
     public ToggleResponse like(Long userId, Long userBookId) {
         Long currentUserId = userService.requireUserId(userId);
         UserBook userBook = getOwnedUserBook(currentUserId, userBookId);
-        userBook.like();
-        return new ToggleResponse(true, 1);
+        Book book = getBookEntity(userBook.getBookId());
+        if (!userBook.isLiked()) {
+            userBook.like();
+            book.increaseLikeCount();
+        }
+        return new ToggleResponse(true, book.getLikeCount());
     }
 
     @Transactional
     public ToggleResponse unlike(Long userId, Long userBookId) {
         Long currentUserId = userService.requireUserId(userId);
         UserBook userBook = getOwnedUserBook(currentUserId, userBookId);
-        userBook.unlike();
-        return new ToggleResponse(false, 0);
+        Book book = getBookEntity(userBook.getBookId());
+        if (userBook.isLiked()) {
+            userBook.unlike();
+            book.decreaseLikeCount();
+        }
+        return new ToggleResponse(false, book.getLikeCount());
     }
 
     public Book getBookEntity(Long bookId) {

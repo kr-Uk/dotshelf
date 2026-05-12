@@ -17,4 +17,23 @@ public interface BookshelfItemRepository extends JpaRepository<BookshelfItem, Lo
     List<BookshelfItem> findByUserBookIdInAndStatus(Collection<Long> userBookIds, String status);
 
     long countByBookshelfIdAndStatus(Long bookshelfId, String status);
+
+    long countByBookshelfSectionIdAndStatus(Long bookshelfSectionId, String status);
+
+    long countByBookshelfSectionIdAndStatusAndIdNot(Long bookshelfSectionId, String status, Long id);
+
+    boolean existsByBookshelfIdAndBookshelfSectionIdAndSlotNoAndStatus(
+            Long bookshelfId,
+            Long bookshelfSectionId,
+            Integer slotNo,
+            String status
+    );
+
+    boolean existsByBookshelfIdAndBookshelfSectionIdAndSlotNoAndStatusAndIdNot(
+            Long bookshelfId,
+            Long bookshelfSectionId,
+            Integer slotNo,
+            String status,
+            Long id
+    );
 }

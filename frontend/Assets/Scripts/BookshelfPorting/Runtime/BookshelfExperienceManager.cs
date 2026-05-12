@@ -749,9 +749,6 @@ namespace BookshelfPorting.Runtime
         private Button bookFocusRatingButton;
         private Button bookFocusWriteReportButton;
         private Text bookFocusRatingText;
-        private GameObject bookRatingChoicePanel;
-        private readonly Button[] bookRatingChoiceButtons = new Button[BookRatingChoiceCount];
-        private bool isBookRatingChoicePanelOpen;
         private GameObject bookReviewWritePanel;
         private Text bookReviewWriteTitleText;
         private Text bookReviewWriteBookText;
@@ -1677,11 +1674,6 @@ namespace BookshelfPorting.Runtime
             isBookEditPanelOpen = false;
             pendingDeleteBook = null;
             activeEditSection = null;
-            isBookRatingChoicePanelOpen = false;
-            if (bookRatingChoicePanel != null)
-            {
-                bookRatingChoicePanel.SetActive(false);
-            }
 
             if (bookDetailPanel != null)
             {
@@ -1902,7 +1894,6 @@ namespace BookshelfPorting.Runtime
             placementOriginalOrientation = book.orientation;
             placementStagedOrientation = book.orientation;
             isBookPlacementEditorOpen = true;
-            isBookRatingChoicePanelOpen = false;
             ActiveDetailBook = null;
             activeEditSection = null;
             pendingDeleteBook = null;
@@ -1973,16 +1964,10 @@ namespace BookshelfPorting.Runtime
             placementEditBook = null;
             placementOriginalOrientation = BookOrientation.Spine;
             placementStagedOrientation = BookOrientation.Spine;
-            isBookRatingChoicePanelOpen = false;
 
             if (bookPlacementEditorPanel != null)
             {
                 bookPlacementEditorPanel.SetActive(false);
-            }
-
-            if (bookRatingChoicePanel != null)
-            {
-                bookRatingChoicePanel.SetActive(false);
             }
 
             if (openBookPlacementEditorButton != null)
@@ -3037,7 +3022,6 @@ namespace BookshelfPorting.Runtime
             var rollback = new BookStateMutationSnapshot(book, meta);
             meta.readingStatus = GetNextReadingStatus(meta.readingStatus);
             meta.isRead = meta.readingStatus == App.Domain.ReadingStatus.Read;
-            isBookRatingChoicePanelOpen = false;
             dataStore.ApplyBookMeta(book, meta);
             var desired = new BookStateMutationSnapshot(book, meta);
             SyncBookStateOrRollback(book, rollback, desired, "독서 상태 변경");
@@ -3073,7 +3057,6 @@ namespace BookshelfPorting.Runtime
             {
                 meta.totalLikeCount = Mathf.Max(0, meta.totalLikeCount + (meta.isLiked ? 1 : -1));
             }
-            isBookRatingChoicePanelOpen = false;
             dataStore.ApplyBookMeta(book, meta);
             var desired = new BookStateMutationSnapshot(book, meta);
             SyncBookLikeOrRollback(book, rollback, desired, "좋아요 변경");
@@ -3111,7 +3094,6 @@ namespace BookshelfPorting.Runtime
             stagedBookReviewRating = meta != null && meta.ownerRating > 0f
                 ? SnapRatingToStep(Mathf.Clamp(meta.ownerRating, BookRatingStep, 5f))
                 : 0f;
-            isBookRatingChoicePanelOpen = false;
             isBookReviewWritePanelOpen = true;
             isBookReviewSaving = false;
             SetBookReviewStatus(string.Empty);
@@ -3121,68 +3103,6 @@ namespace BookshelfPorting.Runtime
             }
 
             RefreshHud();
-        }
-
-        private void SetOwnerRating(float rating)
-        {
-            var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
-            if (book == null || dataStore == null || !CanUseOwnerBookActions())
-            {
-                return;
-            }
-
-            var meta = dataStore.GetOrCreateBookMeta(book);
-            if (meta == null)
-            {
-                return;
-            }
-
-            var rollback = new BookStateMutationSnapshot(book, meta);
-            var previousRating = meta.ownerRating;
-            var clampedRating = Mathf.Clamp(SnapRatingToStep(rating), BookRatingStep, 5f);
-            meta.ownerRating = Mathf.Approximately(meta.ownerRating, clampedRating) ? 0f : clampedRating;
-            ApplyOwnerRatingToLocalAggregate(meta, previousRating, meta.ownerRating);
-            isBookRatingChoicePanelOpen = false;
-            dataStore.ApplyBookMeta(book, meta);
-            var desired = new BookStateMutationSnapshot(book, meta);
-            SyncBookStateOrRollback(book, rollback, desired, "별점 저장");
-            RefreshBookDetailPanel();
-            RefreshHud();
-        }
-
-        private static void ApplyOwnerRatingToLocalAggregate(BookMetaData meta, float previousOwnerRating, float nextOwnerRating)
-        {
-            if (meta == null)
-            {
-                return;
-            }
-
-            var previous = SnapRatingToStep(Mathf.Clamp(previousOwnerRating, 0f, 5f));
-            var next = SnapRatingToStep(Mathf.Clamp(nextOwnerRating, 0f, 5f));
-            if (Mathf.Approximately(previous, next))
-            {
-                return;
-            }
-
-            var count = meta.hasAggregateBookStats
-                ? Mathf.Max(0, meta.reviewCount)
-                : previous > 0 ? 1 : 0;
-            var total = (meta.hasAggregateBookStats ? Mathf.Clamp(meta.averageRating, 0f, 5f) : previous) * count;
-            if (previous > 0 && count > 0)
-            {
-                total -= previous;
-                count--;
-            }
-
-            if (next > 0)
-            {
-                total += next;
-                count++;
-            }
-
-            meta.reviewCount = Mathf.Max(0, count);
-            meta.averageRating = count > 0 ? Mathf.Clamp(total / count, 0f, 5f) : 0f;
-            meta.hasAggregateBookStats = true;
         }
 
         private void SetStagedBookReviewRating(float rating)
@@ -4059,22 +3979,6 @@ namespace BookshelfPorting.Runtime
             bookFocusRatingText.color = new Color32(84, 74, 66, 255);
             bookFocusRatingText.gameObject.SetActive(false);
 
-            bookRatingChoicePanel = CreatePanel(canvasObject.transform, "BookRatingChoicePanel", new Vector2(0f, 160f), new Vector2(330f, 56f), new Vector2(0.5f, 0f));
-            StyleBookshelfIndexPanel(bookRatingChoicePanel.GetComponent<Image>());
-            bookRatingChoicePanel.SetActive(false);
-            for (var i = 0; i < bookRatingChoiceButtons.Length; i++)
-            {
-                var rating = GetRatingChoiceValue(i);
-                bookRatingChoiceButtons[i] = CreateButton(
-                    bookRatingChoicePanel.transform,
-                    $"BookRatingChoiceButton_{i + 1}",
-                    $"{FormatRatingValue(rating)}★",
-                    new Vector2(-248f + i * 55f, 0f),
-                    () => SetOwnerRating(rating),
-                    new Vector2(50f, 36f),
-                    new Vector2(0.5f, 0.5f));
-            }
-
             bookReviewWritePanel = CreatePanel(canvasObject.transform, "BookReviewWritePanel", new Vector2(-24f, -78f), new Vector2(430f, 390f), new Vector2(1f, 1f));
             StyleBookDetailPanel(bookReviewWritePanel.GetComponent<Image>());
             bookReviewWritePanel.SetActive(false);
@@ -4690,8 +4594,8 @@ namespace BookshelfPorting.Runtime
             RefreshSectionEditPanel();
             RefreshBookPlacementEditor();
             ApplyResponsiveFocusOverlayLayout(true);
-            RefreshFloatingBookRatingChoicePanel();
             RefreshDeleteResultDialog();
+            RequestEmptyBookshelfTutorialEntry();
             RefreshFirstBookshelfTutorialPanel();
             RefreshEmptyBookshelfAddButton();
         }
@@ -5615,39 +5519,6 @@ namespace BookshelfPorting.Runtime
                 bookFocusRatingText.alignment = TextAnchor.MiddleCenter;
             }
 
-            LayoutBookRatingChoicePanel(ratingButtonX, bottomOffset + panelHeight + 10f, panelHeight);
-        }
-
-        private void LayoutBookRatingChoicePanel(float x, float y, float toolbarHeight)
-        {
-            if (bookRatingChoicePanel == null)
-            {
-                return;
-            }
-
-            var panelWidth = Mathf.Clamp(toolbarHeight * 5.35f, 560f, 680f);
-            var panelHeight = Mathf.Clamp(toolbarHeight * 0.46f, 50f, 62f);
-            SetHudObjectRect(
-                bookRatingChoicePanel,
-                new Vector2(0.5f, 0f),
-                new Vector2(0.5f, 0f),
-                new Vector2(x, y),
-                new Vector2(panelWidth, panelHeight));
-
-            var padding = Mathf.Clamp(panelWidth * 0.045f, 12f, 16f);
-            var gap = Mathf.Clamp(panelWidth * 0.012f, 5f, 8f);
-            var buttonWidth = (panelWidth - padding * 2f - gap * (bookRatingChoiceButtons.Length - 1)) / bookRatingChoiceButtons.Length;
-            var buttonHeight = Mathf.Clamp(panelHeight - 14f, 36f, 46f);
-            var startX = -panelWidth * 0.5f + padding + buttonWidth * 0.5f;
-            for (var i = 0; i < bookRatingChoiceButtons.Length; i++)
-            {
-                LayoutToolbarButton(
-                    bookRatingChoiceButtons[i],
-                    startX + (buttonWidth + gap) * i,
-                    buttonWidth,
-                    buttonHeight,
-                    Mathf.RoundToInt(Mathf.Clamp(panelHeight * 0.25f, 13f, 16f)));
-            }
         }
 
         private void LayoutBookPlacementToolbar(GameObject panel, float panelWidth, float panelHeight, float bottomOffset, Vector2 canvasSize)
@@ -6540,6 +6411,22 @@ namespace BookshelfPorting.Runtime
 
         private FirstBookshelfTutorialMode ResolveFirstBookshelfTutorialMode()
         {
+            if (!CanShowFirstBookshelfTutorialOverCurrentUi())
+            {
+                return FirstBookshelfTutorialMode.None;
+            }
+
+            if (ShouldShowFirstBookshelfFeatureGuide())
+            {
+                return FirstBookshelfTutorialMode.FeatureGuide;
+            }
+
+            if (ShouldEnterEmptyBookshelfTutorial() &&
+                CurrentFocusArea == ExperienceFocusArea.Bookshelf)
+            {
+                return FirstBookshelfTutorialMode.CreateFirstShelf;
+            }
+
             return FirstBookshelfTutorialMode.None;
         }
 
@@ -7203,12 +7090,6 @@ namespace BookshelfPorting.Runtime
             if (bookshelfUnsavedConfirmPanel != null)
             {
                 bookshelfUnsavedConfirmPanel.SetActive(false);
-            }
-
-            isBookRatingChoicePanelOpen = false;
-            if (bookRatingChoicePanel != null)
-            {
-                bookRatingChoicePanel.SetActive(false);
             }
         }
 
@@ -11039,21 +10920,6 @@ namespace BookshelfPorting.Runtime
 
             if (!canUseOwnerActions)
             {
-                var canKeepRatingChoiceOverReport = isBookRatingChoicePanelOpen &&
-                                                    (isBookReportWritePanelOpen || isBookReportReadPanelOpen) &&
-                                                    CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
-                                                    state != null &&
-                                                    state.IsViewingBook &&
-                                                    state.ActiveViewedBook != null;
-                if (!canKeepRatingChoiceOverReport)
-                {
-                    if (bookRatingChoicePanel != null)
-                    {
-                        bookRatingChoicePanel.SetActive(false);
-                    }
-
-                    isBookRatingChoicePanelOpen = false;
-                }
                 return;
             }
 
@@ -11099,7 +10965,6 @@ namespace BookshelfPorting.Runtime
                         true);
                 }
             }
-            RefreshBookRatingChoicePanel(meta);
             if (openBookPlacementEditorButton != null)
             {
                 var canPlace = CanMutateOwnedBookshelf() &&
@@ -11155,53 +11020,6 @@ namespace BookshelfPorting.Runtime
             {
                 bookFocusWriteReportButton.transform.SetAsLastSibling();
             }
-        }
-
-        private void RefreshFloatingBookRatingChoicePanel()
-        {
-            var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
-            var meta = book != null && dataStore != null ? dataStore.GetOrCreateBookMeta(book) : null;
-            RefreshBookRatingChoicePanel(meta);
-        }
-
-        private void RefreshBookRatingChoicePanel(BookMetaData meta)
-        {
-            if (bookRatingChoicePanel == null)
-            {
-                return;
-            }
-
-            var shouldShow = isBookRatingChoicePanelOpen &&
-                             CanUseOwnerBookActions() &&
-                             meta != null &&
-                             CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
-                             state != null &&
-                             state.IsViewingBook &&
-                             state.ActiveViewedBook != null;
-            bookRatingChoicePanel.SetActive(shouldShow);
-            if (!shouldShow)
-            {
-                return;
-            }
-
-            var selectedRating = SnapRatingToStep(Mathf.Clamp(meta.ownerRating, 0f, 5f));
-            for (var i = 0; i < bookRatingChoiceButtons.Length; i++)
-            {
-                var rating = GetRatingChoiceValue(i);
-                var isSelected = Mathf.Approximately(rating, selectedRating);
-                var label = $"{FormatRatingValue(rating)}★";
-                SetButtonLabel(bookRatingChoiceButtons[i], isSelected ? $"✓ {label}" : label);
-                StyleHudButton(
-                    bookRatingChoiceButtons[i],
-                    isSelected ? new Color32(197, 128, 67, 245) : new Color32(255, 255, 255, 240),
-                    isSelected ? new Color32(214, 145, 82, 255) : new Color32(241, 235, 230, 255),
-                    new Color32(224, 219, 214, 140),
-                    14,
-                    isSelected ? Color.white : new Color32(63, 47, 38, 255),
-                    isSelected);
-            }
-
-            bookRatingChoicePanel.transform.SetAsLastSibling();
         }
 
         private void RefreshBookReviewWritePanel()
@@ -11378,7 +11196,6 @@ namespace BookshelfPorting.Runtime
 
         private void CloseActiveViewedBook()
         {
-            isBookRatingChoicePanelOpen = false;
             if (interactionController != null && state != null && state.IsViewingBook)
             {
                 interactionController.CloseViewedBook(true);

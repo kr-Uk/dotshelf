@@ -113,6 +113,14 @@ public class Book extends BaseEntity {
         this.viewCount += 1;
     }
 
+    public void increaseLikeCount() {
+        this.likeCount += 1;
+    }
+
+    public void decreaseLikeCount() {
+        this.likeCount = Math.max(0, this.likeCount - 1);
+    }
+
     public void addReviewRating(BigDecimal rating) {
         this.ratingSum = this.ratingSum.add(rating);
         this.ratingCount += 1;
