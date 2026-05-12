@@ -163,6 +163,9 @@ class AdminAssetControllerTest {
                 "깊은바다 의자",
                 "CHAIR",
                 "DEEP_SEA",
+                300, // pricePages
+                "DotShelf Studio", // supplier
+                "{\"themes\":[\"DEEPSEA\"],\"placement\":[\"floor\"]}", // compatibleTargets
                 "https://cdn.test/chair.glb",
                 "https://cdn.test/chair.png",
                 null, // previewBundleUrl

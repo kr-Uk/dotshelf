@@ -25,17 +25,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { PageHeader } from "@/components/common/page-header";
 import { RoleGate } from "@/components/common/role-gate";
 import { StatusBadge } from "@/components/common/status-badge";
 import { api, ApiError } from "@/lib/api";
+import {
+  PlacementToggle,
+  ThemeSelector,
+  deserializeCompatibleTargets,
+  serializeCompatibleTargets,
+  type Placement,
+} from "@/lib/asset-form";
 import { generatePreviewGlb } from "@/lib/gltf-preview";
 import {
   ADMIN_ASSET_BUNDLE_MAX_BYTES,
@@ -45,7 +45,6 @@ import {
   ADMIN_ASSET_PREVIEW_TYPES,
 } from "@/lib/types";
 import type {
-  AdminAssetCategory,
   AdminAssetDetail,
   AdminAssetUpdateInput,
   AdminAssetUploadUrl,
@@ -62,14 +61,6 @@ export default function AssetDetailPage() {
     queryKey: ["admin-asset", assetId],
     queryFn: () => api<AdminAssetDetail>(`/assets/${assetId}`),
     enabled: Number.isFinite(assetId),
-  });
-
-  const categoriesQuery = useQuery({
-    queryKey: ["admin-asset-categories"],
-    queryFn: () =>
-      api<{ categories: AdminAssetCategory[] }>("/assets/categories").then(
-        (response) => response.categories,
-      ),
   });
 
   const asset = detailQuery.data;
@@ -162,11 +153,7 @@ export default function AssetDetailPage() {
         />
       </div>
 
-      <MetadataEditor
-        key={asset.id}
-        asset={asset}
-        categories={categoriesQuery.data ?? []}
-      />
+      <MetadataEditor key={asset.id} asset={asset} />
 
       <Card>
         <CardHeader>
@@ -301,20 +288,15 @@ function PublishButton({
   );
 }
 
-function MetadataEditor({
-  asset,
-  categories,
-}: {
-  asset: AdminAssetDetail;
-  categories: AdminAssetCategory[];
-}) {
+function MetadataEditor({ asset }: { asset: AdminAssetDetail }) {
   const qc = useQueryClient();
   // 부모에서 key={asset.id} 로 감싸므로 asset 이 바뀌면 컴포넌트가 새로 마운트된다 —
   // 초기값을 그대로 쓰고 useEffect로 동기화하지 않는다 (cascading render 회피).
-  const [name, setName] = useState(asset.name);
-  const [categoryCode, setCategoryCode] = useState("");
-  const [collectionCode, setCollectionCode] = useState(asset.collectionCode ?? "");
-  const [assetType, setAssetType] = useState(asset.assetType);
+  const initial = deserializeCompatibleTargets(asset.compatibleTargets);
+  const [theme, setTheme] = useState(initial.theme);
+  const [placement, setPlacement] = useState<Placement>(initial.placement);
+  const [pricePages, setPricePages] = useState(String(asset.pricePages));
+  const [supplier, setSupplier] = useState(asset.supplier ?? "");
 
   const updateMutation = useMutation({
     mutationFn: (payload: AdminAssetUpdateInput) =>
@@ -335,14 +317,12 @@ function MetadataEditor({
   });
 
   const submit = () => {
+    const parsedPrice = Number(pricePages);
     const payload: AdminAssetUpdateInput = {
-      name: name.trim(),
-      assetType: assetType.trim().toUpperCase(),
-      collectionCode: collectionCode.trim() || null,
+      compatibleTargets: serializeCompatibleTargets(theme, placement),
+      pricePages: Number.isFinite(parsedPrice) ? parsedPrice : 0,
+      supplier: supplier.trim() || null,
     };
-    if (categoryCode) {
-      payload.categoryCode = categoryCode;
-    }
     updateMutation.mutate(payload);
   };
 
@@ -351,49 +331,42 @@ function MetadataEditor({
       <CardHeader>
         <CardTitle>메타데이터</CardTitle>
         <CardDescription>
-          이름, 타입, 컬렉션, 카테고리만 수정합니다. code는 S3 키 prefix라 고정입니다.
+          테마, 배치, 가격, 공급자만 수정합니다. code 와 식별자는 S3 키 prefix 라 고정.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-5">
+        <Field label="code (고정)">
+          <Input value={asset.code} disabled className="font-mono" />
+        </Field>
+
+        <Field label="테마">
+          <ThemeSelector value={theme} onChange={setTheme} />
+        </Field>
+
+        <Field label="배치 (placement)">
+          <PlacementToggle value={placement} onChange={setPlacement} />
+        </Field>
+
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="이름">
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label="에셋 타입">
+          <Field label="가격 (페이지)">
             <Input
-              value={assetType}
-              onChange={(e) => setAssetType(e.target.value)}
+              type="number"
+              min={0}
+              value={pricePages}
+              onChange={(e) => setPricePages(e.target.value)}
             />
           </Field>
-          <Field label="컬렉션 코드">
+          <Field label="공급자">
             <Input
-              value={collectionCode}
-              onChange={(e) => setCollectionCode(e.target.value)}
+              placeholder="DotShelf Studio (선택)"
+              value={supplier}
+              onChange={(e) => setSupplier(e.target.value)}
             />
-          </Field>
-          <Field label="카테고리 (변경하려면 선택)">
-            <Select
-              value={categoryCode || undefined}
-              onValueChange={(value) => setCategoryCode(value ?? "")}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="유지" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((category) => (
-                  <SelectItem key={category.code} value={category.code}>
-                    {category.name} · {category.code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </Field>
         </div>
-        <div className="mt-3 flex justify-end">
-          <Button
-            onClick={submit}
-            disabled={updateMutation.isPending || !name.trim()}
-          >
+
+        <div className="flex justify-end">
+          <Button onClick={submit} disabled={updateMutation.isPending}>
             {updateMutation.isPending ? "저장 중…" : "메타데이터 저장"}
           </Button>
         </div>
@@ -444,8 +417,13 @@ function UploadCard({
   const [phase, setPhase] = useState<string | null>(null);
 
   const uploadAndConfirm = async (file: File) => {
-    if (!allowedTypes.includes(file.type)) {
-      toast.error(`허용되지 않은 형식입니다: ${file.type || "unknown"}`);
+    // 브라우저가 .glb 같은 확장자의 MIME 을 OS 별로 모르거나 비워서 반환할 때가 있어 (특히 Windows)
+    // 파일 확장자 기반 fallback 으로 보정한다. 보정 후에도 미매치면 그때 reject.
+    const contentType = resolveContentType(file);
+    if (!allowedTypes.includes(contentType)) {
+      toast.error(
+        `허용되지 않은 형식입니다: ${contentType || file.type || "unknown"}`,
+      );
       return;
     }
     if (file.size > maxBytes) {
@@ -466,12 +444,12 @@ function UploadCard({
       const presigned = await api<AdminAssetUploadUrl>(uploadPath, {
         method: "POST",
         body: JSON.stringify({
-          contentType: file.type,
+          contentType,
           byteLength: file.size,
         }),
       });
 
-      await putToS3(presigned.uploadUrl, file, setProgress);
+      await putToS3(presigned.uploadUrl, file, contentType, setProgress);
 
       const confirmPath =
         kind === "bundle"
@@ -605,15 +583,31 @@ function Field({
   );
 }
 
+// 브라우저 (특히 Windows) 가 .glb / .bundle 같은 확장자의 MIME type 을 모르고 빈 string 으로
+// 반환하는 경우가 있어 파일명 확장자로 fallback 매핑한다. BE 의 ALLOWED_BUNDLE_TYPES /
+// ALLOWED_PREVIEW_IMAGE_TYPES 에 맞춰 같은 키를 돌려준다.
+function resolveContentType(file: File): string {
+  if (file.type) return file.type;
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith(".glb")) return "model/gltf-binary";
+  if (lower.endsWith(".zip")) return "application/zip";
+  if (lower.endsWith(".bundle")) return "application/octet-stream";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "";
+}
+
 function putToS3(
   url: string,
   file: File,
+  contentType: string,
   onProgress: (percent: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
-    xhr.setRequestHeader("Content-Type", file.type);
+    xhr.setRequestHeader("Content-Type", contentType);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {
         const percent = Math.round((event.loaded / event.total) * 100);
@@ -678,7 +672,7 @@ async function generateAndUploadPreviewBundle(
       }),
     },
   );
-  await putToS3(presigned.uploadUrl, previewFile, () => {});
+  await putToS3(presigned.uploadUrl, previewFile, previewFile.type, () => {});
   await api<AdminAssetDetail>(`/assets/${assetId}/preview-bundle`, {
     method: "PATCH",
     body: JSON.stringify({ key: presigned.key }),

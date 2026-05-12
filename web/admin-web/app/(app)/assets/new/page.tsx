@@ -19,27 +19,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/common/page-header";
 import { api, ApiError } from "@/lib/api";
+import {
+  PlacementToggle,
+  ThemeSelector,
+  serializeCompatibleTargets,
+  type Placement,
+} from "@/lib/asset-form";
 import type {
   AdminAssetCategory,
   AdminAssetCreateInput,
   AdminAssetDetail,
 } from "@/lib/types";
-
-type Placement = "floor" | "wall" | "";
-
-// 어드민에서 클릭으로 빠르게 붙일 수 있는 추천 테마.
-// 칩 라벨은 한국어, 실제 themes 배열/S3 prefix 에는 영문 code 가 들어간다.
-// 테마 code 에는 underscore 금지 — code 의 첫 _ 가 BE 의 S3 키 split 기준점이라
-// 테마 자체에 _ 가 들어가면 경로가 깨진다 (예: DEEP_SEA_CHAIR_001 → DEEP/SEA_CHAIR_001).
-const THEME_OPTIONS: { code: string; label: string }[] = [
-  { code: "DEEPSEA", label: "바다" },
-  { code: "FANTASY", label: "판타지" },
-  { code: "VINTAGE", label: "빈티지" },
-  { code: "UNIVERSE", label: "우주" },
-  { code: "FOREST", label: "숲" },
-  { code: "SPOOKY", label: "공포" },
-  { code: "DEFAULT", label: "기본" },
-];
 
 interface FormState {
   theme: string;
@@ -247,78 +237,6 @@ function Field({
         ) : null}
       </Label>
       {children}
-    </div>
-  );
-}
-
-// 폼의 테마/배치 선택값을 BE 의 compatibleTargets JSON 컬럼 포맷으로 직렬화.
-// Unity 클라이언트가 아직 이 키를 읽고 있지는 않지만, 후속 PR 에서 활성화될 때
-// 데이터가 이미 쌓여 있도록 미리 형식을 정해둔다. 둘 다 비면 null 을 돌려준다.
-function serializeCompatibleTargets(
-  theme: string,
-  placement: Placement,
-): string | null {
-  const payload: Record<string, string[]> = {};
-  if (theme) payload.themes = [theme];
-  if (placement) payload.placement = [placement];
-  return Object.keys(payload).length > 0 ? JSON.stringify(payload) : null;
-}
-
-function ThemeSelector({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {THEME_OPTIONS.map((opt) => {
-        const active = value === opt.code;
-        return (
-          <Button
-            key={opt.code}
-            type="button"
-            variant={active ? "default" : "outline"}
-            size="sm"
-            onClick={() => onChange(active ? "" : opt.code)}
-            title={opt.code}
-          >
-            {opt.label}
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
-
-function PlacementToggle({
-  value,
-  onChange,
-}: {
-  value: Placement;
-  onChange: (next: Placement) => void;
-}) {
-  const options: { code: Exclude<Placement, "">; label: string }[] = [
-    { code: "floor", label: "바닥" },
-    { code: "wall", label: "벽" },
-  ];
-  return (
-    <div className="flex gap-2">
-      {options.map((opt) => {
-        const active = value === opt.code;
-        return (
-          <Button
-            key={opt.code}
-            type="button"
-            variant={active ? "default" : "outline"}
-            size="sm"
-            onClick={() => onChange(active ? "" : opt.code)}
-          >
-            {opt.label}
-          </Button>
-        );
-      })}
     </div>
   );
 }
