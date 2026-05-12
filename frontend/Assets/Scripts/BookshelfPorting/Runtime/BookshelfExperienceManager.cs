@@ -902,6 +902,16 @@ namespace BookshelfPorting.Runtime
         // edit-mode select / rotate / delete that the edit overlay itself drives.
         public bool AreSceneInteractionsSuppressed { get; set; }
 
+        // 룸 편집 모드 등 외부 컨텍스트에서 노트북 화면 click → FocusNotebook 자동 진입을 차단할 때 호출.
+        // AreSceneInteractionsSuppressed 는 BookshelfExperienceManager.Update 의 raycast-based focus 전환만
+        // 막고, ScreenSaverCanvas 위 AdImage Button.onClick (= onOpenScreenSaver = FocusNotebook) 은 그대로
+        // fire 되므로 별도 차단이 필요. 호출 시 NotebookScreenController.SetSceneInteractionSuppressed 로
+        // canvas SetActive 토글.
+        public void SetNotebookScreenSuppressed(bool suppressed)
+        {
+            notebookScreenController?.SetSceneInteractionSuppressed(suppressed);
+        }
+
         public void Configure(
             BookshelfState bookshelfState,
             CameraController controller,
@@ -1065,6 +1075,27 @@ namespace BookshelfPorting.Runtime
             }
 
             if (!Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                return;
+            }
+
+            // Notebook 이 immersive overlay 모드일 때 (Dashboard / ScreenSaver 둘 다 ScreenSpaceOverlay
+            // 로 전체 화면을 덮음) — main scene 의 raycast-based focus 전환은 click 을 가로채지 않는다.
+            // UI Toolkit / Canvas Button 자체 dispatch 가 click 을 소비하도록 위임.
+            //
+            // 회귀 방어: dashboard X (NotebookToolkitController UIDocument) click 이 같은 frame 에서
+            // 1) 이 핸들러가 먼저 실행 → IsPointerOverUi 가 PanelRaycaster hit 을 감지 못해 (DashboardRaycastFilter
+            //    는 DashboardScreenController 만 추적, NotebookToolkitController 는 모름) → TryHitGuestbookBoard
+            //    ray 가 top-right 픽셀로 cast 되어 GuestbookBoard collider hit → FocusGuestbook → MoveToWhiteboardSurface
+            //    transition 시작
+            // 2) EventSystem 의 PanelEventHandler 가 같은 frame 후반에 X close callback dispatch → CloseNotebookFocus
+            //    의 CanStartCameraFocus 가 cameraController.IsTransitioning=true 라 early return → 카메라 이동 skip
+            // 3) 결과: 카메라가 GuestbookBoard pose 에 도착
+            //
+            // CurrentFocusArea==Notebook 조건도 함께 둬 — 다른 focus 상태에서 잘못 suppress 되지 않도록.
+            if (CurrentFocusArea == ExperienceFocusArea.Notebook &&
+                notebookScreenController != null &&
+                notebookScreenController.IsImmersiveModeActive)
             {
                 return;
             }
@@ -3473,6 +3504,18 @@ namespace BookshelfPorting.Runtime
             // AddComponent 된 시점이라, 여기서 panel mount 를 재시도하면 깨끗하게 회복된다.
             // 기존 유저 재로그인 케이스는 OnEnable 시점에 이미 mount 가 성공한 상태라 부수효과 없음 (idempotent).
             SyncExternalDashboardPanelPresentation();
+
+            // 같은 race 의 노트북 변종: Start() 의 ConfigureNotebookScreen 이 Generate() 보다 먼저 돌면
+            // FindRoomNotebookScreenController() 가 null 을 반환해 notebookScreenController 가 미설정
+            // 상태로 남는다. NotebookScreenController.Awake 는 AdImage / ScreenSaverCanvas (GraphicRaycaster
+            // raycastTarget=true) 는 만들어 두지만 AdImage Button.onClick = () => onOpenScreenSaver(=FocusNotebook)
+            // lambda 는 Configure → EnsureCanvases → BuildScreenSaver 에서만 wire 된다. 따라서 첫 클릭이
+            // AdImage 를 hit 해도 onClick 가 비어있어 silent consume → 사용자에겐 "노트북 클릭 무반응 →
+            // 다른 기능 한 번 후엔 됨" 회귀. Generate 이후 ConfigureNotebookScreen 재호출로 늦게 만들어진
+            // controller 를 잡아 Configure 까지 끝내 onClick lambda wire.
+            // idempotent — 이미 잡혀 있으면 같은 controller 재바인딩 (callback 중복 register 는 AttachNotebookApiCallbacks
+            // 의 == 체크가 막음).
+            ConfigureNotebookScreen();
         }
 
         private void SyncFromCameraMode(CameraMode mode)

@@ -201,15 +201,13 @@ namespace App.Bootstrap
                 laptopRenderersHidden = HideLaptopHierarchyRenderers(notebookTransform, marker);
             }
 
-            // monitor 화면 fit — entry 의 notebookScreen* override 로 Notebook/Screen 의 transform 을
-            // 디자이너 지정 값으로 set. ScreenSaverCanvas / DashboardCanvas 는 Screen 자식이라 같이
-            // 따라감. native (procedural 노트북의 (0, 0.114, -0.154) / Euler (-99.5, 0, 0)) 는 marker
-            // 에 캡처 후 ClearSkinUnder 에서 복원.
+            // Notebook/Screen native transform 캡처 — monitor 모드에서 auto-fit + modulation 으로
+            // override 되므로 ClearSkinUnder 시 정확히 복원하려면 첫 진입에 native 값 저장 필수.
+            // 실제 apply 는 AlignNotebookScreenToMonitor 에서 (monitor + NotebookStation 자리잡은 후).
             Transform screenTransform = null;
             Vector3 finalScreenLocalPos = Vector3.zero;
             Vector3 finalScreenLocalEuler = Vector3.zero;
             Vector3 finalScreenLocalScale = Vector3.one;
-            bool screenOverrideApplied = false;
             if (notebookTransform != null)
             {
                 for (int i = 0; i < notebookTransform.childCount; i++)
@@ -220,29 +218,11 @@ namespace App.Bootstrap
             }
             if (screenTransform != null)
             {
-                // native 캡처 — 첫 진입에만 의미. 같은 marker 가 재사용되면 이미 has=true 라 skip.
                 marker.NativeScreenLocalPosition = screenTransform.localPosition;
                 marker.NativeScreenLocalRotation = screenTransform.localRotation;
                 marker.NativeScreenLocalScale = screenTransform.localScale;
                 marker.HasNativeScreenCapture = true;
 
-                var screenScaleMult = SanitizeMultiplier(entry.NotebookScreenScaleMultiplier);
-                bool hasAnyOverride =
-                    entry.NotebookScreenLocalPosition.sqrMagnitude > 1e-10f ||
-                    entry.NotebookScreenLocalRotation.sqrMagnitude > 1e-10f ||
-                    (screenScaleMult - Vector3.one).sqrMagnitude > 1e-10f;
-                if (hasAnyOverride)
-                {
-                    if (entry.NotebookScreenLocalPosition.sqrMagnitude > 1e-10f)
-                        screenTransform.localPosition = entry.NotebookScreenLocalPosition;
-                    if (entry.NotebookScreenLocalRotation.sqrMagnitude > 1e-10f)
-                        screenTransform.localEulerAngles = entry.NotebookScreenLocalRotation;
-                    screenTransform.localScale = new Vector3(
-                        marker.NativeScreenLocalScale.x * screenScaleMult.x,
-                        marker.NativeScreenLocalScale.y * screenScaleMult.y,
-                        marker.NativeScreenLocalScale.z * screenScaleMult.z);
-                    screenOverrideApplied = true;
-                }
                 finalScreenLocalPos = screenTransform.localPosition;
                 finalScreenLocalEuler = screenTransform.localEulerAngles;
                 finalScreenLocalScale = screenTransform.localScale;
@@ -304,8 +284,7 @@ namespace App.Bootstrap
                       $"skinLocalPositionOverride={localPositionOverride} usedLocalPositionOverride={usedLocalPositionOverride} " +
                       $"lockNotebookStationToMonitor={entry.LockNotebookStationToMonitor} laptopYAdjusted={laptopYAdjusted} " +
                       $"hideLaptopRenderers={entry.HideLaptopRenderers} laptopRenderersHidden={laptopRenderersHidden} " +
-                      $"screenOverrideApplied={screenOverrideApplied} " +
-                      $"finalScreenLocal=(pos={finalScreenLocalPos}, eul={finalScreenLocalEuler}, scale={finalScreenLocalScale}) " +
+                      $"finalScreenLocal=(pos={finalScreenLocalPos}, eul={finalScreenLocalEuler}, scale={finalScreenLocalScale}) (note: 실제 monitor fit 은 [DeskScreen] 로그 참조) " +
                       $"finalScreenCanvasPosition={finalScreenCanvasPosition} finalScreenCanvasRotation={finalScreenCanvasRotation} finalScreenCanvasScale={finalScreenCanvasScale} cameraFocusForward={cameraFocusForward} " +
                       $"prefabRootLocalScale={entry.Prefab.transform.localScale} deskLossyScale={deskTransform.lossyScale} " +
                       $"multiplier=({multiplier.x:F3},{multiplier.y:F3},{multiplier.z:F3}) multiplierApplied={multiplierApplied} " +
@@ -327,6 +306,177 @@ namespace App.Bootstrap
                                  "X / Z 는 native anchor 유지여야 정상 — Desk transform 자체가 흔들리지 않았는지 확인.");
             }
             return true;
+        }
+
+        // monitor 모드 (hideLaptopRenderers + lockNotebookStationToMonitor) 에서 ApplyMonitorMeshSwap
+        // + ApplyNotebookStationPlacement 가 끝난 뒤 호출 — Notebook/Screen 의 world transform 을
+        // monitor 디스플레이 면에 fit. **항상 auto-fit 을 실행하고, entry 의 notebookScreen* 필드를
+        // additive modulation 으로 적용**:
+        //
+        //   - Screen.position = monitorBounds.center + monitor.TransformVector(notebookScreenLocalPosition)
+        //     (notebookScreenLocalPosition 는 monitor-local 좌표계 offset — 기본 zero 면 pure center.)
+        //   - Screen.rotation = monitor.rotation × Quaternion.Euler(notebookScreenLocalRotation)
+        //     (monitor 의 local forward 가 디스플레이 normal 이 아니면 (0, 180, 0) 같은 회전 offset 으로 보정.)
+        //   - Screen.lossyScale = autoUniformScale × notebookScreenScaleMultiplier (componentwise)
+        //
+        // 모든 modulation 필드가 default (zero / one) 이면 pure auto-fit. 디자이너가 한 축만 tweak
+        // 해도 다른 축은 auto-fit 결과 그대로 유지.
+        //
+        // auto-fit 알고리즘:
+        //   1) monitor hierarchy 자식 중 "screen"/"display"/"panel" 이름 패턴으로 디스플레이 mesh 찾기.
+        //      없으면 monitor 전체 renderer bounds 로 fallback.
+        //   2) bounds.size 의 가장 큰 두 축을 displayWidth/Height 로 가정 (가장 작은 축 = 두께).
+        //   3) ScreenSaverCanvasSize (800×450) × CanvasScale (0.000542) 를 canvas native world 크기로
+        //      잡고, contain fit 으로 uniform scale 계산.
+        public static void AlignNotebookScreenToMonitor(Transform roomRoot, CustomizationEntry entry, Transform monitorTransform, string source)
+        {
+            if (entry == null || monitorTransform == null) return;
+            if (!entry.HideLaptopRenderers || !entry.LockNotebookStationToMonitor) return;
+
+            if (!TryFindDeskAndNotebook(roomRoot, out var desk, out var notebook, out _)) return;
+            Transform screen = null;
+            for (int i = 0; i < notebook.childCount; i++)
+            {
+                var c = notebook.GetChild(i);
+                if (c.gameObject.name == "Screen") { screen = c; break; }
+            }
+            if (screen == null) return;
+
+            // monitor 디스플레이 mesh 의 world bounds + transform 자동 탐색
+            var (monitorBounds, monitorScreenAnchor, anchorSource) = FindMonitorScreenBounds(monitorTransform);
+            if (!monitorBounds.HasValue || monitorBounds.Value.size.sqrMagnitude < 1e-8f)
+            {
+                Debug.LogWarning($"[DeskScreen] auto-fit FAIL: monitorScreenBounds null/zero entryAssetId={entry.AssetId} anchorSource={anchorSource} source={source}");
+                return;
+            }
+            var bounds = monitorBounds.Value;
+
+            // ─ position ─ monitor 디스플레이 중심 + monitor-local 좌표계의 offset
+            // monitor.TransformVector 로 entry 의 offset 을 monitor 의 right/up/forward 축에 매핑.
+            // 예: notebookScreenLocalPosition=(0, 0, -0.01) → monitor 의 -Z 방향으로 1cm offset (디스플레이를
+            // 카메라 쪽으로 살짝 빼냄 — z-fight 회피용).
+            Vector3 positionOffset = monitorTransform.TransformVector(entry.NotebookScreenLocalPosition);
+            screen.position = bounds.center + positionOffset;
+
+            // ─ rotation ─ monitor.rotation × notebookScreenLocalRotation (additive offset).
+            // monitor 의 local forward(+Z) 가 디스플레이 normal 이 아닌 경우 (예: 디자이너가 GLB 를 다른
+            // 축으로 export) entry 에 (0, 180, 0) / (0, 90, 0) 같은 회전 offset 박아서 보정.
+            Quaternion rotationOffset = Quaternion.Euler(entry.NotebookScreenLocalRotation);
+            screen.rotation = monitorTransform.rotation * rotationOffset;
+
+            // ─ scale ─ contain fit × notebookScreenScaleMultiplier
+            const float canvasScale = 0.000542f; // NotebookScreenController.CanvasScale
+            Vector2 canvasNative = new Vector2(800f * canvasScale, 450f * canvasScale);
+            float[] axes = { bounds.size.x, bounds.size.y, bounds.size.z };
+            System.Array.Sort(axes); // ascending
+            float displayHeight = axes[1];
+            float displayWidth = axes[2];
+            float scaleByWidth = displayWidth / canvasNative.x;
+            float scaleByHeight = displayHeight / canvasNative.y;
+            float uniformWorldScale = Mathf.Max(0.001f, Mathf.Min(scaleByWidth, scaleByHeight));
+
+            Vector3 scaleMult = SanitizeMultiplier(entry.NotebookScreenScaleMultiplier);
+            float targetWorldX = uniformWorldScale * scaleMult.x;
+            float targetWorldY = uniformWorldScale * scaleMult.y;
+            float targetWorldZ = uniformWorldScale * scaleMult.z;
+            var parentLossy = screen.parent != null ? screen.parent.lossyScale : Vector3.one;
+            screen.localScale = new Vector3(
+                SafeInvScale(targetWorldX, parentLossy.x),
+                SafeInvScale(targetWorldY, parentLossy.y),
+                SafeInvScale(targetWorldZ, parentLossy.z));
+
+            // CameraFocusPoint 는 Screen 자식이라 Screen 회전을 inherit → camera 가 monitor 정면을 바라봄.
+            var finalScreenCanvasPosition = screen.position;
+            var finalScreenCanvasRotation = screen.eulerAngles;
+            var finalScreenCanvasScale = screen.lossyScale;
+            var cameraFocusForward = screen.forward;
+
+            Debug.Log($"[DeskScreen] mode=auto-fit+modulation entryAssetId={entry.AssetId} anchorSource={anchorSource} anchor={(monitorScreenAnchor != null ? monitorScreenAnchor.name : "null")} " +
+                      $"monitorRotation={monitorTransform.eulerAngles} notebookScreenLocalRotation={entry.NotebookScreenLocalRotation} notebookScreenLocalPosition={entry.NotebookScreenLocalPosition} notebookScreenScaleMultiplier={scaleMult} " +
+                      $"monitorScreenBounds=(center={bounds.center}, size={bounds.size}) canvasNative={canvasNative} " +
+                      $"displayWidth={displayWidth:F4} displayHeight={displayHeight:F4} scaleByWidth={scaleByWidth:F3} scaleByHeight={scaleByHeight:F3} uniformWorldScale={uniformWorldScale:F4} " +
+                      $"finalScreenCanvasPosition={finalScreenCanvasPosition} finalScreenCanvasRotation={finalScreenCanvasRotation} finalScreenCanvasScale={finalScreenCanvasScale} cameraFocusForward={cameraFocusForward} source={source}");
+
+            // ScreenSaverCanvas / DashboardCanvas 가 별도의 non-identity localRotation 을 가지면 위
+            // Screen.rotation 만 set 해도 canvas 가 비틀어져 보인다. 둘 다 Canvas (Screen 자식, 런타임
+            // 생성) 라 reset 안전. NotebookScreenController.CreateCanvas 는 identity 로 만들지만,
+            // 디자이너가 prefab 으로 baked 한 경우 등 대비 명시 초기화.
+            ResetCanvasLocalRotations(screen);
+
+            // DeepSea 전용 ScreenSaverCanvas + AdImage override 는 DeepSeaScreenOverride orchestrator
+            // 가 single source 로 처리. 등록 시 즉시 reapply + Screen 에 Guard 부착해 canvas 재생성/
+            // FadeCanvas 등으로 인한 reset 을 ReapplyIfActive("screen_rebuild" / "guard_divergence")
+            // 로 회복. entry.AssetId != DeepSeaScreenOverride.DeepSeaAssetId 또는 entry 의 override
+            // 플래그가 모두 꺼져 있으면 RegisterActive 내부에서 자동 skip.
+            // CameraFocusPoint / camera 이동 로직은 변경 없음 — orchestrator 도 ScreenSaverCanvas /
+            // AdImage 의 RectTransform 만 다룬다.
+            DeepSeaScreenOverride.RegisterActive(roomRoot, entry, $"theme_apply:{source}");
+        }
+
+        // Screen 자식 중 이름이 "Canvas" 로 끝나는 Canvas 의 localRotation 을 identity 로 reset.
+        // ScreenSaverCanvas / DashboardCanvas / 기타 canvas 일관성 보장. Screen.rotation 으로 모든
+        // 방향 control.
+        private static void ResetCanvasLocalRotations(Transform screen)
+        {
+            for (int i = 0; i < screen.childCount; i++)
+            {
+                var c = screen.GetChild(i);
+                if (c == null) continue;
+                if (!c.gameObject.name.EndsWith("Canvas")) continue;
+                if (c.localRotation != Quaternion.identity)
+                {
+                    c.localRotation = Quaternion.identity;
+                }
+            }
+        }
+
+        // monitor hierarchy 에서 디스플레이 면 mesh 의 world AABB + 해당 transform 반환.
+        // 우선순위: (1) 이름 패턴 매칭 ("screen"/"display"/"panel") (2) monitor 전체 renderer bounds.
+        // anchorSource: "name_match" / "monitor_bounds_fallback" / "none" 으로 진단.
+        private static (Bounds? bounds, Transform anchor, string source) FindMonitorScreenBounds(Transform monitorRoot)
+        {
+            if (monitorRoot == null) return (null, null, "monitor_null");
+
+            // (1) 이름 패턴 매칭
+            var all = monitorRoot.GetComponentsInChildren<Transform>(true);
+            Transform bestAnchor = null;
+            Bounds? bestBounds = null;
+            for (int i = 0; i < all.Length; i++)
+            {
+                var t = all[i];
+                if (t == monitorRoot) continue;
+                var lname = t.gameObject.name.ToLowerInvariant();
+                if (!(lname.Contains("screen") || lname.Contains("display") || lname.Contains("panel"))) continue;
+                var r = t.GetComponent<Renderer>();
+                if (r == null || !r.enabled) continue;
+                var b = r.bounds;
+                if (b.size.sqrMagnitude < 1e-8f) continue;
+                // 가장 큰 면적의 매칭 mesh 선택 (모니터 디스플레이가 panel 중 가장 크다고 가정)
+                if (bestBounds == null || b.size.sqrMagnitude > bestBounds.Value.size.sqrMagnitude)
+                {
+                    bestBounds = b;
+                    bestAnchor = t;
+                }
+            }
+            if (bestBounds.HasValue) return (bestBounds, bestAnchor, "name_match");
+
+            // (2) Fallback: monitor 전체 renderer bounds (디스플레이만 분리 안 되는 GLB 의 경우)
+            var renderers = monitorRoot.GetComponentsInChildren<Renderer>(true);
+            Bounds? acc = null;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null || !r.enabled) continue;
+                if (!r.gameObject.activeInHierarchy) continue;
+                if (r is ParticleSystemRenderer || r is TrailRenderer || r is LineRenderer) continue;
+                var b = r.bounds;
+                if (b.size.sqrMagnitude < 1e-8f) continue;
+                if (acc == null) acc = b;
+                else { var aa = acc.Value; aa.Encapsulate(b); acc = aa; }
+            }
+            if (acc.HasValue) return (acc, monitorRoot, "monitor_bounds_fallback");
+
+            return (null, null, "none");
         }
 
         // 외부 (테마 전환 시) 명시 호출. functional Desk / Notebook 못 찾으면 no-op.
@@ -393,6 +543,9 @@ namespace App.Bootstrap
                         screen.localRotation = marker.NativeScreenLocalRotation;
                         screen.localScale = marker.NativeScreenLocalScale;
                     }
+                    // DeepSea override 해제 — orchestrator 가 Screen 의 Guard 도 함께 destroy.
+                    // 다른 테마는 IsActive=false 이라 no-op (native canvas 동작 그대로).
+                    DeepSeaScreenOverride.Deactivate("clear_skin");
                 }
             }
             // FQN — App.Application namespace 와 충돌 회피.

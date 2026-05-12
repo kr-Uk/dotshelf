@@ -211,6 +211,38 @@ namespace BookshelfPorting.Runtime
         public Transform ScreenTransform { get; private set; }
         public event Action BookAddedToShelfThroughApi;
 
+        // notebook 이 immersive overlay 모드인지 — 이때 ScreenSaverCanvas / DashboardCanvas / 노트북 UIDocument 가
+        // ScreenSpaceOverlay 로 화면 전체를 덮는다. main scene 의 mouse click 은 모두 이 UI 를 위한 것으로
+        // 간주해야 하며, BookshelfExperienceManager 의 raycast-based focus 전환 (FocusGuestbook 등) 이 같은
+        // frame 에 spurious 하게 fire 되지 않도록 click handler 가 이 속성을 확인해 skip 한다.
+        public bool IsImmersiveModeActive => useImmersiveMode;
+
+        // 룸 편집 모드 등 외부 컨텍스트에서 노트북 화면 클릭으로 인한 focus 전환을 차단해야 할 때 호출.
+        // suppress=true 면 ScreenSaverCanvas / DashboardCanvas GameObject 를 SetActive(false) 해 visual +
+        // GraphicRaycaster (AdImage Button.onClick 으로 인한 FocusNotebook spurious fire) 동시 차단.
+        // suppress=false 면 currentState 에 맞게 정확한 canvas 만 재활성. NotebookToolkitController UIDocument
+        // (immersive Dashboard) 는 이 호출 범위 밖 — 편집 모드는 QuarterView 에서만 진입하므로 immersive
+        // 상태 진입 자체가 차단됨.
+        public void SetSceneInteractionSuppressed(bool suppressed)
+        {
+            if (suppressed)
+            {
+                if (screenSaverCanvas != null) screenSaverCanvas.gameObject.SetActive(false);
+                if (dashboardCanvas != null) dashboardCanvas.gameObject.SetActive(false);
+            }
+            else
+            {
+                if (screenSaverCanvas != null)
+                {
+                    screenSaverCanvas.gameObject.SetActive(currentState == NotebookUiState.ScreenSaver);
+                }
+                if (dashboardCanvas != null)
+                {
+                    dashboardCanvas.gameObject.SetActive(currentState == NotebookUiState.Dashboard);
+                }
+            }
+        }
+
         private void Awake()
         {
             EnsureAdImages();

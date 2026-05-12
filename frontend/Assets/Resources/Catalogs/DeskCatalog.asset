@@ -45,7 +45,9 @@ MonoBehaviour:
       preserveSkinNativeScale=1 + skinScaleMultiplier(3,3,2) + skinLocalPositionOverride(\uAC70\uC758 0,-1.82,\uAC70\uC758 0) \uB85C deepsea_desk \uBC30\uCE58.
       lockNotebookStationToMonitor=1 \uB85C NotebookStation \uC804\uCCB4\uB97C MeshSwap_DeskMonitor \uC704\uB85C \uC774\uB3D9\uD574 CameraFocusPoint/ScreenSaverCanvas \uAC00 GoodVibes_Monitor \uD654\uBA74\uACFC \uC815\uB82C\uB418\uB3C4\uB85D \uD568. monitorPosition=(-2.004, 1.048, -0.29).
       hideLaptopRenderers=1 \uB85C laptop body / \uD654\uBA74 mesh \uC758 Renderer \uC804\uBD80 disable \u2014 Canvas UI (CanvasRenderer) \uB9CC \uC0B4\uC544\uB0A8\uC544 monitor \uB514\uC2A4\uD50C\uB808\uC774 \uBA74\uCC98\uB7FC \uBCF4\uC784. \uD14C\uB9C8 \uC804\uD658 \uC2DC \uC790\uB3D9 \uBCF5\uC6D0.
-      notebookScreen* override \uD544\uB4DC\uB85C Notebook/Screen \uC758 localPosition/Rotation/Scale \uC744 monitor \uB514\uC2A4\uD50C\uB808\uC774 \uBA74\uC5D0 fit \uC2DC\uD0B4 (\uB514\uC790\uC774\uB108 Inspector \uD29C\uB2DD \uD6C4 \uAC12 \uBC15\uAE30)."
+      notebookScreen* override \uD544\uB4DC\uB85C Notebook/Screen \uC758 localPosition/Rotation/Scale \uC744 monitor \uB514\uC2A4\uD50C\uB808\uC774 \uBA74\uC5D0 fit \uC2DC\uD0B4 (\uB514\uC790\uC774\uB108 Inspector \uD29C\uB2DD \uD6C4 \uAC12 \uBC15\uAE30).
+      stretchCanvasAdImageOnDesk=1 \uB85C ScreenSaverCanvas > AdImage \uB97C stretch-full + scale(0.9641, 1.0573, 1) \uAC15\uC81C \u2014 monitor \uD654\uBA74 \uBE44\uC728\uC5D0 \uB9DE\uCDA4.
+      overrideScreenSaverCanvasTransform=1 + screenSaverCanvas* \uD544\uB4DC\uB85C ScreenSaverCanvas \uC790\uCCB4 RectTransform \uC744 \uB514\uC790\uC774\uB108 \uCE21\uC815\uAC12\uC73C\uB85C \uAC15\uC81C (Pos (-0.002, 0.041, 0.019) / Rot (-187.307, 0, -180) / Scale (0.0005316375, 0.0005324333, 0.0005) / Size 800\u00D7450). CameraFocusPoint / camera \uC774\uB3D9 \uB85C\uC9C1\uC740 \uC601\uD5A5 \uC5C6\uC74C."
     previewSprite: {fileID: 0}
     themeTag: DeepSea
     isLocalPreview: 1
@@ -70,6 +72,18 @@ MonoBehaviour:
     preserveSkinNativeScale: 1
     skinLocalPositionOverride: {x: 0, y: -2.14, z: 0.001}
     hideLaptopRenderers: 1
+    stretchCanvasAdImageOnDesk: 1
+    adImageAnchorMin: {x: 0, y: 0}
+    adImageAnchorMax: {x: 1, y: 1}
+    adImagePivot: {x: 0.5, y: 0.5}
+    adImageOffsetMin: {x: -5, y: 4}
+    adImageOffsetMax: {x: -5, y: 4}
+    adImageLocalScale: {x: 0.9922, y: 1.0775, z: 1}
+    overrideScreenSaverCanvasTransform: 1
+    screenSaverCanvasLocalPosition: {x: -0.002, y: 0.041, z: 0.019}
+    screenSaverCanvasLocalRotation: {x: -187.307, y: 0, z: -180}
+    screenSaverCanvasLocalScale: {x: 0.0005316375, y: 0.0005324333, z: 0.0005}
+    screenSaverCanvasSizeDelta: {x: 800, y: 450}
   - assetId: 200031
     displayName: "빈티지 책상"
     description: "Vintage 테마 전용 책상. DeskVisualSkinApplier 가 functional Desk transform 위에 visual overlay 로 부착. preserveSkinNativeScale=true 라 GLB 의 native world scale 을 base 로, placementScale (0.5, 0.5, 0.4) 를 multiplier 로 곱해 최종 world 크기 결정. placementRotation (0, 90, 0) 으로 Y 축 90도 회전. 위치는 XZ 중심 + Y bottom-align 으로 functional desk 자리에 정렬. laptop y 는 회전·축소된 skin top 을 자동 추적해 상판 위 안착. legacy placementAnchor / overrideNotebookStation 등은 새 경로에서 사용 안 함."

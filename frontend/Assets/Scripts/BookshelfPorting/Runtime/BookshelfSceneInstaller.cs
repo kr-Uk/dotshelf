@@ -298,7 +298,14 @@ namespace BookshelfPorting.Runtime
                 // Main scene opens centered on the bookshelf via the MainView pose.
                 // (Previously this transitioned to overviewAnchor / QuarterView, which
                 // sits at an angle and made the bookshelf appear left-shifted.)
-                cameraController.MoveToMainView();
+                //
+                // Generate() 직후 anchor 위치가 갱신될 수 있어 pose 재계산이 필요하지만 transition (0.4s)
+                // 으로 진행하면 그 동안 CameraController.IsTransitioning=true 라 사용자의 첫 클릭이 CanStartCameraFocus
+                // 가드에 막혀 무시되는 회귀가 있었다 — 특히 노트북 클릭 시 "바로 누르면 안 되고 다른 동작 후엔 됨"
+                // 증상의 root cause. ApplyMainView 는 같은 pose 를 즉시 snap (isTransitioning=false 보장) 으로 적용해
+                // line 280 의 초기 ApplyMainView 이후 anchor 변경분만 재반영. 사용자에겐 same-pose 라 시각적 차이
+                // 없음.
+                cameraController.ApplyMainView();
 
                 // MR #128: 룸/책장/scene-baked decoration 생성이 모두 끝난 시점에 저장된 사용자
                 // layout 복원을 트리거. controller 자체의 Start() 에서 호출하면 SceneEntry 가 active

@@ -3641,6 +3641,17 @@ namespace App.Bootstrap
                 if (entry.OverrideNotebookStation && entry.LockNotebookStationToMonitor && monitorTransform != null)
                 {
                     ApplyNotebookStationPlacement(roomRoot, entry, monitorTransform);
+
+                    // monitor 와 NotebookStation 이 모두 자리잡은 후 — Notebook/Screen 을 monitor 디스플레이
+                    // 면에 fit. entry.notebookScreen* override 가 있으면 manual 모드 (이미 TryAttach
+                    // 에서 적용됨), 없으면 auto-fit (monitor bounds 기반 position/rotation/scale 자동).
+                    DeskVisualSkinApplier.AlignNotebookScreenToMonitor(roomRoot, entry, monitorTransform, "ApplyCategoryMeshSwap");
+
+                    // NotebookStation 이 monitor 위로 재배치된 직후 — DeepSea 가 활성이면 ScreenSaverCanvas /
+                    // AdImage override 재적용. 비활성 (다른 테마 / DeepSea 가 아직 RegisterActive 안 한 상태)
+                    // 면 no-op. AlignNotebookScreenToMonitor 가 이미 RegisterActive 를 호출했지만 이 시점에
+                    // 한 번 더 트리거해 station 재배치로 인한 transform 변화에 대비.
+                    DeepSeaScreenOverride.ReapplyIfActive("notebook_station_placement");
                 }
                 return;
             }
@@ -5732,7 +5743,17 @@ namespace App.Bootstrap
             if (experienceManager != null)
             {
                 experienceManager.AreSceneInteractionsSuppressed = true;
+                // 노트북 화면 클릭으로 인한 FocusNotebook 자동 진입 차단 — AreSceneInteractionsSuppressed 는
+                // raycast-based focus 전환만 막고 ScreenSaverCanvas 의 AdImage Button.onClick 은 그대로
+                // fire 됨 (월드 캔버스 GraphicRaycaster 경로). 편집 모드 동안 ScreenSaverCanvas / DashboardCanvas
+                // GameObject 를 SetActive(false) 해 visual + 클릭 동시 차단.
+                experienceManager.SetNotebookScreenSuppressed(true);
             }
+
+            // DeepSea 활성 시 — 편집 모드 진입 직후 ScreenSaverCanvas / AdImage override 재적용.
+            // 비활성 (다른 테마 / DeepSea 미적용) 이면 no-op. 편집 모드 전환 중 FadeCanvas / 카메라 viewport
+            // edit 등이 canvas transform 을 흔들었을 수 있어 다시 안정화. 매 프레임 강제 없이 이 hook 한 번만.
+            DeepSeaScreenOverride.ReapplyIfActive("edit_enter");
         }
 
         // Scan the active scene for the room-shell geometry and recompute
@@ -6140,6 +6161,8 @@ namespace App.Bootstrap
             if (experienceManager != null)
             {
                 experienceManager.AreSceneInteractionsSuppressed = false;
+                // 편집 모드 진입 시 hide 한 ScreenSaverCanvas / DashboardCanvas 를 currentState 에 맞춰 복원.
+                experienceManager.SetNotebookScreenSuppressed(false);
             }
 
             // Snapshot 의 GameObject reference 해제 — 다음 진입 시 stale reference 들고 있지 않도록.
@@ -6171,6 +6194,11 @@ namespace App.Bootstrap
                 Debug.Log($"[RoomEdit][Preview] ExitEditMode 에서 미확정 preview {toDestroy.Count}개 destroy.");
             }
             ClearAllPendingState();
+
+            // DeepSea 활성 시 — 편집 모드 종료 후 메인 복귀 직후 ScreenSaverCanvas / AdImage override 재적용.
+            // 편집 중 카메라 viewport edit / wall fade / FadeCanvas 상태 전환 등으로 canvas transform 이
+            // 흔들렸을 수 있어 메인 화면 진입과 동시에 안정화. 비활성이면 no-op.
+            DeepSeaScreenOverride.ReapplyIfActive("edit_exit");
         }
 
         // Shrink the main camera's viewport rect so it renders only into the area
