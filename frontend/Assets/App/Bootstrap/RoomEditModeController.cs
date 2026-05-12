@@ -1006,6 +1006,7 @@ namespace App.Bootstrap
             {
                 var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[i]);
                 if (string.IsNullOrEmpty(path)) continue;
+                if (IsBookshelfModelPath(path)) continue;
                 var ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
                 if (ext != ".glb" && ext != ".fbx" && ext != ".prefab" && ext != ".obj") continue;
 
@@ -1026,6 +1027,12 @@ namespace App.Bootstrap
                 string.Compare(a.DisplayName, b.DisplayName, System.StringComparison.OrdinalIgnoreCase));
         }
 
+        private static bool IsBookshelfModelPath(string path)
+        {
+            return !string.IsNullOrEmpty(path) &&
+                   path.StartsWith("Assets/Arts/Models/Bookshelves", System.StringComparison.OrdinalIgnoreCase);
+        }
+
         private static string ToDisplayName(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "decoration";
@@ -1041,10 +1048,12 @@ namespace App.Bootstrap
 #endif
 
         // Map toolbar category → which inventory entries to surface. "전체" lists every
-        // catalog entry; "가구" surfaces anything coming from Assets/Arts/Models/Props
-        // (and the Furniture sibling folder) per spec; the remaining categories are
-        // wireframe placeholders for now and intentionally show an empty list until
-        // their content pipelines exist.
+        // catalog entry; "가구" 탭은 바닥 placement 가능한 모든 항목 (이전 /Props/ + /Furniture/
+        // 폴더 의미와 동일). 분류는 PlacementCategory 메타데이터로 결정 — GLB 평탄화(MR #154)
+        // 이후 폴더 경로 기반은 무효. 남은 카테고리들은 wireframe placeholders 라
+        // content pipeline 생기기 전까지 빈 list 의도.
+        // (MR #154 review #2: 주석은 metadata 기반인데 코드는 여전히 path 기반이라 평탄화 후
+        // FURNITURE 탭이 비는 회귀 fix.)
         private static bool MatchesCategory(InventoryEntry entry, string categoryKey)
         {
             switch (categoryKey)
@@ -1052,9 +1061,10 @@ namespace App.Bootstrap
                 case "ALL":
                     return true;
                 case "FURNITURE":
-                    var path = entry.SourceAssetPath ?? string.Empty;
-                    return path.IndexOf("/Props/", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                           path.IndexOf("/Furniture/", StringComparison.OrdinalIgnoreCase) >= 0;
+                    // WallDeco (창문/네온사인) 와 BookshelfDeco 는 별도 placement → 가구 탭 제외.
+                    // 나머지 (Wallpaper loader fallback → FloorDeco 포함, FloorDeco 자체)는 바닥 데코로 surface.
+                    return entry.PlacementCategory != CustomizationCategory.WallDeco
+                        && entry.PlacementCategory != CustomizationCategory.BookshelfDeco;
                 default:
                     return false;
             }
@@ -2788,9 +2798,12 @@ namespace App.Bootstrap
 
             // 3) native renderer 들 disable (visual hide, GameObject 자체는 유지 — collider/
             // 기능 컴포넌트 보존). 카테고리 매칭 transform 의 모든 자식 renderer 까지 hide —
-            // NotebookStation 같은 root 의 자식 (UnibodyBase/Trackpad 등) 은 prefix 매칭 안
-            // 되어 renderer 자체 검색만으론 missed. transform 단위로 매칭 후 GetComponentsInChildren
-            // 으로 자식까지 모두 hide → 노트북 visual 도 같이 사라짐.
+            // 단 **NotebookStation hierarchy 는 절대 hide 안 함**. 노트북은 고정 interactive
+            // 오브젝트 (클릭 시 dashboard UI) 라 Desk/Dashboard 등 어떤 mesh swap 에서도 visual
+            // 보존 필수. 과거엔 Dashboard 패턴의 GuestbookBoard 매칭 → 자식 scan 으로 NotebookStation
+            // 자식 (UnibodyBase/Trackpad) 도 같이 disable 되어 편집 모드 진입 시 노트북이 사라지는
+            // 회귀 발생. 매칭 transform 자체가 NotebookStation 인 경우는 Desk 패턴에서 이미 제외됐고,
+            // 부모 매칭 (GuestbookBoard) 경유 자식 disable 만 여기서 guard.
             var allTransforms = roomRoot.GetComponentsInChildren<Transform>(true);
             for (int i = 0; i < allTransforms.Length; i++)
             {
@@ -2799,15 +2812,19 @@ namespace App.Bootstrap
                 if (anchor == null) anchor = t; // primary 못 찾으면 첫 매칭 fallback
                 foreach (var r in t.GetComponentsInChildren<Renderer>(true))
                 {
+                    if (IsUnderNotebookStation(r.transform, t)) continue;
                     r.enabled = false;
                 }
+            }
+            if (anchor != null && !IsSameOrChildOf(anchor, roomRoot))
+            {
+                SetRenderersEnabled(anchor, false);
             }
             if (anchor == null)
             {
                 Debug.LogWarning($"[RoomEditModeController] {category} mesh swap — native anchor 못 찾음, prefab spawn skip.");
                 return;
             }
-
             // 4) prefab spawn — entry.PlacementAnchor/Rotation/Scale 을 world 로 직접 해석.
             // 사용자가 Unity scene 에서 시각으로 잡은 transform 값을 catalog Inspector 에 그대로
             // 입력 가능. native anchor 위치 무시 — 책상별 크기/높이 자유 fit.
@@ -2820,9 +2837,13 @@ namespace App.Bootstrap
             //    OverrideNotebookStation=true 면 entry 의 NotebookStation* 값 적용. false 면 native.
             if (category == CustomizationCategory.Desk)
             {
-                ApplyNotebookStationPlacement(roomRoot, entry);
                 // Monitor sub-prefab — 책상의 일부로 함께 spawn (사용자 placement 불가, 고정).
-                ApplyMonitorMeshSwap(roomRoot, entry);
+                var monitor = ApplyMonitorMeshSwap(roomRoot, entry);
+                ApplyNotebookStationPlacement(roomRoot, entry, monitor);
+            }
+            else if (category == CustomizationCategory.DashboardSkin)
+            {
+                ApplyDashboardBoardPlacement(roomRoot, entry);
             }
         }
 
@@ -2842,7 +2863,7 @@ namespace App.Bootstrap
         // Desk entry 의 monitorPrefab spawn — book 책상 mesh swap 의 일부. 별도 GameObject (이름
         // MeshSwap_DeskMonitor) 로 roomRoot 자식. 다음 desk 적용 또는 RestoreCategoryNativeMesh 시
         // 같이 정리.
-        private void ApplyMonitorMeshSwap(Transform roomRoot, CustomizationEntry entry)
+        private Transform ApplyMonitorMeshSwap(Transform roomRoot, CustomizationEntry entry)
         {
             // 이전 monitor swap 정리
             const string monitorSwapName = "MeshSwap_DeskMonitor";
@@ -2856,12 +2877,13 @@ namespace App.Bootstrap
                 }
             }
 
-            if (entry.MonitorPrefab == null) return;
+            if (entry.MonitorPrefab == null) return null;
 
             var go = Instantiate(entry.MonitorPrefab, roomRoot);
             go.name = monitorSwapName;
             go.transform.SetPositionAndRotation(entry.MonitorPosition, Quaternion.Euler(entry.MonitorRotation));
             go.transform.localScale = entry.MonitorScale != Vector3.zero ? entry.MonitorScale : Vector3.one;
+            return go.transform;
         }
 
         // NotebookStation 의 원래 transform 보존용 — 첫 swap 호출 시 저장, restore 시 복원.
@@ -2869,9 +2891,9 @@ namespace App.Bootstrap
         private Quaternion? nativeNotebookStationLocalRot;
         private Vector3? nativeNotebookStationLocalScale;
 
-        private void ApplyNotebookStationPlacement(Transform roomRoot, CustomizationEntry entry)
+        private void ApplyNotebookStationPlacement(Transform roomRoot, CustomizationEntry entry, Transform monitorAnchor = null)
         {
-            var notebookStation = FindChildByName(roomRoot, "NotebookStation");
+            var notebookStation = FindNotebookStation(roomRoot);
             if (notebookStation == null) return;
             // 첫 호출 시 native 보존
             if (!nativeNotebookStationLocalPos.HasValue)
@@ -2890,19 +2912,109 @@ namespace App.Bootstrap
             }
             // override — entry 값을 NotebookStation 의 부모 (GuestbookBoard) 기준 local 로 적용.
             // Inspector 의 Transform 은 default Local 이므로 사용자 캡처값 그대로 박힘.
-            notebookStation.localPosition = entry.NotebookStationPosition;
-            notebookStation.localRotation = Quaternion.Euler(entry.NotebookStationRotation);
+            var resolvedMonitorAnchor = monitorAnchor != null ? monitorAnchor : FindDeskMonitor(roomRoot);
+            if (ShouldLockNotebookStationToMonitor(entry) && resolvedMonitorAnchor != null)
+            {
+                var worldPosition = resolvedMonitorAnchor.TransformPoint(entry.NotebookStationPosition);
+                var worldRotation = resolvedMonitorAnchor.rotation * Quaternion.Euler(entry.NotebookStationRotation);
+                notebookStation.SetPositionAndRotation(worldPosition, worldRotation);
+                notebookStation.localScale = entry.NotebookStationScale != Vector3.zero ? entry.NotebookStationScale : Vector3.one;
+                return;
+            }
+
+            if (IsSameOrChildOf(notebookStation, roomRoot))
+            {
+                notebookStation.localPosition = entry.NotebookStationPosition;
+                notebookStation.localRotation = Quaternion.Euler(entry.NotebookStationRotation);
+            }
+            else
+            {
+                var dashboardBoard = FindDashboardBoard(roomRoot);
+                if (dashboardBoard != null)
+                {
+                    var worldPosition = dashboardBoard.TransformPoint(entry.NotebookStationPosition);
+                    var worldRotation = dashboardBoard.rotation * Quaternion.Euler(entry.NotebookStationRotation);
+                    notebookStation.SetPositionAndRotation(worldPosition, worldRotation);
+                }
+                else
+                {
+                    notebookStation.SetPositionAndRotation(entry.NotebookStationPosition, Quaternion.Euler(entry.NotebookStationRotation));
+                }
+            }
             notebookStation.localScale = entry.NotebookStationScale != Vector3.zero ? entry.NotebookStationScale : Vector3.one;
+        }
+
+        private static bool ShouldLockNotebookStationToMonitor(CustomizationEntry entry)
+        {
+            return entry != null
+                && entry.MonitorPrefab != null
+                && entry.LockNotebookStationToMonitor;
         }
 
         private void RestoreNotebookStationPosition(Transform roomRoot)
         {
             if (!nativeNotebookStationLocalPos.HasValue) return;
-            var notebookStation = FindChildByName(roomRoot, "NotebookStation");
+            var notebookStation = FindNotebookStation(roomRoot);
             if (notebookStation == null) return;
             notebookStation.localPosition = nativeNotebookStationLocalPos.Value;
             notebookStation.localRotation = nativeNotebookStationLocalRot ?? Quaternion.identity;
             notebookStation.localScale = nativeNotebookStationLocalScale ?? Vector3.one;
+        }
+
+        private Vector3? nativeDashboardBoardLocalPos;
+        private Quaternion? nativeDashboardBoardLocalRot;
+        private Vector3? nativeDashboardBoardLocalScale;
+
+        private void ApplyDashboardBoardPlacement(Transform roomRoot, CustomizationEntry entry)
+        {
+            var dashboardBoard = FindDashboardBoard(roomRoot);
+            if (dashboardBoard == null) return;
+            if (!nativeDashboardBoardLocalPos.HasValue)
+            {
+                nativeDashboardBoardLocalPos = dashboardBoard.localPosition;
+                nativeDashboardBoardLocalRot = dashboardBoard.localRotation;
+                nativeDashboardBoardLocalScale = dashboardBoard.localScale;
+            }
+            if (!entry.OverrideNotebookStation)
+            {
+                RestoreDashboardBoardPlacement(roomRoot);
+                return;
+            }
+
+            dashboardBoard.localPosition = entry.NotebookStationPosition;
+            dashboardBoard.localRotation = Quaternion.Euler(entry.NotebookStationRotation);
+            dashboardBoard.localScale = entry.NotebookStationScale != Vector3.zero ? entry.NotebookStationScale : Vector3.one;
+            SyncDashboardPanelToBoard(dashboardBoard);
+            ReapplyActiveDeskOverlay(roomRoot);
+        }
+
+        private void RestoreDashboardBoardPlacement(Transform roomRoot)
+        {
+            if (!nativeDashboardBoardLocalPos.HasValue) return;
+            var dashboardBoard = FindDashboardBoard(roomRoot);
+            if (dashboardBoard == null) return;
+            dashboardBoard.localPosition = nativeDashboardBoardLocalPos.Value;
+            dashboardBoard.localRotation = nativeDashboardBoardLocalRot ?? Quaternion.identity;
+            dashboardBoard.localScale = nativeDashboardBoardLocalScale ?? Vector3.one;
+            SyncDashboardPanelToBoard(dashboardBoard);
+        }
+
+        private static void SyncDashboardPanelToBoard(Transform dashboardBoard)
+        {
+            if (dashboardBoard == null) return;
+            var hitArea = FindChildByName(dashboardBoard, "GuestbookHitArea") ?? dashboardBoard;
+            var panel = FindSceneTransformByName("DashboardScreenPanel");
+            if (panel == null) return;
+            DashboardPanelLayout.Mount(panel, hitArea);
+        }
+
+        private void ReapplyActiveDeskOverlay(Transform roomRoot)
+        {
+            if (!lastAppliedEntries.TryGetValue(CustomizationCategory.Desk, out var deskAssetId)) return;
+            var deskCatalog = LoadCategoryCatalog(CustomizationCategory.Desk);
+            var deskEntry = deskCatalog != null ? deskCatalog.FindByAssetId(deskAssetId) : null;
+            if (deskEntry == null || !deskEntry.OverrideNotebookStation) return;
+            ApplyNotebookStationPlacement(roomRoot, deskEntry, FindDeskMonitor(roomRoot));
         }
 
         private static Transform FindChildByName(Transform root, string name)
@@ -2915,6 +3027,22 @@ namespace App.Bootstrap
             return null;
         }
 
+        // renderer 의 부모 체인 (matchedTransform 경계까지) 에 NotebookStation 이름의 transform 이
+        // 있는지 검사. 있으면 그 renderer 는 노트북 hierarchy 일부 → mesh swap 시 disable 금지.
+        // 노트북은 고정 interactive 오브젝트라 모든 카테고리 mesh swap 에서 visual 보존.
+        // (MR #157 review simonjiho #1: hardcoded 문자열 → RoomGameObjectPatterns.NotebookStation 상수 통일.)
+        private static bool IsUnderNotebookStation(Transform renderer, Transform matchedTransform)
+        {
+            var current = renderer;
+            while (current != null)
+            {
+                if (current.gameObject.name == Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.NotebookStation) return true;
+                if (current == matchedTransform) return false; // matched 까지 올라갔으면 노트북 부모 없었음
+                current = current.parent;
+            }
+            return false;
+        }
+
         // 카테고리별 primary anchor — native 룸의 root transform. mesh swap 시 이 위치/회전을
         // 그대로 GLB prefab 에 적용해 native 와 일치시킴.
         private static Transform FindPrimaryAnchor(Transform roomRoot, CustomizationCategory category)
@@ -2924,15 +3052,81 @@ namespace App.Bootstrap
             {
                 case CustomizationCategory.Desk:           primaryName = "DeskRoot"; break;
                 case CustomizationCategory.BookshelfSkin:  primaryName = "BookshelfRoot"; break;
-                case CustomizationCategory.DashboardSkin:  primaryName = "DashboardScreenPanel"; break;
+                case CustomizationCategory.DashboardSkin:  primaryName = "GuestbookBoard"; break;
                 default: return null;
             }
-            var allTransforms = roomRoot.GetComponentsInChildren<Transform>(true);
-            for (int i = 0; i < allTransforms.Length; i++)
+
+            var anchor = FindChildByName(roomRoot, primaryName);
+            if (anchor != null) return anchor;
+
+            if (category == CustomizationCategory.DashboardSkin)
             {
-                if (allTransforms[i].gameObject.name == primaryName) return allTransforms[i];
+                anchor = FindSceneTransformByName("GuestbookBoard");
+                if (anchor != null) return anchor;
+                anchor = FindSceneTransformByName("DashboardScreenPanel");
+                if (anchor != null) return anchor;
+            }
+
+            return FindSceneTransformByName(primaryName);
+        }
+
+        private static Transform FindSceneTransformByName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            var scene = SceneManager.GetActiveScene();
+            if (!scene.IsValid()) return null;
+
+            var roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                var root = roots[i];
+                if (root == null) continue;
+                if (root.name == name) return root.transform;
+
+                var transforms = root.GetComponentsInChildren<Transform>(true);
+                for (int j = 0; j < transforms.Length; j++)
+                {
+                    var t = transforms[j];
+                    if (t != null && t.gameObject.name == name) return t;
+                }
             }
             return null;
+        }
+
+        private static Transform FindNotebookStation(Transform roomRoot)
+        {
+            return FindChildByName(roomRoot, "NotebookStation") ?? FindSceneTransformByName("NotebookStation");
+        }
+
+        private static Transform FindDeskMonitor(Transform roomRoot)
+        {
+            return FindChildByName(roomRoot, "MeshSwap_DeskMonitor") ?? FindSceneTransformByName("MeshSwap_DeskMonitor");
+        }
+
+        private static Transform FindDashboardBoard(Transform roomRoot)
+        {
+            return FindChildByName(roomRoot, "GuestbookBoard") ?? FindSceneTransformByName("GuestbookBoard");
+        }
+
+        private static bool IsSameOrChildOf(Transform child, Transform root)
+        {
+            if (child == null || root == null) return false;
+            var current = child;
+            while (current != null)
+            {
+                if (current == root) return true;
+                current = current.parent;
+            }
+            return false;
+        }
+
+        private static void SetRenderersEnabled(Transform root, bool enabled)
+        {
+            if (root == null) return;
+            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                renderer.enabled = enabled;
+            }
         }
 
         // mesh swap 복원 — native renderer 들 enable + spawned mesh swap 정리 + Desk 의 경우
@@ -2942,6 +3136,7 @@ namespace App.Bootstrap
             if (category == CustomizationCategory.Desk)
             {
                 RestoreNotebookStationPosition(roomRoot);
+                SetRenderersEnabled(FindNotebookStation(roomRoot), true);
                 // monitor sub-prefab 정리
                 const string monitorSwapName = "MeshSwap_DeskMonitor";
                 for (int i = roomRoot.childCount - 1; i >= 0; i--)
@@ -2953,6 +3148,10 @@ namespace App.Bootstrap
                         else DestroyImmediate(child.gameObject);
                     }
                 }
+            }
+            else if (category == CustomizationCategory.DashboardSkin)
+            {
+                RestoreDashboardBoardPlacement(roomRoot);
             }
             string swapName = $"MeshSwap_{category}";
             for (int i = roomRoot.childCount - 1; i >= 0; i--)
@@ -2974,6 +3173,11 @@ namespace App.Bootstrap
                 {
                     r.enabled = true;
                 }
+            }
+            var externalAnchor = FindPrimaryAnchor(roomRoot, category);
+            if (externalAnchor != null && !IsSameOrChildOf(externalAnchor, roomRoot))
+            {
+                SetRenderersEnabled(externalAnchor, true);
             }
         }
 
@@ -3244,11 +3448,45 @@ namespace App.Bootstrap
                     }
                 }
             }
+
+            // (MR #157 review skh1205 #2): mesh swap 카테고리 (Desk/BookshelfSkin/DashboardSkin) 에서
+            // inventoryId 가 null/0 = "customize 안 됨" 이면 catalog Entries[0] fallback 으로 가지 말고
+            // **native 상태 유지**. 이전 정책 (Entries[0] fallback) 은 DeskCatalog Entries[0].AssetId=200030
+            // (Goodvibes Desk) 인 fresh session 에서 첫 reload 가 Goodvibes mesh swap 을 실행해 고정
+            // 노트북/테이블이 의도치 않게 바뀌던 회귀 fix.
+            //
+            // 정책:
+            //   - mesh swap 카테고리 + null/0: lastAppliedEntries 에 prev 가 있을 때만 (=이전에 swap
+            //     됐던 흔적 있을 때만) RestoreCategoryNativeMesh 호출. fresh session 매 reload 는 noop.
+            //   - 비-mesh-swap 카테고리 (Wallpaper/Floor/InteriorLight/ExteriorLight) 는 material/light
+            //     만 바뀌므로 Entries[0] fallback 유지 — 디자이너 의도된 default 외형.
+            if (entry == null && IsMeshSwapCategory(category))
+            {
+                if (lastAppliedEntries.ContainsKey(category)
+                    && themeApplier != null
+                    && themeApplier.RoomRoot != null)
+                {
+                    RestoreCategoryNativeMesh(category, themeApplier.RoomRoot);
+                }
+                lastAppliedEntries.Remove(category);
+                return;
+            }
             if (entry == null && catalog.Entries.Count > 0)
             {
                 entry = catalog.Entries[0];
             }
             if (entry == null) return;
+
+            // Idempotency: 이미 같은 entry 가 적용되어 있으면 visual 작업 skip.
+            // (MR #154 user 보고: 편집 모드 진입 시 ReloadRoomState 가 매번 ApplyCategoryById 호출 →
+            //  catalog Entries[0] fallback → ApplyCategoryMeshSwap 가 native 메시 destroy/respawn 회귀 fix.)
+            //
+            // 직접 user 클릭 / ApplyThemeDefaultEntries 같은 다른 호출 경로는 ApplyEntryVisual 을
+            // 직접 호출하므로 이 guard 영향 없음.
+            if (lastAppliedEntries.TryGetValue(category, out var prevId) && prevId == entry.AssetId)
+            {
+                return;
+            }
 
             ApplyEntryVisual(category, entry);
             if (entry.AssetId > 0) lastAppliedEntries[category] = entry.AssetId;
@@ -3361,6 +3599,35 @@ namespace App.Bootstrap
             }
             return null;
         }
+
+        // 평탄화(MR #154) 이전 저장본 호환 alias — 사용자 layout JSON 의 InventoryKey 에 박힌 old
+        // path (예: "path:Assets/Arts/Models/Props/book_stack.glb") 가 새 평탄 경로
+        // ("path:Assets/Arts/Models/book_stack.glb") 와 매칭되도록 lookup table.
+        //
+        // (MR #154 review #3: SourceAssetPath 가 저장 key 라 단순 이동으로도 사용자 layout 복원
+        // 실패하는 회귀 fix. TryFindInventoryEntryByKey 에서 한 번 통과 → catalog 새 key 로
+        // 재매칭 → SaveDecorationsUseCase 다음 저장 시 자동 마이그레이션.)
+        //
+        // 장기적으로는 SourceAssetPath 대신 catalog stable id / Unity GUID 기반 key 로 전환하는 게
+        // 정공법 — 그 전까지 alias map 이 호환 layer.
+        private static readonly Dictionary<string, string> LegacyInventoryKeyAliases =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "path:Assets/Arts/Models/Props/book_stack.glb",                        "path:Assets/Arts/Models/book_stack.glb" },
+                { "path:Assets/Arts/Models/Props/clock_hamham.glb",                      "path:Assets/Arts/Models/clock_hamham.glb" },
+                { "path:Assets/Arts/Models/Props/dashboard_natural.glb",                 "path:Assets/Arts/Models/dashboard_natural.glb" },
+                { "path:Assets/Arts/Models/Props/doll_hamham.glb",                       "path:Assets/Arts/Models/doll_hamham.glb" },
+                { "path:Assets/Arts/Models/Furniture/lamp_floor.glb",                    "path:Assets/Arts/Models/lamp_floor.glb" },
+                { "path:Assets/Arts/Models/Furniture/rug_natural.glb",                   "path:Assets/Arts/Models/rug_natural.glb" },
+                { "path:Assets/Arts/Models/Furniture/table_natural.glb",                 "path:Assets/Arts/Models/table_natural.glb" },
+                { "path:Assets/Arts/Models/Furniture/GoodVibes/GoodVibes_Bed.glb",       "path:Assets/Arts/Models/GoodVibes_Bed.glb" },
+                { "path:Assets/Arts/Models/Furniture/GoodVibes/GoodVibes_Desk.glb",      "path:Assets/Arts/Models/GoodVibes_Desk.glb" },
+                { "path:Assets/Arts/Models/Furniture/GoodVibes/GoodVibes_Monitor.glb",   "path:Assets/Arts/Models/GoodVibes_Monitor.glb" },
+                { "path:Assets/Arts/Models/Furniture/GoodVibes/GoodVibes_NeonSign.glb",  "path:Assets/Arts/Models/GoodVibes_NeonSign.glb" },
+                { "path:Assets/Arts/Models/Props/GoodVibes/GoodVibes_Rug.glb",           "path:Assets/Arts/Models/GoodVibes_Rug.glb" },
+                { "path:Assets/Arts/Models/Props/GoodVibes/GoodVibes_ToastPillow.glb",   "path:Assets/Arts/Models/GoodVibes_ToastPillow.glb" },
+                { "path:Assets/Arts/Models/Window/GoodVibes_Window.glb",                 "path:Assets/Arts/Models/GoodVibes_Window.glb" },
+            };
 
         // 캐시에 키가 있고 GameObject 가 살아있으면 true. 죽은 reference 는 lazy-clean.
         private bool IsInventoryKeyPlaced(string key)
@@ -5435,10 +5702,16 @@ namespace App.Bootstrap
 
         // InventoryKey 로 inventoryEntries 에서 매칭. BuildInventoryKey 가 일관된 prefix 를 발행하므로
         // 단순 string 비교로 충분.
+        // 추가로 평탄화(MR #154) 이전 저장본 호환 — old path key 면 LegacyInventoryKeyAliases 로
+        // 새 평탄 경로 key 로 매핑 후 매칭. 한 번 매칭되면 다음 저장 시 새 key 로 자동 갱신.
         private bool TryFindInventoryEntryByKey(string key, out InventoryEntry entry)
         {
             if (!string.IsNullOrEmpty(key))
             {
+                if (LegacyInventoryKeyAliases.TryGetValue(key, out var aliased))
+                {
+                    key = aliased;
+                }
                 for (int i = 0; i < inventoryEntries.Count; i++)
                 {
                     if (BuildInventoryKey(inventoryEntries[i]) == key)
@@ -7076,20 +7349,13 @@ namespace App.Bootstrap
             bc.isTrigger = false;
         }
 
+        // Kind=None + canonical 매칭도 없는 edge case 의 마지막 fallback. 평탄화(MR #154) 이전엔
+        // /Props/ → 0.5m, /Furniture/ → 1.2m 폴더 휴리스틱이었는데 평탄 구조에선 폴더 의미가
+        // 없어졌으므로 항상 Generic 0.8m 반환. Kind 별 표준 크기는 NormalizeSpawnedScale 의
+        // 우선 lookup 에서 결정되며 이 함수는 그 외 fallback 만 담당.
+        // (MR #154 review #6: /Props//Furniture/ dead code 정리.)
         private static float ResolveTargetMeterSize(string sourceAssetPath)
         {
-            if (string.IsNullOrEmpty(sourceAssetPath))
-            {
-                return DefaultGenericTargetSizeMeters;
-            }
-            if (sourceAssetPath.IndexOf("/Props/", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return DefaultPropTargetSizeMeters;
-            }
-            if (sourceAssetPath.IndexOf("/Furniture/", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return DefaultFurnitureTargetSizeMeters;
-            }
             return DefaultGenericTargetSizeMeters;
         }
 

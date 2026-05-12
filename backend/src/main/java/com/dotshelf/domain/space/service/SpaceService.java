@@ -614,13 +614,22 @@ public class SpaceService {
     }
 
     public Space getSpaceEntity(Long spaceId) {
-        return spaceRepository.findById(spaceId)
+        Space space = spaceRepository.findById(spaceId)
                 .orElseThrow(() -> new CustomException(ErrorCode.SPACE_NOT_FOUND));
+        if (space.getDeletedAt() != null) {
+            throw new CustomException(ErrorCode.SPACE_NOT_FOUND);
+        }
+        return space;
     }
 
     @Transactional
     public void ensureDefaultSpace(Long userId) {
         findOrCreateMySpace(userId);
+    }
+
+    public boolean hasActiveBookshelf(Long userId) {
+        return spaceRepository.findByOwnerUserIdAndDeletedAtIsNull(userId).stream()
+                .anyMatch(space -> bookshelfRepository.countBySpaceIdAndStatus(space.getId(), "ACTIVE") > 0L);
     }
 
     @Transactional

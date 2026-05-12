@@ -610,3 +610,102 @@ export interface AuditLogEntry {
   occurredAt: string;
   ip: string;
 }
+
+// --- Assets (관리자 콘솔) ------------------------------------------------
+// BE: AdminAssetController + AssetDtos.Admin*. 본체(Unity AssetBundle 등) /
+// 프리뷰 이미지를 S3에 직업로드하는 흐름이라 list 행에는 URL 자체보다 업로드
+// 완료 여부 플래그 (hasAssetUrl / hasPreviewImage) 만 노출한다.
+export interface AdminAssetListItem {
+  id: number;
+  code: string;
+  name: string;
+  assetType: string;
+  collectionCode: string | null;
+  tier: string;
+  version: number;
+  pricePages: number;
+  hasAssetUrl: boolean;
+  hasPreviewImage: boolean;
+  hasPreviewBundle: boolean;
+  active: boolean;
+  updatedAt: string;
+}
+
+export interface AdminAssetListResponse {
+  items: AdminAssetListItem[];
+  nextCursor: string | null;
+  totalCount: number;
+}
+
+export interface AdminAssetDetail {
+  id: number;
+  code: string;
+  name: string;
+  assetType: string;
+  collectionCode: string | null;
+  assetUrl: string | null;
+  previewImageUrl: string | null;
+  previewBundleUrl: string | null;
+  previewBundleContentType: string | null;
+  previewBundleSize: number | null;
+  previewBundleHash: string | null;
+  contentType: string | null;
+  fileSize: number | null;
+  fileHash: string | null;
+  version: number;
+  active: boolean;
+}
+
+export interface AdminAssetCategory {
+  categoryId: number;
+  code: string;
+  name: string;
+  displayOrder: number;
+}
+
+export interface AdminAssetUploadUrl {
+  uploadUrl: string;
+  key: string;
+  expiresInSeconds: number;
+}
+
+export interface AdminAssetCreateInput {
+  code: string;
+  name: string;
+  categoryCode: string;
+  assetType: string;
+  collectionCode?: string | null;
+  tier?: string | null;
+  assetScope?: string | null;
+  pricePages?: number | null;
+  creator?: string | null;
+  supplier?: string | null;
+  compatibleTargets?: string | null;
+  allowsCustomization?: boolean | null;
+  active?: boolean | null;
+}
+
+export type AdminAssetUpdateInput = Partial<Omit<AdminAssetCreateInput, "code" | "active">>;
+
+// 본체는 Unity AssetBundle(application/octet-stream 또는 zip) / .glb (model/gltf-binary).
+// 200MB 한도는 BE의 MAX_BUNDLE_SIZE_BYTES 와 동일하게 둔다.
+export const ADMIN_ASSET_BUNDLE_TYPES = [
+  "application/octet-stream",
+  "application/zip",
+  "model/gltf-binary",
+] as const;
+export const ADMIN_ASSET_BUNDLE_MAX_BYTES = 200 * 1024 * 1024;
+
+export const ADMIN_ASSET_PREVIEW_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+export const ADMIN_ASSET_PREVIEW_MAX_BYTES = 5 * 1024 * 1024;
+
+// 저폴리 3D 프리뷰 번들. wasm gltfpack 결과는 보통 100KB 미만이지만 디자이너가 직접
+// 만든 LOD 도 받을 수 있게 20MB 정도 여유를 둔다 (BE MAX_PREVIEW_BUNDLE_SIZE_BYTES 와 동일).
+export const ADMIN_ASSET_PREVIEW_BUNDLE_TYPES = [
+  "model/gltf-binary",
+] as const;
+export const ADMIN_ASSET_PREVIEW_BUNDLE_MAX_BYTES = 20 * 1024 * 1024;

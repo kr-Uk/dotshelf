@@ -69,6 +69,22 @@ public class Asset extends BaseEntity {
     @Column(length = 500)
     private String previewImageUrl;
 
+    /**
+     * 저폴리 3D 프리뷰 번들 URL (보통 .glb). 상세 페이지에서 회전 가능한 미리보기 용도.
+     * 본체와 별도 객체로 S3 에 저장돼 다운로드 사이즈 절감 + 본체 IP 일부 보호.
+     * admin-web 이 wasm gltfpack 으로 자동 생성해 올리거나 운영자가 직접 올린다.
+     */
+    @Column(length = 500)
+    private String previewBundleUrl;
+
+    @Column(length = 120)
+    private String previewBundleContentType;
+
+    private Long previewBundleSize;
+
+    @Column(length = 160)
+    private String previewBundleHash;
+
     @Column(nullable = false)
     private int pricePages = 0;
 
@@ -169,6 +185,17 @@ public class Asset extends BaseEntity {
 
     public void updatePreviewImageUrl(String previewImageUrl) {
         this.previewImageUrl = previewImageUrl;
+    }
+
+    /**
+     * 본체와 별개로 갱신된다. publish 게이트에 포함되지 않는다 — 자동 생성이 실패해도
+     * 본체가 준비됐다면 공개는 가능해야 하기 때문.
+     */
+    public void updatePreviewBundle(String url, String contentType, long size, String hash) {
+        this.previewBundleUrl = url;
+        this.previewBundleContentType = contentType;
+        this.previewBundleSize = size;
+        this.previewBundleHash = hash;
     }
 
     public void publish() {

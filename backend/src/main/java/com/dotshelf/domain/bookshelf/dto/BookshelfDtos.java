@@ -181,7 +181,8 @@ public final class BookshelfDtos {
             String name,
             String description,
             String visibilityScope,
-            Long skinInventoryId
+            Long skinInventoryId,
+            Boolean clearSkinInventory
     ) {
     }
 

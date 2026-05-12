@@ -22,6 +22,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
 
+import com.dotshelf.domain.book.entity.UserBook;
+import com.dotshelf.domain.book.repository.UserBookRepository;
+import com.dotshelf.domain.bookshelf.entity.Bookshelf;
+import com.dotshelf.domain.bookshelf.entity.BookshelfItem;
+import com.dotshelf.domain.bookshelf.repository.BookshelfItemRepository;
+import com.dotshelf.domain.bookshelf.repository.BookshelfRepository;
+import com.dotshelf.domain.space.entity.Space;
+import com.dotshelf.domain.space.repository.SpaceRepository;
 import com.dotshelf.domain.user.dto.UserDtos.FeedSettingRequest;
 import com.dotshelf.domain.user.dto.UserDtos.NotificationSettingRequest;
 import com.dotshelf.domain.user.dto.UserDtos.ProfileImageConfirmRequest;
@@ -52,6 +60,18 @@ class UserServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private SpaceRepository spaceRepository;
+
+    @Mock
+    private BookshelfRepository bookshelfRepository;
+
+    @Mock
+    private BookshelfItemRepository bookshelfItemRepository;
+
+    @Mock
+    private UserBookRepository userBookRepository;
+
+    @Mock
     private FollowRepository followRepository;
 
     @Mock
@@ -73,7 +93,7 @@ class UserServiceTest {
     private UserService userService;
 
     @Test
-    @DisplayName("프로필 수정은 닉네임을 변경하고 온보딩을 완료 처리한다")
+    @DisplayName("프로필 수정은 기존 클라이언트 호환을 위해 온보딩 완료 상태를 세운다")
     void updateMe_validRequest_updatesProfileAndCompletesOnboarding() {
         User user = TestFixtures.user(1L, "old");
         given(userRepository.findById(1L)).willReturn(Optional.of(user));
@@ -85,6 +105,17 @@ class UserServiceTest {
         assertThat(response.onboarded()).isTrue();
         assertThat(user.getProfileImageUrl()).isEqualTo("https://example.com/old.png");
         assertThat(user.getIntroduction()).isEqualTo("intro");
+    }
+
+    @Test
+    @DisplayName("책장 생성 완료 신호가 들어오면 온보딩을 완료 처리한다")
+    void completeOnboardingIfNeeded_marksUserOnboarded() {
+        User user = TestFixtures.user(1L, "old");
+        given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+        userService.completeOnboardingIfNeeded(1L);
+
+        assertThat(user.isOnboarded()).isTrue();
     }
 
     @Test
@@ -242,12 +273,41 @@ class UserServiceTest {
     @DisplayName("회원 탈퇴는 사용자 상태를 DELETED로 바꾸고 삭제 시각을 남긴다")
     void deleteMe_marksUserDeleted() {
         User user = TestFixtures.user(1L, "delete-target");
+        given(spaceRepository.findByOwnerUserIdAndDeletedAtIsNull(1L)).willReturn(List.of());
+        given(userBookRepository.findByUserIdAndStorageStatusNot(1L, "DELETED")).willReturn(List.of());
         given(userRepository.findById(1L)).willReturn(Optional.of(user));
 
         userService.deleteMe(1L);
 
         assertThat(user.getStatus()).isEqualTo("DELETED");
         assertThat(user.getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("회원 탈퇴는 기존 공간, 책장, 책장 아이템, 보유 도서를 비활성화한다")
+    void deleteMe_removesExistingShelfData() {
+        User user = TestFixtures.user(1L, "delete-with-shelves");
+        Space space = TestFixtures.space(10L, user.getId());
+        Bookshelf bookshelf = TestFixtures.bookshelf(20L, space.getId(), 0);
+        BookshelfItem item = TestFixtures.bookshelfItem(30L, bookshelf.getId(), 40L, 50L);
+        UserBook userBook = TestFixtures.userBook(50L, user.getId(), 60L);
+
+        given(spaceRepository.findByOwnerUserIdAndDeletedAtIsNull(user.getId())).willReturn(List.of(space));
+        given(bookshelfRepository.findBySpaceIdInAndStatusOrderBySpaceIdAscDisplayOrderAsc(List.of(space.getId()), "ACTIVE"))
+                .willReturn(List.of(bookshelf));
+        given(bookshelfItemRepository.findByBookshelfIdInAndStatus(List.of(bookshelf.getId()), "ACTIVE"))
+                .willReturn(List.of(item));
+        given(userBookRepository.findByUserIdAndStorageStatusNot(user.getId(), "DELETED"))
+                .willReturn(List.of(userBook));
+        given(userRepository.findById(user.getId())).willReturn(Optional.of(user));
+
+        userService.deleteMe(user.getId());
+
+        assertThat(space.getDeletedAt()).isNotNull();
+        assertThat(bookshelf.getStatus()).isEqualTo("DELETED");
+        assertThat(item.getStatus()).isEqualTo("REMOVED");
+        assertThat(userBook.getStorageStatus()).isEqualTo("DELETED");
+        assertThat(user.getStatus()).isEqualTo("DELETED");
     }
 
     @Test

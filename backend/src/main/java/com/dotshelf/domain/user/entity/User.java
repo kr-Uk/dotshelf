@@ -84,12 +84,16 @@ public class User extends BaseEntity {
     public void delete() {
         this.status = "DELETED";
         this.deletedAt = Instant.now();
+        invalidateSessions();
     }
 
     public void changeStatus(String status) {
         this.status = status;
         if ("DELETED".equalsIgnoreCase(status)) {
             this.deletedAt = Instant.now();
+            invalidateSessions();
+        } else if ("ACTIVE".equalsIgnoreCase(status)) {
+            this.deletedAt = null;
         }
     }
 
@@ -104,5 +108,20 @@ public class User extends BaseEntity {
         this.introduction = null;
         this.status = "DELETED";
         this.deletedAt = Instant.now();
+        invalidateSessions();
+    }
+
+    public boolean isDeleted() {
+        return "DELETED".equalsIgnoreCase(this.status) || this.deletedAt != null;
+    }
+
+    public void reactivateForOnboarding(String email, String nickname, String profileImageUrl) {
+        this.email = email;
+        this.nickname = nickname;
+        this.profileImageUrl = profileImageUrl;
+        this.introduction = null;
+        this.status = "ACTIVE";
+        this.deletedAt = null;
+        this.isOnboarded = false;
     }
 }

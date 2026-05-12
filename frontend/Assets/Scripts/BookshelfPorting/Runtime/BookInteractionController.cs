@@ -242,7 +242,7 @@ namespace BookshelfPorting.Runtime
                 activeViewedHitArea = null;
             }
 
-            if (reapplyLayout && book.CurrentSection != null)
+            if (reapplyLayout && book.CurrentSection != null && book.CurrentSection.books.Contains(book))
             {
                 state.LayoutSection(book.CurrentSection, this, true);
             }
@@ -407,6 +407,11 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (IsFixedShelfDecoration(pressedBook))
+            {
+                return;
+            }
+
             if (draggingBook == null && shelfBookPointerTravel > dragStartThresholdPixels)
             {
                 BeginDrag(pressedBook);
@@ -488,7 +493,7 @@ namespace BookshelfPorting.Runtime
                      !state.IsViewingBook &&
                      (hoveredBook == pressedBook || currentPointerTarget.Book == pressedBook))
             {
-                if (IsBookshelfEditMode())
+                if (IsBookshelfEditMode() && !IsFixedShelfDecoration(pressedBook))
                 {
                     experienceManager?.OpenBookEditPanel(pressedBook);
                 }
@@ -557,6 +562,11 @@ namespace BookshelfPorting.Runtime
         private bool IsBookAddPlacementSelectionActive()
         {
             return experienceManager != null && experienceManager.IsBookAddPlacementSelectionActive;
+        }
+
+        private static bool IsFixedShelfDecoration(BookEntity book)
+        {
+            return book != null && book.isDecoration;
         }
 
         private bool IsBookshelfWorldInputBlocked()
@@ -1117,18 +1127,28 @@ namespace BookshelfPorting.Runtime
             experienceManager?.HandleBookViewed(book);
             SetDynamicHierarchy(book.transform);
             book.CaptureCurrentTransform();
-            var viewRotation = cameraController.BookViewAnchor.rotation * BookFootprintUtility.GetVisualRotation(BookOrientation.Front);
+            var viewRotation = ResolveBookViewRotation(book);
+            var viewScale = book.StoredScale * viewedBookScaleMultiplier;
+            var viewPosition = ResolveBookViewPosition(book, viewRotation, viewScale);
             book.BeginViewRotation(viewRotation);
             EnsureViewedBookHitArea(book);
             activeViewedHitArea.SetActive(true);
             StartCoroutine(AnimateWorldMove(
                 book.transform,
-                ResolveBookViewPosition(),
+                viewPosition,
                 viewRotation,
-                book.StoredScale * viewedBookScaleMultiplier));
+                viewScale));
         }
 
-        private Vector3 ResolveBookViewPosition()
+        private Quaternion ResolveBookViewRotation(BookEntity book)
+        {
+            var anchorRotation = cameraController.BookViewAnchor.rotation;
+            return IsFixedShelfDecoration(book)
+                ? anchorRotation * Quaternion.Euler(0f, 180f, 0f)
+                : anchorRotation * BookFootprintUtility.GetVisualRotation(BookOrientation.Front);
+        }
+
+        private Vector3 ResolveBookViewPosition(BookEntity book, Quaternion viewRotation, Vector3 viewScale)
         {
             var fallbackPosition = cameraController.BookViewAnchor.position;
             if (sceneCamera == null)
@@ -1142,7 +1162,65 @@ namespace BookshelfPorting.Runtime
             var cameraDistance = Mathf.Max(
                 0.7f,
                 viewedBookCameraDistance - Mathf.Max(0f, viewedBookZoomForwardOffset) * zoomInAmount);
-            return sceneCamera.transform.position + sceneCamera.transform.forward * cameraDistance;
+            var targetPosition = sceneCamera.transform.position + sceneCamera.transform.forward * cameraDistance;
+            if (!IsFixedShelfDecoration(book) || !TryGetRendererBoundsInBookLocalSpace(book, out var bounds))
+            {
+                return targetPosition;
+            }
+
+            var centerOffset = viewRotation * Vector3.Scale(bounds.center, viewScale);
+            return targetPosition - centerOffset;
+        }
+
+        private static bool TryGetRendererBoundsInBookLocalSpace(BookEntity book, out Bounds bounds)
+        {
+            bounds = default;
+            if (book == null)
+            {
+                return false;
+            }
+
+            var renderers = book.GetComponentsInChildren<Renderer>(true);
+            var hasBounds = false;
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                var targetRenderer = renderers[i];
+                if (targetRenderer == null)
+                {
+                    continue;
+                }
+
+                EncapsulateRendererBounds(targetRenderer.bounds, book.transform, ref bounds, ref hasBounds);
+            }
+
+            return hasBounds;
+        }
+
+        private static void EncapsulateRendererBounds(Bounds worldBounds, Transform targetSpace, ref Bounds bounds, ref bool hasBounds)
+        {
+            var min = worldBounds.min;
+            var max = worldBounds.max;
+            EncapsulateLocalBoundsPoint(new Vector3(min.x, min.y, min.z), targetSpace, ref bounds, ref hasBounds);
+            EncapsulateLocalBoundsPoint(new Vector3(min.x, min.y, max.z), targetSpace, ref bounds, ref hasBounds);
+            EncapsulateLocalBoundsPoint(new Vector3(min.x, max.y, min.z), targetSpace, ref bounds, ref hasBounds);
+            EncapsulateLocalBoundsPoint(new Vector3(min.x, max.y, max.z), targetSpace, ref bounds, ref hasBounds);
+            EncapsulateLocalBoundsPoint(new Vector3(max.x, min.y, min.z), targetSpace, ref bounds, ref hasBounds);
+            EncapsulateLocalBoundsPoint(new Vector3(max.x, min.y, max.z), targetSpace, ref bounds, ref hasBounds);
+            EncapsulateLocalBoundsPoint(new Vector3(max.x, max.y, min.z), targetSpace, ref bounds, ref hasBounds);
+            EncapsulateLocalBoundsPoint(new Vector3(max.x, max.y, max.z), targetSpace, ref bounds, ref hasBounds);
+        }
+
+        private static void EncapsulateLocalBoundsPoint(Vector3 worldPoint, Transform targetSpace, ref Bounds bounds, ref bool hasBounds)
+        {
+            var localPoint = targetSpace.InverseTransformPoint(worldPoint);
+            if (!hasBounds)
+            {
+                bounds = new Bounds(localPoint, Vector3.zero);
+                hasBounds = true;
+                return;
+            }
+
+            bounds.Encapsulate(localPoint);
         }
 
         private static void SetDynamicHierarchy(Transform root)

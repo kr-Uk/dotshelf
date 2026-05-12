@@ -19,6 +19,7 @@ import com.dotshelf.domain.auth.repository.GuestMigrationImportRepository;
 import com.dotshelf.domain.auth.repository.UserSocialAccountRepository;
 import com.dotshelf.domain.auth.service.social.SocialTokenVerifierRegistry;
 import com.dotshelf.domain.auth.service.social.SocialUserInfo;
+import com.dotshelf.domain.asset.service.AssetService;
 import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.entity.UserNotificationSetting;
@@ -45,6 +46,7 @@ public class AuthService {
     private final GuestMigrationImportRepository guestMigrationImportRepository;
     private final UserService userService;
     private final SpaceService spaceService;
+    private final AssetService assetService;
     private final UserNotificationSettingRepository notificationSettingRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final SocialTokenVerifierRegistry socialTokenVerifierRegistry;
@@ -67,10 +69,16 @@ public class AuthService {
                 .findByProviderAndProviderUserId(socialUser.provider(), socialUser.providerUserId())
                 .orElse(null);
         boolean newUser = socialAccount == null;
+        boolean reactivatedUser = false;
         User user = newUser ? createUserAndSocialAccount(socialUser) : userService.getUser(socialAccount.getUserId());
+        if (!newUser && user.isDeleted()) {
+            reactivateDeletedUser(user, socialUser);
+            reactivatedUser = true;
+        }
+
         user.markLogin();
         TokenPair tokenPair = issueTokens(user.getId());
-        return buildAuthTokenResponse(user, tokenPair, newUser);
+        return buildAuthTokenResponse(user, tokenPair, newUser || reactivatedUser);
     }
 
     @Transactional
@@ -85,12 +93,21 @@ public class AuthService {
             oldToken.markReuseDetected();
             throw new CustomException(ErrorCode.INVALID_TOKEN);
         }
+        User user = userService.getUser(oldToken.getUserId());
+        if (user.isDeleted() || isTokenInvalidatedByUserSession(user, oldToken)) {
+            throw new CustomException(ErrorCode.INVALID_TOKEN);
+        }
+
         TokenPair tokenPair = issueTokens(oldToken.getUserId());
         AuthRefreshToken newToken = refreshTokenRepository.findByTokenHash(tokenPair.refreshToken())
                 .orElseThrow(() -> new CustomException(ErrorCode.INTERNAL_SERVER_ERROR));
         oldToken.rotateTo(newToken.getId());
-        User user = userService.getUser(oldToken.getUserId());
         return buildAuthTokenResponse(user, tokenPair, false);
+    }
+
+    private boolean isTokenInvalidatedByUserSession(User user, AuthRefreshToken refreshToken) {
+        Instant sessionInvalidatedAt = user.getSessionInvalidatedAt();
+        return sessionInvalidatedAt != null && refreshToken.getIssuedAt().isBefore(sessionInvalidatedAt);
     }
 
     @Transactional
@@ -133,6 +150,7 @@ public class AuthService {
                 .profileImageUrl(socialUser.profileImageUrl())
                 .build());
         spaceService.ensureDefaultSpace(user.getId());
+        assetService.grantDefaultBookshelfSkins(user.getId());
         notificationSettingRepository.save(UserNotificationSetting.builder()
                 .userId(user.getId())
                 .build());
@@ -145,6 +163,20 @@ public class AuthService {
         return user;
     }
 
+    private void reactivateDeletedUser(User user, SocialUserInfo socialUser) {
+        user.reactivateForOnboarding(
+                resolveEmailForExistingUser(user, socialUser.email()),
+                resolveNicknameForExistingUser(user, socialUser.nickname()),
+                socialUser.profileImageUrl()
+        );
+        spaceService.ensureDefaultSpace(user.getId());
+        assetService.grantDefaultBookshelfSkins(user.getId());
+        notificationSettingRepository.findByUserId(user.getId())
+                .orElseGet(() -> notificationSettingRepository.save(UserNotificationSetting.builder()
+                        .userId(user.getId())
+                        .build()));
+    }
+
     private String resolveEmail(String email) {
         if (email == null || email.isBlank()) {
             return null;
@@ -153,8 +185,36 @@ public class AuthService {
         return userRepository.existsByEmail(normalizedEmail) ? null : normalizedEmail;
     }
 
+    private String resolveEmailForExistingUser(User user, String email) {
+        if (email == null || email.isBlank()) {
+            return user.getEmail();
+        }
+
+        String normalizedEmail = email.trim();
+        if (normalizedEmail.equals(user.getEmail())) {
+            return normalizedEmail;
+        }
+
+        return userRepository.existsByEmail(normalizedEmail) ? user.getEmail() : normalizedEmail;
+    }
+
     private String resolveNickname(String nickname) {
         String baseNickname = normalizeNickname(nickname);
+        for (int i = 0; i < 10; i++) {
+            String candidate = i == 0 ? baseNickname : appendNicknameSuffix(baseNickname);
+            if (!userRepository.existsByNickname(candidate)) {
+                return candidate;
+            }
+        }
+        return "user-" + UUID.randomUUID().toString().substring(0, 12);
+    }
+
+    private String resolveNicknameForExistingUser(User user, String nickname) {
+        String baseNickname = normalizeNickname(nickname);
+        if (baseNickname.equals(user.getNickname())) {
+            return baseNickname;
+        }
+
         for (int i = 0; i < 10; i++) {
             String candidate = i == 0 ? baseNickname : appendNicknameSuffix(baseNickname);
             if (!userRepository.existsByNickname(candidate)) {
@@ -187,8 +247,12 @@ public class AuthService {
                 "Bearer",
                 jwtTokenProvider.getAccessTokenValiditySeconds(),
                 newUser,
-                user.isOnboarded()
+                isOnboardingComplete(user)
         );
+    }
+
+    private boolean isOnboardingComplete(User user) {
+        return user.isOnboarded() && spaceService.hasActiveBookshelf(user.getId());
     }
 
     private TokenPair issueTokens(Long userId) {

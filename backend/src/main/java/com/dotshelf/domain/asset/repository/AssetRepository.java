@@ -21,17 +21,23 @@ public interface AssetRepository extends JpaRepository<Asset, Long> {
 
     boolean existsByCode(String code);
 
+    // 같은 named parameter 를 `:x is null` 가드와 `upper(:x)` 비교에 동시에 쓰면
+    // Hibernate 7 의 SQM 가 parameter 의 SQL type 을 byte[] (bytea) 로 잘못 추론하는 회귀가 있어
+    // PostgreSQL 가 `function upper(bytea) does not exist` 로 SQL grammar error 를 던지며 500 으로 죽는다.
+    // 모든 String 파라미터에 `cast(:x as string)` 을 명시해 type hint 를 강제한다.
+    // 신규 가입 직후 BookshelfApiSyncController.RefreshBookshelfSkinCatalog 가 이 endpoint 를 호출하는데,
+    // 500 이 떨어지면 클라 init chain 일부가 깨져 빈 화면 회귀로 이어진 사례가 있다 (#114 후속).
     @Query("""
             select asset
             from Asset asset
             where asset.isActive = true
               and (:categoryId is null or asset.categoryId = :categoryId)
-              and (:assetType is null or upper(asset.assetType) = upper(:assetType))
-              and (:collectionCode is null or upper(asset.collectionCode) = upper(:collectionCode))
+              and (cast(:assetType as string) is null or upper(asset.assetType) = upper(cast(:assetType as string)))
+              and (cast(:collectionCode as string) is null or upper(asset.collectionCode) = upper(cast(:collectionCode as string)))
               and (
-                    :keyword is null
-                    or lower(asset.name) like lower(concat('%', :keyword, '%'))
-                    or lower(asset.code) like lower(concat('%', :keyword, '%'))
+                    cast(:keyword as string) is null
+                    or lower(asset.name) like lower(concat('%', cast(:keyword as string), '%'))
+                    or lower(asset.code) like lower(concat('%', cast(:keyword as string), '%'))
                   )
               and (
                     :owned is null
@@ -54,6 +60,29 @@ public interface AssetRepository extends JpaRepository<Asset, Long> {
             @Param("collectionCode") String collectionCode,
             @Param("keyword") String keyword,
             @Param("owned") Boolean owned,
+            Pageable pageable);
+
+    /**
+     * 운영자 콘솔 전용 검색. draft/비활성 자산까지 포함하므로 active 파라미터로
+     * 명시적으로 필터링한다. 사용자용 searchActive 와 달리 owned/userId 의존이 없다.
+     */
+    @Query("""
+            select asset
+            from Asset asset
+            where (:active is null or asset.isActive = :active)
+              and (:assetType is null or upper(asset.assetType) = upper(:assetType))
+              and (:collectionCode is null or upper(asset.collectionCode) = upper(:collectionCode))
+              and (
+                    :keyword is null
+                    or lower(asset.name) like lower(concat('%', :keyword, '%'))
+                    or lower(asset.code) like lower(concat('%', :keyword, '%'))
+                  )
+            """)
+    Page<Asset> searchForAdmin(
+            @Param("active") Boolean active,
+            @Param("assetType") String assetType,
+            @Param("collectionCode") String collectionCode,
+            @Param("keyword") String keyword,
             Pageable pageable);
 
     @Query("""

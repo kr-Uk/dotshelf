@@ -20,6 +20,7 @@ namespace App.EditorTools
     public static class EditableDecorationCatalogBuilder
     {
         private const string ModelsRoot = "Assets/Arts/Models";
+        private const string BookshelfModelsRoot = "Assets/Arts/Models/Bookshelves";
         private const string ResourcesDir = "Assets/Resources";
         private const string CatalogAssetPath = "Assets/Resources/EditableDecorationCatalog.asset";
 
@@ -146,7 +147,8 @@ namespace App.EditorTools
                 for (var i = 0; i < paths.Length; i++)
                 {
                     if (!string.IsNullOrEmpty(paths[i]) &&
-                        paths[i].StartsWith(ModelsRoot, StringComparison.OrdinalIgnoreCase))
+                        paths[i].StartsWith(ModelsRoot, StringComparison.OrdinalIgnoreCase) &&
+                        !IsBookshelfModelPath(paths[i]))
                     {
                         return true;
                     }
@@ -163,6 +165,11 @@ namespace App.EditorTools
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 if (string.IsNullOrEmpty(path))
+                {
+                    continue;
+                }
+
+                if (IsBookshelfModelPath(path))
                 {
                     continue;
                 }
@@ -187,6 +194,12 @@ namespace App.EditorTools
                 });
             }
             return entries;
+        }
+
+        private static bool IsBookshelfModelPath(string path)
+        {
+            return !string.IsNullOrEmpty(path) &&
+                   path.StartsWith(BookshelfModelsRoot, StringComparison.OrdinalIgnoreCase);
         }
 
         private static EditableDecorationCatalog LoadOrCreateCatalog()

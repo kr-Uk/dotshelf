@@ -17,6 +17,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.repository.AssetRepository;
 import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
 import com.dotshelf.domain.book.entity.UserBook;
@@ -100,6 +101,7 @@ class BookshelfServiceTest {
         assertThat(response.id()).isEqualTo(99L);
         assertThat(response.displayOrder()).isEqualTo(3);
         then(sectionRepository).should(times(16)).save(any(BookshelfSection.class));
+        then(userService).should().completeOnboardingIfNeeded(1L);
     }
 
     @Test
@@ -167,12 +169,49 @@ class BookshelfServiceTest {
         given(userService.requireUserId(1L)).willReturn(1L);
         given(bookshelfRepository.findById(3L)).willReturn(Optional.of(bookshelf));
         given(spaceService.getSpaceEntity(10L)).willReturn(TestFixtures.space(10L, 1L));
+        given(inventoryRepository.findById(8L)).willReturn(Optional.of(TestFixtures.inventory(8L, 1L, 50L)));
+        given(assetRepository.findById(50L)).willReturn(Optional.of(bookshelfSkinAsset(50L)));
 
-        var response = bookshelfService.update(1L, 3L, new UpdateBookshelfRequest("changed", "desc", "PRIVATE", 8L));
+        var response = bookshelfService.update(1L, 3L, new UpdateBookshelfRequest("changed", "desc", "PRIVATE", 8L, false));
 
         assertThat(response.name()).isEqualTo("changed");
         assertThat(response.visibilityScope()).isEqualTo("PRIVATE");
         assertThat(response.skinInventoryId()).isEqualTo(8L);
+    }
+
+    @Test
+    @DisplayName("책장 스킨 수정은 BOOKSHELF_SKIN 에셋만 허용한다")
+    void update_nonBookshelfSkinInventoryThrowsMismatch() {
+        Bookshelf bookshelf = TestFixtures.bookshelf(3L, 10L, 0);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(bookshelfRepository.findById(3L)).willReturn(Optional.of(bookshelf));
+        given(spaceService.getSpaceEntity(10L)).willReturn(TestFixtures.space(10L, 1L));
+        given(inventoryRepository.findById(8L)).willReturn(Optional.of(TestFixtures.inventory(8L, 1L, 50L)));
+        given(assetRepository.findById(50L)).willReturn(Optional.of(TestFixtures.asset(50L, 1L, "wallpaper", 0)));
+
+        assertThatThrownBy(() -> bookshelfService.update(
+                1L,
+                3L,
+                new UpdateBookshelfRequest("changed", null, null, 8L, false)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.CATEGORY_INVENTORY_TYPE_MISMATCH);
+    }
+
+    @Test
+    @DisplayName("책장 스킨 수정은 clearSkinInventory=true 일 때 기본 스킨으로 되돌린다")
+    void update_clearSkinInventory_resetsSkin() {
+        Bookshelf bookshelf = TestFixtures.bookshelf(3L, 10L, 0);
+        bookshelf.update(null, null, null, 8L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(bookshelfRepository.findById(3L)).willReturn(Optional.of(bookshelf));
+        given(spaceService.getSpaceEntity(10L)).willReturn(TestFixtures.space(10L, 1L));
+
+        var response = bookshelfService.update(1L, 3L, new UpdateBookshelfRequest(null, null, null, null, true));
+
+        assertThat(response.skinInventoryId()).isNull();
+        then(inventoryRepository).shouldHaveNoInteractions();
+        then(assetRepository).shouldHaveNoInteractions();
     }
 
     @Test
@@ -188,6 +227,43 @@ class BookshelfServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("광고 예약 섹션에는 아이템을 배치할 수 없다")
+    void requireAvailablePlacement_reservedAdSectionThrowsInvalidInput() {
+        given(sectionRepository.findById(7L)).willReturn(Optional.of(TestFixtures.bookshelfSection(7L, 3L, 3, 3)));
+
+        assertThatThrownBy(() -> bookshelfService.requireAvailablePlacement(3L, 7L, 1, null))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("이미 사용 중인 슬롯에는 새 아이템을 배치할 수 없다")
+    void requireAvailablePlacement_occupiedSlotThrowsInvalidInput() {
+        given(sectionRepository.findById(7L)).willReturn(Optional.of(TestFixtures.bookshelfSection(7L, 3L, 0, 0)));
+        given(bookshelfItemRepository.existsByBookshelfIdAndBookshelfSectionIdAndSlotNoAndStatus(3L, 7L, 1, "ACTIVE"))
+                .willReturn(true);
+
+        assertThatThrownBy(() -> bookshelfService.requireAvailablePlacement(3L, 7L, 1, null))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("삭제된 책장 ID로는 책장을 조회할 수 없다")
+    void getBookshelf_deletedBookshelfThrowsNotFound() {
+        Bookshelf bookshelf = TestFixtures.bookshelf(3L, 10L, 0);
+        bookshelf.delete();
+        given(bookshelfRepository.findById(3L)).willReturn(Optional.of(bookshelf));
+
+        assertThatThrownBy(() -> bookshelfService.getBookshelf(3L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.BOOKSHELF_NOT_FOUND);
     }
 
     @Test
@@ -237,5 +313,18 @@ class BookshelfServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    private static Asset bookshelfSkinAsset(Long id) {
+        Asset asset = Asset.builder()
+                .categoryId(1L)
+                .code("BOOKSHELF_PASTEL_CABIN_SKIN")
+                .name("Pastel Cabin Bookshelf Skin")
+                .assetScope("BOOKSHELF")
+                .assetType("BOOKSHELF_SKIN")
+                .pricePages(0)
+                .build();
+        TestFixtures.setId(asset, id);
+        return asset;
     }
 }

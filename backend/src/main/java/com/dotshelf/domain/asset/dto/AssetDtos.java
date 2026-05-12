@@ -1,5 +1,6 @@
 package com.dotshelf.domain.asset.dto;
 
+import java.time.Instant;
 import java.util.List;
 
 import com.dotshelf.domain.asset.entity.Asset;
@@ -355,6 +356,10 @@ public final class AssetDtos {
             String collectionCode,
             String assetUrl,
             String previewImageUrl,
+            String previewBundleUrl,
+            String previewBundleContentType,
+            Long previewBundleSize,
+            String previewBundleHash,
             String contentType,
             Long fileSize,
             String fileHash,
@@ -371,6 +376,10 @@ public final class AssetDtos {
                     asset.getCollectionCode(),
                     asset.getAssetUrl(),
                     asset.getPreviewImageUrl(),
+                    asset.getPreviewBundleUrl(),
+                    asset.getPreviewBundleContentType(),
+                    asset.getPreviewBundleSize(),
+                    asset.getPreviewBundleHash(),
                     asset.getContentType(),
                     asset.getFileSize(),
                     asset.getFileHash(),
@@ -378,5 +387,52 @@ public final class AssetDtos {
                     asset.isActive()
             );
         }
+    }
+
+    /**
+     * 운영자 콘솔 리스트 행에 표시할 요약. 본체/프리뷰 URL 자체는 노출 안 하고
+     * 업로드 완료 여부(hasAssetUrl / hasPreviewImage) 플래그만 내려서 publish 가능
+     * 여부만 한눈에 확인하게 한다. 상세 진입 시 AdminAssetResponse 로 전체 URL 확인.
+     */
+    public record AdminAssetListItemResponse(
+            Long id,
+            String code,
+            String name,
+            String assetType,
+            String collectionCode,
+            String tier,
+            int version,
+            int pricePages,
+            boolean hasAssetUrl,
+            boolean hasPreviewImage,
+            boolean hasPreviewBundle,
+            boolean active,
+            Instant updatedAt
+    ) {
+
+        public static AdminAssetListItemResponse from(Asset asset) {
+            return new AdminAssetListItemResponse(
+                    asset.getId(),
+                    asset.getCode(),
+                    asset.getName(),
+                    asset.getAssetType(),
+                    asset.getCollectionCode(),
+                    asset.getTier(),
+                    asset.getVersion(),
+                    asset.getPricePages(),
+                    asset.getAssetUrl() != null && !asset.getAssetUrl().isBlank(),
+                    asset.getPreviewImageUrl() != null && !asset.getPreviewImageUrl().isBlank(),
+                    asset.getPreviewBundleUrl() != null && !asset.getPreviewBundleUrl().isBlank(),
+                    asset.isActive(),
+                    asset.getUpdatedAt()
+            );
+        }
+    }
+
+    public record AdminAssetListResponse(
+            List<AdminAssetListItemResponse> items,
+            String nextCursor,
+            long totalCount
+    ) {
     }
 }

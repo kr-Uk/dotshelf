@@ -38,6 +38,7 @@ namespace App.Bootstrap
         private const float BookshelfFocusRetryIntervalSeconds = 0.75f;
         private const float MainScenePreviewDelaySeconds = 0.7f;
         private const float MainScenePreviewCoverAlpha = 0.62f;
+        private const string OnboardingBookshelfVisibility = "PUBLIC";
         private static readonly bool EnableDebugLogs = false;
 
         // Theme list / default / sprite mapping all live in
@@ -86,6 +87,7 @@ namespace App.Bootstrap
         private OnboardingThemePreviewProvider themePreviewProvider;
         private TMP_Text themePreviewTitleLabel;
         private TMP_Text themePreviewCaptionLabel;
+        private Button randomThemeButton;
         private Button step2PreviousButton;
         private Button step2NextButton;
         private TMP_Text step2NextButtonLabel;
@@ -96,6 +98,8 @@ namespace App.Bootstrap
         private GameObject step3LoadingContentRoot;
         private GameObject step3StatusRoot;
         private TMP_Text step3LoadingMessageLabel;
+        private Button step3CompleteButton;
+        private TMP_Text step3CompleteHintLabel;
 
         private readonly Dictionary<string, Button> themeButtons = new Dictionary<string, Button>(StringComparer.Ordinal);
         private readonly Dictionary<string, Image> themeButtonImages = new Dictionary<string, Image>(StringComparer.Ordinal);
@@ -117,6 +121,8 @@ namespace App.Bootstrap
         // they cannot overlap, but each flow needs its own re-entrancy guard.
         private bool isSubmittingProfile;
         private NotebookApiClient nicknameApiClient;
+        private NotebookApiClient onboardingApiClient;
+        private bool isPreparingOnboardingBookshelf;
         private Texture2D profileTexture;
         private Sprite profileSprite;
         private bool isInitialized;
@@ -124,7 +130,18 @@ namespace App.Bootstrap
         private bool isMainViewReady;
         private bool isBookshelfFocusRequested;
         private bool isBookshelfFocused;
+        private bool isStep3CompletionReady;
+        private float nextStep3CompletionGateRefreshAt;
         private Coroutine step3TransitionRoutine;
+        private BookshelfExperienceManager cachedBookshelfExperienceManager;
+        private CameraController cachedCameraController;
+        private BookshelfGenerator cachedBookshelfGenerator;
+        private BookshelfApiSyncController cachedBookshelfApiSyncController;
+
+        private sealed class OnboardingBookshelfProvisioningContext
+        {
+            public SpaceResponseDto Space;
+        }
 
         public void InitializeIfNeeded()
         {
@@ -156,6 +173,14 @@ namespace App.Bootstrap
             InitializeIfNeeded();
         }
 
+        private void Update()
+        {
+            if (currentStep == 3 && step3Panel != null && step3Panel.activeInHierarchy)
+            {
+                RefreshStep3CompletionGate(false);
+            }
+        }
+
         public void StartOnboarding()
         {
             InitializeIfNeeded();
@@ -169,10 +194,7 @@ namespace App.Bootstrap
             {
                 step2PreviousButton.gameObject.SetActive(true);
             }
-            if (step2NextButtonLabel != null)
-            {
-                step2NextButtonLabel.text = "다음 단계";
-            }
+            RefreshStep2ThemeProvisioningUi();
             ShowStep1();
         }
 
@@ -214,6 +236,7 @@ namespace App.Bootstrap
             {
                 SetExperienceManagerStep3Active(true);
                 EnterBookshelfFocusForOnboarding();
+                RefreshStep3CompletionGate(true);
             }
             else
             {
@@ -289,7 +312,11 @@ namespace App.Bootstrap
             // instead of the procedural placeholder; user can switch or proceed.
             selectedTheme = OnboardingThemePreviewProvider.DefaultThemeId;
             currentStep = 1;
+            isPreparingOnboardingBookshelf = false;
             ResetStep3FlowState();
+            isStep3CompletionReady = false;
+            nextStep3CompletionGateRefreshAt = 0f;
+            RefreshStep3CompletionGate(true);
 
             if (nicknameInput != null)
             {
@@ -305,6 +332,7 @@ namespace App.Bootstrap
             SetStep1Feedback(string.Empty, MutedTextColor, false);
             ResetProfilePreview();
             UpdateThemeSelectionVisuals();
+            RefreshStep2ThemeProvisioningUi();
             // Reflect the default selection set above — keep in sync with selectedTheme.
             UpdateThemePreview(selectedTheme);
             SetStep3OverlayStatus("메인 화면과 책장 포커스 화면으로 이동할 준비가 되었습니다.");
@@ -449,6 +477,12 @@ namespace App.Bootstrap
                 return;
             }
 
+            if (!HasOnboardingBookshelf())
+            {
+                RefreshStep3CompletionGate(true);
+                return;
+            }
+
             // Push to the front so it visually overlays the Step 3 navigation card.
             completionModalRoot.transform.SetAsLastSibling();
             completionModalRoot.SetActive(true);
@@ -572,8 +606,8 @@ namespace App.Bootstrap
             CreateSpacer(column, 8f);
 
             var randomRow = CreateRow(column, "RandomRow", 0f, TextAnchor.MiddleCenter);
-            var randomButton = CreateFixedButton(randomRow, "RandomThemeButton", "랜덤", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));
-            randomButton.onClick.AddListener(OnRandomThemeButtonClicked);
+            randomThemeButton = CreateFixedButton(randomRow, "RandomThemeButton", "랜덤", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));
+            randomThemeButton.onClick.AddListener(OnRandomThemeButtonClicked);
 
             CreateSpacer(column, 8f);
 
@@ -774,17 +808,34 @@ namespace App.Bootstrap
             previousRect.anchoredPosition = new Vector2(48f, 96f);
             previousButton.onClick.AddListener(ShowStep2);
 
-            var completeButton = CreateFixedButton(panel.transform, "CompleteButton", "완료", PrimaryColor, Color.white, false, BorderColor, new Vector2(220f, PrimaryControlHeight));
-            var completeRect = (RectTransform)completeButton.transform;
+            step3CompleteButton = CreateFixedButton(panel.transform, "CompleteButton", "완료", PrimaryColor, Color.white, false, BorderColor, new Vector2(220f, PrimaryControlHeight));
+            var completeRect = (RectTransform)step3CompleteButton.transform;
             completeRect.anchorMin = new Vector2(1f, 0f);
             completeRect.anchorMax = new Vector2(1f, 0f);
             completeRect.pivot = new Vector2(1f, 0f);
             completeRect.anchoredPosition = new Vector2(-48f, 96f);
-            completeButton.onClick.AddListener(ShowCompletionModal);
+            step3CompleteButton.onClick.AddListener(ShowCompletionModal);
+
+            step3CompleteHintLabel = CreateText(
+                panel.transform,
+                "CompletionGateHint",
+                "첫 책장을 만든 뒤 완료할 수 있습니다.",
+                16f,
+                FontStyles.Bold,
+                MutedTextColor,
+                TextAlignmentOptions.Right,
+                Vector2.zero,
+                new Vector2(420f, 40f));
+            var hintRect = step3CompleteHintLabel.rectTransform;
+            hintRect.anchorMin = new Vector2(1f, 0f);
+            hintRect.anchorMax = new Vector2(1f, 0f);
+            hintRect.pivot = new Vector2(1f, 0f);
+            hintRect.anchoredPosition = new Vector2(-48f, 106f);
 
             SetStep3LoadingPanelVisible(true);
             SetStep3StatusVisible(false);
             SetStep3LoadingCoverVisible(false);
+            RefreshStep3CompletionGate(true);
             panel.SetActive(false);
             return panel;
         }
@@ -957,6 +1008,23 @@ namespace App.Bootstrap
             return nicknameApiClient;
         }
 
+        private NotebookApiClient EnsureOnboardingApiClient()
+        {
+            APIManager api = ApiManagerProvider.EnsureInstance();
+            if (api == null)
+            {
+                Debug.LogWarning("[Onboarding] APIManager 확보 실패 — 온보딩 기본 책장 준비를 시작할 수 없습니다.");
+                return null;
+            }
+
+            if (onboardingApiClient == null)
+            {
+                onboardingApiClient = new NotebookApiClient(api);
+            }
+
+            return onboardingApiClient;
+        }
+
         private void OnNicknameChanged(string _)
         {
             nicknameChecked = false;
@@ -1058,24 +1126,148 @@ namespace App.Bootstrap
 
         private void OnStep2NextButtonClicked()
         {
+            if (isPreparingOnboardingBookshelf)
+            {
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(selectedTheme))
             {
                 SetMessage(step2MessageLabel, "테마를 선택해주세요.", ErrorColor);
                 return;
             }
 
+            var client = EnsureOnboardingApiClient();
+            if (client == null)
+            {
+                SetMessage(step2MessageLabel, "첫 책장 준비에 실패했습니다. 다시 시도해주세요.", ErrorColor);
+                return;
+            }
+
+            var context = new OnboardingBookshelfProvisioningContext();
+
+            isPreparingOnboardingBookshelf = true;
+            RefreshStep2ThemeProvisioningUi();
+            SetMessage(step2MessageLabel, "기본 책장을 준비 중입니다...", MutedTextColor);
+
+            LoadOnboardingSpace(client, context);
+        }
+
+        private void LoadOnboardingSpace(NotebookApiClient client, OnboardingBookshelfProvisioningContext context)
+        {
+            client.GetMySpace(
+                space =>
+                {
+                    if (space == null || space.Id <= 0L)
+                    {
+                        HandleOnboardingProvisioningError("내 공간 조회", "내 공간 정보를 찾을 수 없습니다.");
+                        return;
+                    }
+
+                    context.Space = space;
+                    client.GetBookshelves(
+                        space.Id,
+                        shelves => CreateOrUpdateOnboardingBookshelf(client, context, shelves),
+                        error => HandleOnboardingProvisioningError("책장 목록 조회", error));
+                },
+                error => HandleOnboardingProvisioningError("내 공간 조회", error));
+        }
+
+        private void CreateOrUpdateOnboardingBookshelf(
+            NotebookApiClient client,
+            OnboardingBookshelfProvisioningContext context,
+            BookshelfListResponseDto shelves)
+        {
+            var existingShelf = FindFirstActiveBookshelf(shelves);
+            if (existingShelf != null)
+            {
+                CompleteOnboardingBookshelfProvisioning();
+                return;
+            }
+
+            var request = new CreateBookshelfRequestDto
+            {
+                SpaceId = context.Space.Id,
+                BodyInventoryId = null,
+                Name = BuildOnboardingBookshelfName(),
+                Description = "온보딩에서 자동으로 만든 기본 책장입니다.",
+                VisibilityScope = OnboardingBookshelfVisibility
+            };
+
+            client.CreateBookshelf(
+                request,
+                created =>
+                {
+                    if (created == null || created.Id <= 0L)
+                    {
+                        HandleOnboardingProvisioningError("첫 책장 생성", "서버가 생성된 책장 정보를 반환하지 않았습니다.");
+                        return;
+                    }
+
+                    CompleteOnboardingBookshelfProvisioning();
+                },
+                error => HandleOnboardingProvisioningError("첫 책장 생성", error));
+        }
+
+        private void CompleteOnboardingBookshelfProvisioning()
+        {
+            isPreparingOnboardingBookshelf = false;
+            RefreshStep2ThemeProvisioningUi();
             SetMessage(step2MessageLabel, string.Empty, ErrorColor);
-
-            // TODO(theme-be-wiring): selectedTheme 라벨("내추럴"·"클래식"·"모던"·"빈티지"·"파스텔")이
-            // BE asset/inventory 모델에 정식 등록되면 여기서 PATCH /v1/spaces/me/theme 를 호출해
-            // ApiSpaceSettingsRepository.UpdateCurrentTheme(inventoryId, ...) 로 적용한다.
-            // 현재는 라벨 ↔ inventoryId 매핑이 없어 호출하면 4xx가 확정이라 로컬 상태로만 둔다.
-
             ShowStep3();
+        }
+
+        private void HandleOnboardingProvisioningError(string operationName, ApiErrorResponseDto error)
+        {
+            HandleOnboardingProvisioningError(operationName, FormatApiErrorMessage(error, "서버 요청을 완료하지 못했습니다."));
+        }
+
+        private void HandleOnboardingProvisioningError(string operationName, string message)
+        {
+            isPreparingOnboardingBookshelf = false;
+            RefreshStep2ThemeProvisioningUi();
+            SetMessage(step2MessageLabel, $"{operationName}에 실패했습니다. 다시 시도해주세요.", ErrorColor);
+            Debug.LogWarning($"[Onboarding] {operationName} failed: {message}");
+        }
+
+        private void RefreshStep2ThemeProvisioningUi()
+        {
+            if (step2NextButtonLabel != null)
+            {
+                step2NextButtonLabel.text = isPreparingOnboardingBookshelf ? "준비 중..." : "다음 단계";
+            }
+
+            if (step2NextButton != null)
+            {
+                step2NextButton.interactable = !isPreparingOnboardingBookshelf;
+            }
+
+            if (step2PreviousButton != null)
+            {
+                step2PreviousButton.interactable = !isPreparingOnboardingBookshelf;
+            }
+
+            if (randomThemeButton != null)
+            {
+                randomThemeButton.interactable = !isPreparingOnboardingBookshelf;
+            }
+
+            foreach (var entry in themeButtons)
+            {
+                if (entry.Value != null)
+                {
+                    entry.Value.interactable = !isPreparingOnboardingBookshelf;
+                }
+            }
         }
 
         private void SelectTheme(string themeName)
         {
+            if (isPreparingOnboardingBookshelf)
+            {
+                return;
+            }
+
             selectedTheme = themeName ?? string.Empty;
             SetMessage(step2MessageLabel, string.Empty, ErrorColor);
             UpdateThemeSelectionVisuals();
@@ -1288,6 +1480,8 @@ namespace App.Bootstrap
                 SetStep3LoadingPanelVisible(false);
                 SetStep3LoadingCoverVisible(false);
             }
+
+            RefreshStep3CompletionGate(true);
         }
 
         private void SetStep3OverlayStatus(string message)
@@ -1483,16 +1677,21 @@ namespace App.Bootstrap
 
             if (SceneManager.GetActiveScene().name != SceneKeys.Main)
             {
+                ResetCachedMainSceneDependencies();
                 return false;
             }
 
-            experienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
-            if (experienceManager == null)
+            if (cachedBookshelfExperienceManager == null)
             {
-                BookshelfAutoBootstrap.BootstrapScene();
-                experienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                cachedBookshelfExperienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                if (cachedBookshelfExperienceManager == null)
+                {
+                    BookshelfAutoBootstrap.BootstrapScene();
+                    cachedBookshelfExperienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                }
             }
 
+            experienceManager = cachedBookshelfExperienceManager;
             return experienceManager != null;
         }
 
@@ -1563,8 +1762,6 @@ namespace App.Bootstrap
                 }
             }
 
-            SetStep3LoadingCoverVisible(false);
-            yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
             var readyDeadline = Time.unscaledTime + MainViewReadyTimeoutSeconds;
             while (Time.unscaledTime < readyDeadline)
             {
@@ -1588,6 +1785,11 @@ namespace App.Bootstrap
                     step3TransitionRoutine = null;
                     yield break;
                 }
+            }
+            else
+            {
+                SetStep3LoadingCoverVisible(false);
+                yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
             }
 
             SetStep3OverlayStatus("책장 포커스 화면으로 이동 중입니다.");
@@ -1631,9 +1833,11 @@ namespace App.Bootstrap
             {
                 SetStep3LoadingCoverVisible(false);
                 SetStep3OverlayStatus("책장 포커스 화면이 표시되었습니다.");
+                RefreshStep3CompletionGate(true);
             }
             else
             {
+                SetStep3LoadingCoverVisible(false);
                 SetStep3OverlayStatus("책장 포커스 연결을 확인해주세요.");
                 Debug.LogWarning("[OnboardingDemo] Failed to complete bookshelf focus transition using existing scene flow before the Step 3 timeout.");
             }
@@ -1672,22 +1876,37 @@ namespace App.Bootstrap
 
             if (SceneManager.GetActiveScene().name != SceneKeys.Main)
             {
+                ResetCachedMainSceneDependencies();
                 return false;
             }
 
-            experienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
-            if (experienceManager == null)
+            if (cachedBookshelfExperienceManager == null)
             {
-                BookshelfAutoBootstrap.BootstrapScene();
-                experienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                cachedBookshelfExperienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                if (cachedBookshelfExperienceManager == null)
+                {
+                    BookshelfAutoBootstrap.BootstrapScene();
+                    cachedBookshelfExperienceManager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>(FindObjectsInactive.Include);
+                }
             }
 
-            cameraController = UnityEngine.Object.FindFirstObjectByType<CameraController>(FindObjectsInactive.Include);
-            bookshelfGenerator = UnityEngine.Object.FindFirstObjectByType<BookshelfGenerator>(FindObjectsInactive.Include);
+            if (cachedCameraController == null)
+            {
+                cachedCameraController = UnityEngine.Object.FindFirstObjectByType<CameraController>(FindObjectsInactive.Include);
+            }
+
+            if (cachedBookshelfGenerator == null)
+            {
+                cachedBookshelfGenerator = UnityEngine.Object.FindFirstObjectByType<BookshelfGenerator>(FindObjectsInactive.Include);
+            }
+
+            experienceManager = cachedBookshelfExperienceManager;
+            cameraController = cachedCameraController;
+            bookshelfGenerator = cachedBookshelfGenerator;
             return experienceManager != null && cameraController != null;
         }
 
-        private static bool IsMainViewReadyForBookshelfFocus(
+        private bool IsMainViewReadyForBookshelfFocus(
             BookshelfExperienceManager experienceManager,
             CameraController cameraController,
             BookshelfGenerator bookshelfGenerator)
@@ -1697,7 +1916,76 @@ namespace App.Bootstrap
                    cameraController != null &&
                    cameraController.isActiveAndEnabled &&
                    !cameraController.IsTransitioning &&
+                   IsInitialBookshelfRefreshComplete() &&
                    (bookshelfGenerator == null || !bookshelfGenerator.IsBookshelfSwitching);
+        }
+
+        private bool IsInitialBookshelfRefreshComplete()
+        {
+            if (cachedBookshelfApiSyncController == null)
+            {
+                cachedBookshelfApiSyncController = UnityEngine.Object.FindFirstObjectByType<BookshelfApiSyncController>(FindObjectsInactive.Include);
+            }
+
+            var syncController = cachedBookshelfApiSyncController;
+            return syncController == null ||
+                   !syncController.IsServerSyncEnabled ||
+                   syncController.HasCompletedInitialRefresh;
+        }
+
+        private void ResetCachedMainSceneDependencies()
+        {
+            cachedBookshelfExperienceManager = null;
+            cachedCameraController = null;
+            cachedBookshelfGenerator = null;
+            cachedBookshelfApiSyncController = null;
+        }
+
+        private void RefreshStep3CompletionGate(bool force)
+        {
+            if (step3CompleteButton == null && step3CompleteHintLabel == null)
+            {
+                return;
+            }
+
+            if (!force && Time.unscaledTime < nextStep3CompletionGateRefreshAt)
+            {
+                return;
+            }
+
+            nextStep3CompletionGateRefreshAt = Time.unscaledTime + 0.25f;
+            var canComplete = currentStep == 3 && HasOnboardingBookshelf();
+            if (!force && canComplete == isStep3CompletionReady)
+            {
+                return;
+            }
+
+            isStep3CompletionReady = canComplete;
+            if (step3CompleteButton != null)
+            {
+                step3CompleteButton.gameObject.SetActive(canComplete);
+            }
+
+            if (step3CompleteHintLabel != null)
+            {
+                step3CompleteHintLabel.gameObject.SetActive(currentStep == 3 && !canComplete);
+            }
+        }
+
+        private bool HasOnboardingBookshelf()
+        {
+            if (SceneManager.GetActiveScene().name != SceneKeys.Main)
+            {
+                ResetCachedMainSceneDependencies();
+                return false;
+            }
+
+            if (cachedBookshelfGenerator == null)
+            {
+                cachedBookshelfGenerator = UnityEngine.Object.FindFirstObjectByType<BookshelfGenerator>(FindObjectsInactive.Include);
+            }
+
+            return cachedBookshelfGenerator != null && cachedBookshelfGenerator.BookshelfCount > 0;
         }
 
         private static bool IsCameraTransitioning(CameraController cameraController)
@@ -2313,6 +2601,7 @@ namespace App.Bootstrap
                 "책장 포커스 화면이 표시되었습니다." +
                 "책장 포커스 연결을 확인해주세요." +
                 "메인 화면과 책장 포커스 화면으로 이동할 준비가 되었습니다." +
+                "첫 책장을 만든 뒤 완료할 수 있습니다." +
                 "이전 단계완료";
 
             targetFontAsset.TryAddCharacters(commonText, out _);
@@ -2521,6 +2810,60 @@ namespace App.Bootstrap
             }
 
             return null;
+        }
+
+        private static BookshelfResponseDto FindFirstActiveBookshelf(BookshelfListResponseDto shelves)
+        {
+            var items = shelves?.Bookshelves;
+            if (items == null)
+            {
+                return null;
+            }
+
+            BookshelfResponseDto best = null;
+            for (var i = 0; i < items.Count; i++)
+            {
+                var shelf = items[i];
+                if (shelf == null || shelf.Id <= 0L)
+                {
+                    continue;
+                }
+
+                if (best == null || shelf.DisplayOrder < best.DisplayOrder)
+                {
+                    best = shelf;
+                }
+            }
+
+            return best;
+        }
+
+        private static string BuildOnboardingBookshelfName()
+        {
+            return "기본 책장";
+        }
+
+        private static string FormatApiErrorMessage(ApiErrorResponseDto error, string fallback)
+        {
+            return FirstNonEmpty(error?.Message, error?.Error, fallback);
+        }
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            if (values == null)
+            {
+                return string.Empty;
+            }
+
+            for (var i = 0; i < values.Length; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(values[i]))
+                {
+                    return values[i];
+                }
+            }
+
+            return string.Empty;
         }
 
         private static void SetMessage(TMP_Text label, string message, Color color)

@@ -33,6 +33,11 @@ namespace BookshelfPorting.Runtime
 
         public void AddBookToSection(BookEntity book, ShelfSection section)
         {
+            if (book == null || section == null || section.isAdvertisementSection)
+            {
+                return;
+            }
+
             if (book.CurrentSection != null)
             {
                 book.CurrentSection.books.Remove(book);
@@ -450,7 +455,7 @@ namespace BookshelfPorting.Runtime
 
         private bool TryInsertIntoSection(BookEntity book, ShelfSection target, int insertIndex)
         {
-            if (book == null || target == null)
+            if (book == null || target == null || target.isAdvertisementSection)
             {
                 return false;
             }
@@ -491,7 +496,7 @@ namespace BookshelfPorting.Runtime
 
         private bool CanSectionContainAll(ShelfSection section)
         {
-            if (section == null)
+            if (section == null || section.isAdvertisementSection)
             {
                 return false;
             }
@@ -502,7 +507,7 @@ namespace BookshelfPorting.Runtime
 
         private bool CanSectionContainBook(ShelfSection section, BookEntity book)
         {
-            if (section == null || book == null)
+            if (section == null || section.isAdvertisementSection || book == null)
             {
                 return false;
             }
@@ -544,7 +549,7 @@ namespace BookshelfPorting.Runtime
                     book,
                     new Vector3(
                         x + footprint * 0.5f,
-                        section.shelfTopY + book.height * sectionScale * 0.5f,
+                        section.BookBaseY + book.height * sectionScale * 0.5f,
                         section.GetFrontAlignedBookCenterZ(book, sectionScale, shelfFrontInset)),
                     BookFootprintUtility.GetVisualRotation(book.orientation),
                     book.BaseLocalScale * sectionScale));

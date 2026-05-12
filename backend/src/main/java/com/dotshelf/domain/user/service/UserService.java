@@ -14,6 +14,14 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dotshelf.domain.book.entity.UserBook;
+import com.dotshelf.domain.book.repository.UserBookRepository;
+import com.dotshelf.domain.bookshelf.entity.Bookshelf;
+import com.dotshelf.domain.bookshelf.entity.BookshelfItem;
+import com.dotshelf.domain.bookshelf.repository.BookshelfItemRepository;
+import com.dotshelf.domain.bookshelf.repository.BookshelfRepository;
+import com.dotshelf.domain.space.entity.Space;
+import com.dotshelf.domain.space.repository.SpaceRepository;
 import com.dotshelf.domain.user.dto.UserDtos.FeedSettingRequest;
 import com.dotshelf.domain.user.dto.UserDtos.FeedSettingResponse;
 import com.dotshelf.domain.user.dto.UserDtos.NicknameAvailabilityResponse;
@@ -53,12 +61,18 @@ public class UserService {
 
     // 프로필 이미지 — 너무 큰 파일은 막되 카메라 원본(보통 3~4MB)은 받을 수 있도록 5MB.
     private static final long MAX_PROFILE_IMAGE_SIZE_BYTES = 5L * 1024 * 1024;
+    private static final String ACTIVE = "ACTIVE";
+    private static final String DELETED = "DELETED";
     private static final Map<String, String> ALLOWED_PROFILE_IMAGE_TYPES = Map.of(
             "image/jpeg", "jpg",
             "image/png", "png",
             "image/webp", "webp");
 
     private final UserRepository userRepository;
+    private final SpaceRepository spaceRepository;
+    private final BookshelfRepository bookshelfRepository;
+    private final BookshelfItemRepository bookshelfItemRepository;
+    private final UserBookRepository userBookRepository;
     private final FollowRepository followRepository;
     private final UserBlockRepository userBlockRepository;
     private final UserNotificationSettingRepository notificationSettingRepository;
@@ -91,18 +105,53 @@ public class UserService {
         // 프로필 이미지 URL 은 본 메서드로 변경하지 않는다 — S3 업로드/confirm 흐름으로만 갱신.
         // 닉네임/소개만 갱신하고 기존 이미지 URL 은 그대로 보존.
         user.updateProfile(request.nickname(), user.getProfileImageUrl(), request.introduction());
-        // 온보딩 첫 프로필 set 시점에 isOnboarded 를 영구화. PATCH /v1/users/me 가 온보딩 step1 에서
-        // 호출되는 유일한 완료 신호이므로 여기서 flip. 이후 Settings 등에서 재호출돼도 idempotent.
-        // 다음 socialLogin 응답의 onboarded=true 로 FE 가 onboarding 반복하지 않게 됨.
-        if (!user.isOnboarded()) {
-            user.completeOnboarding();
-        }
+        completeOnboarding(user);
         return UserProfileResponse.from(user);
     }
 
     @Transactional
+    public void completeOnboardingIfNeeded(Long userId) {
+        completeOnboarding(getUser(requireUserId(userId)));
+    }
+
+    private static void completeOnboarding(User user) {
+        if (!user.isOnboarded()) {
+            user.completeOnboarding();
+        }
+    }
+
+    @Transactional
     public void deleteMe(Long userId) {
-        getUser(requireUserId(userId)).delete();
+        Long currentUserId = requireUserId(userId);
+        removeShelfDataForWithdrawal(currentUserId);
+        getUser(currentUserId).delete();
+    }
+
+    // Account withdrawal is a soft-delete flow. This cleanup is intentionally
+    // scoped to the user's personal room/bookshelf state so re-login starts
+    // from onboarding without resurrecting stale shelves; social identity and
+    // broader account-owned records are handled by the user lifecycle policy.
+    private void removeShelfDataForWithdrawal(Long userId) {
+        List<Space> spaces = spaceRepository.findByOwnerUserIdAndDeletedAtIsNull(userId);
+        List<Long> spaceIds = spaces.stream()
+                .map(Space::getId)
+                .toList();
+        List<Bookshelf> bookshelves = spaceIds.isEmpty()
+                ? List.of()
+                : bookshelfRepository.findBySpaceIdInAndStatusOrderBySpaceIdAscDisplayOrderAsc(spaceIds, ACTIVE);
+        List<Long> bookshelfIds = bookshelves.stream()
+                .map(Bookshelf::getId)
+                .toList();
+
+        if (!bookshelfIds.isEmpty()) {
+            bookshelfItemRepository.findByBookshelfIdInAndStatus(bookshelfIds, ACTIVE)
+                    .forEach(BookshelfItem::remove);
+        }
+
+        bookshelves.forEach(Bookshelf::delete);
+        spaces.forEach(Space::delete);
+        userBookRepository.findByUserIdAndStorageStatusNot(userId, DELETED)
+                .forEach(UserBook::delete);
     }
 
     /**

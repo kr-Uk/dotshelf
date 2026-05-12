@@ -56,6 +56,10 @@ public class BookshelfService {
 
     private static final int SECTION_ROWS = 4;
     private static final int SECTION_COLUMNS = 4;
+    private static final int RESERVED_AD_ROW = SECTION_ROWS - 1;
+    private static final int RESERVED_AD_COLUMN = SECTION_COLUMNS - 1;
+    private static final String ACTIVE = "ACTIVE";
+    private static final String ASSET_TYPE_BOOKSHELF_SKIN = "BOOKSHELF_SKIN";
 
     private final BookshelfRepository bookshelfRepository;
     private final BookshelfSectionRepository sectionRepository;
@@ -70,7 +74,7 @@ public class BookshelfService {
     private final UserService userService;
 
     public BookshelfListResponse getBookshelves(Long spaceId) {
-        return new BookshelfListResponse(bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(spaceId, "ACTIVE")
+        return new BookshelfListResponse(bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(spaceId, ACTIVE)
                 .stream()
                 .map(BookshelfResponse::from)
                 .toList());
@@ -85,7 +89,7 @@ public class BookshelfService {
         Bookshelf bookshelf = getBookshelf(bookshelfId);
         requireReadable(userId, bookshelf);
         List<BookshelfSection> sections = sectionRepository.findByBookshelfIdOrderByRowNoAscColumnNoAsc(bookshelfId);
-        List<BookshelfItem> items = bookshelfItemRepository.findByBookshelfIdAndStatusOrderByBookshelfSectionIdAscSlotNoAsc(bookshelfId, "ACTIVE");
+        List<BookshelfItem> items = bookshelfItemRepository.findByBookshelfIdAndStatusOrderByBookshelfSectionIdAscSlotNoAsc(bookshelfId, ACTIVE);
         log.debug("getItems bookshelfId={} sections={} items={}", bookshelfId, sections.size(), items.size());
         Map<Long, BookshelfSection> sectionsById = sections.stream()
                 .collect(Collectors.toMap(BookshelfSection::getId, Function.identity()));
@@ -114,7 +118,7 @@ public class BookshelfService {
         if (!space.getOwnerUserId().equals(currentUserId)) {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
-        int displayOrder = bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(request.spaceId(), "ACTIVE").stream()
+        int displayOrder = bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(request.spaceId(), ACTIVE).stream()
                 .mapToInt(Bookshelf::getDisplayOrder)
                 .max()
                 .orElse(-1) + 1;
@@ -127,6 +131,7 @@ public class BookshelfService {
                 .displayOrder(displayOrder)
                 .build());
         createDefaultSections(bookshelf.getId());
+        userService.completeOnboardingIfNeeded(currentUserId);
         return BookshelfResponse.from(bookshelf);
     }
 
@@ -134,6 +139,13 @@ public class BookshelfService {
     public BookshelfResponse update(Long userId, Long bookshelfId, UpdateBookshelfRequest request) {
         Long currentUserId = userService.requireUserId(userId);
         Bookshelf bookshelf = getOwnedBookshelf(currentUserId, bookshelfId);
+        if (Boolean.TRUE.equals(request.clearSkinInventory())) {
+            bookshelf.update(request.name(), request.description(), request.visibilityScope(), null);
+            bookshelf.resetSkin();
+            return BookshelfResponse.from(bookshelf);
+        }
+
+        verifyBookshelfSkinInventory(currentUserId, request.skinInventoryId());
         bookshelf.update(request.name(), request.description(), request.visibilityScope(), request.skinInventoryId());
         return BookshelfResponse.from(bookshelf);
     }
@@ -190,7 +202,7 @@ public class BookshelfService {
     public BookshelfItemResponse addInteriorObject(Long userId, Long bookshelfId, InteriorObjectRequest request) {
         Long currentUserId = userService.requireUserId(userId);
         getOwnedBookshelf(currentUserId, bookshelfId);
-        requireSectionInBookshelf(bookshelfId, request.sectionId());
+        requireAvailablePlacement(bookshelfId, request.sectionId(), request.slotNo(), null);
         UserAssetInventory inventory = getOwnedInventory(currentUserId, request.assetInventoryId());
         BookshelfItem item = bookshelfItemRepository.save(BookshelfItem.builder()
                 .bookshelfId(bookshelfId)
@@ -212,7 +224,7 @@ public class BookshelfService {
                 .orElseThrow(() -> new CustomException(ErrorCode.BOOKSHELF_ITEM_NOT_FOUND));
         getOwnedBookshelf(currentUserId, item.getBookshelfId());
         getOwnedBookshelf(currentUserId, bookshelfId);
-        requireSectionInBookshelf(bookshelfId, sectionId);
+        requireAvailablePlacement(bookshelfId, sectionId, slotNo, item.getId());
         item.move(bookshelfId, sectionId, slotNo, facingDirection, displayStyle);
         return BookshelfItemResponse.from(item);
     }
@@ -233,8 +245,12 @@ public class BookshelfService {
     }
 
     public Bookshelf getBookshelf(Long bookshelfId) {
-        return bookshelfRepository.findById(bookshelfId)
+        Bookshelf bookshelf = bookshelfRepository.findById(bookshelfId)
                 .orElseThrow(() -> new CustomException(ErrorCode.BOOKSHELF_NOT_FOUND));
+        if (!ACTIVE.equalsIgnoreCase(bookshelf.getStatus())) {
+            throw new CustomException(ErrorCode.BOOKSHELF_NOT_FOUND);
+        }
+        return bookshelf;
     }
 
     public Bookshelf getOwnedBookshelf(Long userId, Long bookshelfId) {
@@ -259,6 +275,42 @@ public class BookshelfService {
     }
 
     public void requireSectionInBookshelf(Long bookshelfId, Long sectionId) {
+        resolveSectionInBookshelf(bookshelfId, sectionId);
+    }
+
+    public void requireAvailablePlacement(Long bookshelfId, Long sectionId, Integer slotNo, Long existingItemId) {
+        BookshelfSection section = resolveSectionInBookshelf(bookshelfId, sectionId);
+        if (isReservedAdvertisementSection(section)) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "Reserved advertisement section cannot accept items.");
+        }
+        if (slotNo == null || slotNo < 0) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "Invalid bookshelf slot number.");
+        }
+        if (slotNo >= section.getMaxItemCount()) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "Bookshelf slot number exceeds section capacity.");
+        }
+
+        long activeItemCount = existingItemId == null
+                ? bookshelfItemRepository.countByBookshelfSectionIdAndStatus(sectionId, ACTIVE)
+                : bookshelfItemRepository.countByBookshelfSectionIdAndStatusAndIdNot(sectionId, ACTIVE, existingItemId);
+        if (activeItemCount >= section.getMaxItemCount()) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "Bookshelf section is full.");
+        }
+
+        boolean occupied = existingItemId == null
+                ? bookshelfItemRepository.existsByBookshelfIdAndBookshelfSectionIdAndSlotNoAndStatus(bookshelfId, sectionId, slotNo, ACTIVE)
+                : bookshelfItemRepository.existsByBookshelfIdAndBookshelfSectionIdAndSlotNoAndStatusAndIdNot(
+                        bookshelfId,
+                        sectionId,
+                        slotNo,
+                        ACTIVE,
+                        existingItemId);
+        if (occupied) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "Bookshelf slot is already occupied.");
+        }
+    }
+
+    private BookshelfSection resolveSectionInBookshelf(Long bookshelfId, Long sectionId) {
         if (sectionId == null) {
             throw new CustomException(ErrorCode.INVALID_INPUT);
         }
@@ -267,6 +319,11 @@ public class BookshelfService {
         if (!section.getBookshelfId().equals(bookshelfId)) {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
+        return section;
+    }
+
+    private boolean isReservedAdvertisementSection(BookshelfSection section) {
+        return section.getRowNo() == RESERVED_AD_ROW && section.getColumnNo() == RESERVED_AD_COLUMN;
     }
 
     private void createDefaultSections(Long bookshelfId) {
@@ -284,7 +341,7 @@ public class BookshelfService {
 
     private void relocateDeletedBookshelves(Long spaceId) {
         bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(spaceId).stream()
-                .filter(bookshelf -> !"ACTIVE".equalsIgnoreCase(bookshelf.getStatus()))
+                .filter(bookshelf -> !ACTIVE.equalsIgnoreCase(bookshelf.getStatus()))
                 .forEach(Bookshelf::moveToDeletedOrder);
         bookshelfRepository.flush();
     }
@@ -296,6 +353,19 @@ public class BookshelfService {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
         return inventory;
+    }
+
+    private void verifyBookshelfSkinInventory(Long userId, Long skinInventoryId) {
+        if (skinInventoryId == null) {
+            return;
+        }
+
+        UserAssetInventory inventory = getOwnedInventory(userId, skinInventoryId);
+        Asset asset = assetRepository.findById(inventory.getAssetId())
+                .orElseThrow(() -> new CustomException(ErrorCode.ASSET_NOT_FOUND));
+        if (!ASSET_TYPE_BOOKSHELF_SKIN.equalsIgnoreCase(asset.getAssetType())) {
+            throw new CustomException(ErrorCode.CATEGORY_INVENTORY_TYPE_MISMATCH);
+        }
     }
 
     private Map<Long, UserBook> userBooksById(List<BookshelfItem> items) {
@@ -333,7 +403,7 @@ public class BookshelfService {
         if (userBookIds.isEmpty()) {
             return Map.of();
         }
-        return readingRecordRepository.findBookshelfRenderSummariesByUserBookIdInAndStatus(userBookIds, "ACTIVE").stream()
+        return readingRecordRepository.findBookshelfRenderSummariesByUserBookIdInAndStatus(userBookIds, ACTIVE).stream()
                 .collect(Collectors.toMap(
                         ReadingRecordSummaryResponse::userBookId,
                         Function.identity(),
