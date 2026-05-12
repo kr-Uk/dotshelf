@@ -79,10 +79,10 @@ namespace BookshelfPorting.Runtime
         private const int BookRatingChoiceCount = 10;
         private const float BookRatingStep = 0.5f;
         private const float BookshelfTransientStatusDuration = 2.8f;
-        private const float VisitedSpaceLoadingMinimumVisibleSeconds = 2.0f;
-        private const float VisitedSpaceLoadingBookCenterY = 102f;
-        private const float VisitedSpaceLoadingPageWidth = 112f;
-        private const float VisitedSpaceLoadingPageHeight = 134f;
+        private const float VisitedSpaceLoadingMinimumVisibleSeconds = 2.65f;
+        private const float VisitedSpaceLoadingBookCenterY = 108f;
+        private const float VisitedSpaceLoadingPageWidth = 124f;
+        private const float VisitedSpaceLoadingPageHeight = 148f;
         private const float VisitedSpaceLoadingHalfPageWidth = VisitedSpaceLoadingPageWidth * 0.5f;
         private static readonly Color32 DeleteButtonBackground = new(196, 78, 72, 255);
         private static readonly Color32 DeleteButtonHighlighted = new(176, 62, 58, 255);
@@ -131,9 +131,11 @@ namespace BookshelfPorting.Runtime
             new Vector2(-142f, 116f),
             new Vector2(142f, 106f),
             new Vector2(-124f, 42f),
-            new Vector2(124f, 48f)
+            new Vector2(124f, 48f),
+            new Vector2(-176f, -116f),
+            new Vector2(176f, -118f)
         };
-        private static readonly float[] VisitedSpaceLoadingDecorationBaseRotations = { -12f, 14f, 8f, -8f };
+        private static readonly float[] VisitedSpaceLoadingDecorationBaseRotations = { -12f, 14f, 8f, -8f, -6f, 7f };
         private static Sprite roundedUiSprite;
         private static Texture2D roundedUiTexture;
         private static Sprite searchIconRingSprite;
@@ -502,14 +504,22 @@ namespace BookshelfPorting.Runtime
         private bool openOtherSpacesTabAfterNotebookFocus;
         private GameObject visitedSpaceLoadingBackdrop;
         private GameObject visitedSpaceLoadingPanel;
+        private RectTransform visitedSpaceLoadingBookShadowRect;
+        private Image visitedSpaceLoadingBookShadowImage;
+        private RectTransform visitedSpaceLoadingPageCastShadowRect;
+        private Image visitedSpaceLoadingPageCastShadowImage;
         private RectTransform visitedSpaceLoadingFlipPageRect;
         private Image visitedSpaceLoadingFlipPageImage;
         private RectTransform visitedSpaceLoadingFlipPageFoldRect;
         private Image visitedSpaceLoadingFlipPageFoldImage;
         private RectTransform visitedSpaceLoadingFlipPageEdgeRect;
         private Image visitedSpaceLoadingFlipPageEdgeImage;
-        private readonly RectTransform[] visitedSpaceLoadingDecorationRects = new RectTransform[4];
-        private readonly Image[] visitedSpaceLoadingDecorationImages = new Image[4];
+        private RectTransform visitedSpaceLoadingFlipPageHighlightRect;
+        private Image visitedSpaceLoadingFlipPageHighlightImage;
+        private RectTransform visitedSpaceLoadingProgressFillRect;
+        private Image visitedSpaceLoadingProgressFillImage;
+        private readonly RectTransform[] visitedSpaceLoadingDecorationRects = new RectTransform[6];
+        private readonly Image[] visitedSpaceLoadingDecorationImages = new Image[6];
         private readonly RectTransform[] visitedSpaceLoadingDotRects = new RectTransform[3];
         private readonly Image[] visitedSpaceLoadingDotImages = new Image[3];
         private Text visitedSpaceLoadingTitleText;
@@ -4284,7 +4294,7 @@ namespace BookshelfPorting.Runtime
                 visitedSpaceLoadingBackdrop.transform,
                 "VisitedSpaceLoadingPanel",
                 Vector2.zero,
-                new Vector2(454f, 370f),
+                new Vector2(486f, 396f),
                 new Vector2(0.5f, 0.5f));
 
             var panelImage = visitedSpaceLoadingPanel.GetComponent<Image>();
@@ -4296,10 +4306,18 @@ namespace BookshelfPorting.Runtime
             }
             AddSoftShadow(visitedSpaceLoadingPanel, new Color(0.20f, 0.12f, 0.07f, 0.14f), new Vector2(0f, -12f));
 
+            CreateHudImage(visitedSpaceLoadingPanel.transform, "VisitedSpaceLoadingTopAccent", new Vector2(-158f, 166f), new Vector2(82f, 4f), new Vector2(0.5f, 0.5f), new Color32(163, 128, 105, 172));
+            CreateHudImage(visitedSpaceLoadingPanel.transform, "VisitedSpaceLoadingTopAccentSmall", new Vector2(-62f, 166f), new Vector2(32f, 4f), new Vector2(0.5f, 0.5f), new Color32(214, 196, 173, 180));
+            CreateHudImage(visitedSpaceLoadingPanel.transform, "VisitedSpaceLoadingShelfBase", new Vector2(0f, 34f), new Vector2(260f, 8f), new Vector2(0.5f, 0.5f), new Color32(163, 128, 105, 95));
+
             AddVisitedSpaceLoadingDecoration(0, new Vector2(-142f, 116f), new Vector2(18f, 24f), new Color32(214, 196, 173, 208), -12f);
             AddVisitedSpaceLoadingDecoration(1, new Vector2(142f, 106f), new Vector2(20f, 26f), new Color32(163, 128, 105, 170), 14f);
             AddVisitedSpaceLoadingDecoration(2, new Vector2(-124f, 42f), new Vector2(16f, 20f), new Color32(246, 242, 236, 232), 8f);
             AddVisitedSpaceLoadingDecoration(3, new Vector2(124f, 48f), new Vector2(14f, 34f), new Color32(163, 128, 105, 194), -8f);
+            AddVisitedSpaceLoadingDecoration(4, new Vector2(-176f, -116f), new Vector2(34f, 10f), new Color32(214, 196, 173, 180), -6f);
+            AddVisitedSpaceLoadingDecoration(5, new Vector2(176f, -118f), new Vector2(38f, 10f), new Color32(163, 128, 105, 160), 7f);
+            AddVisitedSpaceLoadingBookStack(visitedSpaceLoadingPanel.transform, "Left", new Vector2(-188f, -122f), false);
+            AddVisitedSpaceLoadingBookStack(visitedSpaceLoadingPanel.transform, "Right", new Vector2(188f, -122f), true);
 
             var bookShadow = CreateHudImage(
                 visitedSpaceLoadingPanel.transform,
@@ -4309,6 +4327,26 @@ namespace BookshelfPorting.Runtime
                 new Vector2(0.5f, 0.5f),
                 new Color32(163, 128, 105, 42));
             ApplyRoundedSprite(bookShadow);
+            visitedSpaceLoadingBookShadowRect = bookShadow.rectTransform;
+            visitedSpaceLoadingBookShadowImage = bookShadow;
+
+            var leftCover = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingLeftCover",
+                new Vector2(-VisitedSpaceLoadingHalfPageWidth, VisitedSpaceLoadingBookCenterY - 3f),
+                new Vector2(VisitedSpaceLoadingPageWidth + 12f, VisitedSpaceLoadingPageHeight + 14f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(163, 128, 105, 118));
+            ApplyRoundedSprite(leftCover);
+
+            var rightCover = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingRightCover",
+                new Vector2(VisitedSpaceLoadingHalfPageWidth, VisitedSpaceLoadingBookCenterY - 3f),
+                new Vector2(VisitedSpaceLoadingPageWidth + 12f, VisitedSpaceLoadingPageHeight + 14f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(214, 196, 173, 132));
+            ApplyRoundedSprite(rightCover);
 
             var leftPage = CreateHudImage(
                 visitedSpaceLoadingPanel.transform,
@@ -4318,6 +4356,7 @@ namespace BookshelfPorting.Runtime
                 new Vector2(0.5f, 0.5f),
                 new Color32(246, 242, 236, 255));
             ApplyRoundedSprite(leftPage);
+            AddVisitedSpaceLoadingPageLines(leftPage.transform, "Left", false);
 
             var rightPage = CreateHudImage(
                 visitedSpaceLoadingPanel.transform,
@@ -4327,6 +4366,18 @@ namespace BookshelfPorting.Runtime
                 new Vector2(0.5f, 0.5f),
                 new Color32(214, 196, 173, 255));
             ApplyRoundedSprite(rightPage);
+            AddVisitedSpaceLoadingPageLines(rightPage.transform, "Right", true);
+
+            var pageCastShadow = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingTurningPageShadow",
+                new Vector2(VisitedSpaceLoadingHalfPageWidth, VisitedSpaceLoadingBookCenterY - 4f),
+                new Vector2(VisitedSpaceLoadingPageWidth, VisitedSpaceLoadingPageHeight - 8f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(92, 68, 52, 0));
+            ApplyRoundedSprite(pageCastShadow);
+            visitedSpaceLoadingPageCastShadowRect = pageCastShadow.rectTransform;
+            visitedSpaceLoadingPageCastShadowImage = pageCastShadow;
 
             var flipPage = CreateHudImage(
                 visitedSpaceLoadingPanel.transform,
@@ -4339,6 +4390,7 @@ namespace BookshelfPorting.Runtime
             visitedSpaceLoadingFlipPageRect = flipPage.rectTransform;
             visitedSpaceLoadingFlipPageRect.pivot = new Vector2(0f, 0.5f);
             visitedSpaceLoadingFlipPageImage = flipPage;
+            AddVisitedSpaceLoadingPageLines(flipPage.transform, "Flip", true);
 
             var foldShadow = CreateHudImage(
                 flipPage.transform,
@@ -4350,6 +4402,17 @@ namespace BookshelfPorting.Runtime
             ApplyRoundedSprite(foldShadow);
             visitedSpaceLoadingFlipPageFoldRect = foldShadow.rectTransform;
             visitedSpaceLoadingFlipPageFoldImage = foldShadow;
+
+            var pageHighlight = CreateHudImage(
+                flipPage.transform,
+                "VisitedSpaceLoadingFlipPageHighlight",
+                new Vector2(VisitedSpaceLoadingHalfPageWidth - 22f, 0f),
+                new Vector2(18f, VisitedSpaceLoadingPageHeight - 22f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(255, 255, 255, 0));
+            ApplyRoundedSprite(pageHighlight);
+            visitedSpaceLoadingFlipPageHighlightRect = pageHighlight.rectTransform;
+            visitedSpaceLoadingFlipPageHighlightImage = pageHighlight;
 
             var pageEdge = CreateHudImage(
                 flipPage.transform,
@@ -4403,10 +4466,29 @@ namespace BookshelfPorting.Runtime
             visitedSpaceLoadingBodyText.horizontalOverflow = HorizontalWrapMode.Wrap;
             visitedSpaceLoadingBodyText.verticalOverflow = VerticalWrapMode.Truncate;
 
+            var progressTrack = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingProgressTrack",
+                new Vector2(0f, -126f),
+                new Vector2(172f, 6f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(214, 196, 173, 132));
+            ApplyRoundedSprite(progressTrack);
+            var progressFill = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingProgressFill",
+                new Vector2(-56f, -126f),
+                new Vector2(46f, 6f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(163, 128, 105, 218));
+            ApplyRoundedSprite(progressFill);
+            visitedSpaceLoadingProgressFillRect = progressFill.rectTransform;
+            visitedSpaceLoadingProgressFillImage = progressFill;
+
             var dotRow = CreateHudContainer(
                 visitedSpaceLoadingPanel.transform,
                 "VisitedSpaceLoadingDots",
-                new Vector2(0f, -138f),
+                new Vector2(0f, -158f),
                 new Vector2(76f, 16f),
                 new Vector2(0.5f, 0.5f));
             ConfigureHorizontalLayout(dotRow, TextAnchor.MiddleCenter, 8f);
@@ -4443,6 +4525,71 @@ namespace BookshelfPorting.Runtime
             decoration.rectTransform.localRotation = Quaternion.Euler(0f, 0f, rotation);
             visitedSpaceLoadingDecorationRects[index] = decoration.rectTransform;
             visitedSpaceLoadingDecorationImages[index] = decoration;
+        }
+
+        private static void AddVisitedSpaceLoadingBookStack(Transform parent, string name, Vector2 anchoredPosition, bool mirrored)
+        {
+            var root = CreateHudContainer(
+                parent,
+                $"VisitedSpaceLoading{name}BookStack",
+                anchoredPosition,
+                new Vector2(72f, 46f),
+                new Vector2(0.5f, 0.5f));
+
+            var baseLine = CreateHudImage(
+                root,
+                "Base",
+                new Vector2(0f, -15f),
+                new Vector2(64f, 5f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(163, 128, 105, 145));
+            ApplyRoundedSprite(baseLine);
+
+            var direction = mirrored ? -1f : 1f;
+            var colors = new[]
+            {
+                new Color32(163, 128, 105, 222),
+                new Color32(214, 196, 173, 236),
+                new Color32(246, 242, 236, 246),
+                new Color32(173, 133, 104, 206)
+            };
+
+            for (var i = 0; i < colors.Length; i++)
+            {
+                var book = CreateHudImage(
+                    root,
+                    $"Book_{i}",
+                    new Vector2(direction * (-22f + i * 14f), -2f + (i % 2) * 2f),
+                    new Vector2(10f + (i % 2) * 3f, 28f + i * 2f),
+                    new Vector2(0.5f, 0.5f),
+                    colors[i]);
+                ApplyRoundedSprite(book);
+                book.rectTransform.localRotation = Quaternion.Euler(0f, 0f, direction * (-4f + i * 2.2f));
+            }
+        }
+
+        private static void AddVisitedSpaceLoadingPageLines(Transform pageTransform, string prefix, bool warmTint)
+        {
+            if (pageTransform == null)
+            {
+                return;
+            }
+
+            var lineColor = warmTint
+                ? new Color32(163, 128, 105, 48)
+                : new Color32(163, 128, 105, 38);
+            for (var i = 0; i < 4; i++)
+            {
+                var width = 64f - i * 7f;
+                var line = CreateHudImage(
+                    pageTransform,
+                    $"VisitedSpaceLoading{prefix}Line_{i}",
+                    new Vector2(i % 2 == 0 ? -4f : 5f, 34f - i * 23f),
+                    new Vector2(width, 2f),
+                    new Vector2(0.5f, 0.5f),
+                    lineColor);
+                line.rectTransform.localRotation = Quaternion.Euler(0f, 0f, i % 2 == 0 ? -1.2f : 1.4f);
+            }
         }
 
         private void ShowVisitedSpaceLoading()
@@ -4498,29 +4645,30 @@ namespace BookshelfPorting.Runtime
 
         private void AnimateVisitedSpaceLoadingPage(float elapsed)
         {
-            const float cycleSeconds = 1.72f;
+            const float cycleSeconds = 2.28f;
             var progress = Mathf.Repeat(elapsed, cycleSeconds) / cycleSeconds;
-            var pageAlpha = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(progress / 0.08f)) *
-                            (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((progress - 0.94f) / 0.06f)));
-            var turnProgress = Mathf.Clamp01((progress - 0.06f) / 0.88f);
-            var turn = Mathf.SmoothStep(0f, 1f, turnProgress);
+            var pageAlpha = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(progress / 0.12f)) *
+                            (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((progress - 0.93f) / 0.07f)));
+            var turnProgress = Mathf.Clamp01((progress - 0.08f) / 0.78f);
+            var turn = turnProgress * turnProgress * turnProgress * (turnProgress * (6f * turnProgress - 15f) + 10f);
             var foldAmount = Mathf.Sin(turn * Mathf.PI);
-            var flutter = Mathf.Sin(elapsed * 18f + turn * Mathf.PI * 1.4f) * foldAmount;
-            var smallFlutter = Mathf.Sin(elapsed * 31f + turn * Mathf.PI * 0.65f) * foldAmount;
+            var flutter = Mathf.Sin(elapsed * 8.2f + turn * Mathf.PI * 1.08f) * foldAmount;
+            var smallFlutter = Mathf.Sin(elapsed * 14.4f + turn * Mathf.PI * 0.72f) * foldAmount;
             var isLeavingRightPage = turn < 0.5f;
             var sideProgress = isLeavingRightPage ? turn * 2f : (turn - 0.5f) * 2f;
             var sideEased = Mathf.SmoothStep(0f, 1f, sideProgress);
-            var widthScale = Mathf.Lerp(1f, 0.16f, Mathf.Pow(foldAmount, 0.72f));
-            var heightScale = 1f + foldAmount * 0.08f + smallFlutter * 0.022f;
+            var pageBow = Mathf.Sin(sideEased * Mathf.PI);
+            var widthScale = Mathf.Lerp(1f, 0.09f, Mathf.Pow(foldAmount, 0.66f));
+            var heightScale = 1f + foldAmount * 0.13f + smallFlutter * 0.014f;
             var yRotation = isLeavingRightPage
-                ? Mathf.Lerp(0f, -82f, sideEased)
-                : Mathf.Lerp(82f, 0f, sideEased);
-            var zRotation = (isLeavingRightPage ? -8f : 8f) * foldAmount + flutter * 5f;
+                ? Mathf.Lerp(0f, -88f, sideEased)
+                : Mathf.Lerp(88f, 0f, sideEased);
+            var zRotation = (isLeavingRightPage ? -5.8f : 5.8f) * foldAmount + flutter * 2.8f + pageBow * (isLeavingRightPage ? -3.2f : 3.2f);
 
             visitedSpaceLoadingFlipPageRect.pivot = new Vector2(isLeavingRightPage ? 0f : 1f, 0.5f);
             visitedSpaceLoadingFlipPageRect.anchoredPosition = new Vector2(
-                flutter * 1.4f,
-                VisitedSpaceLoadingBookCenterY + foldAmount * 9f + smallFlutter * 1.8f);
+                flutter * 0.9f + pageBow * (isLeavingRightPage ? -3.8f : 3.8f),
+                VisitedSpaceLoadingBookCenterY + foldAmount * 15f + smallFlutter * 1.1f);
             visitedSpaceLoadingFlipPageRect.localScale = new Vector3(widthScale, heightScale, 1f);
             visitedSpaceLoadingFlipPageRect.localRotation = Quaternion.Euler(0f, yRotation, zRotation);
 
@@ -4534,26 +4682,70 @@ namespace BookshelfPorting.Runtime
                 visitedSpaceLoadingFlipPageImage.color = pageColor;
             }
 
+            if (visitedSpaceLoadingBookShadowRect != null)
+            {
+                var shadowPulse = 1f + foldAmount * 0.06f;
+                visitedSpaceLoadingBookShadowRect.localScale = new Vector3(shadowPulse, 1f + foldAmount * 0.10f, 1f);
+            }
+
+            if (visitedSpaceLoadingBookShadowImage != null)
+            {
+                var color = new Color32(163, 128, 105, 42);
+                color.a = (byte)Mathf.RoundToInt(Mathf.Lerp(38f, 66f, foldAmount));
+                visitedSpaceLoadingBookShadowImage.color = color;
+            }
+
+            if (visitedSpaceLoadingPageCastShadowRect != null)
+            {
+                visitedSpaceLoadingPageCastShadowRect.pivot = new Vector2(isLeavingRightPage ? 0f : 1f, 0.5f);
+                visitedSpaceLoadingPageCastShadowRect.anchoredPosition = new Vector2(
+                    (isLeavingRightPage ? 25f : -25f) + flutter * 1.1f,
+                    VisitedSpaceLoadingBookCenterY - 5f + foldAmount * 4f);
+                visitedSpaceLoadingPageCastShadowRect.localScale = new Vector3(Mathf.Lerp(0.94f, 0.38f, foldAmount), Mathf.Lerp(0.94f, 1.08f, foldAmount), 1f);
+                visitedSpaceLoadingPageCastShadowRect.localRotation = Quaternion.Euler(0f, 0f, zRotation * 0.38f);
+            }
+
+            if (visitedSpaceLoadingPageCastShadowImage != null)
+            {
+                var color = new Color32(92, 68, 52, 0);
+                color.a = (byte)Mathf.RoundToInt(Mathf.Lerp(12f, 92f, foldAmount) * pageAlpha);
+                visitedSpaceLoadingPageCastShadowImage.color = color;
+            }
+
             var edgeX = isLeavingRightPage ? VisitedSpaceLoadingHalfPageWidth : -VisitedSpaceLoadingHalfPageWidth;
             if (visitedSpaceLoadingFlipPageFoldRect != null)
             {
-                visitedSpaceLoadingFlipPageFoldRect.anchoredPosition = new Vector2(edgeX - Mathf.Sign(edgeX) * Mathf.Lerp(8f, 16f, foldAmount), flutter * 1.1f);
-                visitedSpaceLoadingFlipPageFoldRect.sizeDelta = new Vector2(Mathf.Lerp(14f, 28f, foldAmount), VisitedSpaceLoadingPageHeight - 14f);
-                visitedSpaceLoadingFlipPageFoldRect.localRotation = Quaternion.Euler(0f, 0f, -zRotation * 0.42f + smallFlutter * 2.4f);
+                visitedSpaceLoadingFlipPageFoldRect.anchoredPosition = new Vector2(edgeX - Mathf.Sign(edgeX) * Mathf.Lerp(8f, 22f, foldAmount), flutter * 0.7f);
+                visitedSpaceLoadingFlipPageFoldRect.sizeDelta = new Vector2(Mathf.Lerp(12f, 31f, foldAmount), VisitedSpaceLoadingPageHeight - 14f);
+                visitedSpaceLoadingFlipPageFoldRect.localRotation = Quaternion.Euler(0f, 0f, -zRotation * 0.32f + smallFlutter * 1.2f);
             }
 
             if (visitedSpaceLoadingFlipPageFoldImage != null)
             {
                 var color = new Color32(92, 68, 52, 0);
-                color.a = (byte)Mathf.RoundToInt(Mathf.Lerp(16f, 140f, foldAmount) * pageAlpha);
+                color.a = (byte)Mathf.RoundToInt(Mathf.Lerp(12f, 150f, foldAmount) * pageAlpha);
                 visitedSpaceLoadingFlipPageFoldImage.color = color;
+            }
+
+            if (visitedSpaceLoadingFlipPageHighlightRect != null)
+            {
+                visitedSpaceLoadingFlipPageHighlightRect.anchoredPosition = new Vector2(edgeX - Mathf.Sign(edgeX) * Mathf.Lerp(23f, 36f, foldAmount), -flutter * 0.32f);
+                visitedSpaceLoadingFlipPageHighlightRect.sizeDelta = new Vector2(Mathf.Lerp(14f, 24f, pageBow), VisitedSpaceLoadingPageHeight - 24f);
+                visitedSpaceLoadingFlipPageHighlightRect.localRotation = Quaternion.Euler(0f, 0f, zRotation * 0.14f);
+            }
+
+            if (visitedSpaceLoadingFlipPageHighlightImage != null)
+            {
+                var color = new Color32(255, 255, 255, 0);
+                color.a = (byte)Mathf.RoundToInt(Mathf.Lerp(18f, 94f, pageBow) * pageAlpha);
+                visitedSpaceLoadingFlipPageHighlightImage.color = color;
             }
 
             if (visitedSpaceLoadingFlipPageEdgeRect != null)
             {
-                visitedSpaceLoadingFlipPageEdgeRect.anchoredPosition = new Vector2(edgeX, flutter * 0.8f);
-                visitedSpaceLoadingFlipPageEdgeRect.sizeDelta = new Vector2(Mathf.Lerp(4f, 7f, foldAmount), VisitedSpaceLoadingPageHeight - 12f);
-                visitedSpaceLoadingFlipPageEdgeRect.localRotation = Quaternion.Euler(0f, 0f, -zRotation * 0.28f + smallFlutter * 1.8f);
+                visitedSpaceLoadingFlipPageEdgeRect.anchoredPosition = new Vector2(edgeX, flutter * 0.7f);
+                visitedSpaceLoadingFlipPageEdgeRect.sizeDelta = new Vector2(Mathf.Lerp(3f, 8f, foldAmount), VisitedSpaceLoadingPageHeight - 12f);
+                visitedSpaceLoadingFlipPageEdgeRect.localRotation = Quaternion.Euler(0f, 0f, -zRotation * 0.22f + smallFlutter * 1.3f);
             }
 
             if (visitedSpaceLoadingFlipPageEdgeImage != null)
@@ -4590,6 +4782,23 @@ namespace BookshelfPorting.Runtime
 
         private void AnimateVisitedSpaceLoadingDots(float elapsed)
         {
+            if (visitedSpaceLoadingProgressFillRect != null)
+            {
+                var sweep = Mathf.SmoothStep(0f, 1f, Mathf.PingPong(elapsed * 0.46f, 1f));
+                var pulse = Mathf.Sin(sweep * Mathf.PI);
+                visitedSpaceLoadingProgressFillRect.anchoredPosition = new Vector2(Mathf.Lerp(-58f, 58f, sweep), -126f);
+                visitedSpaceLoadingProgressFillRect.sizeDelta = new Vector2(Mathf.Lerp(34f, 68f, pulse), 6f);
+            }
+
+            if (visitedSpaceLoadingProgressFillImage != null)
+            {
+                var pulse = (Mathf.Sin(elapsed * 2.9f) + 1f) * 0.5f;
+                visitedSpaceLoadingProgressFillImage.color = Color32.Lerp(
+                    new Color32(163, 128, 105, 190),
+                    new Color32(163, 128, 105, 245),
+                    pulse);
+            }
+
             for (var i = 0; i < visitedSpaceLoadingDotRects.Length; i++)
             {
                 var rect = visitedSpaceLoadingDotRects[i];

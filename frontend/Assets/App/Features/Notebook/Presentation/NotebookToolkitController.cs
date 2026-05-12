@@ -213,6 +213,9 @@ namespace App.Features.Notebook.Presentation
         private const int MaxSpaceThumbnailTextureCacheCount = 32;
         private const int MaxRemoteSpaceThumbnailWidth = 2048;
         private const int MaxRemoteSpaceThumbnailHeight = 1152;
+        private const int MaxBookCoverTextureCacheCount = 64;
+        private const int MaxRemoteBookCoverWidth = 2048;
+        private const int MaxRemoteBookCoverHeight = 3072;
         private const float RecommendWheelScrollScale = 56f;
         private const int SearchResultPageSize = 48;
         private const int MarketBookPageSize = 48;
@@ -272,6 +275,9 @@ namespace App.Features.Notebook.Presentation
         private readonly Dictionary<string, Texture2D> spaceThumbnailTextureCache = new();
         private readonly LinkedList<string> spaceThumbnailTextureCacheOrder = new();
         private readonly Dictionary<string, LinkedListNode<string>> spaceThumbnailTextureCacheNodes = new();
+        private readonly Dictionary<string, Texture2D> bookCoverTextureCache = new();
+        private readonly LinkedList<string> bookCoverTextureCacheOrder = new();
+        private readonly Dictionary<string, LinkedListNode<string>> bookCoverTextureCacheNodes = new();
         private readonly List<Button> bookRatingStarButtons = new();
         private SpaceViewModel[] apiSpaces = Array.Empty<SpaceViewModel>();
         private DecorObjectViewModel[] apiDecorObjects = Array.Empty<DecorObjectViewModel>();
@@ -450,6 +456,7 @@ namespace App.Features.Notebook.Presentation
         private void OnDestroy()
         {
             ClearSpaceThumbnailTextureCache();
+            ClearBookCoverTextureCache();
         }
 
         private void Update()
@@ -5193,9 +5200,9 @@ namespace App.Features.Notebook.Presentation
         private VisualElement CreateSearchResultCard(BookViewModel book, int index)
         {
             var card = new VisualElement { name = $"search-result-{book.Id}" };
-            card.style.width = 218;
+            card.style.width = 168;
             card.style.height = 266;
-            card.style.marginRight = 10;
+            card.style.marginRight = 8;
             card.style.marginBottom = 10;
             card.style.paddingLeft = 10;
             card.style.paddingRight = 10;
@@ -5505,6 +5512,34 @@ namespace App.Features.Notebook.Presentation
             cover.style.overflow = Overflow.Hidden;
             Round(cover, 5);
 
+            var remoteUrl = string.IsNullOrWhiteSpace(book.CoverImageUrl) ? string.Empty : book.CoverImageUrl.Trim();
+            cover.userData = remoteUrl;
+            if (!string.IsNullOrEmpty(remoteUrl) && TryGetCachedBookCoverTexture(remoteUrl, out var cached))
+            {
+                ApplyBookCoverTexture(cover, cached);
+                return cover;
+            }
+
+            BuildGeneratedBookCover(cover, book, width, height, includeText);
+            if (!string.IsNullOrEmpty(remoteUrl))
+            {
+                StartCoroutine(LoadBookCoverTexture(remoteUrl, cover));
+            }
+
+            return cover;
+        }
+
+        private void BuildGeneratedBookCover(VisualElement cover, BookViewModel book, float width, float height, bool includeText)
+        {
+            var generated = new VisualElement { name = "book-cover-generated" };
+            generated.pickingMode = PickingMode.Ignore;
+            generated.style.position = Position.Absolute;
+            generated.style.left = 0;
+            generated.style.right = 0;
+            generated.style.top = 0;
+            generated.style.bottom = 0;
+            cover.Add(generated);
+
             var sheen = new VisualElement();
             sheen.style.position = Position.Absolute;
             sheen.style.left = 0;
@@ -5512,7 +5547,7 @@ namespace App.Features.Notebook.Presentation
             sheen.style.width = width * 0.38f;
             sheen.style.height = height;
             sheen.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.10f);
-            cover.Add(sheen);
+            generated.Add(sheen);
 
             var bandTop = height * 0.34f;
             var bandHeight = height * 0.24f;
@@ -5525,7 +5560,7 @@ namespace App.Features.Notebook.Presentation
             band.style.height = bandHeight;
             band.style.backgroundColor = book.AccentColor;
             band.style.opacity = 0.30f;
-            cover.Add(band);
+            generated.Add(band);
 
             var spine = new VisualElement();
             spine.style.position = Position.Absolute;
@@ -5534,7 +5569,7 @@ namespace App.Features.Notebook.Presentation
             spine.style.width = Mathf.Max(6, width * 0.08f);
             spine.style.height = height;
             spine.style.backgroundColor = Rgba(0x00, 0x00, 0x00, 0.22f);
-            cover.Add(spine);
+            generated.Add(spine);
 
             if (includeText)
             {
@@ -5547,7 +5582,7 @@ namespace App.Features.Notebook.Presentation
                 title.style.whiteSpace = WhiteSpace.Normal;
                 title.style.maxHeight = Mathf.Max(38, bandHeight);
                 title.style.unityTextAlign = TextAnchor.MiddleCenter;
-                cover.Add(title);
+                generated.Add(title);
 
                 var author = Text(book.Author.ToUpperInvariant(), 7, Rgba(0xF7, 0xFF, 0xF7, 0.78f), FontStyle.Normal);
                 author.style.position = Position.Absolute;
@@ -5555,10 +5590,8 @@ namespace App.Features.Notebook.Presentation
                 author.style.right = 8;
                 author.style.bottom = 9;
                 author.style.maxHeight = 14;
-                cover.Add(author);
+                generated.Add(author);
             }
-
-            return cover;
         }
 
         private VisualElement EmptyState(string message)
@@ -6756,6 +6789,152 @@ namespace App.Features.Notebook.Presentation
             button.style.unityFontStyleAndWeight = FontStyle.Normal;
             Border(button, Line);
             return button;
+        }
+
+        private IEnumerator LoadBookCoverTexture(string url, VisualElement cover)
+        {
+            using (var request = UnityWebRequestTexture.GetTexture(url))
+            {
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    yield break;
+                }
+
+                var texture = DownloadHandlerTexture.GetContent(request);
+                if (texture == null)
+                {
+                    yield break;
+                }
+
+                if (texture.width > MaxRemoteBookCoverWidth || texture.height > MaxRemoteBookCoverHeight)
+                {
+                    UnityEngine.Debug.LogWarning($"[NotebookToolkit] Skipped oversized book cover {texture.width}x{texture.height}: {url}");
+                    Destroy(texture);
+                    yield break;
+                }
+
+                texture = CacheBookCoverTexture(url, texture);
+                if (cover != null && cover.panel != null && Equals(cover.userData, url))
+                {
+                    ApplyBookCoverTexture(cover, texture);
+                }
+            }
+        }
+
+        private bool TryGetCachedBookCoverTexture(string url, out Texture2D texture)
+        {
+            if (!bookCoverTextureCache.TryGetValue(url, out texture) || texture == null)
+            {
+                bookCoverTextureCache.Remove(url);
+                if (bookCoverTextureCacheNodes.TryGetValue(url, out var staleNode))
+                {
+                    bookCoverTextureCacheOrder.Remove(staleNode);
+                    bookCoverTextureCacheNodes.Remove(url);
+                }
+
+                texture = null;
+                return false;
+            }
+
+            if (bookCoverTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                bookCoverTextureCacheOrder.Remove(node);
+                bookCoverTextureCacheOrder.AddLast(node);
+            }
+
+            return true;
+        }
+
+        private Texture2D CacheBookCoverTexture(string url, Texture2D texture)
+        {
+            if (string.IsNullOrEmpty(url) || texture == null)
+            {
+                return texture;
+            }
+
+            if (bookCoverTextureCache.TryGetValue(url, out var previous))
+            {
+                if (previous != null)
+                {
+                    if (previous != texture)
+                    {
+                        Destroy(texture);
+                    }
+
+                    if (bookCoverTextureCacheNodes.TryGetValue(url, out var existingNode))
+                    {
+                        bookCoverTextureCacheOrder.Remove(existingNode);
+                        bookCoverTextureCacheOrder.AddLast(existingNode);
+                    }
+                    else
+                    {
+                        bookCoverTextureCacheNodes[url] = bookCoverTextureCacheOrder.AddLast(url);
+                    }
+
+                    return previous;
+                }
+
+                bookCoverTextureCache.Remove(url);
+                if (bookCoverTextureCacheNodes.TryGetValue(url, out var staleNode))
+                {
+                    bookCoverTextureCacheOrder.Remove(staleNode);
+                    bookCoverTextureCacheNodes.Remove(url);
+                }
+            }
+
+            bookCoverTextureCache[url] = texture;
+            bookCoverTextureCacheNodes[url] = bookCoverTextureCacheOrder.AddLast(url);
+            TrimBookCoverTextureCache();
+            return texture;
+        }
+
+        private void TrimBookCoverTextureCache()
+        {
+            while (bookCoverTextureCache.Count > MaxBookCoverTextureCacheCount && bookCoverTextureCacheOrder.First != null)
+            {
+                var oldestUrl = bookCoverTextureCacheOrder.First.Value;
+                bookCoverTextureCacheOrder.RemoveFirst();
+                bookCoverTextureCacheNodes.Remove(oldestUrl);
+
+                if (bookCoverTextureCache.TryGetValue(oldestUrl, out var texture) && texture != null)
+                {
+                    Destroy(texture);
+                }
+
+                bookCoverTextureCache.Remove(oldestUrl);
+            }
+        }
+
+        private void ClearBookCoverTextureCache()
+        {
+            foreach (var texture in bookCoverTextureCache.Values)
+            {
+                if (texture != null)
+                {
+                    Destroy(texture);
+                }
+            }
+
+            bookCoverTextureCache.Clear();
+            bookCoverTextureCacheOrder.Clear();
+            bookCoverTextureCacheNodes.Clear();
+        }
+
+        private static void ApplyBookCoverTexture(VisualElement cover, Texture2D texture)
+        {
+            if (cover == null || texture == null)
+            {
+                return;
+            }
+
+            cover.style.backgroundColor = Color.clear;
+            cover.style.backgroundImage = new StyleBackground(texture);
+            cover.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Cover);
+            cover.style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Center);
+            cover.style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center);
+            cover.Q<VisualElement>("book-cover-generated")?.RemoveFromHierarchy();
         }
 
         private void BuildSpaceThumbnail(VisualElement thumbnail, SpaceViewModel space)

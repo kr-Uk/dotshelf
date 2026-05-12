@@ -13,6 +13,13 @@ MonoBehaviour:
   m_Name: EditableDecorationCatalog
   m_EditorClassIdentifier: Assembly-CSharp::App.Bootstrap.EditableDecorationCatalog
   entries:
+  - DisplayName: Ads Book
+    Prefab: {fileID: 6156902042414624892, guid: 804b03257239a6d43902dbab519aa185, type: 3}
+    SourceAssetPath: Assets/Arts/Models/ads_book/ads_book.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
   - DisplayName: Book Stack
     Prefab: {fileID: -8098169881513260187, guid: c762a71677879be41a5a565fdad2dc71, type: 3}
     SourceAssetPath: Assets/Arts/Models/book_stack.glb
