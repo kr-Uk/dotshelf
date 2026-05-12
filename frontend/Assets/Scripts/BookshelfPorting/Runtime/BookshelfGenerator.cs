@@ -87,6 +87,24 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float width = 1.60f;
         [SerializeField] private float height = 1.60f;
         [SerializeField] private float depth = 0.25f;
+
+        // Canonical bookshelf shell dimensions — RoomEditModeController.ApplyVintageScaleNormalization
+        // 이 vintage_* 자산 크기 보정의 reference 로 사용. shell 이 아직 만들어지지 않았거나 (bookshelfCount=0)
+        // 동적 Renderer.bounds 측정 실패 시 deterministic fallback. 인스펙터에서 width/height/depth 가
+        // 변경되면 그대로 따라감.
+        public Vector3 CanonicalShellSize => new Vector3(width, height, depth);
+
+        // active bookshelfRoot 의 shell mesh 가 (재)생성된 직후 발행. 외부 (App.Bootstrap.
+        // BookshelfVisualSkin) 가 listen 해서 자기 형제 (functional shell) renderer 들을 다시
+        // hide 하는 등 skin overlay 일관성 유지에 사용.
+        public event System.Action BookshelfShellRebuilt;
+
+        // 회전 swap 중간 상태의 transient transitionBookshelfRoot 가 준비된 직후 발행 — root
+        // 자체와 그 자식 shell mesh 가 모두 완성된 시점. 외부 (App.Bootstrap.BookshelfVisualSkin)
+        // 가 listen 해서 transition root 에도 skin clone 을 attach + functional mesh 를 hide
+        // 한다. transition root 는 SwapActiveBookshelfToTransitionTarget 이 swap 후 destroy
+        // 하므로 거기 attach 된 skin clone 도 자동 정리.
+        public event System.Action<Transform> TransitionShellPrepared;
         [SerializeField] private int rows = 4;
         [SerializeField] private int columns = 4;
         [SerializeField] private float boardThickness = 0.025f;
@@ -131,6 +149,7 @@ namespace BookshelfPorting.Runtime
         private IReadOnlyList<BookCatalogItem> bookCatalogItems = System.Array.Empty<BookCatalogItem>();
         private bool bookCatalogLoaded;
         private bool useServerBookshelfSnapshots;
+        private bool hasReceivedServerSnapshot;
         private bool isConfigured;
         private readonly Dictionary<int, BookshelfLayoutSnapshot> bookshelfLayoutSnapshots = new Dictionary<int, BookshelfLayoutSnapshot>();
         private readonly Dictionary<int, string> bookshelfServerIds = new Dictionary<int, string>();
@@ -166,6 +185,8 @@ namespace BookshelfPorting.Runtime
         }
         public bool IsBookshelfSwitching => bookshelfSwitchCoroutine != null;
         public int BookshelfCount => bookshelfCount;
+        public bool UseServerBookshelfSnapshots => useServerBookshelfSnapshots;
+        public bool HasReceivedServerSnapshot => hasReceivedServerSnapshot;
         public int ActiveBookshelfIndex => activeBookshelfIndex;
         public int DisplayBookshelfIndex => IsBookshelfSwitching && pendingBookshelfIndex >= 0 ? pendingBookshelfIndex : activeBookshelfIndex;
         public string DisplayBookshelfName => GetBookshelfName(DisplayBookshelfIndex);
@@ -214,6 +235,7 @@ namespace BookshelfPorting.Runtime
 
         public void ApplyServerBookshelves(IReadOnlyList<BookshelfRuntimeApiSnapshot> shelves)
         {
+            hasReceivedServerSnapshot = true;
             var orderedShelves = shelves != null
                 ? new List<BookshelfRuntimeApiSnapshot>(shelves)
                 : new List<BookshelfRuntimeApiSnapshot>();
@@ -664,6 +686,15 @@ namespace BookshelfPorting.Runtime
                     continue;
                 }
 
+                // App.Bootstrap.BookshelfVisualSkin 으로 부착된 visual skin 자식은 destroy 제외.
+                // BookshelfPorting → App.Bootstrap 역방향 의존 회피를 위해 컴포넌트 reference 가
+                // 아닌 GameObject 이름 ("ThemeBookshelfVisual") 으로 매칭한다. skin 의 lifecycle
+                // (생성/제거) 은 App.Bootstrap.BookshelfVisualSkinApplier 가 담당한다.
+                if (child.gameObject.name == "ThemeBookshelfVisual")
+                {
+                    continue;
+                }
+
                 children.Add(child.gameObject);
             }
 
@@ -862,6 +893,8 @@ namespace BookshelfPorting.Runtime
             state.ResetSections(bookshelfSections);
             PopulateBookshelfVariant(activeBookshelfIndex);
             SetBookshelfAlpha(1f);
+
+            BookshelfShellRebuilt?.Invoke();
         }
 
         private void BuildBookshelfShell(Transform shellRoot, List<ShelfSection> sections, bool includeFocusHitArea, Material wood)
@@ -2791,6 +2824,8 @@ namespace BookshelfPorting.Runtime
             RestoreBookshelfLayoutSnapshot(targetIndex, transitionBookshelfSections, transitionBooksRoot);
             LayoutBookshelfSectionsImmediately(transitionBookshelfSections);
             SpawnAdvertisementBook(transitionBookshelfSections, transitionBooksRoot);
+
+            TransitionShellPrepared?.Invoke(transitionBookshelfRoot);
         }
 
         private void SwapActiveBookshelfToTransitionTarget(int targetIndex)
@@ -2815,6 +2850,8 @@ namespace BookshelfPorting.Runtime
             RestoreBookshelfLayoutSnapshot(variantIndex, bookshelfSections, booksRoot);
             state.LayoutAll(state, false);
             SpawnAdvertisementBook(bookshelfSections, booksRoot);
+
+            BookshelfShellRebuilt?.Invoke();
         }
 
         private void SaveActiveBookshelfLayoutSnapshot()

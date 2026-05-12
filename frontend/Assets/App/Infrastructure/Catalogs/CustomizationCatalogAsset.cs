@@ -88,6 +88,14 @@ namespace App.Infrastructure.Catalogs
         [SerializeField] private Vector3 monitorRotation;
         [SerializeField] private Vector3 monitorScale = Vector3.one;
 
+        [Header("Desk 전용 — Skin scale multiplier (auto-fit 위 fine-tune)")]
+        [Tooltip("DeskVisualSkinApplier 가 functional desk bounds 에 자동 fit 한 scale 위에 추가로 " +
+                 "componentwise 곱하는 multiplier. (1,1,1) 또는 zero 면 multiplier 적용 안 함 (auto-fit " +
+                 "결과 그대로). 예: vintage_table 처럼 GLB 의 raw 종횡비가 functional desk 와 다른 자산을 " +
+                 "디자이너가 (0.7, 0.5, 0.5) 같은 비율로 미세 조정. laptop y 는 skin 의 새 top 을 기준으로 " +
+                 "자동 따라감 (수동 조정 불필요).")]
+        [SerializeField] private Vector3 skinScaleMultiplier = Vector3.one;
+
         public long AssetId => assetId;
         public string DisplayName => displayName;
         public string Description => description;
@@ -112,6 +120,7 @@ namespace App.Infrastructure.Catalogs
         public Vector3 MonitorPosition => monitorPosition;
         public Vector3 MonitorRotation => monitorRotation;
         public Vector3 MonitorScale => monitorScale;
+        public Vector3 SkinScaleMultiplier => skinScaleMultiplier;
     }
 
     /// <summary>

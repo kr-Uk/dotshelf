@@ -89,6 +89,23 @@ namespace BookshelfPorting.Runtime
         private static readonly Vector2 GuestbookBoardSize = new(1380f, 960f);
         private static readonly Vector2 GuestbookPreviewCardSize = new(248f, 142f);
         private static readonly Vector2 GuestbookFocusedNoteBaseSize = new(246f, 156f);
+        // hitArea local +X 방향 offset. native dashboard (visual skin 미적용) 케이스의 fallback —
+        // hitArea collider 표면 바로 앞 3mm. visual skin (vintage 등) 이 적용되면 MountExternal
+        // DashboardPanel 이 skin 의 renderer bounds.center 기준으로 위치를 재계산하므로 이 값은
+        // 무시됨.
+        private static readonly Vector3 ExternalDashboardPanelSurfaceOffset = new(0.003f, 0f, 0f);
+        private static readonly Quaternion ExternalDashboardPanelLocalRotation = Quaternion.Euler(0f, 90f, 0f);
+
+        // Visual skin 적용 시 panel 의 boardNormal-front 방향 추가 offset. z-fight 방지 + 자연스럽
+        // 게 밀착되도록 0.003 m (3mm). 너무 크면 panel 이 frame 에서 분리되어 보임. 너무 작으면
+        // z-fight.
+        private const float ExternalDashboardPanelTinyForwardOffset = 0.003f;
+        private const string DashboardVisualSkinChildName = "ThemeDashboardVisual"; // App.Bootstrap.DashboardVisualSkin.SkinChildName 과 동일
+        // Flip local X so the room-facing UI Toolkit panel reads left-to-right on the board.
+        private static readonly Vector2 ExternalDashboardPanelReferenceSize = new(1920f, 1080f);
+        private const float ExternalDashboardPanelFallbackWorldScale = 0.00060f;
+        private const float ExternalDashboardPanelHorizontalInset = 0.10f;
+        private const float ExternalDashboardPanelVerticalInset = 0.06f;
         private static readonly Vector2[] GuestbookPreviewOffsets =
         {
             new Vector2(-336f, 154f),
@@ -692,6 +709,10 @@ namespace BookshelfPorting.Runtime
         private bool runtimeUseExternalDashboardPanel;
         private bool ShouldUseExternalDashboardPanel => useExternalDashboardPanel || runtimeUseExternalDashboardPanel;
         private UnityEngine.UIElements.VisualElement focusedDashboardPressedElement;
+        // MountExternalDashboardPanel 진단 log throttle — 첫 호출 + skin attach/detach 상태 변경
+        // 시점 1회씩 log. visual skin 적용/제거 시 panel 위치 정책이 바뀌므로 그 시점에 재 log.
+        private bool externalDashboardPanelMountLogged;
+        private bool externalDashboardPanelMountLastHadSkin;
 
         [SerializeField] private bool guestbookOwnerMode = true;
         private bool isGuestbookPublic = true;
@@ -6318,6 +6339,15 @@ namespace BookshelfPorting.Runtime
 
         private bool ShouldEnterEmptyBookshelfTutorial()
         {
+            // server snapshot 모드에서는 첫 fetch 완료 전에는 BookshelfCount==0 이 "비어있음"이 아닌
+            // "아직 모름". 이 시점 튜토리얼/FocusBookshelf 발동을 차단해 race 회피.
+            if (bookshelfGenerator != null &&
+                bookshelfGenerator.UseServerBookshelfSnapshots &&
+                !bookshelfGenerator.HasReceivedServerSnapshot)
+            {
+                return false;
+            }
+
             return bookshelfGenerator != null &&
                    bookshelfGenerator.BookshelfCount <= 0 &&
                    CanMutateOwnedBookshelf() &&
@@ -12927,8 +12957,141 @@ namespace BookshelfPorting.Runtime
             }
 
             var panelTransform = externalDashboardPanel.transform;
-            DashboardPanelLayout.Mount(panelTransform, dynamicHitArea.transform);
+            if (panelTransform.parent != null)
+            {
+                panelTransform.SetParent(null, true);
+            }
+
+            // Position 결정 — visual skin 이 attach 돼 있으면 그 renderer bounds.center 기준,
+            // 없으면 (native dashboard) hitArea + ExternalDashboardPanelSurfaceOffset.
+            //
+            // visual skin 케이스 (vintage_dashboard 등):
+            //   - finalPosition = visualBounds.center + frontNormal * (halfThickness + tinyOffset)
+            //   - frontNormal = hitArea.right (= hitArea local +X in world — board outward axis).
+            //     hitArea collider 가 (size.z=width, .y=height, .x=thickness) 컨벤션으로 setup 됐고
+            //     native dashboard 에서 ExternalDashboardPanelSurfaceOffset.x>0 이 작동했으므로
+            //     local +X 가 outward 방향.
+            //   - in-plane(Y/Z 평면) 위치도 visualBounds.center 기준으로 정렬 → screen 이 visual
+            //     mesh 정중앙에 위치 (좌우/상하 치우침 없음). 사용자 요구 "screen center == visual center".
+            //   - halfThickness 는 hitArea.right axis 에 사영한 bounds 두께의 절반 — skin 의 두께가
+            //     얼마든 panel 이 정확히 front face 바로 앞에 위치.
+            //   - tinyOffset (3mm) — z-fight 방지 최소 거리. 사용자 요구 "붕 뜬 느낌 제거".
+            Transform visualSkin = FindDashboardVisualSkin(dynamicHitArea.transform);
+            Vector3 hitAreaRight = dynamicHitArea.transform.right;
+            Vector3 finalPosition;
+            bool usedVisualSkin = false;
+            Bounds visualBounds = new Bounds();
+            float halfThickness = 0f;
+            if (visualSkin != null && TryComputeRendererBounds(visualSkin.gameObject, out visualBounds))
+            {
+                Vector3 boundsSize = visualBounds.size;
+                halfThickness = (Mathf.Abs(boundsSize.x * hitAreaRight.x)
+                                + Mathf.Abs(boundsSize.y * hitAreaRight.y)
+                                + Mathf.Abs(boundsSize.z * hitAreaRight.z)) * 0.5f;
+                finalPosition = visualBounds.center + hitAreaRight * (halfThickness + ExternalDashboardPanelTinyForwardOffset);
+                usedVisualSkin = true;
+            }
+            else
+            {
+                finalPosition = dynamicHitArea.transform.TransformPoint(ExternalDashboardPanelSurfaceOffset);
+            }
+
+            panelTransform.position = finalPosition;
+            panelTransform.rotation = dynamicHitArea.transform.rotation * ExternalDashboardPanelLocalRotation;
+            var panelScale = ResolveExternalDashboardPanelScale(dynamicHitArea);
+            panelTransform.localScale = new Vector3(-panelScale, panelScale, panelScale);
+
+            // Log throttle — 첫 호출 + skin attach/detach 상태 변경 시 1회씩.
+            if (!externalDashboardPanelMountLogged || usedVisualSkin != externalDashboardPanelMountLastHadSkin)
+            {
+                float distFromVisualCenter = usedVisualSkin ? Vector3.Distance(panelTransform.position, visualBounds.center) : -1f;
+                Debug.Log($"[ExternalDashboardPanel] MountExternalDashboardPanel result — " +
+                          $"usedVisualSkin={usedVisualSkin} " +
+                          (usedVisualSkin
+                              ? $"visualBounds.center={visualBounds.center} visualBounds.size={visualBounds.size} halfThickness={halfThickness:F4} tinyOffset={ExternalDashboardPanelTinyForwardOffset:F4} "
+                              : $"fallback=hitArea+SurfaceOffset({ExternalDashboardPanelSurfaceOffset}) ") +
+                          $"frontNormal(hitArea.right)={hitAreaRight} " +
+                          $"finalPanelWorldPosition={panelTransform.position} " +
+                          $"panel.distFromVisualCenter={distFromVisualCenter:F4} " +
+                          $"panel.forward={panelTransform.forward} " +
+                          $"panel.rotation.eulerAngles={panelTransform.rotation.eulerAngles} " +
+                          $"panel.localScale={panelTransform.localScale} " +
+                          $"hitArea.position={dynamicHitArea.transform.position} " +
+                          $"hitArea.up(local+Y)={dynamicHitArea.transform.up} hitArea.forward(local+Z)={dynamicHitArea.transform.forward} " +
+                          $"panelScale={panelScale:F5}");
+                externalDashboardPanelMountLogged = true;
+                externalDashboardPanelMountLastHadSkin = usedVisualSkin;
+            }
             return true;
+        }
+
+        // ThemeDashboardVisual 검색 — hitArea 의 parent (GuestbookBoard 기본) → hitArea 자신 →
+        // scene 전체 순. visual skin 이 attach 안 됐으면 null.
+        private static Transform FindDashboardVisualSkin(Transform hitAreaTransform)
+        {
+            if (hitAreaTransform == null) return null;
+
+            var parent = hitAreaTransform.parent;
+            if (parent != null)
+            {
+                var skin = parent.Find(DashboardVisualSkinChildName);
+                if (skin != null) return skin;
+            }
+            var directChild = hitAreaTransform.Find(DashboardVisualSkinChildName);
+            if (directChild != null) return directChild;
+
+            var all = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] != null && all[i].gameObject.name == DashboardVisualSkinChildName)
+                {
+                    return all[i];
+                }
+            }
+            return null;
+        }
+
+        // Combined renderer world-AABB bounds. ParticleSystem/Trail/Line / 비활성 renderer / 빈
+        // bounds 제외. 최소 1개 valid renderer 가 있으면 true.
+        private static bool TryComputeRendererBounds(GameObject go, out Bounds bounds)
+        {
+            bounds = new Bounds();
+            if (go == null) return false;
+            var renderers = go.GetComponentsInChildren<Renderer>(true);
+            if (renderers == null || renderers.Length == 0) return false;
+            bool hasAny = false;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null || !r.enabled) continue;
+                if (!r.gameObject.activeInHierarchy) continue;
+                if (r is ParticleSystemRenderer || r is TrailRenderer || r is LineRenderer) continue;
+                var b = r.bounds;
+                if (b.size.sqrMagnitude < 1e-8f) continue;
+                if (!hasAny) { bounds = b; hasAny = true; }
+                else { bounds.Encapsulate(b); }
+            }
+            return hasAny;
+        }
+
+        private static float ResolveExternalDashboardPanelScale(GuestbookBoardHitArea dynamicHitArea)
+        {
+            if (dynamicHitArea == null)
+            {
+                return ExternalDashboardPanelFallbackWorldScale;
+            }
+
+            var collider = dynamicHitArea.GetComponent<BoxCollider>();
+            if (collider == null)
+            {
+                return ExternalDashboardPanelFallbackWorldScale;
+            }
+
+            var usableWidth = Mathf.Max(0.1f, collider.size.z - ExternalDashboardPanelHorizontalInset);
+            var usableHeight = Mathf.Max(0.1f, collider.size.y - ExternalDashboardPanelVerticalInset);
+            var scaleByWidth = usableWidth / ExternalDashboardPanelReferenceSize.x;
+            var scaleByHeight = usableHeight / ExternalDashboardPanelReferenceSize.y;
+            return Mathf.Min(scaleByWidth, scaleByHeight);
         }
 
         private void SeedGuestbookNotes()
