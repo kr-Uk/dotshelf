@@ -47,7 +47,29 @@ namespace App.Infrastructure.Api
             }
 
             Instance = this;
-            DontDestroyOnLoad(gameObject);
+
+            // 회귀 방지망 — APIManager 가 다른 시스템 prefab (예: RuntimeSystems → 'BookshelfSystems')
+            // 의 root 에 attach 되면 DontDestroyOnLoad(gameObject) 가 root 전체를 DDOL 로 이동시켜
+            // scene reload 시 BookshelfExperienceManager / state / canvas 등 옛 인스턴스가 통째로
+            // 살아남는다 (재로그인 회귀: 옛 BEM 의 stale SerializeField → MissingReferenceException +
+            // 책장 오버레이 button 비표시 + dashboard 빈 액자). 정상 prefab 구성은 APIManager 를
+            // 단독 host GameObject 에 두는 것 (RuntimeSystems prefab 에서 child 로 분리). 본 가드는
+            // 그 구성이 미래에 회귀해도 자동으로 DDOL 을 차단하는 안전망 — 컴포넌트 수가 Transform +
+            // APIManager (== 2) 일 때만 DDOL. 그 외 (= 다른 시스템과 co-located) 는 scene 라이프사이클
+            // 그대로 따른다. 다음 scene 진입 시 새 APIManager 가 prefab 의 일부로 다시 instantiated 되고
+            // HydrateAccessTokenFromAuthSession 가 PlayerPrefs 에서 token 복구.
+            var componentCount = GetComponents<Component>().Length;
+            if (componentCount <= 2)
+            {
+                DontDestroyOnLoad(gameObject);
+            }
+            else
+            {
+                Debug.LogWarning(
+                    $"[APIManager] DDOL skip — co-located with other systems on '{gameObject.name}' " +
+                    $"(componentCount={componentCount}). Prefab 분리 회귀 의심 — 정상 구성은 APIManager " +
+                    "단독 host GameObject 입니다.");
+            }
 
             // dev/prod 혼재만 교정 — prefab 의 SerializeField 가 빌드 모드와 정반대인 known endpoint 일 때만 덮어씀.
             // 의도: editor/Dev build 인데 prefab 에 ProdBaseUrl 이 박혀 있으면 (이번 버그 케이스) → DevBaseUrl 로 교정.
@@ -66,6 +88,18 @@ namespace App.Infrastructure.Api
             }
 
             HydrateAccessTokenFromAuthSession();
+        }
+
+        private void OnDestroy()
+        {
+            // DDOL 안 한 경로 (co-located with other systems) 에서 scene reload 시 static Instance
+            // 가 destroyed Unity object 를 가리키는 fake-null 로 남는다. `APIManager.Instance != null`
+            // 비교는 Unity == operator 가 fake-null 을 인식하지만 C# null-conditional (`?.`) 은
+            // 인식 못 해 destroyed reference 에 메서드를 호출 → MissingReferenceException. 명시 클리어.
+            if (Instance == this)
+            {
+                Instance = null;
+            }
         }
 
         private void HydrateAccessTokenFromAuthSession()

@@ -108,7 +108,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
@@ -235,7 +235,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
@@ -254,6 +254,54 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_RenderingLayers: 1
   m_ShadowRenderingLayers: 1
+--- !u!1 &1492420579243604452
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8141383469897347177}
+  - component: {fileID: 408423829030517756}
+  m_Layer: 0
+  m_Name: APIManagerHost
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &8141383469897347177
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1492420579243604452}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 3458300441714730644}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &408423829030517756
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1492420579243604452}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dbf853c121dce4d47a9552d8cae790c2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Api.APIManager
+  baseUrl: https://dev-api.dotshelf.digital
+  accessToken: 
+  timeoutSeconds: 10
+  enableVerboseLog: 0
 --- !u!1 &4217866127604916737
 GameObject:
   m_ObjectHideFlags: 0
@@ -452,7 +500,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
@@ -488,7 +536,6 @@ GameObject:
   - component: {fileID: 7485675297398986964}
   - component: {fileID: 6258595487013663177}
   - component: {fileID: 7559835252838956906}
-  - component: {fileID: 6075429825377612230}
   - component: {fileID: 1210491958176595673}
   m_Layer: 0
   m_Name: RuntimeSystems
@@ -517,6 +564,7 @@ Transform:
   - {fileID: 4901883628837947877}
   - {fileID: 578021679114453871}
   - {fileID: 8936744386227420923}
+  - {fileID: 8141383469897347177}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &5138704272313850402
@@ -529,7 +577,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: bfcc117b0e352dd49b9694ea55d1ca41, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfState
   bookPadding: 0.01
   shelfFrontInset: 0.01
@@ -544,7 +592,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 787225fbb1cc40e44b6b1b0b3613d744, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.MaterialFactory
   woodBaseMap: {fileID: 0}
   woodNormalMap: {fileID: 0}
@@ -569,7 +617,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1cf43b1ec7b17ae4290b3ece892eb841, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfGenerator
   state: {fileID: 5138704272313850402}
   materialFactory: {fileID: 1756564791657781441}
@@ -619,7 +667,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cbe780630d20ab849b266ef67b71e964, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.CameraController
   targetCamera: {fileID: 0}
   overviewAnchor: {fileID: 0}
@@ -630,6 +678,7 @@ MonoBehaviour:
   moveDuration: 0.7
   overviewFieldOfView: 55
   whiteboardFieldOfView: 45
+  whiteboardFocusDistance: 1.45
   notebookFieldOfView: 24
   notebookTransitionDuration: 0.75
   frontalDefaultFieldOfView: 45
@@ -659,7 +708,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 24c0182a877b73549a048ec408c53732, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookInteractionController
   sceneCamera: {fileID: 0}
   state: {fileID: 5138704272313850402}
@@ -713,7 +762,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ca2c911e128b9ba4ba9b9262af38a9aa, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfRuntimeDataStore
 --- !u!114 &6258595487013663177
 MonoBehaviour:
@@ -725,7 +774,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fb6b90527219e15499bff1a68ccc7c75, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfExperienceManager
   state: {fileID: 5138704272313850402}
   cameraController: {fileID: 8646103123008295061}
@@ -748,27 +797,11 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 90250d517556fca4c85a641254c266d3, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.EnvironmentSetup
   reflectionProbe: {fileID: 0}
   skyboxMaterial: {fileID: 0}
   applyOnStart: 1
---- !u!114 &6075429825377612230
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7668760752131279891}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: dbf853c121dce4d47a9552d8cae790c2, type: 3}
-  m_Name:
-  m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Api.APIManager
-  baseUrl: https://dev-api.dotshelf.digital
-  accessToken:
-  timeoutSeconds: 10
-  enableVerboseLog: 0
 --- !u!114 &1210491958176595673
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -779,7 +812,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 92608ee860344354b21bdc78e9f41fd9, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfApiSyncController
 --- !u!1 &7937912645884972081
 GameObject:
@@ -921,7 +954,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
