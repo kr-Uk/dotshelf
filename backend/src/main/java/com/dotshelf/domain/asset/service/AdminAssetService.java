@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -394,9 +395,7 @@ public class AdminAssetService {
     /**
      * Asset.code 를 S3 키 prefix 로 변환. 첫 underscore 에서 잘라 테마/sub-code 두 폴더로 분리한다.
      * 예: "FANTASY_CHAIR_001" → "FANTASY/CHAIR_001" → s3://.../assets/FANTASY/CHAIR_001/bundle/...
-     * 어드민 폼이 항상 "TEMA_SUB" 형식으로 채워주지만 잘못된 입력 방어용으로 첫 _ 가 없거나
-     * sub-code 가 비면 reject. 테마 코드 자체에 underscore 가 들어가면 split 위치가 깨지므로
-     * 테마 코드는 단일 단어 (영문/숫자만) 로 운영한다 — admin-web 의 ThemeTagInput 이 그 제약을 강제.
+     * 어드민 폼이 정규화하지만 BE 도 직접 호출 방어용으로 같은 규칙을 강제한다 (requireValidCodeShape).
      */
     private static String codeToS3Prefix(String code) {
         requireValidCodeShape(code);
@@ -404,13 +403,21 @@ public class AdminAssetService {
         return code.substring(0, idx) + "/" + code.substring(idx + 1);
     }
 
+    /**
+     * 에셋 코드 형식 강제.
+     * <ul>
+     *   <li>theme(첫 토큰): 영문 대문자/숫자만, underscore 금지 — split 기준점이라 단일 단어여야 함</li>
+     *   <li>sub-code(나머지): 영문 대문자/숫자, underscore 는 토큰 사이에만 (연속/끝 underscore 금지)</li>
+     * </ul>
+     * 예) FANTASY_CHAIR_001 ✓, DEEPSEA_LAMP ✓, DEEP_SEA_CHAIR_001 ✗ (theme 에 _, theme 이 DEEP 으로 잘림),
+     *     fantasy_chair ✗ (소문자), FANTASY_ ✗ (sub 빔), FANTASY/CHAIR ✗ (허용 외 문자).
+     */
+    private static final Pattern ASSET_CODE_PATTERN = Pattern.compile(
+            "^[A-Z0-9]+_[A-Z0-9]+(_[A-Z0-9]+)*$");
+
     private static void requireValidCodeShape(String code) {
-        if (code == null) {
-            throw new CustomException(ErrorCode.INVALID_INPUT);
-        }
-        int idx = code.indexOf('_');
-        if (idx <= 0 || idx >= code.length() - 1) {
-            throw new CustomException(ErrorCode.INVALID_INPUT);
+        if (code == null || !ASSET_CODE_PATTERN.matcher(code).matches()) {
+            throw new CustomException(ErrorCode.ASSET_CODE_FORMAT_INVALID);
         }
     }
 
