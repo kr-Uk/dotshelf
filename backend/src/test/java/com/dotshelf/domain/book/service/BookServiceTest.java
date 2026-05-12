@@ -231,7 +231,6 @@ class BookServiceTest {
         given(bookRepository.findById(10L)).willReturn(Optional.of(book));
         given(userBookRepository.findByUserIdAndBookId(1L, 10L)).willReturn(Optional.empty());
         given(userBookRepository.save(any(UserBook.class))).willReturn(userBook);
-        given(bookshelfItemRepository.findByUserBookIdAndStatus(20L, "ACTIVE")).willReturn(Optional.empty());
         given(bookshelfItemRepository.save(any(BookshelfItem.class))).willReturn(item);
         ArgumentCaptor<BookAdded> eventCaptor = ArgumentCaptor.forClass(BookAdded.class);
 
@@ -314,7 +313,6 @@ class BookServiceTest {
         given(bookRepository.findByIsbn13(existing.getIsbn13())).willReturn(Optional.of(existing));
         given(userBookRepository.findByUserIdAndBookId(1L, 10L)).willReturn(Optional.empty());
         given(userBookRepository.save(any(UserBook.class))).willReturn(userBook);
-        given(bookshelfItemRepository.findByUserBookIdAndStatus(20L, "ACTIVE")).willReturn(Optional.empty());
         given(bookshelfItemRepository.save(any(BookshelfItem.class))).willReturn(item);
 
         var response = bookService.addKakaoBookToShelf(
@@ -357,7 +355,6 @@ class BookServiceTest {
         });
         given(userBookRepository.findByUserIdAndBookId(1L, 11L)).willReturn(Optional.empty());
         given(userBookRepository.save(any(UserBook.class))).willReturn(userBook);
-        given(bookshelfItemRepository.findByUserBookIdAndStatus(20L, "ACTIVE")).willReturn(Optional.empty());
         given(bookshelfItemRepository.save(any(BookshelfItem.class))).willReturn(item);
         ArgumentCaptor<Book> bookCaptor = ArgumentCaptor.forClass(Book.class);
 
@@ -445,16 +442,21 @@ class BookServiceTest {
     @Test
     @DisplayName("내 책 좋아요/취소는 소유자 검증 후 liked 상태를 토글한다")
     void likeAndUnlike_ownedBook_togglesLikedState() {
+        Book book = TestFixtures.book(10L, "도서");
         UserBook userBook = TestFixtures.userBook(20L, 1L, 10L);
         given(userService.requireUserId(1L)).willReturn(1L);
         given(userBookRepository.findById(20L)).willReturn(Optional.of(userBook));
+        given(bookRepository.findById(10L)).willReturn(Optional.of(book));
 
         var liked = bookService.like(1L, 20L);
         var unliked = bookService.unlike(1L, 20L);
 
         assertThat(liked.active()).isTrue();
+        assertThat(liked.count()).isEqualTo(1L);
         assertThat(unliked.active()).isFalse();
+        assertThat(unliked.count()).isZero();
         assertThat(userBook.isLiked()).isFalse();
+        assertThat(book.getLikeCount()).isZero();
     }
 
     @Test

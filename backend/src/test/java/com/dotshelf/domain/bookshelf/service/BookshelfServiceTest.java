@@ -100,6 +100,7 @@ class BookshelfServiceTest {
         assertThat(response.id()).isEqualTo(99L);
         assertThat(response.displayOrder()).isEqualTo(3);
         then(sectionRepository).should(times(16)).save(any(BookshelfSection.class));
+        then(userService).should().completeOnboardingIfNeeded(1L);
     }
 
     @Test
@@ -188,6 +189,43 @@ class BookshelfServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("광고 예약 섹션에는 아이템을 배치할 수 없다")
+    void requireAvailablePlacement_reservedAdSectionThrowsInvalidInput() {
+        given(sectionRepository.findById(7L)).willReturn(Optional.of(TestFixtures.bookshelfSection(7L, 3L, 3, 3)));
+
+        assertThatThrownBy(() -> bookshelfService.requireAvailablePlacement(3L, 7L, 1, null))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("이미 사용 중인 슬롯에는 새 아이템을 배치할 수 없다")
+    void requireAvailablePlacement_occupiedSlotThrowsInvalidInput() {
+        given(sectionRepository.findById(7L)).willReturn(Optional.of(TestFixtures.bookshelfSection(7L, 3L, 0, 0)));
+        given(bookshelfItemRepository.existsByBookshelfIdAndBookshelfSectionIdAndSlotNoAndStatus(3L, 7L, 1, "ACTIVE"))
+                .willReturn(true);
+
+        assertThatThrownBy(() -> bookshelfService.requireAvailablePlacement(3L, 7L, 1, null))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("삭제된 책장 ID로는 책장을 조회할 수 없다")
+    void getBookshelf_deletedBookshelfThrowsNotFound() {
+        Bookshelf bookshelf = TestFixtures.bookshelf(3L, 10L, 0);
+        bookshelf.delete();
+        given(bookshelfRepository.findById(3L)).willReturn(Optional.of(bookshelf));
+
+        assertThatThrownBy(() -> bookshelfService.getBookshelf(3L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.BOOKSHELF_NOT_FOUND);
     }
 
     @Test

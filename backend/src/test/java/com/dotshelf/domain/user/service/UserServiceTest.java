@@ -73,8 +73,8 @@ class UserServiceTest {
     private UserService userService;
 
     @Test
-    @DisplayName("프로필 수정은 닉네임을 변경하고 온보딩을 완료 처리한다")
-    void updateMe_validRequest_updatesProfileAndCompletesOnboarding() {
+    @DisplayName("프로필 수정은 닉네임과 소개만 바꾸고 온보딩 완료 상태를 바꾸지 않는다")
+    void updateMe_validRequest_updatesProfileOnly() {
         User user = TestFixtures.user(1L, "old");
         given(userRepository.findById(1L)).willReturn(Optional.of(user));
         given(userRepository.existsByNickname("new")).willReturn(false);
@@ -82,9 +82,20 @@ class UserServiceTest {
         var response = userService.updateMe(1L, new UpdateProfileRequest("new", "intro"));
 
         assertThat(response.nickname()).isEqualTo("new");
-        assertThat(response.onboarded()).isTrue();
+        assertThat(response.onboarded()).isFalse();
         assertThat(user.getProfileImageUrl()).isEqualTo("https://example.com/old.png");
         assertThat(user.getIntroduction()).isEqualTo("intro");
+    }
+
+    @Test
+    @DisplayName("책장 생성 완료 신호가 들어오면 온보딩을 완료 처리한다")
+    void completeOnboardingIfNeeded_marksUserOnboarded() {
+        User user = TestFixtures.user(1L, "old");
+        given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+        userService.completeOnboardingIfNeeded(1L);
+
+        assertThat(user.isOnboarded()).isTrue();
     }
 
     @Test
