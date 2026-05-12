@@ -368,6 +368,12 @@ namespace App.Bootstrap
                 result.NewUser,
                 result.Onboarded);
 
+            // 재로그인 회귀 fix — APIManager 는 DontDestroyOnLoad 라 첫 진입 후의 Awake/Hydrate 가
+            // 다시 호출되지 않는다. 로그아웃이 in-memory accessToken 을 "" 로 비웠으므로 PlayerPrefs 만
+            // 저장하면 다음 API 호출이 Authorization header 없이 나가 401 → dashboard / bookshelf 빈
+            // 상태로 보이는 회귀. SessionRefresh.TryRefreshAndRetry 와 동일 대칭으로 in-memory 도 set.
+            APIManager.Instance?.SetAccessToken(result.AccessToken);
+
             // Route based on the BE response:
             //   newUser=true     → first social-login, account just created → run onboarding from step 1.
             //   onboarded=false  → existing account that never finished onboarding → also run onboarding.

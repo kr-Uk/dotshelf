@@ -28,7 +28,7 @@ public interface BookRepository extends JpaRepository<Book, Long> {
     Optional<Book> findFirstByIsbn10(String isbn10);
 
     @Query("SELECT new com.dotshelf.domain.bookshelf.dto.BookshelfDtos$BookSummaryResponse("
-            + "b.id, b.title, b.author, b.publisher, null, b.isbn13, b.isbn10, b.coverImageUrl) "
+            + "b.id, b.title, b.author, b.publisher, b.description, b.isbn13, b.isbn10, b.coverImageUrl) "
             + "FROM Book b WHERE b.id IN :bookIds")
     List<BookSummaryResponse> findBookshelfRenderSummariesByIdIn(@Param("bookIds") Collection<Long> bookIds);
 }

@@ -27,6 +27,10 @@ namespace BookshelfPorting.Runtime
         private Action<NotebookSpaceThumbnailUploadResult> pendingThumbnailUploadSucceeded;
         private Action<string> pendingThumbnailUploadFailed;
         private Action<bool, string> refreshCompletion;
+        private readonly List<Action<bool, string>> queuedRefreshCompletions = new List<Action<bool, string>>();
+        private bool hasCompletedInitialRefresh;
+        private bool lastInitialRefreshSucceeded;
+        private string lastInitialRefreshMessage;
         private int itemsLoadFailureCount;
         private string firstItemsLoadFailureMessage;
         private bool isBookshelfSkinCatalogLoading;
@@ -54,7 +58,29 @@ namespace BookshelfPorting.Runtime
 
         public bool IsRefreshing => isRefreshing;
 
+        public bool HasCompletedInitialRefresh => hasCompletedInitialRefresh;
+
+        public bool LastInitialRefreshSucceeded => lastInitialRefreshSucceeded;
+
+        public string LastInitialRefreshMessage => lastInitialRefreshMessage;
+
         public bool HasAccessToken => APIManager.Instance != null && APIManager.Instance.HasAccessToken;
+
+        public void WaitForInitialRefresh(Action<bool, string> onCompleted)
+        {
+            if (onCompleted == null)
+            {
+                return;
+            }
+
+            if (hasCompletedInitialRefresh)
+            {
+                onCompleted(lastInitialRefreshSucceeded, lastInitialRefreshMessage);
+                return;
+            }
+
+            RefreshFromServer(onCompleted);
+        }
 
         public void Configure(
             NotebookApiClient apiClient,
@@ -82,13 +108,16 @@ namespace BookshelfPorting.Runtime
         {
             if (!IsConfigured)
             {
-                onCompleted?.Invoke(false, "책장 API 동기화가 아직 준비되지 않았습니다.");
+                CompleteRefreshWithoutRequest(onCompleted, false, "책장 API 동기화가 아직 준비되지 않았습니다.");
                 return;
             }
 
             if (isRefreshing)
             {
-                onCompleted?.Invoke(false, "책장 새로고침이 이미 진행 중입니다.");
+                if (onCompleted != null)
+                {
+                    queuedRefreshCompletions.Add(onCompleted);
+                }
                 return;
             }
 
@@ -98,12 +127,16 @@ namespace BookshelfPorting.Runtime
             // until login instead of falling back to local catalog data.
             if (APIManager.Instance == null || !APIManager.Instance.HasAccessToken)
             {
-                onCompleted?.Invoke(false, "로그인 정보가 없어 책장 새로고침을 건너뜁니다.");
+                CompleteRefreshWithoutRequest(onCompleted, false, "로그인 정보가 없어 책장 새로고침을 건너뜁니다.");
                 return;
             }
 
-            RefreshBookshelfSkinCatalog();
             BeginRefresh(onCompleted);
+            RefreshBookshelfSkinCatalog(RefreshOwnSpaceBookshelves);
+        }
+
+        private void RefreshOwnSpaceBookshelves()
+        {
             client.GetMySpace(
                 space =>
                 {
@@ -134,6 +167,14 @@ namespace BookshelfPorting.Runtime
             refreshCompletion = onCompleted;
             itemsLoadFailureCount = 0;
             firstItemsLoadFailureMessage = null;
+        }
+
+        private void CompleteRefreshWithoutRequest(Action<bool, string> onCompleted, bool success, string message)
+        {
+            hasCompletedInitialRefresh = true;
+            lastInitialRefreshSucceeded = success;
+            lastInitialRefreshMessage = message;
+            onCompleted?.Invoke(success, message);
         }
 
         // External entry point for "visit another user's space" flows
@@ -295,13 +336,16 @@ namespace BookshelfPorting.Runtime
                 return false;
             }
 
+            var style = generator.GetBookshelfDesignStyle(index);
+            var clearSkinInventory = style == BookshelfThemeStyle.Default;
             client.UpdateBookshelf(
                 bookshelfId,
                 new UpdateBookshelfRequestDto
                 {
                     Name = generator.GetBookshelfName(index),
                     VisibilityScope = ToApiVisibility(generator.GetBookshelfVisibility(index)),
-                    SkinInventoryId = BookshelfSkinResolver.ResolveInventoryId(generator.GetBookshelfDesignStyle(index))
+                    SkinInventoryId = clearSkinInventory ? null : BookshelfSkinResolver.ResolveInventoryId(style),
+                    ClearSkinInventory = clearSkinInventory
                 },
                 _ => onSucceeded?.Invoke(),
                 error =>
@@ -1204,10 +1248,17 @@ namespace BookshelfPorting.Runtime
                 error => Debug.LogWarning($"Asset inventory load failed: {FormatError(error)}"));
         }
 
-        public void RefreshBookshelfSkinCatalog()
+        public void RefreshBookshelfSkinCatalog(Action onCompleted = null)
         {
-            if (!CanUseServerApi || isBookshelfSkinCatalogLoading)
+            if (!CanUseServerApi)
             {
+                onCompleted?.Invoke();
+                return;
+            }
+
+            if (isBookshelfSkinCatalogLoading)
+            {
+                StartCoroutine(CompleteAfterBookshelfSkinCatalogLoad(onCompleted));
                 return;
             }
 
@@ -1224,19 +1275,32 @@ namespace BookshelfPorting.Runtime
                         {
                             isBookshelfSkinCatalogLoading = false;
                             BookshelfSkinResolver.RegisterApiAssets(assetsResponse, inventory);
+                            onCompleted?.Invoke();
                         },
                         error =>
                         {
                             isBookshelfSkinCatalogLoading = false;
                             BookshelfSkinResolver.RegisterApiAssets(assetsResponse, null);
                             Debug.LogWarning($"Bookshelf skin inventory load failed: {FormatError(error)}");
+                            onCompleted?.Invoke();
                         });
                 },
                 error =>
                 {
                     isBookshelfSkinCatalogLoading = false;
                     Debug.LogWarning($"Bookshelf skin catalog load failed: {FormatError(error)}");
+                    onCompleted?.Invoke();
                 });
+        }
+
+        private IEnumerator CompleteAfterBookshelfSkinCatalogLoad(Action onCompleted)
+        {
+            while (isBookshelfSkinCatalogLoading)
+            {
+                yield return null;
+            }
+
+            onCompleted?.Invoke();
         }
 
         public void AddInteriorObjectToActiveShelf(long assetInventoryId, ShelfSection section, int slotNo = 1)
@@ -1802,16 +1866,27 @@ namespace BookshelfPorting.Runtime
             }
 
             isRefreshing = false;
+            hasCompletedInitialRefresh = true;
+            lastInitialRefreshSucceeded = completionSuccess;
+            lastInitialRefreshMessage = completionMessage;
             if (!success && !string.IsNullOrWhiteSpace(message))
             {
                 Debug.LogWarning($"Bookshelf API refresh skipped: {message}");
             }
 
             var completion = refreshCompletion;
+            var queuedCompletions = queuedRefreshCompletions.Count > 0
+                ? queuedRefreshCompletions.ToArray()
+                : Array.Empty<Action<bool, string>>();
+            queuedRefreshCompletions.Clear();
             refreshCompletion = null;
             itemsLoadFailureCount = 0;
             firstItemsLoadFailureMessage = null;
             completion?.Invoke(completionSuccess, completionMessage);
+            for (var i = 0; i < queuedCompletions.Length; i++)
+            {
+                queuedCompletions[i]?.Invoke(completionSuccess, completionMessage);
+            }
         }
 
         private static void ApplyUserBookResponse(BookEntity book, UserBookResponseDto response)
@@ -2317,24 +2392,9 @@ namespace BookshelfPorting.Runtime
 
         private static BookshelfThemeStyle ResolveStyleFromEntry(object entry, int index)
         {
-            var key = ResolveEntryDisplayName(entry);
-            if (!string.IsNullOrWhiteSpace(key))
+            if (TryResolveStyleByKeyword(ResolveEntryDisplayName(entry), out var style))
             {
-                key = key.Trim().ToLowerInvariant();
-                if (key.Contains("dark") || key.Contains("black") || key.Contains("night"))
-                {
-                    return BookshelfThemeStyle.Dark;
-                }
-
-                if (key.Contains("warm") || key.Contains("wood") || key.Contains("brown"))
-                {
-                    return BookshelfThemeStyle.Warm;
-                }
-
-                if (key.Contains("default") || key.Contains("basic") || key.Contains("ivory") || key.Contains("white"))
-                {
-                    return BookshelfThemeStyle.Default;
-                }
+                return style;
             }
 
             return index switch
@@ -2347,24 +2407,9 @@ namespace BookshelfPorting.Runtime
 
         private static BookshelfThemeStyle ResolveStyleFromKey(string code, string name, int index)
         {
-            var key = $"{code} {name}";
-            if (!string.IsNullOrWhiteSpace(key))
+            if (TryResolveStyleByKeyword($"{code} {name}", out var style))
             {
-                key = key.Trim().ToLowerInvariant();
-                if (key.Contains("dark") || key.Contains("black") || key.Contains("night"))
-                {
-                    return BookshelfThemeStyle.Dark;
-                }
-
-                if (key.Contains("warm") || key.Contains("wood") || key.Contains("brown"))
-                {
-                    return BookshelfThemeStyle.Warm;
-                }
-
-                if (key.Contains("default") || key.Contains("basic") || key.Contains("ivory") || key.Contains("white"))
-                {
-                    return BookshelfThemeStyle.Default;
-                }
+                return style;
             }
 
             return index switch
@@ -2373,6 +2418,36 @@ namespace BookshelfPorting.Runtime
                 2 => BookshelfThemeStyle.Dark,
                 _ => BookshelfThemeStyle.Default
             };
+        }
+
+        private static bool TryResolveStyleByKeyword(string key, out BookshelfThemeStyle style)
+        {
+            style = BookshelfThemeStyle.Default;
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                key = key.Trim().ToLowerInvariant();
+                if (key.Contains("dark") || key.Contains("black") || key.Contains("night") ||
+                    key.Contains("underwater") || key.Contains("shell") || key.Contains("ocean") || key.Contains("sea"))
+                {
+                    style = BookshelfThemeStyle.Dark;
+                    return true;
+                }
+
+                if (key.Contains("warm") || key.Contains("wood") || key.Contains("brown") ||
+                    key.Contains("pastel") || key.Contains("cabin"))
+                {
+                    style = BookshelfThemeStyle.Warm;
+                    return true;
+                }
+
+                if (key.Contains("default") || key.Contains("basic") || key.Contains("ivory") || key.Contains("white"))
+                {
+                    style = BookshelfThemeStyle.Default;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void WarnMissingStyle(BookshelfThemeStyle style)

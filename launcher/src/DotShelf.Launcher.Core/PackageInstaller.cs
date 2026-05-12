@@ -113,6 +113,10 @@ public sealed class PackageInstaller
             CopyDirectory(appRoot, versionDirectory.FullName, progress, cancellationToken);
             Report(progress, CopyEndPercent, "설치 정보 저장 중...");
 
+            // 새 버전 설치 직후 옛 버전 폴더들 정리 — 사용자 PC 디스크 누적 차단.
+            // 직전 사용자 인지 없이 N × ~570 MB 가 쌓이던 문제 fix. R2 서버측 retention 과 같은 결.
+            CleanupOldVersions(versionDirectory, cancellationToken);
+
             var state = new LauncherInstallState
             {
                 InstalledVersion = manifest.LatestVersion,
@@ -146,13 +150,13 @@ public sealed class PackageInstaller
 
         var installPath = Path.GetFullPath(state.InstallPath);
         var versionsPath = Path.GetFullPath(paths.VersionsDirectory.FullName);
-        if (!installPath.StartsWith(versionsPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        if (!IsContainedIn(installPath, versionsPath))
         {
             throw new InvalidOperationException("Installed path is outside the launcher versions directory.");
         }
 
         var entryPointPath = Path.GetFullPath(Path.Combine(installPath, state.EntryPoint));
-        if (!entryPointPath.StartsWith(installPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        if (!IsContainedIn(entryPointPath, installPath))
         {
             throw new InvalidOperationException("Entry point is outside the install directory.");
         }
@@ -180,33 +184,105 @@ public sealed class PackageInstaller
 
     public async Task DeleteInstalledAppAsync(CancellationToken cancellationToken = default)
     {
-        var state = await GetInstallStateAsync(cancellationToken).ConfigureAwait(false);
-        if (state == null)
-        {
-            return;
-        }
-
-        var installPath = Path.GetFullPath(state.InstallPath);
+        // 안전 가드 — versions/ 가 root 안에 있는지 확인. 사용자가 install path 를
+        // 옮긴 뒤 root 가 망가졌거나 외부 경로가 들어오면 즉시 throw.
         var versionsPath = Path.GetFullPath(paths.VersionsDirectory.FullName);
-        var isInsideVersionsDirectory =
-            installPath.StartsWith(versionsPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(installPath, versionsPath, StringComparison.OrdinalIgnoreCase);
-
-        if (!isInsideVersionsDirectory)
+        var rootPath = Path.GetFullPath(paths.RootDirectory.FullName);
+        if (!IsContainedIn(versionsPath, rootPath))
         {
-            throw new InvalidOperationException("Installed path is outside the launcher versions directory.");
+            throw new InvalidOperationException("versions 디렉터리가 RootDirectory 밖에 있습니다.");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        if (Directory.Exists(installPath))
+
+        // 옛 버전 누적 (CleanupOldVersions 도입 전 N × ~570 MB 쌓였던 것) 까지 함께 정리.
+        // 사용자 입장 "DotShelf 앱 삭제" = '디스크에서 통째 비우기' 직관과 일치.
+        if (paths.VersionsDirectory.Exists)
         {
-            Directory.Delete(installPath, recursive: true);
+            paths.VersionsDirectory.Delete(recursive: true);
         }
 
         if (paths.StateFile.Exists)
         {
             paths.StateFile.Delete();
         }
+
+        await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    // R2 서버측 retention 정책 (최근 3개 유지) 과 동일. 현재 버전 + 직전 2개까지 보존해
+    // 다운그레이드 안전망 1단계 (옛 빌드 깨졌을 때 사용자 PC 에 직전 버전이 살아있어
+    // state.json 만 되돌리면 즉시 복귀 가능).
+    private const int VersionsRetentionKeep = 3;
+
+    private void CleanupOldVersions(DirectoryInfo currentVersion, CancellationToken cancellationToken)
+    {
+        if (!paths.VersionsDirectory.Exists)
+        {
+            return;
+        }
+
+        var versionsRoot = Path.GetFullPath(paths.VersionsDirectory.FullName);
+        var currentPath = Path.GetFullPath(currentVersion.FullName);
+
+        // 안전 가드를 통과한 디렉터리만 수집 — VersionsDirectory 밖으로 절대 못 나감
+        // (symlink 경유 등).
+        var safeDirs = paths.VersionsDirectory.EnumerateDirectories()
+            .Where(d => IsContainedIn(Path.GetFullPath(d.FullName), versionsRoot))
+            .ToList();
+
+        // 보존 set 구성: 현재 버전 + 옛 버전들 중 SemVer 내림차순 상위 (Keep-1) 개.
+        // 폴더 이름 자체가 SemVer (paths.GetVersionDirectory 가 생성한 형식) 라 그대로 비교.
+        var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { currentPath };
+        var olderPaths = safeDirs
+            .Select(d => new { Dir = d, FullPath = Path.GetFullPath(d.FullName) })
+            .Where(x => !string.Equals(x.FullPath, currentPath, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.Dir.Name, Comparer<string>.Create(ReleaseVersionComparer.Compare))
+            .Take(Math.Max(0, VersionsRetentionKeep - 1))
+            .Select(x => x.FullPath);
+        foreach (var p in olderPaths)
+        {
+            keep.Add(p);
+        }
+
+        foreach (var dir in safeDirs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var fullPath = Path.GetFullPath(dir.FullName);
+            if (keep.Contains(fullPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                dir.Delete(recursive: true);
+            }
+            catch (IOException ex)
+            {
+                // 옛 버전 .exe 가 다른 프로세스에서 실행 중인 경우 등 IO 충돌은 무시 —
+                // 다음 업데이트 사이클에서 다시 시도. cleanup 실패가 설치 자체를 깨뜨리지 않도록.
+                // 다만 "왜 옛 폴더가 안 지워졌지?" 추적용 Trace 로깅.
+                Trace.WriteLine($"[CleanupOldVersions] IO skip: '{dir.FullName}' - {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Trace.WriteLine($"[CleanupOldVersions] access skip: '{dir.FullName}' - {ex.Message}");
+            }
+        }
+    }
+
+    // root containment 검사 헬퍼 — `Path.GetFullPath` 가 trailing separator 를 유지하는
+    // 환경 (예: 사용자가 InstallRoot = "C:\\Temp\\DotShelf\\" 로 설정 저장) 에서
+    // `parent + sep` 가 `C:\\Temp\\DotShelf\\\\` 두 sep 가 되어 정상 child 도 StartsWith
+    // 가 false 가 되던 trailing separator 오탐 차단 (MR #165 리뷰 P1).
+    // LaunchAsync / DeleteInstalledAppAsync / CleanupOldVersions / ExtractPackage 의 5개
+    // containment 체크가 모두 이 헬퍼로 단일화 — 향후 회귀 줄임.
+    private static bool IsContainedIn(string childFullPath, string parentFullPath)
+    {
+        var normalizedParent = Path.TrimEndingDirectorySeparator(parentFullPath);
+        return childFullPath.StartsWith(normalizedParent + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task DownloadAsync(
@@ -277,7 +353,7 @@ public sealed class PackageInstaller
 
             var destinationPath = Path.GetFullPath(Path.Combine(extractDirectory, entry.FullName));
             var extractRoot = Path.GetFullPath(extractDirectory);
-            if (!destinationPath.StartsWith(extractRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            if (!IsContainedIn(destinationPath, extractRoot))
             {
                 throw new InvalidDataException($"Package contains an unsafe path: {entry.FullName}");
             }

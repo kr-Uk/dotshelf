@@ -135,6 +135,11 @@ public class Space extends BaseEntity {
         this.currentExteriorLightInventoryId = inventoryId;
     }
 
+    public void delete() {
+        this.deletedAt = LocalDateTime.now();
+        this.layoutVersion += 1;
+    }
+
     /**
      * 커스터마이징 불가 테마 자동 해제 시 호출. 카테고리 6 ID + 전체 테마 ID 모두 비우고
      * layoutVersion을 올린다. bookshelves.skin_inventory_id 초기화는 별도(BookshelfRepository)에서.

@@ -166,9 +166,20 @@ namespace BookshelfPorting.Runtime
             // 빈/stale baseUrl 보유 → UnityWebRequest가 default 'localhost' host로 fallback (cf.
             // APIManager.BuildUrl 주석). Windows에서는 우연히 순서가 맞아 발생 안 함.
             // fix: scene에 이미 있는 인스턴스(보통 RuntimeSystems prefab) 우선 사용, 없으면 fallback.
+            //
+            // 재진입 회귀 fix — 이전 fallback (`systems.AddComponent<APIManager>()`) 은 BookshelfSystems
+            // 에 APIManager 를 attach. APIManager.Awake 가 `DontDestroyOnLoad(gameObject)` 를 호출하므로
+            // BookshelfSystems 전체가 DDOL scene 으로 이동 → 로그아웃 시 MainScene 이 Single 로드로
+            // unload 되어도 옛 BookshelfSystems 가 살아남고, 재진입 시 GetOrAddComponent<...> 가 옛
+            // BEM/state/canvas 인스턴스를 반환. BEM 의 SerializeField (externalDashboardPanel, 책장
+            // 오버레이 button refs 등) 는 destroyed MainScene 의 GameObject 를 가리키는 stale reference
+            // 가 되어 dashboard 빈 액자 / 오버레이 button 비표시 / MissingReferenceException 발생.
+            // 해결: scene 에 APIManager 가 없으면 ApiManagerProvider.EnsureInstance() 가 별도 GameObject
+            // ("AutoApiManager (fallback)") 에 attach → APIManager 만 DDOL 되고 BookshelfSystems 는
+            // MainScene 라이프사이클을 그대로 따른다.
             var apiManager = APIManager.Instance
                 ?? UnityEngine.Object.FindFirstObjectByType<APIManager>()
-                ?? systems.AddComponent<APIManager>();
+                ?? ApiManagerProvider.EnsureInstance();
             var notebookUiSceneLoader = GetOrAddComponent<NotebookUiSceneLoader>(systems);
 
             apiManager.Configure(

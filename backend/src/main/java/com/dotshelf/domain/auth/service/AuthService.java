@@ -19,6 +19,7 @@ import com.dotshelf.domain.auth.repository.GuestMigrationImportRepository;
 import com.dotshelf.domain.auth.repository.UserSocialAccountRepository;
 import com.dotshelf.domain.auth.service.social.SocialTokenVerifierRegistry;
 import com.dotshelf.domain.auth.service.social.SocialUserInfo;
+import com.dotshelf.domain.asset.service.AssetService;
 import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.user.entity.User;
 import com.dotshelf.domain.user.entity.UserNotificationSetting;
@@ -45,6 +46,7 @@ public class AuthService {
     private final GuestMigrationImportRepository guestMigrationImportRepository;
     private final UserService userService;
     private final SpaceService spaceService;
+    private final AssetService assetService;
     private final UserNotificationSettingRepository notificationSettingRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final SocialTokenVerifierRegistry socialTokenVerifierRegistry;
@@ -148,6 +150,7 @@ public class AuthService {
                 .profileImageUrl(socialUser.profileImageUrl())
                 .build());
         spaceService.ensureDefaultSpace(user.getId());
+        assetService.grantDefaultBookshelfSkins(user.getId());
         notificationSettingRepository.save(UserNotificationSetting.builder()
                 .userId(user.getId())
                 .build());
@@ -167,6 +170,7 @@ public class AuthService {
                 socialUser.profileImageUrl()
         );
         spaceService.ensureDefaultSpace(user.getId());
+        assetService.grantDefaultBookshelfSkins(user.getId());
         notificationSettingRepository.findByUserId(user.getId())
                 .orElseGet(() -> notificationSettingRepository.save(UserNotificationSetting.builder()
                         .userId(user.getId())

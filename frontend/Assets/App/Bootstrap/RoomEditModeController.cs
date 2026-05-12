@@ -997,6 +997,7 @@ namespace App.Bootstrap
             {
                 var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[i]);
                 if (string.IsNullOrEmpty(path)) continue;
+                if (IsBookshelfModelPath(path)) continue;
                 var ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
                 if (ext != ".glb" && ext != ".fbx" && ext != ".prefab" && ext != ".obj") continue;
 
@@ -1015,6 +1016,12 @@ namespace App.Bootstrap
 
             inventoryEntries.Sort((a, b) =>
                 string.Compare(a.DisplayName, b.DisplayName, System.StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool IsBookshelfModelPath(string path)
+        {
+            return !string.IsNullOrEmpty(path) &&
+                   path.StartsWith("Assets/Arts/Models/Bookshelves", System.StringComparison.OrdinalIgnoreCase);
         }
 
         private static string ToDisplayName(string raw)

@@ -53,6 +53,7 @@ namespace BookshelfPorting.Runtime
         private const int BookSpineTitleCharacterLimit = 10;
         private const int BookSpineTitleFontSize = 30;
         private const string TableNaturalAssetPath = "Assets/Arts/Models/table_natural.glb";
+        private const string BookshelfThemeLayoutCatalogResourcePath = "BookshelfThemeLayoutCatalog";
         private const float DeskTargetWidthX = 0.54f;
         private const float DeskTargetHeightY = 0.41f;
         private const float DeskTargetDepthZ = 0.86f;
@@ -163,6 +164,7 @@ namespace BookshelfPorting.Runtime
         private Material addBookPlacementGuideLineMaterial;
         private Material addBookPlacementGuideGhostMaterial;
         private int runtimeBookSerial;
+        private BookshelfThemeLayoutCatalog bookshelfThemeLayoutCatalog;
 
         public Transform BooksRoot => booksRoot;
 
@@ -801,6 +803,29 @@ namespace BookshelfPorting.Runtime
 #endif
         }
 
+        private BookshelfThemeLayout ResolveBookshelfThemeLayout(BookshelfThemeStyle style)
+        {
+            if (style == BookshelfThemeStyle.Default)
+            {
+                return null;
+            }
+
+            if (bookshelfThemeLayoutCatalog == null)
+            {
+                bookshelfThemeLayoutCatalog = Resources.Load<BookshelfThemeLayoutCatalog>(BookshelfThemeLayoutCatalogResourcePath);
+            }
+
+            if (bookshelfThemeLayoutCatalog != null &&
+                bookshelfThemeLayoutCatalog.TryGetLayout(style, out var layout) &&
+                layout != null &&
+                layout.IsUsable)
+            {
+                return layout;
+            }
+
+            return null;
+        }
+
         private void BuildBackWallAlcove()
         {
             var wallMaterial = materialFactory.GetWallMaterial();
@@ -888,7 +913,7 @@ namespace BookshelfPorting.Runtime
 
             var wood = GetBookshelfMaterial(activeBookshelfIndex);
 
-            BuildBookshelfShell(bookshelfRoot, bookshelfSections, true, wood);
+            BuildBookshelfShell(bookshelfRoot, bookshelfSections, true, wood, GetBookshelfDesignStyle(activeBookshelfIndex));
 
             state.ResetSections(bookshelfSections);
             PopulateBookshelfVariant(activeBookshelfIndex);
@@ -897,8 +922,14 @@ namespace BookshelfPorting.Runtime
             BookshelfShellRebuilt?.Invoke();
         }
 
-        private void BuildBookshelfShell(Transform shellRoot, List<ShelfSection> sections, bool includeFocusHitArea, Material wood)
+        private void BuildBookshelfShell(Transform shellRoot, List<ShelfSection> sections, bool includeFocusHitArea, Material wood, BookshelfThemeStyle style)
         {
+            var themeLayout = ResolveBookshelfThemeLayout(style);
+            if (themeLayout != null && TryBuildThemedBookshelfShell(shellRoot, sections, includeFocusHitArea, themeLayout))
+            {
+                return;
+            }
+
             BuildBookshelfWallCassette(shellRoot);
 
             CreateBox("LeftPanel", shellRoot, new Vector3(-width * 0.5f + boardThickness * 0.5f, height * 0.5f, 0f), new Vector3(boardThickness, height, depth), wood);
@@ -954,6 +985,34 @@ namespace BookshelfPorting.Runtime
                     sections.Add(section);
                 }
             }
+        }
+
+        private bool TryBuildThemedBookshelfShell(
+            Transform shellRoot,
+            List<ShelfSection> sections,
+            bool includeFocusHitArea,
+            BookshelfThemeLayout themeLayout)
+        {
+            if (shellRoot == null || sections == null || themeLayout == null || !themeLayout.IsUsable)
+            {
+                return false;
+            }
+
+            BuildBookshelfWallCassette(shellRoot);
+
+            var visual = themeLayout.InstantiateVisual(shellRoot);
+            if (visual != null)
+            {
+                generatedGeometry.Add(visual);
+            }
+
+            if (includeFocusHitArea)
+            {
+                CreateBookshelfFocusHitArea(shellRoot, themeLayout.FocusLocalPosition, themeLayout.FocusSize);
+            }
+
+            themeLayout.BuildSections(sections);
+            return sections.Count > 0;
         }
 
         private void ConfigureBookshelfTurntable()
@@ -2819,7 +2878,7 @@ namespace BookshelfPorting.Runtime
             transitionBooksRoot = new GameObject("BooksRoot").transform;
             transitionBooksRoot.SetParent(transitionBookshelfRoot, false);
 
-            BuildBookshelfShell(transitionBookshelfRoot, transitionBookshelfSections, false, GetBookshelfMaterial(targetIndex));
+            BuildBookshelfShell(transitionBookshelfRoot, transitionBookshelfSections, false, GetBookshelfMaterial(targetIndex), GetBookshelfDesignStyle(targetIndex));
             SpawnBooks(transitionBookshelfSections, targetIndex, transitionBooksRoot, false);
             RestoreBookshelfLayoutSnapshot(targetIndex, transitionBookshelfSections, transitionBooksRoot);
             LayoutBookshelfSectionsImmediately(transitionBookshelfSections);
@@ -2840,7 +2899,7 @@ namespace BookshelfPorting.Runtime
         {
             ClearBookshelfShellChildren();
             ClearBookshelfBooks();
-            BuildBookshelfShell(bookshelfRoot, bookshelfSections, true, GetBookshelfMaterial(variantIndex));
+            BuildBookshelfShell(bookshelfRoot, bookshelfSections, true, GetBookshelfMaterial(variantIndex), GetBookshelfDesignStyle(variantIndex));
             if (state != null)
             {
                 state.ResetSections(bookshelfSections);
@@ -3655,7 +3714,7 @@ namespace BookshelfPorting.Runtime
                     var footprint = book.GetFootprint() * sectionScale;
                     book.transform.localPosition = new Vector3(
                         x + footprint * 0.5f,
-                        section.shelfTopY + book.height * sectionScale * 0.5f,
+                        section.BookBaseY + book.height * sectionScale * 0.5f,
                         section.GetFrontAlignedBookCenterZ(book, sectionScale, frontInset));
                     book.transform.localRotation = BookFootprintUtility.GetVisualRotation(book.orientation);
                     book.transform.localScale = book.BaseLocalScale * sectionScale;
@@ -4160,11 +4219,19 @@ namespace BookshelfPorting.Runtime
 
         private void CreateBookshelfFocusHitArea(Transform parent)
         {
+            CreateBookshelfFocusHitArea(
+                parent,
+                new Vector3(0f, height * 0.5f, -depth * 0.5f - 0.05f),
+                new Vector3(width + 0.10f, height + 0.10f, 0.18f));
+        }
+
+        private void CreateBookshelfFocusHitArea(Transform parent, Vector3 localPosition, Vector3 size)
+        {
             var hitArea = new GameObject("BookshelfFocusHitArea");
             hitArea.transform.SetParent(parent, false);
-            hitArea.transform.localPosition = new Vector3(0f, height * 0.5f, -depth * 0.5f - 0.05f);
+            hitArea.transform.localPosition = localPosition;
             var collider = hitArea.AddComponent<BoxCollider>();
-            collider.size = new Vector3(width + 0.10f, height + 0.10f, 0.18f);
+            collider.size = size;
             hitArea.AddComponent<BookshelfFocusHitArea>();
             generatedGeometry.Add(hitArea);
         }

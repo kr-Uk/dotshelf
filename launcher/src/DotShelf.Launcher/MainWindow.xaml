@@ -322,14 +322,6 @@
                                         Background="{StaticResource BrandBrush}"
                                         Margin="0,0,0,-12" />
                             </Grid>
-                            <TextBlock Text="뉴스"
-                                       Foreground="{StaticResource InkBodyBrush}"
-                                       FontSize="13"
-                                       Margin="22,0,0,0" VerticalAlignment="Center" />
-                            <TextBlock Text="설정"
-                                       Foreground="{StaticResource InkBodyBrush}"
-                                       FontSize="13"
-                                       Margin="22,0,0,0" VerticalAlignment="Center" />
                         </StackPanel>
                     </StackPanel>
 

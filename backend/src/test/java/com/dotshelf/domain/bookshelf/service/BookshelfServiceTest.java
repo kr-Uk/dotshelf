@@ -17,6 +17,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.repository.AssetRepository;
 import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
 import com.dotshelf.domain.book.entity.UserBook;
@@ -168,12 +169,49 @@ class BookshelfServiceTest {
         given(userService.requireUserId(1L)).willReturn(1L);
         given(bookshelfRepository.findById(3L)).willReturn(Optional.of(bookshelf));
         given(spaceService.getSpaceEntity(10L)).willReturn(TestFixtures.space(10L, 1L));
+        given(inventoryRepository.findById(8L)).willReturn(Optional.of(TestFixtures.inventory(8L, 1L, 50L)));
+        given(assetRepository.findById(50L)).willReturn(Optional.of(bookshelfSkinAsset(50L)));
 
-        var response = bookshelfService.update(1L, 3L, new UpdateBookshelfRequest("changed", "desc", "PRIVATE", 8L));
+        var response = bookshelfService.update(1L, 3L, new UpdateBookshelfRequest("changed", "desc", "PRIVATE", 8L, false));
 
         assertThat(response.name()).isEqualTo("changed");
         assertThat(response.visibilityScope()).isEqualTo("PRIVATE");
         assertThat(response.skinInventoryId()).isEqualTo(8L);
+    }
+
+    @Test
+    @DisplayName("책장 스킨 수정은 BOOKSHELF_SKIN 에셋만 허용한다")
+    void update_nonBookshelfSkinInventoryThrowsMismatch() {
+        Bookshelf bookshelf = TestFixtures.bookshelf(3L, 10L, 0);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(bookshelfRepository.findById(3L)).willReturn(Optional.of(bookshelf));
+        given(spaceService.getSpaceEntity(10L)).willReturn(TestFixtures.space(10L, 1L));
+        given(inventoryRepository.findById(8L)).willReturn(Optional.of(TestFixtures.inventory(8L, 1L, 50L)));
+        given(assetRepository.findById(50L)).willReturn(Optional.of(TestFixtures.asset(50L, 1L, "wallpaper", 0)));
+
+        assertThatThrownBy(() -> bookshelfService.update(
+                1L,
+                3L,
+                new UpdateBookshelfRequest("changed", null, null, 8L, false)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.CATEGORY_INVENTORY_TYPE_MISMATCH);
+    }
+
+    @Test
+    @DisplayName("책장 스킨 수정은 clearSkinInventory=true 일 때 기본 스킨으로 되돌린다")
+    void update_clearSkinInventory_resetsSkin() {
+        Bookshelf bookshelf = TestFixtures.bookshelf(3L, 10L, 0);
+        bookshelf.update(null, null, null, 8L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(bookshelfRepository.findById(3L)).willReturn(Optional.of(bookshelf));
+        given(spaceService.getSpaceEntity(10L)).willReturn(TestFixtures.space(10L, 1L));
+
+        var response = bookshelfService.update(1L, 3L, new UpdateBookshelfRequest(null, null, null, null, true));
+
+        assertThat(response.skinInventoryId()).isNull();
+        then(inventoryRepository).shouldHaveNoInteractions();
+        then(assetRepository).shouldHaveNoInteractions();
     }
 
     @Test
@@ -275,5 +313,18 @@ class BookshelfServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    private static Asset bookshelfSkinAsset(Long id) {
+        Asset asset = Asset.builder()
+                .categoryId(1L)
+                .code("BOOKSHELF_PASTEL_CABIN_SKIN")
+                .name("Pastel Cabin Bookshelf Skin")
+                .assetScope("BOOKSHELF")
+                .assetType("BOOKSHELF_SKIN")
+                .pricePages(0)
+                .build();
+        TestFixtures.setId(asset, id);
+        return asset;
     }
 }

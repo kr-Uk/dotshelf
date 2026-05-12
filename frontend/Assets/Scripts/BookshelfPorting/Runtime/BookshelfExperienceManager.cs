@@ -972,8 +972,47 @@ namespace BookshelfPorting.Runtime
 
         public void NotifyBookshelfApiSynced()
         {
+            ClearFirstBookshelfCreationPromptIfShelfExists();
             RefreshBookshelfIndexIndicator(CurrentFocusArea == ExperienceFocusArea.Bookshelf && (state == null || !state.IsViewingBook));
             RefreshHud();
+        }
+
+        private bool HasAnyBookshelf()
+        {
+            return bookshelfGenerator != null && bookshelfGenerator.BookshelfCount > 0;
+        }
+
+        private bool IsInitialBookshelfApiSyncPending()
+        {
+            return usesHttpApiMode &&
+                   bookshelfApiSyncController != null &&
+                   bookshelfApiSyncController.IsServerSyncEnabled &&
+                   !bookshelfApiSyncController.HasCompletedInitialRefresh;
+        }
+
+        private void ClearFirstBookshelfCreationPromptIfShelfExists()
+        {
+            if (!HasAnyBookshelf())
+            {
+                return;
+            }
+
+            isEmptyBookshelfTutorialEntryPending = false;
+            if (firstBookshelfTutorialMode != FirstBookshelfTutorialMode.CreateFirstShelf)
+            {
+                return;
+            }
+
+            firstBookshelfTutorialMode = FirstBookshelfTutorialMode.None;
+            isFirstBookshelfTutorialOpen = false;
+            if (firstBookshelfTutorialBackdrop != null)
+            {
+                firstBookshelfTutorialBackdrop.SetActive(false);
+            }
+            if (firstBookshelfTutorialPanel != null)
+            {
+                firstBookshelfTutorialPanel.SetActive(false);
+            }
         }
 
         public void NotifyBookPlacementCommitted(BookEntity book)
@@ -3735,8 +3774,8 @@ namespace BookshelfPorting.Runtime
             bookshelfDesignHintText.fontSize = 14;
             bookshelfDesignHintText.color = new Color32(124, 111, 101, 255);
             defaultBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "DefaultBookshelfDesignButton", "기본", new Vector2(24f, -116f), () => SetBookshelfDesignStyle(BookshelfThemeStyle.Default), new Vector2(128f, 38f), new Vector2(0f, 1f));
-            warmBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "WarmBookshelfDesignButton", "웜 우드", new Vector2(176f, -116f), () => SetBookshelfDesignStyle(BookshelfThemeStyle.Warm), new Vector2(128f, 38f), new Vector2(0f, 1f));
-            darkBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "DarkBookshelfDesignButton", "다크 우드", new Vector2(328f, -116f), () => SetBookshelfDesignStyle(BookshelfThemeStyle.Dark), new Vector2(128f, 38f), new Vector2(0f, 1f));
+            warmBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "WarmBookshelfDesignButton", "파스텔 캐빈", new Vector2(176f, -116f), () => SetBookshelfDesignStyle(BookshelfThemeStyle.Warm), new Vector2(128f, 38f), new Vector2(0f, 1f));
+            darkBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "DarkBookshelfDesignButton", "언더워터 쉘", new Vector2(328f, -116f), () => SetBookshelfDesignStyle(BookshelfThemeStyle.Dark), new Vector2(128f, 38f), new Vector2(0f, 1f));
             closeBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "CloseBookshelfDesignButton", "닫기", new Vector2(24f, -166f), CloseBookshelfDesignPanel, new Vector2(432f, 34f), new Vector2(0f, 1f));
 
             bookAddPanel = CreatePanel(canvasObject.transform, "BookAddPanel", new Vector2(0f, -128f), new Vector2(560f, 498f), new Vector2(0.5f, 1f));
@@ -4660,6 +4699,7 @@ namespace BookshelfPorting.Runtime
             RefreshBookPlacementEditor();
             ApplyResponsiveFocusOverlayLayout(true);
             RefreshDeleteResultDialog();
+            ClearFirstBookshelfCreationPromptIfShelfExists();
             RequestEmptyBookshelfTutorialEntry();
             RefreshFirstBookshelfTutorialPanel();
             RefreshEmptyBookshelfAddButton();
@@ -6400,6 +6440,7 @@ namespace BookshelfPorting.Runtime
 
             return bookshelfGenerator != null &&
                    bookshelfGenerator.BookshelfCount <= 0 &&
+                   !IsInitialBookshelfApiSyncPending() &&
                    CanMutateOwnedBookshelf() &&
                    !isFirstBookshelfCreateInProgress &&
                    !isBookAddPlacementSelectionActive &&
@@ -6485,6 +6526,11 @@ namespace BookshelfPorting.Runtime
 
         private FirstBookshelfTutorialMode ResolveFirstBookshelfTutorialMode()
         {
+            if (HasAnyBookshelf() && firstBookshelfTutorialMode == FirstBookshelfTutorialMode.CreateFirstShelf)
+            {
+                return FirstBookshelfTutorialMode.None;
+            }
+
             if (!CanShowFirstBookshelfTutorialOverCurrentUi())
             {
                 return FirstBookshelfTutorialMode.None;
@@ -6695,6 +6741,7 @@ namespace BookshelfPorting.Runtime
         {
             return bookshelfGenerator != null &&
                    bookshelfGenerator.BookshelfCount <= 0 &&
+                   !IsInitialBookshelfApiSyncPending() &&
                    !isFirstBookshelfCreateInProgress &&
                    CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
                    CanMutateOwnedBookshelf() &&
@@ -9091,7 +9138,9 @@ namespace BookshelfPorting.Runtime
                                              bookshelfGenerator != null &&
                                              bookshelfGenerator.BookshelfCount > 0 &&
                                              !CanUseBookshelfServerPlacement(bookshelfGenerator.DisplayBookshelfIndex);
-            var hasNoBookshelves = bookshelfGenerator != null && bookshelfGenerator.BookshelfCount <= 0;
+            var hasNoBookshelves = bookshelfGenerator != null &&
+                                   bookshelfGenerator.BookshelfCount <= 0 &&
+                                   !IsInitialBookshelfApiSyncPending();
             var canShowEmptyState = isBookshelfFocused &&
                                     !isViewingBook &&
                                     !isDraggingBook &&
@@ -10273,18 +10322,12 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (usesHttpApiMode && !BookshelfSkinResolver.ResolveInventoryId(style).HasValue)
+            var canPersistDesignStyle = style == BookshelfThemeStyle.Default ||
+                                        !usesHttpApiMode ||
+                                        BookshelfSkinResolver.ResolveInventoryId(style).HasValue;
+            if (!canPersistDesignStyle)
             {
                 bookshelfApiSyncController?.RefreshBookshelfSkinCatalog();
-                var message = BookshelfSkinResolver.HasLoadedApiAssets
-                    ? "해당 책장 디자인은 서버 카탈로그에 없어 저장할 수 없습니다."
-                    : "서버 책장 스킨 목록을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.";
-                ShowBookshelfTransientStatus(
-                    "책장 디자인 변경 불가",
-                    message,
-                    true);
-                RefreshHud();
-                return;
             }
 
             var previous = displayIndex >= 0 ? bookshelfGenerator.GetBookshelfDesignStyle(displayIndex) : style;
@@ -10292,8 +10335,21 @@ namespace BookshelfPorting.Runtime
             {
                 if (previous != style)
                 {
-                    MarkBookshelfEditDirty();
-                    SyncBookshelfUpdateOrRefresh(displayIndex, "책장 디자인 변경");
+                    if (canPersistDesignStyle)
+                    {
+                        MarkBookshelfEditDirty();
+                        SyncBookshelfUpdateOrRefresh(displayIndex, "책장 디자인 변경");
+                    }
+                    else
+                    {
+                        var message = BookshelfSkinResolver.HasLoadedApiAssets
+                            ? "서버 책장 스킨 카탈로그에 없는 디자인이라 이번 화면에만 임시 적용했습니다."
+                            : "서버 책장 스킨 목록을 불러오는 중이라 이번 화면에만 임시 적용했습니다.";
+                        ShowBookshelfTransientStatus(
+                            "책장 디자인 임시 적용",
+                            message,
+                            false);
+                    }
                 }
 
                 RefreshHud();
@@ -10303,6 +10359,11 @@ namespace BookshelfPorting.Runtime
         private bool CanUseBookshelfDesignStyle(BookshelfThemeStyle style)
         {
             if (!usesHttpApiMode)
+            {
+                return true;
+            }
+
+            if (style == BookshelfThemeStyle.Default)
             {
                 return true;
             }
