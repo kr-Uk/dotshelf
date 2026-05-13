@@ -278,6 +278,8 @@ namespace App.Features.Notebook.Presentation
         private readonly Dictionary<string, Texture2D> bookCoverTextureCache = new();
         private readonly LinkedList<string> bookCoverTextureCacheOrder = new();
         private readonly Dictionary<string, LinkedListNode<string>> bookCoverTextureCacheNodes = new();
+        private readonly Dictionary<string, int> bookCoverTextureUseCounts = new();
+        private readonly Dictionary<string, Texture2D> pendingBookCoverTextureDestroy = new();
         private readonly List<Button> bookRatingStarButtons = new();
         private SpaceViewModel[] apiSpaces = Array.Empty<SpaceViewModel>();
         private DecorObjectViewModel[] apiDecorObjects = Array.Empty<DecorObjectViewModel>();
@@ -5590,6 +5592,7 @@ namespace App.Features.Notebook.Presentation
 
         private void BuildGeneratedBookCover(VisualElement cover, BookViewModel book, float width, float height, bool includeText)
         {
+            cover.Q<VisualElement>("book-cover-generated")?.RemoveFromHierarchy();
             var generated = new VisualElement { name = "book-cover-generated" };
             generated.pickingMode = PickingMode.Ignore;
             generated.style.position = Position.Absolute;
@@ -6884,6 +6887,15 @@ namespace App.Features.Notebook.Presentation
 
         private bool TryGetCachedBookCoverTexture(string url, out Texture2D texture)
         {
+            if (pendingBookCoverTextureDestroy.TryGetValue(url, out texture) && texture != null)
+            {
+                pendingBookCoverTextureDestroy.Remove(url);
+                bookCoverTextureCache[url] = texture;
+                bookCoverTextureCacheNodes[url] = bookCoverTextureCacheOrder.AddLast(url);
+                TrimBookCoverTextureCache();
+                return true;
+            }
+
             if (!bookCoverTextureCache.TryGetValue(url, out texture) || texture == null)
             {
                 bookCoverTextureCache.Remove(url);
@@ -6959,11 +6971,29 @@ namespace App.Features.Notebook.Presentation
 
                 if (bookCoverTextureCache.TryGetValue(oldestUrl, out var texture) && texture != null)
                 {
-                    Destroy(texture);
+                    DestroyBookCoverTextureWhenUnused(oldestUrl, texture);
                 }
 
                 bookCoverTextureCache.Remove(oldestUrl);
             }
+        }
+
+        private void DestroyBookCoverTextureWhenUnused(string url, Texture2D texture)
+        {
+            if (texture == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(url) &&
+                bookCoverTextureUseCounts.TryGetValue(url, out var useCount) &&
+                useCount > 0)
+            {
+                pendingBookCoverTextureDestroy[url] = texture;
+                return;
+            }
+
+            Destroy(texture);
         }
 
         private void ClearBookCoverTextureCache()
@@ -6976,12 +7006,22 @@ namespace App.Features.Notebook.Presentation
                 }
             }
 
+            foreach (var texture in pendingBookCoverTextureDestroy.Values)
+            {
+                if (texture != null)
+                {
+                    Destroy(texture);
+                }
+            }
+
             bookCoverTextureCache.Clear();
             bookCoverTextureCacheOrder.Clear();
             bookCoverTextureCacheNodes.Clear();
+            bookCoverTextureUseCounts.Clear();
+            pendingBookCoverTextureDestroy.Clear();
         }
 
-        private static void ApplyBookCoverTexture(VisualElement cover, Texture2D texture)
+        private void ApplyBookCoverTexture(VisualElement cover, Texture2D texture)
         {
             if (cover == null || texture == null)
             {
@@ -6994,6 +7034,41 @@ namespace App.Features.Notebook.Presentation
             cover.style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Center);
             cover.style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center);
             cover.Q<VisualElement>("book-cover-generated")?.RemoveFromHierarchy();
+
+            if (cover.userData is string url && !string.IsNullOrEmpty(url))
+            {
+                TrackBookCoverTextureUse(url, cover);
+            }
+        }
+
+        private void TrackBookCoverTextureUse(string url, VisualElement cover)
+        {
+            bookCoverTextureUseCounts.TryGetValue(url, out var useCount);
+            bookCoverTextureUseCounts[url] = useCount + 1;
+            cover.RegisterCallback<DetachFromPanelEvent>(_ => ReleaseBookCoverTextureUse(url));
+        }
+
+        private void ReleaseBookCoverTextureUse(string url)
+        {
+            if (string.IsNullOrEmpty(url) ||
+                !bookCoverTextureUseCounts.TryGetValue(url, out var useCount))
+            {
+                return;
+            }
+
+            useCount--;
+            if (useCount > 0)
+            {
+                bookCoverTextureUseCounts[url] = useCount;
+                return;
+            }
+
+            bookCoverTextureUseCounts.Remove(url);
+            if (pendingBookCoverTextureDestroy.TryGetValue(url, out var texture) && texture != null)
+            {
+                pendingBookCoverTextureDestroy.Remove(url);
+                Destroy(texture);
+            }
         }
 
         private void BuildSpaceThumbnail(VisualElement thumbnail, SpaceViewModel space)

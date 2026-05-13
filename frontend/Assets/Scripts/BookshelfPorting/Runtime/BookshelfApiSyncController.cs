@@ -214,26 +214,23 @@ namespace BookshelfPorting.Runtime
                         return;
                     }
 
-                    currentSpaceId = space.Id;
                     var isOtherUserSpace = !IsOwnSpace(space.OwnerUserId);
-                    SetViewingOtherUserSpace(isOtherUserSpace);
-                    ApplyRoomVisuals(space, isOtherUserSpace);
-                    // The notebook card owns follow/like/visit actions. The
-                    // visited room itself stays read-only and inspection-only.
-                    SpaceVisitorOverlayController.Instance?.HideOverlay();
-
-                    if (!IsOwnSpace(space.OwnerUserId))
-                    {
-                        // Visit record is "best-effort" — failure must not
-                        // block the user from seeing the space. The de-dupe
-                        // also moves to record-on-attempt to avoid retry
-                        // floods if BE is slow.
-                        RecordVisitOnce(space.Id);
-                    }
-
                     client.GetBookshelves(
                         space.Id,
-                        LoadBookshelfItems,
+                        response =>
+                        {
+                            currentSpaceId = space.Id;
+                            SetViewingOtherUserSpace(isOtherUserSpace);
+                            ApplyRoomVisuals(space, isOtherUserSpace);
+                            SpaceVisitorOverlayController.Instance?.HideOverlay();
+
+                            if (isOtherUserSpace)
+                            {
+                                RecordVisitOnce(space.Id);
+                            }
+
+                            LoadBookshelfItems(response);
+                        },
                         error => FinishRefresh(false, FormatError(error)));
                 },
                 error =>

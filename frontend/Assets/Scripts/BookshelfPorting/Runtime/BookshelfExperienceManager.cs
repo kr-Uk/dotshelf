@@ -16311,6 +16311,7 @@ namespace BookshelfPorting.Runtime
             {
                 var detail = NormalizeMutationErrorMessage(message);
                 ShowBookshelfTransientStatus("공간 방문 실패", detail, true);
+                OpenOtherSpacesNotebookDirect();
                 RefreshHud();
                 return;
             }
@@ -16375,7 +16376,8 @@ namespace BookshelfPorting.Runtime
 
             if (notebookUiSceneLoader == null)
             {
-                return true;
+                ShowNotebookUiLoadFailure();
+                return false;
             }
 
             if (isNotebookFocusWaitingForScene)
