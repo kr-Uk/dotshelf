@@ -357,6 +357,51 @@ namespace Dotshelf.Scripts.Dashboard
             else root.RemoveFromClassList(InteractiveClass);
         }
 
+        public void ShowMineDashboard()
+        {
+            if (viewMode == ViewMode.Mine && visitedSpaceId == 0L)
+            {
+                return;
+            }
+
+            viewMode = ViewMode.Mine;
+            visitedSpaceId = 0L;
+            ApplyViewMode();
+            ReloadDashboardIfReady();
+        }
+
+        public void ShowVisitedSpaceDashboard(long spaceId)
+        {
+            if (spaceId <= 0)
+            {
+                return;
+            }
+
+            if (viewMode == ViewMode.Visitor && visitedSpaceId == spaceId)
+            {
+                return;
+            }
+
+            viewMode = ViewMode.Visitor;
+            visitedSpaceId = spaceId;
+            ApplyViewMode();
+            ReloadDashboardIfReady();
+        }
+
+        private void ReloadDashboardIfReady()
+        {
+            if (!Application.isPlaying ||
+                !isActiveAndEnabled ||
+                root == null ||
+                !configured ||
+                !HasConfiguredUseCases())
+            {
+                return;
+            }
+
+            LoadInitialData();
+        }
+
         public void Configure(
             IDashboardRepository dashboardRepo,
             IGuestbookRepository guestbookRepo,
@@ -382,10 +427,21 @@ namespace Dotshelf.Scripts.Dashboard
             useMockRepositories = isMockMode;
             BuildUseCasesFromRepos(dashboardRepo, guestbookRepo, spaceSettingsRepo, followRepo, libraryRepo);
             configured = true;
+
+            if (Application.isPlaying && isActiveAndEnabled && root != null)
+            {
+                ApplyViewMode();
+                LoadInitialData();
+            }
         }
 
         private void OnEnable()
         {
+            if (!Application.isPlaying)
+            {
+                return;
+            }
+
             EnsureDocument();
             if (document == null)
             {
@@ -393,7 +449,7 @@ namespace Dotshelf.Scripts.Dashboard
                 return;
             }
 
-            if (!configured)
+            if (!configured || !HasConfiguredUseCases())
             {
                 BuildMockUseCases();
                 configured = true;
@@ -439,6 +495,7 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void BuildMockUseCases()
         {
+            useMockRepositories = true;
             // SceneInstaller가 없는 경우의 fallback. Mock으로 단독 동작.
             BuildUseCasesFromRepos(
                 new MockDashboardRepository(),
@@ -446,6 +503,28 @@ namespace Dotshelf.Scripts.Dashboard
                 new MockSpaceSettingsRepository(),
                 new MockFollowRepository(),
                 new MockLibraryViewRepository());
+        }
+
+        private bool HasConfiguredUseCases()
+        {
+            return loadDashboardUseCase != null &&
+                   toggleLikeUseCase != null &&
+                   loadGuestbookPageUseCase != null &&
+                   loadOwnedBooksUseCase != null &&
+                   loadReadingRecordsUseCase != null &&
+                   loadFollowersUseCase != null &&
+                   loadFollowingsUseCase != null &&
+                   followUseCase != null &&
+                   unfollowUseCase != null &&
+                   blockUseCase != null &&
+                   writeGuestbookUseCase != null &&
+                   writeGuestbookReplyUseCase != null &&
+                   deleteGuestbookUseCase != null &&
+                   deleteGuestbookReplyUseCase != null &&
+                   reportGuestbookUseCase != null &&
+                   updateIntroductionUseCase != null &&
+                   updateGuestbookVisibilityUseCase != null &&
+                   updateWhitelistUseCase != null;
         }
 
         private void BuildUseCasesFromRepos(

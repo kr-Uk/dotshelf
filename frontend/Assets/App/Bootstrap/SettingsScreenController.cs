@@ -80,6 +80,7 @@ namespace App.Bootstrap
         private GameObject modeChangeButtonRoot;
         private BookshelfExperienceManager cachedExperienceManager;
         private RoomEditModeController cachedEditModeController;
+        private BookshelfApiSyncController cachedBookshelfApiSyncController;
         private GameObject panelRoot;
         private GameObject dimBackground;
         private GameObject cardRoot;
@@ -232,6 +233,11 @@ namespace App.Bootstrap
 
         public void OpenSettings()
         {
+            if (IsViewingOtherUserSpace())
+            {
+                return;
+            }
+
             InitializeIfNeeded();
             SetPanelVisible(true);
             ShowProfileEdit();
@@ -343,9 +349,8 @@ namespace App.Bootstrap
         // Floating settings + mode-change buttons only show on the unfocused main view
         // (CurrentFocusArea == QuarterView, i.e. CameraMode.Overview). They stay hidden
         // while: the settings panel is open, onboarding Step 3 is in progress, the
-        // camera is in any focus mode (bookshelf / guestbook / notebook), or the player
-        // is in room edit mode (RoomEditModeController takes over the chrome with its
-        // own return button + bottom toolbar).
+        // camera is in any focus mode (bookshelf / guestbook / notebook), the player
+        // is in room edit mode, or the room is another user's read-only visit preview.
         private void UpdateMainSceneChromeVisibility()
         {
             var panelOpen = panelRoot != null && panelRoot.activeSelf;
@@ -354,7 +359,7 @@ namespace App.Bootstrap
                               experienceManager.CurrentFocusArea == ExperienceFocusArea.QuarterView;
             var step3Active = experienceManager != null && experienceManager.IsOnboardingStep3Active;
             var editModeActive = ResolveEditModeController() != null && ResolveEditModeController().IsEditModeActive;
-            var shouldShow = !panelOpen && inMainScene && !step3Active && !editModeActive;
+            var shouldShow = !panelOpen && inMainScene && !step3Active && !editModeActive && !IsViewingOtherUserSpace();
 
             if (settingsButtonRoot != null && settingsButtonRoot.activeSelf != shouldShow)
             {
@@ -387,6 +392,23 @@ namespace App.Bootstrap
 
             cachedEditModeController = UnityEngine.Object.FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
             return cachedEditModeController;
+        }
+
+        private BookshelfApiSyncController ResolveBookshelfApiSyncController()
+        {
+            if (cachedBookshelfApiSyncController != null)
+            {
+                return cachedBookshelfApiSyncController;
+            }
+
+            cachedBookshelfApiSyncController = UnityEngine.Object.FindFirstObjectByType<BookshelfApiSyncController>(FindObjectsInactive.Include);
+            return cachedBookshelfApiSyncController;
+        }
+
+        private bool IsViewingOtherUserSpace()
+        {
+            var apiSync = ResolveBookshelfApiSyncController();
+            return apiSync != null && apiSync.IsViewingOtherUserSpace;
         }
 
         private void Update()
@@ -522,6 +544,11 @@ namespace App.Bootstrap
 
         private void OnModeChangeClicked()
         {
+            if (IsViewingOtherUserSpace())
+            {
+                return;
+            }
+
             var manager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>();
             if (manager == null)
             {

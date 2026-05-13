@@ -34,6 +34,21 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void Awake()
         {
+            ConfigureController();
+        }
+
+        private void OnEnable()
+        {
+            if (!Application.isPlaying)
+            {
+                return;
+            }
+
+            ConfigureController();
+        }
+
+        private void ConfigureController()
+        {
             if (controller == null)
             {
                 controller = GetComponent<DashboardScreenController>();
@@ -68,7 +83,7 @@ namespace Dotshelf.Scripts.Dashboard
             }
             else
             {
-                APIManager resolvedApiManager = apiManager != null ? apiManager : APIManager.Instance;
+                APIManager resolvedApiManager = apiManager != null ? apiManager : ApiManagerProvider.EnsureInstance();
                 if (resolvedApiManager == null)
                 {
                     Debug.LogWarning("[DashboardSceneInstaller] Api mode has no APIManager. Falling back to mock repositories so the dashboard stays usable.");
@@ -80,6 +95,16 @@ namespace Dotshelf.Scripts.Dashboard
                     controller.Configure(dashboardRepo, guestbookRepo, spaceSettingsRepo, followRepo, libraryRepo, isMockMode: true);
                     return;
                 }
+
+                if (resolvedApiConfig != null)
+                {
+                    resolvedApiManager.Configure(
+                        resolvedApiConfig.ResolveBaseUrl(),
+                        resolvedApiConfig.ResolveAccessToken(),
+                        resolvedApiConfig.RequestTimeoutSeconds,
+                        resolvedApiConfig.EnableVerboseLog);
+                }
+
                 NotebookApiClient client = new NotebookApiClient(resolvedApiManager);
                 dashboardRepo = new ApiDashboardRepository(client);
                 guestbookRepo = new ApiGuestbookRepository(client);

@@ -256,6 +256,23 @@ namespace App.Bootstrap
 
         public bool IsEditModeActive { get; private set; }
         public bool IsDecorationPopupOpen { get; private set; }
+        public bool IsReadOnlySpacePreview { get; private set; }
+
+        public void SetReadOnlySpacePreview(bool isReadOnly)
+        {
+            if (IsReadOnlySpacePreview == isReadOnly)
+            {
+                return;
+            }
+
+            IsReadOnlySpacePreview = isReadOnly;
+            if (isReadOnly && IsDecorationPopupOpen)
+            {
+                CloseDecorationPopupInternal();
+            }
+
+            UpdateButtonVisibility();
+        }
 
         // Internal -----------------------------------------------------------------
 
@@ -4353,6 +4370,11 @@ namespace App.Bootstrap
 
         // Space 응답의 6 카테고리 ID로 visual 재적용. catalog에 매칭 entry 없으면 default(첫 entry).
         // null/0 ID는 \"카테고리별 미적용\" 의미 — default로 fallback (테마 reset 후 default 외형 복귀).
+        public void ApplyServerSpaceVisuals(SpaceResponseDto space)
+        {
+            ApplySpaceVisualsToRoom(space);
+        }
+
         private void ApplySpaceVisualsToRoom(SpaceResponseDto space)
         {
             if (space == null) return;
@@ -5469,7 +5491,7 @@ namespace App.Bootstrap
             var inMainScene = experienceManager != null &&
                               experienceManager.CurrentFocusArea == ExperienceFocusArea.QuarterView;
             var step3Active = experienceManager != null && experienceManager.IsOnboardingStep3Active;
-            var canShowDecorationButton = inMainScene && !step3Active && !IsEditModeActive;
+            var canShowDecorationButton = inMainScene && !step3Active && !IsEditModeActive && !IsReadOnlySpacePreview;
 
             if (decorationButtonRoot != null && decorationButtonRoot.activeSelf != canShowDecorationButton)
             {
@@ -5660,6 +5682,11 @@ namespace App.Bootstrap
 
         private void OnDecorationButtonClicked()
         {
+            if (IsReadOnlySpacePreview)
+            {
+                return;
+            }
+
             if (IsDecorationPopupOpen)
             {
                 CloseDecorationPopupInternal();
