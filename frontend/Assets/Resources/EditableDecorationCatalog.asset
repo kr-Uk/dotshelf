@@ -132,6 +132,55 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 11
     ScaleMultiplierOverride: 0
+  - DisplayName: Fantasy Bed
+    Prefab: {fileID: -8098169881513260187, guid: d47b2633f2014e1a9d75002e533c49c3, type: 3}
+    SourceAssetPath: Assets/Arts/Models/fantasy_bed.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 5
+    ScaleMultiplierOverride: 0
+  - DisplayName: Fantasy Books
+    Prefab: {fileID: -8098169881513260187, guid: d8c1653807804653813c5fb32c91ddb8, type: 3}
+    SourceAssetPath: Assets/Arts/Models/fantasy_books.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
+  - DisplayName: Fantasy Candle
+    Prefab: {fileID: -8098169881513260187, guid: 30a05569096c49029cf464ffd8a3aeb1, type: 3}
+    SourceAssetPath: Assets/Arts/Models/fantasy_candle.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 7
+    ScaleMultiplierOverride: 0
+  - DisplayName: Fantasy Crystalball
+    Prefab: {fileID: -8098169881513260187, guid: 2dbe743360574f198db0639df859b83f, type: 3}
+    SourceAssetPath: Assets/Arts/Models/fantasy_crystalball.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
+  - DisplayName: Fantasy Lamp1
+    Prefab: {fileID: -8098169881513260187, guid: fda37af71976429db1b8f095904dea42, type: 3}
+    SourceAssetPath: Assets/Arts/Models/fantasy_lamp1.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 7
+    ScaleMultiplierOverride: 0
+  - DisplayName: Fantasy Lamp2
+    Prefab: {fileID: -8098169881513260187, guid: cd14d0d6281541f187e79eab5e204dea, type: 3}
+    SourceAssetPath: Assets/Arts/Models/fantasy_lamp2.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 7
+    ScaleMultiplierOverride: 0
+  - DisplayName: Fantasy Window
+    Prefab: {fileID: -8098169881513260187, guid: 712b814690124370bf720e61ce9d4365, type: 3}
+    SourceAssetPath: Assets/Arts/Models/fantasy_window.glb
+    PlacementCategory: 9
+    AllowRotation: 0
+    Kind: 12
+    ScaleMultiplierOverride: 0
   - DisplayName: Goodvibes Bed
     Prefab: {fileID: -8098169881513260187, guid: e1f2a3b4c5d6789012345678abcdef01, type: 3}
     SourceAssetPath: Assets/Arts/Models/GoodVibes_Bed.glb
@@ -194,6 +243,90 @@ MonoBehaviour:
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 6
+    ScaleMultiplierOverride: 0
+  - DisplayName: Space Explorer
+    Prefab: {fileID: -8098169881513260187, guid: c62352d438d24c7da7f840e5f398e193, type: 3}
+    SourceAssetPath: Assets/Arts/Models/space_explorer.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
+  - DisplayName: Space Rocket
+    Prefab: {fileID: -8098169881513260187, guid: cef571fc59344c9b870c8ec769b39087, type: 3}
+    SourceAssetPath: Assets/Arts/Models/space_rocket.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
+  - DisplayName: Space Window
+    Prefab: {fileID: -8098169881513260187, guid: be40aa9cfed84e5abe4c941a6e84813f, type: 3}
+    SourceAssetPath: Assets/Arts/Models/space_window.glb
+    PlacementCategory: 9
+    AllowRotation: 0
+    Kind: 12
+    ScaleMultiplierOverride: 0
+  - DisplayName: Space Woode
+    Prefab: {fileID: -8098169881513260187, guid: d409863b6a184439be7342015b1aeacd, type: 3}
+    SourceAssetPath: Assets/Arts/Models/space_woode.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
+  - DisplayName: Spooky Bed
+    Prefab: {fileID: -8098169881513260187, guid: 05e2a466293e45b1a3e4081cf68ffa05, type: 3}
+    SourceAssetPath: Assets/Arts/Models/spooky_bed.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 5
+    ScaleMultiplierOverride: 0
+  - DisplayName: Spooky Character
+    Prefab: {fileID: 489627813733477026, guid: 3feba441bab54d29bd8c1dce6954d658, type: 3}
+    SourceAssetPath: Assets/Arts/Models/spooky_character.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
+  - DisplayName: Spooky Desk
+    Prefab: {fileID: -8098169881513260187, guid: be35d7e61a5e4798b79f873c56e37b2c, type: 3}
+    SourceAssetPath: Assets/Arts/Models/spooky_desk.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 1
+    ScaleMultiplierOverride: 0
+  - DisplayName: Spooky Lamp
+    Prefab: {fileID: -8098169881513260187, guid: 9c19359bd6fc4a7ab6de939d4e42e59f, type: 3}
+    SourceAssetPath: Assets/Arts/Models/spooky_lamp.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 7
+    ScaleMultiplierOverride: 0
+  - DisplayName: Spooky Pumpkin
+    Prefab: {fileID: -8098169881513260187, guid: 30ea1a3e4a09449eb5b0ec05e241b75c, type: 3}
+    SourceAssetPath: Assets/Arts/Models/spooky_pumpkin.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
+  - DisplayName: Spooky Repeater
+    Prefab: {fileID: -8098169881513260187, guid: 54da90f1cf0d4c41a1e5a98d4be5925a, type: 3}
+    SourceAssetPath: Assets/Arts/Models/spooky_repeater.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
+  - DisplayName: Spooky Skull
+    Prefab: {fileID: -8098169881513260187, guid: 699fc0ee84d648c69cc6b4259018f980, type: 3}
+    SourceAssetPath: Assets/Arts/Models/spooky_skull.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
+  - DisplayName: Spooky Window
+    Prefab: {fileID: -8098169881513260187, guid: f22da3ace91d4533a4d99ec4cac3170b, type: 3}
+    SourceAssetPath: Assets/Arts/Models/spooky_window.glb
+    PlacementCategory: 9
+    AllowRotation: 0
+    Kind: 12
     ScaleMultiplierOverride: 0
   - DisplayName: Table Natural
     Prefab: {fileID: -8098169881513260187, guid: 6e5e1cd8910cedc468a37ef0c772b180, type: 3}

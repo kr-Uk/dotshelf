@@ -1,6 +1,7 @@
 using System.IO;
 using System.Collections.Generic;
 using App.Infrastructure.Catalogs;
+using Dotshelf.Scripts.RoomTheme;
 using UnityEditor;
 using UnityEngine;
 
@@ -109,6 +110,135 @@ namespace Dotshelf.EditorTools
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("[DeepSeaThemeCreator] Captured current DeepSea scene placement into RoomTheme_DeepSea.asset and DeepSea catalog entries.");
+        }
+
+        [MenuItem("Dotshelf/Theme/Capture Current Fantasy Placement")]
+        public static void CaptureCurrentFantasyPlacement()
+        {
+            CaptureCurrentThemePlacement("Fantasy", ThemesRoot + "/RoomTheme_Fantasy.asset");
+        }
+
+        [MenuItem("Dotshelf/Theme/Capture Current Space Placement")]
+        public static void CaptureCurrentSpacePlacement()
+        {
+            CaptureCurrentThemePlacement("Space", ThemesRoot + "/RoomTheme_Space.asset");
+        }
+
+        [MenuItem("Dotshelf/Theme/Capture Current Spooky Placement")]
+        public static void CaptureCurrentSpookyPlacement()
+        {
+            CaptureCurrentThemePlacement("Spooky", ThemesRoot + "/RoomTheme_Spooky.asset");
+        }
+
+        private static void CaptureCurrentThemePlacement(string themeName, string themePath)
+        {
+            var theme = LoadRequired<RoomThemeAsset>(themePath);
+            var themeObject = new SerializedObject(theme);
+            var roomThemeApplier = FindSceneComponent<RoomThemeApplier>();
+
+            CaptureDecoSpecArray(
+                themeObject.FindProperty("floorDecoSpecs"),
+                "ThemeDeco_Floor_",
+                false,
+                roomThemeApplier,
+                themeName);
+            CaptureDecoSpecArray(
+                themeObject.FindProperty("wallDecoSpecs"),
+                "ThemeDeco_Wall_",
+                true,
+                roomThemeApplier,
+                themeName);
+
+            themeObject.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(theme);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log($"[DeepSeaThemeCreator] Captured current {themeName} scene placement into {Path.GetFileName(themePath)}.");
+        }
+
+        private static void CaptureDecoSpecArray(
+            SerializedProperty specs,
+            string objectNamePrefix,
+            bool convertWallAnchorSpace,
+            RoomThemeApplier roomThemeApplier,
+            string themeName)
+        {
+            if (specs == null) return;
+
+            for (int i = 0; i < specs.arraySize; i++)
+            {
+                var spec = specs.GetArrayElementAtIndex(i);
+                var prefabName = ResolveDecoSpecPrefabName(spec);
+                if (string.IsNullOrWhiteSpace(prefabName))
+                {
+                    Debug.LogWarning($"[DeepSeaThemeCreator] {themeName} deco spec has no prefab at index {i}. Keeping existing placement.");
+                    continue;
+                }
+
+                var sceneObjectName = objectNamePrefix + SanitizeName(prefabName);
+                var sceneObject = FindSceneGameObject(sceneObjectName);
+                if (sceneObject == null)
+                {
+                    Debug.LogWarning($"[DeepSeaThemeCreator] {themeName} theme deco not found in scene: {sceneObjectName}. Keeping existing placement.");
+                    continue;
+                }
+
+                if (convertWallAnchorSpace && TryCaptureWallLocalTransform(spec, sceneObject.transform, roomThemeApplier))
+                {
+                    SetVector(spec, "localScale", sceneObject.transform.localScale);
+                    continue;
+                }
+
+                SetVector(spec, "localPosition", sceneObject.transform.position);
+                SetVector(spec, "localRotation", sceneObject.transform.eulerAngles);
+                SetVector(spec, "localScale", sceneObject.transform.localScale);
+            }
+        }
+
+        private static string ResolveDecoSpecPrefabName(SerializedProperty spec)
+        {
+            var prefabProp = spec.FindPropertyRelative("prefab");
+            if (prefabProp?.objectReferenceValue is GameObject prefab)
+            {
+                return prefab.name;
+            }
+
+            var assetKey = spec.FindPropertyRelative("assetKey")?.stringValue;
+            if (string.IsNullOrWhiteSpace(assetKey))
+            {
+                return null;
+            }
+
+            prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetKey);
+            if (prefab != null)
+            {
+                SetObject(prefabProp, prefab);
+                return prefab.name;
+            }
+
+            return Path.GetFileNameWithoutExtension(assetKey);
+        }
+
+        private static bool TryCaptureWallLocalTransform(
+            SerializedProperty spec,
+            Transform sceneTransform,
+            RoomThemeApplier roomThemeApplier)
+        {
+            if (roomThemeApplier == null) return false;
+
+            var wallSideProp = spec.FindPropertyRelative("wallSide");
+            if (wallSideProp == null) return false;
+
+            var wallSide = (WallSide)wallSideProp.enumValueIndex;
+            if (!roomThemeApplier.TryGetWallSurfaceAnchor(wallSide, out var anchorPosition, out var anchorRotation))
+            {
+                return false;
+            }
+
+            var inverseAnchorRotation = Quaternion.Inverse(anchorRotation);
+            SetVector(spec, "localPosition", inverseAnchorRotation * (sceneTransform.position - anchorPosition));
+            SetVector(spec, "localRotation", (inverseAnchorRotation * sceneTransform.rotation).eulerAngles);
+            return true;
         }
 
         private static RoomThemeAsset CreateOrLoadTheme(
@@ -468,6 +598,25 @@ namespace Dotshelf.EditorTools
                 if (go.name == objectName) return go;
             }
             return null;
+        }
+
+        private static T FindSceneComponent<T>() where T : Component
+        {
+            var components = Resources.FindObjectsOfTypeAll<T>();
+            for (int i = 0; i < components.Length; i++)
+            {
+                var component = components[i];
+                if (component == null || component.gameObject == null) continue;
+                if (!component.gameObject.scene.IsValid()) continue;
+                if (EditorUtility.IsPersistent(component)) continue;
+                return component;
+            }
+            return null;
+        }
+
+        private static string SanitizeName(string raw)
+        {
+            return string.IsNullOrWhiteSpace(raw) ? "decoration" : raw.Replace(' ', '_');
         }
 
         private static void EnsureCatalogContainsTheme(RoomThemeAsset theme)

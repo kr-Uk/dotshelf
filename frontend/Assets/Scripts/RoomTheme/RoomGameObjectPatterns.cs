@@ -8,6 +8,7 @@ namespace Dotshelf.Scripts.RoomTheme
     public static class RoomGameObjectPatterns
     {
         public const string Floor = "Floor";
+        public const string Ceiling = "Ceiling";
         // 고정 interactive 오브젝트 — Desk/Dashboard mesh swap 에서 hide 금지 대상.
         // RoomEditModeController.IsUnderNotebookStation 이 부모 체인 탐색 시 이 상수와 비교.
         // (MR #157 review simonjiho #1: hardcoded 문자열 통일 — prefab 이름 변경 시 silent break 방지.)
@@ -48,6 +49,16 @@ namespace Dotshelf.Scripts.RoomTheme
                 if (name.StartsWith(Wall[i] + "_")) return true;
             }
             return false;
+        }
+
+        public static bool IsCeilingName(string name)
+        {
+            return name == Ceiling;
+        }
+
+        public static bool IsWallpaperSurfaceName(string name)
+        {
+            return IsWallName(name) || IsCeilingName(name);
         }
 
         public static bool MatchesPrefix(string name, string[] patterns)

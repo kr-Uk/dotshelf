@@ -1,0 +1,113 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7fcf5d37657e94c1a8a0ff4244296f90, type: 3}
+  m_Name: RoomTheme_Spooky
+  m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Catalogs.RoomThemeAsset
+  assetId: 600000
+  displayName: "\uC2A4\uD478\uD0A4"
+  description: "\uBC15\uC950, \uD638\uBC15, \uD574\uACE8\uACFC \uC5B4\uB450\uC6B4
+    \uBCF4\uB797\uBE5B \uBCBD\uC9C0\uB85C \uAD6C\uC131\uD55C \uB85C\uCEEC \uD504\uB9AC\uBDF0
+    \uD14C\uB9C8."
+  previewSprite: {fileID: 0}
+  bookshelfStyleIndex: 0
+  wallMaterial: {fileID: 2100000, guid: 22f221f0716d439994e09157cb0cd0cf, type: 2}
+  floorMaterial: {fileID: 2100000, guid: 4ab825f11c7740c3b3cba9e4f5c111e1, type: 2}
+  bookshelfMaterial: {fileID: 2100000, guid: 771f319880734e27b45336ec706f8c7a, type: 2}
+  furnitureMaterial: {fileID: 2100000, guid: f894691d2a9b4e33aad5b10f3db31cac, type: 2}
+  deskTopMaterial: {fileID: 2100000, guid: f894691d2a9b4e33aad5b10f3db31cac, type: 2}
+  chairMaterial: {fileID: 2100000, guid: f894691d2a9b4e33aad5b10f3db31cac, type: 2}
+  dashboardMaterial: {fileID: 2100000, guid: 67a03d86997e47ed9a2fc0039b1ccb1f, type: 2}
+  accentMaterial: {fileID: 2100000, guid: ca4b53d1e614475e8c48e3b8a1e2ddaa, type: 2}
+  interiorLightColor: {r: 1, g: 0.73333335, b: 0.42745098, a: 1}
+  interiorLightKelvin: 3600
+  ambientTint: {r: 0.39215687, g: 0.2509804, b: 0.52156866, a: 1}
+  ambientIntensity: 0.82
+  exteriorLightColor: {r: 0.7411765, g: 0.43137255, b: 1, a: 1}
+  exteriorLightKelvin: 4200
+  exteriorLightIntensity: 0.9
+  defaultExterior: {fileID: 0}
+  allowsCustomization: 1
+  isLocalPreview: 1
+  accentPrimary: {r: 0.9411765, g: 0.5411765, b: 0.18039216, a: 1}
+  accentSecondary: {r: 0.62352943, g: 0.35686275, b: 0.92156863, a: 1}
+  accentTertiary: {r: 0.6784314, g: 0.8666667, b: 0.5058824, a: 1}
+  defaultEntries:
+  - category: 0
+    assetId: 600001
+  - category: 4
+    assetId: 600030
+  bookshelfDecoSpecs: []
+  floorDecoSpecs:
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: 05e2a466293e45b1a3e4081cf68ffa05, type: 3}
+    wallSide: 0
+    localPosition: {x: 1.752, y: 0.824, z: 0.523}
+    localRotation: {x: 0, y: 180, z: 0}
+    localScale: {x: 0.916384, y: 0.916384, z: 0.916384}
+    anchorTag: spookyBed
+    themeSlot: 7
+    assetKey: Assets/Arts/Models/spooky_bed.glb
+  - assetId: 0
+    prefab: {fileID: 489627813733477026, guid: 3feba441bab54d29bd8c1dce6954d658, type: 3}
+    wallSide: 0
+    localPosition: {x: -1.3, y: 0.34, z: 0.84}
+    localRotation: {x: 0, y: 22, z: 0}
+    localScale: {x: 0.34, y: 0.34, z: 0.34}
+    anchorTag: spookyCharacter
+    themeSlot: 0
+    assetKey: Assets/Arts/Models/spooky_character.glb
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: 9c19359bd6fc4a7ab6de939d4e42e59f, type: 3}
+    wallSide: 0
+    localPosition: {x: -2.0488, y: 0.683, z: 1.0791}
+    localRotation: {x: -0, y: 149.1561, z: 0}
+    localScale: {x: 0.70972306, y: 0.70972306, z: 0.70972306}
+    anchorTag: spookyLamp
+    themeSlot: 4
+    assetKey: Assets/Arts/Models/spooky_lamp.glb
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: 30ea1a3e4a09449eb5b0ec05e241b75c, type: 3}
+    wallSide: 0
+    localPosition: {x: -1.386, y: 0.184, z: 1.373}
+    localRotation: {x: -0, y: 147.01285, z: -0}
+    localScale: {x: 0.32, y: 0.32, z: 0.32}
+    anchorTag: spookyPumpkin
+    themeSlot: 0
+    assetKey: Assets/Arts/Models/spooky_pumpkin.glb
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: 54da90f1cf0d4c41a1e5a98d4be5925a, type: 3}
+    wallSide: 0
+    localPosition: {x: 0.994, y: 0.23, z: 0.975}
+    localRotation: {x: 0, y: 205, z: 0}
+    localScale: {x: 0.3, y: 0.3, z: 0.3}
+    anchorTag: spookyRepeater
+    themeSlot: 3
+    assetKey: Assets/Arts/Models/spooky_repeater.glb
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: 699fc0ee84d648c69cc6b4259018f980, type: 3}
+    wallSide: 0
+    localPosition: {x: -0.073, y: 0.0076481, z: -0.2}
+    localRotation: {x: -0, y: 136.95087, z: 0}
+    localScale: {x: 1.0544288, y: 1.0544288, z: 1.0544288}
+    anchorTag: spookySkull
+    themeSlot: 0
+    assetKey: Assets/Arts/Models/spooky_skull.glb
+  wallDecoSpecs:
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: f22da3ace91d4533a4d99ec4cac3170b, type: 3}
+    wallSide: 3
+    localPosition: {x: 1.624, y: 0.40100002, z: 0.05000007}
+    localRotation: {x: 0, y: 180, z: 0}
+    localScale: {x: 0.72, y: 0.72, z: 0.72}
+    anchorTag: spookyWindow
+    themeSlot: 8
+    assetKey: Assets/Arts/Models/spooky_window.glb

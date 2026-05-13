@@ -244,3 +244,75 @@ MonoBehaviour:
     monitorPosition: {x: 0, y: 0, z: 0}
     monitorRotation: {x: 0, y: 0, z: 0}
     monitorScale: {x: 1, y: 1, z: 1}
+  - assetId: 400001
+    displayName: "\uD310\uD0C0\uC9C0 \uBCBD\uC9C0"
+    description:
+    previewSprite: {fileID: 0}
+    themeTag: Fantasy
+    isLocalPreview: 1
+    materials:
+    - {fileID: 2100000, guid: 78eee197e04f45d8ad4e08c8330f65e1, type: 2}
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: 0}
+    placementAnchor: {x: 0, y: 0, z: 0}
+    placementRotation: {x: 0, y: 0, z: 0}
+    placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    lockNotebookStationToMonitor: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
+  - assetId: 500001
+    displayName: "\uC6B0\uC8FC \uBCBD\uC9C0"
+    description:
+    previewSprite: {fileID: 0}
+    themeTag: Space
+    isLocalPreview: 1
+    materials:
+    - {fileID: 2100000, guid: 5e3dd637b147449e918940b3f590000e, type: 2}
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: 0}
+    placementAnchor: {x: 0, y: 0, z: 0}
+    placementRotation: {x: 0, y: 0, z: 0}
+    placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    lockNotebookStationToMonitor: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
+  - assetId: 600001
+    displayName: "\uC2A4\uD478\uD0A4 \uBCBD\uC9C0"
+    description:
+    previewSprite: {fileID: 0}
+    themeTag: Spooky
+    isLocalPreview: 1
+    materials:
+    - {fileID: 2100000, guid: 22f221f0716d439994e09157cb0cd0cf, type: 2}
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: 0}
+    placementAnchor: {x: 0, y: 0, z: 0}
+    placementRotation: {x: 0, y: 0, z: 0}
+    placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    lockNotebookStationToMonitor: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
