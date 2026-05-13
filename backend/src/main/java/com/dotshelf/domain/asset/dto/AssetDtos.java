@@ -287,11 +287,12 @@ public final class AssetDtos {
             String creator,
             String supplier,
             // V27 부터 일반 Asset 의 호환성 메타는 theme / placement 컬럼으로 직접 받는다.
-            // 기존 compatibleTargets JSON 필드는 호환을 위해 잠시 받도록 두지만, BE 는 무시.
             @Size(max = 30, message = "theme은 30자 이하여야 합니다.")
             String theme,
             @Pattern(regexp = "floor|wall", message = "placement는 'floor' 또는 'wall' 이어야 합니다.")
             String placement,
+            // @Deprecated: V27 이후 BE 가 무시. theme / placement 필드로 대체. 다음 cleanup MR 에서 record 컴포넌트 자체를 제거 예정.
+            @Deprecated
             String compatibleTargets,
             Boolean allowsCustomization,
             Boolean active
@@ -314,6 +315,8 @@ public final class AssetDtos {
             String theme,
             @Pattern(regexp = "floor|wall", message = "placement는 'floor' 또는 'wall' 이어야 합니다.")
             String placement,
+            // @Deprecated: V27 이후 BE 가 무시. theme / placement 필드로 대체. 다음 cleanup MR 에서 record 컴포넌트 자체를 제거 예정.
+            @Deprecated
             String compatibleTargets,
             Boolean allowsCustomization
     ) {
