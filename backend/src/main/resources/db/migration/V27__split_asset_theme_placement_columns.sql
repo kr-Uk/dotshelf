@@ -18,12 +18,32 @@
 ALTER TABLE assets ADD COLUMN theme VARCHAR(30);
 ALTER TABLE assets ADD COLUMN placement VARCHAR(10);
 
+-- compatible_targets 에는 과거에 BE 가 JSON validation 없이 raw 문자열로 받아서 저장한 이력이 있어
+-- 단 한 row 의 invalid UTF-8 / invalid JSON 도 ::jsonb 캐스팅에서 throw → 전체 마이그레이션 실패 →
+-- 앱 부팅 차단으로 이어진다. CTE WHERE 의 jsonb_typeof 가드는 캐스팅 이후 적용되므로 막아주지 못한다.
+-- 캐스팅 실패를 NULL 로 흡수하는 임시 helper 를 두고, 마이그레이션 종료 직후 DROP.
+CREATE OR REPLACE FUNCTION pg_temp.safe_asset_compatible_targets_jsonb(value oid)
+RETURNS jsonb
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF value IS NULL THEN
+        RETURN NULL;
+    END IF;
+    RETURN convert_from(lo_get(value), 'UTF8')::jsonb;
+EXCEPTION WHEN OTHERS THEN
+    -- invalid UTF-8 / invalid JSON / 손상된 LOB OID 등 모든 실패 → NULL 로 떨어뜨려 백필에서 누락.
+    -- 해당 row 는 운영자가 admin-web edit 폼에서 재설정해야 함 (legacy 배열과 동일 처리).
+    RETURN NULL;
+END;
+$$;
+
 -- LOB fetch 를 한 row 당 1회만 하기 위해 CTE 로 parsed jsonb 를 캐싱.
 -- placement 값은 BE/DB 가 새로 강제할 도메인 ('floor'|'wall') 안에 들어오는 값만 통과시킨다 —
 -- legacy DB 에 손으로 입력된 비표준 값이 있다면 NULL 로 떨어뜨려 CHECK 제약 추가가 실패하지 않게 한다.
 WITH parsed AS (
     SELECT id,
-           (convert_from(lo_get(compatible_targets::oid), 'UTF8'))::jsonb AS doc
+           pg_temp.safe_asset_compatible_targets_jsonb(compatible_targets::oid) AS doc
     FROM assets
     WHERE compatible_targets IS NOT NULL
 )
@@ -37,7 +57,10 @@ SET
     END
 FROM parsed
 WHERE a.id = parsed.id
+  AND parsed.doc IS NOT NULL
   AND jsonb_typeof(parsed.doc) = 'object';
+
+DROP FUNCTION pg_temp.safe_asset_compatible_targets_jsonb(oid);
 
 -- 백필 결과 로그 — 운영자가 어드민에서 NULL row 를 재설정해야 하는 갯수를 즉시 파악할 수 있게.
 -- backfilled: 객체 형태 LOB 에서 theme/placement 둘 중 하나라도 추출된 row 수
