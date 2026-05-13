@@ -3814,6 +3814,48 @@ namespace BookshelfPorting.Runtime
             isEmptyBookshelfTutorialEntryPending = false;
 
             RefreshHud();
+
+            // 대시보드(Guestbook) focus 진입 시 placedItemsRoot 자식(가구/장식)을 반투명 처리해
+            // 대시보드 화면을 가리지 않게 한다. 이탈 시 자동 원복. wall fade 와 독립적으로 동작.
+            ApplyGuestbookFocusRoomFade();
+        }
+
+        // RoomEditModeController.SetGuestbookFocusFadeActive 으로 placedItemsRoot 자식 fade 토글.
+        // 컨트롤러는 BookshelfSceneInstaller 가 단일 인스턴스로 생성하므로 lazy resolve + cache.
+        private void ApplyGuestbookFocusRoomFade()
+        {
+            var roomEdit = ResolveRoomEditModeController();
+            bool shouldFade = CurrentFocusArea == ExperienceFocusArea.Guestbook;
+            Debug.Log($"[GuestbookFocus][Hook] SyncFromCameraMode → ApplyGuestbookFocusRoomFade focus={CurrentFocusArea} shouldFade={shouldFade} roomEditModeController={(roomEdit != null ? "found" : "NULL")}");
+            if (roomEdit == null)
+            {
+                return;
+            }
+
+            // fade 는 부수적 visual 효과 — 실패해도 카메라 transition / focus 동작은 절대 막지 않는다.
+            // SyncFromCameraMode 는 CameraController.MoveToWhiteboardSurface 의 event fire 도중 호출되는데,
+            // 여기서 throw 가 propagate 되면 caller 의 transition 시작 코드 (line 284 이후) 가 끊겨 카메라
+            // 가 안 움직이는 회귀가 발생했었다. 그래서 swallow + LogError 로 진단만 남긴다.
+            try
+            {
+                roomEdit.SetGuestbookFocusFadeActive(shouldFade);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[GuestbookFocus][Hook] fade 적용 실패 (focus={CurrentFocusArea}, shouldFade={shouldFade}) — fade 무시하고 카메라 transition 계속. ex={ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        private App.Bootstrap.RoomEditModeController cachedRoomEditModeController;
+
+        private App.Bootstrap.RoomEditModeController ResolveRoomEditModeController()
+        {
+            if (cachedRoomEditModeController != null)
+            {
+                return cachedRoomEditModeController;
+            }
+            cachedRoomEditModeController = FindFirstObjectByType<App.Bootstrap.RoomEditModeController>(FindObjectsInactive.Include);
+            return cachedRoomEditModeController;
         }
 
         private void EnsureHud()
