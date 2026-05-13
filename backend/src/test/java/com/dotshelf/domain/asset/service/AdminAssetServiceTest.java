@@ -333,23 +333,8 @@ class AdminAssetServiceTest {
         then(adminAuditLogRepository).shouldHaveNoInteractions();
     }
 
-    @Test
-    @DisplayName("관리자가 아니면 에셋 조회 전에 FORBIDDEN을 던진다")
-    void createPreviewImageUploadUrl_nonAdmin_throwsForbidden() {
-        User user = TestFixtures.user(1L, "member");
-        given(userService.requireUserId(1L)).willReturn(1L);
-        given(userService.getUser(1L)).willReturn(user);
-
-        assertThatThrownBy(() -> adminAssetService.createPreviewImageUploadUrl(
-                1L,
-                10L,
-                new AdminAssetUploadUrlRequest("image/png", 100L)))
-                .isInstanceOf(CustomException.class)
-                .extracting("errorCode")
-                .isEqualTo(ErrorCode.FORBIDDEN);
-
-        then(assetRepository).shouldHaveNoInteractions();
-    }
+    // 인증 임시 제거: 비-admin role 의 FORBIDDEN 케이스는 AdminAssetService.requireAdmin 가 role 체크를
+    // 하지 않으므로 더 이상 발생하지 않는다. 인증 복구 시 nonAdmin 케이스 테스트를 다시 추가한다.
 
     @Test
     @DisplayName("운영자 list는 active 필터와 keyword 를 repository 에 전달하고 다음 cursor 를 응답한다")
@@ -375,21 +360,6 @@ class AdminAssetServiceTest {
         assertThat(response.items().get(0).hasPreviewImage()).isTrue();
         assertThat(response.nextCursor()).isEqualTo("20");
         assertThat(response.totalCount()).isEqualTo(30L);
-    }
-
-    @Test
-    @DisplayName("관리자가 아니면 list 호출도 FORBIDDEN")
-    void searchAssets_nonAdmin_throwsForbidden() {
-        User user = TestFixtures.user(1L, "member");
-        given(userService.requireUserId(1L)).willReturn(1L);
-        given(userService.getUser(1L)).willReturn(user);
-
-        assertThatThrownBy(() -> adminAssetService.searchAssets(1L, null, null, null, null, null, 20))
-                .isInstanceOf(CustomException.class)
-                .extracting("errorCode")
-                .isEqualTo(ErrorCode.FORBIDDEN);
-
-        then(assetRepository).shouldHaveNoInteractions();
     }
 
     @Test

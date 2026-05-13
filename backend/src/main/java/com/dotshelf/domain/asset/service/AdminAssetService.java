@@ -53,7 +53,12 @@ import lombok.RequiredArgsConstructor;
 @Transactional(readOnly = true)
 public class AdminAssetService {
 
+    // 인증 임시 제거 (admin-web 운영 폼 활성화용). requireAdmin 에서 user lookup 이 실패하거나 헤더에 userId 가
+    // 없으면 audit log actorUserId 가 비어 NPE/제약 위반이 나므로, 익명 actor 폴백 ID 를 둔다.
+    // TODO(인증 복구): role==ADMIN 체크 부활 후 이 상수와 fallback 분기를 함께 제거.
+    @SuppressWarnings("unused") // 인증 복구 시 다시 사용
     private static final String ROLE_ADMIN = "ADMIN";
+    private static final Long ANON_ACTOR_ID = 0L;
     private static final String AUDIT_TARGET_TYPE = "ASSET";
     private static final String AUDIT_ACTION_CREATE = "CREATE_ASSET";
     private static final String AUDIT_ACTION_UPDATE = "UPDATE_ASSET";
@@ -358,12 +363,19 @@ public class AdminAssetService {
                 .orElseThrow(() -> new CustomException(ErrorCode.ASSET_CATEGORY_NOT_FOUND));
     }
 
+    /**
+     * 인증 임시 제거 — role==ADMIN 체크와 userId/user lookup 실패를 모두 무력화한다.
+     * TODO(인증 복구): role 체크와 throw UNAUTHORIZED/FORBIDDEN 부활. writeAudit 의 actor null 폴백도 함께 제거.
+     */
     private User requireAdmin(Long userId) {
-        User user = userService.getUser(userService.requireUserId(userId));
-        if (!ROLE_ADMIN.equalsIgnoreCase(user.getRole())) {
-            throw new CustomException(ErrorCode.FORBIDDEN);
+        if (userId == null) {
+            return null;
         }
-        return user;
+        try {
+            return userService.getUser(userService.requireUserId(userId));
+        } catch (CustomException ignored) {
+            return null;
+        }
     }
 
     /**
@@ -372,7 +384,7 @@ public class AdminAssetService {
      */
     private void writeAudit(User actor, String action, Long assetId, String before, String after, String ipAddress) {
         adminAuditLogRepository.save(AdminAuditLog.builder()
-                .actorUserId(actor.getId())
+                .actorUserId(actor != null ? actor.getId() : ANON_ACTOR_ID)
                 .action(action)
                 .targetType(AUDIT_TARGET_TYPE)
                 .targetId(assetId)

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronLeft } from "lucide-react";
 
@@ -25,11 +25,7 @@ import {
   serializeCompatibleTargets,
   type Placement,
 } from "@/lib/asset-form";
-import type {
-  AdminAssetCategory,
-  AdminAssetCreateInput,
-  AdminAssetDetail,
-} from "@/lib/types";
+import type { AdminAssetCreateInput, AdminAssetDetail } from "@/lib/types";
 
 interface FormState {
   theme: string;
@@ -49,23 +45,17 @@ const INITIAL_FORM: FormState = {
 
 // BE 필수 필드 중 폼에 안 보이는 것들. assetType 은 Unity 카탈로그에 표시되는
 // 분류이지만 운영자가 신경 쓰지 않기로 해서 generic 값으로 고정. tier/assetScope 도 동일 처리.
-// 카테고리는 categoriesQuery 로딩 후 첫 항목을 default 로 쓴다.
+// categoryCode 는 BE @NotBlank 라 어떤 값이든 보내야 하는데 운영자가 카테고리 선택을 안 해서
+// V25 seed 에 항상 존재하는 'BOOKSHELF' 로 고정한다. categories lookup 호출 자체를 제거.
 const DEFAULT_ASSET_TYPE = "ASSET";
 const DEFAULT_TIER = "NORMAL";
 const DEFAULT_ASSET_SCOPE = "SPACE";
+const DEFAULT_CATEGORY_CODE = "BOOKSHELF";
 
 export default function NewAssetPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
-
-  const categoriesQuery = useQuery({
-    queryKey: ["admin-asset-categories"],
-    queryFn: () =>
-      api<{ categories: AdminAssetCategory[] }>("/assets/categories").then(
-        (response) => response.categories,
-      ),
-  });
 
   const createMutation = useMutation({
     mutationFn: (payload: AdminAssetCreateInput) =>
@@ -99,14 +89,12 @@ export default function NewAssetPage() {
     updateField("subCode", normalized);
   };
 
-  const defaultCategoryCode = categoriesQuery.data?.[0]?.code ?? "";
   const canSubmit =
     form.theme.length > 0 &&
     form.subCode.length > 0 &&
     !form.subCode.startsWith("_") &&
     !form.subCode.endsWith("_") &&
     form.placement.length > 0 &&
-    defaultCategoryCode.length > 0 &&
     !createMutation.isPending;
 
   const handleSubmit = () => {
@@ -118,7 +106,7 @@ export default function NewAssetPage() {
       // 한국어 표시 이름을 별도로 받지 않는다 — 운영자가 영문 식별자만으로 충분.
       // Unity 카탈로그에 사용자 친화적인 이름이 필요해지면 그때 한국어 입력 칸 부활.
       name: form.subCode,
-      categoryCode: defaultCategoryCode,
+      categoryCode: DEFAULT_CATEGORY_CODE,
       assetType: DEFAULT_ASSET_TYPE,
       collectionCode: null,
       tier: DEFAULT_TIER,
