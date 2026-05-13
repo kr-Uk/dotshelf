@@ -216,11 +216,11 @@ namespace App.Features.Notebook.Presentation
         private const int MaxBookCoverTextureCacheCount = 64;
         private const int MaxRemoteBookCoverWidth = 2048;
         private const int MaxRemoteBookCoverHeight = 3072;
-        private const float RecommendWheelScrollScale = 56f;
         private const int SearchResultPageSize = 48;
         private const int MarketBookPageSize = 48;
         private const NotebookShelfDisplayStyle DefaultDisplayStyle = NotebookShelfDisplayStyle.Spine;
         private const string PanelSettingsResource = "NotebookPanelSettings";
+
         private static readonly Color PageBack = Hex(0xF0EEE9);
         private static readonly Color Surface = Hex(0xF7FFF7);
         private static readonly Color SurfaceAlt = Hex(0xEEF4EC);
@@ -296,6 +296,7 @@ namespace App.Features.Notebook.Presentation
         private VisualElement searchResultsList;
         private VisualElement bookDetailContent;
         private VisualElement bookDetailModalPanel;
+        private ScrollView bookDetailScrollView;
         private VisualElement otherSpacesContent;
         private VisualElement otherSpacesList;
         private VisualElement socialListPanel;
@@ -355,8 +356,6 @@ namespace App.Features.Notebook.Presentation
         private Label toastLabel;
         private VisualElement toast;
         private ScrollView pageScrollView;
-        private int recommendWheelLockVersion;
-        private bool pointerOverRecommendScroll;
         private VisualElement scrollRail;
         private VisualElement scrollThumb;
         private Button previousPageButton;
@@ -467,25 +466,21 @@ namespace App.Features.Notebook.Presentation
             }
 
             if (Input.GetKeyDown(KeyCode.Escape) &&
-                bookDetailContent != null &&
-                bookDetailContent.style.display.value == DisplayStyle.Flex)
+                IsBookDetailModalOpen())
             {
                 CloseBookDetail();
+                return;
+            }
+
+            if (IsBookDetailModalOpen())
+            {
                 return;
             }
 
             var wheel = Input.mouseScrollDelta.y;
             if (Mathf.Abs(wheel) > 0.01f)
             {
-                if (pointerOverRecommendScroll && recommendScrollView != null)
-                {
-                    var lockedPageY = pageScrollView.scrollOffset.y;
-                    LockNotebookScrollForRecommendWheel(lockedPageY);
-                }
-                else
-                {
-                    ScrollNotebookBy(-wheel * 90f);
-                }
+                ScrollNotebookBy(-wheel * 90f);
             }
 
             if (Input.GetKeyDown(KeyCode.PageDown))
@@ -922,6 +917,7 @@ namespace App.Features.Notebook.Presentation
             searchResultsList = null;
             bookDetailContent = null;
             bookDetailModalPanel = null;
+            bookDetailScrollView = null;
             otherSpacesContent = null;
             otherSpacesList = null;
             socialListPanel = null;
@@ -937,7 +933,6 @@ namespace App.Features.Notebook.Presentation
             walletPurchaseList = null;
             detailCover = null;
             recommendScrollView = null;
-            pointerOverRecommendScroll = false;
             searchField = null;
             otherSpacesSearchField = null;
             bookReviewInput = null;
@@ -1686,8 +1681,8 @@ namespace App.Features.Notebook.Presentation
 
             var panel = new VisualElement { name = "search-results-panel" };
             panel.style.flexDirection = FlexDirection.Column;
-            panel.style.paddingLeft = 16;
-            panel.style.paddingRight = 16;
+            panel.style.paddingLeft = 10;
+            panel.style.paddingRight = 10;
             panel.style.paddingTop = 12;
             panel.style.paddingBottom = 18;
             panel.style.backgroundColor = Rgba(0xFA, 0xFE, 0xFB, 0.94f);
@@ -1701,8 +1696,8 @@ namespace App.Features.Notebook.Presentation
             searchResultsList.style.alignItems = Align.Stretch;
             searchResultsList.style.marginTop = 0;
             searchResultsList.style.minHeight = 326;
-            searchResultsList.style.paddingLeft = 2;
-            searchResultsList.style.paddingRight = 2;
+            searchResultsList.style.paddingLeft = 0;
+            searchResultsList.style.paddingRight = 0;
             panel.Add(searchResultsList);
         }
 
@@ -1718,6 +1713,8 @@ namespace App.Features.Notebook.Presentation
             bookDetailContent.style.alignItems = Align.Center;
             bookDetailContent.style.justifyContent = Justify.Center;
             bookDetailContent.style.backgroundColor = Rgba(0x09, 0x16, 0x26, 0.52f);
+            bookDetailContent.pickingMode = PickingMode.Position;
+            bookDetailContent.RegisterCallback<WheelEvent>(evt => evt.StopPropagation());
             bookDetailContent.RegisterCallback<ClickEvent>(evt =>
             {
                 if (evt.target == bookDetailContent)
@@ -1730,9 +1727,9 @@ namespace App.Features.Notebook.Presentation
             var panel = new VisualElement { name = "book-detail-modal" };
             bookDetailModalPanel = panel;
             panel.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
-            panel.style.width = 600;
-            panel.style.height = 650;
-            panel.style.maxWidth = Length.Percent(92);
+            panel.style.width = 680;
+            panel.style.height = 700;
+            panel.style.maxWidth = Length.Percent(94);
             panel.style.maxHeight = Length.Percent(96);
             panel.style.flexDirection = FlexDirection.Column;
             panel.style.paddingLeft = 24;
@@ -1745,19 +1742,31 @@ namespace App.Features.Notebook.Presentation
             Border(panel, Rgba(0x0E, 0x1D, 0x2A, 0.14f));
             bookDetailContent.Add(panel);
 
+            var detailScroll = new ScrollView(ScrollViewMode.Vertical) { name = "book-detail-scroll" };
+            bookDetailScrollView = detailScroll;
+            detailScroll.style.flexGrow = 1f;
+            detailScroll.style.minHeight = 0;
+            detailScroll.style.width = Length.Percent(100);
+            detailScroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            detailScroll.verticalScrollerVisibility = ScrollerVisibility.Auto;
+            detailScroll.RegisterCallback<WheelEvent>(evt => evt.StopPropagation());
+            detailScroll.contentContainer.style.flexDirection = FlexDirection.Column;
+            detailScroll.contentContainer.style.alignItems = Align.Stretch;
+            panel.Add(detailScroll);
+
             var top = Row("book-detail-top");
             top.style.width = Length.Percent(100);
-            top.style.height = Length.Percent(100);
+            top.style.height = StyleKeyword.Auto;
             top.style.flexDirection = FlexDirection.Column;
-            top.style.flexGrow = 1f;
+            top.style.flexGrow = 0f;
             top.style.paddingLeft = 0;
             top.style.paddingRight = 0;
             top.style.paddingTop = 0;
             top.style.paddingBottom = 0;
             top.style.flexWrap = Wrap.NoWrap;
             top.style.alignItems = Align.Stretch;
-            top.style.flexShrink = 1f;
-            panel.Add(top);
+            top.style.flexShrink = 0f;
+            detailScroll.contentContainer.Add(top);
 
             var coverStage = new VisualElement { name = "book-detail-cover-stage" };
             coverStage.style.width = Length.Percent(100);
@@ -1848,6 +1857,10 @@ namespace App.Features.Notebook.Presentation
             bookDetailSummary.style.paddingBottom = 10;
             bookDetailSummary.style.whiteSpace = WhiteSpace.Normal;
             bookDetailSummary.style.minHeight = 48;
+            bookDetailSummary.style.height = StyleKeyword.Auto;
+            bookDetailSummary.style.flexShrink = 0f;
+            bookDetailSummary.style.overflow = Overflow.Hidden;
+            bookDetailSummary.style.unityTextAlign = TextAnchor.UpperLeft;
             bookDetailSummary.style.backgroundColor = Rgba(0xF7, 0xFF, 0xF7, 0.86f);
             bookDetailSummary.style.borderLeftWidth = 3;
             bookDetailSummary.style.borderLeftColor = Accent;
@@ -1870,14 +1883,21 @@ namespace App.Features.Notebook.Presentation
             var priceColumn = new VisualElement { name = "book-detail-price-column" };
             priceColumn.style.flexGrow = 1f;
             priceColumn.style.minWidth = 0;
+            priceColumn.style.height = 48;
+            priceColumn.style.alignSelf = Align.Center;
+            priceColumn.style.justifyContent = Justify.Center;
             purchasePanel.Add(priceColumn);
 
             var priceLabel = Text("표지 가격", 12, FaintInk, FontStyle.Normal);
+            priceLabel.style.height = 16;
             priceLabel.style.letterSpacing = 2f;
+            priceLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
             priceColumn.Add(priceLabel);
 
             bookDetailPrice = Text(string.Empty, 21, AccentDeep, FontStyle.Bold);
-            bookDetailPrice.style.marginTop = 1;
+            bookDetailPrice.style.height = 28;
+            bookDetailPrice.style.marginTop = 0;
+            bookDetailPrice.style.unityTextAlign = TextAnchor.MiddleLeft;
             priceColumn.Add(bookDetailPrice);
 
             bookDetailAddButton = TextButton("구매하고 책장에 추가", true);
@@ -2755,15 +2775,16 @@ namespace App.Features.Notebook.Presentation
             scroller.style.marginBottom = 12;
             scroller.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
             scroller.verticalScrollerVisibility = ScrollerVisibility.Hidden;
-            scroller.RegisterCallback<WheelEvent>(OnRecommendWheel, TrickleDown.TrickleDown);
-            scroller.RegisterCallback<WheelEvent>(OnRecommendWheel);
-            scroller.RegisterCallback<PointerEnterEvent>(_ => pointerOverRecommendScroll = true);
-            scroller.RegisterCallback<PointerLeaveEvent>(_ => pointerOverRecommendScroll = false);
-            recommendList = scroller.contentContainer;
-            recommendList.style.flexDirection = FlexDirection.Row;
-            recommendList.RegisterCallback<WheelEvent>(OnRecommendWheel, TrickleDown.TrickleDown);
-            recommendList.RegisterCallback<WheelEvent>(OnRecommendWheel);
+            scroller.RegisterCallback<WheelEvent>(BlockRecommendWheelScroll, TrickleDown.TrickleDown);
+            scroller.RegisterCallback<WheelEvent>(BlockRecommendWheelScroll);
+            scroller.RegisterCallback<AttachToPanelEvent>(_ => HideNativeScroller(scroller));
             parent.Add(scroller);
+
+            recommendList = new VisualElement { name = "recommend-list" };
+            recommendList.style.flexDirection = FlexDirection.Row;
+            recommendList.style.flexWrap = Wrap.NoWrap;
+            recommendList.style.alignItems = Align.Stretch;
+            scroller.contentContainer.Add(recommendList);
         }
 
         private void BuildRanking(VisualElement parent)
@@ -3182,87 +3203,28 @@ namespace App.Features.Notebook.Presentation
 
         private void OnNotebookPageWheel(WheelEvent evt)
         {
-            ConsumeRecommendWheel(evt, false);
-        }
-
-        private void OnRecommendWheel(WheelEvent evt)
-        {
-            pointerOverRecommendScroll = true;
-            ConsumeRecommendWheel(evt, true);
-        }
-
-        private void ConsumeRecommendWheel(WheelEvent evt, bool forceConsume)
-        {
-            if (recommendScrollView == null ||
-                recommendScrollView.resolvedStyle.display == DisplayStyle.None)
+            if (IsBookDetailModalOpen())
             {
+                evt.StopPropagation();
+                evt.StopImmediatePropagation();
                 return;
             }
 
-            if (!forceConsume && !IsPointerOverRecommendScroll(evt))
-            {
-                return;
-            }
+        }
 
-            pointerOverRecommendScroll = true;
-            var lockedPageY = pageScrollView?.scrollOffset.y ?? 0f;
-            var dominantDelta = Mathf.Abs(evt.delta.x) > Mathf.Abs(evt.delta.y)
-                ? evt.delta.x
-                : evt.delta.y;
-            if (!Mathf.Approximately(dominantDelta, 0f))
-            {
-                ScrollRecommendBy(dominantDelta * RecommendWheelScrollScale);
-            }
-
-            LockNotebookScrollForRecommendWheel(lockedPageY);
+        private void BlockRecommendWheelScroll(WheelEvent evt)
+        {
+            var scroller = recommendScrollView;
+            var lockedOffset = scroller?.scrollOffset ?? Vector2.zero;
             evt.StopPropagation();
             evt.StopImmediatePropagation();
-        }
-
-        private bool IsPointerOverRecommendScroll(WheelEvent evt)
-        {
-            if (recommendScrollView == null)
+            scroller?.schedule.Execute(() =>
             {
-                return false;
-            }
-
-            if (recommendScrollView.worldBound.Contains(evt.mousePosition))
-            {
-                return true;
-            }
-
-            if (evt.currentTarget is VisualElement currentTarget)
-            {
-                var worldMouse = currentTarget.LocalToWorld(evt.mousePosition);
-                return recommendScrollView.worldBound.Contains(worldMouse);
-            }
-
-            return false;
-        }
-
-        private void LockNotebookScrollForRecommendWheel(float lockedPageY)
-        {
-            if (pageScrollView == null)
-            {
-                return;
-            }
-
-            var lockVersion = ++recommendWheelLockVersion;
-            SetNotebookScrollOffset(lockedPageY);
-            pageScrollView.schedule.Execute(() =>
-            {
-                if (lockVersion == recommendWheelLockVersion)
+                if (scroller.panel != null)
                 {
-                    SetNotebookScrollOffset(lockedPageY);
+                    scroller.scrollOffset = lockedOffset;
                 }
             }).ExecuteLater(0);
-            pageScrollView.schedule.Execute(() =>
-            {
-                if (lockVersion == recommendWheelLockVersion)
-                {
-                    SetNotebookScrollOffset(lockedPageY);
-                }
-            }).ExecuteLater(16);
         }
 
         private void ScrollRecommendBy(float delta)
@@ -3296,6 +3258,14 @@ namespace App.Features.Notebook.Presentation
             foreach (var child in recommendScrollView.contentContainer.Children())
             {
                 contentWidth = Mathf.Max(contentWidth, child.layout.xMax + child.resolvedStyle.marginRight);
+            }
+
+            if (recommendList != null)
+            {
+                foreach (var child in recommendList.Children())
+                {
+                    contentWidth = Mathf.Max(contentWidth, recommendList.layout.x + child.layout.xMax + child.resolvedStyle.marginRight);
+                }
             }
 
             var viewWidth = Mathf.Max(
@@ -3996,6 +3966,7 @@ namespace App.Features.Notebook.Presentation
             if (bookDetailSummary != null)
             {
                 bookDetailSummary.text = $"\"{book.Summary}\"";
+                ScheduleBookDetailSummaryAutoHeight();
             }
 
             if (bookDetailPrice != null)
@@ -4013,6 +3984,67 @@ namespace App.Features.Notebook.Presentation
             RefreshBookReviews(book);
             RefreshBookReviewToggle();
             RefreshRatingStars();
+        }
+
+        private void ScheduleBookDetailSummaryAutoHeight()
+        {
+            if (bookDetailSummary == null)
+            {
+                return;
+            }
+
+            bookDetailSummary.style.height = StyleKeyword.Auto;
+            bookDetailSummary.style.minHeight = 48;
+            bookDetailSummary.schedule.Execute(UpdateBookDetailSummaryAutoHeight).StartingIn(1);
+        }
+
+        private void UpdateBookDetailSummaryAutoHeight()
+        {
+            if (bookDetailSummary == null)
+            {
+                return;
+            }
+
+            var width = bookDetailSummary.resolvedStyle.width;
+            if (float.IsNaN(width) || width <= 0f)
+            {
+                return;
+            }
+
+            var verticalPadding = bookDetailSummary.resolvedStyle.paddingTop + bookDetailSummary.resolvedStyle.paddingBottom;
+            var text = bookDetailSummary.text ?? string.Empty;
+            var usableWidth = Mathf.Max(24f, width - bookDetailSummary.resolvedStyle.paddingLeft - bookDetailSummary.resolvedStyle.paddingRight);
+            var fontSize = Mathf.Max(8f, bookDetailSummary.resolvedStyle.fontSize);
+            var lineCapacity = Mathf.Max(1f, usableWidth / (fontSize * 0.92f));
+            var visualLength = 0f;
+            var lineCount = 1;
+            for (var i = 0; i < text.Length; i++)
+            {
+                if (text[i] == '\n')
+                {
+                    lineCount++;
+                    visualLength = 0;
+                    continue;
+                }
+
+                var weight = text[i] == ' '
+                    ? 0.32f
+                    : text[i] <= 0x007F
+                        ? 0.58f
+                        : 1f;
+                if (visualLength > 0f && visualLength + weight > lineCapacity)
+                {
+                    lineCount++;
+                    visualLength = 0f;
+                }
+
+                visualLength += weight;
+            }
+
+            var lineHeight = Mathf.Max(18f, fontSize * 1.42f);
+            var targetHeight = Mathf.Ceil(Mathf.Max(48f, lineCount * lineHeight + verticalPadding + 4f));
+            bookDetailSummary.style.minHeight = targetHeight;
+            bookDetailSummary.style.height = targetHeight;
         }
 
         private void RefreshFavoriteBookButton(BookViewModel book)
@@ -4171,6 +4203,12 @@ namespace App.Features.Notebook.Presentation
             return card;
         }
 
+        private bool IsBookDetailModalOpen()
+        {
+            return bookDetailContent != null &&
+                   bookDetailContent.style.display.value == DisplayStyle.Flex;
+        }
+
         private void CloseBookDetail()
         {
             if (bookDetailContent != null)
@@ -4194,9 +4232,14 @@ namespace App.Features.Notebook.Presentation
                 FadeInElement(bookDetailContent, 0.14f);
             }
 
+            if (bookDetailScrollView != null)
+            {
+                bookDetailScrollView.scrollOffset = Vector2.zero;
+            }
+
             if (bookDetailModalPanel != null)
             {
-                bookDetailModalPanel.style.height = 650;
+                bookDetailModalPanel.style.height = 700;
                 bookDetailModalPanel.style.marginRight = 0;
                 SlideFadeInElement(bookDetailModalPanel, 12, 0, 0.18f);
             }
@@ -4245,7 +4288,7 @@ namespace App.Features.Notebook.Presentation
 
             if (bookDetailModalPanel != null)
             {
-                bookDetailModalPanel.style.height = 650;
+                bookDetailModalPanel.style.height = 700;
                 bookDetailModalPanel.style.marginRight = open ? 300 : 0;
             }
         }
@@ -5200,10 +5243,14 @@ namespace App.Features.Notebook.Presentation
         private VisualElement CreateSearchResultCard(BookViewModel book, int index)
         {
             var card = new VisualElement { name = $"search-result-{book.Id}" };
-            card.style.width = 168;
-            card.style.height = 266;
-            card.style.marginRight = 8;
-            card.style.marginBottom = 10;
+            card.style.width = 184;
+            card.style.minWidth = 176;
+            card.style.maxWidth = 214;
+            card.style.flexBasis = 184;
+            card.style.flexGrow = 1f;
+            card.style.height = 302;
+            card.style.marginRight = 10;
+            card.style.marginBottom = 12;
             card.style.paddingLeft = 10;
             card.style.paddingRight = 10;
             card.style.paddingTop = 10;
@@ -5211,6 +5258,7 @@ namespace App.Features.Notebook.Presentation
             card.style.alignItems = Align.Center;
             card.style.flexDirection = FlexDirection.Column;
             card.style.backgroundColor = index % 2 == 0 ? Rgba(0xFF, 0xFF, 0xFF, 0.94f) : Rgba(0xF4, 0xFB, 0xFF, 0.92f);
+            card.style.overflow = Overflow.Hidden;
             Round(card, 14);
             Border(card, index == 0 ? Rgba(0x58, 0xB9, 0xFF, 0.36f) : Rgba(0x0E, 0x1D, 0x2A, 0.08f));
             card.RegisterCallback<ClickEvent>(_ => SelectBook(book));
@@ -5218,6 +5266,7 @@ namespace App.Features.Notebook.Presentation
             var coverStage = new VisualElement { name = "search-result-cover-stage" };
             coverStage.style.width = Length.Percent(100);
             coverStage.style.height = 122;
+            coverStage.style.flexShrink = 0;
             coverStage.style.alignItems = Align.Center;
             coverStage.style.justifyContent = Justify.Center;
             coverStage.style.backgroundColor = Rgba(0xEA, 0xF5, 0xFF, 0.74f);
@@ -5237,6 +5286,7 @@ namespace App.Features.Notebook.Presentation
             top.style.alignItems = Align.Center;
             top.style.justifyContent = Justify.Center;
             top.style.minHeight = 22;
+            top.style.flexShrink = 0;
             info.Add(top);
 
             var price = Text(book.Price == 0 ? "FREE" : $"{book.Price:N0}P", 9, book.Price == 0 ? Success : AccentDeep, FontStyle.Bold);
@@ -5255,22 +5305,30 @@ namespace App.Features.Notebook.Presentation
             var title = Text(book.Title, 13, Ink, FontStyle.Bold);
             title.style.marginTop = 4;
             title.style.whiteSpace = WhiteSpace.Normal;
-            title.style.minHeight = 32;
-            title.style.maxHeight = 34;
+            title.style.minHeight = 54;
+            title.style.maxHeight = 58;
+            title.style.overflow = Overflow.Hidden;
+            title.style.flexShrink = 0;
             title.style.unityTextAlign = TextAnchor.UpperCenter;
             info.Add(title);
 
             var meta = Text($"{book.Author} · {book.Publisher}", 10, SoftInk, FontStyle.Normal);
-            meta.style.marginTop = 2;
+            meta.style.fontSize = 9;
+            meta.style.marginTop = 3;
             meta.style.whiteSpace = WhiteSpace.Normal;
-            meta.style.minHeight = 28;
-            meta.style.maxHeight = 30;
+            meta.style.minHeight = 34;
+            meta.style.maxHeight = 38;
+            meta.style.overflow = Overflow.Hidden;
+            meta.style.flexShrink = 0;
             meta.style.unityTextAlign = TextAnchor.UpperCenter;
             info.Add(meta);
 
             var stats = Text($"★ {book.Rating:0.0} · 리뷰 {book.Reviews:N0} · 조회 {book.Views:N0}", 9, Ink, FontStyle.Normal);
-            stats.style.marginTop = 4;
-            stats.style.minHeight = 16;
+            stats.style.marginTop = 6;
+            stats.style.height = 20;
+            stats.style.width = Length.Percent(100);
+            stats.style.overflow = Overflow.Hidden;
+            stats.style.flexShrink = 0;
             stats.style.unityTextAlign = TextAnchor.MiddleCenter;
             stats.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.04f);
             Round(stats, 999);
@@ -5353,6 +5411,7 @@ namespace App.Features.Notebook.Presentation
             card.style.height = 350;
             card.style.flexShrink = 0;
             card.style.marginRight = 18;
+            card.style.marginBottom = 16;
             card.style.paddingLeft = 8;
             card.style.paddingRight = 8;
             card.style.paddingTop = 8;

@@ -502,6 +502,7 @@ namespace BookshelfPorting.Runtime
         private Canvas hudCanvas;
         private bool isNotebookFocusWaitingForScene;
         private bool openOtherSpacesTabAfterNotebookFocus;
+        private bool pendingNotebookFocusAfterTransition;
         private GameObject visitedSpaceLoadingBackdrop;
         private GameObject visitedSpaceLoadingPanel;
         private RectTransform visitedSpaceLoadingBookShadowRect;
@@ -1081,12 +1082,13 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (HandleFocusShortcuts())
+            if (cameraController != null && cameraController.IsTransitioning)
             {
+                QueueNotebookFocusIfClickedDuringTransition();
                 return;
             }
 
-            if (cameraController != null && cameraController.IsTransitioning)
+            if (HandleFocusShortcuts())
             {
                 return;
             }
@@ -1123,6 +1125,14 @@ namespace BookshelfPorting.Runtime
 
             if (IsPointerOverUi())
             {
+                if (!IsViewingOtherUserSpace() &&
+                    CurrentFocusArea != ExperienceFocusArea.Notebook &&
+                    Mouse.current.leftButton.wasPressedThisFrame &&
+                    IsPointerOverRoomNotebookWorldUi(pointer))
+                {
+                    FocusNotebook();
+                }
+
                 return;
             }
 
@@ -1131,19 +1141,20 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (!IsViewingOtherUserSpace())
+            var isViewingOtherSpace = IsViewingOtherUserSpace();
+            if (!isViewingOtherSpace)
             {
                 if (TryHitNotebook())
                 {
                     FocusNotebook();
                     return;
                 }
+            }
 
-                if (TryHitGuestbookBoard())
-                {
-                    FocusGuestbook();
-                    return;
-                }
+            if (TryHitGuestbookBoard())
+            {
+                FocusGuestbook();
+                return;
             }
 
             if (CurrentFocusArea != ExperienceFocusArea.Bookshelf && TryHitBookshelf())
@@ -1626,7 +1637,7 @@ namespace BookshelfPorting.Runtime
                 return true;
             }
 
-            if (!isViewingOtherSpace && Keyboard.current.f3Key.wasPressedThisFrame)
+            if (Keyboard.current.f3Key.wasPressedThisFrame)
             {
                 FocusGuestbook();
                 return true;
@@ -3518,6 +3529,17 @@ namespace BookshelfPorting.Runtime
 
         private void HandleCameraTransitionCompleted(CameraMode mode)
         {
+            if (pendingNotebookFocusAfterTransition)
+            {
+                pendingNotebookFocusAfterTransition = false;
+                if (mode != CameraMode.Notebook && isActiveAndEnabled)
+                {
+                    StartCoroutine(FocusNotebookAfterTransitionCompleted());
+                    RefreshHud();
+                    return;
+                }
+            }
+
             if (mode == CameraMode.Notebook && CurrentFocusArea == ExperienceFocusArea.Notebook)
             {
                 if (notebookScreenController != null)
@@ -3533,6 +3555,12 @@ namespace BookshelfPorting.Runtime
             }
 
             RefreshHud();
+        }
+
+        private IEnumerator FocusNotebookAfterTransitionCompleted()
+        {
+            yield return null;
+            FocusNotebook();
         }
 
         private void HandleBookshelfSwitchStateChanged()
@@ -4638,6 +4666,12 @@ namespace BookshelfPorting.Runtime
             }
 
             var elapsed = Time.unscaledTime - visitedSpaceLoadingAnimationStartedAt;
+            if (!IsFinite(elapsed) || elapsed < 0f)
+            {
+                visitedSpaceLoadingAnimationStartedAt = Time.unscaledTime;
+                elapsed = 0f;
+            }
+
             AnimateVisitedSpaceLoadingPage(elapsed);
             AnimateVisitedSpaceLoadingDecorations(elapsed);
             AnimateVisitedSpaceLoadingDots(elapsed);
@@ -4646,7 +4680,13 @@ namespace BookshelfPorting.Runtime
         private void AnimateVisitedSpaceLoadingPage(float elapsed)
         {
             const float cycleSeconds = 2.28f;
+            if (!IsFinite(elapsed))
+            {
+                elapsed = 0f;
+            }
+
             var progress = Mathf.Repeat(elapsed, cycleSeconds) / cycleSeconds;
+            progress = Mathf.Clamp01(SanitizeFinite(progress, 0f));
             var pageAlpha = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(progress / 0.12f)) *
                             (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((progress - 0.93f) / 0.07f)));
             var turnProgress = Mathf.Clamp01((progress - 0.08f) / 0.78f);
@@ -4664,6 +4704,15 @@ namespace BookshelfPorting.Runtime
                 ? Mathf.Lerp(0f, -88f, sideEased)
                 : Mathf.Lerp(88f, 0f, sideEased);
             var zRotation = (isLeavingRightPage ? -5.8f : 5.8f) * foldAmount + flutter * 2.8f + pageBow * (isLeavingRightPage ? -3.2f : 3.2f);
+            pageAlpha = Mathf.Clamp01(SanitizeFinite(pageAlpha, 1f));
+            foldAmount = Mathf.Clamp01(SanitizeFinite(foldAmount, 0f));
+            flutter = SanitizeFinite(flutter, 0f);
+            smallFlutter = SanitizeFinite(smallFlutter, 0f);
+            pageBow = SanitizeFinite(pageBow, 0f);
+            widthScale = Mathf.Clamp(SanitizeFinite(widthScale, 1f), 0.05f, 1.15f);
+            heightScale = Mathf.Clamp(SanitizeFinite(heightScale, 1f), 0.85f, 1.25f);
+            yRotation = SanitizeFinite(yRotation, 0f);
+            zRotation = SanitizeFinite(zRotation, 0f);
 
             visitedSpaceLoadingFlipPageRect.pivot = new Vector2(isLeavingRightPage ? 0f : 1f, 0.5f);
             visitedSpaceLoadingFlipPageRect.anchoredPosition = new Vector2(
@@ -4754,6 +4803,16 @@ namespace BookshelfPorting.Runtime
                 color.a = (byte)Mathf.RoundToInt(Mathf.Lerp(76f, 190f, foldAmount) * pageAlpha);
                 visitedSpaceLoadingFlipPageEdgeImage.color = color;
             }
+        }
+
+        private static float SanitizeFinite(float value, float fallback)
+        {
+            return IsFinite(value) ? value : fallback;
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
         }
 
         private void AnimateVisitedSpaceLoadingDecorations(float elapsed)
@@ -13669,6 +13728,7 @@ namespace BookshelfPorting.Runtime
 
             if (controller != null)
             {
+                SyncExternalDashboardTarget(controller);
                 controller.SetDimmed(!isFocused);
                 controller.SetInteractionEnabled(isFocused);
             }
@@ -13679,6 +13739,29 @@ namespace BookshelfPorting.Runtime
             {
                 externalDashboardPanel.SetActive(true);
             }
+        }
+
+        private void SyncExternalDashboardTarget(DashboardScreenController controller)
+        {
+            if (controller == null)
+            {
+                return;
+            }
+
+            if (IsViewingOtherUserSpace())
+            {
+                var targetSpaceId = bookshelfApiSyncController != null
+                    ? bookshelfApiSyncController.CurrentSpaceId
+                    : null;
+                if (targetSpaceId.HasValue && targetSpaceId.Value > 0)
+                {
+                    controller.ShowVisitedSpaceDashboard(targetSpaceId.Value);
+                }
+
+                return;
+            }
+
+            controller.ShowMineDashboard();
         }
 
         private static void SetGuestbookBoardHitAreaColliderEnabled(bool enabled)
@@ -15066,14 +15149,64 @@ namespace BookshelfPorting.Runtime
 
         private bool TryHitNotebook()
         {
+            if (Mouse.current == null)
+            {
+                return false;
+            }
+
+            return TryHitNotebook(Mouse.current.position.ReadValue());
+        }
+
+        private bool TryHitNotebook(Vector2 pointer)
+        {
             var sceneCamera = Camera.main;
             if (sceneCamera == null)
             {
                 return false;
             }
 
-            var ray = sceneCamera.ScreenPointToRay(Mouse.current.position.ReadValue());
-            return TryHitClosest<NotebookHitArea>(ray);
+            var ray = sceneCamera.ScreenPointToRay(pointer);
+            var hits = Physics.RaycastAll(ray, 100f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
+            if (hits.Length == 0)
+            {
+                return false;
+            }
+
+            System.Array.Sort(hits, (left, right) => left.distance.CompareTo(right.distance));
+            for (var i = 0; i < hits.Length; i++)
+            {
+                var collider = hits[i].collider;
+                if (collider == null || ShouldIgnoreSceneHitCollider(collider))
+                {
+                    continue;
+                }
+
+                return IsRoomNotebookCollider(collider);
+            }
+
+            return false;
+        }
+
+        private void QueueNotebookFocusIfClickedDuringTransition()
+        {
+            if (Mouse.current == null ||
+                !Mouse.current.leftButton.wasPressedThisFrame ||
+                IsViewingOtherUserSpace())
+            {
+                return;
+            }
+
+            var pointer = Mouse.current.position.ReadValue();
+            var isOverNotebookWorldUi = IsPointerOverRoomNotebookWorldUi(pointer);
+            if (IsPointerOverUi() && !isOverNotebookWorldUi)
+            {
+                return;
+            }
+
+            if (isOverNotebookWorldUi || TryHitNotebook(pointer))
+            {
+                pendingNotebookFocusAfterTransition = true;
+            }
         }
 
         private bool TryHitBookshelf()
@@ -15141,8 +15274,7 @@ namespace BookshelfPorting.Runtime
 
             if (notebookScreenController == null && notebookUiSceneLoader == null)
             {
-                var controllers = FindObjectsByType<NotebookScreenController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-                notebookScreenController = controllers != null && controllers.Length > 0 ? controllers[0] : null;
+                notebookScreenController = FindRoomNotebookScreenController();
             }
 
             if (notebookScreenController == null || Camera.main == null)
@@ -15176,13 +15308,22 @@ namespace BookshelfPorting.Runtime
             for (var i = 0; i < controllers.Length; i++)
             {
                 var controller = controllers[i];
-                if (controller != null && (notebookUiSceneLoader == null || !notebookUiSceneLoader.OwnsController(controller)))
+                if (controller != null &&
+                    !IsNotebookUiSceneController(controller) &&
+                    (notebookUiSceneLoader == null || !notebookUiSceneLoader.OwnsController(controller)))
                 {
                     return controller;
                 }
             }
 
             return null;
+        }
+
+        private static bool IsNotebookUiSceneController(NotebookScreenController controller)
+        {
+            return controller != null &&
+                   controller.gameObject.scene.IsValid() &&
+                   controller.gameObject.scene.name == SceneKeys.NotebookUi;
         }
 
         private void AttachNotebookApiCallbacks()
@@ -15684,6 +15825,59 @@ namespace BookshelfPorting.Runtime
             return DashboardRaycastFilter.IsPointerOverInteractiveDashboard(pointerScreen);
         }
 
+        private bool IsPointerOverRoomNotebookWorldUi(Vector2 pointerScreen)
+        {
+            var eventSystem = EventSystem.current;
+            if (eventSystem == null)
+            {
+                return false;
+            }
+
+            var eventData = new PointerEventData(eventSystem)
+            {
+                position = pointerScreen
+            };
+            var results = new List<RaycastResult>();
+            eventSystem.RaycastAll(eventData, results);
+            for (var i = 0; i < results.Count; i++)
+            {
+                if (IsRoomNotebookWorldUiRaycast(results[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsRoomNotebookWorldUiRaycast(RaycastResult result)
+        {
+            if (result.gameObject == null)
+            {
+                return false;
+            }
+
+            Canvas canvas = null;
+            if (result.module is GraphicRaycaster graphicRaycaster)
+            {
+                canvas = graphicRaycaster.GetComponent<Canvas>();
+            }
+
+            if (canvas == null)
+            {
+                canvas = result.gameObject.GetComponentInParent<Canvas>();
+            }
+
+            if (canvas == null || canvas.renderMode != RenderMode.WorldSpace)
+            {
+                return false;
+            }
+
+            var controller = result.gameObject.GetComponentInParent<NotebookScreenController>()
+                ?? canvas.GetComponentInParent<NotebookScreenController>();
+            return controller != null && !IsNotebookUiSceneController(controller);
+        }
+
         // origin/dev 의 의도된 동작 — RaycastAll 결과를 DashboardRaycastFilter.IsBlockingRaycastResult
         // 가 분류한다. 그 필터는 WorldSpaceRaycastPassthrough 마커가 붙은 WorldSpace 캔버스 hit
         // (guestbookPreviewPanel / guestbookPanel 등) 은 non-blocking 으로 처리해 메인룸 클릭이
@@ -15714,6 +15908,22 @@ namespace BookshelfPorting.Runtime
             }
 
             return false;
+        }
+
+        private static bool IsRoomNotebookCollider(Collider collider)
+        {
+            if (collider == null)
+            {
+                return false;
+            }
+
+            if (collider.GetComponent<NotebookHitArea>() != null)
+            {
+                return true;
+            }
+
+            var controller = collider.GetComponentInParent<NotebookScreenController>();
+            return controller != null && !IsNotebookUiSceneController(controller);
         }
 
         private static void EnsureEventSystem()

@@ -357,6 +357,51 @@ namespace Dotshelf.Scripts.Dashboard
             else root.RemoveFromClassList(InteractiveClass);
         }
 
+        public void ShowMineDashboard()
+        {
+            if (viewMode == ViewMode.Mine && visitedSpaceId == 0L)
+            {
+                return;
+            }
+
+            viewMode = ViewMode.Mine;
+            visitedSpaceId = 0L;
+            ApplyViewMode();
+            ReloadDashboardIfReady();
+        }
+
+        public void ShowVisitedSpaceDashboard(long spaceId)
+        {
+            if (spaceId <= 0)
+            {
+                return;
+            }
+
+            if (viewMode == ViewMode.Visitor && visitedSpaceId == spaceId)
+            {
+                return;
+            }
+
+            viewMode = ViewMode.Visitor;
+            visitedSpaceId = spaceId;
+            ApplyViewMode();
+            ReloadDashboardIfReady();
+        }
+
+        private void ReloadDashboardIfReady()
+        {
+            if (!Application.isPlaying ||
+                !isActiveAndEnabled ||
+                root == null ||
+                !configured ||
+                !HasConfiguredUseCases())
+            {
+                return;
+            }
+
+            LoadInitialData();
+        }
+
         public void Configure(
             IDashboardRepository dashboardRepo,
             IGuestbookRepository guestbookRepo,

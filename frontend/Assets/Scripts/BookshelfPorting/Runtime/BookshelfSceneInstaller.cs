@@ -169,7 +169,6 @@ namespace BookshelfPorting.Runtime
             var apiManager = APIManager.Instance
                 ?? UnityEngine.Object.FindFirstObjectByType<APIManager>()
                 ?? systems.AddComponent<APIManager>();
-            var notebookUiSceneLoader = GetOrAddComponent<NotebookUiSceneLoader>(systems);
 
             apiManager.Configure(
                 apiBaseUrl,
@@ -265,8 +264,7 @@ namespace BookshelfPorting.Runtime
             runtimeDataStore.Configure(state, materialFactory);
             experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
             experienceManager.ConfigureApiMode(usesHttpApi);
-            notebookUiSceneLoader.Configure(SceneKeys.NotebookUi, unloadSceneOnFocusExit: false, enablePerformanceLog: Application.isPlaying);
-            experienceManager.ConfigureNotebookUiSceneLoader(notebookUiSceneLoader);
+            experienceManager.ConfigureNotebookUiSceneLoader(null);
             experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase);
             if (usesHttpApi)
             {
@@ -428,7 +426,7 @@ namespace BookshelfPorting.Runtime
             var desk = guestbook.Find("NotebookStation/Desk");
             if (desk == null)
             {
-                return HasExternalNotebookUi();
+                return false;
             }
 
             if (desk.Find("Desktop") != null)
@@ -449,12 +447,6 @@ namespace BookshelfPorting.Runtime
             }
 
             return true;
-        }
-
-        private static bool HasExternalNotebookUi()
-        {
-            var controllers = Object.FindObjectsByType<NotebookScreenController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            return controllers != null && controllers.Length > 0;
         }
 
         // BookshelfSceneInstaller.InstallIntoActiveScene 한 사이클에 FindOrCreateRoot 가 system 별 N 회
@@ -569,7 +561,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            var notebookScreenController = Object.FindFirstObjectByType<NotebookScreenController>();
+            var notebookScreenController = FindRoomNotebookScreenController();
             var screen = notebookScreenController != null
                 ? notebookScreenController.transform.Find("Screen")
                 : null;
@@ -589,6 +581,28 @@ namespace BookshelfPorting.Runtime
 
             notebookAnchor.position = anchorPosition;
             notebookAnchor.rotation = Quaternion.LookRotation((screenCenter - anchorPosition).normalized, Vector3.up);
+        }
+
+        private static NotebookScreenController FindRoomNotebookScreenController()
+        {
+            var controllers = Object.FindObjectsByType<NotebookScreenController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            if (controllers == null || controllers.Length == 0)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < controllers.Length; i++)
+            {
+                var controller = controllers[i];
+                if (controller != null &&
+                    (!controller.gameObject.scene.IsValid() ||
+                     controller.gameObject.scene.name != SceneKeys.NotebookUi))
+                {
+                    return controller;
+                }
+            }
+
+            return null;
         }
 
         // 메인씬 진입 시 BE 의 사용자 프로필을 한 번 동기화한다. 결과는 Console 에 status/body 로

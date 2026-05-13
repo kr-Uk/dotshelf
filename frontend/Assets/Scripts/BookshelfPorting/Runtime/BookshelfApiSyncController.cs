@@ -61,6 +61,8 @@ namespace BookshelfPorting.Runtime
 
         public bool IsViewingOtherUserSpace => isViewingOtherUserSpace;
 
+        public long? CurrentSpaceId => currentSpaceId;
+
         public bool HasCompletedInitialRefresh => hasCompletedInitialRefresh;
 
         public bool LastInitialRefreshSucceeded => lastInitialRefreshSucceeded;
