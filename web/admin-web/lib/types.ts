@@ -661,13 +661,6 @@ export interface AdminAssetDetail {
   active: boolean;
 }
 
-export interface AdminAssetCategory {
-  categoryId: number;
-  code: string;
-  name: string;
-  displayOrder: number;
-}
-
 export interface AdminAssetUploadUrl {
   uploadUrl: string;
   key: string;
