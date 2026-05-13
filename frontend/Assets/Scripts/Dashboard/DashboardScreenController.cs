@@ -1139,10 +1139,14 @@ namespace Dotshelf.Scripts.Dashboard
                     yield break;
                 }
 
+                // 항상 캐시에 넣어 Texture2D 소유권을 이전한다.
+                // target이 detach된 경우에도 캐시가 소유하므로 텍스처 누수가 없다.
+                // Put은 이미 같은 URL이 캐시에 있으면 duplicate를 destroy하고
+                // canonical 텍스처를 반환한다 (concurrent download race 방지).
+                var canonical = coverImageLoader?.Put(url, texture) ?? texture;
                 if (target?.panel != null)
                 {
-                    coverImageLoader?.Put(url, texture);
-                    ApplyCoverTexture(target, texture);
+                    ApplyCoverTexture(target, canonical);
                 }
             }
         }

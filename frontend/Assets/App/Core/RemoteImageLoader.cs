@@ -92,25 +92,38 @@ namespace App.Core
                     yield break;
                 }
 
-                Put(url, texture);
-                onLoaded?.Invoke(texture);
+                var canonical = Put(url, texture);
+                onLoaded?.Invoke(canonical);
             }
         }
 
         /// <summary>
-        /// Manually insert a texture into the cache (e.g. locally created).
-        /// Destroys any previously cached texture for the same URL.
+        /// Insert a texture into the cache and return the canonical (cached) instance.
+        /// If the same URL is already cached, the <paramref name="texture"/> passed in
+        /// is destroyed and the existing cached texture is returned instead.
+        /// This prevents race conditions where concurrent downloads for the same URL
+        /// could destroy a texture still referenced by UI elements.
         /// </summary>
-        public void Put(string url, Texture2D texture)
+        /// <returns>The texture that remains in the cache — callers must use this reference.</returns>
+        public Texture2D Put(string url, Texture2D texture)
         {
             if (string.IsNullOrWhiteSpace(url) || texture == null)
             {
-                return;
+                return texture;
             }
 
-            if (_cache.TryGetValue(url, out var previous) && previous != null && previous != texture)
+            // If a texture for this URL already exists, keep the existing one
+            // and destroy the duplicate. This matches NotebookToolkitController's
+            // CacheBookCoverTexture pattern and prevents destroying textures
+            // that are still referenced by StyleBackground in UI elements.
+            if (_cache.TryGetValue(url, out var existing) && existing != null)
             {
-                UnityEngine.Object.Destroy(previous);
+                if (existing != texture)
+                {
+                    UnityEngine.Object.Destroy(texture);
+                }
+                TouchLru(url);
+                return existing;
             }
 
             _cache[url] = texture;
@@ -127,6 +140,7 @@ namespace App.Core
             }
 
             Trim();
+            return texture;
         }
 
         /// <summary>Remove a single entry and destroy its texture.</summary>
