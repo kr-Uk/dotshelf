@@ -550,8 +550,12 @@ namespace App.Bootstrap
         private sealed class PlacedItemFadeCache
         {
             public Renderer Renderer;
-            public Material InstanceMaterial;
-            public Material SharedOriginal;
+            // multi-material Renderer 대응 (MR #182 skh1205 리뷰 #3): material slot 전체 snapshot/instance.
+            // hidden fallback 시 InstanceMaterials 는 Destroy 후 null. 첫 slot 만 instance 처리하던
+            // 이전 구조는 submesh 가 여러 material slot 가진 책상/가구 GLB 에서 일부 면이 opaque 로 남는
+            // 회귀 (fade 적용 로그는 성공인데 시각적으로는 가림).
+            public Material[] InstanceMaterials;
+            public Material[] SharedOriginals;
             public bool RendererWasEnabled;
         }
         private readonly List<PlacedItemFadeCache> placedItemFadeCaches = new List<PlacedItemFadeCache>();
@@ -7641,7 +7645,21 @@ namespace App.Bootstrap
 
             if (active)
             {
-                ApplyGuestbookFocusFade();
+                // MR #182 skh1205 리뷰 #2: ApplyGuestbookFocusFade 중간에 예외가 던져지면 일부 renderer
+                // material instance / enabled / canvas.enabled 상태가 부분 적용된 채 leak 한다. 더구나
+                // 여기서 active flag 가 안 set 되면 OnDisable/OnDestroy 의 cleanup 가드 (placedItemFadeActive
+                // 체크) 도 안 돌아 leak 영구화. catch 에서 명시적 RestoreGuestbookFocusFade 로 부분 적용분
+                // rollback 후 rethrow — 호출자 (BookshelfExperienceManager.ApplyGuestbookFocusRoomFade)
+                // 의 swallow 까지 도달.
+                try
+                {
+                    ApplyGuestbookFocusFade();
+                }
+                catch
+                {
+                    RestoreGuestbookFocusFade();
+                    throw;
+                }
                 // fade 가 적용된 target 이 하나도 없으면(BookshelfGenerator 미완료 등) active flag 도
                 // 마킹 안 해서 다음 호출에서 자연스럽게 retry. 정상 흐름에선 사용자 인터랙션 시점에
                 // 이미 생성 완료라 race 가능성은 낮지만 방어적.
@@ -7718,11 +7736,20 @@ namespace App.Bootstrap
                 }
             }
 
-            int faded = 0, skipped = 0, hidden = 0;
+            int faded = 0, skipped = 0, skippedDisabled = 0, hidden = 0;
             for (int i = 0; i < collected.Count; i++)
             {
                 var r = collected[i];
                 if (r == null) continue;
+
+                // MR #182 skh1205 리뷰 #1: 원래 비활성 renderer 는 의도된 hidden (테마 swap / LOD
+                // variant / 임시 hidden mesh 등). 우리가 fade 진입 시 enabled=true 로 켜면 포커스 중
+                // 안 보여야 할 mesh 가 반투명으로 노출되는 회귀. 수집 대상에서 제외.
+                if (!r.enabled)
+                {
+                    skippedDisabled++;
+                    continue;
+                }
 
                 // pending placement(배치 미리보기 ghost) 의 material 은 이미 별도 instance —
                 // 또 swap 하면 ghost 복구 시 reference 가 깨진다. 정상 흐름엔 Guestbook focus
@@ -7733,53 +7760,65 @@ namespace App.Bootstrap
                     continue;
                 }
 
+                // MR #182 skh1205 리뷰 #3: multi-material Renderer 의 모든 slot 처리. 첫 slot 만
+                // instance 처리하던 이전 구조는 책상/가구 GLB submesh 가 multi-material 일 때
+                // 일부 면이 opaque 그대로 남아 시각적으로 가려지지 않는 회귀.
+                var sharedOriginals = r.sharedMaterials;
+                var instanceMaterials = r.materials; // getter 가 모든 slot instance 자동 생성
+
                 var cache = new PlacedItemFadeCache
                 {
                     Renderer = r,
-                    InstanceMaterial = null,
-                    SharedOriginal = r.sharedMaterial,
-                    RendererWasEnabled = r.enabled,
+                    InstanceMaterials = instanceMaterials,
+                    SharedOriginals = sharedOriginals,
+                    RendererWasEnabled = true, // skip-disabled 가드로 항상 true
                 };
-
-                if (!r.enabled)
-                {
-                    r.enabled = true;
-                }
-
-                cache.InstanceMaterial = r.material;
-                ConfigureMaterialAsTransparent(cache.InstanceMaterial);
 
                 // shader 가 URP 표준 _Surface keyword 를 지원해야 alpha 변경이 시각적 transparent
                 // 로 전환된다. Shader Graphs/glTF-pbrMetallicRoughness 같은 custom shader 는 _BaseColor
                 // 는 있어도 _Surface 가 없어 alpha 변경 후에도 opaque 그대로 렌더링 — 결국 안 가려진다.
-                // 그래서 _Surface 없으면 alpha 변경은 시도하지 않고 hidden fallback 으로 직행.
-                bool supportsTransparentSurface = cache.InstanceMaterial.HasProperty("_Surface");
-                bool applied = false;
-                if (supportsTransparentSurface)
+                // 그래서 _Surface 없으면 hidden fallback. 한 slot 이라도 fade 불가면 renderer 전체
+                // hidden 으로 통일 (skh1205 #3 권장 — 일부 slot 만 fade 되면 같은 면 일관성 깨짐).
+                bool allSlotsApplied = instanceMaterials.Length > 0;
+                for (int s = 0; s < instanceMaterials.Length; s++)
                 {
-                    if (cache.InstanceMaterial.HasProperty("_BaseColor"))
+                    var mat = instanceMaterials[s];
+                    if (mat == null) { allSlotsApplied = false; continue; }
+
+                    ConfigureMaterialAsTransparent(mat);
+                    bool supportsTransparentSurface = mat.HasProperty("_Surface");
+                    bool slotApplied = false;
+                    if (supportsTransparentSurface)
                     {
-                        var c = cache.InstanceMaterial.GetColor("_BaseColor");
-                        c.a = alpha;
-                        cache.InstanceMaterial.SetColor("_BaseColor", c);
-                        applied = true;
+                        if (mat.HasProperty("_BaseColor"))
+                        {
+                            var c = mat.GetColor("_BaseColor");
+                            c.a = alpha;
+                            mat.SetColor("_BaseColor", c);
+                            slotApplied = true;
+                        }
+                        else if (mat.HasProperty("_Color"))
+                        {
+                            var c = mat.GetColor("_Color");
+                            c.a = alpha;
+                            mat.SetColor("_Color", c);
+                            slotApplied = true;
+                        }
                     }
-                    else if (cache.InstanceMaterial.HasProperty("_Color"))
-                    {
-                        var c = cache.InstanceMaterial.GetColor("_Color");
-                        c.a = alpha;
-                        cache.InstanceMaterial.SetColor("_Color", c);
-                        applied = true;
-                    }
+                    if (!slotApplied) allSlotsApplied = false;
                 }
 
-                if (!applied)
+                if (!allSlotsApplied)
                 {
-                    // alpha fade 불가 — 통째 숨김 fallback. 이탈 시 RendererWasEnabled 로 복구.
+                    // 하나라도 fade 불가 — renderer 통째 hidden fallback. instance 정리 +
+                    // sharedMaterials 원본 복원. 이탈 시 RendererWasEnabled 로 enabled 복구.
                     r.enabled = false;
-                    Destroy(cache.InstanceMaterial);
-                    cache.InstanceMaterial = null;
-                    r.sharedMaterial = cache.SharedOriginal;
+                    for (int s = 0; s < instanceMaterials.Length; s++)
+                    {
+                        if (instanceMaterials[s] != null) Destroy(instanceMaterials[s]);
+                    }
+                    cache.InstanceMaterials = null;
+                    r.sharedMaterials = sharedOriginals;
                     hidden++;
                 }
                 else
@@ -7803,7 +7842,8 @@ namespace App.Bootstrap
 
             Debug.Log(
                 $"[GuestbookFocus][PlacedFade] applied — faded={faded} hidden-fallback={hidden} " +
-                $"skipped(pending)={skipped} sources(placedItems={placedItemCount},notebookStation={notebookStationCount},monitorSwap={monitorSwapCount}) " +
+                $"skipped(pending={skipped},alreadyDisabled={skippedDisabled}) " +
+                $"sources(placedItems={placedItemCount},notebookStation={notebookStationCount},monitorSwap={monitorSwapCount}) " +
                 $"canvases-disabled={canvasFadeCaches.Count} alpha={alpha:0.00}");
         }
 
@@ -7832,18 +7872,27 @@ namespace App.Bootstrap
                 var cache = placedItemFadeCaches[i];
                 if (cache.Renderer != null)
                 {
-                    if (cache.InstanceMaterial != null)
+                    // InstanceMaterials != null = faded path 였음 → sharedMaterials 원본 배열로 복구.
+                    // null = hidden fallback path 였음 → Apply 시점에 이미 sharedMaterials 원본 복원돼
+                    //        있으므로 enabled 만 되돌리면 충분.
+                    if (cache.InstanceMaterials != null && cache.SharedOriginals != null)
                     {
-                        cache.Renderer.sharedMaterial = cache.SharedOriginal;
+                        cache.Renderer.sharedMaterials = cache.SharedOriginals;
                     }
                     cache.Renderer.enabled = cache.RendererWasEnabled;
                     restored++;
                 }
-                if (cache.InstanceMaterial != null)
+                if (cache.InstanceMaterials != null)
                 {
-                    Destroy(cache.InstanceMaterial);
-                    cache.InstanceMaterial = null;
-                    destroyed++;
+                    for (int s = 0; s < cache.InstanceMaterials.Length; s++)
+                    {
+                        if (cache.InstanceMaterials[s] != null)
+                        {
+                            Destroy(cache.InstanceMaterials[s]);
+                            destroyed++;
+                        }
+                    }
+                    cache.InstanceMaterials = null;
                 }
             }
 
