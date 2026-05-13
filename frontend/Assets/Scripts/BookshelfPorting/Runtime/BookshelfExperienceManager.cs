@@ -16264,22 +16264,27 @@ namespace BookshelfPorting.Runtime
         }
 
         /// <summary>
-        /// 책 추가 후 외부 대시보드 패널의 최근 추가한 책 캐러셀을 새로고침한다.
+        /// externalDashboardPanel에서 DashboardScreenController를 찾는다.
+        /// GetComponent → GetComponentInChildren(includeInactive) 순으로 탐색.
         /// </summary>
-        private void RefreshExternalDashboardBooks()
+        private DashboardScreenController GetExternalDashboardController()
         {
-            if (externalDashboardPanel == null) return;
+            if (externalDashboardPanel == null) return null;
 
             var controller = externalDashboardPanel.GetComponent<DashboardScreenController>();
             if (controller == null)
             {
                 controller = externalDashboardPanel.GetComponentInChildren<DashboardScreenController>(true);
             }
+            return controller;
+        }
 
-            if (controller != null)
-            {
-                controller.RefreshBooks();
-            }
+        /// <summary>
+        /// 책 추가 후 외부 대시보드 패널의 최근 추가한 책 캐러셀을 새로고침한다.
+        /// </summary>
+        private void RefreshExternalDashboardBooks()
+        {
+            GetExternalDashboardController()?.RefreshBooks();
         }
 
         /// <summary>
@@ -16287,18 +16292,7 @@ namespace BookshelfPorting.Runtime
         /// </summary>
         private void RefreshExternalDashboardRecords()
         {
-            if (externalDashboardPanel == null) return;
-
-            var controller = externalDashboardPanel.GetComponent<DashboardScreenController>();
-            if (controller == null)
-            {
-                controller = externalDashboardPanel.GetComponentInChildren<DashboardScreenController>(true);
-            }
-
-            if (controller != null)
-            {
-                controller.RefreshRecords();
-            }
+            GetExternalDashboardController()?.RefreshRecords();
         }
 
         /// <summary>
@@ -16306,18 +16300,7 @@ namespace BookshelfPorting.Runtime
         /// </summary>
         private void OnDashboardRefreshClicked()
         {
-            if (externalDashboardPanel == null) return;
-
-            var controller = externalDashboardPanel.GetComponent<DashboardScreenController>();
-            if (controller == null)
-            {
-                controller = externalDashboardPanel.GetComponentInChildren<DashboardScreenController>(true);
-            }
-
-            if (controller != null)
-            {
-                controller.RefreshAll();
-            }
+            GetExternalDashboardController()?.RefreshAll();
         }
 
         private void HandleNotebookSpaceVisitRequested(long spaceId)

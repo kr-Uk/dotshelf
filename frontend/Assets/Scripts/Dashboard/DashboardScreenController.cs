@@ -60,6 +60,8 @@ namespace Dotshelf.Scripts.Dashboard
         private UIDocument document;
 
         private const int CarouselItemLimit = 10;
+        private const int MaxRemoteBookCoverWidth = 2048;
+        private const int MaxRemoteBookCoverHeight = 3072;
 
         private bool configured;
 
@@ -1107,6 +1109,11 @@ namespace Dotshelf.Scripts.Dashboard
             element.style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center);
         }
 
+        // NOTE: RemoteImageLoader.Load(url, callback)를 쓰지 않고 인라인 코루틴으로 다운로드한다.
+        // 이유: RemoteImageLoader는 App.Core.asmdef에 있고, 이 컨트롤러는 Assembly-CSharp에 있다.
+        // cross-asmdef 경계를 넘어 반환된 IEnumerator를 StartCoroutine에 넘기면
+        // MoveNext 호출이 실패해 코루틴이 실행되지 않는 Unity 제한이 있다.
+        // 따라서 캐시(TryGet/Put)만 사용하고 다운로드는 여기서 직접 수행한다.
         private IEnumerator DownloadCover(string url, VisualElement target)
         {
             using (var request = UnityWebRequestTexture.GetTexture(url))
@@ -1120,7 +1127,19 @@ namespace Dotshelf.Scripts.Dashboard
                 }
 
                 var texture = DownloadHandlerTexture.GetContent(request);
-                if (texture != null && target?.panel != null)
+                if (texture == null)
+                {
+                    yield break;
+                }
+
+                if (texture.width > MaxRemoteBookCoverWidth || texture.height > MaxRemoteBookCoverHeight)
+                {
+                    UnityEngine.Debug.LogWarning($"[Dashboard] Skipped oversized book cover {texture.width}x{texture.height}: {url}");
+                    UnityEngine.Object.Destroy(texture);
+                    yield break;
+                }
+
+                if (target?.panel != null)
                 {
                     coverImageLoader?.Put(url, texture);
                     ApplyCoverTexture(target, texture);
