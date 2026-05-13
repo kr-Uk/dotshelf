@@ -65,17 +65,21 @@ public interface AssetRepository extends JpaRepository<Asset, Long> {
     /**
      * 운영자 콘솔 전용 검색. draft/비활성 자산까지 포함하므로 active 파라미터로
      * 명시적으로 필터링한다. 사용자용 searchActive 와 달리 owned/userId 의존이 없다.
+     *
+     * <p>searchActive 와 동일한 이유로 모든 String 파라미터에 cast(:x as string) 을 명시한다 —
+     * Hibernate 7 의 SQM 이 parameter SQL type 을 bytea 로 잘못 추론해 PostgreSQL 이
+     * `function upper(bytea) does not exist` 로 500 을 던지는 회귀를 막는다.
      */
     @Query("""
             select asset
             from Asset asset
             where (:active is null or asset.isActive = :active)
-              and (:assetType is null or upper(asset.assetType) = upper(:assetType))
-              and (:collectionCode is null or upper(asset.collectionCode) = upper(:collectionCode))
+              and (cast(:assetType as string) is null or upper(asset.assetType) = upper(cast(:assetType as string)))
+              and (cast(:collectionCode as string) is null or upper(asset.collectionCode) = upper(cast(:collectionCode as string)))
               and (
-                    :keyword is null
-                    or lower(asset.name) like lower(concat('%', :keyword, '%'))
-                    or lower(asset.code) like lower(concat('%', :keyword, '%'))
+                    cast(:keyword as string) is null
+                    or lower(asset.name) like lower(concat('%', cast(:keyword as string), '%'))
+                    or lower(asset.code) like lower(concat('%', cast(:keyword as string), '%'))
                   )
             """)
     Page<Asset> searchForAdmin(
