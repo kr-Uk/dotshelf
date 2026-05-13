@@ -10,7 +10,7 @@ namespace Dotshelf.Scripts.RoomTheme
     public sealed class RoomThemeApplier : MonoBehaviour
     {
         [Header("Targets")]
-        [Tooltip("벽/바닥 Renderer를 traverse할 룸 루트. BookshelfGenerator가 만든 'Floor'/'*Wall' GameObject들의 부모.")]
+        [Tooltip("벽/천장/바닥 Renderer를 traverse할 룸 루트. BookshelfGenerator가 만든 'Floor'/'Ceiling'/'*Wall' GameObject들의 부모.")]
         [SerializeField] private Transform roomRoot;
         [Tooltip("책장/가구 색상 분기. 새 머티리얼이 우선 적용되고 이건 fallback tint.")]
         [SerializeField] private MaterialFactory materialFactory;
@@ -89,7 +89,7 @@ namespace Dotshelf.Scripts.RoomTheme
             Material deskMat = theme.FurnitureMaterial;
             Material dashboardMat = theme.DashboardMaterial;
 
-            int wallSwapped = 0, floorSwapped = 0;
+            int wallSwapped = 0, ceilingSwapped = 0, floorSwapped = 0;
             int bookshelfSwapped = 0, deskSwapped = 0, dashboardSwapped = 0;
 
             if (roomRoot != null)
@@ -99,13 +99,22 @@ namespace Dotshelf.Scripts.RoomTheme
                 {
                     var r = renderers[i];
                     var n = r.gameObject.name;
-                    if (wallMat != null && RoomGameObjectPatterns.IsWallName(n))
+                    if (wallMat != null && RoomGameObjectPatterns.IsWallpaperSurfaceName(n))
                     {
-                        r.sharedMaterial = wallMat; wallSwapped++;
-                        // wall 의 face 크기가 LR(5×2.8) vs BackWall strip(~1×2.8) 으로 크게 달라
-                        // 동일 material 의 tiling=(1,1) 만으로는 좌/우가 5× stretch 되어 보임.
-                        // MPB 로 face-비례 _BaseMap_ST 를 set → 동일 world-space texel density.
-                        WallTilingNormalizer.Apply(r, wallPatternWorldSize);
+                        r.sharedMaterial = wallMat;
+                        if (RoomGameObjectPatterns.IsCeilingName(n))
+                        {
+                            ceilingSwapped++;
+                            WallTilingNormalizer.ApplyHorizontalSurface(r, wallPatternWorldSize);
+                        }
+                        else
+                        {
+                            wallSwapped++;
+                            // wall 의 face 크기가 LR(5×2.8) vs BackWall strip(~1×2.8) 으로 크게 달라
+                            // 동일 material 의 tiling=(1,1) 만으로는 좌/우가 5× stretch 되어 보임.
+                            // MPB 로 face-비례 _BaseMap_ST 를 set → 동일 world-space texel density.
+                            WallTilingNormalizer.Apply(r, wallPatternWorldSize);
+                        }
                     }
                     else if (floorMat != null && n == RoomGameObjectPatterns.Floor)
                     {
@@ -130,6 +139,8 @@ namespace Dotshelf.Scripts.RoomTheme
             if (roomRoot == null) return;
             if (wallMat != null && wallSwapped == 0)
                 Debug.LogWarning($"[RoomThemeApplier] Wall 매칭 0개 — 기대 패턴: {string.Join(",", RoomGameObjectPatterns.Wall)}");
+            if (wallMat != null && ceilingSwapped == 0)
+                Debug.LogWarning($"[RoomThemeApplier] Ceiling 매칭 0개 — 기대 이름: '{RoomGameObjectPatterns.Ceiling}'");
             if (floorMat != null && floorSwapped == 0)
                 Debug.LogWarning($"[RoomThemeApplier] Floor 매칭 0개 — 기대 이름: '{RoomGameObjectPatterns.Floor}'");
             if (bookshelfMat != null && bookshelfSwapped == 0)

@@ -3626,7 +3626,14 @@ namespace App.Bootstrap
                     swapped++;
                     if (isWallpaper)
                     {
-                        WallTilingNormalizer.Apply(renderer, wallPatternSize);
+                        if (RoomGameObjectPatterns.IsCeilingName(renderer.gameObject.name))
+                        {
+                            WallTilingNormalizer.ApplyHorizontalSurface(renderer, wallPatternSize);
+                        }
+                        else
+                        {
+                            WallTilingNormalizer.Apply(renderer, wallPatternSize);
+                        }
                     }
                 }
             }
@@ -4289,7 +4296,7 @@ namespace App.Bootstrap
         {
             switch (category)
             {
-                case CustomizationCategory.Wallpaper:     return Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.IsWallName(name);
+                case CustomizationCategory.Wallpaper:     return Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.IsWallpaperSurfaceName(name);
                 case CustomizationCategory.Floor:         return name == Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.Floor;
                 case CustomizationCategory.BookshelfSkin: return Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.MatchesPrefix(name, Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.Bookshelf);
                 case CustomizationCategory.Desk:          return Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.MatchesPrefix(name, Dotshelf.Scripts.RoomTheme.RoomGameObjectPatterns.Desk);
