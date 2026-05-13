@@ -18,6 +18,8 @@ namespace App.Bootstrap
     //       Renderer 들. clear 시 원복해 native dashboard board mesh 가 다시 보이게 한다.
     //       DashboardScreenPanel (UIDocument) / NotebookStation / GuestbookHitArea 자식 +
     //       skin 본인 자식은 hide 대상에서 제외 (UI panel/노트북/raycast 보존).
+    //       runtime-only (SerializeField 미지정) — scene save / Inspector 직렬화 시 destroyed
+    //       Renderer 의 fake-null reference 가 따라가 stale 직렬화 회귀 방지 (MR #174 beshu #3).
     [DisallowMultipleComponent]
     public sealed class DashboardVisualSkin : MonoBehaviour
     {
@@ -25,7 +27,7 @@ namespace App.Bootstrap
 
         [SerializeField] private long themeId;
         [SerializeField] private string assetKey;
-        [SerializeField] private List<Renderer> hiddenFunctionalRenderers = new List<Renderer>();
+        private readonly List<Renderer> hiddenFunctionalRenderers = new List<Renderer>();
 
         public long ThemeId
         {

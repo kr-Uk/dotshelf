@@ -80,13 +80,12 @@ namespace App.Bootstrap
                 var guard = screen.GetComponent<ScreenSaverCanvasOverrideGuard>();
                 if (guard != null)
                 {
-                    if (UnityEngine.Application.isPlaying) Object.Destroy(guard);
-                    else Object.DestroyImmediate(guard);
+                    UnityObjectSafeDestroy.Destroy(guard);
                 }
             }
             s_entry = null;
             s_roomRoot = null;
-            Debug.Log($"[DeepSeaScreenUI] deactivated entryAssetId={prevAssetId} reason={reason}");
+            VisualSkinLog.Verbose($"[DeepSeaScreenUI] deactivated entryAssetId={prevAssetId} reason={reason}");
         }
 
         // 알려진 trigger 시점마다 호출 — 비활성 상태면 no-op 이라 호출 site 에서 가드 불필요.
@@ -126,7 +125,7 @@ namespace App.Bootstrap
             // Guard 부착 — 매 reapply 마다 Initialize 갱신 (target 값 변화 따라가게 함).
             EnsureGuardAttached(screen, s_entry, reason);
 
-            Debug.Log($"[DeepSeaScreenUI] reapplied reason={reason} entryAssetId={s_entry.AssetId} " +
+            VisualSkinLog.Verbose($"[DeepSeaScreenUI] reapplied reason={reason} entryAssetId={s_entry.AssetId} " +
                       $"canvasApplied={canvasApplied} adImageApplied={adImageApplied}");
         }
 
@@ -180,7 +179,7 @@ namespace App.Bootstrap
             // entryAssetId 와 함께 출력. assetId 200031=Vintage / 300030=DeepSea / etc.
             if (rect != null)
             {
-                Debug.Log($"[ScreenCanvasVerify] entryAssetId={entry.AssetId} reason={reason} " +
+                VisualSkinLog.Verbose($"[ScreenCanvasVerify] entryAssetId={entry.AssetId} reason={reason} " +
                           $"anchoredPosition={rect.anchoredPosition3D} localPosition={rect.localPosition} " +
                           $"sizeDelta={rect.sizeDelta} anchorMin={rect.anchorMin} anchorMax={rect.anchorMax} pivot={rect.pivot} " +
                           $"localEulerAngles={rect.localEulerAngles} localScale={rect.localScale} " +

@@ -24,12 +24,14 @@ namespace App.Bootstrap
         public const string SkinChildName = "ThemeDeskVisual";
 
         [SerializeField] private long entryAssetId;
-        [SerializeField] private List<Renderer> hiddenFunctionalRenderers = new List<Renderer>();
+        // [SerializeField] 미지정 — runtime-only. scene save 시 destroyed Renderer 의 fake-null
+        // reference 직렬화 회귀 방지 (MR #174 beshu #3 / hiddenFunctionalRenderers stale 가드).
+        private readonly List<Renderer> hiddenFunctionalRenderers = new List<Renderer>();
         // Notebook hierarchy (laptop body + 화면 mesh) 의 Renderer 들. entry.HideLaptopRenderers=true 일
         // 때 DeskVisualSkinApplier 가 attach 시 disable 한 후 여기에 캡처 → ClearSkinUnder 가 enable
         // 원복. Canvas UI 는 CanvasRenderer 라 이 리스트에 안 들어감 → monitor 모드에서 dashboard /
-        // screen saver UI 만 살아남음.
-        [SerializeField] private List<Renderer> hiddenLaptopRenderers = new List<Renderer>();
+        // screen saver UI 만 살아남음. 위와 같은 이유로 SerializeField 미지정.
+        private readonly List<Renderer> hiddenLaptopRenderers = new List<Renderer>();
         [SerializeField] private Vector3 nativeLaptopLocalPosition;
         [SerializeField] private bool hasNativeLaptopCapture;
 

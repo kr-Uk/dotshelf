@@ -43,7 +43,7 @@ namespace App.Bootstrap
                 return false;
             }
 
-            Debug.Log($"[BookshelfSkin] TryAttach enter themeId={themeId} themeSlot={spec.ThemeSlot} assetKey={spec.AssetKey} prefabWired={(spec.Prefab != null ? spec.Prefab.name : "null")} source={source}");
+            VisualSkinLog.Verbose($"[BookshelfSkin] TryAttach enter themeId={themeId} themeSlot={spec.ThemeSlot} assetKey={spec.AssetKey} prefabWired={(spec.Prefab != null ? spec.Prefab.name : "null")} source={source}");
 
             var prefab = loader != null ? loader.Resolve(spec) : spec.Prefab;
             if (prefab == null)
@@ -149,7 +149,7 @@ namespace App.Bootstrap
                 ? (firstBookAfter.Value - firstBookBefore.Value)
                 : Vector3.zero;
 
-            Debug.Log($"[BookshelfSkin] themeId={themeId} themeSlot={spec.ThemeSlot} assetKey={spec.AssetKey} functionalRoot={functionalRoot.name} functionalWorldPos={functionalRoot.position} visualAttached={go.name} visualWorldPos={go.transform.position} referenceBounds={referenceSize} visualBoundsBefore={(visualBoundsBefore?.size.ToString() ?? "null")} visualBoundsAfter={(visualBoundsAfter?.size.ToString() ?? "null")} visualBoundsCenter={(visualBoundsAfter?.center.ToString() ?? "null")} desiredCenter={desiredWorldCenter} worldOffset={worldOffset} scaleFactor=({scaleFactor.x:F3},{scaleFactor.y:F3},{scaleFactor.z:F3}) firstBookBefore={(firstBookBefore?.ToString() ?? "null")} firstBookAfter={(firstBookAfter?.ToString() ?? "null")} bookDelta={bookDelta} source={source}");
+            VisualSkinLog.Verbose($"[BookshelfSkin] themeId={themeId} themeSlot={spec.ThemeSlot} assetKey={spec.AssetKey} functionalRoot={functionalRoot.name} functionalWorldPos={functionalRoot.position} visualAttached={go.name} visualWorldPos={go.transform.position} referenceBounds={referenceSize} visualBoundsBefore={(visualBoundsBefore?.size.ToString() ?? "null")} visualBoundsAfter={(visualBoundsAfter?.size.ToString() ?? "null")} visualBoundsCenter={(visualBoundsAfter?.center.ToString() ?? "null")} desiredCenter={desiredWorldCenter} worldOffset={worldOffset} scaleFactor=({scaleFactor.x:F3},{scaleFactor.y:F3},{scaleFactor.z:F3}) firstBookBefore={(firstBookBefore?.ToString() ?? "null")} firstBookAfter={(firstBookAfter?.ToString() ?? "null")} bookDelta={bookDelta} source={source}");
 
             // bookDelta 가 의미 있게 0 이 아니면 functional state invariance 가 깨졌다는 신호.
             // 현재 경로상 발생하지 않아야 하지만 회귀 가드로 warning 남김.
@@ -182,7 +182,7 @@ namespace App.Bootstrap
             ClearSkinUnder(functionalRoot);
             if (exists)
             {
-                Debug.Log($"[BookshelfSkinRestore] themeId=- visualExists={exists} normalizationApplied=false functionalRootPreserved=true source={source ?? "ClearSkin"}");
+                VisualSkinLog.Verbose($"[BookshelfSkinRestore] themeId=- visualExists={exists} normalizationApplied=false functionalRootPreserved=true source={source ?? "ClearSkin"}");
             }
         }
 
@@ -202,9 +202,7 @@ namespace App.Bootstrap
                 }
                 hidden.Clear();
             }
-            // FQN — App 하위에 App.Application namespace 가 있어 짧은 이름 'Application' 이 그쪽으로 해석됨.
-            if (UnityEngine.Application.isPlaying) Object.Destroy(existing.gameObject);
-            else Object.DestroyImmediate(existing.gameObject);
+            UnityObjectSafeDestroy.Destroy(existing.gameObject);
         }
 
         // functional bookshelf 의 root transform 과 reference bounds size 산출.

@@ -27,6 +27,13 @@ namespace App.Bootstrap
     //   - 같은 위치에 이미 skin 이 있으면 destroy 후 새 skin 으로 교체 (idempotent re-apply).
     public static class DashboardVisualSkinApplier
     {
+        // 아래 4개 const 는 dashboard skin 의 z-offset / scale clamp / panel overscan 의 baseline.
+        // MR #174 beshu #6 권고: 디자이너 fine-tune 가능하도록 [SerializeField] 노출 권장.
+        // 본 클래스는 static 이라 SerializeField 직접 불가 — `DashboardSkinTuning` ScriptableObject
+        // 분리 + 호출 site (RoomEditModeController) 에서 inject 하는 follow-up PR 로 분리.
+        // 그 전까지는 이 const 값을 바꾸려면 코드 수정 + 컴파일 필요. 변경 시 z-fight / panel
+        // 잘림 회귀가 일어날 수 있어 측정/캡처 후 commit 권고.
+
         // UIDocument World-Space panel 의 face 평면보다 약간 뒤에 vintage_dashboard 가
         // 오도록 하는 local-Z offset. 너무 작으면 z-fight, 너무 크면 보드/UI 사이 깊이감 ↑.
         // 디자이너가 추후 spec.LocalPosition 으로 미세 보정 가능 — 이 값은 baseline.
@@ -53,7 +60,7 @@ namespace App.Bootstrap
                 return false;
             }
 
-            Debug.Log($"[DashboardSkin] TryAttach enter themeId={themeId} themeSlot={spec.ThemeSlot} assetKey={spec.AssetKey} prefabWired={(spec.Prefab != null ? spec.Prefab.name : "null")} source={source}");
+            VisualSkinLog.Verbose($"[DashboardSkin] TryAttach enter themeId={themeId} themeSlot={spec.ThemeSlot} assetKey={spec.AssetKey} prefabWired={(spec.Prefab != null ? spec.Prefab.name : "null")} source={source}");
 
             var prefab = loader != null ? loader.Resolve(spec) : spec.Prefab;
             if (prefab == null)
@@ -240,7 +247,7 @@ namespace App.Bootstrap
 
             HideFunctionalBoardRenderers(functionalRoot, marker);
 
-            Debug.Log($"[DashboardSkin] TryAttach SUCCESS themeId={themeId} category=DashboardSkin assetKey={spec.AssetKey} " +
+            VisualSkinLog.Verbose($"[DashboardSkin] TryAttach SUCCESS themeId={themeId} category=DashboardSkin assetKey={spec.AssetKey} " +
                       $"functionalRoot={functionalRoot.name} functionalWorldPos={functionalRoot.position} " +
                       $"boardNormalAxisIdx={AxisName(boardNormalAxisIdx)} boardNormal={boardNormal} (detected from referenceBounds smallest axis) " +
                       $"referenceBounds.center={referenceBounds.center} referenceBounds.size={referenceBounds.size} " +
@@ -304,7 +311,7 @@ namespace App.Bootstrap
             ClearSkinUnder(functionalRoot);
             if (exists)
             {
-                Debug.Log($"[DashboardSkinRestore] themeId=- visualExists={exists} normalizationApplied=false " +
+                VisualSkinLog.Verbose($"[DashboardSkinRestore] themeId=- visualExists={exists} normalizationApplied=false " +
                           $"functionalRootPreserved=true source={source ?? "ClearSkin"}");
             }
         }
@@ -325,9 +332,7 @@ namespace App.Bootstrap
                 }
                 hidden.Clear();
             }
-            // FQN — App 하위에 App.Application namespace 가 있어 짧은 'Application' 충돌 회피.
-            if (UnityEngine.Application.isPlaying) Object.Destroy(existing.gameObject);
-            else Object.DestroyImmediate(existing.gameObject);
+            UnityObjectSafeDestroy.Destroy(existing.gameObject);
         }
 
         // functional dashboard root 검색. 우선순위:

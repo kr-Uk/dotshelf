@@ -123,7 +123,7 @@ namespace App.Bootstrap
                 DeepSeaScreenOverride.ReapplyIfActive("guard_divergence");
                 if (reapplyCountSinceLog >= LogIntervalFrames)
                 {
-                    Debug.Log($"[DeepSeaScreenUI] Guard divergence reapply count entryAssetId={entryAssetId} " +
+                    VisualSkinLog.Verbose($"[DeepSeaScreenUI] Guard divergence reapply count entryAssetId={entryAssetId} " +
                               $"(이 로그는 ~{LogIntervalFrames} frame 마다 한 번 — divergence trigger 추적용)");
                     reapplyCountSinceLog = 0;
                 }

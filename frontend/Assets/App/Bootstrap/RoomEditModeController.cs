@@ -2016,6 +2016,12 @@ namespace App.Bootstrap
         //
         // 형식: 카테고리(int):assetId(long) 쌍을 ';' 구분. 예: "0:200004;1:0;5:200015"
         // assetId 가 long.MinValue 면 "명시적 reset" — Restore 시 dictionary 에 안 채움.
+        //
+        // **소유 경계 (MR #174 skh1205 리뷰 #1 반영)**: 이 base prefix 는 그대로 두되,
+        // 실제 PlayerPrefs key 는 ScopedKey() 를 통해 `<base>.user<UserId>` 로 변환된다.
+        // 한 기기에서 A → B 로 계정이 바뀐 뒤 server 가 B 의 theme 을 모르면 A 의 마지막
+        // local-preview 가 B 의 방에 복원되는 회귀를 막기 위함. AuthSession.UserId == 0
+        // (비로그인/owner 미상) 시점에는 Persist/Restore 양쪽 모두 skip 한다.
         private const string LastAppliedEntriesPrefsKey = "RoomEditMode.LastAppliedEntries.v1";
         private bool lastAppliedEntriesRestored;
 
@@ -2024,10 +2030,22 @@ namespace App.Bootstrap
         // 마지막 적용한 local-preview 테마의 ScriptableObject 이름 (예: "RoomTheme_Vintage2") 을 저장해
         // 다음 세션 ApplySpaceVisualsToRoom 에서 server null 응답이면 PlayerPrefs 값으로 복원.
         // non-local-preview 테마를 적용하면 이 키를 비워둠 (server 가 권위 상태 보유).
+        // **소유 경계 — LastAppliedEntriesPrefsKey 와 동일하게 ScopedKey() 로 user 별 분리.**
         private const string LastAppliedLocalPreviewThemePrefsKey = "RoomEditMode.LastAppliedLocalPreviewTheme.v1";
+
+        // AuthSession.UserId 로 scoped PlayerPrefs key 생성. 0 (비로그인/anon) 이면 null →
+        // 호출자가 Persist/Restore 를 skip. 사용자 간 local-preview 누출 차단의 단일 진입점.
+        private static string ScopedKey(string baseKey)
+        {
+            long uid = AuthSession.UserId;
+            if (uid <= 0) return null;
+            return $"{baseKey}.user{uid}";
+        }
 
         private void PersistLastAppliedEntries()
         {
+            var key = ScopedKey(LastAppliedEntriesPrefsKey);
+            if (key == null) return; // 비로그인/owner 미상 — disk 에 안 남김.
             try
             {
                 var sb = new System.Text.StringBuilder();
@@ -2038,7 +2056,7 @@ namespace App.Bootstrap
                     sb.Append((int)kv.Key).Append(':').Append(kv.Value);
                     first = false;
                 }
-                UnityEngine.PlayerPrefs.SetString(LastAppliedEntriesPrefsKey, sb.ToString());
+                UnityEngine.PlayerPrefs.SetString(key, sb.ToString());
                 UnityEngine.PlayerPrefs.Save();
             }
             catch (System.Exception ex)
@@ -2049,13 +2067,21 @@ namespace App.Bootstrap
 
         // 컨트롤러 처음 깨어났을 때 1회 호출. dictionary 가 비어 있을 때만 disk 값으로 채워
         // 이미 in-memory 에 누적된 더 신선한 값을 덮어쓰지 않는다.
+        //
+        // Awake 시점엔 AuthSession.UserId 가 아직 0 (로그인 전) 일 수 있어 ScopedKey 가 null
+        // 이면 lastAppliedEntriesRestored 도 set 하지 않는다 — 로그인 완료 후 다시 호출되면
+        // 그 때 진짜 user-scoped key 로 복원. (정상 흐름: LoginScreenController 가 AuthSession
+        // 채운 뒤 Main scene 진입 → BookshelfSceneInstaller 가 본 컨트롤러 재호출.)
         private void RestoreLastAppliedEntriesFromPrefs()
         {
             if (lastAppliedEntriesRestored) return;
+
+            var key = ScopedKey(LastAppliedEntriesPrefsKey);
+            if (key == null) return; // 비로그인/owner 미상 — server snapshot 이후 재호출 위임.
             lastAppliedEntriesRestored = true;
 
-            if (!UnityEngine.PlayerPrefs.HasKey(LastAppliedEntriesPrefsKey)) return;
-            var serialized = UnityEngine.PlayerPrefs.GetString(LastAppliedEntriesPrefsKey, string.Empty);
+            if (!UnityEngine.PlayerPrefs.HasKey(key)) return;
+            var serialized = UnityEngine.PlayerPrefs.GetString(key, string.Empty);
             if (string.IsNullOrEmpty(serialized)) return;
 
             try
@@ -2086,7 +2112,7 @@ namespace App.Bootstrap
             catch (System.Exception ex)
             {
                 Debug.LogWarning($"[RoomEditModeController] RestoreLastAppliedEntriesFromPrefs 파싱 실패 — {ex.GetType().Name}: {ex.Message}. 키 삭제 후 진행.");
-                UnityEngine.PlayerPrefs.DeleteKey(LastAppliedEntriesPrefsKey);
+                UnityEngine.PlayerPrefs.DeleteKey(key);
             }
         }
 
@@ -2094,15 +2120,17 @@ namespace App.Bootstrap
         // ApplySpaceVisualsToRoom 가 server null 응답을 받아도 이 키로 복원해 wall/floor 유지.
         private void PersistLastAppliedLocalPreviewTheme(RoomThemeAsset theme)
         {
+            var key = ScopedKey(LastAppliedLocalPreviewThemePrefsKey);
+            if (key == null) return; // 비로그인/owner 미상 — disk 에 안 남김.
             try
             {
                 if (theme == null || !IsLocalPreviewTheme(theme))
                 {
-                    UnityEngine.PlayerPrefs.DeleteKey(LastAppliedLocalPreviewThemePrefsKey);
+                    UnityEngine.PlayerPrefs.DeleteKey(key);
                 }
                 else
                 {
-                    UnityEngine.PlayerPrefs.SetString(LastAppliedLocalPreviewThemePrefsKey, theme.name);
+                    UnityEngine.PlayerPrefs.SetString(key, theme.name);
                 }
                 UnityEngine.PlayerPrefs.Save();
             }
@@ -2116,8 +2144,10 @@ namespace App.Bootstrap
         // ScriptableObject.name 은 자산 파일명 (예: "RoomTheme_Vintage2") 이라 unique.
         private RoomThemeAsset TryFindLastAppliedLocalPreviewTheme()
         {
-            if (!UnityEngine.PlayerPrefs.HasKey(LastAppliedLocalPreviewThemePrefsKey)) return null;
-            var savedName = UnityEngine.PlayerPrefs.GetString(LastAppliedLocalPreviewThemePrefsKey, string.Empty);
+            var key = ScopedKey(LastAppliedLocalPreviewThemePrefsKey);
+            if (key == null) return null; // 비로그인/owner 미상 — 다른 사용자 마지막 테마 복원 차단.
+            if (!UnityEngine.PlayerPrefs.HasKey(key)) return null;
+            var savedName = UnityEngine.PlayerPrefs.GetString(key, string.Empty);
             if (string.IsNullOrEmpty(savedName)) return null;
             if (themeCatalog == null) themeCatalog = Resources.Load<RoomThemeCatalogAsset>("RoomThemeCatalog");
             if (themeCatalog == null || themeCatalog.Entries == null) return null;
@@ -2131,7 +2161,7 @@ namespace App.Bootstrap
                 }
             }
             // 저장된 이름이 catalog 에 없음 — 자산 삭제/이름 변경 등. 키 정리.
-            UnityEngine.PlayerPrefs.DeleteKey(LastAppliedLocalPreviewThemePrefsKey);
+            UnityEngine.PlayerPrefs.DeleteKey(key);
             UnityEngine.PlayerPrefs.Save();
             return null;
         }

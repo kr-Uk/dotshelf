@@ -50,7 +50,7 @@ namespace App.Bootstrap
                 return false;
             }
 
-            Debug.Log($"[DeskSkin] TryAttach enter entryAssetId={entry.AssetId} prefab={entry.Prefab.name} source={source}");
+            VisualSkinLog.Verbose($"[DeskSkin] TryAttach enter entryAssetId={entry.AssetId} prefab={entry.Prefab.name} source={source}");
 
             if (!TryFindDeskAndNotebook(roomRoot, out var deskTransform, out var notebookTransform, out var failReason))
             {
@@ -279,7 +279,7 @@ namespace App.Bootstrap
                 cameraFocusForward = screenTransform.forward;
             }
 
-            Debug.Log($"[DeskSkin] entryAssetId={entry.AssetId} prefab={entry.Prefab.name} deskRoot={deskTransform.name} notebook={notebookTransform.name} " +
+            VisualSkinLog.Verbose($"[DeskSkin] entryAssetId={entry.AssetId} prefab={entry.Prefab.name} deskRoot={deskTransform.name} notebook={notebookTransform.name} " +
                       $"preserveSkinNativeScale={preserveNative} placementRotation={entry.PlacementRotation} placementScaleOverride={placementScaleOverride} " +
                       $"skinLocalPositionOverride={localPositionOverride} usedLocalPositionOverride={usedLocalPositionOverride} " +
                       $"lockNotebookStationToMonitor={entry.LockNotebookStationToMonitor} laptopYAdjusted={laptopYAdjusted} " +
@@ -412,7 +412,7 @@ namespace App.Bootstrap
             var finalScreenCanvasScale = screen.lossyScale;
             var cameraFocusForward = screen.forward;
 
-            Debug.Log($"[DeskScreen] mode=auto-fit+modulation entryAssetId={entry.AssetId} anchorSource={anchorSource} anchor={(monitorScreenAnchor != null ? monitorScreenAnchor.name : "null")} " +
+            VisualSkinLog.Verbose($"[DeskScreen] mode=auto-fit+modulation entryAssetId={entry.AssetId} anchorSource={anchorSource} anchor={(monitorScreenAnchor != null ? monitorScreenAnchor.name : "null")} " +
                       $"monitorRotation={monitorTransform.eulerAngles} notebookScreenLocalRotation={entry.NotebookScreenLocalRotation} notebookScreenLocalPosition={entry.NotebookScreenLocalPosition} notebookScreenScaleMultiplier={scaleMult} " +
                       $"monitorScreenBounds=(center={bounds.center}, size={bounds.size}) canvasNative={canvasNative} " +
                       $"displayWidth={displayWidth:F4} displayHeight={displayHeight:F4} scaleByWidth={scaleByWidth:F3} scaleByHeight={scaleByHeight:F3} uniformWorldScale={uniformWorldScale:F4} " +
@@ -512,7 +512,7 @@ namespace App.Bootstrap
             ClearSkinUnder(deskTransform, notebookTransform);
             if (exists)
             {
-                Debug.Log($"[DeskSkinRestore] entryAssetId=- visualExists={exists} functionalDeskPreserved=true laptopRestored={(notebookTransform != null ? "true" : "false")} source={source ?? "ClearSkin"}");
+                VisualSkinLog.Verbose($"[DeskSkinRestore] entryAssetId=- visualExists={exists} functionalDeskPreserved=true laptopRestored={(notebookTransform != null ? "true" : "false")} source={source ?? "ClearSkin"}");
             }
 
             // 노트북 포커스 카메라 mode reset — desk skin 해제되면 native procedural laptop 로 돌아
@@ -574,9 +574,7 @@ namespace App.Bootstrap
                     DeepSeaScreenOverride.Deactivate("clear_skin");
                 }
             }
-            // FQN — App.Application namespace 와 충돌 회피.
-            if (UnityEngine.Application.isPlaying) Object.Destroy(existing.gameObject);
-            else Object.DestroyImmediate(existing.gameObject);
+            UnityObjectSafeDestroy.Destroy(existing.gameObject);
         }
 
         // roomRoot 아래에서 NotebookStation > Desk > Notebook 경로 탐색.

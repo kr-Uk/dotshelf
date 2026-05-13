@@ -46,7 +46,7 @@ namespace App.Bootstrap
             }
             if (Current != mode)
             {
-                Debug.Log($"[NotebookFocusCameraMode] {Current} → {mode} (source={source})");
+                VisualSkinLog.Verbose($"[NotebookFocusCameraMode] {Current} → {mode} (source={source})");
             }
             Current = mode;
         }
@@ -55,7 +55,7 @@ namespace App.Bootstrap
         {
             if (Current != NotebookFocusCameraMode.ScreenAnchorBaked)
             {
-                Debug.Log($"[NotebookFocusCameraMode] {Current} → ScreenAnchorBaked (reset, source={source})");
+                VisualSkinLog.Verbose($"[NotebookFocusCameraMode] {Current} → ScreenAnchorBaked (reset, source={source})");
             }
             Current = NotebookFocusCameraMode.ScreenAnchorBaked;
         }
