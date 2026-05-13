@@ -926,6 +926,7 @@ namespace BookshelfPorting.Runtime
         private GameObject hamburgerMenuPanel;
         private Button hamburgerButton;
         private Button focusBackButton;
+        private Button dashboardRefreshButton;
         private bool isHamburgerMenuOpen;
         private GameObject bookshelfBottomNavPanel;
         private Button bookshelfNavHomeButton;
@@ -3834,6 +3835,10 @@ namespace BookshelfPorting.Runtime
             focusBackButton = CreateButton(canvasObject.transform, "FocusBackButton", "←", new Vector2(34f, -34f), ReturnFromFocusedArea, new Vector2(66f, 66f), new Vector2(0f, 1f));
             StyleHudPanel(focusBackButton.GetComponent<Image>(), new Color(0.08f, 0.09f, 0.11f, 0.78f));
 
+            dashboardRefreshButton = CreateButton(canvasObject.transform, "DashboardRefreshButton", "↻ 새로고침", new Vector2(-34f, -34f), OnDashboardRefreshClicked, new Vector2(140f, 52f), new Vector2(1f, 1f));
+            StyleHudPanel(dashboardRefreshButton.GetComponent<Image>(), new Color(0.08f, 0.09f, 0.11f, 0.78f));
+            dashboardRefreshButton.gameObject.SetActive(false);
+
             hamburgerMenuPanel = CreatePanel(canvasObject.transform, "HamburgerMenuPanel", new Vector2(-20f, -74f), new Vector2(190f, 204f), new Vector2(1f, 1f));
             StyleHudPanel(hamburgerMenuPanel.GetComponent<Image>(), new Color(0.08f, 0.09f, 0.11f, 0.84f));
             CreateButton(hamburgerMenuPanel.transform, "QuarterViewButton", "Quarter View", new Vector2(-10f, -10f), () => RunMenuAction(FocusQuarterView));
@@ -5600,6 +5605,24 @@ namespace BookshelfPorting.Runtime
                     isBookshelfFocused || isViewingOtherSpace ? 34 : 16,
                     new Color32(45, 50, 58, 255),
                     true);
+            }
+
+            if (dashboardRefreshButton != null)
+            {
+                var isDashboardFocused = CurrentFocusArea == ExperienceFocusArea.Guestbook && ShouldUseExternalDashboardPanel;
+                dashboardRefreshButton.gameObject.SetActive(isDashboardFocused);
+                if (isDashboardFocused)
+                {
+                    dashboardRefreshButton.interactable = cameraController == null || !cameraController.IsTransitioning;
+                    StyleHudButton(
+                        dashboardRefreshButton,
+                        new Color32(255, 255, 255, 235),
+                        new Color32(241, 235, 230, 255),
+                        new Color32(224, 219, 214, 255),
+                        16,
+                        new Color32(45, 50, 58, 255),
+                        true);
+                }
             }
 
             RefreshBookshelfOverlay();
@@ -12481,8 +12504,8 @@ namespace BookshelfPorting.Runtime
             bookFocusToolbarPanel.SetActive(canUseOwnerActions);
             if (bookFocusWriteReportButton != null)
             {
-                bookFocusWriteReportButton.gameObject.SetActive(false);
-                bookFocusWriteReportButton.interactable = false;
+                bookFocusWriteReportButton.gameObject.SetActive(canUseOwnerActions);
+                bookFocusWriteReportButton.interactable = canUseOwnerActions;
             }
 
             if (bookFocusRatingText != null)
@@ -12566,8 +12589,15 @@ namespace BookshelfPorting.Runtime
             }
             if (bookFocusWriteReportButton != null)
             {
-                bookFocusWriteReportButton.gameObject.SetActive(false);
-                bookFocusWriteReportButton.interactable = false;
+                SetButtonLabel(bookFocusWriteReportButton, meta != null && !string.IsNullOrWhiteSpace(meta.reportBody) ? "독후감 보기" : "독후감 작성");
+                StyleHudButton(
+                    bookFocusWriteReportButton,
+                    new Color32(88, 133, 117, 245),
+                    new Color32(105, 150, 132, 255),
+                    new Color32(224, 219, 214, 140),
+                    15,
+                    Color.white,
+                    true);
             }
 
             bookFocusToolbarPanel.transform.SetAsLastSibling();
@@ -13617,6 +13647,7 @@ namespace BookshelfPorting.Runtime
 
             RefreshBookDetailPanel();
             RefreshHud();
+            RefreshExternalDashboardRecords();
         }
 
         private void HandleBookReportSaveFailure(BookEntity book, BookReportMutationSnapshot rollback, string errorMessage)
@@ -16222,12 +16253,54 @@ namespace BookshelfPorting.Runtime
             {
                 ShowBookshelfTransientStatus("책 추가 저장 완료", "책은 서버에 저장됐지만 이 화면에서는 책장 새로고침을 실행할 수 없습니다.", false);
                 RefreshHud();
+                RefreshExternalDashboardBooks();
                 return;
             }
 
             ShowBookshelfTransientStatus("책 추가 저장 완료", "책은 서버에 저장됐고 책장 새로고침을 시작합니다.", false);
             bookshelfApiSyncController.RefreshFromServer(HandleNotebookBookAddRefreshCompleted);
             RefreshHud();
+            RefreshExternalDashboardBooks();
+        }
+
+        /// <summary>
+        /// externalDashboardPanel에서 DashboardScreenController를 찾는다.
+        /// GetComponent → GetComponentInChildren(includeInactive) 순으로 탐색.
+        /// </summary>
+        private DashboardScreenController GetExternalDashboardController()
+        {
+            if (externalDashboardPanel == null) return null;
+
+            var controller = externalDashboardPanel.GetComponent<DashboardScreenController>();
+            if (controller == null)
+            {
+                controller = externalDashboardPanel.GetComponentInChildren<DashboardScreenController>(true);
+            }
+            return controller;
+        }
+
+        /// <summary>
+        /// 책 추가 후 외부 대시보드 패널의 최근 추가한 책 캐러셀을 새로고침한다.
+        /// </summary>
+        private void RefreshExternalDashboardBooks()
+        {
+            GetExternalDashboardController()?.RefreshBooks();
+        }
+
+        /// <summary>
+        /// 독후감 저장 후 외부 대시보드 패널의 최근 독후감 캐러셀을 새로고침한다.
+        /// </summary>
+        private void RefreshExternalDashboardRecords()
+        {
+            GetExternalDashboardController()?.RefreshRecords();
+        }
+
+        /// <summary>
+        /// HUD 새로고침 버튼 클릭 — 대시보드 전체를 새로고침한다.
+        /// </summary>
+        private void OnDashboardRefreshClicked()
+        {
+            GetExternalDashboardController()?.RefreshAll();
         }
 
         private void HandleNotebookSpaceVisitRequested(long spaceId)
