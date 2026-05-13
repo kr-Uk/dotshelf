@@ -1,10 +1,13 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using App.Application.Dashboard;
+using App.Core;
 using App.Domain.Dashboard;
 using App.Infrastructure.Catalogs;
 using App.Infrastructure.Mock.Dashboard;
 using UnityEngine;
+using UnityEngine.Networking;
 using UnityEngine.UIElements;
 
 namespace Dotshelf.Scripts.Dashboard
@@ -99,6 +102,8 @@ namespace Dotshelf.Scripts.Dashboard
         private Button returnMineButton;
         private ScrollView booksCarousel;
         private ScrollView recordsCarousel;
+
+        private RemoteImageLoader coverImageLoader;
 
         private VisualElement userListModalRoot;
         private VisualElement userListModalBackdrop;
@@ -240,6 +245,7 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void Awake()
         {
+            coverImageLoader = new RemoteImageLoader(maxCacheSize: 32);
             EnsureDocument();
             if (document == null)
             {
@@ -402,6 +408,40 @@ namespace Dotshelf.Scripts.Dashboard
             LoadInitialData();
         }
 
+        /// <summary>
+        /// 전체 대시보드를 새로고침한다. 외부 호출용 (새로고침 버튼, 이벤트 핸들러 등).
+        /// </summary>
+        public void RefreshAll()
+        {
+            ReloadDashboardIfReady();
+        }
+
+        /// <summary>
+        /// 최근 추가한 책 캐러셀만 새로고침한다. 책 추가 이벤트 핸들러용.
+        /// </summary>
+        public void RefreshBooks()
+        {
+            if (!configured || !HasConfiguredUseCases())
+            {
+                return;
+            }
+
+            LoadRecentBooks();
+        }
+
+        /// <summary>
+        /// 최근 작성한 독후감 캐러셀만 새로고침한다. 독후감 작성 이벤트 핸들러용.
+        /// </summary>
+        public void RefreshRecords()
+        {
+            if (!configured || !HasConfiguredUseCases())
+            {
+                return;
+            }
+
+            LoadRecentRecords();
+        }
+
         public void Configure(
             IDashboardRepository dashboardRepo,
             IGuestbookRepository guestbookRepo,
@@ -491,6 +531,8 @@ namespace Dotshelf.Scripts.Dashboard
                 UnwireEvents();
                 eventsWired = false;
             }
+
+            coverImageLoader?.Dispose();
         }
 
         private void BuildMockUseCases()
@@ -1023,7 +1065,7 @@ namespace Dotshelf.Scripts.Dashboard
             }
         }
 
-        private static VisualElement BuildBookCell(OwnedBookItem item)
+        private VisualElement BuildBookCell(OwnedBookItem item)
         {
             VisualElement cell = new VisualElement();
             cell.AddToClassList("carousel-cell");
@@ -1032,11 +1074,58 @@ namespace Dotshelf.Scripts.Dashboard
             cover.AddToClassList("book-cover");
             cell.Add(cover);
 
+            if (!string.IsNullOrWhiteSpace(item.CoverImageUrl))
+            {
+                var url = item.CoverImageUrl;
+                if (coverImageLoader.TryGet(url, out var cached))
+                {
+                    ApplyCoverTexture(cover, cached);
+                }
+                else
+                {
+                    StartCoroutine(DownloadCover(url, cover));
+                }
+            }
+
             Label title = new Label(item.Title ?? string.Empty);
             title.AddToClassList("book-cell-title");
             cell.Add(title);
 
             return cell;
+        }
+
+        private static void ApplyCoverTexture(VisualElement element, Texture2D texture)
+        {
+            if (element == null || texture == null)
+            {
+                return;
+            }
+
+            element.style.backgroundImage = new StyleBackground(texture);
+            element.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Cover);
+            element.style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Center);
+            element.style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center);
+        }
+
+        private IEnumerator DownloadCover(string url, VisualElement target)
+        {
+            using (var request = UnityWebRequestTexture.GetTexture(url))
+            {
+                request.timeout = coverImageLoader?.TimeoutSeconds ?? 8;
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    yield break;
+                }
+
+                var texture = DownloadHandlerTexture.GetContent(request);
+                if (texture != null && target?.panel != null)
+                {
+                    coverImageLoader?.Put(url, texture);
+                    ApplyCoverTexture(target, texture);
+                }
+            }
         }
 
         private void RenderRecordsCarousel(ReadingRecordListPage page)
