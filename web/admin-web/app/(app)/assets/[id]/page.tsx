@@ -36,19 +36,19 @@ import {
   serializeCompatibleTargets,
   type Placement,
 } from "@/lib/asset-form";
-import { generatePreviewGlb } from "@/lib/gltf-preview";
+import {
+  formatBytes,
+  generateAndUploadPreviewBundle,
+  resolveContentType,
+  uploadAndConfirmAsset,
+} from "@/lib/asset-upload";
 import {
   ADMIN_ASSET_BUNDLE_MAX_BYTES,
   ADMIN_ASSET_BUNDLE_TYPES,
-  ADMIN_ASSET_PREVIEW_BUNDLE_MAX_BYTES,
   ADMIN_ASSET_PREVIEW_MAX_BYTES,
   ADMIN_ASSET_PREVIEW_TYPES,
 } from "@/lib/types";
-import type {
-  AdminAssetDetail,
-  AdminAssetUpdateInput,
-  AdminAssetUploadUrl,
-} from "@/lib/types";
+import type { AdminAssetDetail, AdminAssetUpdateInput } from "@/lib/types";
 type UploadKind = "bundle" | "preview-image";
 
 export default function AssetDetailPage() {
@@ -127,7 +127,8 @@ export default function AssetDetailPage() {
             // .glb 본체에 한해서 wasm gltfpack 으로 저폴리화한 preview.glb 를 만들어 같이 올린다.
             // bundle/zip 은 Unity Editor 도구 없이는 저폴리화 못 하니까 skip.
             if (file.type !== "model/gltf-binary") return;
-            await generateAndUploadPreviewBundle(asset.id, file);
+            const size = await generateAndUploadPreviewBundle(asset.id, file);
+            toast.success(`프리뷰 자동 생성 완료 (${formatBytes(size)})`);
           }}
           onAfter={() => {
             qc.invalidateQueries({ queryKey: ["admin-asset", asset.id] });
@@ -437,27 +438,12 @@ function UploadCard({
     setProgress(0);
     setPhase("업로드 중");
     try {
-      const uploadPath =
-        kind === "bundle"
-          ? `/assets/${assetId}/bundle/upload-url`
-          : `/assets/${assetId}/preview-image/upload-url`;
-      const presigned = await api<AdminAssetUploadUrl>(uploadPath, {
-        method: "POST",
-        body: JSON.stringify({
-          contentType,
-          byteLength: file.size,
-        }),
-      });
-
-      await putToS3(presigned.uploadUrl, file, contentType, setProgress);
-
-      const confirmPath =
-        kind === "bundle"
-          ? `/assets/${assetId}/bundle`
-          : `/assets/${assetId}/preview-image`;
-      await api<AdminAssetDetail>(confirmPath, {
-        method: "PATCH",
-        body: JSON.stringify({ key: presigned.key }),
+      await uploadAndConfirmAsset({
+        assetId,
+        kind,
+        file,
+        contentType,
+        onProgress: setProgress,
       });
       toast.success(
         kind === "bundle" ? "본체 업로드 완료" : "프리뷰 업로드 완료",
@@ -583,101 +569,3 @@ function Field({
   );
 }
 
-// 브라우저 (특히 Windows) 가 .glb / .bundle 같은 확장자의 MIME type 을 모르고 빈 string 으로
-// 반환하는 경우가 있어 파일명 확장자로 fallback 매핑한다. BE 의 ALLOWED_BUNDLE_TYPES /
-// ALLOWED_PREVIEW_IMAGE_TYPES 에 맞춰 같은 키를 돌려준다.
-function resolveContentType(file: File): string {
-  if (file.type) return file.type;
-  const lower = file.name.toLowerCase();
-  if (lower.endsWith(".glb")) return "model/gltf-binary";
-  if (lower.endsWith(".zip")) return "application/zip";
-  if (lower.endsWith(".bundle")) return "application/octet-stream";
-  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
-  if (lower.endsWith(".png")) return "image/png";
-  if (lower.endsWith(".webp")) return "image/webp";
-  return "";
-}
-
-function putToS3(
-  url: string,
-  file: File,
-  contentType: string,
-  onProgress: (percent: number) => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url);
-    xhr.setRequestHeader("Content-Type", contentType);
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const percent = Math.round((event.loaded / event.total) * 100);
-        onProgress(percent);
-      }
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress(100);
-        resolve();
-      } else {
-        reject(new Error(`S3 PUT 실패 (HTTP ${xhr.status})`));
-      }
-    };
-    xhr.onerror = () => reject(new Error("S3 PUT 네트워크 오류"));
-    xhr.send(file);
-  });
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024)
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-/**
- * 본체 .glb 를 wasm 으로 저폴리화 → preview-bundle 엔드포인트 두 번(URL 발급 / confirm)
- * 호출해서 S3 에 같이 올린다. UploadCard.onPostConfirm 의 후처리로 호출된다.
- * 결과 사이즈가 BE 한도를 넘으면 BE 가 400 으로 거른다 — 그래도 본체 publish 는 가능.
- */
-async function generateAndUploadPreviewBundle(
-  assetId: number,
-  bodyFile: File,
-): Promise<void> {
-  const bytes = new Uint8Array(await bodyFile.arrayBuffer());
-  const previewBytes = await generatePreviewGlb(bytes);
-
-  if (previewBytes.byteLength > ADMIN_ASSET_PREVIEW_BUNDLE_MAX_BYTES) {
-    throw new Error(
-      `프리뷰 생성 결과가 너무 큽니다 (${formatBytes(previewBytes.byteLength)}). 본체에서 폴리곤 수를 더 줄여야 합니다.`,
-    );
-  }
-
-  // TS lib 가 Uint8Array<ArrayBufferLike> 를 BlobPart 로 직접 못 받아서 ArrayBuffer 슬라이스 경유.
-  const previewBuffer = previewBytes.buffer.slice(
-    previewBytes.byteOffset,
-    previewBytes.byteOffset + previewBytes.byteLength,
-  ) as ArrayBuffer;
-  const previewFile = new File([previewBuffer], "preview.glb", {
-    type: "model/gltf-binary",
-  });
-
-  const presigned = await api<AdminAssetUploadUrl>(
-    `/assets/${assetId}/preview-bundle/upload-url`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        contentType: previewFile.type,
-        byteLength: previewFile.size,
-      }),
-    },
-  );
-  await putToS3(presigned.uploadUrl, previewFile, previewFile.type, () => {});
-  await api<AdminAssetDetail>(`/assets/${assetId}/preview-bundle`, {
-    method: "PATCH",
-    body: JSON.stringify({ key: presigned.key }),
-  });
-  toast.success(
-    `프리뷰 자동 생성 완료 (${formatBytes(previewBytes.byteLength)})`,
-  );
-}
