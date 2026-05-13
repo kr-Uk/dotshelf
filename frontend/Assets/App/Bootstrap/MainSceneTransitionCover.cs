@@ -1,4 +1,6 @@
 using System.Collections;
+using App.Auth;
+using App.Infrastructure.Api;
 using BookshelfPorting.Runtime;
 using TMPro;
 using UnityEngine;
@@ -185,10 +187,16 @@ namespace App.Bootstrap
                 cachedSyncController = FindFirstObjectByType<BookshelfApiSyncController>(FindObjectsInactive.Include);
             }
 
+            var shouldWaitForServerBookshelf = HasAuthenticatedSessionForMainScene();
             var sync = cachedSyncController;
-            if (sync == null || !sync.IsServerSyncEnabled || !sync.HasAccessToken)
+            if (sync == null || !sync.IsServerSyncEnabled)
             {
-                return true;
+                return !shouldWaitForServerBookshelf;
+            }
+
+            if (!sync.HasAccessToken)
+            {
+                return !shouldWaitForServerBookshelf;
             }
 
             if (sync.HasCompletedInitialRefresh || initialBookshelfRefreshCompleted)
@@ -215,6 +223,12 @@ namespace App.Bootstrap
             }
 
             return false;
+        }
+
+        private static bool HasAuthenticatedSessionForMainScene()
+        {
+            return AuthSession.HasAccessToken ||
+                   (APIManager.Instance != null && APIManager.Instance.HasAccessToken);
         }
 
         private void SetMessage(string message)
