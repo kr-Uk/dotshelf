@@ -4784,31 +4784,55 @@ namespace App.Bootstrap
             bodyRect.offsetMax = new Vector2(-48f, 0f);
             body.enableWordWrapping = true;
 
+            // 하단 버튼 3종 — 카드 중앙 기준 균일 size / 균일 간격 / 수평 정렬.
+            // - 같은 modal 안의 다른 컨트롤 (title / body) 이 모두 anchoredPosition 기반이라 일관성
+            //   유지를 위해 HorizontalLayoutGroup 없이 좌표 계산만 명시.
+            // - 폭 200 은 가장 긴 라벨 "배치 유지 준비 중" 기준. CreateButton 의 자동 font size
+            //   (= size.y * 0.45 = 22.5) + 좌우 margin 10 으로 모든 라벨이 잘림 없이 fit.
+            // - 카드 width 700, 행 총 width = 3·200 + 2·14 = 628 → 양옆 36px 여유 (충돌 없음).
+            // - btnBottomY 34 는 기존 위치 보존 — 위 body anchor 와 안 겹침 (body 바닥 0.34*330=112, 버튼 top 84).
+            // 다른 모달 (CustomizationLockedModal 등) 의 버튼 spec 은 건드리지 않음.
+            const float btnHeight = 50f;
+            const float btnWidth = 200f;
+            const float btnSpacing = 14f;
+            const float btnBottomY = 34f;
+            const float btnLabelMargin = 10f;
+            const float btnSidePos = btnWidth + btnSpacing;
+
             var resetButton = CreateButton(card.transform, "ResetButton", "전체 초기화",
-                PrimaryColor, Color.white, new Vector2(180f, 58f), false, BorderColor);
+                PrimaryColor, Color.white, new Vector2(btnWidth, btnHeight), false, BorderColor);
             var resetRect = (RectTransform)resetButton.transform;
             resetRect.anchorMin = new Vector2(0.5f, 0f);
             resetRect.anchorMax = new Vector2(0.5f, 0f);
             resetRect.pivot = new Vector2(0.5f, 0f);
-            resetRect.anchoredPosition = new Vector2(-210f, 34f);
+            resetRect.anchoredPosition = new Vector2(-btnSidePos, btnBottomY);
+            ApplyButtonLabelHorizontalMargin(resetButton, btnLabelMargin);
             resetButton.onClick.AddListener(() => ConfirmThemeApplyMode(ThemeApplyMode.Reset));
 
             var keepButton = CreateButton(card.transform, "KeepButton", "배치 유지 준비 중",
-                SecondaryColor, MutedTextColor, new Vector2(190f, 58f), true, BorderColor);
+                SecondaryColor, MutedTextColor, new Vector2(btnWidth, btnHeight), true, BorderColor);
             var keepRect = (RectTransform)keepButton.transform;
             keepRect.anchorMin = new Vector2(0.5f, 0f);
             keepRect.anchorMax = new Vector2(0.5f, 0f);
             keepRect.pivot = new Vector2(0.5f, 0f);
-            keepRect.anchoredPosition = new Vector2(0f, 34f);
+            keepRect.anchoredPosition = new Vector2(0f, btnBottomY);
+            ApplyButtonLabelHorizontalMargin(keepButton, btnLabelMargin);
             keepButton.interactable = false;
+            // disabled 시각 강화 — CanvasGroup alpha 로 전체 톤 dim. 크기 / 좌표는 활성 버튼과 동일하게 유지.
+            // blocksRaycasts=false 로 클릭 입력도 차단 (interactable=false 와 redundant 하지만 명시).
+            var keepCanvasGroup = keepButton.gameObject.AddComponent<CanvasGroup>();
+            keepCanvasGroup.alpha = 0.6f;
+            keepCanvasGroup.interactable = false;
+            keepCanvasGroup.blocksRaycasts = false;
 
             var cancelButton = CreateButton(card.transform, "CancelButton", "취소",
-                CardColor, TextColor, new Vector2(140f, 58f), true, BorderColor);
+                CardColor, TextColor, new Vector2(btnWidth, btnHeight), true, BorderColor);
             var cancelRect = (RectTransform)cancelButton.transform;
             cancelRect.anchorMin = new Vector2(0.5f, 0f);
             cancelRect.anchorMax = new Vector2(0.5f, 0f);
             cancelRect.pivot = new Vector2(0.5f, 0f);
-            cancelRect.anchoredPosition = new Vector2(195f, 34f);
+            cancelRect.anchoredPosition = new Vector2(btnSidePos, btnBottomY);
+            ApplyButtonLabelHorizontalMargin(cancelButton, btnLabelMargin);
             cancelButton.onClick.AddListener(HideThemeApplyModeModal);
         }
 
