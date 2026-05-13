@@ -25,31 +25,30 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { PageHeader } from "@/components/common/page-header";
 import { RoleGate } from "@/components/common/role-gate";
 import { StatusBadge } from "@/components/common/status-badge";
 import { api, ApiError } from "@/lib/api";
-import { generatePreviewGlb } from "@/lib/gltf-preview";
+import {
+  PlacementToggle,
+  ThemeSelector,
+  deserializeCompatibleTargets,
+  serializeCompatibleTargets,
+  type Placement,
+} from "@/lib/asset-form";
+import {
+  formatBytes,
+  generateAndUploadPreviewBundle,
+  resolveContentType,
+  uploadAndConfirmAsset,
+} from "@/lib/asset-upload";
 import {
   ADMIN_ASSET_BUNDLE_MAX_BYTES,
   ADMIN_ASSET_BUNDLE_TYPES,
-  ADMIN_ASSET_PREVIEW_BUNDLE_MAX_BYTES,
   ADMIN_ASSET_PREVIEW_MAX_BYTES,
   ADMIN_ASSET_PREVIEW_TYPES,
 } from "@/lib/types";
-import type {
-  AdminAssetCategory,
-  AdminAssetDetail,
-  AdminAssetUpdateInput,
-  AdminAssetUploadUrl,
-} from "@/lib/types";
+import type { AdminAssetDetail, AdminAssetUpdateInput } from "@/lib/types";
 type UploadKind = "bundle" | "preview-image";
 
 export default function AssetDetailPage() {
@@ -62,14 +61,6 @@ export default function AssetDetailPage() {
     queryKey: ["admin-asset", assetId],
     queryFn: () => api<AdminAssetDetail>(`/assets/${assetId}`),
     enabled: Number.isFinite(assetId),
-  });
-
-  const categoriesQuery = useQuery({
-    queryKey: ["admin-asset-categories"],
-    queryFn: () =>
-      api<{ categories: AdminAssetCategory[] }>("/assets/categories").then(
-        (response) => response.categories,
-      ),
   });
 
   const asset = detailQuery.data;
@@ -135,8 +126,11 @@ export default function AssetDetailPage() {
           onPostConfirm={async (file) => {
             // .glb 본체에 한해서 wasm gltfpack 으로 저폴리화한 preview.glb 를 만들어 같이 올린다.
             // bundle/zip 은 Unity Editor 도구 없이는 저폴리화 못 하니까 skip.
-            if (file.type !== "model/gltf-binary") return;
-            await generateAndUploadPreviewBundle(asset.id, file);
+            // Windows 등에서 .glb 의 file.type 이 빈 string 으로 오는 케이스를 잡으려면
+            // 확장자 fallback 까지 보는 resolveContentType 을 거쳐야 한다.
+            if (resolveContentType(file) !== "model/gltf-binary") return;
+            const size = await generateAndUploadPreviewBundle(asset.id, file);
+            toast.success(`프리뷰 자동 생성 완료 (${formatBytes(size)})`);
           }}
           onAfter={() => {
             qc.invalidateQueries({ queryKey: ["admin-asset", asset.id] });
@@ -162,11 +156,7 @@ export default function AssetDetailPage() {
         />
       </div>
 
-      <MetadataEditor
-        key={asset.id}
-        asset={asset}
-        categories={categoriesQuery.data ?? []}
-      />
+      <MetadataEditor key={asset.id} asset={asset} />
 
       <Card>
         <CardHeader>
@@ -301,20 +291,15 @@ function PublishButton({
   );
 }
 
-function MetadataEditor({
-  asset,
-  categories,
-}: {
-  asset: AdminAssetDetail;
-  categories: AdminAssetCategory[];
-}) {
+function MetadataEditor({ asset }: { asset: AdminAssetDetail }) {
   const qc = useQueryClient();
   // 부모에서 key={asset.id} 로 감싸므로 asset 이 바뀌면 컴포넌트가 새로 마운트된다 —
   // 초기값을 그대로 쓰고 useEffect로 동기화하지 않는다 (cascading render 회피).
-  const [name, setName] = useState(asset.name);
-  const [categoryCode, setCategoryCode] = useState("");
-  const [collectionCode, setCollectionCode] = useState(asset.collectionCode ?? "");
-  const [assetType, setAssetType] = useState(asset.assetType);
+  const initial = deserializeCompatibleTargets(asset.compatibleTargets);
+  const [theme, setTheme] = useState(initial.theme);
+  const [placement, setPlacement] = useState<Placement>(initial.placement);
+  const [pricePages, setPricePages] = useState(String(asset.pricePages));
+  const [supplier, setSupplier] = useState(asset.supplier ?? "");
 
   const updateMutation = useMutation({
     mutationFn: (payload: AdminAssetUpdateInput) =>
@@ -335,14 +320,12 @@ function MetadataEditor({
   });
 
   const submit = () => {
+    const parsedPrice = Number(pricePages);
     const payload: AdminAssetUpdateInput = {
-      name: name.trim(),
-      assetType: assetType.trim().toUpperCase(),
-      collectionCode: collectionCode.trim() || null,
+      compatibleTargets: serializeCompatibleTargets(theme, placement),
+      pricePages: Number.isFinite(parsedPrice) ? parsedPrice : 0,
+      supplier: supplier.trim() || null,
     };
-    if (categoryCode) {
-      payload.categoryCode = categoryCode;
-    }
     updateMutation.mutate(payload);
   };
 
@@ -351,49 +334,42 @@ function MetadataEditor({
       <CardHeader>
         <CardTitle>메타데이터</CardTitle>
         <CardDescription>
-          이름, 타입, 컬렉션, 카테고리만 수정합니다. code는 S3 키 prefix라 고정입니다.
+          테마, 배치, 가격, 공급자만 수정합니다. code 와 식별자는 S3 키 prefix 라 고정.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-5">
+        <Field label="code (고정)">
+          <Input value={asset.code} disabled className="font-mono" />
+        </Field>
+
+        <Field label="테마">
+          <ThemeSelector value={theme} onChange={setTheme} />
+        </Field>
+
+        <Field label="배치 (placement)">
+          <PlacementToggle value={placement} onChange={setPlacement} />
+        </Field>
+
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="이름">
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label="에셋 타입">
+          <Field label="가격 (페이지)">
             <Input
-              value={assetType}
-              onChange={(e) => setAssetType(e.target.value)}
+              type="number"
+              min={0}
+              value={pricePages}
+              onChange={(e) => setPricePages(e.target.value)}
             />
           </Field>
-          <Field label="컬렉션 코드">
+          <Field label="공급자">
             <Input
-              value={collectionCode}
-              onChange={(e) => setCollectionCode(e.target.value)}
+              placeholder="DotShelf Studio (선택)"
+              value={supplier}
+              onChange={(e) => setSupplier(e.target.value)}
             />
-          </Field>
-          <Field label="카테고리 (변경하려면 선택)">
-            <Select
-              value={categoryCode || undefined}
-              onValueChange={(value) => setCategoryCode(value ?? "")}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="유지" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((category) => (
-                  <SelectItem key={category.code} value={category.code}>
-                    {category.name} · {category.code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </Field>
         </div>
-        <div className="mt-3 flex justify-end">
-          <Button
-            onClick={submit}
-            disabled={updateMutation.isPending || !name.trim()}
-          >
+
+        <div className="flex justify-end">
+          <Button onClick={submit} disabled={updateMutation.isPending}>
             {updateMutation.isPending ? "저장 중…" : "메타데이터 저장"}
           </Button>
         </div>
@@ -444,8 +420,13 @@ function UploadCard({
   const [phase, setPhase] = useState<string | null>(null);
 
   const uploadAndConfirm = async (file: File) => {
-    if (!allowedTypes.includes(file.type)) {
-      toast.error(`허용되지 않은 형식입니다: ${file.type || "unknown"}`);
+    // 브라우저가 .glb 같은 확장자의 MIME 을 OS 별로 모르거나 비워서 반환할 때가 있어 (특히 Windows)
+    // 파일 확장자 기반 fallback 으로 보정한다. 보정 후에도 미매치면 그때 reject.
+    const contentType = resolveContentType(file);
+    if (!allowedTypes.includes(contentType)) {
+      toast.error(
+        `허용되지 않은 형식입니다: ${contentType || file.type || "unknown"}`,
+      );
       return;
     }
     if (file.size > maxBytes) {
@@ -459,27 +440,12 @@ function UploadCard({
     setProgress(0);
     setPhase("업로드 중");
     try {
-      const uploadPath =
-        kind === "bundle"
-          ? `/assets/${assetId}/bundle/upload-url`
-          : `/assets/${assetId}/preview-image/upload-url`;
-      const presigned = await api<AdminAssetUploadUrl>(uploadPath, {
-        method: "POST",
-        body: JSON.stringify({
-          contentType: file.type,
-          byteLength: file.size,
-        }),
-      });
-
-      await putToS3(presigned.uploadUrl, file, setProgress);
-
-      const confirmPath =
-        kind === "bundle"
-          ? `/assets/${assetId}/bundle`
-          : `/assets/${assetId}/preview-image`;
-      await api<AdminAssetDetail>(confirmPath, {
-        method: "PATCH",
-        body: JSON.stringify({ key: presigned.key }),
+      await uploadAndConfirmAsset({
+        assetId,
+        kind,
+        file,
+        contentType,
+        onProgress: setProgress,
       });
       toast.success(
         kind === "bundle" ? "본체 업로드 완료" : "프리뷰 업로드 완료",
@@ -602,88 +568,5 @@ function Field({
       <Label className="text-xs text-muted-foreground">{label}</Label>
       {children}
     </div>
-  );
-}
-
-function putToS3(
-  url: string,
-  file: File,
-  onProgress: (percent: number) => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url);
-    xhr.setRequestHeader("Content-Type", file.type);
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const percent = Math.round((event.loaded / event.total) * 100);
-        onProgress(percent);
-      }
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress(100);
-        resolve();
-      } else {
-        reject(new Error(`S3 PUT 실패 (HTTP ${xhr.status})`));
-      }
-    };
-    xhr.onerror = () => reject(new Error("S3 PUT 네트워크 오류"));
-    xhr.send(file);
-  });
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024)
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-/**
- * 본체 .glb 를 wasm 으로 저폴리화 → preview-bundle 엔드포인트 두 번(URL 발급 / confirm)
- * 호출해서 S3 에 같이 올린다. UploadCard.onPostConfirm 의 후처리로 호출된다.
- * 결과 사이즈가 BE 한도를 넘으면 BE 가 400 으로 거른다 — 그래도 본체 publish 는 가능.
- */
-async function generateAndUploadPreviewBundle(
-  assetId: number,
-  bodyFile: File,
-): Promise<void> {
-  const bytes = new Uint8Array(await bodyFile.arrayBuffer());
-  const previewBytes = await generatePreviewGlb(bytes);
-
-  if (previewBytes.byteLength > ADMIN_ASSET_PREVIEW_BUNDLE_MAX_BYTES) {
-    throw new Error(
-      `프리뷰 생성 결과가 너무 큽니다 (${formatBytes(previewBytes.byteLength)}). 본체에서 폴리곤 수를 더 줄여야 합니다.`,
-    );
-  }
-
-  // TS lib 가 Uint8Array<ArrayBufferLike> 를 BlobPart 로 직접 못 받아서 ArrayBuffer 슬라이스 경유.
-  const previewBuffer = previewBytes.buffer.slice(
-    previewBytes.byteOffset,
-    previewBytes.byteOffset + previewBytes.byteLength,
-  ) as ArrayBuffer;
-  const previewFile = new File([previewBuffer], "preview.glb", {
-    type: "model/gltf-binary",
-  });
-
-  const presigned = await api<AdminAssetUploadUrl>(
-    `/assets/${assetId}/preview-bundle/upload-url`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        contentType: previewFile.type,
-        byteLength: previewFile.size,
-      }),
-    },
-  );
-  await putToS3(presigned.uploadUrl, previewFile, () => {});
-  await api<AdminAssetDetail>(`/assets/${assetId}/preview-bundle`, {
-    method: "PATCH",
-    body: JSON.stringify({ key: presigned.key }),
-  });
-  toast.success(
-    `프리뷰 자동 생성 완료 (${formatBytes(previewBytes.byteLength)})`,
   );
 }

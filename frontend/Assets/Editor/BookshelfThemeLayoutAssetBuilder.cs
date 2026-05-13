@@ -42,6 +42,7 @@ namespace BookshelfPorting.Editor
                 new[] { 0.150f, 0.486f, 0.822f, 1.157f },
                 new[] { 0.308f, 0.308f, 0.308f, 0.308f },
                 new[] { 0.006f, 0.006f, 0.006f, 0.006f }),
+
             new ThemeSpec(
                 BookshelfThemeStyle.Dark,
                 "UnderwaterShell",
@@ -62,7 +63,29 @@ namespace BookshelfPorting.Editor
                 0f,
                 new[] { 0.160f, 0.453f, 0.747f, 1.040f },
                 new[] { 0.269f, 0.268f, 0.267f, 0.257f },
-                new[] { 0.011f, 0.010f, 0.010f, 0.010f })
+                new[] { 0.011f, 0.010f, 0.010f, 0.010f }),
+
+            new ThemeSpec(
+                BookshelfThemeStyle.Vintage,
+                "VintageShelf",
+                "Assets/Arts/Models/Bookshelves/vintage_shelf.glb",
+                $"{ThemeLayoutFolder}/BookshelfThemeLayout_VintageShelf.asset",
+                4,
+                4,
+                1f,
+                Vector3.zero,
+                0.13f,
+                0.18f,
+                0.13f,
+                0.065f,
+                0.030f,
+                0.04f,
+                0.04f,
+                -0.020f,
+                0f,
+                new[] { 0.165f, 0.535f, 0.820f, 1.145f },
+                new[] { 0.305f, 0.295f, 0.310f, 0.315f },
+                new[] { 0.006f, 0.006f, 0.006f, 0.006f })
         };
 
         [MenuItem("Tools/DotShelf/Bookshelf/Create Meshy Theme Layouts")]

@@ -643,6 +643,11 @@ export interface AdminAssetDetail {
   name: string;
   assetType: string;
   collectionCode: string | null;
+  pricePages: number;
+  supplier: string | null;
+  // BE 에 저장된 compatibleTargets JSON 원본 (예: `{"themes":["FANTASY"],"placement":["floor"]}`).
+  // 수정 폼이 다시 파싱해서 ThemeSelector / PlacementToggle 초기값으로 사용한다.
+  compatibleTargets: string | null;
   assetUrl: string | null;
   previewImageUrl: string | null;
   previewBundleUrl: string | null;
@@ -654,13 +659,6 @@ export interface AdminAssetDetail {
   fileHash: string | null;
   version: number;
   active: boolean;
-}
-
-export interface AdminAssetCategory {
-  categoryId: number;
-  code: string;
-  name: string;
-  displayOrder: number;
 }
 
 export interface AdminAssetUploadUrl {

@@ -40,14 +40,60 @@ namespace App.Infrastructure.Api
 
         private void Awake()
         {
+            // 회귀 방지망 — APIManager 가 다른 시스템 prefab (예: RuntimeSystems → 'BookshelfSystems')
+            // 의 root 에 attach 되면 DontDestroyOnLoad(gameObject) 가 root 전체를 DDOL 로 이동시켜
+            // scene reload 시 BookshelfExperienceManager / state / canvas 등 옛 인스턴스가 통째로
+            // 살아남는다 (재로그인 회귀: 옛 BEM 의 stale SerializeField → MissingReferenceException +
+            // 책장 오버레이 button 비표시 + dashboard 빈 액자). 정상 prefab 구성은 APIManager 를
+            // 단독 host GameObject 에 두는 것 (RuntimeSystems prefab 에서 child 로 분리). 본 가드는
+            // 그 구성이 미래에 회귀해도 자동으로 DDOL/Destroy 영향을 root 로 확대하지 않도록 한다 —
+            // 컴포넌트 수가 Transform + APIManager (== 2) 면 단독 host, 그 외는 co-located.
+            var componentCount = GetComponents<Component>().Length;
+            var isCoLocatedWithOtherSystems = componentCount > 2;
+
+            // duplicate 처리 — 이미 살아있는 Instance 가 있으면 자기 자신을 제거.
+            // 단독 host duplicate 라면 GameObject 통째로 destroy 안전. co-located 라면 component 만
+            // destroy 해서 root 의 다른 시스템 (BEM/state/canvas 등) 을 보호 (review Finding 2 반영).
             if (Instance != null && Instance != this)
             {
-                Destroy(gameObject);
+                if (isCoLocatedWithOtherSystems)
+                {
+                    Debug.LogWarning(
+                        $"[APIManager] duplicate on co-located host '{gameObject.name}' " +
+                        $"(componentCount={componentCount}) — component-only destroy 로 root 보호. " +
+                        "Prefab 분리 회귀 의심 — 정상 구성은 APIManager 단독 host GameObject 입니다.");
+                    Destroy(this);
+                }
+                else
+                {
+                    Destroy(gameObject);
+                }
                 return;
             }
 
             Instance = this;
-            DontDestroyOnLoad(gameObject);
+
+            // co-located 면 DDOL skip — scene 라이프사이클 그대로. 다음 scene 진입 시 새 APIManager
+            // 가 prefab 의 일부로 다시 instantiated 되고 HydrateAccessTokenFromAuthSession 가
+            // PlayerPrefs 에서 token 복구.
+            // 단독 host 면 DDOL — 단 DDOL 은 root GameObject 만 받으므로 child 로 attach 되어 있으면
+            // 먼저 root 로 분리 (review Finding 1 반영). prefab 에서 child host 로 두어도 본 가드가
+            // 자동으로 root 분리 + DDOL 보장.
+            if (!isCoLocatedWithOtherSystems)
+            {
+                if (transform.parent != null)
+                {
+                    transform.SetParent(null, worldPositionStays: true);
+                }
+                DontDestroyOnLoad(gameObject);
+            }
+            else
+            {
+                Debug.LogWarning(
+                    $"[APIManager] DDOL skip — co-located with other systems on '{gameObject.name}' " +
+                    $"(componentCount={componentCount}). Prefab 분리 회귀 의심 — 정상 구성은 APIManager " +
+                    "단독 host GameObject 입니다.");
+            }
 
             // dev/prod 혼재만 교정 — prefab 의 SerializeField 가 빌드 모드와 정반대인 known endpoint 일 때만 덮어씀.
             // 의도: editor/Dev build 인데 prefab 에 ProdBaseUrl 이 박혀 있으면 (이번 버그 케이스) → DevBaseUrl 로 교정.
@@ -66,6 +112,18 @@ namespace App.Infrastructure.Api
             }
 
             HydrateAccessTokenFromAuthSession();
+        }
+
+        private void OnDestroy()
+        {
+            // DDOL 안 한 경로 (co-located with other systems) 에서 scene reload 시 static Instance
+            // 가 destroyed Unity object 를 가리키는 fake-null 로 남는다. `APIManager.Instance != null`
+            // 비교는 Unity == operator 가 fake-null 을 인식하지만 C# null-conditional (`?.`) 은
+            // 인식 못 해 destroyed reference 에 메서드를 호출 → MissingReferenceException. 명시 클리어.
+            if (Instance == this)
+            {
+                Instance = null;
+            }
         }
 
         private void HydrateAccessTokenFromAuthSession()

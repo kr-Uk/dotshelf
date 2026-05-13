@@ -76,6 +76,7 @@ namespace BookshelfPorting.Runtime
         // Runtime HUD selector keeps one row of shelf chips readable without
         // turning the add/search overlays into full shelf-management screens.
         private const int BookshelfSelectorMaxButtons = 12;
+        private const int BookCoverSkinOptionCount = 3;
         private const int BookRatingChoiceCount = 10;
         private const float BookRatingStep = 0.5f;
         private const float BookshelfTransientStatusDuration = 2.8f;
@@ -95,6 +96,23 @@ namespace BookshelfPorting.Runtime
         private static readonly Vector2 GuestbookBoardSize = new(1380f, 960f);
         private static readonly Vector2 GuestbookPreviewCardSize = new(248f, 142f);
         private static readonly Vector2 GuestbookFocusedNoteBaseSize = new(246f, 156f);
+        // hitArea local +X 방향 offset. native dashboard (visual skin 미적용) 케이스의 fallback —
+        // hitArea collider 표면 바로 앞 3mm. visual skin (vintage 등) 이 적용되면 MountExternal
+        // DashboardPanel 이 skin 의 renderer bounds.center 기준으로 위치를 재계산하므로 이 값은
+        // 무시됨.
+        private static readonly Vector3 ExternalDashboardPanelSurfaceOffset = new(0.003f, 0f, 0f);
+        private static readonly Quaternion ExternalDashboardPanelLocalRotation = Quaternion.Euler(0f, 90f, 0f);
+
+        // Visual skin 적용 시 panel 의 boardNormal-front 방향 추가 offset. z-fight 방지 + 자연스럽
+        // 게 밀착되도록 0.003 m (3mm). 너무 크면 panel 이 frame 에서 분리되어 보임. 너무 작으면
+        // z-fight.
+        private const float ExternalDashboardPanelTinyForwardOffset = 0.003f;
+        private const string DashboardVisualSkinChildName = "ThemeDashboardVisual"; // App.Bootstrap.DashboardVisualSkin.SkinChildName 과 동일
+        // Flip local X so the room-facing UI Toolkit panel reads left-to-right on the board.
+        private static readonly Vector2 ExternalDashboardPanelReferenceSize = new(1920f, 1080f);
+        private const float ExternalDashboardPanelFallbackWorldScale = 0.00060f;
+        private const float ExternalDashboardPanelHorizontalInset = 0.10f;
+        private const float ExternalDashboardPanelVerticalInset = 0.06f;
         private static readonly Vector2[] GuestbookPreviewOffsets =
         {
             new Vector2(-336f, 154f),
@@ -476,6 +494,27 @@ namespace BookshelfPorting.Runtime
             public int ReviewCount { get; }
         }
 
+        private sealed class BookCoverSkinOption
+        {
+            public BookCoverSkinOption(string label, string resourcePath, string description)
+            {
+                Label = label;
+                ResourcePath = resourcePath;
+                Description = description;
+            }
+
+            public string Label { get; }
+            public string ResourcePath { get; }
+            public string Description { get; }
+        }
+
+        private static readonly BookCoverSkinOption[] SponsoredBookCoverSkinOptions =
+        {
+            new BookCoverSkinOption("기본", string.Empty, "글만 표시되는 기본 표지"),
+            new BookCoverSkinOption("Ads 01", "UI/Ads/ad_01", "스폰서 표지 1"),
+            new BookCoverSkinOption("Ads 02", "UI/Ads/ad_02", "스폰서 표지 2")
+        };
+
         private sealed class GuestbookNoteData
         {
             public string authorName;
@@ -610,6 +649,20 @@ namespace BookshelfPorting.Runtime
         private Button bookAddConfirmFrontButton;
         private Button confirmBookAddButton;
         private Button cancelBookAddConfirmButton;
+        private GameObject bookCoverSkinPanel;
+        private Text bookCoverSkinTitleText;
+        private Text bookCoverSkinHintText;
+        private Text bookCoverSkinStatusText;
+        private Button closeBookCoverSkinButton;
+        private readonly Button[] bookCoverSkinButtons = new Button[BookCoverSkinOptionCount];
+        private readonly Image[] bookCoverSkinPreviewImages = new Image[BookCoverSkinOptionCount];
+        private GameObject advertisementBookAddPanel;
+        private Text advertisementBookAddTitleText;
+        private Text advertisementBookAddHintText;
+        private Text advertisementBookAddStatusText;
+        private Button closeAdvertisementBookAddButton;
+        private readonly Button[] advertisementBookShelfButtons = new Button[BookshelfSelectorMaxButtons];
+        private Coroutine pendingAdvertisementBookAddPlacementCoroutine;
         private GameObject bookSearchPanel;
         private Text bookSearchTitleText;
         private Text bookSearchStatusText;
@@ -673,12 +726,15 @@ namespace BookshelfPorting.Runtime
         private BookAddCatalogItem pendingBookAddCatalogItem;
         private BookOrientation pendingBookAddOrientation = BookOrientation.Front;
         private App.Domain.ReadingStatus pendingBookAddReadingStatus = App.Domain.ReadingStatus.Unread;
+        private BookEntity activeCoverSkinBook;
         private bool isBookAddPlacementSelectionActive;
         private bool isBookshelfNameEditPanelOpen;
         private bool isBookshelfDeleteConfirmPanelOpen;
         private bool isBookshelfDesignPanelOpen;
         private bool isBookAddPanelOpen;
         private bool isBookAddConfirmPanelOpen;
+        private bool isBookCoverSkinPanelOpen;
+        private bool isAdvertisementBookAddPanelOpen;
         private bool isBookSearchPanelOpen;
         private bool isBookshelfManagePanelOpen;
         private bool isBookshelfUnsavedConfirmPanelOpen;
@@ -734,6 +790,10 @@ namespace BookshelfPorting.Runtime
         private bool runtimeUseExternalDashboardPanel;
         private bool ShouldUseExternalDashboardPanel => useExternalDashboardPanel || runtimeUseExternalDashboardPanel;
         private UnityEngine.UIElements.VisualElement focusedDashboardPressedElement;
+        // MountExternalDashboardPanel 진단 log throttle — 첫 호출 + skin attach/detach 상태 변경
+        // 시점 1회씩 log. visual skin 적용/제거 시 panel 위치 정책이 바뀌므로 그 시점에 재 log.
+        private bool externalDashboardPanelMountLogged;
+        private bool externalDashboardPanelMountLastHadSkin;
 
         [SerializeField] private bool guestbookOwnerMode = true;
         private bool isGuestbookPublic = true;
@@ -923,6 +983,25 @@ namespace BookshelfPorting.Runtime
         // short-circuited so the only interaction the player can perform is the
         // edit-mode select / rotate / delete that the edit overlay itself drives.
         public bool AreSceneInteractionsSuppressed { get; set; }
+
+        // 룸 편집 모드 등 외부 컨텍스트에서 노트북 화면 click → FocusNotebook 자동 진입을 차단할 때 호출.
+        // AreSceneInteractionsSuppressed 는 BookshelfExperienceManager.Update 의 raycast-based focus 전환만
+        // 막고, ScreenSaverCanvas 위 AdImage Button.onClick (= onOpenScreenSaver = FocusNotebook) 은 그대로
+        // fire 되므로 별도 차단이 필요. 호출 시 NotebookScreenController.SetSceneInteractionSuppressed 로
+        // canvas SetActive 토글.
+        public void SetNotebookScreenSuppressed(bool suppressed)
+        {
+            notebookScreenController?.SetSceneInteractionSuppressed(suppressed);
+        }
+
+        // theme swap (DeskVisualSkinApplier.TryAttach) 처럼 편집 모드 도중에 NotebookScreenController 의
+        // canvas state 가 흔들릴 수 있는 외부 hook 에서 호출. suppress 가 active 면 canvas 를 다시 SetActive(false)
+        // — 비활성이면 no-op. 편집 모드 진입 후 어떤 테마든 theme swap 직후 ScreenSaverCanvas 가 다시
+        // 보이거나 click 가능 상태로 돌아가지 않도록 보장.
+        public void ReassertNotebookScreenSuppressionIfActive(string reason)
+        {
+            notebookScreenController?.ReassertSceneInteractionSuppressionIfActive(reason);
+        }
 
         public void Configure(
             BookshelfState bookshelfState,
@@ -1142,13 +1221,31 @@ namespace BookshelfPorting.Runtime
             }
 
             var isViewingOtherSpace = IsViewingOtherUserSpace();
-            if (!isViewingOtherSpace)
+            // Notebook 이 immersive overlay 모드일 때 (Dashboard / ScreenSaver 둘 다 ScreenSpaceOverlay
+            // 로 전체 화면을 덮음) — main scene 의 raycast-based focus 전환은 click 을 가로채지 않는다.
+            // UI Toolkit / Canvas Button 자체 dispatch 가 click 을 소비하도록 위임.
+            //
+            // 회귀 방어: dashboard X (NotebookToolkitController UIDocument) click 이 같은 frame 에서
+            // 1) 이 핸들러가 먼저 실행 → IsPointerOverUi 가 PanelRaycaster hit 을 감지 못해 (DashboardRaycastFilter
+            //    는 DashboardScreenController 만 추적, NotebookToolkitController 는 모름) → TryHitGuestbookBoard
+            //    ray 가 top-right 픽셀로 cast 되어 GuestbookBoard collider hit → FocusGuestbook → MoveToWhiteboardSurface
+            //    transition 시작
+            // 2) EventSystem 의 PanelEventHandler 가 같은 frame 후반에 X close callback dispatch → CloseNotebookFocus
+            //    의 CanStartCameraFocus 가 cameraController.IsTransitioning=true 라 early return → 카메라 이동 skip
+            // 3) 결과: 카메라가 GuestbookBoard pose 에 도착
+            //
+            // CurrentFocusArea==Notebook 조건도 함께 둬 — 다른 focus 상태에서 잘못 suppress 되지 않도록.
+            if (CurrentFocusArea == ExperienceFocusArea.Notebook &&
+                notebookScreenController != null &&
+                notebookScreenController.IsImmersiveModeActive)
             {
-                if (TryHitNotebook())
-                {
-                    FocusNotebook();
-                    return;
-                }
+                return;
+            }
+
+            if (!isViewingOtherSpace && TryHitNotebook())
+            {
+                FocusNotebook();
+                return;
             }
 
             if (TryHitGuestbookBoard())
@@ -1379,6 +1476,11 @@ namespace BookshelfPorting.Runtime
             DetachNotebookApiCallbacks();
             CancelBookAddCoverLoads();
             ClearBookAddCoverSpriteCache();
+            if (pendingAdvertisementBookAddPlacementCoroutine != null)
+            {
+                StopCoroutine(pendingAdvertisementBookAddPlacementCoroutine);
+                pendingAdvertisementBookAddPlacementCoroutine = null;
+            }
         }
 
         public void FocusQuarterView()
@@ -1512,6 +1614,17 @@ namespace BookshelfPorting.Runtime
 
         public void FocusNotebook()
         {
+            // Edit-mode / scene-interaction suppression catch-all — entry path 무관 (raycast hit,
+            // F4 shortcut, AdImage Button.onClick, 미래 호출자) 어디서 들어와도 함수 진입부에서 차단.
+            // raycast 경로는 Update 단의 AreSceneInteractionsSuppressed 가드로 이미 차단되지만, 다른
+            // 경로 (canvas SetActive(false) 이어도 GraphicRaycaster 가 미세하게 deferred fire 하거나
+            // 외부 코드에서 직접 FocusNotebook() 호출하는 케이스) 까지 한 번에 막기 위함. 테마 무관 정책.
+            if (AreSceneInteractionsSuppressed)
+            {
+                Debug.Log("[NotebookFocusBlock] FocusNotebook suppressed — edit/scene interaction lock active. entry=public_FocusNotebook");
+                return;
+            }
+
             if (TryPromptUnsavedBookshelfChanges(FocusNotebookImmediate))
             {
                 return;
@@ -1522,6 +1635,15 @@ namespace BookshelfPorting.Runtime
 
         private void FocusNotebookImmediate()
         {
+            // FocusNotebook 공개 진입점에서 이미 가드하지만 TryPromptUnsavedBookshelfChanges 가 delegate
+            // 로 비동기 호출하는 경로 (모달 확인 후 FocusNotebookImmediate 재진입) 에서 edit 진입 race 가
+            // 발생할 수 있어 한 번 더 가드. 중복 비용은 bool 체크 1회.
+            if (AreSceneInteractionsSuppressed)
+            {
+                Debug.Log("[NotebookFocusBlock] FocusNotebookImmediate suppressed — edit/scene interaction lock active. entry=immediate");
+                return;
+            }
+
             if (!CanStartCameraFocus())
             {
                 return;
@@ -1562,7 +1684,13 @@ namespace BookshelfPorting.Runtime
 
             if (notebookScreenController != null && notebookScreenController.ScreenTransform != null)
             {
-                cameraController.MoveToNotebookScreen(notebookScreenController.ScreenTransform);
+                // 노트북 포커스 카메라 mode — 현재 적용된 desk skin (테마) 에 따라 다름.
+                // ScreenAnchorBaked (default, vintage 등) = CameraFocusPoint baked offset 사용,
+                // ScreenForwardGeometry (DeepSea monitor 모드) = screen.forward geometry 사용.
+                // mode 는 DeskVisualSkinApplier.TryAttach 가 entry 의 NotebookFocusCameraMode 로 push,
+                // ClearSkin 이 default 로 reset.
+                var notebookFocusMode = NotebookFocusCameraModeRegistry.Current;
+                cameraController.MoveToNotebookScreen(notebookScreenController.ScreenTransform, notebookFocusMode);
                 return;
             }
 
@@ -1808,9 +1936,22 @@ namespace BookshelfPorting.Runtime
                 bookReviewWritePanel.SetActive(false);
             }
 
+            if (bookCoverSkinPanel != null)
+            {
+                bookCoverSkinPanel.SetActive(false);
+            }
+
+            if (advertisementBookAddPanel != null)
+            {
+                advertisementBookAddPanel.SetActive(false);
+            }
+
             isBookReviewWritePanelOpen = false;
             isBookReviewSaving = false;
             activeReviewBook = null;
+            isBookCoverSkinPanelOpen = false;
+            activeCoverSkinBook = null;
+            isAdvertisementBookAddPanelOpen = false;
             SetBookReviewStatus(string.Empty);
             CloseBookReportPanelsSilently();
             RefreshHud();
@@ -1953,13 +2094,26 @@ namespace BookshelfPorting.Runtime
                 sectionEditPanel.SetActive(false);
             }
 
+            if (bookCoverSkinPanel != null)
+            {
+                bookCoverSkinPanel.SetActive(false);
+            }
+
+            if (advertisementBookAddPanel != null)
+            {
+                advertisementBookAddPanel.SetActive(false);
+            }
+
             if (isBookEditPanelOpen)
             {
                 ActiveDetailBook = null;
             }
 
             activeEditSection = null;
+            activeCoverSkinBook = null;
             isBookEditPanelOpen = false;
+            isBookCoverSkinPanelOpen = false;
+            isAdvertisementBookAddPanelOpen = false;
             pendingDeleteBook = null;
             RefreshHud();
         }
@@ -3590,6 +3744,18 @@ namespace BookshelfPorting.Runtime
             // AddComponent 된 시점이라, 여기서 panel mount 를 재시도하면 깨끗하게 회복된다.
             // 기존 유저 재로그인 케이스는 OnEnable 시점에 이미 mount 가 성공한 상태라 부수효과 없음 (idempotent).
             SyncExternalDashboardPanelPresentation();
+
+            // 같은 race 의 노트북 변종: Start() 의 ConfigureNotebookScreen 이 Generate() 보다 먼저 돌면
+            // FindRoomNotebookScreenController() 가 null 을 반환해 notebookScreenController 가 미설정
+            // 상태로 남는다. NotebookScreenController.Awake 는 AdImage / ScreenSaverCanvas (GraphicRaycaster
+            // raycastTarget=true) 는 만들어 두지만 AdImage Button.onClick = () => onOpenScreenSaver(=FocusNotebook)
+            // lambda 는 Configure → EnsureCanvases → BuildScreenSaver 에서만 wire 된다. 따라서 첫 클릭이
+            // AdImage 를 hit 해도 onClick 가 비어있어 silent consume → 사용자에겐 "노트북 클릭 무반응 →
+            // 다른 기능 한 번 후엔 됨" 회귀. Generate 이후 ConfigureNotebookScreen 재호출로 늦게 만들어진
+            // controller 를 잡아 Configure 까지 끝내 onClick lambda wire.
+            // idempotent — 이미 잡혀 있으면 같은 controller 재바인딩 (callback 중복 register 는 AttachNotebookApiCallbacks
+            // 의 == 체크가 막음).
+            ConfigureNotebookScreen();
         }
 
         private void SyncFromCameraMode(CameraMode mode)
@@ -3915,6 +4081,64 @@ namespace BookshelfPorting.Runtime
             confirmBookAddButton = CreateButton(bookAddConfirmPanel.transform, "ConfirmBookAddButton", "추가", new Vector2(304f, -350f), ConfirmAddCatalogBookToShelf, new Vector2(92f, 34f), new Vector2(0f, 1f));
             cancelBookAddConfirmButton = CreateButton(bookAddConfirmPanel.transform, "CancelBookAddConfirmButton", "취소", new Vector2(404f, -350f), CloseBookAddConfirmPanel, new Vector2(72f, 34f), new Vector2(0f, 1f));
 
+            bookCoverSkinPanel = CreatePanel(canvasObject.transform, "BookCoverSkinPanel", new Vector2(-24f, -78f), new Vector2(430f, 318f), new Vector2(1f, 1f));
+            StyleBookDetailPanel(bookCoverSkinPanel.GetComponent<Image>());
+            bookCoverSkinPanel.SetActive(false);
+            CreateHudImage(bookCoverSkinPanel.transform, "BookCoverSkinAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(87, 139, 106, 170), false);
+            bookCoverSkinTitleText = CreateLabel(bookCoverSkinPanel.transform, "BookCoverSkinTitleText", new Vector2(20f, -36f), new Vector2(344f, 24f), TextAnchor.UpperLeft);
+            bookCoverSkinTitleText.text = "표지 변경";
+            bookCoverSkinTitleText.fontSize = 18;
+            bookCoverSkinTitleText.fontStyle = FontStyle.Bold;
+            bookCoverSkinTitleText.color = new Color32(44, 66, 53, 255);
+            closeBookCoverSkinButton = CreateButton(bookCoverSkinPanel.transform, "CloseBookCoverSkinButton", "×", new Vector2(382f, -28f), CloseBookCoverSkinPanel, new Vector2(28f, 32f), new Vector2(0f, 1f));
+            bookCoverSkinHintText = CreateLabel(bookCoverSkinPanel.transform, "BookCoverSkinHintText", new Vector2(20f, -72f), new Vector2(390f, 34f), TextAnchor.UpperLeft);
+            bookCoverSkinHintText.text = "이 책과 연결된 표지 스킨을 선택하세요.";
+            bookCoverSkinHintText.fontSize = 13;
+            bookCoverSkinHintText.color = new Color32(84, 74, 66, 255);
+            for (var i = 0; i < bookCoverSkinButtons.Length; i++)
+            {
+                var optionIndex = i;
+                bookCoverSkinButtons[i] = CreateButton(bookCoverSkinPanel.transform, $"BookCoverSkinButton_{i}", string.Empty, new Vector2(20f + i * 132f, -124f), () => ApplyBookCoverSkinOption(optionIndex), new Vector2(118f, 132f), new Vector2(0f, 1f));
+                bookCoverSkinPreviewImages[i] = CreateHudImage(bookCoverSkinButtons[i].transform, $"BookCoverSkinPreview_{i}", new Vector2(14f, -12f), new Vector2(90f, 76f), new Vector2(0f, 1f), new Color32(238, 231, 221, 235), true);
+                if (bookCoverSkinPreviewImages[i] != null)
+                {
+                    bookCoverSkinPreviewImages[i].preserveAspect = true;
+                    bookCoverSkinPreviewImages[i].raycastTarget = false;
+                }
+            }
+
+            bookCoverSkinStatusText = CreateLabel(bookCoverSkinPanel.transform, "BookCoverSkinStatusText", new Vector2(20f, -272f), new Vector2(390f, 22f), TextAnchor.UpperLeft);
+            bookCoverSkinStatusText.fontSize = 12;
+            bookCoverSkinStatusText.color = new Color32(124, 111, 101, 255);
+
+            advertisementBookAddPanel = CreatePanel(canvasObject.transform, "AdvertisementBookAddPanel", new Vector2(-24f, -78f), new Vector2(430f, 318f), new Vector2(1f, 1f));
+            StyleBookDetailPanel(advertisementBookAddPanel.GetComponent<Image>());
+            advertisementBookAddPanel.SetActive(false);
+            CreateHudImage(advertisementBookAddPanel.transform, "AdvertisementBookAddAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(87, 139, 106, 170), false);
+            advertisementBookAddTitleText = CreateLabel(advertisementBookAddPanel.transform, "AdvertisementBookAddTitleText", new Vector2(20f, -36f), new Vector2(344f, 24f), TextAnchor.UpperLeft);
+            advertisementBookAddTitleText.text = "책장에 추가하기";
+            advertisementBookAddTitleText.fontSize = 18;
+            advertisementBookAddTitleText.fontStyle = FontStyle.Bold;
+            advertisementBookAddTitleText.color = new Color32(44, 66, 53, 255);
+            closeAdvertisementBookAddButton = CreateButton(advertisementBookAddPanel.transform, "CloseAdvertisementBookAddButton", "×", new Vector2(382f, -28f), CloseAdvertisementBookAddPanel, new Vector2(28f, 32f), new Vector2(0f, 1f));
+            advertisementBookAddHintText = CreateLabel(advertisementBookAddPanel.transform, "AdvertisementBookAddHintText", new Vector2(20f, -72f), new Vector2(390f, 40f), TextAnchor.UpperLeft);
+            advertisementBookAddHintText.text = "추가할 책장을 고른 뒤 빈 칸을 클릭해 위치를 선택하세요.";
+            advertisementBookAddHintText.fontSize = 13;
+            advertisementBookAddHintText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            advertisementBookAddHintText.color = new Color32(84, 74, 66, 255);
+            for (var i = 0; i < advertisementBookShelfButtons.Length; i++)
+            {
+                var shelfIndex = i;
+                var row = i / 3;
+                var column = i % 3;
+                advertisementBookShelfButtons[i] = CreateButton(advertisementBookAddPanel.transform, $"AdvertisementBookShelfButton_{i}", string.Empty, new Vector2(20f + column * 132f, -128f - row * 42f), () => BeginAdvertisementBookAddToShelf(shelfIndex), new Vector2(118f, 34f), new Vector2(0f, 1f));
+            }
+
+            advertisementBookAddStatusText = CreateLabel(advertisementBookAddPanel.transform, "AdvertisementBookAddStatusText", new Vector2(20f, -272f), new Vector2(390f, 28f), TextAnchor.UpperLeft);
+            advertisementBookAddStatusText.fontSize = 12;
+            advertisementBookAddStatusText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            advertisementBookAddStatusText.color = new Color32(124, 111, 101, 255);
+
             bookSearchPanel = CreatePanel(canvasObject.transform, "BookSearchPanel", new Vector2(24f, -96f), new Vector2(360f, 438f), new Vector2(0f, 1f));
             StyleBookDetailPanel(bookSearchPanel.GetComponent<Image>());
             bookSearchPanel.SetActive(false);
@@ -4089,13 +4313,14 @@ namespace BookshelfPorting.Runtime
             bookDetailPanelController = new BookDetailPanelController(
                 canvasObject.transform,
                 new BookDetailPanelCallbacks(
-                    OpenBookReportWritePanel,
+                    OpenBookReviewWritePanel,
                     OpenBookReportReadPanel,
                     OpenBookPlacementEditor,
                     ToggleReadState,
                     ToggleLikeState,
                     CycleOwnerRating,
                     ToggleVisibilityState,
+                    OpenAdvertisementBookAddPanel,
                     CloseBookDetailPanel,
                     DeleteActiveBookFromDetail));
             bookDetailPanel = bookDetailPanelController.Panel;
@@ -4104,8 +4329,9 @@ namespace BookshelfPorting.Runtime
             StyleBookshelfIndexPanel(bookFocusToolbarPanel.GetComponent<Image>());
             bookFocusToolbarPanel.SetActive(false);
             bookFocusDetailButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusDetailButton", "상태", new Vector2(174f, 0f), ToggleReadState, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
-            bookFocusRatingButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusRatingButton", "리뷰 작성", new Vector2(254f, 0f), OpenBookReviewWritePanel, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
+            bookFocusRatingButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusRatingButton", "표지 변경", new Vector2(254f, 0f), OpenBookCoverSkinPanel, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
             bookFocusReportButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusReportButton", "좋아요", new Vector2(334f, 0f), ToggleLikeState, new Vector2(86f, 36f), new Vector2(0f, 0.5f));
+            bookFocusReportButton.gameObject.SetActive(false);
             bookFocusWriteReportButton = CreateButton(canvasObject.transform, "BookFocusWriteReportButton", "독후감 작성", new Vector2(0f, 128f), OpenActiveViewedBookReport, new Vector2(160f, 44f), new Vector2(0.5f, 0f));
             bookFocusWriteReportButton.gameObject.SetActive(false);
             bookFocusRatingText = CreateLabel(bookFocusToolbarPanel.transform, "BookFocusRatingText", new Vector2(0f, 22f), new Vector2(360f, 18f), TextAnchor.MiddleCenter);
@@ -5387,6 +5613,8 @@ namespace BookshelfPorting.Runtime
             RefreshBookReviewWritePanel();
             RefreshBookReportWritePanel();
             RefreshBookReportReadPanel();
+            RefreshBookCoverSkinPanel();
+            RefreshAdvertisementBookAddPanel();
             RefreshBookEditPanel();
             RefreshSectionEditPanel();
             RefreshBookPlacementEditor();
@@ -6261,6 +6489,8 @@ namespace BookshelfPorting.Runtime
                 : new Vector2(-(safeMargins.z + edge), -sidePanelTop);
 
             SetHudObjectRect(bookDetailPanel, sidePanelAnchor, sidePanelPivot, sidePanelPosition, new Vector2(sidePanelWidth, detailPanelHeight));
+            SetHudObjectRect(bookCoverSkinPanel, sidePanelAnchor, sidePanelPivot, sidePanelPosition, new Vector2(sidePanelWidth, Mathf.Min(detailPanelHeight, 380f)));
+            SetHudObjectRect(advertisementBookAddPanel, sidePanelAnchor, sidePanelPivot, sidePanelPosition, new Vector2(sidePanelWidth, Mathf.Min(detailPanelHeight, 380f)));
             SetHudObjectRect(bookReportReadPanel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(writePanelWidth, writePanelHeight));
             SetHudObjectRect(bookReportWritePanel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(writePanelWidth, writePanelHeight));
             SetHudObjectRect(bookReviewWritePanel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(writePanelWidth, writePanelHeight));
@@ -6291,19 +6521,21 @@ namespace BookshelfPorting.Runtime
 
             var padding = Mathf.Clamp(panelWidth * 0.066f, 44f, 64f);
             var gap = Mathf.Clamp(panelWidth * 0.024f, 18f, 28f);
-            var buttonWidth = (panelWidth - padding * 2f - gap * 3f) / 4f;
+            var buttonWidth = (panelWidth - padding * 2f - gap * 2f) / 3f;
             var buttonHeight = panelHeight - Mathf.Clamp(panelHeight * 0.48f, 54f, 66f);
             var startX = -panelWidth * 0.5f + padding + buttonWidth * 0.5f;
             var fontSize = Mathf.RoundToInt(Mathf.Clamp(panelHeight * 0.15f, 14f, 18f));
 
             var detailButtonX = startX;
-            var ratingButtonX = startX + (buttonWidth + gap);
-            var likeButtonX = startX + (buttonWidth + gap) * 2f;
-            var placementButtonX = startX + (buttonWidth + gap) * 3f;
+            var coverButtonX = startX + (buttonWidth + gap);
+            var placementButtonX = startX + (buttonWidth + gap) * 2f;
             LayoutToolbarButton(bookFocusDetailButton, detailButtonX, buttonWidth, buttonHeight, fontSize);
-            LayoutToolbarButton(bookFocusRatingButton, ratingButtonX, buttonWidth, buttonHeight, fontSize);
-            LayoutToolbarButton(bookFocusReportButton, likeButtonX, buttonWidth, buttonHeight, fontSize);
+            LayoutToolbarButton(bookFocusRatingButton, coverButtonX, buttonWidth, buttonHeight, fontSize);
             LayoutToolbarButton(openBookPlacementEditorButton, placementButtonX, buttonWidth, buttonHeight, fontSize);
+            if (bookFocusReportButton != null)
+            {
+                bookFocusReportButton.gameObject.SetActive(false);
+            }
 
             if (bookFocusRatingText != null)
             {
@@ -7122,6 +7354,15 @@ namespace BookshelfPorting.Runtime
 
         private bool ShouldEnterEmptyBookshelfTutorial()
         {
+            // server snapshot 모드에서는 첫 fetch 완료 전에는 BookshelfCount==0 이 "비어있음"이 아닌
+            // "아직 모름". 이 시점 튜토리얼/FocusBookshelf 발동을 차단해 race 회피.
+            if (bookshelfGenerator != null &&
+                bookshelfGenerator.UseServerBookshelfSnapshots &&
+                !bookshelfGenerator.HasReceivedServerSnapshot)
+            {
+                return false;
+            }
+
             return bookshelfGenerator != null &&
                    bookshelfGenerator.BookshelfCount <= 0 &&
                    !IsInitialBookshelfApiSyncPending() &&
@@ -8224,6 +8465,432 @@ namespace BookshelfPorting.Runtime
             }
         }
 
+        private void OpenBookCoverSkinPanel()
+        {
+            var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
+            if (!CanChangeCoverSkin(book) || bookCoverSkinPanel == null)
+            {
+                ShowBookshelfTransientStatus(
+                    "표지 변경 불가",
+                    "이 책과 연결된 표지 스킨이 없습니다.",
+                    true);
+                return;
+            }
+
+            CloseOverlayPanels(bookCoverSkinPanel);
+            activeCoverSkinBook = book;
+            ActiveDetailBook = book;
+            isBookCoverSkinPanelOpen = true;
+            bookCoverSkinPanel.SetActive(true);
+            RefreshHud();
+        }
+
+        private void CloseBookCoverSkinPanel()
+        {
+            isBookCoverSkinPanelOpen = false;
+            activeCoverSkinBook = null;
+            if (bookCoverSkinPanel != null)
+            {
+                bookCoverSkinPanel.SetActive(false);
+            }
+
+            RefreshHud();
+        }
+
+        private void ApplyBookCoverSkinOption(int optionIndex)
+        {
+            if (!isBookCoverSkinPanelOpen ||
+                activeCoverSkinBook == null ||
+                optionIndex < 0 ||
+                optionIndex >= SponsoredBookCoverSkinOptions.Length)
+            {
+                return;
+            }
+
+            var option = SponsoredBookCoverSkinOptions[optionIndex];
+            if (!string.IsNullOrWhiteSpace(option.ResourcePath) &&
+                !BookshelfGenerator.TryGetBookCoverSkinSprite(option.ResourcePath, out _))
+            {
+                ShowBookshelfTransientStatus("표지 변경 실패", "선택한 표지 에셋을 찾을 수 없습니다.", true);
+                return;
+            }
+
+            var meta = dataStore != null ? dataStore.GetOrCreateBookMeta(activeCoverSkinBook) : null;
+            if (meta != null)
+            {
+                meta.coverSkinResourcePath = option.ResourcePath;
+                dataStore.ApplyBookMeta(activeCoverSkinBook, meta);
+            }
+
+            activeCoverSkinBook.coverSkinResourcePath = option.ResourcePath;
+            bookshelfGenerator?.ApplyBookCoverSkin(activeCoverSkinBook, option.ResourcePath);
+            ShowBookshelfTransientStatus("표지 변경 완료", $"{TryGetBookDisplayTitle(activeCoverSkinBook)} 표지를 변경했습니다.", false);
+            RefreshBookCoverSkinPanel();
+            RefreshHud();
+        }
+
+        private void RefreshBookCoverSkinPanel()
+        {
+            if (bookCoverSkinPanel == null)
+            {
+                return;
+            }
+
+            var show = isBookCoverSkinPanelOpen &&
+                       activeCoverSkinBook != null &&
+                       CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                       !IsBookshelfEditMode;
+            bookCoverSkinPanel.SetActive(show);
+            if (!show)
+            {
+                return;
+            }
+
+            if (bookCoverSkinTitleText != null)
+            {
+                bookCoverSkinTitleText.text = "표지 변경";
+            }
+
+            if (bookCoverSkinHintText != null)
+            {
+                bookCoverSkinHintText.text = $"{TryGetBookDisplayTitle(activeCoverSkinBook)}에 적용할 표지를 선택하세요.";
+            }
+
+            for (var i = 0; i < bookCoverSkinButtons.Length; i++)
+            {
+                var option = i < SponsoredBookCoverSkinOptions.Length ? SponsoredBookCoverSkinOptions[i] : null;
+                var button = bookCoverSkinButtons[i];
+                if (button == null)
+                {
+                    continue;
+                }
+
+                var hasOption = option != null &&
+                                (string.IsNullOrWhiteSpace(option.ResourcePath) ||
+                                 TryGetCoverSkinPreviewSprite(option.ResourcePath, out _));
+                button.gameObject.SetActive(hasOption);
+                if (!hasOption)
+                {
+                    continue;
+                }
+
+                var isSelected = string.Equals(activeCoverSkinBook.coverSkinResourcePath ?? string.Empty, option.ResourcePath ?? string.Empty, System.StringComparison.Ordinal);
+                SetButtonLabel(button, isSelected ? $"✓ {option.Label}" : option.Label);
+                StyleHudButton(
+                    button,
+                    isSelected ? new Color32(88, 133, 117, 245) : new Color32(255, 255, 255, 238),
+                    isSelected ? new Color32(105, 150, 132, 255) : new Color32(241, 235, 230, 255),
+                    new Color32(224, 219, 214, 140),
+                    13,
+                    isSelected ? Color.white : new Color32(63, 47, 38, 255),
+                    true);
+
+                var label = GetButtonLabelText(button);
+                if (label != null)
+                {
+                    label.alignment = TextAnchor.LowerCenter;
+                    label.rectTransform.offsetMin = new Vector2(6f, 8f);
+                    label.rectTransform.offsetMax = new Vector2(-6f, -90f);
+                }
+
+                var preview = bookCoverSkinPreviewImages[i];
+                if (preview != null)
+                {
+                    if (string.IsNullOrWhiteSpace(option.ResourcePath))
+                    {
+                        preview.sprite = null;
+                        preview.color = new Color32(238, 231, 221, 235);
+                    }
+                    else if (TryGetCoverSkinPreviewSprite(option.ResourcePath, out var sprite))
+                    {
+                        preview.sprite = sprite;
+                        preview.color = Color.white;
+                    }
+                }
+            }
+
+            if (bookCoverSkinStatusText != null)
+            {
+                bookCoverSkinStatusText.text = "기본 표지는 글만 표시되고, 스킨은 책 전면 표지에 적용됩니다.";
+            }
+
+            StyleHudButton(
+                closeBookCoverSkinButton,
+                new Color32(245, 237, 226, 245),
+                new Color32(255, 248, 236, 255),
+                new Color32(224, 219, 214, 140),
+                16,
+                new Color32(84, 74, 66, 255),
+                true);
+            bookCoverSkinPanel.transform.SetAsLastSibling();
+        }
+
+        private bool CanChangeCoverSkin(BookEntity book)
+        {
+            return book != null &&
+                   !book.isDecoration &&
+                   guestbookOwnerMode &&
+                   CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                   BookshelfSponsoredBook.MatchesSponsoredCatalog(book) &&
+                   HasAvailableSponsoredCoverSkin();
+        }
+
+        private static bool HasAvailableSponsoredCoverSkin()
+        {
+            for (var i = 0; i < SponsoredBookCoverSkinOptions.Length; i++)
+            {
+                var option = SponsoredBookCoverSkinOptions[i];
+                if (option != null &&
+                    !string.IsNullOrWhiteSpace(option.ResourcePath) &&
+                    BookshelfGenerator.TryGetBookCoverSkinSprite(option.ResourcePath, out _))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryGetCoverSkinPreviewSprite(string resourcePath, out Sprite sprite)
+        {
+            return BookshelfGenerator.TryGetBookCoverSkinSprite(resourcePath, out sprite);
+        }
+
+        private void OpenAdvertisementBookAddPanel()
+        {
+            var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
+            if (!CanAddAdvertisementBookFromDetail(book) || advertisementBookAddPanel == null)
+            {
+                return;
+            }
+
+            CloseOverlayPanels(advertisementBookAddPanel);
+            ActiveDetailBook = book;
+            isAdvertisementBookAddPanelOpen = true;
+            advertisementBookAddPanel.SetActive(true);
+            RefreshHud();
+        }
+
+        private void CloseAdvertisementBookAddPanel()
+        {
+            CloseAdvertisementBookAddPanel(true);
+        }
+
+        private void CloseAdvertisementBookAddPanel(bool refresh)
+        {
+            isAdvertisementBookAddPanelOpen = false;
+            if (advertisementBookAddPanel != null)
+            {
+                advertisementBookAddPanel.SetActive(false);
+            }
+
+            if (refresh)
+            {
+                RefreshHud();
+            }
+        }
+
+        private void RefreshAdvertisementBookAddPanel()
+        {
+            if (advertisementBookAddPanel == null)
+            {
+                return;
+            }
+
+            var show = isAdvertisementBookAddPanelOpen &&
+                       CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                       bookshelfGenerator != null &&
+                       bookshelfGenerator.BookshelfCount > 0 &&
+                       !IsBookshelfEditMode;
+            advertisementBookAddPanel.SetActive(show);
+            if (!show)
+            {
+                return;
+            }
+
+            if (advertisementBookAddTitleText != null)
+            {
+                advertisementBookAddTitleText.text = "책장에 추가하기";
+            }
+
+            if (advertisementBookAddHintText != null)
+            {
+                advertisementBookAddHintText.text = "추가할 책장을 고른 뒤 빈 칸을 클릭해 위치를 선택하세요.";
+            }
+
+            var visibleShelfCount = Mathf.Min(bookshelfGenerator.BookshelfCount, advertisementBookShelfButtons.Length);
+            for (var i = 0; i < advertisementBookShelfButtons.Length; i++)
+            {
+                var button = advertisementBookShelfButtons[i];
+                if (button == null)
+                {
+                    continue;
+                }
+
+                var visible = i < visibleShelfCount;
+                button.gameObject.SetActive(visible);
+                if (!visible)
+                {
+                    continue;
+                }
+
+                var canUse = CanUseBookshelfServerPlacement(i);
+                SetButtonLabel(button, bookshelfGenerator.GetBookshelfName(i));
+                button.interactable = canUse;
+                StyleHudButton(
+                    button,
+                    canUse ? new Color32(255, 255, 255, 238) : new Color32(224, 219, 214, 140),
+                    canUse ? new Color32(241, 235, 230, 255) : new Color32(224, 219, 214, 140),
+                    new Color32(224, 219, 214, 140),
+                    13,
+                    canUse ? new Color32(63, 47, 38, 255) : new Color32(124, 111, 101, 190),
+                    true);
+            }
+
+            if (advertisementBookAddStatusText != null)
+            {
+                advertisementBookAddStatusText.text = bookshelfGenerator.BookshelfCount > advertisementBookShelfButtons.Length
+                    ? $"책장이 많아 앞 {advertisementBookShelfButtons.Length}개만 표시됩니다."
+                    : "책장을 선택하면 책장 화면으로 돌아가 배치 위치를 고릅니다.";
+            }
+
+            StyleHudButton(
+                closeAdvertisementBookAddButton,
+                new Color32(245, 237, 226, 245),
+                new Color32(255, 248, 236, 255),
+                new Color32(224, 219, 214, 140),
+                16,
+                new Color32(84, 74, 66, 255),
+                true);
+            advertisementBookAddPanel.transform.SetAsLastSibling();
+        }
+
+        private void BeginAdvertisementBookAddToShelf(int targetBookshelfIndex)
+        {
+            if (!isAdvertisementBookAddPanelOpen ||
+                bookshelfGenerator == null ||
+                targetBookshelfIndex < 0 ||
+                targetBookshelfIndex >= bookshelfGenerator.BookshelfCount)
+            {
+                return;
+            }
+
+            if (!CanUseBookshelfServerPlacement(targetBookshelfIndex))
+            {
+                ShowBookshelfServerPlacementPending();
+                RefreshAdvertisementBookAddPanel();
+                return;
+            }
+
+            pendingBookAddCatalogIndex = -1;
+            pendingBookAddBookshelfIndex = targetBookshelfIndex;
+            pendingBookAddCatalogItem = CreateSponsoredBookAddCatalogItem();
+            pendingBookAddOrientation = BookOrientation.Front;
+            pendingBookAddReadingStatus = App.Domain.ReadingStatus.Unread;
+            CloseAdvertisementBookAddPanel(false);
+            if (bookDetailPanel != null)
+            {
+                bookDetailPanel.SetActive(false);
+            }
+
+            ActiveDetailBook = null;
+            CloseActiveViewedBook();
+
+            if (targetBookshelfIndex != bookshelfGenerator.DisplayBookshelfIndex)
+            {
+                bookshelfGenerator.ShowBookshelf(targetBookshelfIndex);
+            }
+
+            if (pendingAdvertisementBookAddPlacementCoroutine != null)
+            {
+                StopCoroutine(pendingAdvertisementBookAddPlacementCoroutine);
+            }
+
+            pendingAdvertisementBookAddPlacementCoroutine = StartCoroutine(BeginAdvertisementBookAddPlacementWhenReady(targetBookshelfIndex));
+            RefreshHud();
+        }
+
+        private IEnumerator BeginAdvertisementBookAddPlacementWhenReady(int targetBookshelfIndex)
+        {
+            while (bookshelfGenerator != null && bookshelfGenerator.IsBookshelfSwitching)
+            {
+                yield return null;
+            }
+
+            pendingAdvertisementBookAddPlacementCoroutine = null;
+            if (pendingBookAddCatalogItem == null ||
+                bookshelfGenerator == null ||
+                targetBookshelfIndex < 0 ||
+                targetBookshelfIndex >= bookshelfGenerator.BookshelfCount)
+            {
+                ClearPendingBookAddSelection();
+                yield break;
+            }
+
+            if (bookshelfGenerator.DisplayBookshelfIndex != targetBookshelfIndex)
+            {
+                bookshelfGenerator.ShowBookshelf(targetBookshelfIndex);
+                while (bookshelfGenerator != null && bookshelfGenerator.IsBookshelfSwitching)
+                {
+                    yield return null;
+                }
+            }
+
+            if (bookshelfGenerator == null || bookshelfGenerator.DisplayBookshelfIndex != targetBookshelfIndex)
+            {
+                ShowBookshelfTransientStatus("책 추가 대기", "선택한 책장으로 이동한 뒤 다시 시도해 주세요.", true);
+                ClearPendingBookAddSelection();
+                RefreshHud();
+                yield break;
+            }
+
+            if (!CanOpenBookAddPanel())
+            {
+                ShowBookshelfTransientStatus("책 추가 대기", "책장을 조작할 수 있는 상태가 되면 다시 시도해 주세요.", true);
+                ClearPendingBookAddSelection();
+                RefreshHud();
+                yield break;
+            }
+
+            if (IsCatalogBookAlreadyOnActiveShelf(pendingBookAddCatalogItem))
+            {
+                ShowBookshelfTransientStatus("이미 추가된 책", GetCatalogBookDuplicateMessage(pendingBookAddCatalogItem), true);
+                ClearPendingBookAddSelection();
+                RefreshHud();
+                yield break;
+            }
+
+            isBookAddPlacementSelectionActive = true;
+            isBookAddPanelOpen = false;
+            isBookAddConfirmPanelOpen = false;
+            bookAddFeedbackMessage = "빈 칸을 클릭해 광고 책의 배치 위치를 선택하세요.";
+            RefreshHud();
+        }
+
+        private void ClearPendingBookAddSelection()
+        {
+            pendingBookAddCatalogIndex = -1;
+            pendingBookAddBookshelfIndex = -1;
+            pendingBookAddCatalogItem = null;
+        }
+
+        private static BookAddCatalogItem CreateSponsoredBookAddCatalogItem()
+        {
+            return new BookAddCatalogItem(
+                BookshelfSponsoredBook.Title,
+                BookshelfSponsoredBook.Author,
+                BookshelfSponsoredBook.Publisher,
+                BookshelfSponsoredBook.Description,
+                BookOrientation.Front,
+                null,
+                BookshelfSponsoredBook.Source,
+                BookshelfSponsoredBook.Isbn13,
+                BookshelfSponsoredBook.Isbn10,
+                BookshelfSponsoredBook.PublishedDate,
+                BookshelfSponsoredBook.CoverImageUrl,
+                BookshelfSponsoredBook.SourceUrl);
+        }
+
         private void ConfirmAddCatalogBookToShelf()
         {
             if (!CanOpenBookAddPanel() ||
@@ -8322,6 +8989,12 @@ namespace BookshelfPorting.Runtime
             }
 
             isBookAddPlacementSelectionActive = false;
+            if (pendingAdvertisementBookAddPlacementCoroutine != null)
+            {
+                StopCoroutine(pendingAdvertisementBookAddPlacementCoroutine);
+                pendingAdvertisementBookAddPlacementCoroutine = null;
+            }
+
             bookshelfGenerator?.HideBookAddPlacementGuide();
             pendingBookAddCatalogIndex = -1;
             pendingBookAddBookshelfIndex = -1;
@@ -11362,6 +12035,8 @@ namespace BookshelfPorting.Runtime
                    !isBookshelfDesignPanelOpen &&
                    !isBookshelfManagePanelOpen &&
                    !isBookshelfUnsavedConfirmPanelOpen &&
+                   !isBookCoverSkinPanelOpen &&
+                   !isAdvertisementBookAddPanelOpen &&
                    !isDeleteResultDialogOpen &&
                    (state == null || (!state.IsViewingBook && state.ActiveDraggedBook == null));
         }
@@ -11411,6 +12086,16 @@ namespace BookshelfPorting.Runtime
                    CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
                    (ActiveDetailBook == null || !ActiveDetailBook.isDecoration) &&
                    (state == null || state.ActiveViewedBook == null || !state.ActiveViewedBook.isDecoration);
+        }
+
+        private bool CanAddAdvertisementBookFromDetail(BookEntity book)
+        {
+            return BookshelfSponsoredBook.IsAdvertisementBook(book) &&
+                   CanMutateOwnedBookshelf() &&
+                   CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                   bookshelfGenerator != null &&
+                   bookshelfGenerator.BookshelfCount > 0 &&
+                   !IsBookshelfEditMode;
         }
 
         private void RefreshBookshelfIndexDots(int displayIndex, int totalCount)
@@ -11725,8 +12410,12 @@ namespace BookshelfPorting.Runtime
             var averageRating = ResolveDisplayAverageRating(meta);
             var totalLikeCount = ResolveDisplayLikeCount(meta);
             var hasReport = !string.IsNullOrWhiteSpace(meta.reportBody);
-            var canDeleteBook = CanUseOwnerBookActions();
+            var isAdvertisementBook = BookshelfSponsoredBook.IsAdvertisementBook(ActiveDetailBook);
+            var canUseOwnerActions = CanUseOwnerBookActions();
+            var canAddAdvertisementBook = CanAddAdvertisementBookFromDetail(ActiveDetailBook);
+            var canDeleteBook = canUseOwnerActions && !isAdvertisementBook;
             var viewModel = new BookDetailPanelViewModel(
+                BuildBookDetailPanelIdentityKey(ActiveDetailBook),
                 TryGetBookDisplayTitle(ActiveDetailBook),
                 $"저자      {ResolveFallbackText(meta.author, "저자 미상")}\n" +
                 $"출판사    {ResolveFallbackText(meta.publisher, "출판사 미상")}\n" +
@@ -11737,8 +12426,37 @@ namespace BookshelfPorting.Runtime
                 ResolveFallbackText(meta.description, meta.memoPreview),
                 hasReport,
                 canDeleteBook,
+                canUseOwnerActions,
+                canAddAdvertisementBook,
+                meta.isLiked,
+                isAdvertisementBook,
                 pendingDeleteBook == ActiveDetailBook);
             bookDetailPanelController.Refresh(viewModel);
+        }
+
+        private static string BuildBookDetailPanelIdentityKey(BookEntity book)
+        {
+            if (book == null)
+            {
+                return string.Empty;
+            }
+
+            if (!string.IsNullOrWhiteSpace(book.bookshelfItemId))
+            {
+                return $"item:{book.bookshelfItemId}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(book.userBookId))
+            {
+                return $"user-book:{book.userBookId}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(book.bookId))
+            {
+                return $"book:{book.bookId}";
+            }
+
+            return $"runtime:{book.GetInstanceID()}";
         }
 
         private void RefreshBookFocusToolbar()
@@ -11756,13 +12474,15 @@ namespace BookshelfPorting.Runtime
                           !isBookPlacementEditorOpen &&
                           !isBookReviewWritePanelOpen &&
                           !isBookReportWritePanelOpen &&
-                          !isBookReportReadPanelOpen;
+                          !isBookReportReadPanelOpen &&
+                          !isBookCoverSkinPanelOpen &&
+                          !isAdvertisementBookAddPanelOpen;
             var canUseOwnerActions = canShow && CanUseOwnerBookActions();
             bookFocusToolbarPanel.SetActive(canUseOwnerActions);
             if (bookFocusWriteReportButton != null)
             {
-                bookFocusWriteReportButton.gameObject.SetActive(canUseOwnerActions);
-                bookFocusWriteReportButton.interactable = canUseOwnerActions;
+                bookFocusWriteReportButton.gameObject.SetActive(false);
+                bookFocusWriteReportButton.interactable = false;
             }
 
             if (bookFocusRatingText != null)
@@ -11777,17 +12497,16 @@ namespace BookshelfPorting.Runtime
             }
 
             var activeBook = state.ActiveViewedBook;
+            var canChangeCoverSkin = CanChangeCoverSkin(activeBook);
             var meta = dataStore != null ? dataStore.GetOrCreateBookMeta(activeBook) : null;
             if (meta != null)
             {
                 SetButtonLabel(bookFocusDetailButton, GetReadingStatusLabel(meta.readingStatus));
-                SetButtonLabel(bookFocusRatingButton, "리뷰 작성");
-                SetButtonLabel(bookFocusReportButton, meta.isLiked ? "좋아요 취소" : "좋아요");
+                SetButtonLabel(bookFocusRatingButton, "표지 변경");
             }
             else
             {
-                SetButtonLabel(bookFocusRatingButton, "리뷰 작성");
-                SetButtonLabel(bookFocusReportButton, "좋아요");
+                SetButtonLabel(bookFocusRatingButton, "표지 변경");
             }
 
             StyleHudButton(
@@ -11810,12 +12529,13 @@ namespace BookshelfPorting.Runtime
                 {
                     StyleHudButton(
                         bookFocusRatingButton,
-                        meta != null && meta.ownerRating > 0f ? new Color32(197, 128, 67, 245) : new Color32(255, 255, 255, 235),
-                        meta != null && meta.ownerRating > 0f ? new Color32(214, 145, 82, 255) : new Color32(241, 235, 230, 255),
+                        canChangeCoverSkin ? new Color32(238, 248, 241, 235) : new Color32(224, 219, 214, 140),
+                        canChangeCoverSkin ? new Color32(247, 255, 250, 255) : new Color32(224, 219, 214, 140),
                         new Color32(224, 219, 214, 140),
                         14,
-                        meta != null && meta.ownerRating > 0f ? Color.white : new Color32(63, 47, 38, 255),
+                        canChangeCoverSkin ? new Color32(53, 94, 73, 255) : new Color32(124, 111, 101, 190),
                         true);
+                    bookFocusRatingButton.interactable = canChangeCoverSkin;
                 }
             }
             if (openBookPlacementEditorButton != null)
@@ -11841,31 +12561,13 @@ namespace BookshelfPorting.Runtime
 
             if (bookFocusReportButton != null)
             {
-                bookFocusReportButton.gameObject.SetActive(canUseOwnerActions);
-                bookFocusReportButton.interactable = canUseOwnerActions;
-                if (canUseOwnerActions)
-                {
-                    StyleHudButton(
-                        bookFocusReportButton,
-                        meta != null && meta.isLiked ? new Color32(173, 122, 79, 245) : new Color32(238, 248, 241, 235),
-                        meta != null && meta.isLiked ? new Color32(151, 104, 64, 255) : new Color32(247, 255, 250, 255),
-                        new Color32(224, 219, 214, 140),
-                        14,
-                        meta != null && meta.isLiked ? Color.white : new Color32(53, 94, 73, 255),
-                        meta != null && meta.isLiked);
-                }
+                bookFocusReportButton.gameObject.SetActive(false);
+                bookFocusReportButton.interactable = false;
             }
             if (bookFocusWriteReportButton != null)
             {
-                SetButtonLabel(bookFocusWriteReportButton, meta != null && !string.IsNullOrWhiteSpace(meta.reportBody) ? "독후감 보기" : "독후감 작성");
-                StyleHudButton(
-                    bookFocusWriteReportButton,
-                    new Color32(88, 133, 117, 245),
-                    new Color32(105, 150, 132, 255),
-                    new Color32(224, 219, 214, 140),
-                    15,
-                    Color.white,
-                    true);
+                bookFocusWriteReportButton.gameObject.SetActive(false);
+                bookFocusWriteReportButton.interactable = false;
             }
 
             bookFocusToolbarPanel.transform.SetAsLastSibling();
@@ -13199,6 +13901,8 @@ namespace BookshelfPorting.Runtime
                                 !isDraggingBook &&
                                 !isBookshelfSwitching &&
                                 !isBookPlacementEditorOpen &&
+                                !isBookCoverSkinPanelOpen &&
+                                !isAdvertisementBookAddPanelOpen &&
                                 (ActiveDetailBook != null || state.ActiveViewedBook != null);
 
             if (openBookPlacementEditorButton != null)
@@ -13810,8 +14514,141 @@ namespace BookshelfPorting.Runtime
             }
 
             var panelTransform = externalDashboardPanel.transform;
-            DashboardPanelLayout.Mount(panelTransform, dynamicHitArea.transform);
+            if (panelTransform.parent != null)
+            {
+                panelTransform.SetParent(null, true);
+            }
+
+            // Position 결정 — visual skin 이 attach 돼 있으면 그 renderer bounds.center 기준,
+            // 없으면 (native dashboard) hitArea + ExternalDashboardPanelSurfaceOffset.
+            //
+            // visual skin 케이스 (vintage_dashboard 등):
+            //   - finalPosition = visualBounds.center + frontNormal * (halfThickness + tinyOffset)
+            //   - frontNormal = hitArea.right (= hitArea local +X in world — board outward axis).
+            //     hitArea collider 가 (size.z=width, .y=height, .x=thickness) 컨벤션으로 setup 됐고
+            //     native dashboard 에서 ExternalDashboardPanelSurfaceOffset.x>0 이 작동했으므로
+            //     local +X 가 outward 방향.
+            //   - in-plane(Y/Z 평면) 위치도 visualBounds.center 기준으로 정렬 → screen 이 visual
+            //     mesh 정중앙에 위치 (좌우/상하 치우침 없음). 사용자 요구 "screen center == visual center".
+            //   - halfThickness 는 hitArea.right axis 에 사영한 bounds 두께의 절반 — skin 의 두께가
+            //     얼마든 panel 이 정확히 front face 바로 앞에 위치.
+            //   - tinyOffset (3mm) — z-fight 방지 최소 거리. 사용자 요구 "붕 뜬 느낌 제거".
+            Transform visualSkin = FindDashboardVisualSkin(dynamicHitArea.transform);
+            Vector3 hitAreaRight = dynamicHitArea.transform.right;
+            Vector3 finalPosition;
+            bool usedVisualSkin = false;
+            Bounds visualBounds = new Bounds();
+            float halfThickness = 0f;
+            if (visualSkin != null && TryComputeRendererBounds(visualSkin.gameObject, out visualBounds))
+            {
+                Vector3 boundsSize = visualBounds.size;
+                halfThickness = (Mathf.Abs(boundsSize.x * hitAreaRight.x)
+                                + Mathf.Abs(boundsSize.y * hitAreaRight.y)
+                                + Mathf.Abs(boundsSize.z * hitAreaRight.z)) * 0.5f;
+                finalPosition = visualBounds.center + hitAreaRight * (halfThickness + ExternalDashboardPanelTinyForwardOffset);
+                usedVisualSkin = true;
+            }
+            else
+            {
+                finalPosition = dynamicHitArea.transform.TransformPoint(ExternalDashboardPanelSurfaceOffset);
+            }
+
+            panelTransform.position = finalPosition;
+            panelTransform.rotation = dynamicHitArea.transform.rotation * ExternalDashboardPanelLocalRotation;
+            var panelScale = ResolveExternalDashboardPanelScale(dynamicHitArea);
+            panelTransform.localScale = new Vector3(-panelScale, panelScale, panelScale);
+
+            // Log throttle — 첫 호출 + skin attach/detach 상태 변경 시 1회씩.
+            if (!externalDashboardPanelMountLogged || usedVisualSkin != externalDashboardPanelMountLastHadSkin)
+            {
+                float distFromVisualCenter = usedVisualSkin ? Vector3.Distance(panelTransform.position, visualBounds.center) : -1f;
+                Debug.Log($"[ExternalDashboardPanel] MountExternalDashboardPanel result — " +
+                          $"usedVisualSkin={usedVisualSkin} " +
+                          (usedVisualSkin
+                              ? $"visualBounds.center={visualBounds.center} visualBounds.size={visualBounds.size} halfThickness={halfThickness:F4} tinyOffset={ExternalDashboardPanelTinyForwardOffset:F4} "
+                              : $"fallback=hitArea+SurfaceOffset({ExternalDashboardPanelSurfaceOffset}) ") +
+                          $"frontNormal(hitArea.right)={hitAreaRight} " +
+                          $"finalPanelWorldPosition={panelTransform.position} " +
+                          $"panel.distFromVisualCenter={distFromVisualCenter:F4} " +
+                          $"panel.forward={panelTransform.forward} " +
+                          $"panel.rotation.eulerAngles={panelTransform.rotation.eulerAngles} " +
+                          $"panel.localScale={panelTransform.localScale} " +
+                          $"hitArea.position={dynamicHitArea.transform.position} " +
+                          $"hitArea.up(local+Y)={dynamicHitArea.transform.up} hitArea.forward(local+Z)={dynamicHitArea.transform.forward} " +
+                          $"panelScale={panelScale:F5}");
+                externalDashboardPanelMountLogged = true;
+                externalDashboardPanelMountLastHadSkin = usedVisualSkin;
+            }
             return true;
+        }
+
+        // ThemeDashboardVisual 검색 — hitArea 의 parent (GuestbookBoard 기본) → hitArea 자신 →
+        // scene 전체 순. visual skin 이 attach 안 됐으면 null.
+        private static Transform FindDashboardVisualSkin(Transform hitAreaTransform)
+        {
+            if (hitAreaTransform == null) return null;
+
+            var parent = hitAreaTransform.parent;
+            if (parent != null)
+            {
+                var skin = parent.Find(DashboardVisualSkinChildName);
+                if (skin != null) return skin;
+            }
+            var directChild = hitAreaTransform.Find(DashboardVisualSkinChildName);
+            if (directChild != null) return directChild;
+
+            var all = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] != null && all[i].gameObject.name == DashboardVisualSkinChildName)
+                {
+                    return all[i];
+                }
+            }
+            return null;
+        }
+
+        // Combined renderer world-AABB bounds. ParticleSystem/Trail/Line / 비활성 renderer / 빈
+        // bounds 제외. 최소 1개 valid renderer 가 있으면 true.
+        private static bool TryComputeRendererBounds(GameObject go, out Bounds bounds)
+        {
+            bounds = new Bounds();
+            if (go == null) return false;
+            var renderers = go.GetComponentsInChildren<Renderer>(true);
+            if (renderers == null || renderers.Length == 0) return false;
+            bool hasAny = false;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null || !r.enabled) continue;
+                if (!r.gameObject.activeInHierarchy) continue;
+                if (r is ParticleSystemRenderer || r is TrailRenderer || r is LineRenderer) continue;
+                var b = r.bounds;
+                if (b.size.sqrMagnitude < 1e-8f) continue;
+                if (!hasAny) { bounds = b; hasAny = true; }
+                else { bounds.Encapsulate(b); }
+            }
+            return hasAny;
+        }
+
+        private static float ResolveExternalDashboardPanelScale(GuestbookBoardHitArea dynamicHitArea)
+        {
+            if (dynamicHitArea == null)
+            {
+                return ExternalDashboardPanelFallbackWorldScale;
+            }
+
+            var collider = dynamicHitArea.GetComponent<BoxCollider>();
+            if (collider == null)
+            {
+                return ExternalDashboardPanelFallbackWorldScale;
+            }
+
+            var usableWidth = Mathf.Max(0.1f, collider.size.z - ExternalDashboardPanelHorizontalInset);
+            var usableHeight = Mathf.Max(0.1f, collider.size.y - ExternalDashboardPanelVerticalInset);
+            var scaleByWidth = usableWidth / ExternalDashboardPanelReferenceSize.x;
+            var scaleByHeight = usableHeight / ExternalDashboardPanelReferenceSize.y;
+            return Mathf.Min(scaleByWidth, scaleByHeight);
         }
 
         private void SeedGuestbookNotes()
@@ -14761,6 +15598,19 @@ namespace BookshelfPorting.Runtime
                 SetBookReviewStatus(string.Empty);
             }
 
+            if (bookCoverSkinPanel != null && bookCoverSkinPanel != except)
+            {
+                bookCoverSkinPanel.SetActive(false);
+                isBookCoverSkinPanelOpen = false;
+                activeCoverSkinBook = null;
+            }
+
+            if (advertisementBookAddPanel != null && advertisementBookAddPanel != except)
+            {
+                advertisementBookAddPanel.SetActive(false);
+                isAdvertisementBookAddPanelOpen = false;
+            }
+
             if (except != bookReportWritePanel && except != bookReportReadPanel)
             {
                 activeReportBook = null;
@@ -15286,7 +16136,18 @@ namespace BookshelfPorting.Runtime
             notebookScreenController.Configure(
                 screenTransform,
                 Camera.main,
-                () => notebookScreenController.ReturnToScreenSaver(),
+                // onCloseDashboard — dashboard header 의 X (NotebookToolkitController.cs:1134) 콜백.
+                // 사용자 의도: "X 한 번 = 노트북 focus 종료 = 메인 view 복귀". 이전 wiring 은
+                // ReturnToScreenSaver 만 호출해 노트북 focus 안에 머물면서 UI 만 screen saver 로
+                // 전환했는데, screen saver 의 ad 이미지를 다시 누르면 FocusNotebook → ActivateDashboard
+                // 로 되돌아가 사용자 시각에서 "X → 대시보드로 다시 이동" 으로 보이는 회귀가 발생.
+                // ReturnToScreenSaver 를 먼저 호출해 다음 진입 시 screen saver 부터 보이도록 reset
+                // 한 뒤 CloseNotebookFocus 로 camera 를 메인 view 로 빼낸다.
+                () =>
+                {
+                    notebookScreenController.ReturnToScreenSaver();
+                    CloseNotebookFocus();
+                },
                 CloseNotebookFocus,
                 FocusNotebook,
                 searchNotebookBooksUseCase,

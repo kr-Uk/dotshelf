@@ -131,6 +131,7 @@ public class BookshelfService {
                 .displayOrder(displayOrder)
                 .build());
         createDefaultSections(bookshelf.getId());
+        space.increaseBookshelfCount();
         userService.completeOnboardingIfNeeded(currentUserId);
         return BookshelfResponse.from(bookshelf);
     }
@@ -153,7 +154,10 @@ public class BookshelfService {
     @Transactional
     public void delete(Long userId, Long bookshelfId) {
         Long currentUserId = userService.requireUserId(userId);
-        getOwnedBookshelf(currentUserId, bookshelfId).delete();
+        Bookshelf bookshelf = getOwnedBookshelf(currentUserId, bookshelfId);
+        bookshelf.delete();
+        Space space = spaceService.getSpaceEntity(bookshelf.getSpaceId());
+        space.decreaseBookshelfCount();
     }
 
     @Transactional

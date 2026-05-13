@@ -13,6 +13,31 @@ namespace BookshelfPorting.Runtime
         Notebook
     }
 
+    // 노트북 포커스 진입 시 camera pose 산출 방식. 테마별 desk skin 의 Screen 변환 양상이 달라
+    // 같은 식이 모든 case 에 맞지 않음 — 테마/desk entry 별로 골라 쓰기 위한 mode.
+    //
+    //   ScreenAnchorBaked       — 기존 (vintage / 기본 procedural laptop) 경로. Screen 자식
+    //                             CameraFocusPoint (Screen-local (0, -0.58, 0.024)) 의 prefab-baked
+    //                             offset 을 그대로 camera position 으로 사용. laptop 슬랜트 기준이라
+    //                             native laptop 화면 정면 framing 에 fit. monitor 모드처럼 Screen 이
+    //                             upright 으로 회전된 desk skin 에서는 camera 가 화면 아래로 떨어져
+    //                             올려다보는 어색한 각도가 됨 — 그런 desk 는 ScreenForwardGeometry.
+    //
+    //   ScreenForwardGeometry   — DeepSea monitor 모드용 신규 경로. screen.forward × notebookFocusDistance
+    //                             단위 vector × world distance 로 camera 배치 → Screen 의 lossyScale /
+    //                             position / rotation 이 어떻게 바뀌어도 일정한 체감 거리/각도.
+    //                             AlignNotebookScreenToMonitor 가 Screen.rotation 을 monitor 정면과
+    //                             align 시켜 둔 경우에만 의도대로 작동.
+    //
+    // 향후 테마 추가 시 — 테이블 높이/laptop slant 가 native 와 비슷하면 ScreenAnchorBaked, monitor
+    // 처럼 upright + scale 변화가 크면 ScreenForwardGeometry. 디자이너가 desk 카탈로그 entry 의
+    // notebookFocusCameraMode 필드로 선택.
+    public enum NotebookFocusCameraMode
+    {
+        ScreenAnchorBaked = 0,
+        ScreenForwardGeometry = 1,
+    }
+
     public class CameraController : MonoBehaviour
     {
         [SerializeField] private Camera targetCamera = null;
@@ -26,7 +51,14 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float whiteboardFieldOfView = 38f;
         [SerializeField] private float whiteboardFocusDistance = 1.45f;
         [SerializeField] private float notebookFieldOfView = 24f;
-        [SerializeField] private float notebookTransitionDuration = 0.75f;
+        [Tooltip("노트북/모니터 화면 정면에서 camera 까지의 world distance (meter). 화면 기하학에서 직접 derive — " +
+                 "Screen.lossyScale 변화 (DeepSea monitor 모드 등) 에도 같은 체감 거리 유지. 음수 입력 시 camera 가 " +
+                 "screen.forward 반대편에 배치되므로 GLB convention 따라 부호 조정 가능.")]
+        [SerializeField] private float notebookFocusDistance = 0.45f;
+        [Tooltip("노트북 focus 진입 / 메인 복귀 transition duration (sec). 책장/대시보드의 moveDuration (0.4s) " +
+                 "보다 길어 화면 안으로 부드럽게 끌려들어가는 cinematic 체감. 너무 크면 (>1.2s) 무거워지고 너무 " +
+                 "작으면 (<0.3s) 급해 보임. 디자이너 튜닝 가능.")]
+        [SerializeField] private float notebookTransitionDuration = 0.85f;
         [SerializeField] private float frontalDefaultFieldOfView = 60f;
         [SerializeField] private float frontalDefaultZoomDistance = 3.25f;
         [SerializeField] private float frontalMinZoomDistance = 0.8f;
@@ -390,7 +422,14 @@ namespace BookshelfPorting.Runtime
             return true;
         }
 
+        // 무인자 오버로드 — 기존 호출자 호환. mode 미지정 시 ScreenAnchorBaked (vintage / 기본
+        // procedural laptop) 로 진입. 새 호출자는 mode 를 명시.
         public void MoveToNotebookScreen(Transform screenTransform)
+        {
+            MoveToNotebookScreen(screenTransform, NotebookFocusCameraMode.ScreenAnchorBaked);
+        }
+
+        public void MoveToNotebookScreen(Transform screenTransform, NotebookFocusCameraMode mode)
         {
             if (screenTransform == null)
             {
@@ -398,20 +437,53 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            // Snapshot the screen target before events/UI updates run, so the camera
-            // transition never chases a Transform that may be reconfigured this frame.
+            if (!EnsureCameraResolved())
+            {
+                return;
+            }
+
+            // Snapshot the screen geometry before events/UI updates run — camera transition must never
+            // re-read a Transform that may be reconfigured during fade.
             var screenCenterTransform = screenTransform.Find("ScreenCenter");
-            var cameraFocusPoint = screenTransform.Find("CameraFocusPoint");
-            var screenCenter = screenCenterTransform != null
+            var lookTarget = screenCenterTransform != null
                 ? screenCenterTransform.position
                 : screenTransform.TransformPoint(new Vector3(0f, 0.068f, 0.014f));
-            var cameraPosition = cameraFocusPoint != null
-                ? cameraFocusPoint.position
-                : screenTransform.TransformPoint(new Vector3(0f, -0.58f, 0.024f));
-            var cameraRotation = Quaternion.LookRotation((screenCenter - cameraPosition).normalized, Vector3.up);
+
+            Vector3 cameraPosition;
+            if (mode == NotebookFocusCameraMode.ScreenForwardGeometry)
+            {
+                // DeepSea monitor 모드 — screen.forward × world distance. AlignNotebookScreenToMonitor
+                // 가 Screen.rotation 을 monitor 정면과 align 해 두므로 screen.forward 가 display normal.
+                // 단위 vector × distance 라 Screen.lossyScale 변화에 영향 안 받음.
+                var distance = Mathf.Max(0.05f, notebookFocusDistance);
+                cameraPosition = lookTarget + screenTransform.forward * distance;
+            }
+            else
+            {
+                // ScreenAnchorBaked (default / vintage / 기본 procedural laptop) — Screen 자식
+                // CameraFocusPoint 의 prefab-baked offset 을 그대로 camera position 으로 사용.
+                // laptop 슬랜트 기준이라 native laptop 화면 정면 framing 에 fit. CameraFocusPoint
+                // 가 없으면 BookshelfGenerator 의 native offset (0, -0.58, 0.024) 로 fallback.
+                var cameraFocusPoint = screenTransform.Find("CameraFocusPoint");
+                cameraPosition = cameraFocusPoint != null
+                    ? cameraFocusPoint.position
+                    : screenTransform.TransformPoint(new Vector3(0f, -0.58f, 0.024f));
+            }
+
+            var lookDirection = lookTarget - cameraPosition;
+            if (lookDirection.sqrMagnitude <= 0.0001f)
+            {
+                // degenerate (screen 기하학이 비정상) — 안전한 anchor fallback.
+                MoveToMode(CameraMode.Notebook);
+                return;
+            }
+
+            var cameraRotation = Quaternion.LookRotation(lookDirection.normalized, Vector3.up);
 
             CurrentMode = CameraMode.Notebook;
             ModeChanged?.Invoke(CameraMode.Notebook);
+            // notebookTransitionDuration 으로 entry — 책장/대시보드 moveDuration (0.4s) 보다 살짝 길게 (기본 0.6s)
+            // 해서 화면으로 끌려들어가는 부드러운 체감. SmoothStep easing 은 StepTransition 에서 공통 적용.
             StartSingleSegmentTransition(cameraPosition, cameraRotation, notebookFieldOfView, notebookTransitionDuration);
         }
 
@@ -567,6 +639,8 @@ namespace BookshelfPorting.Runtime
 
         private void StartNotebookReturnTransition(Vector3 targetPosition, Quaternion targetRotation, float targetFov)
         {
+            // Notebook → Overview 복귀도 entry 와 동일한 notebookTransitionDuration 사용 — 진입/복귀 체감
+            // 속도 일관성.
             StartSingleSegmentTransition(targetPosition, targetRotation, targetFov, notebookTransitionDuration);
         }
 

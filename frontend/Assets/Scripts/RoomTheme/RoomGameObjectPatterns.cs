@@ -12,13 +12,27 @@ namespace Dotshelf.Scripts.RoomTheme
         // RoomEditModeController.IsUnderNotebookStation 이 부모 체인 탐색 시 이 상수와 비교.
         // (MR #157 review simonjiho #1: hardcoded 문자열 통일 — prefab 이름 변경 시 silent break 방지.)
         public const string NotebookStation = "NotebookStation";
+        // 노트북 본체 GameObject 이름 — procedural (BookshelfGenerator.BuildNotebookStation
+        // line 4199) 과 prefab (NotebookStation.prefab line 4029) 모두 "Notebook". Desk
+        // 패턴이 "Desk" parent 와 매칭되어 자식 renderer 를 walk 할 때, 이 이름의 ancestor 가
+        // 있으면 hide skip — 노트북 시각 보존.
+        //
+        // 왜 필요한가: 실제 hierarchy 는 NotebookStation > Desk > Notebook 이라 IsUnderNotebookStation
+        // 이 renderer 에서 matchedTransform(=Desk) 까지만 올라가면 NotebookStation 에 못 닿음.
+        // "Notebook" 이름 자체로 보호 — Desk 가 matchedTransform 일 때도 laptop 보존됨.
+        public const string Notebook = "Notebook";
         public static readonly string[] Wall = { "LeftWall", "RightWall", "BackWall", "FrontWall" };
         public static readonly string[] Bookshelf = { "BookshelfRoot", "Bookshelf_" };
-        // **NotebookStation 은 Desk 매칭에서 의도적으로 제외**. 노트북은 고정 interactive 오브젝트
-        // (클릭 시 dashboard UI 진입) 라 Desk 테마 mesh swap 의 영향을 받으면 안 됨. 과거 매칭에
-        // 포함됐을 땐 ApplyCategoryMeshSwap 가 NotebookStation 자식 renderer 까지 disable 해서
-        // 편집 모드 진입 시 노트북이 사라지거나 다른 형태로 보이는 회귀 발생.
-        public static readonly string[] Desk = { "DeskRoot", "Desk_" };
+        // Desk pattern — procedural BookshelfGenerator (line 4191) 과 prefab NotebookStation.prefab
+        // (line 2357) 모두 "Desk" 라는 이름을 쓴다. 이전 패턴 "DeskRoot"/"Desk_" 는 실제 이름 어느
+        // 것에도 매칭되지 않아 ApplyCategoryMeshSwap 가 vintage_table/GoodVibes_Desk mesh swap 을
+        // silent skip 하는 회귀 (270512 vintage 테마 적용 시 책상 안 바뀜 보고). prefix 매칭이라
+        // "Desk" 하나로 "Desk"/"Desktop"/"DeskLegA-D"/"DeskRoot"/"Desk_*" 모두 cover.
+        //
+        // 노트북 (laptop) 은 Desk 자식인 "Notebook" GameObject 로 들어 있어 본 pattern 이 자식 walk
+        // 시 같이 잡힌다. RoomEditModeController.IsUnderNotebookStation 이 Notebook ancestor 검사로
+        // hide skip 처리.
+        public static readonly string[] Desk = { "Desk" };
         public static readonly string[] Dashboard = { "DashboardScreenPanel", "GuestbookBoard", "Dashboard_" };
 
         // BackWall 자체는 BookshelfGenerator.BuildBackWallAlcove 가 책장 alcove 때문에

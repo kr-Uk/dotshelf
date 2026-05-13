@@ -35,6 +35,7 @@ import com.dotshelf.domain.bookshelf.entity.BookshelfItem;
 import com.dotshelf.domain.bookshelf.repository.BookshelfItemRepository;
 import com.dotshelf.domain.bookshelf.service.BookshelfService;
 import com.dotshelf.domain.notification.event.NotificationEvents.BookAdded;
+import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
@@ -57,6 +58,9 @@ class BookServiceTest {
 
     @Mock
     private BookshelfService bookshelfService;
+
+    @Mock
+    private SpaceService spaceService;
 
     @Mock
     private UserService userService;
@@ -232,6 +236,7 @@ class BookServiceTest {
         given(userBookRepository.findByUserIdAndBookId(1L, 10L)).willReturn(Optional.empty());
         given(userBookRepository.save(any(UserBook.class))).willReturn(userBook);
         given(bookshelfItemRepository.save(any(BookshelfItem.class))).willReturn(item);
+        given(spaceService.findOrCreateMySpace(1L)).willReturn(TestFixtures.space(1L, 1L));
         ArgumentCaptor<BookAdded> eventCaptor = ArgumentCaptor.forClass(BookAdded.class);
 
         var response = bookService.addToShelf(
@@ -314,6 +319,7 @@ class BookServiceTest {
         given(userBookRepository.findByUserIdAndBookId(1L, 10L)).willReturn(Optional.empty());
         given(userBookRepository.save(any(UserBook.class))).willReturn(userBook);
         given(bookshelfItemRepository.save(any(BookshelfItem.class))).willReturn(item);
+        given(spaceService.findOrCreateMySpace(1L)).willReturn(TestFixtures.space(1L, 1L));
 
         var response = bookService.addKakaoBookToShelf(
                 1L,
@@ -356,6 +362,7 @@ class BookServiceTest {
         given(userBookRepository.findByUserIdAndBookId(1L, 11L)).willReturn(Optional.empty());
         given(userBookRepository.save(any(UserBook.class))).willReturn(userBook);
         given(bookshelfItemRepository.save(any(BookshelfItem.class))).willReturn(item);
+        given(spaceService.findOrCreateMySpace(1L)).willReturn(TestFixtures.space(1L, 1L));
         ArgumentCaptor<Book> bookCaptor = ArgumentCaptor.forClass(Book.class);
 
         var response = bookService.addKakaoBookToShelf(
@@ -416,6 +423,7 @@ class BookServiceTest {
         given(userService.requireUserId(1L)).willReturn(1L);
         given(userBookRepository.findById(20L)).willReturn(Optional.of(userBook));
         given(bookshelfItemRepository.findByUserBookIdAndStatus(20L, "ACTIVE")).willReturn(Optional.of(item));
+        given(spaceService.findOrCreateMySpace(1L)).willReturn(TestFixtures.space(1L, 1L));
 
         var response = bookService.archive(1L, 20L);
 
@@ -431,6 +439,7 @@ class BookServiceTest {
         given(userService.requireUserId(1L)).willReturn(1L);
         given(userBookRepository.findById(20L)).willReturn(Optional.of(userBook));
         given(bookshelfItemRepository.findByUserBookIdAndStatus(20L, "ACTIVE")).willReturn(Optional.of(item));
+        given(spaceService.findOrCreateMySpace(1L)).willReturn(TestFixtures.space(1L, 1L));
 
         bookService.delete(1L, 20L);
 

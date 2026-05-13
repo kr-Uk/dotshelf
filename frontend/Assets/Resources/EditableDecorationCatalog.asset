@@ -202,6 +202,13 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 1
     ScaleMultiplierOverride: 0
+  - DisplayName: Vintage Dashboard
+    Prefab: {fileID: 7983643115131895607, guid: aa3ab19392bb02d468db34d43ed9d050, type: 3}
+    SourceAssetPath: Assets/Arts/Models/vintage_dashboard.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 11
+    ScaleMultiplierOverride: 0
   - DisplayName: Vintage Frame
     Prefab: {fileID: -8098169881513260187, guid: 0b1e54b06c039a24cb76c630e502d0f3, type: 3}
     SourceAssetPath: Assets/Arts/Models/vintage_frame.glb
@@ -209,9 +216,30 @@ MonoBehaviour:
     AllowRotation: 0
     Kind: 11
     ScaleMultiplierOverride: 0
+  - DisplayName: Vintage Lamp Mint
+    Prefab: {fileID: -8098169881513260187, guid: fcb105d263d32fc458bfd05601e56cac, type: 3}
+    SourceAssetPath: Assets/Arts/Models/vintage_lamp_mint.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 7
+    ScaleMultiplierOverride: 0
+  - DisplayName: Vintage Rug
+    Prefab: {fileID: -8098169881513260187, guid: 1b2b2fbcd3d98ee4085a704b94c17eae, type: 3}
+    SourceAssetPath: Assets/Arts/Models/vintage_rug.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 6
+    ScaleMultiplierOverride: 0
   - DisplayName: Vintage Table
     Prefab: {fileID: -8098169881513260187, guid: a2b781486c47bc348a186474f5773a08, type: 3}
     SourceAssetPath: Assets/Arts/Models/vintage_table.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 1
+    ScaleMultiplierOverride: 0
+  - DisplayName: Vintage Table Mini
+    Prefab: {fileID: -8098169881513260187, guid: 2ea81d849b8d72b47a1290a0e09f53f4, type: 3}
+    SourceAssetPath: Assets/Arts/Models/vintage_table_mini.glb
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 1

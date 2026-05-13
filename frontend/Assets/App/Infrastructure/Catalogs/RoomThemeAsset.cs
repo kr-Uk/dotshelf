@@ -19,6 +19,35 @@ namespace App.Infrastructure.Catalogs
     }
 
     /// <summary>
+    /// 테마 적용 시 "이 자리에 들어갈 종류" 식별자. 정책: 같은 슬롯에 이미 다른 오브젝트가
+    /// 있으면 교체, 슬롯과 무관한 사용자 placement 는 보존.
+    ///
+    /// CustomizationCategory(어디에 놓는가) / DecorationObjectKind(무엇인가) 와 직교 —
+    /// 같은 Kind=Desk 가구라도 테마가 채워야 하는 자리가 다르면 별개 슬롯으로 잡힌다
+    /// (예: vintage_table=Table 슬롯 vs vintage_table_mini=TableMini 슬롯).
+    ///
+    /// None 은 "슬롯 의미 없음" — 보존 정책에서 매칭 대상 아님. 기존 테마 asset 가
+    /// 마이그레이션되기 전까지는 None 으로 직렬화되어 backward compatible.
+    /// </summary>
+    public enum ThemeSlot
+    {
+        None = 0,
+        Shelf,
+        Table,
+        TableMini,
+        Lamp,
+        Frame,
+        Rug,
+        Bed,
+        Window,
+        Plant,
+        // Dashboard (GuestbookBoard) 자체는 항시 존재 — placedItemsRoot 가 아닌 functional
+        // dashboard root (GuestbookBoard/DashboardScreenPanel) 자식 "visual skin" 으로 attach.
+        // DashboardVisualSkinApplier 가 처리, ThemeSlot.Shelf 와 동일 정책.
+        Dashboard,
+    }
+
+    /// <summary>
     /// 테마 적용 시 자동으로 set 할 카테고리별 default entry assetId.
     /// 예: 산뜻 테마에 (Desk, 201) 등록하면 테마 적용 시 DeskCatalog.assetId=201 entry
     /// (GoodVibes_Desk) 가 자동으로 swap. 사용자가 추후 다른 entry 선택하면 그것이 우선.
@@ -53,6 +82,19 @@ namespace App.Infrastructure.Catalogs
         [SerializeField] private Vector3 localScale = Vector3.one;
         [SerializeField] private string anchorTag;
 
+        // 슬롯 식별자 — 테마 교체 정책의 1차 매칭 키. 같은 슬롯에 이미 placement 가
+        // 있으면 destroy 후 새 prefab 으로 교체. None 이면 슬롯 기반 매칭 skip
+        // (백워드 호환 — 기존 spec 들은 None 으로 직렬화).
+        [SerializeField] private ThemeSlot themeSlot = ThemeSlot.None;
+
+        // 자산 식별자 — InventoryKey/저장 키로 사용. 로컬 GLB SourceAssetPath 와 1:1
+        // 매핑되어 저장 후 reload 시에도 같은 자산으로 복원 가능. 슬롯 매칭의 2차
+        // 키로도 사용 (slot 미설정 spec 도 assetKey 동일 시 교체 매칭).
+        //
+        // 미래 S3 도입 시 동일 assetKey 로 remote URL 매핑 → 로직 변화 없이 확장 가능
+        // (LocalThemeAssetLoader vs RemoteThemeAssetLoader 만 swap).
+        [SerializeField] private string assetKey;
+
         public long AssetId => assetId;
         public GameObject Prefab => prefab;
         public WallSide WallSide => wallSide;
@@ -60,6 +102,8 @@ namespace App.Infrastructure.Catalogs
         public Vector3 LocalRotation => localRotation;
         public Vector3 LocalScale => localScale;
         public string AnchorTag => anchorTag;
+        public ThemeSlot ThemeSlot => themeSlot;
+        public string AssetKey => assetKey;
     }
 
     [CreateAssetMenu(menuName = "Dotshelf/Room Theme", fileName = "RoomTheme")]

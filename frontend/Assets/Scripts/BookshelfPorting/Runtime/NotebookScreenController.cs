@@ -125,6 +125,9 @@ namespace BookshelfPorting.Runtime
         private CanvasGroup screenSaverCanvasGroup;
         private CanvasGroup dashboardCanvasGroup;
         private Coroutine transitionRoutine;
+        // 편집 모드 등에서 SetSceneInteractionSuppressed(true) 호출 시 true. theme swap 후 reassert
+        // hook 이 이 flag 를 읽어 canvas 가 다시 active 로 돌아가지 않게 보장.
+        private bool sceneInteractionSuppressed;
         [SerializeField] private Image screenSaverImage;
         [SerializeField] private Sprite[] adImages;
         [SerializeField] private bool useRandomAd;
@@ -211,6 +214,62 @@ namespace BookshelfPorting.Runtime
         public Transform ScreenTransform { get; private set; }
         public event Action BookAddedToShelfThroughApi;
         public event Action<long> SpaceVisitRequested;
+
+        // notebook 이 immersive overlay 모드인지 — 이때 ScreenSaverCanvas / DashboardCanvas / 노트북 UIDocument 가
+        // ScreenSpaceOverlay 로 화면 전체를 덮는다. main scene 의 mouse click 은 모두 이 UI 를 위한 것으로
+        // 간주해야 하며, BookshelfExperienceManager 의 raycast-based focus 전환 (FocusGuestbook 등) 이 같은
+        // frame 에 spurious 하게 fire 되지 않도록 click handler 가 이 속성을 확인해 skip 한다.
+        public bool IsImmersiveModeActive => useImmersiveMode;
+
+        // 룸 편집 모드 등 외부 컨텍스트에서 노트북 화면 클릭으로 인한 focus 전환을 차단해야 할 때 호출.
+        // suppress=true 면 ScreenSaverCanvas / DashboardCanvas GameObject 를 SetActive(false) 해 visual +
+        // GraphicRaycaster (AdImage Button.onClick 으로 인한 FocusNotebook spurious fire) 동시 차단.
+        // suppress=false 면 currentState 에 맞게 정확한 canvas 만 재활성. NotebookToolkitController UIDocument
+        // (immersive Dashboard) 는 이 호출 범위 밖 — 편집 모드는 QuarterView 에서만 진입하므로 immersive
+        // 상태 진입 자체가 차단됨.
+        public void SetSceneInteractionSuppressed(bool suppressed)
+        {
+            sceneInteractionSuppressed = suppressed;
+            if (suppressed)
+            {
+                if (screenSaverCanvas != null) screenSaverCanvas.gameObject.SetActive(false);
+                if (dashboardCanvas != null) dashboardCanvas.gameObject.SetActive(false);
+            }
+            else
+            {
+                if (screenSaverCanvas != null)
+                {
+                    screenSaverCanvas.gameObject.SetActive(currentState == NotebookUiState.ScreenSaver);
+                }
+                if (dashboardCanvas != null)
+                {
+                    dashboardCanvas.gameObject.SetActive(currentState == NotebookUiState.Dashboard);
+                }
+            }
+            Debug.Log($"[NotebookFocusBlock] SetSceneInteractionSuppressed suppressed={suppressed} " +
+                      $"screenSaverActive={(screenSaverCanvas != null ? screenSaverCanvas.gameObject.activeSelf : false)} " +
+                      $"dashboardActive={(dashboardCanvas != null ? dashboardCanvas.gameObject.activeSelf : false)} currentState={currentState}");
+        }
+
+        // 편집 모드 진입 후 theme swap 등으로 canvas state 가 다시 흔들렸을 때 외부 (예: DeskVisualSkinApplier
+        // 의 theme 적용 직후) 에서 호출해 suppress 상태 재확인용. 현재 suppression 이 active 면 두 canvas
+        // 를 다시 SetActive(false). 비활성이면 no-op (정상 상태 유지).
+        public void ReassertSceneInteractionSuppressionIfActive(string reason)
+        {
+            if (!sceneInteractionSuppressed) return;
+            if (screenSaverCanvas != null && screenSaverCanvas.gameObject.activeSelf)
+            {
+                screenSaverCanvas.gameObject.SetActive(false);
+                Debug.Log($"[NotebookFocusBlock] reasserted ScreenSaverCanvas SetActive(false) reason={reason}");
+            }
+            if (dashboardCanvas != null && dashboardCanvas.gameObject.activeSelf)
+            {
+                dashboardCanvas.gameObject.SetActive(false);
+                Debug.Log($"[NotebookFocusBlock] reasserted DashboardCanvas SetActive(false) reason={reason}");
+            }
+        }
+
+        public bool IsSceneInteractionSuppressed => sceneInteractionSuppressed;
 
         private void Awake()
         {

@@ -42,6 +42,7 @@ namespace BookshelfPorting.Runtime
         public ReadingStatus readingStatus = ReadingStatus.Unread;
         public bool isLiked;
         public bool isPaidCoverOwned;
+        public string coverSkinResourcePath;
         public bool isDecoration;
         public bool isRead;
         public bool isPublic = true;

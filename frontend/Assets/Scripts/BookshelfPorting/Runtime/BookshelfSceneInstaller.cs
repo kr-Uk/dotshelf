@@ -166,9 +166,20 @@ namespace BookshelfPorting.Runtime
             // 빈/stale baseUrl 보유 → UnityWebRequest가 default 'localhost' host로 fallback (cf.
             // APIManager.BuildUrl 주석). Windows에서는 우연히 순서가 맞아 발생 안 함.
             // fix: scene에 이미 있는 인스턴스(보통 RuntimeSystems prefab) 우선 사용, 없으면 fallback.
+            //
+            // 재진입 회귀 fix — 이전 fallback (`systems.AddComponent<APIManager>()`) 은 BookshelfSystems
+            // 에 APIManager 를 attach. APIManager.Awake 가 `DontDestroyOnLoad(gameObject)` 를 호출하므로
+            // BookshelfSystems 전체가 DDOL scene 으로 이동 → 로그아웃 시 MainScene 이 Single 로드로
+            // unload 되어도 옛 BookshelfSystems 가 살아남고, 재진입 시 GetOrAddComponent<...> 가 옛
+            // BEM/state/canvas 인스턴스를 반환. BEM 의 SerializeField (externalDashboardPanel, 책장
+            // 오버레이 button refs 등) 는 destroyed MainScene 의 GameObject 를 가리키는 stale reference
+            // 가 되어 dashboard 빈 액자 / 오버레이 button 비표시 / MissingReferenceException 발생.
+            // 해결: scene 에 APIManager 가 없으면 ApiManagerProvider.EnsureInstance() 가 별도 GameObject
+            // ("AutoApiManager (fallback)") 에 attach → APIManager 만 DDOL 되고 BookshelfSystems 는
+            // MainScene 라이프사이클을 그대로 따른다.
             var apiManager = APIManager.Instance
                 ?? UnityEngine.Object.FindFirstObjectByType<APIManager>()
-                ?? systems.AddComponent<APIManager>();
+                ?? ApiManagerProvider.EnsureInstance();
 
             apiManager.Configure(
                 apiBaseUrl,
@@ -296,7 +307,14 @@ namespace BookshelfPorting.Runtime
                 // Main scene opens centered on the bookshelf via the MainView pose.
                 // (Previously this transitioned to overviewAnchor / QuarterView, which
                 // sits at an angle and made the bookshelf appear left-shifted.)
-                cameraController.MoveToMainView();
+                //
+                // Generate() 직후 anchor 위치가 갱신될 수 있어 pose 재계산이 필요하지만 transition (0.4s)
+                // 으로 진행하면 그 동안 CameraController.IsTransitioning=true 라 사용자의 첫 클릭이 CanStartCameraFocus
+                // 가드에 막혀 무시되는 회귀가 있었다 — 특히 노트북 클릭 시 "바로 누르면 안 되고 다른 동작 후엔 됨"
+                // 증상의 root cause. ApplyMainView 는 같은 pose 를 즉시 snap (isTransitioning=false 보장) 으로 적용해
+                // line 280 의 초기 ApplyMainView 이후 anchor 변경분만 재반영. 사용자에겐 same-pose 라 시각적 차이
+                // 없음.
+                cameraController.ApplyMainView();
 
                 // MR #128: 룸/책장/scene-baked decoration 생성이 모두 끝난 시점에 저장된 사용자
                 // layout 복원을 트리거. controller 자체의 Start() 에서 호출하면 SceneEntry 가 active

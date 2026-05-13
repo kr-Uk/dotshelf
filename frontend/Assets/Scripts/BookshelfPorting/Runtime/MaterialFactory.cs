@@ -7,7 +7,9 @@ namespace BookshelfPorting.Runtime
     {
         Default,
         Warm,
-        Dark
+        Dark,
+
+        Vintage
     }
 
     public class MaterialFactory : MonoBehaviour
