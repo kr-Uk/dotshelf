@@ -126,7 +126,9 @@ export default function AssetDetailPage() {
           onPostConfirm={async (file) => {
             // .glb 본체에 한해서 wasm gltfpack 으로 저폴리화한 preview.glb 를 만들어 같이 올린다.
             // bundle/zip 은 Unity Editor 도구 없이는 저폴리화 못 하니까 skip.
-            if (file.type !== "model/gltf-binary") return;
+            // Windows 등에서 .glb 의 file.type 이 빈 string 으로 오는 케이스를 잡으려면
+            // 확장자 fallback 까지 보는 resolveContentType 을 거쳐야 한다.
+            if (resolveContentType(file) !== "model/gltf-binary") return;
             const size = await generateAndUploadPreviewBundle(asset.id, file);
             toast.success(`프리뷰 자동 생성 완료 (${formatBytes(size)})`);
           }}
@@ -568,4 +570,3 @@ function Field({
     </div>
   );
 }
-

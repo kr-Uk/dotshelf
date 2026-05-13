@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -86,6 +86,11 @@ export default function NewAssetPage() {
   const [bundleFile, setBundleFile] = useState<File | null>(null);
   const [previewFile, setPreviewFile] = useState<File | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  // POST /assets 까지는 성공했는데 이후 업로드/publish 단계가 실패한 경우, 같은 code 로
+  // 다시 저장을 누르면 BE 가 ASSET_CODE_ALREADY_EXISTS 로 막는다 (Asset.code unique).
+  // 그래서 mutation 진행 중에 발생한 assetId 를 ref 로 보관해두고, 실패 시 운영자를
+  // 상세 페이지로 유도해 거기서 per-file 업로드/publish 재시도하도록 한다.
+  const createdIdRef = useRef<number | null>(null);
 
   const updateField = <K extends keyof FormState>(
     key: K,
@@ -159,12 +164,14 @@ export default function NewAssetPage() {
         active: false,
       };
 
+      createdIdRef.current = null;
       setPhase({ kind: "creating" });
       const created = await api<AdminAssetDetail>("/assets", {
         method: "POST",
         body: JSON.stringify(payload),
       });
       const assetId = created.id;
+      createdIdRef.current = assetId;
 
       // 1) 본체. .glb 이면 뒤에서 저폴리 preview-bundle 도 같이 만든다.
       const bundleContentType = resolveContentType(bundleFile);
@@ -227,8 +234,14 @@ export default function NewAssetPage() {
             ? error.message
             : "에셋 등록에 실패했습니다.";
       toast.error(message);
-      // draft 가 만들어졌을 수도 있어 목록 캐시는 무효화 — 운영자가 상세에서 재시도 가능.
+      // draft 가 만들어졌으면 목록 캐시 무효화 + 상세 페이지로 자동 이동.
+      // 거기서 미완 업로드/publish 를 per-file UI 로 재시도할 수 있다.
       qc.invalidateQueries({ queryKey: ["admin-assets"] });
+      const draftId = createdIdRef.current;
+      if (draftId !== null) {
+        qc.invalidateQueries({ queryKey: ["admin-asset", draftId] });
+        router.push(`/assets/${draftId}`);
+      }
     },
     onSettled: () => {
       setPhase({ kind: "idle" });
@@ -421,12 +434,16 @@ function FileStagingCard({
   showImagePreview?: boolean;
   onPick: (file: File | null) => void;
 }) {
-  // 이미지 미리보기용 object URL. file 이 바뀌면 useMemo 가 새로 만들고, 이전 URL 은
-  // 브라우저 GC 가 회수한다. 운영자 한 화면에 1장이라 명시적 revoke 없이도 누적 누수 없음.
+  // 이미지 미리보기용 object URL. file 이 바뀌거나 카드가 unmount 될 때 명시적 revoke.
+  // 운영자가 같은 카드에서 파일을 여러 번 바꿔 고를 수 있어 누적 누수를 막는다.
   const previewUrl = useMemo(() => {
     if (!showImagePreview || !file) return null;
     return URL.createObjectURL(file);
   }, [showImagePreview, file]);
+  useEffect(() => {
+    if (!previewUrl) return;
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
 
   return (
     <Card>
