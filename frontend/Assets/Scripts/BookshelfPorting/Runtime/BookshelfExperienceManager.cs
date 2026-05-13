@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using App.Application.Notebook;
+using App.Bootstrap;
 using Dotshelf.Scripts.Dashboard;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -90,6 +91,23 @@ namespace BookshelfPorting.Runtime
         private static readonly Vector2 GuestbookBoardSize = new(1380f, 960f);
         private static readonly Vector2 GuestbookPreviewCardSize = new(248f, 142f);
         private static readonly Vector2 GuestbookFocusedNoteBaseSize = new(246f, 156f);
+        // hitArea local +X 방향 offset. native dashboard (visual skin 미적용) 케이스의 fallback —
+        // hitArea collider 표면 바로 앞 3mm. visual skin (vintage 등) 이 적용되면 MountExternal
+        // DashboardPanel 이 skin 의 renderer bounds.center 기준으로 위치를 재계산하므로 이 값은
+        // 무시됨.
+        private static readonly Vector3 ExternalDashboardPanelSurfaceOffset = new(0.003f, 0f, 0f);
+        private static readonly Quaternion ExternalDashboardPanelLocalRotation = Quaternion.Euler(0f, 90f, 0f);
+
+        // Visual skin 적용 시 panel 의 boardNormal-front 방향 추가 offset. z-fight 방지 + 자연스럽
+        // 게 밀착되도록 0.003 m (3mm). 너무 크면 panel 이 frame 에서 분리되어 보임. 너무 작으면
+        // z-fight.
+        private const float ExternalDashboardPanelTinyForwardOffset = 0.003f;
+        private const string DashboardVisualSkinChildName = "ThemeDashboardVisual"; // App.Bootstrap.DashboardVisualSkin.SkinChildName 과 동일
+        // Flip local X so the room-facing UI Toolkit panel reads left-to-right on the board.
+        private static readonly Vector2 ExternalDashboardPanelReferenceSize = new(1920f, 1080f);
+        private const float ExternalDashboardPanelFallbackWorldScale = 0.00060f;
+        private const float ExternalDashboardPanelHorizontalInset = 0.10f;
+        private const float ExternalDashboardPanelVerticalInset = 0.06f;
         private static readonly Vector2[] GuestbookPreviewOffsets =
         {
             new Vector2(-336f, 154f),
@@ -731,6 +749,10 @@ namespace BookshelfPorting.Runtime
         private bool runtimeUseExternalDashboardPanel;
         private bool ShouldUseExternalDashboardPanel => useExternalDashboardPanel || runtimeUseExternalDashboardPanel;
         private UnityEngine.UIElements.VisualElement focusedDashboardPressedElement;
+        // MountExternalDashboardPanel 진단 log throttle — 첫 호출 + skin attach/detach 상태 변경
+        // 시점 1회씩 log. visual skin 적용/제거 시 panel 위치 정책이 바뀌므로 그 시점에 재 log.
+        private bool externalDashboardPanelMountLogged;
+        private bool externalDashboardPanelMountLastHadSkin;
 
         [SerializeField] private bool guestbookOwnerMode = true;
         private bool isGuestbookPublic = true;
@@ -919,6 +941,25 @@ namespace BookshelfPorting.Runtime
         // short-circuited so the only interaction the player can perform is the
         // edit-mode select / rotate / delete that the edit overlay itself drives.
         public bool AreSceneInteractionsSuppressed { get; set; }
+
+        // 룸 편집 모드 등 외부 컨텍스트에서 노트북 화면 click → FocusNotebook 자동 진입을 차단할 때 호출.
+        // AreSceneInteractionsSuppressed 는 BookshelfExperienceManager.Update 의 raycast-based focus 전환만
+        // 막고, ScreenSaverCanvas 위 AdImage Button.onClick (= onOpenScreenSaver = FocusNotebook) 은 그대로
+        // fire 되므로 별도 차단이 필요. 호출 시 NotebookScreenController.SetSceneInteractionSuppressed 로
+        // canvas SetActive 토글.
+        public void SetNotebookScreenSuppressed(bool suppressed)
+        {
+            notebookScreenController?.SetSceneInteractionSuppressed(suppressed);
+        }
+
+        // theme swap (DeskVisualSkinApplier.TryAttach) 처럼 편집 모드 도중에 NotebookScreenController 의
+        // canvas state 가 흔들릴 수 있는 외부 hook 에서 호출. suppress 가 active 면 canvas 를 다시 SetActive(false)
+        // — 비활성이면 no-op. 편집 모드 진입 후 어떤 테마든 theme swap 직후 ScreenSaverCanvas 가 다시
+        // 보이거나 click 가능 상태로 돌아가지 않도록 보장.
+        public void ReassertNotebookScreenSuppressionIfActive(string reason)
+        {
+            notebookScreenController?.ReassertSceneInteractionSuppressionIfActive(reason);
+        }
 
         public void Configure(
             BookshelfState bookshelfState,
@@ -1122,6 +1163,27 @@ namespace BookshelfPorting.Runtime
             }
 
             if (!Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                return;
+            }
+
+            // Notebook 이 immersive overlay 모드일 때 (Dashboard / ScreenSaver 둘 다 ScreenSpaceOverlay
+            // 로 전체 화면을 덮음) — main scene 의 raycast-based focus 전환은 click 을 가로채지 않는다.
+            // UI Toolkit / Canvas Button 자체 dispatch 가 click 을 소비하도록 위임.
+            //
+            // 회귀 방어: dashboard X (NotebookToolkitController UIDocument) click 이 같은 frame 에서
+            // 1) 이 핸들러가 먼저 실행 → IsPointerOverUi 가 PanelRaycaster hit 을 감지 못해 (DashboardRaycastFilter
+            //    는 DashboardScreenController 만 추적, NotebookToolkitController 는 모름) → TryHitGuestbookBoard
+            //    ray 가 top-right 픽셀로 cast 되어 GuestbookBoard collider hit → FocusGuestbook → MoveToWhiteboardSurface
+            //    transition 시작
+            // 2) EventSystem 의 PanelEventHandler 가 같은 frame 후반에 X close callback dispatch → CloseNotebookFocus
+            //    의 CanStartCameraFocus 가 cameraController.IsTransitioning=true 라 early return → 카메라 이동 skip
+            // 3) 결과: 카메라가 GuestbookBoard pose 에 도착
+            //
+            // CurrentFocusArea==Notebook 조건도 함께 둬 — 다른 focus 상태에서 잘못 suppress 되지 않도록.
+            if (CurrentFocusArea == ExperienceFocusArea.Notebook &&
+                notebookScreenController != null &&
+                notebookScreenController.IsImmersiveModeActive)
             {
                 return;
             }
@@ -1498,6 +1560,17 @@ namespace BookshelfPorting.Runtime
 
         public void FocusNotebook()
         {
+            // Edit-mode / scene-interaction suppression catch-all — entry path 무관 (raycast hit,
+            // F4 shortcut, AdImage Button.onClick, 미래 호출자) 어디서 들어와도 함수 진입부에서 차단.
+            // raycast 경로는 Update 단의 AreSceneInteractionsSuppressed 가드로 이미 차단되지만, 다른
+            // 경로 (canvas SetActive(false) 이어도 GraphicRaycaster 가 미세하게 deferred fire 하거나
+            // 외부 코드에서 직접 FocusNotebook() 호출하는 케이스) 까지 한 번에 막기 위함. 테마 무관 정책.
+            if (AreSceneInteractionsSuppressed)
+            {
+                Debug.Log("[NotebookFocusBlock] FocusNotebook suppressed — edit/scene interaction lock active. entry=public_FocusNotebook");
+                return;
+            }
+
             if (TryPromptUnsavedBookshelfChanges(FocusNotebookImmediate))
             {
                 return;
@@ -1508,6 +1581,15 @@ namespace BookshelfPorting.Runtime
 
         private void FocusNotebookImmediate()
         {
+            // FocusNotebook 공개 진입점에서 이미 가드하지만 TryPromptUnsavedBookshelfChanges 가 delegate
+            // 로 비동기 호출하는 경로 (모달 확인 후 FocusNotebookImmediate 재진입) 에서 edit 진입 race 가
+            // 발생할 수 있어 한 번 더 가드. 중복 비용은 bool 체크 1회.
+            if (AreSceneInteractionsSuppressed)
+            {
+                Debug.Log("[NotebookFocusBlock] FocusNotebookImmediate suppressed — edit/scene interaction lock active. entry=immediate");
+                return;
+            }
+
             if (!CanStartCameraFocus())
             {
                 return;
@@ -1546,7 +1628,13 @@ namespace BookshelfPorting.Runtime
 
             if (notebookScreenController != null && notebookScreenController.ScreenTransform != null)
             {
-                cameraController.MoveToNotebookScreen(notebookScreenController.ScreenTransform);
+                // 노트북 포커스 카메라 mode — 현재 적용된 desk skin (테마) 에 따라 다름.
+                // ScreenAnchorBaked (default, vintage 등) = CameraFocusPoint baked offset 사용,
+                // ScreenForwardGeometry (DeepSea monitor 모드) = screen.forward geometry 사용.
+                // mode 는 DeskVisualSkinApplier.TryAttach 가 entry 의 NotebookFocusCameraMode 로 push,
+                // ClearSkin 이 default 로 reset.
+                var notebookFocusMode = NotebookFocusCameraModeRegistry.Current;
+                cameraController.MoveToNotebookScreen(notebookScreenController.ScreenTransform, notebookFocusMode);
                 return;
             }
 
@@ -3561,6 +3649,18 @@ namespace BookshelfPorting.Runtime
             // AddComponent 된 시점이라, 여기서 panel mount 를 재시도하면 깨끗하게 회복된다.
             // 기존 유저 재로그인 케이스는 OnEnable 시점에 이미 mount 가 성공한 상태라 부수효과 없음 (idempotent).
             SyncExternalDashboardPanelPresentation();
+
+            // 같은 race 의 노트북 변종: Start() 의 ConfigureNotebookScreen 이 Generate() 보다 먼저 돌면
+            // FindRoomNotebookScreenController() 가 null 을 반환해 notebookScreenController 가 미설정
+            // 상태로 남는다. NotebookScreenController.Awake 는 AdImage / ScreenSaverCanvas (GraphicRaycaster
+            // raycastTarget=true) 는 만들어 두지만 AdImage Button.onClick = () => onOpenScreenSaver(=FocusNotebook)
+            // lambda 는 Configure → EnsureCanvases → BuildScreenSaver 에서만 wire 된다. 따라서 첫 클릭이
+            // AdImage 를 hit 해도 onClick 가 비어있어 silent consume → 사용자에겐 "노트북 클릭 무반응 →
+            // 다른 기능 한 번 후엔 됨" 회귀. Generate 이후 ConfigureNotebookScreen 재호출로 늦게 만들어진
+            // controller 를 잡아 Configure 까지 끝내 onClick lambda wire.
+            // idempotent — 이미 잡혀 있으면 같은 controller 재바인딩 (callback 중복 register 는 AttachNotebookApiCallbacks
+            // 의 == 체크가 막음).
+            ConfigureNotebookScreen();
         }
 
         private void SyncFromCameraMode(CameraMode mode)
@@ -6494,6 +6594,15 @@ namespace BookshelfPorting.Runtime
 
         private bool ShouldEnterEmptyBookshelfTutorial()
         {
+            // server snapshot 모드에서는 첫 fetch 완료 전에는 BookshelfCount==0 이 "비어있음"이 아닌
+            // "아직 모름". 이 시점 튜토리얼/FocusBookshelf 발동을 차단해 race 회피.
+            if (bookshelfGenerator != null &&
+                bookshelfGenerator.UseServerBookshelfSnapshots &&
+                !bookshelfGenerator.HasReceivedServerSnapshot)
+            {
+                return false;
+            }
+
             return bookshelfGenerator != null &&
                    bookshelfGenerator.BookshelfCount <= 0 &&
                    !IsInitialBookshelfApiSyncPending() &&
@@ -13587,8 +13696,141 @@ namespace BookshelfPorting.Runtime
             }
 
             var panelTransform = externalDashboardPanel.transform;
-            DashboardPanelLayout.Mount(panelTransform, dynamicHitArea.transform);
+            if (panelTransform.parent != null)
+            {
+                panelTransform.SetParent(null, true);
+            }
+
+            // Position 결정 — visual skin 이 attach 돼 있으면 그 renderer bounds.center 기준,
+            // 없으면 (native dashboard) hitArea + ExternalDashboardPanelSurfaceOffset.
+            //
+            // visual skin 케이스 (vintage_dashboard 등):
+            //   - finalPosition = visualBounds.center + frontNormal * (halfThickness + tinyOffset)
+            //   - frontNormal = hitArea.right (= hitArea local +X in world — board outward axis).
+            //     hitArea collider 가 (size.z=width, .y=height, .x=thickness) 컨벤션으로 setup 됐고
+            //     native dashboard 에서 ExternalDashboardPanelSurfaceOffset.x>0 이 작동했으므로
+            //     local +X 가 outward 방향.
+            //   - in-plane(Y/Z 평면) 위치도 visualBounds.center 기준으로 정렬 → screen 이 visual
+            //     mesh 정중앙에 위치 (좌우/상하 치우침 없음). 사용자 요구 "screen center == visual center".
+            //   - halfThickness 는 hitArea.right axis 에 사영한 bounds 두께의 절반 — skin 의 두께가
+            //     얼마든 panel 이 정확히 front face 바로 앞에 위치.
+            //   - tinyOffset (3mm) — z-fight 방지 최소 거리. 사용자 요구 "붕 뜬 느낌 제거".
+            Transform visualSkin = FindDashboardVisualSkin(dynamicHitArea.transform);
+            Vector3 hitAreaRight = dynamicHitArea.transform.right;
+            Vector3 finalPosition;
+            bool usedVisualSkin = false;
+            Bounds visualBounds = new Bounds();
+            float halfThickness = 0f;
+            if (visualSkin != null && TryComputeRendererBounds(visualSkin.gameObject, out visualBounds))
+            {
+                Vector3 boundsSize = visualBounds.size;
+                halfThickness = (Mathf.Abs(boundsSize.x * hitAreaRight.x)
+                                + Mathf.Abs(boundsSize.y * hitAreaRight.y)
+                                + Mathf.Abs(boundsSize.z * hitAreaRight.z)) * 0.5f;
+                finalPosition = visualBounds.center + hitAreaRight * (halfThickness + ExternalDashboardPanelTinyForwardOffset);
+                usedVisualSkin = true;
+            }
+            else
+            {
+                finalPosition = dynamicHitArea.transform.TransformPoint(ExternalDashboardPanelSurfaceOffset);
+            }
+
+            panelTransform.position = finalPosition;
+            panelTransform.rotation = dynamicHitArea.transform.rotation * ExternalDashboardPanelLocalRotation;
+            var panelScale = ResolveExternalDashboardPanelScale(dynamicHitArea);
+            panelTransform.localScale = new Vector3(-panelScale, panelScale, panelScale);
+
+            // Log throttle — 첫 호출 + skin attach/detach 상태 변경 시 1회씩.
+            if (!externalDashboardPanelMountLogged || usedVisualSkin != externalDashboardPanelMountLastHadSkin)
+            {
+                float distFromVisualCenter = usedVisualSkin ? Vector3.Distance(panelTransform.position, visualBounds.center) : -1f;
+                Debug.Log($"[ExternalDashboardPanel] MountExternalDashboardPanel result — " +
+                          $"usedVisualSkin={usedVisualSkin} " +
+                          (usedVisualSkin
+                              ? $"visualBounds.center={visualBounds.center} visualBounds.size={visualBounds.size} halfThickness={halfThickness:F4} tinyOffset={ExternalDashboardPanelTinyForwardOffset:F4} "
+                              : $"fallback=hitArea+SurfaceOffset({ExternalDashboardPanelSurfaceOffset}) ") +
+                          $"frontNormal(hitArea.right)={hitAreaRight} " +
+                          $"finalPanelWorldPosition={panelTransform.position} " +
+                          $"panel.distFromVisualCenter={distFromVisualCenter:F4} " +
+                          $"panel.forward={panelTransform.forward} " +
+                          $"panel.rotation.eulerAngles={panelTransform.rotation.eulerAngles} " +
+                          $"panel.localScale={panelTransform.localScale} " +
+                          $"hitArea.position={dynamicHitArea.transform.position} " +
+                          $"hitArea.up(local+Y)={dynamicHitArea.transform.up} hitArea.forward(local+Z)={dynamicHitArea.transform.forward} " +
+                          $"panelScale={panelScale:F5}");
+                externalDashboardPanelMountLogged = true;
+                externalDashboardPanelMountLastHadSkin = usedVisualSkin;
+            }
             return true;
+        }
+
+        // ThemeDashboardVisual 검색 — hitArea 의 parent (GuestbookBoard 기본) → hitArea 자신 →
+        // scene 전체 순. visual skin 이 attach 안 됐으면 null.
+        private static Transform FindDashboardVisualSkin(Transform hitAreaTransform)
+        {
+            if (hitAreaTransform == null) return null;
+
+            var parent = hitAreaTransform.parent;
+            if (parent != null)
+            {
+                var skin = parent.Find(DashboardVisualSkinChildName);
+                if (skin != null) return skin;
+            }
+            var directChild = hitAreaTransform.Find(DashboardVisualSkinChildName);
+            if (directChild != null) return directChild;
+
+            var all = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] != null && all[i].gameObject.name == DashboardVisualSkinChildName)
+                {
+                    return all[i];
+                }
+            }
+            return null;
+        }
+
+        // Combined renderer world-AABB bounds. ParticleSystem/Trail/Line / 비활성 renderer / 빈
+        // bounds 제외. 최소 1개 valid renderer 가 있으면 true.
+        private static bool TryComputeRendererBounds(GameObject go, out Bounds bounds)
+        {
+            bounds = new Bounds();
+            if (go == null) return false;
+            var renderers = go.GetComponentsInChildren<Renderer>(true);
+            if (renderers == null || renderers.Length == 0) return false;
+            bool hasAny = false;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null || !r.enabled) continue;
+                if (!r.gameObject.activeInHierarchy) continue;
+                if (r is ParticleSystemRenderer || r is TrailRenderer || r is LineRenderer) continue;
+                var b = r.bounds;
+                if (b.size.sqrMagnitude < 1e-8f) continue;
+                if (!hasAny) { bounds = b; hasAny = true; }
+                else { bounds.Encapsulate(b); }
+            }
+            return hasAny;
+        }
+
+        private static float ResolveExternalDashboardPanelScale(GuestbookBoardHitArea dynamicHitArea)
+        {
+            if (dynamicHitArea == null)
+            {
+                return ExternalDashboardPanelFallbackWorldScale;
+            }
+
+            var collider = dynamicHitArea.GetComponent<BoxCollider>();
+            if (collider == null)
+            {
+                return ExternalDashboardPanelFallbackWorldScale;
+            }
+
+            var usableWidth = Mathf.Max(0.1f, collider.size.z - ExternalDashboardPanelHorizontalInset);
+            var usableHeight = Mathf.Max(0.1f, collider.size.y - ExternalDashboardPanelVerticalInset);
+            var scaleByWidth = usableWidth / ExternalDashboardPanelReferenceSize.x;
+            var scaleByHeight = usableHeight / ExternalDashboardPanelReferenceSize.y;
+            return Mathf.Min(scaleByWidth, scaleByHeight);
         }
 
         private void SeedGuestbookNotes()
@@ -15027,7 +15269,18 @@ namespace BookshelfPorting.Runtime
             notebookScreenController.Configure(
                 screenTransform,
                 Camera.main,
-                () => notebookScreenController.ReturnToScreenSaver(),
+                // onCloseDashboard — dashboard header 의 X (NotebookToolkitController.cs:1134) 콜백.
+                // 사용자 의도: "X 한 번 = 노트북 focus 종료 = 메인 view 복귀". 이전 wiring 은
+                // ReturnToScreenSaver 만 호출해 노트북 focus 안에 머물면서 UI 만 screen saver 로
+                // 전환했는데, screen saver 의 ad 이미지를 다시 누르면 FocusNotebook → ActivateDashboard
+                // 로 되돌아가 사용자 시각에서 "X → 대시보드로 다시 이동" 으로 보이는 회귀가 발생.
+                // ReturnToScreenSaver 를 먼저 호출해 다음 진입 시 screen saver 부터 보이도록 reset
+                // 한 뒤 CloseNotebookFocus 로 camera 를 메인 view 로 빼낸다.
+                () =>
+                {
+                    notebookScreenController.ReturnToScreenSaver();
+                    CloseNotebookFocus();
+                },
                 CloseNotebookFocus,
                 FocusNotebook,
                 searchNotebookBooksUseCase,

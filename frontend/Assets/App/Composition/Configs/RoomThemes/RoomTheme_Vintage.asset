@@ -38,7 +38,9 @@ MonoBehaviour:
   accentPrimary: {r: 1, g: 1, b: 1, a: 1}
   accentSecondary: {r: 1, g: 1, b: 1, a: 1}
   accentTertiary: {r: 1, g: 1, b: 1, a: 1}
-  defaultEntries: []
+  defaultEntries:
+  - category: 4
+    assetId: 200031
   bookshelfDecoSpecs: []
   floorDecoSpecs: []
   wallDecoSpecs: []

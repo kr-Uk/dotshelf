@@ -46,6 +46,15 @@ public class Space extends BaseEntity {
     private long likeCount = 0;
 
     @Column(nullable = false)
+    private long bookCount = 0;
+
+    @Column(nullable = false)
+    private long readingRecordCount = 0;
+
+    @Column(nullable = false)
+    private long bookshelfCount = 0;
+
+    @Column(nullable = false)
     private long layoutVersion = 0;
 
     @Column(length = 500)
@@ -94,6 +103,36 @@ public class Space extends BaseEntity {
     public void unlike() {
         if (this.likeCount > 0) {
             this.likeCount -= 1;
+        }
+    }
+
+    public void increaseBookCount() {
+        this.bookCount += 1;
+    }
+
+    public void decreaseBookCount() {
+        if (this.bookCount > 0) {
+            this.bookCount -= 1;
+        }
+    }
+
+    public void increaseReadingRecordCount() {
+        this.readingRecordCount += 1;
+    }
+
+    public void decreaseReadingRecordCount() {
+        if (this.readingRecordCount > 0) {
+            this.readingRecordCount -= 1;
+        }
+    }
+
+    public void increaseBookshelfCount() {
+        this.bookshelfCount += 1;
+    }
+
+    public void decreaseBookshelfCount() {
+        if (this.bookshelfCount > 0) {
+            this.bookshelfCount -= 1;
         }
     }
 

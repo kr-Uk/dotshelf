@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.dotshelf.domain.book.entity.UserBook;
 import com.dotshelf.domain.book.service.BookService;
+import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.notification.event.NotificationEvents.ReadingRecordLiked;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordPageResponse;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordRequest;
@@ -41,6 +42,7 @@ public class ReadingRecordService {
     private final ReadingRecordRepository readingRecordRepository;
     private final ReadingRecordLikeRepository likeRepository;
     private final BookService bookService;
+    private final SpaceService spaceService;
     private final UserService userService;
     private final FollowRepository followRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -133,17 +135,20 @@ public class ReadingRecordService {
         if (!userBook.getUserId().equals(currentUserId)) {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
-        ReadingRecord record = readingRecordRepository.findByUserBookId(request.userBookId())
-                .map(existing -> {
-                    existing.update(request.title(), request.content(), request.visibilityScope());
-                    return existing;
-                })
-                .orElseGet(() -> readingRecordRepository.save(ReadingRecord.builder()
-                        .userBookId(request.userBookId())
-                        .title(request.title())
-                        .content(request.content())
-                        .visibilityScope(request.visibilityScope())
-                        .build()));
+        var existing = readingRecordRepository.findByUserBookId(request.userBookId());
+        ReadingRecord record;
+        if (existing.isPresent()) {
+            record = existing.get();
+            record.update(request.title(), request.content(), request.visibilityScope());
+        } else {
+            record = readingRecordRepository.save(ReadingRecord.builder()
+                    .userBookId(request.userBookId())
+                    .title(request.title())
+                    .content(request.content())
+                    .visibilityScope(request.visibilityScope())
+                    .build());
+            spaceService.findOrCreateMySpace(currentUserId).increaseReadingRecordCount();
+        }
         return ReadingRecordResponse.from(record);
     }
 
@@ -157,8 +162,10 @@ public class ReadingRecordService {
 
     @Transactional
     public void delete(Long userId, Long recordId) {
-        validateOwner(userId, recordId);
+        Long currentUserId = userService.requireUserId(userId);
+        validateOwner(currentUserId, recordId);
         getRecordEntity(recordId).delete();
+        spaceService.findOrCreateMySpace(currentUserId).decreaseReadingRecordCount();
     }
 
     @Transactional

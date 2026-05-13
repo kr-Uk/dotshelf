@@ -49,6 +49,8 @@ MonoBehaviour:
     localRotation: {x: 0, y: 0, z: 0}
     localScale: {x: 1, y: 1, z: 1}
     anchorTag: "rug"
+    themeSlot: 6
+    assetKey: "Assets/Arts/Models/GoodVibes_Rug.glb"
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: e1f2a3b4c5d6789012345678abcdef01, type: 3}
     wallSide: 0
@@ -56,6 +58,8 @@ MonoBehaviour:
     localRotation: {x: 0, y: 179.986, z: 0}
     localScale: {x: 1, y: 1, z: 1}
     anchorTag: "bed"
+    themeSlot: 7
+    assetKey: "Assets/Arts/Models/GoodVibes_Bed.glb"
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: e5f6a7b8c9d0123456789012abcdef05, type: 3}
     wallSide: 0
@@ -63,6 +67,8 @@ MonoBehaviour:
     localRotation: {x: 0, y: 0, z: 0}
     localScale: {x: 0.2, y: 0.2, z: 0.2}
     anchorTag: "toastPillow"
+    themeSlot: 0
+    assetKey: "Assets/Arts/Models/GoodVibes_ToastPillow.glb"
   wallDecoSpecs:
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: e4f5a6b7c8d9012345678901abcdef04, type: 3}
@@ -71,6 +77,8 @@ MonoBehaviour:
     localRotation: {x: 0, y: 180, z: 0}
     localScale: {x: 1.265, y: 2.8, z: 0.08}
     anchorTag: "neonSign"
+    themeSlot: 0
+    assetKey: "Assets/Arts/Models/GoodVibes_NeonSign.glb"
   - assetId: 0
     prefab: {fileID: 1000000000, guid: d4e5f67890123456789abcdef0123456, type: 3}
     wallSide: 2
@@ -78,3 +86,5 @@ MonoBehaviour:
     localRotation: {x: 0, y: -90, z: 0}
     localScale: {x: 0.6, y: 0.6, z: 0.6}
     anchorTag: "window"
+    themeSlot: 8
+    assetKey: "Assets/Arts/Models/GoodVibes_Window.glb"

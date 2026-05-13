@@ -21,6 +21,7 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import com.dotshelf.domain.book.entity.UserBook;
 import com.dotshelf.domain.book.service.BookService;
+import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordRequest;
 import com.dotshelf.domain.readingrecord.dto.ReadingRecordDtos.ReadingRecordSummary;
 import com.dotshelf.domain.readingrecord.entity.ReadingRecord;
@@ -44,6 +45,9 @@ class ReadingRecordServiceTest {
 
     @Mock
     private BookService bookService;
+
+    @Mock
+    private SpaceService spaceService;
 
     @Mock
     private UserService userService;
@@ -142,6 +146,7 @@ class ReadingRecordServiceTest {
             TestFixtures.setId(record, 10L);
             return record;
         });
+        given(spaceService.findOrCreateMySpace(1L)).willReturn(TestFixtures.space(1L, 1L));
 
         var response = readingRecordService.create(1L, request(20L, "new", "PUBLIC"));
 
@@ -156,6 +161,7 @@ class ReadingRecordServiceTest {
         given(userService.requireUserId(1L)).willReturn(1L);
         given(readingRecordRepository.findById(10L)).willReturn(Optional.of(record));
         given(bookService.getUserBook(20L)).willReturn(TestFixtures.userBook(20L, 1L, 9L));
+        given(spaceService.findOrCreateMySpace(1L)).willReturn(TestFixtures.space(1L, 1L));
 
         var response = readingRecordService.update(1L, 10L, request(20L, "updated", "FOLLOWERS"));
         readingRecordService.delete(1L, 10L);
