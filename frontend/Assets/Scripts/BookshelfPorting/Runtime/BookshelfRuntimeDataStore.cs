@@ -21,6 +21,7 @@ namespace BookshelfPorting.Runtime
         public bool hasAggregateBookStats;
         public bool isLiked;
         public bool isPaidCoverOwned;
+        public string coverSkinResourcePath;
         public bool isDecoration;
         public bool isRead;
         public bool isPublic = true;
@@ -152,6 +153,7 @@ namespace BookshelfPorting.Runtime
                     hasAggregateBookStats = meta.hasAggregateBookStats,
                     isLiked = meta.isLiked,
                     isPaidCoverOwned = meta.isPaidCoverOwned,
+                    coverSkinResourcePath = meta.coverSkinResourcePath,
                     isDecoration = meta.isDecoration,
                     isRead = meta.isRead,
                     isPublic = meta.isPublic,
@@ -251,6 +253,7 @@ namespace BookshelfPorting.Runtime
                 hasAggregateBookStats = book.hasAggregateBookStats,
                 isLiked = book.isLiked,
                 isPaidCoverOwned = book.isPaidCoverOwned,
+                coverSkinResourcePath = book.coverSkinResourcePath,
                 isDecoration = book.isDecoration,
                 isRead = book.isRead,
                 isPublic = book.reportVisibility == VisibilityScope.Public,
@@ -288,6 +291,7 @@ namespace BookshelfPorting.Runtime
             book.rating = Mathf.RoundToInt(Mathf.Clamp(displayRating, 0f, 5f));
             book.isLiked = meta.isLiked;
             book.isPaidCoverOwned = meta.isPaidCoverOwned;
+            book.coverSkinResourcePath = meta.coverSkinResourcePath;
             book.isDecoration = meta.isDecoration;
             book.isRead = meta.readingStatus == ReadingStatus.Read;
             meta.isPublic = meta.reportVisibility == VisibilityScope.Public;

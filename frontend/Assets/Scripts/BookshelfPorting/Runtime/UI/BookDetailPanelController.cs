@@ -14,6 +14,7 @@ namespace BookshelfPorting.Runtime
             UnityAction toggleLikeState,
             UnityAction cycleOwnerRating,
             UnityAction toggleVisibility,
+            UnityAction addAdvertisementBook,
             UnityAction close,
             UnityAction deleteBook)
         {
@@ -24,6 +25,7 @@ namespace BookshelfPorting.Runtime
             ToggleLikeState = toggleLikeState;
             CycleOwnerRating = cycleOwnerRating;
             ToggleVisibility = toggleVisibility;
+            AddAdvertisementBook = addAdvertisementBook;
             Close = close;
             DeleteBook = deleteBook;
         }
@@ -35,6 +37,7 @@ namespace BookshelfPorting.Runtime
         public UnityAction ToggleLikeState { get; }
         public UnityAction CycleOwnerRating { get; }
         public UnityAction ToggleVisibility { get; }
+        public UnityAction AddAdvertisementBook { get; }
         public UnityAction Close { get; }
         public UnityAction DeleteBook { get; }
     }
@@ -50,6 +53,9 @@ namespace BookshelfPorting.Runtime
             string description,
             bool hasReport,
             bool canDeleteBook,
+            bool canUseOwnerActions,
+            bool isLiked,
+            bool isAdvertisementBook,
             bool isConfirmingDelete)
         {
             Title = title;
@@ -60,6 +66,9 @@ namespace BookshelfPorting.Runtime
             Description = description;
             HasReport = hasReport;
             CanDeleteBook = canDeleteBook;
+            CanUseOwnerActions = canUseOwnerActions;
+            IsLiked = isLiked;
+            IsAdvertisementBook = isAdvertisementBook;
             IsConfirmingDelete = isConfirmingDelete;
         }
 
@@ -71,6 +80,9 @@ namespace BookshelfPorting.Runtime
         public string Description { get; }
         public bool HasReport { get; }
         public bool CanDeleteBook { get; }
+        public bool CanUseOwnerActions { get; }
+        public bool IsLiked { get; }
+        public bool IsAdvertisementBook { get; }
         public bool IsConfirmingDelete { get; }
     }
 
@@ -93,12 +105,16 @@ namespace BookshelfPorting.Runtime
         private readonly Text totalLikeChipText;
         private readonly Text reviewCountChipText;
         private readonly Text descriptionText;
+        private readonly ScrollRect descriptionScrollRect;
+        private readonly RectTransform descriptionContent;
+        private readonly Scrollbar descriptionScrollbar;
         private readonly Button readToggleButton;
         private readonly Button likeToggleButton;
         private readonly Button ratingCycleButton;
         private readonly Button visibilityToggleButton;
         private readonly Button writeReportButton;
         private readonly Button readReportButton;
+        private readonly Button addAdvertisementBookButton;
         private readonly Button placementButton;
         private readonly Button closeButton;
         private readonly Button deleteButton;
@@ -140,13 +156,28 @@ namespace BookshelfPorting.Runtime
             StyleChipText(reviewCountChipText, new Color32(84, 74, 66, 255));
 
             RuntimeHudFactory.CreateImage(Panel.transform, "BookPanelDivider", new Vector2(20f, -198f), new Vector2(340f, 1f), new Vector2(0f, 1f), new Color32(205, 186, 168, 126));
-            descriptionText = RuntimeHudFactory.CreateLabel(Panel.transform, "BookPanelHintText", new Vector2(20f, -214f), new Vector2(340f, 52f), TextAnchor.UpperLeft);
+            var descriptionViewport = RuntimeHudFactory.CreateScrollViewport(Panel.transform, "BookDescriptionViewport", new Vector2(20f, -214f), new Vector2(328f, 52f), new Vector2(0f, 1f));
+            descriptionScrollRect = descriptionViewport.GetComponent<ScrollRect>();
+            descriptionContent = RuntimeHudFactory.CreateScrollContent(descriptionViewport.transform, "BookDescriptionContent", new Vector2(328f, 52f));
+            descriptionScrollbar = RuntimeHudFactory.CreateVerticalScrollbar(Panel.transform, "BookDescriptionScrollbar", new Vector2(352f, -214f), new Vector2(8f, 52f), new Vector2(0f, 1f));
+            RuntimeHudStyle.StyleScrollbar(descriptionScrollbar, new Color32(151, 104, 64, 220), new Color32(238, 231, 221, 150));
+            if (descriptionScrollRect != null)
+            {
+                descriptionScrollRect.viewport = descriptionViewport.GetComponent<RectTransform>();
+                descriptionScrollRect.content = descriptionContent;
+                descriptionScrollRect.verticalScrollbar = descriptionScrollbar;
+                descriptionScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+            }
+
+            descriptionText = RuntimeHudFactory.CreateLabel(descriptionContent, "BookPanelHintText", Vector2.zero, new Vector2(328f, 52f), TextAnchor.UpperLeft);
             descriptionText.fontSize = 13;
             descriptionText.color = new Color32(124, 111, 101, 255);
             descriptionText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            descriptionText.verticalOverflow = VerticalWrapMode.Overflow;
 
-            writeReportButton = RuntimeHudFactory.CreateButton(Panel.transform, "WriteReportButton", "독후감 작성", new Vector2(20f, -282f), callbacks.OpenWriteReport, new Vector2(104f, 32f), new Vector2(0f, 1f));
+            writeReportButton = RuntimeHudFactory.CreateButton(Panel.transform, "WriteReportButton", "리뷰 작성", new Vector2(20f, -282f), callbacks.OpenWriteReport, new Vector2(104f, 32f), new Vector2(0f, 1f));
             readReportButton = RuntimeHudFactory.CreateButton(Panel.transform, "ReadReportButton", "독후감 보기", new Vector2(136f, -282f), callbacks.OpenReadReport, new Vector2(104f, 32f), new Vector2(0f, 1f));
+            addAdvertisementBookButton = RuntimeHudFactory.CreateButton(Panel.transform, "AddAdvertisementBookButton", "책장에 추가하기", new Vector2(136f, -282f), callbacks.AddAdvertisementBook, new Vector2(104f, 32f), new Vector2(0f, 1f));
             placementButton = RuntimeHudFactory.CreateButton(Panel.transform, "DetailPlacementButton", "배치 변경", new Vector2(252f, -282f), callbacks.OpenPlacementEditor, new Vector2(108f, 32f), new Vector2(0f, 1f));
             readToggleButton = RuntimeHudFactory.CreateButton(Panel.transform, "ReadToggleButton", "상태 변경", new Vector2(20f, -322f), callbacks.ToggleReadState, new Vector2(164f, 34f), new Vector2(0f, 1f));
             likeToggleButton = RuntimeHudFactory.CreateButton(Panel.transform, "LikeToggleButton", "좋아요", new Vector2(196f, -322f), callbacks.ToggleLikeState, new Vector2(164f, 34f), new Vector2(0f, 1f));
@@ -182,19 +213,36 @@ namespace BookshelfPorting.Runtime
             totalLikeChipText.text = $"좋아요 {model.TotalLikes}개";
             reviewCountChipText.text = $"리뷰 {model.ReviewCount}개";
             descriptionText.text = model.Description;
+            RefreshDescriptionScrollContent(true);
 
             SetButtonActive(readToggleButton, false);
-            SetButtonActive(likeToggleButton, false);
+            var canToggleLike = model.CanUseOwnerActions && !model.IsAdvertisementBook;
+            SetButtonActive(likeToggleButton, canToggleLike);
+            likeToggleButton.interactable = canToggleLike;
+            RuntimeHudStyle.SetButtonLabel(likeToggleButton, "👍");
+            RuntimeHudStyle.StyleButton(
+                likeToggleButton,
+                model.IsLiked ? new Color32(173, 122, 79, 245) : new Color32(238, 248, 241, 235),
+                model.IsLiked ? new Color32(191, 139, 92, 255) : new Color32(247, 255, 250, 255),
+                new Color32(224, 219, 214, 140),
+                18,
+                model.IsLiked ? Color.white : new Color32(53, 94, 73, 255),
+                true);
             SetButtonActive(ratingCycleButton, false);
             SetButtonActive(visibilityToggleButton, false);
 
-            SetButtonActive(writeReportButton, false);
-            RuntimeHudStyle.SetButtonLabel(writeReportButton, model.HasReport ? "독후감 수정" : "독후감 작성");
+            SetButtonActive(writeReportButton, model.CanUseOwnerActions && !model.IsAdvertisementBook);
+            writeReportButton.interactable = model.CanUseOwnerActions && !model.IsAdvertisementBook;
+            RuntimeHudStyle.SetButtonLabel(writeReportButton, "리뷰 작성");
             StyleStandardButton(writeReportButton, true, 13);
 
-            SetButtonActive(readReportButton, true);
+            SetButtonActive(readReportButton, !model.IsAdvertisementBook);
             readReportButton.interactable = model.HasReport;
             StyleStandardButton(readReportButton, model.HasReport, 13);
+
+            SetButtonActive(addAdvertisementBookButton, model.IsAdvertisementBook);
+            addAdvertisementBookButton.interactable = model.IsAdvertisementBook;
+            StyleStandardButton(addAdvertisementBookButton, true, 13);
 
             SetButtonActive(deleteButton, model.CanDeleteBook);
             deleteButton.interactable = model.CanDeleteBook;
@@ -226,6 +274,13 @@ namespace BookshelfPorting.Runtime
             SetComponentRect(titleText, new Vector2(padding, -54f), new Vector2(contentWidth, 56f));
             SetComponentRect(metaText, new Vector2(padding, -122f), new Vector2(contentWidth, 68f));
 
+            var topActionY = -30f;
+            var likeButtonWidth = 44f;
+            var reviewButtonWidth = 112f;
+            var topActionGap = 8f;
+            SetComponentRect(likeToggleButton, new Vector2(padding + contentWidth - likeButtonWidth, topActionY), new Vector2(likeButtonWidth, 32f));
+            SetComponentRect(writeReportButton, new Vector2(padding + contentWidth - likeButtonWidth - topActionGap - reviewButtonWidth, topActionY), new Vector2(reviewButtonWidth, 32f));
+
             var chipGap = Mathf.Clamp(contentWidth * 0.024f, 8f, 12f);
             var chipWidth = (contentWidth - chipGap * 2f) / 3f;
             var chipHeight = 34f;
@@ -245,9 +300,33 @@ namespace BookshelfPorting.Runtime
             var hintY = -268f;
             var hintHeight = Mathf.Max(92f, -deleteY - Mathf.Abs(hintY) - 18f);
 
-            SetComponentRect(descriptionText, new Vector2(padding, hintY), new Vector2(contentWidth, hintHeight));
+            var scrollbarWidth = 8f;
+            var scrollbarGap = 6f;
+            var descriptionWidth = Mathf.Max(80f, contentWidth - scrollbarWidth - scrollbarGap);
+            SetComponentRect(descriptionScrollRect, new Vector2(padding, hintY), new Vector2(descriptionWidth, hintHeight));
+            SetComponentRect(descriptionScrollbar, new Vector2(padding + descriptionWidth + scrollbarGap, hintY), new Vector2(scrollbarWidth, hintHeight));
+            SetComponentRect(descriptionText, Vector2.zero, new Vector2(descriptionWidth, hintHeight));
             SetComponentRect(readReportButton, new Vector2(padding, actionY), new Vector2(contentWidth, buttonHeight));
+            SetComponentRect(addAdvertisementBookButton, new Vector2(padding, actionY), new Vector2(contentWidth, buttonHeight));
             SetComponentRect(deleteButton, new Vector2(padding, deleteY), new Vector2(contentWidth, buttonHeight));
+            RefreshDescriptionScrollContent(false);
+        }
+
+        private void RefreshDescriptionScrollContent(bool resetToTop)
+        {
+            if (descriptionText == null || descriptionContent == null || descriptionScrollRect == null)
+            {
+                return;
+            }
+
+            var viewportHeight = RuntimeHudLayout.GetScrollViewportHeight(descriptionScrollRect, Mathf.Max(52f, descriptionText.rectTransform.rect.height));
+            var contentWidth = descriptionScrollRect.viewport != null && descriptionScrollRect.viewport.rect.width > 1f
+                ? descriptionScrollRect.viewport.rect.width
+                : Mathf.Max(1f, descriptionText.rectTransform.rect.width);
+            var preferredHeight = Mathf.Max(viewportHeight, descriptionText.preferredHeight + 8f);
+            descriptionContent.sizeDelta = new Vector2(0f, preferredHeight);
+            RuntimeHudLayout.SetComponentRect(descriptionText, new Vector2(0f, 1f), new Vector2(0f, 1f), Vector2.zero, new Vector2(contentWidth, preferredHeight));
+            RuntimeHudLayout.ApplyScrollState(descriptionScrollRect, descriptionScrollbar, descriptionContent, preferredHeight > viewportHeight + 1f, resetToTop, 24f);
         }
 
         private static void StyleChipText(Text text, Color32 color)
