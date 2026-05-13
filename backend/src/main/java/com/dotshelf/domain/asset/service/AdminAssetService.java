@@ -157,6 +157,8 @@ public class AdminAssetService {
             throw new CustomException(ErrorCode.ASSET_CODE_ALREADY_EXISTS);
         }
         AssetCategory category = getCategory(request.categoryCode());
+        // V27 이후 일반 Asset 의 테마/배치는 theme/placement 컬럼에 직접 저장한다.
+        // compatibleTargets JSON 은 ThemeAsset 의 자식 매핑 전용으로만 유지되므로 여기선 안 채운다.
         Asset asset = Asset.builder()
                 .categoryId(category.getId())
                 .code(request.code())
@@ -168,7 +170,8 @@ public class AdminAssetService {
                 .pricePages(request.pricePages() == null ? 0 : request.pricePages())
                 .creator(request.creator())
                 .supplier(request.supplier())
-                .compatibleTargets(request.compatibleTargets())
+                .theme(normalizeBlank(request.theme()))
+                .placement(normalizeBlank(request.placement()))
                 .allowsCustomization(request.allowsCustomization())
                 .isActive(request.active() != null && request.active())
                 .build();
@@ -195,7 +198,8 @@ public class AdminAssetService {
                 request.pricePages() == null ? asset.getPricePages() : request.pricePages(),
                 request.creator() == null ? asset.getCreator() : request.creator(),
                 request.supplier() == null ? asset.getSupplier() : request.supplier(),
-                request.compatibleTargets() == null ? asset.getCompatibleTargets() : request.compatibleTargets(),
+                request.theme() == null ? asset.getTheme() : normalizeBlank(request.theme()),
+                request.placement() == null ? asset.getPlacement() : normalizeBlank(request.placement()),
                 request.allowsCustomization() == null ? asset.isAllowsCustomization() : request.allowsCustomization());
         writeAudit(actor, AUDIT_ACTION_UPDATE, asset.getId(), before, asset.getCode(), ipAddress);
         return AdminAssetResponse.from(asset);

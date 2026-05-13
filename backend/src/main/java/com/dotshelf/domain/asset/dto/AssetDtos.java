@@ -13,6 +13,7 @@ import com.dotshelf.global.storage.S3StorageService.PresignedPut;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -30,6 +31,8 @@ public final class AssetDtos {
             String tier,
             String assetType,
             String collectionCode,
+            String theme,
+            String placement,
             String previewImageUrl,
             Long fileSize,
             String fileHash,
@@ -53,7 +56,7 @@ public final class AssetDtos {
                 boolean owned,
                 boolean wished,
                 boolean allowsCustomization) {
-            this(id, categoryId, code, name, tier, assetType, null, previewImageUrl,
+            this(id, categoryId, code, name, tier, assetType, null, null, null, previewImageUrl,
                     null, null, null, 1, pricePages, owned, wished, allowsCustomization);
         }
 
@@ -66,6 +69,8 @@ public final class AssetDtos {
                     asset.getTier(),
                     asset.getAssetType(),
                     asset.getCollectionCode(),
+                    asset.getTheme(),
+                    asset.getPlacement(),
                     asset.getPreviewImageUrl(),
                     asset.getFileSize(),
                     asset.getFileHash(),
@@ -281,6 +286,12 @@ public final class AssetDtos {
             Integer pricePages,
             String creator,
             String supplier,
+            // V27 부터 일반 Asset 의 호환성 메타는 theme / placement 컬럼으로 직접 받는다.
+            // 기존 compatibleTargets JSON 필드는 호환을 위해 잠시 받도록 두지만, BE 는 무시.
+            @Size(max = 30, message = "theme은 30자 이하여야 합니다.")
+            String theme,
+            @Pattern(regexp = "floor|wall", message = "placement는 'floor' 또는 'wall' 이어야 합니다.")
+            String placement,
             String compatibleTargets,
             Boolean allowsCustomization,
             Boolean active
@@ -299,6 +310,10 @@ public final class AssetDtos {
             Integer pricePages,
             String creator,
             String supplier,
+            @Size(max = 30, message = "theme은 30자 이하여야 합니다.")
+            String theme,
+            @Pattern(regexp = "floor|wall", message = "placement는 'floor' 또는 'wall' 이어야 합니다.")
+            String placement,
             String compatibleTargets,
             Boolean allowsCustomization
     ) {
@@ -356,6 +371,8 @@ public final class AssetDtos {
             String collectionCode,
             int pricePages,
             String supplier,
+            String theme,
+            String placement,
             String compatibleTargets,
             String assetUrl,
             String previewImageUrl,
@@ -379,6 +396,8 @@ public final class AssetDtos {
                     asset.getCollectionCode(),
                     asset.getPricePages(),
                     asset.getSupplier(),
+                    asset.getTheme(),
+                    asset.getPlacement(),
                     asset.getCompatibleTargets(),
                     asset.getAssetUrl(),
                     asset.getPreviewImageUrl(),
@@ -407,6 +426,8 @@ public final class AssetDtos {
             String assetType,
             String collectionCode,
             String tier,
+            String theme,
+            String placement,
             int version,
             int pricePages,
             boolean hasAssetUrl,
@@ -424,6 +445,8 @@ public final class AssetDtos {
                     asset.getAssetType(),
                     asset.getCollectionCode(),
                     asset.getTier(),
+                    asset.getTheme(),
+                    asset.getPlacement(),
                     asset.getVersion(),
                     asset.getPricePages(),
                     asset.getAssetUrl() != null && !asset.getAssetUrl().isBlank(),

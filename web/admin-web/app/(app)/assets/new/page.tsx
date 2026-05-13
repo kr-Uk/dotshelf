@@ -29,7 +29,6 @@ import { api, ApiError } from "@/lib/api";
 import {
   PlacementToggle,
   ThemeSelector,
-  serializeCompatibleTargets,
   type Placement,
 } from "@/lib/asset-form";
 import {
@@ -159,7 +158,8 @@ export default function NewAssetPage() {
         pricePages: Number.isFinite(parsedPrice) ? parsedPrice : 0,
         creator: null,
         supplier: form.supplier.trim() || null,
-        compatibleTargets: serializeCompatibleTargets(form.theme, form.placement),
+        theme: form.theme,
+        placement: form.placement || null,
         allowsCustomization: true,
         active: false,
       };

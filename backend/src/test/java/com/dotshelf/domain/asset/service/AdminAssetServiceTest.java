@@ -103,6 +103,8 @@ class AdminAssetServiceTest {
                         300,
                         "DotShelf",
                         "DotShelf Studio",
+                        "DEEPSEA",
+                        "floor",
                         null,
                         true,
                         false),
@@ -114,6 +116,8 @@ class AdminAssetServiceTest {
         then(assetRepository).should().save(assetCaptor.capture());
         assertThat(assetCaptor.getValue().getAssetScope()).isEqualTo("SPACE");
         assertThat(assetCaptor.getValue().getPricePages()).isEqualTo(300);
+        assertThat(assetCaptor.getValue().getTheme()).isEqualTo("DEEPSEA");
+        assertThat(assetCaptor.getValue().getPlacement()).isEqualTo("floor");
     }
 
     @Test
@@ -500,6 +504,8 @@ class AdminAssetServiceTest {
                             "NORMAL",
                             null,
                             0,
+                            null,
+                            null,
                             null,
                             null,
                             null,
