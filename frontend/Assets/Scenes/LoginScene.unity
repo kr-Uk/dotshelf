@@ -385,6 +385,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe9049c7360694c4cb85b37b8ceb5a90, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::App.Bootstrap.LoginSceneController
+  onboardingPreviewConfig: {fileID: 11400000, guid: 632fa399723c5054bb6a103ed0025987, type: 2}
 --- !u!114 &47858502
 MonoBehaviour:
   m_ObjectHideFlags: 0
