@@ -597,7 +597,6 @@ namespace BookshelfPorting.Runtime
         private Button closeBookCoverSkinButton;
         private readonly Button[] bookCoverSkinButtons = new Button[BookCoverSkinOptionCount];
         private readonly Image[] bookCoverSkinPreviewImages = new Image[BookCoverSkinOptionCount];
-        private readonly Dictionary<string, Sprite> bookCoverSkinPreviewSprites = new Dictionary<string, Sprite>();
         private GameObject advertisementBookAddPanel;
         private Text advertisementBookAddTitleText;
         private Text advertisementBookAddHintText;
@@ -1361,6 +1360,11 @@ namespace BookshelfPorting.Runtime
             DetachNotebookApiCallbacks();
             CancelBookAddCoverLoads();
             ClearBookAddCoverSpriteCache();
+            if (pendingAdvertisementBookAddPlacementCoroutine != null)
+            {
+                StopCoroutine(pendingAdvertisementBookAddPlacementCoroutine);
+                pendingAdvertisementBookAddPlacementCoroutine = null;
+            }
         }
 
         public void FocusQuarterView()
@@ -7636,7 +7640,7 @@ namespace BookshelfPorting.Runtime
 
             var option = SponsoredBookCoverSkinOptions[optionIndex];
             if (!string.IsNullOrWhiteSpace(option.ResourcePath) &&
-                Resources.Load<Texture2D>(option.ResourcePath) == null)
+                !BookshelfGenerator.TryGetBookCoverSkinSprite(option.ResourcePath, out _))
             {
                 ShowBookshelfTransientStatus("표지 변경 실패", "선택한 표지 에셋을 찾을 수 없습니다.", true);
                 return;
@@ -7769,7 +7773,7 @@ namespace BookshelfPorting.Runtime
                 var option = SponsoredBookCoverSkinOptions[i];
                 if (option != null &&
                     !string.IsNullOrWhiteSpace(option.ResourcePath) &&
-                    Resources.Load<Texture2D>(option.ResourcePath) != null)
+                    BookshelfGenerator.TryGetBookCoverSkinSprite(option.ResourcePath, out _))
                 {
                     return true;
                 }
@@ -7780,36 +7784,13 @@ namespace BookshelfPorting.Runtime
 
         private bool TryGetCoverSkinPreviewSprite(string resourcePath, out Sprite sprite)
         {
-            sprite = null;
-            if (string.IsNullOrWhiteSpace(resourcePath))
-            {
-                return false;
-            }
-
-            if (bookCoverSkinPreviewSprites.TryGetValue(resourcePath, out sprite) && sprite != null)
-            {
-                return true;
-            }
-
-            var texture = Resources.Load<Texture2D>(resourcePath);
-            if (texture == null)
-            {
-                return false;
-            }
-
-            sprite = Sprite.Create(
-                texture,
-                new Rect(0f, 0f, texture.width, texture.height),
-                new Vector2(0.5f, 0.5f),
-                100f);
-            bookCoverSkinPreviewSprites[resourcePath] = sprite;
-            return sprite != null;
+            return BookshelfGenerator.TryGetBookCoverSkinSprite(resourcePath, out sprite);
         }
 
         private void OpenAdvertisementBookAddPanel()
         {
             var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
-            if (!BookshelfSponsoredBook.IsAdvertisementBook(book) || advertisementBookAddPanel == null)
+            if (!CanAddAdvertisementBookFromDetail(book) || advertisementBookAddPanel == null)
             {
                 return;
             }
@@ -8032,7 +8013,7 @@ namespace BookshelfPorting.Runtime
                 BookshelfSponsoredBook.Publisher,
                 BookshelfSponsoredBook.Description,
                 BookOrientation.Front,
-                BookshelfSponsoredBook.CatalogBookId,
+                null,
                 BookshelfSponsoredBook.Source,
                 BookshelfSponsoredBook.Isbn13,
                 BookshelfSponsoredBook.Isbn10,
@@ -11204,6 +11185,16 @@ namespace BookshelfPorting.Runtime
                    (state == null || state.ActiveViewedBook == null || !state.ActiveViewedBook.isDecoration);
         }
 
+        private bool CanAddAdvertisementBookFromDetail(BookEntity book)
+        {
+            return BookshelfSponsoredBook.IsAdvertisementBook(book) &&
+                   CanMutateOwnedBookshelf() &&
+                   CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                   bookshelfGenerator != null &&
+                   bookshelfGenerator.BookshelfCount > 0 &&
+                   !IsBookshelfEditMode;
+        }
+
         private void RefreshBookshelfIndexDots(int displayIndex, int totalCount)
         {
             if (bookshelfIndexDotsRoot == null)
@@ -11518,8 +11509,10 @@ namespace BookshelfPorting.Runtime
             var hasReport = !string.IsNullOrWhiteSpace(meta.reportBody);
             var isAdvertisementBook = BookshelfSponsoredBook.IsAdvertisementBook(ActiveDetailBook);
             var canUseOwnerActions = CanUseOwnerBookActions();
+            var canAddAdvertisementBook = CanAddAdvertisementBookFromDetail(ActiveDetailBook);
             var canDeleteBook = canUseOwnerActions && !isAdvertisementBook;
             var viewModel = new BookDetailPanelViewModel(
+                BuildBookDetailPanelIdentityKey(ActiveDetailBook),
                 TryGetBookDisplayTitle(ActiveDetailBook),
                 $"저자      {ResolveFallbackText(meta.author, "저자 미상")}\n" +
                 $"출판사    {ResolveFallbackText(meta.publisher, "출판사 미상")}\n" +
@@ -11531,10 +11524,36 @@ namespace BookshelfPorting.Runtime
                 hasReport,
                 canDeleteBook,
                 canUseOwnerActions,
+                canAddAdvertisementBook,
                 meta.isLiked,
                 isAdvertisementBook,
                 pendingDeleteBook == ActiveDetailBook);
             bookDetailPanelController.Refresh(viewModel);
+        }
+
+        private static string BuildBookDetailPanelIdentityKey(BookEntity book)
+        {
+            if (book == null)
+            {
+                return string.Empty;
+            }
+
+            if (!string.IsNullOrWhiteSpace(book.bookshelfItemId))
+            {
+                return $"item:{book.bookshelfItemId}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(book.userBookId))
+            {
+                return $"user-book:{book.userBookId}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(book.bookId))
+            {
+                return $"book:{book.bookId}";
+            }
+
+            return $"runtime:{book.GetInstanceID()}";
         }
 
         private void RefreshBookFocusToolbar()

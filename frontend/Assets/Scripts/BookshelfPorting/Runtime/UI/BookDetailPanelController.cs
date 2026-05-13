@@ -45,6 +45,7 @@ namespace BookshelfPorting.Runtime
     internal readonly struct BookDetailPanelViewModel
     {
         public BookDetailPanelViewModel(
+            string identityKey,
             string title,
             string meta,
             string averageRating,
@@ -54,10 +55,12 @@ namespace BookshelfPorting.Runtime
             bool hasReport,
             bool canDeleteBook,
             bool canUseOwnerActions,
+            bool canAddAdvertisementBook,
             bool isLiked,
             bool isAdvertisementBook,
             bool isConfirmingDelete)
         {
+            IdentityKey = identityKey;
             Title = title;
             Meta = meta;
             AverageRating = averageRating;
@@ -67,11 +70,13 @@ namespace BookshelfPorting.Runtime
             HasReport = hasReport;
             CanDeleteBook = canDeleteBook;
             CanUseOwnerActions = canUseOwnerActions;
+            CanAddAdvertisementBook = canAddAdvertisementBook;
             IsLiked = isLiked;
             IsAdvertisementBook = isAdvertisementBook;
             IsConfirmingDelete = isConfirmingDelete;
         }
 
+        public string IdentityKey { get; }
         public string Title { get; }
         public string Meta { get; }
         public string AverageRating { get; }
@@ -81,6 +86,7 @@ namespace BookshelfPorting.Runtime
         public bool HasReport { get; }
         public bool CanDeleteBook { get; }
         public bool CanUseOwnerActions { get; }
+        public bool CanAddAdvertisementBook { get; }
         public bool IsLiked { get; }
         public bool IsAdvertisementBook { get; }
         public bool IsConfirmingDelete { get; }
@@ -118,6 +124,7 @@ namespace BookshelfPorting.Runtime
         private readonly Button placementButton;
         private readonly Button closeButton;
         private readonly Button deleteButton;
+        private string renderedIdentityKey;
 
         public BookDetailPanelController(Transform parent, BookDetailPanelCallbacks callbacks)
         {
@@ -135,6 +142,7 @@ namespace BookshelfPorting.Runtime
             titleText.fontSize = 22;
             titleText.fontStyle = FontStyle.Bold;
             titleText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            titleText.verticalOverflow = VerticalWrapMode.Truncate;
             titleText.color = new Color32(49, 42, 36, 255);
 
             metaText = RuntimeHudFactory.CreateLabel(Panel.transform, "BookMetaText", new Vector2(20f, -112f), new Vector2(340f, 72f), TextAnchor.UpperLeft);
@@ -196,6 +204,10 @@ namespace BookshelfPorting.Runtime
             if (Panel != null)
             {
                 Panel.SetActive(isActive);
+                if (!isActive)
+                {
+                    renderedIdentityKey = null;
+                }
             }
         }
 
@@ -213,13 +225,16 @@ namespace BookshelfPorting.Runtime
             totalLikeChipText.text = $"좋아요 {model.TotalLikes}개";
             reviewCountChipText.text = $"리뷰 {model.ReviewCount}개";
             descriptionText.text = model.Description;
-            RefreshDescriptionScrollContent(true);
+            var nextIdentityKey = string.IsNullOrWhiteSpace(model.IdentityKey) ? model.Title : model.IdentityKey;
+            var resetDescriptionScroll = !string.Equals(renderedIdentityKey, nextIdentityKey, System.StringComparison.Ordinal);
+            renderedIdentityKey = nextIdentityKey;
+            RefreshDescriptionScrollContent(resetDescriptionScroll);
 
             SetButtonActive(readToggleButton, false);
             var canToggleLike = model.CanUseOwnerActions && !model.IsAdvertisementBook;
             SetButtonActive(likeToggleButton, canToggleLike);
             likeToggleButton.interactable = canToggleLike;
-            RuntimeHudStyle.SetButtonLabel(likeToggleButton, "👍");
+            RuntimeHudStyle.SetButtonLabel(likeToggleButton, "좋아요");
             RuntimeHudStyle.StyleButton(
                 likeToggleButton,
                 model.IsLiked ? new Color32(173, 122, 79, 245) : new Color32(238, 248, 241, 235),
@@ -240,9 +255,9 @@ namespace BookshelfPorting.Runtime
             readReportButton.interactable = model.HasReport;
             StyleStandardButton(readReportButton, model.HasReport, 13);
 
-            SetButtonActive(addAdvertisementBookButton, model.IsAdvertisementBook);
-            addAdvertisementBookButton.interactable = model.IsAdvertisementBook;
-            StyleStandardButton(addAdvertisementBookButton, true, 13);
+            SetButtonActive(addAdvertisementBookButton, model.CanAddAdvertisementBook);
+            addAdvertisementBookButton.interactable = model.CanAddAdvertisementBook;
+            StyleStandardButton(addAdvertisementBookButton, model.CanAddAdvertisementBook, 13);
 
             SetButtonActive(deleteButton, model.CanDeleteBook);
             deleteButton.interactable = model.CanDeleteBook;
@@ -270,14 +285,16 @@ namespace BookshelfPorting.Runtime
             var contentWidth = Mathf.Max(320f, panelWidth - padding * 2f);
             RuntimeHudLayout.SetChildRect(Panel, "BookPanelAccent", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -22f), new Vector2(84f, 3f));
             RuntimeHudLayout.SetChildActive(Panel, "BookPanelAccent", false);
-            SetComponentRect(eyebrowText, new Vector2(padding, -30f), new Vector2(contentWidth, 18f));
-            SetComponentRect(titleText, new Vector2(padding, -54f), new Vector2(contentWidth, 56f));
-            SetComponentRect(metaText, new Vector2(padding, -122f), new Vector2(contentWidth, 68f));
-
             var topActionY = -30f;
-            var likeButtonWidth = 44f;
+            var likeButtonWidth = 64f;
             var reviewButtonWidth = 112f;
             var topActionGap = 8f;
+            var topActionsWidth = likeButtonWidth + topActionGap + reviewButtonWidth;
+            var headingWidth = Mathf.Max(96f, contentWidth - topActionsWidth - 14f);
+            SetComponentRect(eyebrowText, new Vector2(padding, -30f), new Vector2(headingWidth, 18f));
+            SetComponentRect(titleText, new Vector2(padding, -54f), new Vector2(headingWidth, 56f));
+            SetComponentRect(metaText, new Vector2(padding, -122f), new Vector2(contentWidth, 68f));
+
             SetComponentRect(likeToggleButton, new Vector2(padding + contentWidth - likeButtonWidth, topActionY), new Vector2(likeButtonWidth, 32f));
             SetComponentRect(writeReportButton, new Vector2(padding + contentWidth - likeButtonWidth - topActionGap - reviewButtonWidth, topActionY), new Vector2(reviewButtonWidth, 32f));
 
