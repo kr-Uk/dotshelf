@@ -542,6 +542,31 @@ namespace App.Bootstrap
         // [0..1] 클램프는 ApplyWallFadeState 에서 매 적용 시 보장.
         [SerializeField, Range(0f, 1f)] private float wallFadeAlpha = 0.18f;
 
+        // 대시보드(GuestbookBoard) focus 진입 시 placedItemsRoot 자식(가구/장식)을 반투명으로
+        // fade — 사용자가 대시보드를 정면으로 볼 때 가구가 화면을 가리지 않도록 임시 처리.
+        // Renderer.material instance 만 swap, sharedMaterial 원본은 보존. 이탈 시 원복.
+        // wall fade 와 동일한 instance-material 패턴이라 동시 활성화돼도 서로 다른 Renderer
+        // 집합을 다룬다 (placedItemsRoot 자식 vs scene 의 LeftWall/RightWall/...).
+        private sealed class PlacedItemFadeCache
+        {
+            public Renderer Renderer;
+            public Material InstanceMaterial;
+            public Material SharedOriginal;
+            public bool RendererWasEnabled;
+        }
+        private readonly List<PlacedItemFadeCache> placedItemFadeCaches = new List<PlacedItemFadeCache>();
+        private bool placedItemFadeActive;
+        [SerializeField, Range(0f, 1f)] private float guestbookFocusFadeAlpha = 0.15f;
+
+        // NotebookStation 자식 ScreenSaverCanvas 등 World-Space Canvas — Graphic/CanvasRenderer 라
+        // Renderer.material alpha 로는 못 가린다. Canvas.enabled 토글로 별도 처리.
+        private struct CanvasFadeCache
+        {
+            public Canvas Canvas;
+            public bool WasEnabled;
+        }
+        private readonly List<CanvasFadeCache> canvasFadeCaches = new List<CanvasFadeCache>();
+
         // ---- Decoration save / dirty state ----
         // 명시적 "저장" 버튼 흐름. PlaceInventoryEntry / FinishDrag / RotateSelectedBy /
         // DeleteSelectedObject 직후 SetDirty 만 호출하고, 실제 영속화는 OnSaveButtonClicked 에서만.
@@ -3816,6 +3841,15 @@ namespace App.Bootstrap
         // Desk entry 의 monitorPrefab spawn — book 책상 mesh swap 의 일부. 별도 GameObject (이름
         // MeshSwap_DeskMonitor) 로 roomRoot 자식. 다음 desk 적용 또는 RestoreCategoryNativeMesh 시
         // 같이 정리.
+        //
+        // **왜 NotebookStation 자식이 아니라 roomRoot 직속 자식인가** —
+        // DeepSea 등 일부 entry 는 OverrideNotebookStation + LockNotebookStationToMonitor 가 true 라
+        // NotebookStation transform 이 이 monitor 위치를 anchor 로 따라가야 한다 (ApplyNotebookStationPlacement).
+        // monitor 를 NotebookStation 자식으로 두면 "parent 가 child 위치를 따라가는" 순환 의존이 되어
+        // Unity transform graph 가 깨진다. 그래서 monitor 를 상위(roomRoot 직속) 에 두고 station 을
+        // 거기에 맞춰 옮기는 구조. 발견성 비용은 있지만(같은 "노트북 디스플레이" 도메인이 두 root 로
+        // 분산 — NotebookStation 자식 mesh + roomRoot 자식 MeshSwap_DeskMonitor) 이 의도된 구조다.
+        // cross-cutting traverse (fade/hide/screenshot 등) 가 새로 필요하면 두 root 모두 잡을 것.
         private Transform ApplyMonitorMeshSwap(Transform roomRoot, CustomizationEntry entry)
         {
             // 이전 monitor swap 정리
@@ -6417,6 +6451,11 @@ namespace App.Bootstrap
             // partial rect. 벽 alpha/Renderer 도 같이 원복 — 안 그러면 다음 진입 시 invalid
             // sharedMaterial reference + leaked instance material 이 남는다.
             RestoreWallVisibility("OnDestroy");
+            if (placedItemFadeActive)
+            {
+                RestoreGuestbookFocusFade();
+                placedItemFadeActive = false;
+            }
             EndCameraViewportEdit();
             RoomEditThemeFilter.Changed -= HandleThemeFilterChanged;
             // MR #134 — footprint preview 의 runtime-생성 mesh/Material/GameObject 를 명시 destroy.
@@ -6434,8 +6473,15 @@ namespace App.Bootstrap
         // wallVisibilityCollected==true 인 경우(=fade instance 가 아직 살아있는 경우) 만 추가로 정리.
         private void OnDisable()
         {
-            if (!wallVisibilityCollected) return;
-            RestoreWallVisibility("OnDisable");
+            if (wallVisibilityCollected)
+            {
+                RestoreWallVisibility("OnDisable");
+            }
+            if (placedItemFadeActive)
+            {
+                RestoreGuestbookFocusFade();
+                placedItemFadeActive = false;
+            }
         }
 
         // ---------- Animal Crossing 해피홈식 자유 orbit 카메라 ----------
@@ -7580,6 +7626,242 @@ namespace App.Bootstrap
                     $"(shader={cache.InstanceMaterial.shader?.name}). alpha fade 불가 → Renderer 통째 숨김 fallback.");
                 cache.Renderer.enabled = false;
             }
+        }
+
+        // 대시보드(GuestbookBoard) focus toggle — true 면 placedItemsRoot 자식 Renderer 들을
+        // 반투명 instance material 로 swap, false 면 sharedMaterial 원본으로 원복.
+        // wall fade 와 독립적으로 동작하며, 같은 ConfigureMaterialAsTransparent helper 를 공유한다.
+        // 호출자: BookshelfExperienceManager.SyncFromCameraMode (focus area = Guestbook 진입/이탈).
+        public void SetGuestbookFocusFadeActive(bool active)
+        {
+            if (active == placedItemFadeActive)
+            {
+                return;
+            }
+
+            if (active)
+            {
+                ApplyGuestbookFocusFade();
+                // fade 가 적용된 target 이 하나도 없으면(BookshelfGenerator 미완료 등) active flag 도
+                // 마킹 안 해서 다음 호출에서 자연스럽게 retry. 정상 흐름에선 사용자 인터랙션 시점에
+                // 이미 생성 완료라 race 가능성은 낮지만 방어적.
+                if (placedItemFadeCaches.Count == 0 && canvasFadeCaches.Count == 0)
+                {
+                    Debug.Log("[GuestbookFocus][PlacedFade] skip-marking-active — no targets faded (placedItemsRoot/NotebookStation 모두 비어 있음).");
+                    return;
+                }
+            }
+            else
+            {
+                RestoreGuestbookFocusFade();
+            }
+            placedItemFadeActive = active;
+        }
+
+        private void ApplyGuestbookFocusFade()
+        {
+            placedItemFadeCaches.Clear();
+
+            var alpha = Mathf.Clamp01(guestbookFocusFadeAlpha);
+
+            // 대상 1) placedItemsRoot 자식 — 가구/장식.
+            // 대상 2) NotebookStation 자식 — 책상(Desk) + 노트북(Notebook) mesh 등.
+            //         단 DashboardScreenPanel 은 UIDocument 라 별도 처리(아래) → 자식 Renderer 도 제외.
+            var collected = new List<Renderer>();
+            int placedItemCount = 0, notebookStationCount = 0;
+
+            if (placedItemsRoot != null)
+            {
+                var placedRenderers = placedItemsRoot.GetComponentsInChildren<Renderer>(true);
+                for (int i = 0; i < placedRenderers.Length; i++)
+                {
+                    if (placedRenderers[i] == null) continue;
+                    collected.Add(placedRenderers[i]);
+                    placedItemCount++;
+                }
+            }
+
+            // FindNotebookStation(null) 은 내부에서 FindChildByName(null, ...) 를 거쳐 NPE 가 난다 —
+            // null-safe 한 scene-wide name 검색을 직접 사용.
+            var notebookStation = FindSceneTransformByName("NotebookStation");
+            Transform dashboardPanelTransform = FindSceneTransformByName("DashboardScreenPanel");
+            if (notebookStation != null)
+            {
+                var stationRenderers = notebookStation.GetComponentsInChildren<Renderer>(true);
+                for (int i = 0; i < stationRenderers.Length; i++)
+                {
+                    var r = stationRenderers[i];
+                    if (r == null) continue;
+                    if (dashboardPanelTransform != null && r.transform.IsChildOf(dashboardPanelTransform))
+                    {
+                        continue;
+                    }
+                    collected.Add(r);
+                    notebookStationCount++;
+                }
+            }
+
+            // Desk customization (DeepSea 등) 이 적용되면 노트북 디스플레이가 NotebookStation 자식이
+            // 아니라 roomRoot 자식의 별도 prefab(MeshSwap_DeskMonitor) 으로 swap 되어 위 traverse 에
+            // 안 잡힌다. 그 prefab 도 fade 대상에 포함.
+            var monitorSwap = FindSceneTransformByName("MeshSwap_DeskMonitor");
+            int monitorSwapCount = 0;
+            if (monitorSwap != null)
+            {
+                var monitorRenderers = monitorSwap.GetComponentsInChildren<Renderer>(true);
+                for (int i = 0; i < monitorRenderers.Length; i++)
+                {
+                    var r = monitorRenderers[i];
+                    if (r == null) continue;
+                    collected.Add(r);
+                    monitorSwapCount++;
+                }
+            }
+
+            int faded = 0, skipped = 0, hidden = 0;
+            for (int i = 0; i < collected.Count; i++)
+            {
+                var r = collected[i];
+                if (r == null) continue;
+
+                // pending placement(배치 미리보기 ghost) 의 material 은 이미 별도 instance —
+                // 또 swap 하면 ghost 복구 시 reference 가 깨진다. 정상 흐름엔 Guestbook focus
+                // 진입 직전 edit mode 가 종료돼 pending 이 비어 있지만 방어적으로 skip.
+                if (pendingMaterialBackups.ContainsKey(r))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var cache = new PlacedItemFadeCache
+                {
+                    Renderer = r,
+                    InstanceMaterial = null,
+                    SharedOriginal = r.sharedMaterial,
+                    RendererWasEnabled = r.enabled,
+                };
+
+                if (!r.enabled)
+                {
+                    r.enabled = true;
+                }
+
+                cache.InstanceMaterial = r.material;
+                ConfigureMaterialAsTransparent(cache.InstanceMaterial);
+
+                // shader 가 URP 표준 _Surface keyword 를 지원해야 alpha 변경이 시각적 transparent
+                // 로 전환된다. Shader Graphs/glTF-pbrMetallicRoughness 같은 custom shader 는 _BaseColor
+                // 는 있어도 _Surface 가 없어 alpha 변경 후에도 opaque 그대로 렌더링 — 결국 안 가려진다.
+                // 그래서 _Surface 없으면 alpha 변경은 시도하지 않고 hidden fallback 으로 직행.
+                bool supportsTransparentSurface = cache.InstanceMaterial.HasProperty("_Surface");
+                bool applied = false;
+                if (supportsTransparentSurface)
+                {
+                    if (cache.InstanceMaterial.HasProperty("_BaseColor"))
+                    {
+                        var c = cache.InstanceMaterial.GetColor("_BaseColor");
+                        c.a = alpha;
+                        cache.InstanceMaterial.SetColor("_BaseColor", c);
+                        applied = true;
+                    }
+                    else if (cache.InstanceMaterial.HasProperty("_Color"))
+                    {
+                        var c = cache.InstanceMaterial.GetColor("_Color");
+                        c.a = alpha;
+                        cache.InstanceMaterial.SetColor("_Color", c);
+                        applied = true;
+                    }
+                }
+
+                if (!applied)
+                {
+                    // alpha fade 불가 — 통째 숨김 fallback. 이탈 시 RendererWasEnabled 로 복구.
+                    r.enabled = false;
+                    Destroy(cache.InstanceMaterial);
+                    cache.InstanceMaterial = null;
+                    r.sharedMaterial = cache.SharedOriginal;
+                    hidden++;
+                }
+                else
+                {
+                    faded++;
+                }
+
+                placedItemFadeCaches.Add(cache);
+            }
+
+            // DashboardScreenPanel 자체는 "대시보드 화면 본체" 라 절대 끄면 안 된다 — 사용자가 보려는 대상.
+            // dashboardPanelTransform 변수는 자식 traverse 시 제외 기준으로만 사용. UIDocument 토글은 X.
+
+            // NotebookStation/placedItems/MeshSwap_DeskMonitor 자식의 World-Space Canvas
+            // (ScreenSaverCanvas 등) 도 별도 토글. DashboardScreenPanel 자식 Canvas 는 대시보드 본체
+            // 일부이므로 제외.
+            canvasFadeCaches.Clear();
+            CollectAndDisableCanvasesUnder(placedItemsRoot != null ? placedItemsRoot.transform : null, dashboardPanelTransform);
+            CollectAndDisableCanvasesUnder(notebookStation, dashboardPanelTransform);
+            CollectAndDisableCanvasesUnder(monitorSwap, dashboardPanelTransform);
+
+            Debug.Log(
+                $"[GuestbookFocus][PlacedFade] applied — faded={faded} hidden-fallback={hidden} " +
+                $"skipped(pending)={skipped} sources(placedItems={placedItemCount},notebookStation={notebookStationCount},monitorSwap={monitorSwapCount}) " +
+                $"canvases-disabled={canvasFadeCaches.Count} alpha={alpha:0.00}");
+        }
+
+        private void CollectAndDisableCanvasesUnder(Transform root, Transform exclusionRoot)
+        {
+            if (root == null) return;
+            var canvases = root.GetComponentsInChildren<Canvas>(true);
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                var canvas = canvases[i];
+                if (canvas == null) continue;
+                if (exclusionRoot != null && canvas.transform.IsChildOf(exclusionRoot))
+                {
+                    continue;
+                }
+                canvasFadeCaches.Add(new CanvasFadeCache { Canvas = canvas, WasEnabled = canvas.enabled });
+                canvas.enabled = false;
+            }
+        }
+
+        private void RestoreGuestbookFocusFade()
+        {
+            int restored = 0, destroyed = 0;
+            for (int i = 0; i < placedItemFadeCaches.Count; i++)
+            {
+                var cache = placedItemFadeCaches[i];
+                if (cache.Renderer != null)
+                {
+                    if (cache.InstanceMaterial != null)
+                    {
+                        cache.Renderer.sharedMaterial = cache.SharedOriginal;
+                    }
+                    cache.Renderer.enabled = cache.RendererWasEnabled;
+                    restored++;
+                }
+                if (cache.InstanceMaterial != null)
+                {
+                    Destroy(cache.InstanceMaterial);
+                    cache.InstanceMaterial = null;
+                    destroyed++;
+                }
+            }
+
+            // Canvas 원복.
+            int canvasRestored = 0;
+            for (int i = 0; i < canvasFadeCaches.Count; i++)
+            {
+                var c = canvasFadeCaches[i];
+                if (c.Canvas != null)
+                {
+                    c.Canvas.enabled = c.WasEnabled;
+                    canvasRestored++;
+                }
+            }
+            canvasFadeCaches.Clear();
+
+            Debug.Log($"[GuestbookFocus][PlacedFade] restored — restored={restored}/{placedItemFadeCaches.Count} destroyed-instances={destroyed} canvases-restored={canvasRestored}");
+            placedItemFadeCaches.Clear();
         }
 
         // URP Lit/Standard 호환 — opaque material 의 surface mode 와 blend state 를 transparent
