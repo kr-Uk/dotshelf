@@ -29,6 +29,19 @@ namespace Dotshelf.Scripts.RoomTheme
                  "user-placed deco(RoomEditModeController.placedItemsRoot)와 분리되어 테마 교체 시 안전하게 정리.")]
         [SerializeField] private Transform themeDecoRoot;
 
+        [Header("Wallpaper tiling")]
+        [Tooltip("벽지 텍스처 한 cycle 이 차지할 world-space 크기 (m). " +
+                 "x = 가로 1 cycle 길이, y = 세로 1 cycle 길이. " +
+                 "WallTilingNormalizer 가 각 wall renderer 의 face 크기에 비례한 _BaseMap_ST 를 " +
+                 "MaterialPropertyBlock 으로 설정해 모든 벽이 동일 texel density 를 갖게 한다. " +
+                 "Default (1.0, 2.8): 가로 1m, 세로 RoomHeight 당 한 번 반복. " +
+                 "BackWall 사이드 strip (~1m × 2.8m) 은 거의 (1,1) 로 현재와 유사하게 보이고, " +
+                 "LeftWall/RightWall (5m × 2.8m) 은 가로 5번 반복해 BackWall 과 패턴 밀도 일치. " +
+                 "패턴이 너무 작게 보이면 값 키우고(예: 1.5, 2.8), 너무 크면 줄인다(예: 0.7, 2.0).")]
+        [SerializeField] private Vector2 wallPatternWorldSize = new Vector2(1.0f, 2.8f);
+
+        public Vector2 WallPatternWorldSize => wallPatternWorldSize;
+
         [Header("State")]
         [SerializeField] private RoomThemeAsset currentTheme;
 
@@ -89,6 +102,10 @@ namespace Dotshelf.Scripts.RoomTheme
                     if (wallMat != null && RoomGameObjectPatterns.IsWallName(n))
                     {
                         r.sharedMaterial = wallMat; wallSwapped++;
+                        // wall 의 face 크기가 LR(5×2.8) vs BackWall strip(~1×2.8) 으로 크게 달라
+                        // 동일 material 의 tiling=(1,1) 만으로는 좌/우가 5× stretch 되어 보임.
+                        // MPB 로 face-비례 _BaseMap_ST 를 set → 동일 world-space texel density.
+                        WallTilingNormalizer.Apply(r, wallPatternWorldSize);
                     }
                     else if (floorMat != null && n == RoomGameObjectPatterns.Floor)
                     {
