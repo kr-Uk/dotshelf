@@ -485,15 +485,13 @@ function SmartScreenHelp() {
       <ol className="mt-12 grid md:grid-cols-2 gap-5 list-none p-0">
         <li>
           <figure className="rounded-2xl bg-cream border border-beige p-5 shadow-warm-sm m-0">
-            <div className="rounded-xl overflow-hidden border border-beige bg-[#0078D7]">
-              <Image
-                src="/help/smartscreen-step1.png"
-                alt="Microsoft Defender SmartScreen 경고 창 — '추가 정보' 링크가 작게 표시되고 '실행 안 함' 버튼만 보이는 초기 상태"
-                width={1076}
-                height={1012}
-                className="w-full h-auto"
-              />
-            </div>
+            <Image
+              src="/help/smartscreen-step1.webp"
+              alt="Microsoft Defender SmartScreen 경고 창 — '추가 정보' 링크가 작게 표시되고 '실행 안 함' 버튼만 보이는 초기 상태"
+              width={515}
+              height={484}
+              className="w-full h-auto"
+            />
             <figcaption className="mt-4">
               <span className="mono text-[10px] uppercase tracking-widest text-wood">
                 Step 02 — before
@@ -508,15 +506,13 @@ function SmartScreenHelp() {
         </li>
         <li>
           <figure className="rounded-2xl bg-cream border border-beige p-5 shadow-warm-sm m-0">
-            <div className="rounded-xl overflow-hidden border border-beige bg-[#0078D7]">
-              <Image
-                src="/help/smartscreen-step2.png"
-                alt="Microsoft Defender SmartScreen 경고 창 — '추가 정보' 클릭 후 게시자 정보가 노출되고 우측 하단에 '실행' 버튼이 활성화된 상태"
-                width={1076}
-                height={1008}
-                className="w-full h-auto"
-              />
-            </div>
+            <Image
+              src="/help/smartscreen-step2.webp"
+              alt="Microsoft Defender SmartScreen 경고 창 — '추가 정보' 클릭 후 게시자 정보가 노출되고 우측 하단에 '실행' 버튼이 활성화된 상태"
+              width={516}
+              height={483}
+              className="w-full h-auto"
+            />
             <figcaption className="mt-4">
               <span className="mono text-[10px] uppercase tracking-widest text-wood">
                 Step 02 — after
