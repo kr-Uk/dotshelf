@@ -110,7 +110,8 @@ class AdminAssetControllerTest {
     void searchAssets_passesQueryParams() throws Exception {
         AdminAssetListItemResponse item = new AdminAssetListItemResponse(
                 10L, "DEEP_SEA_CHAIR_001", "깊은바다 의자", "CHAIR", "DEEP_SEA",
-                "NORMAL", 1, 300, true, true, false, false, Instant.parse("2026-05-11T00:00:00Z"));
+                "NORMAL", "DEEPSEA", "floor", 1, 300, true, true, false, false,
+                Instant.parse("2026-05-11T00:00:00Z"));
         given(adminAssetService.searchAssets(eq(1L), eq("DEEP_SEA"), eq("CHAIR"), eq("의자"), eq(false), eq(null), eq(20)))
                 .willReturn(new AdminAssetListResponse(List.of(item), null, 1L));
 
@@ -165,7 +166,9 @@ class AdminAssetControllerTest {
                 "DEEP_SEA",
                 300, // pricePages
                 "DotShelf Studio", // supplier
-                "{\"themes\":[\"DEEPSEA\"],\"placement\":[\"floor\"]}", // compatibleTargets
+                "DEEPSEA", // theme
+                "floor", // placement
+                null, // compatibleTargets (V27 이후 일반 Asset 은 null)
                 "https://cdn.test/chair.glb",
                 "https://cdn.test/chair.png",
                 null, // previewBundleUrl

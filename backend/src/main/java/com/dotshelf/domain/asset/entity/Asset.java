@@ -94,6 +94,25 @@ public class Asset extends BaseEntity {
     @Column(length = 100)
     private String supplier;
 
+    /**
+     * 일반 Asset 의 호환 테마. FE 의 ThemeSelector 가 보내는 단일값(예: "FANTASY", "DEEPSEA").
+     * 신규 등록부터 이 컬럼에만 쓰고 compatibleTargets JSON 에는 안 채운다 (V27 마이그레이션).
+     */
+    @Column(length = 30)
+    private String theme;
+
+    /**
+     * 일반 Asset 의 배치 위치. CHECK 제약으로 'floor' / 'wall' 중 하나로 강제 (V27).
+     */
+    @Column(length = 10)
+    private String placement;
+
+    /**
+     * Legacy + ThemeAsset 의 자식 자산 ID 매핑 ({"wallpaper":11,"floor":12,...}) 전용.
+     * 일반 Asset 의 테마/배치 메타는 V27 마이그레이션 이후 theme/placement 컬럼으로 이전돼서
+     * 신규 row 에서는 비워둔다 (AdminAssetService.createAsset 가 더 이상 안 채움).
+     * AssetService.getThemeContents 가 ThemeAsset row 의 child mapping 을 읽는 용도로만 남음.
+     */
     @Lob
     private String compatibleTargets;
 
@@ -118,8 +137,8 @@ public class Asset extends BaseEntity {
     private Asset(Long categoryId, String code, String name, String tier, String assetScope, String assetType,
                   String collectionCode, String unityResourceKey, String assetUrl, String contentType,
                   Long fileSize, String fileHash, Integer version, String previewImageUrl, int pricePages,
-                  String creator, String supplier, String compatibleTargets, Boolean isDefault,
-                  Boolean isActive, Boolean allowsCustomization) {
+                  String creator, String supplier, String theme, String placement, String compatibleTargets,
+                  Boolean isDefault, Boolean isActive, Boolean allowsCustomization) {
         this.categoryId = categoryId;
         this.code = code;
         this.name = name;
@@ -137,6 +156,8 @@ public class Asset extends BaseEntity {
         this.pricePages = pricePages;
         this.creator = creator;
         this.supplier = supplier;
+        this.theme = theme;
+        this.placement = placement;
         this.compatibleTargets = compatibleTargets;
         this.isDefault = isDefault != null && isDefault;
         this.isActive = isActive == null || isActive;
@@ -153,7 +174,8 @@ public class Asset extends BaseEntity {
             int pricePages,
             String creator,
             String supplier,
-            String compatibleTargets,
+            String theme,
+            String placement,
             Boolean allowsCustomization) {
         this.categoryId = categoryId;
         this.name = name;
@@ -164,7 +186,8 @@ public class Asset extends BaseEntity {
         this.pricePages = pricePages;
         this.creator = creator;
         this.supplier = supplier;
-        this.compatibleTargets = compatibleTargets;
+        this.theme = theme;
+        this.placement = placement;
         this.allowsCustomization = allowsCustomization == null ? true : allowsCustomization;
     }
 

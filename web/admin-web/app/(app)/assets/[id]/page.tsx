@@ -32,8 +32,6 @@ import { api, ApiError } from "@/lib/api";
 import {
   PlacementToggle,
   ThemeSelector,
-  deserializeCompatibleTargets,
-  serializeCompatibleTargets,
   type Placement,
 } from "@/lib/asset-form";
 import {
@@ -295,9 +293,11 @@ function MetadataEditor({ asset }: { asset: AdminAssetDetail }) {
   const qc = useQueryClient();
   // 부모에서 key={asset.id} 로 감싸므로 asset 이 바뀌면 컴포넌트가 새로 마운트된다 —
   // 초기값을 그대로 쓰고 useEffect로 동기화하지 않는다 (cascading render 회피).
-  const initial = deserializeCompatibleTargets(asset.compatibleTargets);
-  const [theme, setTheme] = useState(initial.theme);
-  const [placement, setPlacement] = useState<Placement>(initial.placement);
+  // placement 는 BE CHECK 제약상 'floor'|'wall'|null 만 들어오므로 그대로 Placement 로 좁힘.
+  const [theme, setTheme] = useState(asset.theme ?? "");
+  const [placement, setPlacement] = useState<Placement>(
+    asset.placement === "floor" || asset.placement === "wall" ? asset.placement : "",
+  );
   const [pricePages, setPricePages] = useState(String(asset.pricePages));
   const [supplier, setSupplier] = useState(asset.supplier ?? "");
 
@@ -322,7 +322,8 @@ function MetadataEditor({ asset }: { asset: AdminAssetDetail }) {
   const submit = () => {
     const parsedPrice = Number(pricePages);
     const payload: AdminAssetUpdateInput = {
-      compatibleTargets: serializeCompatibleTargets(theme, placement),
+      theme: theme || null,
+      placement: placement || null,
       pricePages: Number.isFinite(parsedPrice) ? parsedPrice : 0,
       supplier: supplier.trim() || null,
     };

@@ -622,6 +622,8 @@ export interface AdminAssetListItem {
   assetType: string;
   collectionCode: string | null;
   tier: string;
+  theme: string | null;
+  placement: string | null;
   version: number;
   pricePages: number;
   hasAssetUrl: boolean;
@@ -645,8 +647,10 @@ export interface AdminAssetDetail {
   collectionCode: string | null;
   pricePages: number;
   supplier: string | null;
-  // BE 에 저장된 compatibleTargets JSON 원본 (예: `{"themes":["FANTASY"],"placement":["floor"]}`).
-  // 수정 폼이 다시 파싱해서 ThemeSelector / PlacementToggle 초기값으로 사용한다.
+  // V27 이후 일반 Asset 의 호환성 메타는 theme / placement 컬럼으로 직접 노출됨.
+  theme: string | null;
+  placement: string | null;
+  // ThemeAsset 자식 매핑 (legacy schema) 의 raw JSON. 일반 Asset 에서는 null.
   compatibleTargets: string | null;
   assetUrl: string | null;
   previewImageUrl: string | null;
@@ -678,7 +682,9 @@ export interface AdminAssetCreateInput {
   pricePages?: number | null;
   creator?: string | null;
   supplier?: string | null;
-  compatibleTargets?: string | null;
+  theme?: string | null;
+  // 'floor' | 'wall' | null — BE CHECK 제약과 동일 도메인.
+  placement?: string | null;
   allowsCustomization?: boolean | null;
   active?: boolean | null;
 }

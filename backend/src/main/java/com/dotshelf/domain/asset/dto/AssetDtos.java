@@ -13,6 +13,7 @@ import com.dotshelf.global.storage.S3StorageService.PresignedPut;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -30,6 +31,8 @@ public final class AssetDtos {
             String tier,
             String assetType,
             String collectionCode,
+            String theme,
+            String placement,
             String previewImageUrl,
             Long fileSize,
             String fileHash,
@@ -53,7 +56,7 @@ public final class AssetDtos {
                 boolean owned,
                 boolean wished,
                 boolean allowsCustomization) {
-            this(id, categoryId, code, name, tier, assetType, null, previewImageUrl,
+            this(id, categoryId, code, name, tier, assetType, null, null, null, previewImageUrl,
                     null, null, null, 1, pricePages, owned, wished, allowsCustomization);
         }
 
@@ -66,6 +69,8 @@ public final class AssetDtos {
                     asset.getTier(),
                     asset.getAssetType(),
                     asset.getCollectionCode(),
+                    asset.getTheme(),
+                    asset.getPlacement(),
                     asset.getPreviewImageUrl(),
                     asset.getFileSize(),
                     asset.getFileHash(),
@@ -281,6 +286,13 @@ public final class AssetDtos {
             Integer pricePages,
             String creator,
             String supplier,
+            // V27 부터 일반 Asset 의 호환성 메타는 theme / placement 컬럼으로 직접 받는다.
+            @Size(max = 30, message = "theme은 30자 이하여야 합니다.")
+            String theme,
+            @Pattern(regexp = "floor|wall", message = "placement는 'floor' 또는 'wall' 이어야 합니다.")
+            String placement,
+            // @Deprecated: V27 이후 BE 가 무시. theme / placement 필드로 대체. 다음 cleanup MR 에서 record 컴포넌트 자체를 제거 예정.
+            @Deprecated
             String compatibleTargets,
             Boolean allowsCustomization,
             Boolean active
@@ -299,6 +311,12 @@ public final class AssetDtos {
             Integer pricePages,
             String creator,
             String supplier,
+            @Size(max = 30, message = "theme은 30자 이하여야 합니다.")
+            String theme,
+            @Pattern(regexp = "floor|wall", message = "placement는 'floor' 또는 'wall' 이어야 합니다.")
+            String placement,
+            // @Deprecated: V27 이후 BE 가 무시. theme / placement 필드로 대체. 다음 cleanup MR 에서 record 컴포넌트 자체를 제거 예정.
+            @Deprecated
             String compatibleTargets,
             Boolean allowsCustomization
     ) {
@@ -356,6 +374,8 @@ public final class AssetDtos {
             String collectionCode,
             int pricePages,
             String supplier,
+            String theme,
+            String placement,
             String compatibleTargets,
             String assetUrl,
             String previewImageUrl,
@@ -379,6 +399,8 @@ public final class AssetDtos {
                     asset.getCollectionCode(),
                     asset.getPricePages(),
                     asset.getSupplier(),
+                    asset.getTheme(),
+                    asset.getPlacement(),
                     asset.getCompatibleTargets(),
                     asset.getAssetUrl(),
                     asset.getPreviewImageUrl(),
@@ -407,6 +429,8 @@ public final class AssetDtos {
             String assetType,
             String collectionCode,
             String tier,
+            String theme,
+            String placement,
             int version,
             int pricePages,
             boolean hasAssetUrl,
@@ -424,6 +448,8 @@ public final class AssetDtos {
                     asset.getAssetType(),
                     asset.getCollectionCode(),
                     asset.getTier(),
+                    asset.getTheme(),
+                    asset.getPlacement(),
                     asset.getVersion(),
                     asset.getPricePages(),
                     asset.getAssetUrl() != null && !asset.getAssetUrl().isBlank(),
