@@ -307,11 +307,15 @@ public class UserService {
         Map<Long, User> userById = userRepository.findAllById(targetUserIds).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
 
+        Map<Long, Long> userIdToSpaceId = spaceRepository
+                .findByOwnerUserIdInAndDeletedAtIsNullOrderByIdAsc(targetUserIds).stream()
+                .collect(Collectors.toMap(Space::getOwnerUserId, Space::getId, (a, b) -> a));
+
         if (viewerUserId == null) {
             return targetUserIds.stream()
                     .map(userById::get)
                     .filter(Objects::nonNull)
-                    .map(UserSummaryResponse::from)
+                    .map(u -> UserSummaryResponse.from(u, false, false, false, userIdToSpaceId.get(u.getId())))
                     .toList();
         }
 
@@ -323,13 +327,14 @@ public class UserService {
                 .map(userById::get)
                 .filter(Objects::nonNull)
                 .map(u -> {
+                    Long spaceId = userIdToSpaceId.get(u.getId());
                     if (u.getId().equals(viewerUserId)) {
-                        return UserSummaryResponse.from(u);
+                        return UserSummaryResponse.from(u, false, false, false, spaceId);
                     }
                     boolean isFollowing = following.contains(u.getId());
                     boolean isFollowedBy = followedBy.contains(u.getId());
                     boolean isBlocked = blocked.contains(u.getId());
-                    return UserSummaryResponse.from(u, isFollowing && isFollowedBy, isFollowing, isBlocked);
+                    return UserSummaryResponse.from(u, isFollowing && isFollowedBy, isFollowing, isBlocked, spaceId);
                 })
                 .toList();
     }

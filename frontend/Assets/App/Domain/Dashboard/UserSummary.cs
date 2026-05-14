@@ -8,6 +8,7 @@ namespace App.Domain.Dashboard
         public bool Mutual { get; }
         public bool Following { get; }
         public bool Blocked { get; }
+        public long? SpaceId { get; }
 
         public UserSummary(
             long id,
@@ -15,7 +16,8 @@ namespace App.Domain.Dashboard
             string profileImageUrl = null,
             bool mutual = false,
             bool following = false,
-            bool blocked = false)
+            bool blocked = false,
+            long? spaceId = null)
         {
             Id = id;
             Nickname = nickname ?? string.Empty;
@@ -23,6 +25,7 @@ namespace App.Domain.Dashboard
             Mutual = mutual;
             Following = following;
             Blocked = blocked;
+            SpaceId = spaceId;
         }
     }
 }

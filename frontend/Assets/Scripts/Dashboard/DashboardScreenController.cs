@@ -1,10 +1,12 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using App.Application.Dashboard;
 using App.Domain.Dashboard;
 using App.Infrastructure.Catalogs;
 using App.Infrastructure.Mock.Dashboard;
 using UnityEngine;
+using UnityEngine.Networking;
 using UnityEngine.UIElements;
 
 namespace Dotshelf.Scripts.Dashboard
@@ -57,6 +59,10 @@ namespace Dotshelf.Scripts.Dashboard
         private UIDocument document;
 
         private const int CarouselItemLimit = 10;
+        private const int MaxCoverTextureCacheCount = 32;
+        private const int MaxRemoteBookCoverWidth = 2048;
+        private const int MaxRemoteBookCoverHeight = 3072;
+        private const int RemoteBookCoverTimeoutSeconds = 8;
 
         private bool configured;
 
@@ -99,6 +105,10 @@ namespace Dotshelf.Scripts.Dashboard
         private Button returnMineButton;
         private ScrollView booksCarousel;
         private ScrollView recordsCarousel;
+
+        private readonly Dictionary<string, Texture2D> coverTextureCache = new Dictionary<string, Texture2D>();
+        private readonly LinkedList<string> coverTextureCacheOrder = new LinkedList<string>();
+        private readonly Dictionary<string, LinkedListNode<string>> coverTextureCacheNodes = new Dictionary<string, LinkedListNode<string>>();
 
         private VisualElement userListModalRoot;
         private VisualElement userListModalBackdrop;
@@ -402,6 +412,40 @@ namespace Dotshelf.Scripts.Dashboard
             LoadInitialData();
         }
 
+        /// <summary>
+        /// 전체 대시보드를 새로고침한다. 외부 호출용 (새로고침 버튼, 이벤트 핸들러 등).
+        /// </summary>
+        public void RefreshAll()
+        {
+            ReloadDashboardIfReady();
+        }
+
+        /// <summary>
+        /// 최근 추가한 책 캐러셀만 새로고침한다. 책 추가 이벤트 핸들러용.
+        /// </summary>
+        public void RefreshBooks()
+        {
+            if (!configured || !HasConfiguredUseCases())
+            {
+                return;
+            }
+
+            LoadRecentBooks();
+        }
+
+        /// <summary>
+        /// 최근 작성한 독후감 캐러셀만 새로고침한다. 독후감 작성 이벤트 핸들러용.
+        /// </summary>
+        public void RefreshRecords()
+        {
+            if (!configured || !HasConfiguredUseCases())
+            {
+                return;
+            }
+
+            LoadRecentRecords();
+        }
+
         public void Configure(
             IDashboardRepository dashboardRepo,
             IGuestbookRepository guestbookRepo,
@@ -491,6 +535,8 @@ namespace Dotshelf.Scripts.Dashboard
                 UnwireEvents();
                 eventsWired = false;
             }
+
+            ClearCoverTextureCache();
         }
 
         private void BuildMockUseCases()
@@ -1023,7 +1069,7 @@ namespace Dotshelf.Scripts.Dashboard
             }
         }
 
-        private static VisualElement BuildBookCell(OwnedBookItem item)
+        private VisualElement BuildBookCell(OwnedBookItem item)
         {
             VisualElement cell = new VisualElement();
             cell.AddToClassList("carousel-cell");
@@ -1032,11 +1078,161 @@ namespace Dotshelf.Scripts.Dashboard
             cover.AddToClassList("book-cover");
             cell.Add(cover);
 
+            if (!string.IsNullOrWhiteSpace(item.CoverImageUrl))
+            {
+                var url = item.CoverImageUrl;
+                if (TryGetCachedCoverTexture(url, out var cached))
+                {
+                    ApplyCoverTexture(cover, cached);
+                }
+                else
+                {
+                    StartCoroutine(DownloadCover(url, cover));
+                }
+            }
+
             Label title = new Label(item.Title ?? string.Empty);
             title.AddToClassList("book-cell-title");
             cell.Add(title);
 
             return cell;
+        }
+
+        private static void ApplyCoverTexture(VisualElement element, Texture2D texture)
+        {
+            if (element == null || texture == null)
+            {
+                return;
+            }
+
+            element.style.backgroundImage = new StyleBackground(texture);
+            element.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Cover);
+            element.style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Center);
+            element.style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center);
+        }
+
+        private IEnumerator DownloadCover(string url, VisualElement target)
+        {
+            using (var request = UnityWebRequestTexture.GetTexture(url))
+            {
+                request.timeout = RemoteBookCoverTimeoutSeconds;
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    yield break;
+                }
+
+                var texture = DownloadHandlerTexture.GetContent(request);
+                if (texture == null)
+                {
+                    yield break;
+                }
+
+                if (texture.width > MaxRemoteBookCoverWidth || texture.height > MaxRemoteBookCoverHeight)
+                {
+                    UnityEngine.Debug.LogWarning($"[Dashboard] Skipped oversized book cover {texture.width}x{texture.height}: {url}");
+                    UnityEngine.Object.Destroy(texture);
+                    yield break;
+                }
+
+                var canonical = CacheCoverTexture(url, texture);
+                if (target?.panel != null)
+                {
+                    ApplyCoverTexture(target, canonical);
+                }
+            }
+        }
+
+        private bool TryGetCachedCoverTexture(string url, out Texture2D texture)
+        {
+            if (string.IsNullOrWhiteSpace(url) ||
+                !coverTextureCache.TryGetValue(url, out texture) ||
+                texture == null)
+            {
+                RemoveCoverTexture(url);
+                texture = null;
+                return false;
+            }
+
+            if (coverTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                coverTextureCacheOrder.Remove(node);
+                coverTextureCacheOrder.AddLast(node);
+            }
+
+            return true;
+        }
+
+        private Texture2D CacheCoverTexture(string url, Texture2D texture)
+        {
+            if (string.IsNullOrWhiteSpace(url) || texture == null)
+            {
+                return texture;
+            }
+
+            if (coverTextureCache.TryGetValue(url, out var existing) && existing != null)
+            {
+                if (existing != texture)
+                {
+                    UnityEngine.Object.Destroy(texture);
+                }
+                if (coverTextureCacheNodes.TryGetValue(url, out var existingNode))
+                {
+                    coverTextureCacheOrder.Remove(existingNode);
+                    coverTextureCacheOrder.AddLast(existingNode);
+                }
+                return existing;
+            }
+
+            coverTextureCache[url] = texture;
+            var node = coverTextureCacheOrder.AddLast(url);
+            coverTextureCacheNodes[url] = node;
+            TrimCoverTextureCache();
+            return texture;
+        }
+
+        private void TrimCoverTextureCache()
+        {
+            while (coverTextureCache.Count > MaxCoverTextureCacheCount && coverTextureCacheOrder.First != null)
+            {
+                RemoveCoverTexture(coverTextureCacheOrder.First.Value);
+            }
+        }
+
+        private void RemoveCoverTexture(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            if (coverTextureCache.TryGetValue(url, out var texture) && texture != null)
+            {
+                UnityEngine.Object.Destroy(texture);
+            }
+            coverTextureCache.Remove(url);
+
+            if (coverTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                coverTextureCacheOrder.Remove(node);
+                coverTextureCacheNodes.Remove(url);
+            }
+        }
+
+        private void ClearCoverTextureCache()
+        {
+            foreach (var texture in coverTextureCache.Values)
+            {
+                if (texture != null)
+                {
+                    UnityEngine.Object.Destroy(texture);
+                }
+            }
+
+            coverTextureCache.Clear();
+            coverTextureCacheOrder.Clear();
+            coverTextureCacheNodes.Clear();
         }
 
         private void RenderRecordsCarousel(ReadingRecordListPage page)
@@ -1859,14 +2055,16 @@ namespace Dotshelf.Scripts.Dashboard
             VisualElement actions = new VisualElement();
             actions.AddToClassList("user-row-actions");
 
-            // 방문 — mock 모드에서만 노출. real API 모드에서는 UserSummary.Id → spaceId 매핑이 없어 silent
-            // no-op 이 되므로 버튼 자체를 안 그린다 (UserSummary 에 SpaceId 합류 또는 user→space 매핑 endpoint 추가 시 복구).
-            if (useMockRepositories)
+            if (user.SpaceId.HasValue && user.SpaceId.Value > 0)
             {
-                Button visitBtn = new Button { text = "방문" };
-                visitBtn.AddToClassList("user-row-action-button");
-                visitBtn.clicked += () => OnVisitUser(user);
-                actions.Add(visitBtn);
+                bool isSelf = currentSnapshot != null && user.Id == currentSnapshot.Space.OwnerUserId;
+                if (!isSelf)
+                {
+                    Button visitBtn = new Button { text = "방문" };
+                    visitBtn.AddToClassList("user-row-action-button");
+                    visitBtn.clicked += () => OnVisitUser(user);
+                    actions.Add(visitBtn);
+                }
             }
 
             bool isMineSpace = viewMode == ViewMode.Mine;
@@ -1905,30 +2103,16 @@ namespace Dotshelf.Scripts.Dashboard
         private void OnVisitUser(UserSummary user)
         {
             CloseUserListModal();
-            // Mock 가정: user.Id == spaceId. Api 모드에선 user/space 도메인 분리되어 다른 값 가능.
-            // (MR 114 review skh1205 [P2]) UserSummary.Id 는 follower/following API 의 사용자 ID — spaceId 보장 X.
-            // UserSummary 에 spaceId 합류 또는 GET /v1/users/{id}/space 매핑 endpoint 추가 전까지 임시 방어:
-            //   - mock 모드: 기존대로 user.Id == spaceId 가정 진행 (테스트 데이터 호환)
-            //   - real API 모드: visit skip + 사용자 메시지 (spaceId 알 수 없으므로 잘못된 dashboard 호출 차단)
             if (currentSnapshot != null && user.Id == currentSnapshot.Space.OwnerUserId)
             {
                 return;
             }
-            if (!useMockRepositories)
+            if (!user.SpaceId.HasValue || user.SpaceId.Value <= 0)
             {
-                Debug.LogWarning(
-                    $"[Dashboard] OnVisitUser — real API 모드에서 user.Id({user.Id}) 를 spaceId 로 가정 불가. " +
-                    "UserSummary 에 spaceId 합류 또는 user→space 매핑 API 가 필요합니다. visit skip.");
+                Debug.LogWarning($"[Dashboard] OnVisitUser — user.Id={user.Id} 에 유효한 spaceId 없음. visit skip.");
                 return;
             }
-            long targetSpaceId = user.Id;
-            if (targetSpaceId <= 0)
-            {
-                Debug.LogWarning($"[Dashboard] OnVisitUser — invalid targetSpaceId={targetSpaceId} (user.Id 미설정). dashboard 호출 skip.");
-                return;
-            }
-            // OnVisitUser 는 위 useMockRepositories 가드로 real-API 모드에서 이미 return 한다. 여기까지 왔다면 mock 모드.
-            // 그래도 추가 방어로 stop-gap (==1) 가드를 통과시켜 향후 실수로 가드가 풀려도 stale 호출이 새지 않게 한다.
+            long targetSpaceId = user.SpaceId.Value;
             if (TryGuardStaleSpaceIdOne(targetSpaceId, DashboardCallSource.UserClick))
             {
                 return;

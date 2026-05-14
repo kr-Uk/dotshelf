@@ -29,7 +29,7 @@ public class InicisPaymentFormFactory {
         String signKey = requiredSignKey();
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("version", VERSION);
-        parameters.put("gopaymethod", "");
+        parameters.put("gopaymethod", InicisPaymentConstants.PAYMENT_METHOD_CARD);
         parameters.put("mid", requiredMid());
         parameters.put("oid", order.getOrderId());
         parameters.put("price", String.valueOf(order.getAmountKrw()));

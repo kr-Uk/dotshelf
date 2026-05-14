@@ -1124,6 +1124,9 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("blocked")]
         public bool Blocked { get; set; }
+
+        [JsonProperty("spaceId")]
+        public long? SpaceId { get; set; }
     }
 
     [Serializable]

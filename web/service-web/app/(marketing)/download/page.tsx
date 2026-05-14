@@ -7,8 +7,8 @@ import { Icon } from "@/components/marketing/icon";
 import { LAUNCHER_WIN_URL } from "@/lib/launcher-download";
 
 const RELEASE = {
-  version: "0.1.2",
-  date: "2026년 5월 11일",
+  version: "0.2.0",
+  date: "2026년 5월 14일",
   size: "런처 약 69 MB · 본체 별도 다운로드",
   channel: "Beta",
 };

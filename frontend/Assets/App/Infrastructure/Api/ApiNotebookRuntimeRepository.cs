@@ -553,7 +553,8 @@ namespace App.Infrastructure.Api
                     ProfileImageUrl = user.ProfileImageUrl,
                     Mutual = user.Mutual,
                     Following = user.Following,
-                    Blocked = user.Blocked
+                    Blocked = user.Blocked,
+                    SpaceId = user.SpaceId
                 })
                 .ToArray();
         }
