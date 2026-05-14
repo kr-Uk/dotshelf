@@ -31,9 +31,11 @@ namespace App.Infrastructure.Catalogs
         [SerializeField] private long assetId;
         [SerializeField] private string displayName;
         [SerializeField] private Sprite previewSprite;
+        [SerializeField] private Color cellColor = new Color(1f, 0.96f, 0.78f);
 
         public long AssetId => assetId;
         public string DisplayName => displayName;
         public Sprite PreviewSprite => previewSprite;
+        public Color CellColor => cellColor;
     }
 }

@@ -6,8 +6,9 @@ namespace App.Domain.Dashboard
     {
         public long AssetId { get; }
         public string DisplayName { get; }
+        public string ColorHex { get; }
 
-        public PostItStyle(long assetId, string displayName)
+        public PostItStyle(long assetId, string displayName, string colorHex = null)
         {
             if (assetId <= 0)
             {
@@ -16,6 +17,7 @@ namespace App.Domain.Dashboard
 
             AssetId = assetId;
             DisplayName = displayName ?? string.Empty;
+            ColorHex = colorHex ?? "FFF5C8";
         }
     }
 }

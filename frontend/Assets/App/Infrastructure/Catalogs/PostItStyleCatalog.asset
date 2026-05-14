@@ -14,17 +14,22 @@ MonoBehaviour:
   m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Catalogs.PostItStyleCatalogAsset
   entries:
   - assetId: 1
-    displayName: "\uC2A4\uD0C0\uC77C1"
+    displayName: "\uB178\uB791"
     previewSprite: {fileID: 0}
+    cellColor: {r: 1, g: 0.96, b: 0.78, a: 1}
   - assetId: 2
-    displayName: "\uC2A4\uD0C0\uC77C2"
+    displayName: "\uD551\uD06C"
     previewSprite: {fileID: 0}
+    cellColor: {r: 1, g: 0.85, b: 0.88, a: 1}
   - assetId: 3
-    displayName: "\uC2A4\uD0C0\uC77C3"
+    displayName: "\uCF94"
     previewSprite: {fileID: 0}
+    cellColor: {r: 0.78, g: 0.92, b: 1, a: 1}
   - assetId: 4
-    displayName: "\uC2A4\uD0C0\uC77C4"
+    displayName: "\uBBFC\uD2B8"
     previewSprite: {fileID: 0}
+    cellColor: {r: 0.78, g: 0.96, b: 0.86, a: 1}
   - assetId: 5
-    displayName: "\uC2A4\uD0C0\uC77C5"
+    displayName: "\uC8FC\uD669"
     previewSprite: {fileID: 0}
+    cellColor: {r: 1, g: 0.88, b: 0.71, a: 1}
