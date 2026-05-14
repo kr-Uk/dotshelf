@@ -1,11 +1,18 @@
 {
-    "latestVersion":  "0.1.2",
+    "latestVersion":  "0.2.0",
     "mandatory":  false,
-    "packageUrl":  "https://cdn.dotshelf.digital/windows/Dotshelf-0.1.2.zip",
-    "sha256":  "8FB507BAC864729141343E9C4F1468FA36115E9963AE3DC94516C72BA2A8EBFA",
+    "packageUrl":  "https://cdn.dotshelf.digital/windows/Dotshelf-0.2.0.zip",
+    "sha256":  "F7BD91B1773CCDDD936B2C09019C088BC749DAB18C7EE7A60BCA81FC6CF7BF9B",
     "entrypoint":  "Dotshelf.exe",
     "minLauncherVersion":  "0.1.0",
     "releaseNotes":  [
-                         "0.1.2"
+                         "빈티지·딥씨·판타지 스푸키 테마 3종 추가 + 책장 테마 저장 연동",
+                         "대시보드 책/독후감/책장 카운트 연동 + 닉네임 편집 PATCH 누락 수정",
+                         "대시보드 포커스 시 방 내부 가구·노트북·디스플레이 반투명 처리",
+                         "대시보드 책 표지 로딩·새로고침·독후감 버튼 복구",
+                         "책 상세 오버레이 + 책장 전환 개선, 책장 초기 로딩 대기 보강",
+                         "팔로우·팔로워 목록에서 다른 사용자 공간 방문 기능",
+                         "다른 공간 방문 + 노트북 UI 안정화 (S14P31F206-116 트랙)",
+                         "테마별 카메라 이동, 노트북 포커스, 재로그인 책장 오버레이 회귀 등 다수 안정성 개선"
                      ]
 }
