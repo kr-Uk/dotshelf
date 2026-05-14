@@ -18,6 +18,7 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.InicisReturnResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentMethodListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentOrderStatusResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
@@ -102,6 +103,14 @@ public class PaymentController {
     @GetMapping("/purchases")
     public ApiResponse<PurchaseHistoryListResponse> getPurchases(@CurrentUser Long userId) {
         return ApiResponse.success(paymentService.getPurchases(userId));
+    }
+
+    @Operation(summary = "페이지 충전·사용 내역 조회",
+            description = "현재 사용자의 페이지 충전(CHARGE) / 사용 내역을 최신순으로 조회합니다. "
+                    + "KG이니시스 충전업종 심사 요건 \"충전·차감 현황 노출\" 대응.")
+    @GetMapping("/transactions")
+    public ApiResponse<PageTransactionListResponse> getTransactions(@CurrentUser Long userId) {
+        return ApiResponse.success(paymentService.getTransactions(userId));
     }
 
     @Operation(summary = "지갑 조회", description = "현재 사용자의 페이지 잔액과 지갑 정보를 조회합니다.")

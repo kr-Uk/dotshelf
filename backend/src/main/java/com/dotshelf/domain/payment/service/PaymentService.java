@@ -17,6 +17,8 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeConfirmResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionListResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentMethodListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentOrderStatusResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
@@ -24,6 +26,7 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.WalletResponse;
 import com.dotshelf.domain.payment.entity.PaymentOrder;
+import com.dotshelf.domain.payment.repository.PageTransactionRepository;
 import com.dotshelf.domain.payment.repository.PageWalletRepository;
 import com.dotshelf.domain.payment.repository.PaymentOrderRepository;
 import com.dotshelf.domain.payment.service.InicisPaymentClient.InicisApprovalResult;
@@ -44,6 +47,7 @@ public class PaymentService {
     private static final String PAYMENT_PAGE_PATH_PREFIX = "/v1/payments/inicis/request/";
 
     private final PageWalletRepository pageWalletRepository;
+    private final PageTransactionRepository pageTransactionRepository;
     private final PaymentOrderRepository paymentOrderRepository;
     private final AssetPurchaseRepository assetPurchaseRepository;
     private final UserService userService;
@@ -163,6 +167,15 @@ public class PaymentService {
         return new PurchaseHistoryListResponse(assetPurchaseRepository.findByUserIdOrderByPurchasedAtDesc(currentUserId).stream()
                 .map(PurchaseHistoryResponse::from)
                 .toList());
+    }
+
+    public PageTransactionListResponse getTransactions(Long userId) {
+        Long currentUserId = userService.requireUserId(userId);
+        return new PageTransactionListResponse(
+                pageTransactionRepository.findByUserIdOrderByCreatedAtDesc(currentUserId).stream()
+                        .map(PageTransactionResponse::from)
+                        .toList()
+        );
     }
 
     public WalletResponse getWallet(Long userId) {

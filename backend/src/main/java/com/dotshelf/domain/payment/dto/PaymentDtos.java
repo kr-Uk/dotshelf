@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.dotshelf.domain.asset.entity.AssetPurchase;
+import com.dotshelf.domain.payment.entity.PageTransaction;
 import com.dotshelf.domain.payment.entity.PageWallet;
 import com.dotshelf.domain.payment.entity.PaymentOrder;
 import com.dotshelf.domain.payment.service.InicisPaymentFormFactory.InicisPaymentForm;
@@ -221,6 +222,34 @@ public final class PaymentDtos {
     }
 
     public record PaymentMethodListResponse(List<String> methods) {
+    }
+
+    public record PageTransactionResponse(
+            Long id,
+            String type,
+            int pagesDelta,
+            int balanceAfter,
+            String reason,
+            String referenceType,
+            Long referenceId,
+            Instant createdAt
+    ) {
+
+        public static PageTransactionResponse from(PageTransaction transaction) {
+            return new PageTransactionResponse(
+                    transaction.getId(),
+                    transaction.getType(),
+                    transaction.getPagesDelta(),
+                    transaction.getBalanceAfter(),
+                    transaction.getReason(),
+                    transaction.getReferenceType(),
+                    transaction.getReferenceId(),
+                    transaction.getCreatedAt()
+            );
+        }
+    }
+
+    public record PageTransactionListResponse(List<PageTransactionResponse> transactions) {
     }
 
     public record PaymentPolicyResponse(
