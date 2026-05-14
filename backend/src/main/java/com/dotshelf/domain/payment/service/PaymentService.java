@@ -19,6 +19,7 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentMethodListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentOrderStatusResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.WalletResponse;
@@ -49,6 +50,7 @@ public class PaymentService {
     private final InicisPaymentFormFactory inicisPaymentFormFactory;
     private final InicisPaymentClient inicisPaymentClient;
     private final PaymentOrderCompletionService paymentOrderCompletionService;
+    private final PaymentPolicyProperties paymentPolicyProperties;
 
     @Transactional
     public WalletResponse charge(Long userId, PageChargeRequest request) {
@@ -175,11 +177,20 @@ public class PaymentService {
         return new PaymentMethodListResponse(List.of());
     }
 
+    public PaymentPolicyResponse getPolicy() {
+        return PaymentPolicyResponse.from(paymentPolicyProperties);
+    }
+
     private void validatePageChargeAmount(int pagesAmount, int amountKrw) {
         int expectedAmount = pagesAmount * PAGE_UNIT_PRICE_KRW;
         if (amountKrw != expectedAmount) {
             throw new CustomException(ErrorCode.PAYMENT_AMOUNT_MISMATCH,
                     "충전 페이지와 결제 금액이 일치하지 않습니다.");
+        }
+        int maxChargeKrw = paymentPolicyProperties.maxChargeKrw();
+        if (amountKrw > maxChargeKrw) {
+            throw new CustomException(ErrorCode.PAYMENT_AMOUNT_EXCEEDS_LIMIT,
+                    "1회 결제 한도(" + maxChargeKrw + "원)를 초과했습니다.");
         }
     }
 
@@ -205,6 +216,6 @@ public class PaymentService {
     }
 
     private String orderName(int pagesAmount) {
-        return "DotShelf " + pagesAmount + "P 충전";
+        return "DotShelf " + pagesAmount + "P 충전 " + paymentPolicyProperties.orderNameSuffix();
     }
 }

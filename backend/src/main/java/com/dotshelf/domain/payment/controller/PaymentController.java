@@ -20,6 +20,7 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentMethodListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentOrderStatusResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.WalletResponse;
 import com.dotshelf.domain.payment.service.PaymentService;
@@ -113,6 +114,13 @@ public class PaymentController {
     @GetMapping("/methods")
     public ApiResponse<PaymentMethodListResponse> getMethods(@CurrentUser Long userId) {
         return ApiResponse.success(paymentService.getMethods(userId));
+    }
+
+    @Operation(summary = "결제 정책 조회",
+            description = "1회 결제 한도, 결제 수단 제약, 유효기간 안내, 사업자 정보, 약관/환불 URL, 카드사별 한도 안내 등 결제 정책을 조회합니다.")
+    @GetMapping("/policy")
+    public ApiResponse<PaymentPolicyResponse> getPolicy() {
+        return ApiResponse.success(paymentService.getPolicy());
     }
 
     private String renderPaymentPage(InicisPaymentPageResponse response) {

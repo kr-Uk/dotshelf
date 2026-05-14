@@ -32,6 +32,11 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentMethodListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentOrderStatusResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse.CardLimitView;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse.ComplaintContactView;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse.LegalUrlsView;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse.MerchantView;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.WalletResponse;
 import com.dotshelf.domain.payment.service.PaymentService;
@@ -182,5 +187,58 @@ class PaymentControllerTest {
                 .andExpect(jsonPath("$.result.methods[0]").value("INICIS"));
 
         then(paymentService).should().getOrderStatus(1L, "order-1");
+    }
+
+    @Test
+    @DisplayName("결제 정책 조회는 200 과 카드결제·1회 한도·법적 URL·사업자정보 묶음을 응답한다")
+    void getPolicy_returnsPolicyBundle() throws Exception {
+        given(paymentService.getPolicy()).willReturn(policyResponseFixture());
+
+        mockMvc.perform(get("/v1/payments/policy"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.maxChargeKrwPerOrder").value(100_000))
+                .andExpect(jsonPath("$.result.currency").value("KRW"))
+                .andExpect(jsonPath("$.result.paymentMethod").value("CARD"))
+                .andExpect(jsonPath("$.result.validityNotice").value(org.hamcrest.Matchers.containsString("1년")))
+                .andExpect(jsonPath("$.result.responsibilityNotice").value(org.hamcrest.Matchers.containsString("DotShelf")))
+                .andExpect(jsonPath("$.result.legalUrls.paymentTerms").value("https://example.com/terms"))
+                .andExpect(jsonPath("$.result.legalUrls.refundPolicy").value("https://example.com/refund"))
+                .andExpect(jsonPath("$.result.legalUrls.privacy").value("https://example.com/privacy"))
+                .andExpect(jsonPath("$.result.legalUrls.businessInfo").value("https://example.com/biz"))
+                .andExpect(jsonPath("$.result.merchant.name").value("DotShelf"))
+                .andExpect(jsonPath("$.result.merchant.registrationNumber").value("123-45-67890"))
+                .andExpect(jsonPath("$.result.complaintContact.name").value("홍길동"))
+                .andExpect(jsonPath("$.result.complaintContact.tel").value("02-0000-0000"))
+                .andExpect(jsonPath("$.result.cardLimits[0].issuer").value("BC"))
+                .andExpect(jsonPath("$.result.cardLimits[0].description").value("1일 20만원"));
+
+        then(paymentService).should().getPolicy();
+    }
+
+    private PaymentPolicyResponse policyResponseFixture() {
+        return new PaymentPolicyResponse(
+                100_000,
+                "KRW",
+                "CARD",
+                "구매 포인트와 아이템 이용권한의 유효기간은 결제일로부터 1년이며, 서비스 운영 기간 동안 자동으로 갱신됩니다.",
+                "DotShelf에서 운영되는 사이트 내 판매되는 모든 상품은 DotShelf에서 책임지고 있습니다.",
+                new LegalUrlsView(
+                        "https://example.com/terms",
+                        "https://example.com/refund",
+                        "https://example.com/privacy",
+                        "https://example.com/biz"
+                ),
+                new MerchantView(
+                        "DotShelf",
+                        "123-45-67890",
+                        "김지호",
+                        "서울특별시 강남구",
+                        "02-0000-0000",
+                        "biz@dotshelf.digital",
+                        "2026-서울강남-XXXX"
+                ),
+                new ComplaintContactView("홍길동", "02-0000-0000"),
+                List.of(new CardLimitView("BC", "1일 20만원"))
+        );
     }
 }
