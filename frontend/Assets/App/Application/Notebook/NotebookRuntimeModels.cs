@@ -133,6 +133,7 @@ namespace App.Application.Notebook
         public bool Mutual { get; set; }
         public bool Following { get; set; }
         public bool Blocked { get; set; }
+        public long? SpaceId { get; set; }
     }
 
     public sealed class NotebookShelfTarget

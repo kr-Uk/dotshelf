@@ -168,14 +168,14 @@ class UserControllerTest {
     @DisplayName("팔로워/팔로잉/차단 목록 조회는 cursor와 limit을 전달한다")
     void userLists_passPagination() throws Exception {
         UserListResponse list = new UserListResponse(List.of(
-                new UserSummaryResponse(2L, "target", null, false, true, false)
+                new UserSummaryResponse(2L, "target", null, false, true, false, 10L)
         ), "next");
         given(userService.getFollowers(1L, "c1", 5)).willReturn(list);
         given(userService.getFollowings(1L, "c1", 5)).willReturn(list);
         given(userService.getUserFollowers(1L, 2L, "c1", 5)).willReturn(list);
         given(userService.getUserFollowings(1L, 2L, "c1", 5)).willReturn(list);
         given(userService.getBlocks(1L)).willReturn(new UserListResponse(List.of(
-                new UserSummaryResponse(3L, "blocked", null, false, false, true)
+                new UserSummaryResponse(3L, "blocked", null, false, false, true, 11L)
         )));
 
         mockMvc.perform(get("/v1/users/me/followers").header("X-Test-Admin-User-Id", "1")

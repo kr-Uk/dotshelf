@@ -1971,14 +1971,16 @@ namespace Dotshelf.Scripts.Dashboard
             VisualElement actions = new VisualElement();
             actions.AddToClassList("user-row-actions");
 
-            // 방문 — mock 모드에서만 노출. real API 모드에서는 UserSummary.Id → spaceId 매핑이 없어 silent
-            // no-op 이 되므로 버튼 자체를 안 그린다 (UserSummary 에 SpaceId 합류 또는 user→space 매핑 endpoint 추가 시 복구).
-            if (useMockRepositories)
+            if (user.SpaceId.HasValue && user.SpaceId.Value > 0)
             {
-                Button visitBtn = new Button { text = "방문" };
-                visitBtn.AddToClassList("user-row-action-button");
-                visitBtn.clicked += () => OnVisitUser(user);
-                actions.Add(visitBtn);
+                bool isSelf = currentSnapshot != null && user.Id == currentSnapshot.Space.OwnerUserId;
+                if (!isSelf)
+                {
+                    Button visitBtn = new Button { text = "방문" };
+                    visitBtn.AddToClassList("user-row-action-button");
+                    visitBtn.clicked += () => OnVisitUser(user);
+                    actions.Add(visitBtn);
+                }
             }
 
             bool isMineSpace = viewMode == ViewMode.Mine;
@@ -2017,30 +2019,16 @@ namespace Dotshelf.Scripts.Dashboard
         private void OnVisitUser(UserSummary user)
         {
             CloseUserListModal();
-            // Mock 가정: user.Id == spaceId. Api 모드에선 user/space 도메인 분리되어 다른 값 가능.
-            // (MR 114 review skh1205 [P2]) UserSummary.Id 는 follower/following API 의 사용자 ID — spaceId 보장 X.
-            // UserSummary 에 spaceId 합류 또는 GET /v1/users/{id}/space 매핑 endpoint 추가 전까지 임시 방어:
-            //   - mock 모드: 기존대로 user.Id == spaceId 가정 진행 (테스트 데이터 호환)
-            //   - real API 모드: visit skip + 사용자 메시지 (spaceId 알 수 없으므로 잘못된 dashboard 호출 차단)
             if (currentSnapshot != null && user.Id == currentSnapshot.Space.OwnerUserId)
             {
                 return;
             }
-            if (!useMockRepositories)
+            if (!user.SpaceId.HasValue || user.SpaceId.Value <= 0)
             {
-                Debug.LogWarning(
-                    $"[Dashboard] OnVisitUser — real API 모드에서 user.Id({user.Id}) 를 spaceId 로 가정 불가. " +
-                    "UserSummary 에 spaceId 합류 또는 user→space 매핑 API 가 필요합니다. visit skip.");
+                Debug.LogWarning($"[Dashboard] OnVisitUser — user.Id={user.Id} 에 유효한 spaceId 없음. visit skip.");
                 return;
             }
-            long targetSpaceId = user.Id;
-            if (targetSpaceId <= 0)
-            {
-                Debug.LogWarning($"[Dashboard] OnVisitUser — invalid targetSpaceId={targetSpaceId} (user.Id 미설정). dashboard 호출 skip.");
-                return;
-            }
-            // OnVisitUser 는 위 useMockRepositories 가드로 real-API 모드에서 이미 return 한다. 여기까지 왔다면 mock 모드.
-            // 그래도 추가 방어로 stop-gap (==1) 가드를 통과시켜 향후 실수로 가드가 풀려도 stale 호출이 새지 않게 한다.
+            long targetSpaceId = user.SpaceId.Value;
             if (TryGuardStaleSpaceIdOne(targetSpaceId, DashboardCallSource.UserClick))
             {
                 return;
