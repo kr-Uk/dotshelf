@@ -13,7 +13,7 @@ namespace App.Bootstrap
     //   - layer = TransparentFX (Unity default layer 1) — ProjectSettings/TagManager.asset 변경
     //     없이 격리 가능한 default layer. PreviewCamera.cullingMask 가 이 layer 만 포함해
     //     다른 카메라의 mesh 가 우연히 들어오지 않게 한다.
-    //   - 별도 Camera (PreviewCamera) 가 mock room 만 RenderTexture (1024×1024) 로 렌더.
+    //   - 별도 Camera (PreviewCamera) 가 mock room 만 RenderTexture (16:9) 로 렌더.
     //     targetTexture 가 set 돼 있어 main display 에 그리지 않는다.
     //
     // 테마 적용:
@@ -38,8 +38,10 @@ namespace App.Bootstrap
     //   - Step3 진입 시 또는 OnDestroy 시 Dispose — Camera/RT/mock room 모두 정리.
     internal sealed class OnboardingThemePreviewRenderer
     {
-        private const int RtWidth = 1024;
-        private const int RtHeight = 1024;
+        // 16:9 — OnboardingPreviewStage(active path) 와 동일 비율. 정사각형 RT 회귀 차단 (사용자 보고 2026-05-14).
+        // EnableMockRoomPreview=false 면 본 클래스 미사용 (dead-code) — active path 는 OnboardingPreviewStage.
+        private const int RtWidth = 1600;
+        private const int RtHeight = 900;
         // Unity default layer 1 (TransparentFX). Main camera 와는 layer + cullingMask 로 격리 —
         // PreviewCamera 만 이 layer 를 cull on 한다. PreviewLayer 격리에 의존하므로 main camera 의
         // cullingMask 에서 TransparentFX 가 빠져 있어야 함 (Unity Camera default cullingMask 는
@@ -691,10 +693,9 @@ namespace App.Bootstrap
             previewCamera.backgroundColor = new Color(0.18f, 0.19f, 0.23f, 1f); // dark slate
             previewCamera.cullingMask = 1 << PreviewLayer;
             previewCamera.orthographic = false;
-            // fov 38° 였을 때 사용자 "벽지 확대" 회귀 — 한 wall 일부분만 화면 대부분 차지.
-            // 50° 로 확대해 room 의 back wall + 일부 left wall + floor + bookshelf + desk + dashboard
-            // 가 한 view 에 모두 들어오게. 60° 이상은 distortion 강해져 cozy 인테리어 느낌 깨짐 — 50° 절충.
-            previewCamera.fieldOfView = 50f;
+            // FOV — MainScene CameraController.mainViewFieldOfView (52f) 와 align.
+            // OnboardingPreviewStage (active path) 도 52f. 본 mock renderer 는 dead-code 지만 FOV 는 동일 유지.
+            previewCamera.fieldOfView = 52f;
             previewCamera.nearClipPlane = 0.1f;
             previewCamera.farClipPlane = 50f;
             previewCamera.targetTexture = renderTexture;

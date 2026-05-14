@@ -35,10 +35,12 @@ namespace App.Bootstrap
         // ON 토글 시 justEnabled sync 로 현재 카메라 (anchor) 값이 Inspector 에 자동 갱신됨.
         [Header("Onboarding PreviewCamera Manual Override")]
         [SerializeField] private bool overridePreviewCamera = false;
-        [SerializeField] private Vector3 previewCameraPosition = new Vector3(0f, 1.35f, -4.8f);
-        [SerializeField] private Vector3 previewCameraEulerAngles = new Vector3(6f, 0f, 0f);
+        // **LOCKED 값과 sync 유지** — OnboardingPreviewStage.LockedCameraPosition / EulerAngles / Fov
+        // 와 정확히 동일. MainScene CameraController.MainView 와 같은 인테리어 시점.
+        [SerializeField] private Vector3 previewCameraPosition = new Vector3(0f, 0.95f, -2.05f);
+        [SerializeField] private Vector3 previewCameraEulerAngles = new Vector3(1.76f, 0f, 0f);
         [Range(20f, 80f)]
-        [SerializeField] private float previewCameraFov = 42f;
+        [SerializeField] private float previewCameraFov = 52f;
 
         public bool OverridePreviewCamera => overridePreviewCamera;
         public Vector3 PreviewCameraPosition => previewCameraPosition;

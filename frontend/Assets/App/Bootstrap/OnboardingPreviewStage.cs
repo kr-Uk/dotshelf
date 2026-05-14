@@ -29,18 +29,25 @@ namespace App.Bootstrap
     internal sealed class OnboardingPreviewStage
     {
         private const int PreviewLayer = 1; // TransparentFX — 다른 카메라 culling 제외용
-        // 16:9 landscape RT — 우측 preview 영역 비율 (좌측 UI 28% 후 ~72% 가로 영역). 1:1 정사각형
-        // 보다 자연스러운 인테리어 framing + RawImage stretch 시 왜곡 최소.
-        private const int RtWidth = 1600;
-        private const int RtHeight = 900;
+        // RT 크기 — Screen.width/Screen.height 기반 동적 산출 (Initialize 시점). RawImage stretch 가
+        // GameView 와 같은 비율로 그려져 방이 정사각형으로 squash 되는 회귀 회피. height 는 720px 고정
+        // (GPU 비용 예측), width = height * aspect (1:1 ~ 21:9 사이로 clamp).
+        // 정수형 cache (Initialize 가 채움) — Debug.Log / RT 재생성 진단용.
+        private const int RtFixedHeight = 720;
+        private const float RtMinAspect = 1.0f;   // 1:1 (모바일 portrait crop)
+        private const float RtMaxAspect = 2.5f;   // ~21:9 (ultrawide)
+        private int actualRtWidth;
+        private int actualRtHeight;
         // origin 근처. float precision 안전. 다른 카메라 cullingMask 가 default 인 environment 도 layer 격리로 차단.
         private static readonly Vector3 StageWorldOrigin = Vector3.zero;
 
-        // **LOCKED** preview camera preset — PreviewStage 전용 fixed room 기준. OverviewAnchor 자동
-        // 적용 안 함 (사용자 의도: MainScene anchor 와 PreviewStage 좌표계 충돌 회피).
-        private static readonly Vector3 LockedCameraPosition = new Vector3(0f, 1.35f, -4.8f);
-        private static readonly Vector3 LockedCameraEulerAngles = new Vector3(6f, 0f, 0f);
-        private const float LockedCameraFov = 42f;
+        // **LOCKED** preview camera preset — CameraAnchorsPrefab 의 FrontalAnchor 가 못 찾힐 때 fallback.
+        // FrontalAnchor 와 동일한 pose / FOV 로 alignment — MainScene CameraController.MainView 와
+        // 시각적으로 같은 인테리어 시점 (책장 벽면 +Z 정면) 보장. 사용자 요청 (2026-05-14): 메인씬 기본
+        // 쿼터뷰와 fallback 도 동일하게.
+        private static readonly Vector3 LockedCameraPosition = new Vector3(0f, 0.95f, -2.05f);
+        private static readonly Vector3 LockedCameraEulerAngles = new Vector3(1.76f, 0f, 0f);
+        private const float LockedCameraFov = 52f; // MainScene CameraController.mainViewFieldOfView
 
         // **Fixed room geometry** — 모든 procedural wall/floor/ceiling 이 이 좌표계 기준. NormalizeRoomRootPivot
         // 이 RoomBackground 의 floor top 을 y=0 으로 맞춰 일관 alignment 보장. Fixed 값이라 wall/ceiling
@@ -103,7 +110,7 @@ namespace App.Bootstrap
         // 현재 preview camera 의 world transform 노출 — Inspector override toggle ON 시 자동 sync 용.
         public Vector3 CurrentCameraPosition => previewCamera != null ? previewCamera.transform.position : Vector3.zero;
         public Vector3 CurrentCameraEulerAngles => previewCamera != null ? previewCamera.transform.eulerAngles : Vector3.zero;
-        public float CurrentCameraFov => previewCamera != null ? previewCamera.fieldOfView : 42f;
+        public float CurrentCameraFov => previewCamera != null ? previewCamera.fieldOfView : LockedCameraFov;
 
         public bool Initialize(MainSceneCompositionConfig config)
         {
@@ -119,7 +126,20 @@ namespace App.Bootstrap
                 Debug.Log("[OnboardingPreviewStage] Initialize prefab preview stage");
                 Debug.Log("[OnboardingPreviewStage] MainScene direct preview disabled (사용자 의도)");
 
-                renderTexture = new RenderTexture(RtWidth, RtHeight, 24, RenderTextureFormat.Default)
+                // RT 크기 동적 산출 — Screen.width/Screen.height 기반 aspect 로 GameView 와 같은
+                // 비율 보장 (방이 정사각형으로 squash 되는 회귀 fix). height 는 720 고정.
+                actualRtHeight = RtFixedHeight;
+                int screenW = Mathf.Max(1, Screen.width);
+                int screenH = Mathf.Max(1, Screen.height);
+                float screenAspect = Mathf.Clamp(
+                    (float)screenW / screenH, RtMinAspect, RtMaxAspect);
+                actualRtWidth = Mathf.Max(1, Mathf.RoundToInt(actualRtHeight * screenAspect));
+                Debug.Log(
+                    $"[OnboardingPreviewStage] RT size derived from Screen — " +
+                    $"screen={screenW}x{screenH} (aspect={(float)screenW / screenH:F3}, clamped={screenAspect:F3}) " +
+                    $"→ rt={actualRtWidth}x{actualRtHeight}");
+
+                renderTexture = new RenderTexture(actualRtWidth, actualRtHeight, 24, RenderTextureFormat.Default)
                 {
                     name = "OnboardingPreviewStageRT",
                     antiAliasing = 2,
@@ -247,7 +267,7 @@ namespace App.Bootstrap
                 }
                 IsReady = true;
                 Debug.Log("[OnboardingPreviewStage] Initialize OK — preview stage ready.");
-                Debug.Log($"[OnboardingPreviewStage] RenderTexture size={RtWidth}x{RtHeight}");
+                Debug.Log($"[OnboardingPreviewStage] RenderTexture size={actualRtWidth}x{actualRtHeight}");
                 return true;
             }
             catch (System.Exception ex)
