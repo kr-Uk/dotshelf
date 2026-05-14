@@ -308,7 +308,7 @@ public class UserService {
                 .collect(Collectors.toMap(User::getId, Function.identity()));
 
         Map<Long, Long> userIdToSpaceId = spaceRepository
-                .findByOwnerUserIdInAndDeletedAtIsNull(targetUserIds).stream()
+                .findByOwnerUserIdInAndDeletedAtIsNullOrderByIdAsc(targetUserIds).stream()
                 .collect(Collectors.toMap(Space::getOwnerUserId, Space::getId, (a, b) -> a));
 
         if (viewerUserId == null) {

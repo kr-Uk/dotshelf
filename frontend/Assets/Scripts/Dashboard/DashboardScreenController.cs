@@ -2019,6 +2019,10 @@ namespace Dotshelf.Scripts.Dashboard
         private void OnVisitUser(UserSummary user)
         {
             CloseUserListModal();
+            if (currentSnapshot != null && user.Id == currentSnapshot.Space.OwnerUserId)
+            {
+                return;
+            }
             if (!user.SpaceId.HasValue || user.SpaceId.Value <= 0)
             {
                 Debug.LogWarning($"[Dashboard] OnVisitUser — user.Id={user.Id} 에 유효한 spaceId 없음. visit skip.");

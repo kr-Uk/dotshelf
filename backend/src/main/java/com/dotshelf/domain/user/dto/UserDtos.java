@@ -111,14 +111,6 @@ public final class UserDtos {
             Long spaceId
     ) {
 
-        public static UserSummaryResponse from(User user) {
-            return from(user, false, false, false, null);
-        }
-
-        public static UserSummaryResponse from(User user, boolean mutual, boolean following, boolean blocked) {
-            return from(user, mutual, following, blocked, null);
-        }
-
         public static UserSummaryResponse from(User user, boolean mutual, boolean following, boolean blocked, Long spaceId) {
             return new UserSummaryResponse(
                     user.getId(),

@@ -20,7 +20,7 @@ public interface SpaceRepository extends JpaRepository<Space, Long> {
 
     Page<Space> findBySpaceNameContainingIgnoreCase(String spaceName, Pageable pageable);
 
-    List<Space> findByOwnerUserIdInAndDeletedAtIsNull(Collection<Long> ownerUserIds);
+    List<Space> findByOwnerUserIdInAndDeletedAtIsNullOrderByIdAsc(Collection<Long> ownerUserIds);
 
     long countByDeletedAtIsNull();
 }
