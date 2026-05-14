@@ -47,6 +47,7 @@ import type { AdminAssetCreateInput, AdminAssetDetail } from "@/lib/types";
 
 interface FormState {
   theme: string;
+  displayName: string;
   subCode: string;
   placement: Placement;
   pricePages: string;
@@ -55,6 +56,7 @@ interface FormState {
 
 const INITIAL_FORM: FormState = {
   theme: "",
+  displayName: "",
   subCode: "",
   placement: "",
   pricePages: "0",
@@ -124,6 +126,7 @@ export default function NewAssetPage() {
 
   const metadataValid =
     form.theme.length > 0 &&
+    form.displayName.trim().length > 0 &&
     form.subCode.length > 0 &&
     !form.subCode.startsWith("_") &&
     !form.subCode.endsWith("_") &&
@@ -147,9 +150,7 @@ export default function NewAssetPage() {
       const fullCode = `${form.theme}_${form.subCode}`;
       const payload: AdminAssetCreateInput = {
         code: fullCode,
-        // 한국어 표시 이름을 별도로 받지 않는다 — 운영자가 영문 식별자만으로 충분.
-        // Unity 카탈로그에 사용자 친화적인 이름이 필요해지면 그때 한국어 입력 칸 부활.
-        name: form.subCode,
+        name: form.displayName.trim(),
         categoryCode: DEFAULT_CATEGORY_CODE,
         assetType: DEFAULT_ASSET_TYPE,
         collectionCode: null,
@@ -277,6 +278,16 @@ export default function NewAssetPage() {
             <ThemeSelector
               value={form.theme}
               onChange={(value) => updateField("theme", value)}
+            />
+          </Field>
+
+          <Field label="표시명 (한국어)" required>
+            <Input
+              placeholder="고급 의자"
+              value={form.displayName}
+              onChange={(e) => updateField("displayName", e.target.value)}
+              maxLength={100}
+              disabled={busy}
             />
           </Field>
 
