@@ -1,0 +1,84 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7fcf5d37657e94c1a8a0ff4244296f90, type: 3}
+  m_Name: RoomTheme_Space
+  m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Catalogs.RoomThemeAsset
+  assetId: 500000
+  displayName: "\uC6B0\uC8FC"
+  description: "\uC6B0\uC8FC\uC120, \uD0D0\uD5D8\uAC00, \uBCC4\uBE5B \uBCBD\uC9C0\uC640
+    \uCC28\uAC00\uC6B4 \uBE14\uB8E8 \uD1A4\uC73C\uB85C \uAD6C\uC131\uD55C \uB85C\uCEEC
+    \uD504\uB9AC\uBDF0 \uD14C\uB9C8."
+  previewSprite: {fileID: 0}
+  bookshelfStyleIndex: 0
+  wallMaterial: {fileID: 2100000, guid: 5e3dd637b147449e918940b3f590000e, type: 2}
+  floorMaterial: {fileID: 2100000, guid: c900403698c64f14a187a596e5bd0eb9, type: 2}
+  bookshelfMaterial: {fileID: 2100000, guid: 76ef1a766221455bb4cafe9b55934288, type: 2}
+  furnitureMaterial: {fileID: 2100000, guid: dcc28072cc704337b045b1da22db02e3, type: 2}
+  deskTopMaterial: {fileID: 2100000, guid: dcc28072cc704337b045b1da22db02e3, type: 2}
+  chairMaterial: {fileID: 2100000, guid: dcc28072cc704337b045b1da22db02e3, type: 2}
+  dashboardMaterial: {fileID: 2100000, guid: 0da0687a240f48028cde4afa12099abc, type: 2}
+  accentMaterial: {fileID: 2100000, guid: 7949399aa5bd4064814516da65234d1f, type: 2}
+  interiorLightColor: {r: 0.8666667, g: 0.92156863, b: 1, a: 1}
+  interiorLightKelvin: 7600
+  ambientTint: {r: 0.5607843, g: 0.6627451, b: 1, a: 1}
+  ambientIntensity: 0.86
+  exteriorLightColor: {r: 0.7176471, g: 0.84705883, b: 1, a: 1}
+  exteriorLightKelvin: 8200
+  exteriorLightIntensity: 1.15
+  defaultExterior: {fileID: 0}
+  allowsCustomization: 1
+  isLocalPreview: 1
+  accentPrimary: {r: 0.4745098, g: 0.84705883, b: 1, a: 1}
+  accentSecondary: {r: 0.6509804, g: 0.6313726, b: 1, a: 1}
+  accentTertiary: {r: 0.9647059, g: 0.88235295, b: 0.41960785, a: 1}
+  defaultEntries:
+  - category: 0
+    assetId: 500001
+  bookshelfDecoSpecs: []
+  floorDecoSpecs:
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: c62352d438d24c7da7f840e5f398e193, type: 3}
+    wallSide: 0
+    localPosition: {x: 1.049, y: 0.42, z: 0.771}
+    localRotation: {x: -0, y: 216.50612, z: 0}
+    localScale: {x: 0.38, y: 0.38, z: 0.38}
+    anchorTag: spaceExplorer
+    themeSlot: 0
+    assetKey: Assets/Arts/Models/space_explorer.glb
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: cef571fc59344c9b870c8ec769b39087, type: 3}
+    wallSide: 0
+    localPosition: {x: -1.18, y: 0.64, z: 0.84}
+    localRotation: {x: 0, y: 325, z: 0}
+    localScale: {x: 0.58, y: 0.58, z: 0.58}
+    anchorTag: spaceRocket
+    themeSlot: 0
+    assetKey: Assets/Arts/Models/space_rocket.glb
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: d409863b6a184439be7342015b1aeacd, type: 3}
+    wallSide: 0
+    localPosition: {x: 1.84, y: 0.24, z: 0.7645842}
+    localRotation: {x: 0, y: 205, z: 0}
+    localScale: {x: 0.42, y: 0.42, z: 0.42}
+    anchorTag: spaceBase
+    themeSlot: 3
+    assetKey: Assets/Arts/Models/space_woode.glb
+  wallDecoSpecs:
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: be40aa9cfed84e5abe4c941a6e84813f, type: 3}
+    wallSide: 3
+    localPosition: {x: -1.5858977, y: 0.36865306, z: 0}
+    localRotation: {x: -0, y: 0.000005008956, z: 0}
+    localScale: {x: 0.74, y: 0.74, z: 0.74}
+    anchorTag: spaceWindow
+    themeSlot: 8
+    assetKey: Assets/Arts/Models/space_window.glb

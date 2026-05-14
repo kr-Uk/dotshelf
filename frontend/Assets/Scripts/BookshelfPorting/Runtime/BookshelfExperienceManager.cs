@@ -76,9 +76,15 @@ namespace BookshelfPorting.Runtime
         // Runtime HUD selector keeps one row of shelf chips readable without
         // turning the add/search overlays into full shelf-management screens.
         private const int BookshelfSelectorMaxButtons = 12;
+        private const int BookCoverSkinOptionCount = 3;
         private const int BookRatingChoiceCount = 10;
         private const float BookRatingStep = 0.5f;
         private const float BookshelfTransientStatusDuration = 2.8f;
+        private const float VisitedSpaceLoadingMinimumVisibleSeconds = 2.65f;
+        private const float VisitedSpaceLoadingBookCenterY = 108f;
+        private const float VisitedSpaceLoadingPageWidth = 124f;
+        private const float VisitedSpaceLoadingPageHeight = 148f;
+        private const float VisitedSpaceLoadingHalfPageWidth = VisitedSpaceLoadingPageWidth * 0.5f;
         private static readonly Color32 DeleteButtonBackground = new(196, 78, 72, 255);
         private static readonly Color32 DeleteButtonHighlighted = new(176, 62, 58, 255);
         private static readonly Color32 DeleteButtonConfirmBackground = new(176, 50, 48, 255);
@@ -138,6 +144,16 @@ namespace BookshelfPorting.Runtime
         };
         private static readonly float[] GuestbookFocusedNoteRotations = { -3.8f, 2.6f, -4.4f, 1.7f, -1.6f, 3.8f, -2.7f, 4.1f, -3.2f };
         private static readonly float[] GuestbookFocusedNoteScales = { 1.01f, 0.98f, 1.04f, 0.97f, 1.00f, 1.03f, 0.98f, 1.05f, 0.96f };
+        private static readonly Vector2[] VisitedSpaceLoadingDecorationBasePositions =
+        {
+            new Vector2(-142f, 116f),
+            new Vector2(142f, 106f),
+            new Vector2(-124f, 42f),
+            new Vector2(124f, 48f),
+            new Vector2(-176f, -116f),
+            new Vector2(176f, -118f)
+        };
+        private static readonly float[] VisitedSpaceLoadingDecorationBaseRotations = { -12f, 14f, 8f, -8f, -6f, 7f };
         private static Sprite roundedUiSprite;
         private static Texture2D roundedUiTexture;
         private static Sprite searchIconRingSprite;
@@ -478,6 +494,27 @@ namespace BookshelfPorting.Runtime
             public int ReviewCount { get; }
         }
 
+        private sealed class BookCoverSkinOption
+        {
+            public BookCoverSkinOption(string label, string resourcePath, string description)
+            {
+                Label = label;
+                ResourcePath = resourcePath;
+                Description = description;
+            }
+
+            public string Label { get; }
+            public string ResourcePath { get; }
+            public string Description { get; }
+        }
+
+        private static readonly BookCoverSkinOption[] SponsoredBookCoverSkinOptions =
+        {
+            new BookCoverSkinOption("기본", string.Empty, "글만 표시되는 기본 표지"),
+            new BookCoverSkinOption("Ads 01", "UI/Ads/ad_01", "스폰서 표지 1"),
+            new BookCoverSkinOption("Ads 02", "UI/Ads/ad_02", "스폰서 표지 2")
+        };
+
         private sealed class GuestbookNoteData
         {
             public string authorName;
@@ -503,6 +540,32 @@ namespace BookshelfPorting.Runtime
 
         private Canvas hudCanvas;
         private bool isNotebookFocusWaitingForScene;
+        private bool openOtherSpacesTabAfterNotebookFocus;
+        private bool pendingNotebookFocusAfterTransition;
+        private GameObject visitedSpaceLoadingBackdrop;
+        private GameObject visitedSpaceLoadingPanel;
+        private RectTransform visitedSpaceLoadingBookShadowRect;
+        private Image visitedSpaceLoadingBookShadowImage;
+        private RectTransform visitedSpaceLoadingPageCastShadowRect;
+        private Image visitedSpaceLoadingPageCastShadowImage;
+        private RectTransform visitedSpaceLoadingFlipPageRect;
+        private Image visitedSpaceLoadingFlipPageImage;
+        private RectTransform visitedSpaceLoadingFlipPageFoldRect;
+        private Image visitedSpaceLoadingFlipPageFoldImage;
+        private RectTransform visitedSpaceLoadingFlipPageEdgeRect;
+        private Image visitedSpaceLoadingFlipPageEdgeImage;
+        private RectTransform visitedSpaceLoadingFlipPageHighlightRect;
+        private Image visitedSpaceLoadingFlipPageHighlightImage;
+        private RectTransform visitedSpaceLoadingProgressFillRect;
+        private Image visitedSpaceLoadingProgressFillImage;
+        private readonly RectTransform[] visitedSpaceLoadingDecorationRects = new RectTransform[6];
+        private readonly Image[] visitedSpaceLoadingDecorationImages = new Image[6];
+        private readonly RectTransform[] visitedSpaceLoadingDotRects = new RectTransform[3];
+        private readonly Image[] visitedSpaceLoadingDotImages = new Image[3];
+        private Text visitedSpaceLoadingTitleText;
+        private Text visitedSpaceLoadingBodyText;
+        private float visitedSpaceLoadingAnimationStartedAt;
+        private Coroutine visitedSpaceLoadingCompletionRoutine;
         private int notebookFocusRequestVersion;
         private Button overlayPreviousFocusButton;
         private Button overlayNextFocusButton;
@@ -586,6 +649,20 @@ namespace BookshelfPorting.Runtime
         private Button bookAddConfirmFrontButton;
         private Button confirmBookAddButton;
         private Button cancelBookAddConfirmButton;
+        private GameObject bookCoverSkinPanel;
+        private Text bookCoverSkinTitleText;
+        private Text bookCoverSkinHintText;
+        private Text bookCoverSkinStatusText;
+        private Button closeBookCoverSkinButton;
+        private readonly Button[] bookCoverSkinButtons = new Button[BookCoverSkinOptionCount];
+        private readonly Image[] bookCoverSkinPreviewImages = new Image[BookCoverSkinOptionCount];
+        private GameObject advertisementBookAddPanel;
+        private Text advertisementBookAddTitleText;
+        private Text advertisementBookAddHintText;
+        private Text advertisementBookAddStatusText;
+        private Button closeAdvertisementBookAddButton;
+        private readonly Button[] advertisementBookShelfButtons = new Button[BookshelfSelectorMaxButtons];
+        private Coroutine pendingAdvertisementBookAddPlacementCoroutine;
         private GameObject bookSearchPanel;
         private Text bookSearchTitleText;
         private Text bookSearchStatusText;
@@ -649,6 +726,7 @@ namespace BookshelfPorting.Runtime
         private BookAddCatalogItem pendingBookAddCatalogItem;
         private BookOrientation pendingBookAddOrientation = BookOrientation.Front;
         private App.Domain.ReadingStatus pendingBookAddReadingStatus = App.Domain.ReadingStatus.Unread;
+        private BookEntity activeCoverSkinBook;
         private bool isBookAddPlacementSelectionActive;
         private bool isBookshelfNameEditPanelOpen;
         private bool isBookshelfDeleteConfirmPanelOpen;
@@ -661,6 +739,8 @@ namespace BookshelfPorting.Runtime
         public bool IsBookAddPanelVisible =>
             bookAddPanel != null && bookAddPanel.activeInHierarchy && isBookAddPanelOpen;
         private bool isBookAddConfirmPanelOpen;
+        private bool isBookCoverSkinPanelOpen;
+        private bool isAdvertisementBookAddPanelOpen;
         private bool isBookSearchPanelOpen;
         private bool isBookshelfManagePanelOpen;
         private bool isBookshelfUnsavedConfirmPanelOpen;
@@ -852,6 +932,7 @@ namespace BookshelfPorting.Runtime
         private GameObject hamburgerMenuPanel;
         private Button hamburgerButton;
         private Button focusBackButton;
+        private Button dashboardRefreshButton;
         private bool isHamburgerMenuOpen;
         private GameObject bookshelfBottomNavPanel;
         private Button bookshelfNavHomeButton;
@@ -867,6 +948,7 @@ namespace BookshelfPorting.Runtime
         public bool IsBookshelfEditMode { get; private set; }
         public bool IsBookAddPlacementSelectionActive => isBookAddPlacementSelectionActive;
         public bool IsBookshelfWorldInputBlocked => CurrentFocusArea == ExperienceFocusArea.Bookshelf && HasBlockingBookshelfOverlay();
+        public bool CanRearrangeShelfBooks => CanMutateOwnedBookshelf();
         public BookEntity ActiveDetailBook { get; private set; }
 
         // Tracks which of the two main-scene poses (MainView default, QuarterView via
@@ -987,6 +1069,7 @@ namespace BookshelfPorting.Runtime
 
         public void NotifyBookshelfApiSynced()
         {
+            SyncVisitedSpaceOwnerMode();
             ClearFirstBookshelfCreationPromptIfShelfExists();
             RefreshBookshelfIndexIndicator(CurrentFocusArea == ExperienceFocusArea.Bookshelf && (state == null || !state.IsViewingBook));
             RefreshHud();
@@ -1064,6 +1147,7 @@ namespace BookshelfPorting.Runtime
         private void Update()
         {
             ApplyResponsiveFocusOverlayLayout();
+            AnimateVisitedSpaceLoading();
             ExpireBookshelfTransientStatusIfNeeded();
             SyncExternalDashboardPanelPresentation();
 
@@ -1084,12 +1168,13 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (HandleFocusShortcuts())
+            if (cameraController != null && cameraController.IsTransitioning)
             {
+                QueueNotebookFocusIfClickedDuringTransition();
                 return;
             }
 
-            if (cameraController != null && cameraController.IsTransitioning)
+            if (HandleFocusShortcuts())
             {
                 return;
             }
@@ -1126,6 +1211,14 @@ namespace BookshelfPorting.Runtime
 
             if (IsPointerOverUi())
             {
+                if (!IsViewingOtherUserSpace() &&
+                    CurrentFocusArea != ExperienceFocusArea.Notebook &&
+                    Mouse.current.leftButton.wasPressedThisFrame &&
+                    IsPointerOverRoomNotebookWorldUi(pointer))
+                {
+                    FocusNotebook();
+                }
+
                 return;
             }
 
@@ -1134,6 +1227,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var isViewingOtherSpace = IsViewingOtherUserSpace();
             // Notebook 이 immersive overlay 모드일 때 (Dashboard / ScreenSaver 둘 다 ScreenSpaceOverlay
             // 로 전체 화면을 덮음) — main scene 의 raycast-based focus 전환은 click 을 가로채지 않는다.
             // UI Toolkit / Canvas Button 자체 dispatch 가 click 을 소비하도록 위임.
@@ -1155,7 +1249,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (TryHitNotebook())
+            if (!isViewingOtherSpace && TryHitNotebook())
             {
                 FocusNotebook();
                 return;
@@ -1457,6 +1551,11 @@ namespace BookshelfPorting.Runtime
             DetachNotebookApiCallbacks();
             CancelBookAddCoverLoads();
             ClearBookAddCoverSpriteCache();
+            if (pendingAdvertisementBookAddPlacementCoroutine != null)
+            {
+                StopCoroutine(pendingAdvertisementBookAddPlacementCoroutine);
+                pendingAdvertisementBookAddPlacementCoroutine = null;
+            }
         }
 
         public void FocusQuarterView()
@@ -1642,6 +1741,7 @@ namespace BookshelfPorting.Runtime
             {
                 notebookScreenController.SetImmersiveMode(true);
                 notebookScreenController.ActivateDashboard();
+                TryOpenOtherSpacesTabAfterNotebookFocus();
                 return;
             }
 
@@ -1654,6 +1754,7 @@ namespace BookshelfPorting.Runtime
             if (notebookScreenController != null)
             {
                 notebookScreenController.QueueDashboardActivation();
+                TryOpenOtherSpacesTabAfterNotebookFocus();
             }
 
             if (notebookScreenController != null && notebookScreenController.ScreenTransform != null)
@@ -1701,15 +1802,35 @@ namespace BookshelfPorting.Runtime
                 return false;
             }
 
+            var isViewingOtherSpace = IsViewingOtherUserSpace();
             if (Keyboard.current.escapeKey.wasPressedThisFrame && isBookAddPlacementSelectionActive)
             {
                 CancelBookAddPlacementSelection(true, true);
                 return true;
             }
 
+            if (Keyboard.current.escapeKey.wasPressedThisFrame && state != null && state.IsViewingBook)
+            {
+                CloseActiveViewedBook();
+                return true;
+            }
+
+            if (Keyboard.current.escapeKey.wasPressedThisFrame && isViewingOtherSpace)
+            {
+                ReturnFromVisitedSpaceToOtherSpaces();
+                return true;
+            }
+
             if (Keyboard.current.f1Key.wasPressedThisFrame)
             {
-                FocusQuarterView();
+                if (isViewingOtherSpace)
+                {
+                    FocusMainView();
+                }
+                else
+                {
+                    FocusQuarterView();
+                }
                 return true;
             }
 
@@ -1725,7 +1846,7 @@ namespace BookshelfPorting.Runtime
                 return true;
             }
 
-            if (Keyboard.current.f4Key.wasPressedThisFrame)
+            if (!isViewingOtherSpace && Keyboard.current.f4Key.wasPressedThisFrame)
             {
                 FocusNotebook();
                 return true;
@@ -1890,9 +2011,22 @@ namespace BookshelfPorting.Runtime
                 bookReviewWritePanel.SetActive(false);
             }
 
+            if (bookCoverSkinPanel != null)
+            {
+                bookCoverSkinPanel.SetActive(false);
+            }
+
+            if (advertisementBookAddPanel != null)
+            {
+                advertisementBookAddPanel.SetActive(false);
+            }
+
             isBookReviewWritePanelOpen = false;
             isBookReviewSaving = false;
             activeReviewBook = null;
+            isBookCoverSkinPanelOpen = false;
+            activeCoverSkinBook = null;
+            isAdvertisementBookAddPanelOpen = false;
             SetBookReviewStatus(string.Empty);
             CloseBookReportPanelsSilently();
             RefreshHud();
@@ -2035,13 +2169,26 @@ namespace BookshelfPorting.Runtime
                 sectionEditPanel.SetActive(false);
             }
 
+            if (bookCoverSkinPanel != null)
+            {
+                bookCoverSkinPanel.SetActive(false);
+            }
+
+            if (advertisementBookAddPanel != null)
+            {
+                advertisementBookAddPanel.SetActive(false);
+            }
+
             if (isBookEditPanelOpen)
             {
                 ActiveDetailBook = null;
             }
 
             activeEditSection = null;
+            activeCoverSkinBook = null;
             isBookEditPanelOpen = false;
+            isBookCoverSkinPanelOpen = false;
+            isAdvertisementBookAddPanelOpen = false;
             pendingDeleteBook = null;
             RefreshHud();
         }
@@ -3611,6 +3758,17 @@ namespace BookshelfPorting.Runtime
 
         private void HandleCameraTransitionCompleted(CameraMode mode)
         {
+            if (pendingNotebookFocusAfterTransition)
+            {
+                pendingNotebookFocusAfterTransition = false;
+                if (mode != CameraMode.Notebook && isActiveAndEnabled)
+                {
+                    StartCoroutine(FocusNotebookAfterTransitionCompleted());
+                    RefreshHud();
+                    return;
+                }
+            }
+
             if (mode == CameraMode.Notebook && CurrentFocusArea == ExperienceFocusArea.Notebook)
             {
                 if (notebookScreenController != null)
@@ -3621,9 +3779,17 @@ namespace BookshelfPorting.Runtime
                 {
                     ShowNotebookScreen();
                 }
+
+                TryOpenOtherSpacesTabAfterNotebookFocus();
             }
 
             RefreshHud();
+        }
+
+        private IEnumerator FocusNotebookAfterTransitionCompleted()
+        {
+            yield return null;
+            FocusNotebook();
         }
 
         private void HandleBookshelfSwitchStateChanged()
@@ -3722,6 +3888,48 @@ namespace BookshelfPorting.Runtime
             isEmptyBookshelfTutorialEntryPending = false;
 
             RefreshHud();
+
+            // 대시보드(Guestbook) focus 진입 시 placedItemsRoot 자식(가구/장식)을 반투명 처리해
+            // 대시보드 화면을 가리지 않게 한다. 이탈 시 자동 원복. wall fade 와 독립적으로 동작.
+            ApplyGuestbookFocusRoomFade();
+        }
+
+        // RoomEditModeController.SetGuestbookFocusFadeActive 으로 placedItemsRoot 자식 fade 토글.
+        // 컨트롤러는 BookshelfSceneInstaller 가 단일 인스턴스로 생성하므로 lazy resolve + cache.
+        private void ApplyGuestbookFocusRoomFade()
+        {
+            var roomEdit = ResolveRoomEditModeController();
+            bool shouldFade = CurrentFocusArea == ExperienceFocusArea.Guestbook;
+            Debug.Log($"[GuestbookFocus][Hook] SyncFromCameraMode → ApplyGuestbookFocusRoomFade focus={CurrentFocusArea} shouldFade={shouldFade} roomEditModeController={(roomEdit != null ? "found" : "NULL")}");
+            if (roomEdit == null)
+            {
+                return;
+            }
+
+            // fade 는 부수적 visual 효과 — 실패해도 카메라 transition / focus 동작은 절대 막지 않는다.
+            // SyncFromCameraMode 는 CameraController.MoveToWhiteboardSurface 의 event fire 도중 호출되는데,
+            // 여기서 throw 가 propagate 되면 caller 의 transition 시작 코드 (line 284 이후) 가 끊겨 카메라
+            // 가 안 움직이는 회귀가 발생했었다. 그래서 swallow + LogError 로 진단만 남긴다.
+            try
+            {
+                roomEdit.SetGuestbookFocusFadeActive(shouldFade);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[GuestbookFocus][Hook] fade 적용 실패 (focus={CurrentFocusArea}, shouldFade={shouldFade}) — fade 무시하고 카메라 transition 계속. ex={ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        private App.Bootstrap.RoomEditModeController cachedRoomEditModeController;
+
+        private App.Bootstrap.RoomEditModeController ResolveRoomEditModeController()
+        {
+            if (cachedRoomEditModeController != null)
+            {
+                return cachedRoomEditModeController;
+            }
+            cachedRoomEditModeController = FindFirstObjectByType<App.Bootstrap.RoomEditModeController>(FindObjectsInactive.Include);
+            return cachedRoomEditModeController;
         }
 
         private void EnsureHud()
@@ -3742,6 +3950,10 @@ namespace BookshelfPorting.Runtime
 
             focusBackButton = CreateButton(canvasObject.transform, "FocusBackButton", "←", new Vector2(34f, -34f), ReturnFromFocusedArea, new Vector2(66f, 66f), new Vector2(0f, 1f));
             StyleHudPanel(focusBackButton.GetComponent<Image>(), new Color(0.08f, 0.09f, 0.11f, 0.78f));
+
+            dashboardRefreshButton = CreateButton(canvasObject.transform, "DashboardRefreshButton", "↻ 새로고침", new Vector2(-34f, -34f), OnDashboardRefreshClicked, new Vector2(140f, 52f), new Vector2(1f, 1f));
+            StyleHudPanel(dashboardRefreshButton.GetComponent<Image>(), new Color(0.08f, 0.09f, 0.11f, 0.78f));
+            dashboardRefreshButton.gameObject.SetActive(false);
 
             hamburgerMenuPanel = CreatePanel(canvasObject.transform, "HamburgerMenuPanel", new Vector2(-20f, -74f), new Vector2(190f, 204f), new Vector2(1f, 1f));
             StyleHudPanel(hamburgerMenuPanel.GetComponent<Image>(), new Color(0.08f, 0.09f, 0.11f, 0.84f));
@@ -3806,6 +4018,8 @@ namespace BookshelfPorting.Runtime
 
             openBookshelfManageButton = CreateButton(canvasObject.transform, "OpenBookshelfManageButton", "책장관리", new Vector2(-312f, -34f), OpenBookshelfManagePanel, new Vector2(112f, 44f), new Vector2(1f, 1f));
             openBookshelfManageButton.GetComponentInChildren<Text>().fontSize = 14;
+
+            BuildVisitedSpaceLoadingOverlay(canvasObject.transform);
 
             bookshelfNameModalBackdrop = CreateModalBackdrop(canvasObject.transform, "BookshelfNameModalBackdrop", new Color(0.16f, 0.11f, 0.07f, 0.36f));
             bookshelfNameModalBackdrop.SetActive(false);
@@ -3988,6 +4202,64 @@ namespace BookshelfPorting.Runtime
             confirmBookAddButton = CreateButton(bookAddConfirmPanel.transform, "ConfirmBookAddButton", "추가", new Vector2(304f, -350f), ConfirmAddCatalogBookToShelf, new Vector2(92f, 34f), new Vector2(0f, 1f));
             cancelBookAddConfirmButton = CreateButton(bookAddConfirmPanel.transform, "CancelBookAddConfirmButton", "취소", new Vector2(404f, -350f), CloseBookAddConfirmPanel, new Vector2(72f, 34f), new Vector2(0f, 1f));
 
+            bookCoverSkinPanel = CreatePanel(canvasObject.transform, "BookCoverSkinPanel", new Vector2(-24f, -78f), new Vector2(430f, 318f), new Vector2(1f, 1f));
+            StyleBookDetailPanel(bookCoverSkinPanel.GetComponent<Image>());
+            bookCoverSkinPanel.SetActive(false);
+            CreateHudImage(bookCoverSkinPanel.transform, "BookCoverSkinAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(87, 139, 106, 170), false);
+            bookCoverSkinTitleText = CreateLabel(bookCoverSkinPanel.transform, "BookCoverSkinTitleText", new Vector2(20f, -36f), new Vector2(344f, 24f), TextAnchor.UpperLeft);
+            bookCoverSkinTitleText.text = "표지 변경";
+            bookCoverSkinTitleText.fontSize = 18;
+            bookCoverSkinTitleText.fontStyle = FontStyle.Bold;
+            bookCoverSkinTitleText.color = new Color32(44, 66, 53, 255);
+            closeBookCoverSkinButton = CreateButton(bookCoverSkinPanel.transform, "CloseBookCoverSkinButton", "×", new Vector2(382f, -28f), CloseBookCoverSkinPanel, new Vector2(28f, 32f), new Vector2(0f, 1f));
+            bookCoverSkinHintText = CreateLabel(bookCoverSkinPanel.transform, "BookCoverSkinHintText", new Vector2(20f, -72f), new Vector2(390f, 34f), TextAnchor.UpperLeft);
+            bookCoverSkinHintText.text = "이 책과 연결된 표지 스킨을 선택하세요.";
+            bookCoverSkinHintText.fontSize = 13;
+            bookCoverSkinHintText.color = new Color32(84, 74, 66, 255);
+            for (var i = 0; i < bookCoverSkinButtons.Length; i++)
+            {
+                var optionIndex = i;
+                bookCoverSkinButtons[i] = CreateButton(bookCoverSkinPanel.transform, $"BookCoverSkinButton_{i}", string.Empty, new Vector2(20f + i * 132f, -124f), () => ApplyBookCoverSkinOption(optionIndex), new Vector2(118f, 132f), new Vector2(0f, 1f));
+                bookCoverSkinPreviewImages[i] = CreateHudImage(bookCoverSkinButtons[i].transform, $"BookCoverSkinPreview_{i}", new Vector2(14f, -12f), new Vector2(90f, 76f), new Vector2(0f, 1f), new Color32(238, 231, 221, 235), true);
+                if (bookCoverSkinPreviewImages[i] != null)
+                {
+                    bookCoverSkinPreviewImages[i].preserveAspect = true;
+                    bookCoverSkinPreviewImages[i].raycastTarget = false;
+                }
+            }
+
+            bookCoverSkinStatusText = CreateLabel(bookCoverSkinPanel.transform, "BookCoverSkinStatusText", new Vector2(20f, -272f), new Vector2(390f, 22f), TextAnchor.UpperLeft);
+            bookCoverSkinStatusText.fontSize = 12;
+            bookCoverSkinStatusText.color = new Color32(124, 111, 101, 255);
+
+            advertisementBookAddPanel = CreatePanel(canvasObject.transform, "AdvertisementBookAddPanel", new Vector2(-24f, -78f), new Vector2(430f, 318f), new Vector2(1f, 1f));
+            StyleBookDetailPanel(advertisementBookAddPanel.GetComponent<Image>());
+            advertisementBookAddPanel.SetActive(false);
+            CreateHudImage(advertisementBookAddPanel.transform, "AdvertisementBookAddAccent", new Vector2(20f, -22f), new Vector2(72f, 3f), new Vector2(0f, 1f), new Color32(87, 139, 106, 170), false);
+            advertisementBookAddTitleText = CreateLabel(advertisementBookAddPanel.transform, "AdvertisementBookAddTitleText", new Vector2(20f, -36f), new Vector2(344f, 24f), TextAnchor.UpperLeft);
+            advertisementBookAddTitleText.text = "책장에 추가하기";
+            advertisementBookAddTitleText.fontSize = 18;
+            advertisementBookAddTitleText.fontStyle = FontStyle.Bold;
+            advertisementBookAddTitleText.color = new Color32(44, 66, 53, 255);
+            closeAdvertisementBookAddButton = CreateButton(advertisementBookAddPanel.transform, "CloseAdvertisementBookAddButton", "×", new Vector2(382f, -28f), CloseAdvertisementBookAddPanel, new Vector2(28f, 32f), new Vector2(0f, 1f));
+            advertisementBookAddHintText = CreateLabel(advertisementBookAddPanel.transform, "AdvertisementBookAddHintText", new Vector2(20f, -72f), new Vector2(390f, 40f), TextAnchor.UpperLeft);
+            advertisementBookAddHintText.text = "추가할 책장을 고른 뒤 빈 칸을 클릭해 위치를 선택하세요.";
+            advertisementBookAddHintText.fontSize = 13;
+            advertisementBookAddHintText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            advertisementBookAddHintText.color = new Color32(84, 74, 66, 255);
+            for (var i = 0; i < advertisementBookShelfButtons.Length; i++)
+            {
+                var shelfIndex = i;
+                var row = i / 3;
+                var column = i % 3;
+                advertisementBookShelfButtons[i] = CreateButton(advertisementBookAddPanel.transform, $"AdvertisementBookShelfButton_{i}", string.Empty, new Vector2(20f + column * 132f, -128f - row * 42f), () => BeginAdvertisementBookAddToShelf(shelfIndex), new Vector2(118f, 34f), new Vector2(0f, 1f));
+            }
+
+            advertisementBookAddStatusText = CreateLabel(advertisementBookAddPanel.transform, "AdvertisementBookAddStatusText", new Vector2(20f, -272f), new Vector2(390f, 28f), TextAnchor.UpperLeft);
+            advertisementBookAddStatusText.fontSize = 12;
+            advertisementBookAddStatusText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            advertisementBookAddStatusText.color = new Color32(124, 111, 101, 255);
+
             bookSearchPanel = CreatePanel(canvasObject.transform, "BookSearchPanel", new Vector2(24f, -96f), new Vector2(360f, 438f), new Vector2(0f, 1f));
             StyleBookDetailPanel(bookSearchPanel.GetComponent<Image>());
             bookSearchPanel.SetActive(false);
@@ -4162,13 +4434,14 @@ namespace BookshelfPorting.Runtime
             bookDetailPanelController = new BookDetailPanelController(
                 canvasObject.transform,
                 new BookDetailPanelCallbacks(
-                    OpenBookReportWritePanel,
+                    OpenBookReviewWritePanel,
                     OpenBookReportReadPanel,
                     OpenBookPlacementEditor,
                     ToggleReadState,
                     ToggleLikeState,
                     CycleOwnerRating,
                     ToggleVisibilityState,
+                    OpenAdvertisementBookAddPanel,
                     CloseBookDetailPanel,
                     DeleteActiveBookFromDetail));
             bookDetailPanel = bookDetailPanelController.Panel;
@@ -4177,8 +4450,9 @@ namespace BookshelfPorting.Runtime
             StyleBookshelfIndexPanel(bookFocusToolbarPanel.GetComponent<Image>());
             bookFocusToolbarPanel.SetActive(false);
             bookFocusDetailButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusDetailButton", "상태", new Vector2(174f, 0f), ToggleReadState, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
-            bookFocusRatingButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusRatingButton", "리뷰 작성", new Vector2(254f, 0f), OpenBookReviewWritePanel, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
+            bookFocusRatingButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusRatingButton", "표지 변경", new Vector2(254f, 0f), OpenBookCoverSkinPanel, new Vector2(74f, 36f), new Vector2(0f, 0.5f));
             bookFocusReportButton = CreateButton(bookFocusToolbarPanel.transform, "BookFocusReportButton", "좋아요", new Vector2(334f, 0f), ToggleLikeState, new Vector2(86f, 36f), new Vector2(0f, 0.5f));
+            bookFocusReportButton.gameObject.SetActive(false);
             bookFocusWriteReportButton = CreateButton(canvasObject.transform, "BookFocusWriteReportButton", "독후감 작성", new Vector2(0f, 128f), OpenActiveViewedBookReport, new Vector2(160f, 44f), new Vector2(0.5f, 0f));
             bookFocusWriteReportButton.gameObject.SetActive(false);
             bookFocusRatingText = CreateLabel(bookFocusToolbarPanel.transform, "BookFocusRatingText", new Vector2(0f, 22f), new Vector2(360f, 18f), TextAnchor.MiddleCenter);
@@ -4381,6 +4655,577 @@ namespace BookshelfPorting.Runtime
             guestbookPanel = null;
 
             RefreshHud();
+        }
+
+        private void BuildVisitedSpaceLoadingOverlay(Transform parent)
+        {
+            visitedSpaceLoadingBackdrop = CreateModalBackdrop(
+                parent,
+                "VisitedSpaceLoadingBackdrop",
+                new Color32(246, 242, 236, 232));
+            visitedSpaceLoadingBackdrop.SetActive(false);
+
+            visitedSpaceLoadingPanel = CreatePanel(
+                visitedSpaceLoadingBackdrop.transform,
+                "VisitedSpaceLoadingPanel",
+                Vector2.zero,
+                new Vector2(486f, 396f),
+                new Vector2(0.5f, 0.5f));
+
+            var panelImage = visitedSpaceLoadingPanel.GetComponent<Image>();
+            if (panelImage != null)
+            {
+                ApplyRoundedSprite(panelImage);
+                panelImage.color = new Color32(246, 242, 236, 255);
+                panelImage.raycastTarget = true;
+            }
+            AddSoftShadow(visitedSpaceLoadingPanel, new Color(0.20f, 0.12f, 0.07f, 0.14f), new Vector2(0f, -12f));
+
+            CreateHudImage(visitedSpaceLoadingPanel.transform, "VisitedSpaceLoadingTopAccent", new Vector2(-158f, 166f), new Vector2(82f, 4f), new Vector2(0.5f, 0.5f), new Color32(163, 128, 105, 172));
+            CreateHudImage(visitedSpaceLoadingPanel.transform, "VisitedSpaceLoadingTopAccentSmall", new Vector2(-62f, 166f), new Vector2(32f, 4f), new Vector2(0.5f, 0.5f), new Color32(214, 196, 173, 180));
+            CreateHudImage(visitedSpaceLoadingPanel.transform, "VisitedSpaceLoadingShelfBase", new Vector2(0f, 34f), new Vector2(260f, 8f), new Vector2(0.5f, 0.5f), new Color32(163, 128, 105, 95));
+
+            AddVisitedSpaceLoadingDecoration(0, new Vector2(-142f, 116f), new Vector2(18f, 24f), new Color32(214, 196, 173, 208), -12f);
+            AddVisitedSpaceLoadingDecoration(1, new Vector2(142f, 106f), new Vector2(20f, 26f), new Color32(163, 128, 105, 170), 14f);
+            AddVisitedSpaceLoadingDecoration(2, new Vector2(-124f, 42f), new Vector2(16f, 20f), new Color32(246, 242, 236, 232), 8f);
+            AddVisitedSpaceLoadingDecoration(3, new Vector2(124f, 48f), new Vector2(14f, 34f), new Color32(163, 128, 105, 194), -8f);
+            AddVisitedSpaceLoadingDecoration(4, new Vector2(-176f, -116f), new Vector2(34f, 10f), new Color32(214, 196, 173, 180), -6f);
+            AddVisitedSpaceLoadingDecoration(5, new Vector2(176f, -118f), new Vector2(38f, 10f), new Color32(163, 128, 105, 160), 7f);
+            AddVisitedSpaceLoadingBookStack(visitedSpaceLoadingPanel.transform, "Left", new Vector2(-188f, -122f), false);
+            AddVisitedSpaceLoadingBookStack(visitedSpaceLoadingPanel.transform, "Right", new Vector2(188f, -122f), true);
+
+            var bookShadow = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingBookShadow",
+                new Vector2(0f, 42f),
+                new Vector2(218f, 28f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(163, 128, 105, 42));
+            ApplyRoundedSprite(bookShadow);
+            visitedSpaceLoadingBookShadowRect = bookShadow.rectTransform;
+            visitedSpaceLoadingBookShadowImage = bookShadow;
+
+            var leftCover = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingLeftCover",
+                new Vector2(-VisitedSpaceLoadingHalfPageWidth, VisitedSpaceLoadingBookCenterY - 3f),
+                new Vector2(VisitedSpaceLoadingPageWidth + 12f, VisitedSpaceLoadingPageHeight + 14f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(163, 128, 105, 118));
+            ApplyRoundedSprite(leftCover);
+
+            var rightCover = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingRightCover",
+                new Vector2(VisitedSpaceLoadingHalfPageWidth, VisitedSpaceLoadingBookCenterY - 3f),
+                new Vector2(VisitedSpaceLoadingPageWidth + 12f, VisitedSpaceLoadingPageHeight + 14f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(214, 196, 173, 132));
+            ApplyRoundedSprite(rightCover);
+
+            var leftPage = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingLeftPage",
+                new Vector2(-VisitedSpaceLoadingHalfPageWidth, VisitedSpaceLoadingBookCenterY),
+                new Vector2(VisitedSpaceLoadingPageWidth, VisitedSpaceLoadingPageHeight),
+                new Vector2(0.5f, 0.5f),
+                new Color32(246, 242, 236, 255));
+            ApplyRoundedSprite(leftPage);
+            AddVisitedSpaceLoadingPageLines(leftPage.transform, "Left", false);
+
+            var rightPage = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingRightPage",
+                new Vector2(VisitedSpaceLoadingHalfPageWidth, VisitedSpaceLoadingBookCenterY),
+                new Vector2(VisitedSpaceLoadingPageWidth, VisitedSpaceLoadingPageHeight),
+                new Vector2(0.5f, 0.5f),
+                new Color32(214, 196, 173, 255));
+            ApplyRoundedSprite(rightPage);
+            AddVisitedSpaceLoadingPageLines(rightPage.transform, "Right", true);
+
+            var pageCastShadow = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingTurningPageShadow",
+                new Vector2(VisitedSpaceLoadingHalfPageWidth, VisitedSpaceLoadingBookCenterY - 4f),
+                new Vector2(VisitedSpaceLoadingPageWidth, VisitedSpaceLoadingPageHeight - 8f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(92, 68, 52, 0));
+            ApplyRoundedSprite(pageCastShadow);
+            visitedSpaceLoadingPageCastShadowRect = pageCastShadow.rectTransform;
+            visitedSpaceLoadingPageCastShadowImage = pageCastShadow;
+
+            var flipPage = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingFlipPage",
+                new Vector2(0f, VisitedSpaceLoadingBookCenterY),
+                new Vector2(VisitedSpaceLoadingPageWidth, VisitedSpaceLoadingPageHeight),
+                new Vector2(0.5f, 0.5f),
+                new Color32(232, 221, 207, 255));
+            ApplyRoundedSprite(flipPage);
+            visitedSpaceLoadingFlipPageRect = flipPage.rectTransform;
+            visitedSpaceLoadingFlipPageRect.pivot = new Vector2(0f, 0.5f);
+            visitedSpaceLoadingFlipPageImage = flipPage;
+            AddVisitedSpaceLoadingPageLines(flipPage.transform, "Flip", true);
+
+            var foldShadow = CreateHudImage(
+                flipPage.transform,
+                "VisitedSpaceLoadingFlipFoldShadow",
+                new Vector2(VisitedSpaceLoadingHalfPageWidth - 8f, 0f),
+                new Vector2(16f, VisitedSpaceLoadingPageHeight - 14f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(92, 68, 52, 0));
+            ApplyRoundedSprite(foldShadow);
+            visitedSpaceLoadingFlipPageFoldRect = foldShadow.rectTransform;
+            visitedSpaceLoadingFlipPageFoldImage = foldShadow;
+
+            var pageHighlight = CreateHudImage(
+                flipPage.transform,
+                "VisitedSpaceLoadingFlipPageHighlight",
+                new Vector2(VisitedSpaceLoadingHalfPageWidth - 22f, 0f),
+                new Vector2(18f, VisitedSpaceLoadingPageHeight - 22f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(255, 255, 255, 0));
+            ApplyRoundedSprite(pageHighlight);
+            visitedSpaceLoadingFlipPageHighlightRect = pageHighlight.rectTransform;
+            visitedSpaceLoadingFlipPageHighlightImage = pageHighlight;
+
+            var pageEdge = CreateHudImage(
+                flipPage.transform,
+                "VisitedSpaceLoadingFlipPageEdge",
+                new Vector2(VisitedSpaceLoadingHalfPageWidth, 0f),
+                new Vector2(4f, VisitedSpaceLoadingPageHeight - 12f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(163, 128, 105, 112));
+            ApplyRoundedSprite(pageEdge);
+            visitedSpaceLoadingFlipPageEdgeRect = pageEdge.rectTransform;
+            visitedSpaceLoadingFlipPageEdgeImage = pageEdge;
+
+            var bookSpine = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingBookSpine",
+                new Vector2(0f, VisitedSpaceLoadingBookCenterY),
+                new Vector2(14f, VisitedSpaceLoadingPageHeight + 8f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(163, 128, 105, 255));
+            ApplyRoundedSprite(bookSpine);
+
+            var bookmark = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingBookmark",
+                new Vector2(70f, 138f),
+                new Vector2(16f, 60f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(163, 128, 105, 218));
+            ApplyRoundedSprite(bookmark);
+
+            visitedSpaceLoadingTitleText = CreateLabel(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingTitle",
+                new Vector2(0f, -42f),
+                new Vector2(360f, 34f),
+                TextAnchor.MiddleCenter);
+            visitedSpaceLoadingTitleText.text = "책장을 넘기는 중";
+            visitedSpaceLoadingTitleText.fontSize = 25;
+            visitedSpaceLoadingTitleText.fontStyle = FontStyle.Bold;
+            visitedSpaceLoadingTitleText.color = new Color32(91, 67, 52, 255);
+
+            visitedSpaceLoadingBodyText = CreateLabel(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingBody",
+                new Vector2(0f, -86f),
+                new Vector2(336f, 52f),
+                TextAnchor.MiddleCenter);
+            visitedSpaceLoadingBodyText.text = "다른 사람의 공간과 책들을 조용히 펼쳐보고 있어요.";
+            visitedSpaceLoadingBodyText.fontSize = 15;
+            visitedSpaceLoadingBodyText.color = new Color32(117, 91, 74, 255);
+            visitedSpaceLoadingBodyText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            visitedSpaceLoadingBodyText.verticalOverflow = VerticalWrapMode.Truncate;
+
+            var progressTrack = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingProgressTrack",
+                new Vector2(0f, -126f),
+                new Vector2(172f, 6f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(214, 196, 173, 132));
+            ApplyRoundedSprite(progressTrack);
+            var progressFill = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingProgressFill",
+                new Vector2(-56f, -126f),
+                new Vector2(46f, 6f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(163, 128, 105, 218));
+            ApplyRoundedSprite(progressFill);
+            visitedSpaceLoadingProgressFillRect = progressFill.rectTransform;
+            visitedSpaceLoadingProgressFillImage = progressFill;
+
+            var dotRow = CreateHudContainer(
+                visitedSpaceLoadingPanel.transform,
+                "VisitedSpaceLoadingDots",
+                new Vector2(0f, -158f),
+                new Vector2(76f, 16f),
+                new Vector2(0.5f, 0.5f));
+            ConfigureHorizontalLayout(dotRow, TextAnchor.MiddleCenter, 8f);
+            for (var i = 0; i < 3; i++)
+            {
+                var dot = CreateHudImage(
+                    dotRow,
+                    $"VisitedSpaceLoadingDot_{i}",
+                    Vector2.zero,
+                    new Vector2(12f, 12f),
+                    new Vector2(0.5f, 0.5f),
+                    i == 1 ? new Color32(163, 128, 105, 255) : new Color32(214, 196, 173, 255));
+                ApplyRoundedSprite(dot);
+                visitedSpaceLoadingDotRects[i] = dot.rectTransform;
+                visitedSpaceLoadingDotImages[i] = dot;
+            }
+        }
+
+        private void AddVisitedSpaceLoadingDecoration(int index, Vector2 anchoredPosition, Vector2 size, Color32 color, float rotation)
+        {
+            if (index < 0 || index >= visitedSpaceLoadingDecorationRects.Length || visitedSpaceLoadingPanel == null)
+            {
+                return;
+            }
+
+            var decoration = CreateHudImage(
+                visitedSpaceLoadingPanel.transform,
+                $"VisitedSpaceLoadingDecoration_{index}",
+                anchoredPosition,
+                size,
+                new Vector2(0.5f, 0.5f),
+                color);
+            ApplyRoundedSprite(decoration);
+            decoration.rectTransform.localRotation = Quaternion.Euler(0f, 0f, rotation);
+            visitedSpaceLoadingDecorationRects[index] = decoration.rectTransform;
+            visitedSpaceLoadingDecorationImages[index] = decoration;
+        }
+
+        private static void AddVisitedSpaceLoadingBookStack(Transform parent, string name, Vector2 anchoredPosition, bool mirrored)
+        {
+            var root = CreateHudContainer(
+                parent,
+                $"VisitedSpaceLoading{name}BookStack",
+                anchoredPosition,
+                new Vector2(72f, 46f),
+                new Vector2(0.5f, 0.5f));
+
+            var baseLine = CreateHudImage(
+                root,
+                "Base",
+                new Vector2(0f, -15f),
+                new Vector2(64f, 5f),
+                new Vector2(0.5f, 0.5f),
+                new Color32(163, 128, 105, 145));
+            ApplyRoundedSprite(baseLine);
+
+            var direction = mirrored ? -1f : 1f;
+            var colors = new[]
+            {
+                new Color32(163, 128, 105, 222),
+                new Color32(214, 196, 173, 236),
+                new Color32(246, 242, 236, 246),
+                new Color32(173, 133, 104, 206)
+            };
+
+            for (var i = 0; i < colors.Length; i++)
+            {
+                var book = CreateHudImage(
+                    root,
+                    $"Book_{i}",
+                    new Vector2(direction * (-22f + i * 14f), -2f + (i % 2) * 2f),
+                    new Vector2(10f + (i % 2) * 3f, 28f + i * 2f),
+                    new Vector2(0.5f, 0.5f),
+                    colors[i]);
+                ApplyRoundedSprite(book);
+                book.rectTransform.localRotation = Quaternion.Euler(0f, 0f, direction * (-4f + i * 2.2f));
+            }
+        }
+
+        private static void AddVisitedSpaceLoadingPageLines(Transform pageTransform, string prefix, bool warmTint)
+        {
+            if (pageTransform == null)
+            {
+                return;
+            }
+
+            var lineColor = warmTint
+                ? new Color32(163, 128, 105, 48)
+                : new Color32(163, 128, 105, 38);
+            for (var i = 0; i < 4; i++)
+            {
+                var width = 64f - i * 7f;
+                var line = CreateHudImage(
+                    pageTransform,
+                    $"VisitedSpaceLoading{prefix}Line_{i}",
+                    new Vector2(i % 2 == 0 ? -4f : 5f, 34f - i * 23f),
+                    new Vector2(width, 2f),
+                    new Vector2(0.5f, 0.5f),
+                    lineColor);
+                line.rectTransform.localRotation = Quaternion.Euler(0f, 0f, i % 2 == 0 ? -1.2f : 1.4f);
+            }
+        }
+
+        private void ShowVisitedSpaceLoading()
+        {
+            if (visitedSpaceLoadingBackdrop == null)
+            {
+                return;
+            }
+
+            if (visitedSpaceLoadingCompletionRoutine != null)
+            {
+                StopCoroutine(visitedSpaceLoadingCompletionRoutine);
+                visitedSpaceLoadingCompletionRoutine = null;
+            }
+
+            visitedSpaceLoadingBackdrop.SetActive(true);
+            visitedSpaceLoadingBackdrop.transform.SetAsLastSibling();
+            visitedSpaceLoadingAnimationStartedAt = Time.unscaledTime;
+            if (visitedSpaceLoadingPanel != null)
+            {
+                visitedSpaceLoadingPanel.transform.SetAsLastSibling();
+            }
+        }
+
+        private void HideVisitedSpaceLoading()
+        {
+            if (visitedSpaceLoadingCompletionRoutine != null)
+            {
+                StopCoroutine(visitedSpaceLoadingCompletionRoutine);
+                visitedSpaceLoadingCompletionRoutine = null;
+            }
+
+            if (visitedSpaceLoadingBackdrop != null)
+            {
+                visitedSpaceLoadingBackdrop.SetActive(false);
+            }
+        }
+
+        private void AnimateVisitedSpaceLoading()
+        {
+            if (visitedSpaceLoadingBackdrop == null ||
+                !visitedSpaceLoadingBackdrop.activeSelf ||
+                visitedSpaceLoadingFlipPageRect == null)
+            {
+                return;
+            }
+
+            var elapsed = Time.unscaledTime - visitedSpaceLoadingAnimationStartedAt;
+            if (!IsFinite(elapsed) || elapsed < 0f)
+            {
+                visitedSpaceLoadingAnimationStartedAt = Time.unscaledTime;
+                elapsed = 0f;
+            }
+
+            AnimateVisitedSpaceLoadingPage(elapsed);
+            AnimateVisitedSpaceLoadingDecorations(elapsed);
+            AnimateVisitedSpaceLoadingDots(elapsed);
+        }
+
+        private void AnimateVisitedSpaceLoadingPage(float elapsed)
+        {
+            const float cycleSeconds = 2.28f;
+            if (!IsFinite(elapsed))
+            {
+                elapsed = 0f;
+            }
+
+            var progress = Mathf.Repeat(elapsed, cycleSeconds) / cycleSeconds;
+            progress = Mathf.Clamp01(SanitizeFinite(progress, 0f));
+            var pageAlpha = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(progress / 0.12f)) *
+                            (1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((progress - 0.93f) / 0.07f)));
+            var turnProgress = Mathf.Clamp01((progress - 0.08f) / 0.78f);
+            var turn = turnProgress * turnProgress * turnProgress * (turnProgress * (6f * turnProgress - 15f) + 10f);
+            var foldAmount = Mathf.Sin(turn * Mathf.PI);
+            var flutter = Mathf.Sin(elapsed * 8.2f + turn * Mathf.PI * 1.08f) * foldAmount;
+            var smallFlutter = Mathf.Sin(elapsed * 14.4f + turn * Mathf.PI * 0.72f) * foldAmount;
+            var isLeavingRightPage = turn < 0.5f;
+            var sideProgress = isLeavingRightPage ? turn * 2f : (turn - 0.5f) * 2f;
+            var sideEased = Mathf.SmoothStep(0f, 1f, sideProgress);
+            var pageBow = Mathf.Sin(sideEased * Mathf.PI);
+            var widthScale = Mathf.Lerp(1f, 0.09f, Mathf.Pow(foldAmount, 0.66f));
+            var heightScale = 1f + foldAmount * 0.13f + smallFlutter * 0.014f;
+            var yRotation = isLeavingRightPage
+                ? Mathf.Lerp(0f, -88f, sideEased)
+                : Mathf.Lerp(88f, 0f, sideEased);
+            var zRotation = (isLeavingRightPage ? -5.8f : 5.8f) * foldAmount + flutter * 2.8f + pageBow * (isLeavingRightPage ? -3.2f : 3.2f);
+            pageAlpha = Mathf.Clamp01(SanitizeFinite(pageAlpha, 1f));
+            foldAmount = Mathf.Clamp01(SanitizeFinite(foldAmount, 0f));
+            flutter = SanitizeFinite(flutter, 0f);
+            smallFlutter = SanitizeFinite(smallFlutter, 0f);
+            pageBow = SanitizeFinite(pageBow, 0f);
+            widthScale = Mathf.Clamp(SanitizeFinite(widthScale, 1f), 0.05f, 1.15f);
+            heightScale = Mathf.Clamp(SanitizeFinite(heightScale, 1f), 0.85f, 1.25f);
+            yRotation = SanitizeFinite(yRotation, 0f);
+            zRotation = SanitizeFinite(zRotation, 0f);
+
+            visitedSpaceLoadingFlipPageRect.pivot = new Vector2(isLeavingRightPage ? 0f : 1f, 0.5f);
+            visitedSpaceLoadingFlipPageRect.anchoredPosition = new Vector2(
+                flutter * 0.9f + pageBow * (isLeavingRightPage ? -3.8f : 3.8f),
+                VisitedSpaceLoadingBookCenterY + foldAmount * 15f + smallFlutter * 1.1f);
+            visitedSpaceLoadingFlipPageRect.localScale = new Vector3(widthScale, heightScale, 1f);
+            visitedSpaceLoadingFlipPageRect.localRotation = Quaternion.Euler(0f, yRotation, zRotation);
+
+            if (visitedSpaceLoadingFlipPageImage != null)
+            {
+                var baseColor = isLeavingRightPage
+                    ? Color32.Lerp(new Color32(214, 196, 173, 255), new Color32(246, 242, 236, 255), sideEased)
+                    : Color32.Lerp(new Color32(246, 242, 236, 255), new Color32(214, 196, 173, 255), sideEased * 0.5f);
+                var pageColor = Color32.Lerp(baseColor, new Color32(178, 148, 122, 255), foldAmount * 0.28f);
+                pageColor.a = (byte)Mathf.RoundToInt(255f * pageAlpha);
+                visitedSpaceLoadingFlipPageImage.color = pageColor;
+            }
+
+            if (visitedSpaceLoadingBookShadowRect != null)
+            {
+                var shadowPulse = 1f + foldAmount * 0.06f;
+                visitedSpaceLoadingBookShadowRect.localScale = new Vector3(shadowPulse, 1f + foldAmount * 0.10f, 1f);
+            }
+
+            if (visitedSpaceLoadingBookShadowImage != null)
+            {
+                var color = new Color32(163, 128, 105, 42);
+                color.a = (byte)Mathf.RoundToInt(Mathf.Lerp(38f, 66f, foldAmount));
+                visitedSpaceLoadingBookShadowImage.color = color;
+            }
+
+            if (visitedSpaceLoadingPageCastShadowRect != null)
+            {
+                visitedSpaceLoadingPageCastShadowRect.pivot = new Vector2(isLeavingRightPage ? 0f : 1f, 0.5f);
+                visitedSpaceLoadingPageCastShadowRect.anchoredPosition = new Vector2(
+                    (isLeavingRightPage ? 25f : -25f) + flutter * 1.1f,
+                    VisitedSpaceLoadingBookCenterY - 5f + foldAmount * 4f);
+                visitedSpaceLoadingPageCastShadowRect.localScale = new Vector3(Mathf.Lerp(0.94f, 0.38f, foldAmount), Mathf.Lerp(0.94f, 1.08f, foldAmount), 1f);
+                visitedSpaceLoadingPageCastShadowRect.localRotation = Quaternion.Euler(0f, 0f, zRotation * 0.38f);
+            }
+
+            if (visitedSpaceLoadingPageCastShadowImage != null)
+            {
+                var color = new Color32(92, 68, 52, 0);
+                color.a = (byte)Mathf.RoundToInt(Mathf.Lerp(12f, 92f, foldAmount) * pageAlpha);
+                visitedSpaceLoadingPageCastShadowImage.color = color;
+            }
+
+            var edgeX = isLeavingRightPage ? VisitedSpaceLoadingHalfPageWidth : -VisitedSpaceLoadingHalfPageWidth;
+            if (visitedSpaceLoadingFlipPageFoldRect != null)
+            {
+                visitedSpaceLoadingFlipPageFoldRect.anchoredPosition = new Vector2(edgeX - Mathf.Sign(edgeX) * Mathf.Lerp(8f, 22f, foldAmount), flutter * 0.7f);
+                visitedSpaceLoadingFlipPageFoldRect.sizeDelta = new Vector2(Mathf.Lerp(12f, 31f, foldAmount), VisitedSpaceLoadingPageHeight - 14f);
+                visitedSpaceLoadingFlipPageFoldRect.localRotation = Quaternion.Euler(0f, 0f, -zRotation * 0.32f + smallFlutter * 1.2f);
+            }
+
+            if (visitedSpaceLoadingFlipPageFoldImage != null)
+            {
+                var color = new Color32(92, 68, 52, 0);
+                color.a = (byte)Mathf.RoundToInt(Mathf.Lerp(12f, 150f, foldAmount) * pageAlpha);
+                visitedSpaceLoadingFlipPageFoldImage.color = color;
+            }
+
+            if (visitedSpaceLoadingFlipPageHighlightRect != null)
+            {
+                visitedSpaceLoadingFlipPageHighlightRect.anchoredPosition = new Vector2(edgeX - Mathf.Sign(edgeX) * Mathf.Lerp(23f, 36f, foldAmount), -flutter * 0.32f);
+                visitedSpaceLoadingFlipPageHighlightRect.sizeDelta = new Vector2(Mathf.Lerp(14f, 24f, pageBow), VisitedSpaceLoadingPageHeight - 24f);
+                visitedSpaceLoadingFlipPageHighlightRect.localRotation = Quaternion.Euler(0f, 0f, zRotation * 0.14f);
+            }
+
+            if (visitedSpaceLoadingFlipPageHighlightImage != null)
+            {
+                var color = new Color32(255, 255, 255, 0);
+                color.a = (byte)Mathf.RoundToInt(Mathf.Lerp(18f, 94f, pageBow) * pageAlpha);
+                visitedSpaceLoadingFlipPageHighlightImage.color = color;
+            }
+
+            if (visitedSpaceLoadingFlipPageEdgeRect != null)
+            {
+                visitedSpaceLoadingFlipPageEdgeRect.anchoredPosition = new Vector2(edgeX, flutter * 0.7f);
+                visitedSpaceLoadingFlipPageEdgeRect.sizeDelta = new Vector2(Mathf.Lerp(3f, 8f, foldAmount), VisitedSpaceLoadingPageHeight - 12f);
+                visitedSpaceLoadingFlipPageEdgeRect.localRotation = Quaternion.Euler(0f, 0f, -zRotation * 0.22f + smallFlutter * 1.3f);
+            }
+
+            if (visitedSpaceLoadingFlipPageEdgeImage != null)
+            {
+                var color = new Color32(163, 128, 105, 112);
+                color.a = (byte)Mathf.RoundToInt(Mathf.Lerp(76f, 190f, foldAmount) * pageAlpha);
+                visitedSpaceLoadingFlipPageEdgeImage.color = color;
+            }
+        }
+
+        private static float SanitizeFinite(float value, float fallback)
+        {
+            return IsFinite(value) ? value : fallback;
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        private void AnimateVisitedSpaceLoadingDecorations(float elapsed)
+        {
+            for (var i = 0; i < visitedSpaceLoadingDecorationRects.Length; i++)
+            {
+                var rect = visitedSpaceLoadingDecorationRects[i];
+                if (rect == null)
+                {
+                    continue;
+                }
+
+                var wave = Mathf.Sin((elapsed * 2.2f) + (i * 1.7f));
+                rect.anchoredPosition = VisitedSpaceLoadingDecorationBasePositions[i] + new Vector2(wave * 4.5f, wave * 6.5f);
+                rect.localRotation = Quaternion.Euler(0f, 0f, VisitedSpaceLoadingDecorationBaseRotations[i] + wave * 5f);
+
+                var image = visitedSpaceLoadingDecorationImages[i];
+                if (image != null)
+                {
+                    var color = image.color;
+                    color.a = Mathf.Lerp(0.48f, 0.86f, (wave + 1f) * 0.5f);
+                    image.color = color;
+                }
+            }
+        }
+
+        private void AnimateVisitedSpaceLoadingDots(float elapsed)
+        {
+            if (visitedSpaceLoadingProgressFillRect != null)
+            {
+                var sweep = Mathf.SmoothStep(0f, 1f, Mathf.PingPong(elapsed * 0.46f, 1f));
+                var pulse = Mathf.Sin(sweep * Mathf.PI);
+                visitedSpaceLoadingProgressFillRect.anchoredPosition = new Vector2(Mathf.Lerp(-58f, 58f, sweep), -126f);
+                visitedSpaceLoadingProgressFillRect.sizeDelta = new Vector2(Mathf.Lerp(34f, 68f, pulse), 6f);
+            }
+
+            if (visitedSpaceLoadingProgressFillImage != null)
+            {
+                var pulse = (Mathf.Sin(elapsed * 2.9f) + 1f) * 0.5f;
+                visitedSpaceLoadingProgressFillImage.color = Color32.Lerp(
+                    new Color32(163, 128, 105, 190),
+                    new Color32(163, 128, 105, 245),
+                    pulse);
+            }
+
+            for (var i = 0; i < visitedSpaceLoadingDotRects.Length; i++)
+            {
+                var rect = visitedSpaceLoadingDotRects[i];
+                if (rect == null)
+                {
+                    continue;
+                }
+
+                var wave = Mathf.Sin((elapsed * 4.6f) - (i * 0.72f));
+                var scale = Mathf.Lerp(0.82f, 1.18f, (wave + 1f) * 0.5f);
+                rect.localScale = new Vector3(scale, scale, 1f);
+
+                var image = visitedSpaceLoadingDotImages[i];
+                if (image != null)
+                {
+                    image.color = Color32.Lerp(
+                        new Color32(214, 196, 173, 180),
+                        new Color32(163, 128, 105, 255),
+                        (wave + 1f) * 0.5f);
+                }
+            }
         }
 
         private Button CreateBottomNavButton(
@@ -4668,6 +5513,12 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (IsViewingOtherUserSpace())
+            {
+                ReturnFromVisitedSpaceToOtherSpaces();
+                return;
+            }
+
             if (CurrentFocusArea == ExperienceFocusArea.Bookshelf)
             {
                 if (TryPromptUnsavedBookshelfChanges(ReturnToBookshelfEntryMainViewImmediate))
@@ -4683,6 +5534,89 @@ namespace BookshelfPorting.Runtime
             // 이전엔 FocusQuarterView 라 시점 일관성 깨졌음 (책장은 MainView, 노트북/대시보드는 QuarterView).
             // 명시 user choice (F1 단축키, 햄버거 메뉴 QuarterView 버튼) 는 별도 경로라 영향 없음.
             FocusMainView();
+        }
+
+        private void ReturnFromVisitedSpaceToOtherSpaces()
+        {
+            CancelBookPlacementEdit(false);
+            CancelBookAddPlacementSelection(false, false);
+            SetBookshelfEditMode(false);
+            CloseOverlayPanels();
+            CloseBookAddPanel(false);
+            CloseBookAddConfirmPanelSilently();
+            CloseBookshelfManagePanel();
+            CloseBookshelfNameEditPanel();
+            CloseBookshelfDeleteConfirmPanel();
+            CloseBookshelfDesignPanel();
+            SpaceVisitorOverlayController.Instance?.HideOverlay();
+
+            openOtherSpacesTabAfterNotebookFocus = true;
+            if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                bookshelfApiSyncController.RefreshFromServer(HandleReturnFromVisitedSpaceRefreshCompleted);
+            }
+
+            OpenOtherSpacesNotebookDirect();
+        }
+
+        private void HandleReturnFromVisitedSpaceRefreshCompleted(bool success, string message)
+        {
+            SyncVisitedSpaceOwnerMode();
+            if (!success)
+            {
+                ShowBookshelfTransientStatus(
+                    "내 공간 새로고침 실패",
+                    NormalizeMutationErrorMessage(message),
+                    true);
+            }
+
+            RefreshHud();
+        }
+
+        private void OpenOtherSpacesNotebookDirect()
+        {
+            ConfigureNotebookScreen();
+            if (notebookScreenController != null)
+            {
+                OpenOtherSpacesNotebookDirectWithLoadedUi();
+                return;
+            }
+
+            if (notebookUiSceneLoader == null)
+            {
+                ShowNotebookUiLoadFailure();
+                return;
+            }
+
+            notebookUiSceneLoader.EnsureLoaded(controller =>
+            {
+                notebookScreenController = controller;
+                ConfigureNotebookScreen();
+                if (notebookScreenController == null)
+                {
+                    ShowNotebookUiLoadFailure();
+                    return;
+                }
+
+                BookshelfSceneInstaller.AlignNotebookAnchorToLoadedNotebook();
+                OpenOtherSpacesNotebookDirectWithLoadedUi();
+            });
+        }
+
+        private void OpenOtherSpacesNotebookDirectWithLoadedUi()
+        {
+            CancelPendingNotebookFocusRequest();
+            CurrentFocusArea = ExperienceFocusArea.Notebook;
+            CloseOverlayPanels();
+            CloseGuestbookPanel();
+            isHamburgerMenuOpen = false;
+            openOtherSpacesTabAfterNotebookFocus = false;
+
+            notebookScreenController.SetImmersiveMode(true);
+            notebookScreenController.Show();
+            notebookScreenController.ActivateDashboard(false);
+            notebookScreenController.OpenOtherSpacesTab();
+            RefreshHud();
         }
 
         private void RememberBookshelfReturnMainViewMode()
@@ -4763,17 +5697,20 @@ namespace BookshelfPorting.Runtime
 
             if (focusBackButton != null)
             {
-                var showBackButton = CurrentFocusArea != ExperienceFocusArea.QuarterView &&
-                                     CurrentFocusArea != ExperienceFocusArea.Notebook;
+                var isViewingOtherSpace = IsViewingOtherUserSpace();
+                var showBackButton = (isViewingOtherSpace && CurrentFocusArea != ExperienceFocusArea.Notebook) ||
+                                     (CurrentFocusArea != ExperienceFocusArea.QuarterView &&
+                                      CurrentFocusArea != ExperienceFocusArea.Notebook);
                 var backRect = focusBackButton.GetComponent<RectTransform>();
                 if (backRect != null)
                 {
-                    backRect.anchoredPosition = isBookshelfFocused ? new Vector2(34f, -34f) : new Vector2(20f, -20f);
-                    backRect.sizeDelta = isBookshelfFocused ? new Vector2(66f, 66f) : new Vector2(120f, 44f);
+                    var useCompactBack = isBookshelfFocused || isViewingOtherSpace;
+                    backRect.anchoredPosition = useCompactBack ? new Vector2(34f, -34f) : new Vector2(20f, -20f);
+                    backRect.sizeDelta = useCompactBack ? new Vector2(66f, 66f) : new Vector2(120f, 44f);
                 }
 
                 var showBookCloseButton = isBookshelfFocused && state != null && state.IsViewingBook;
-                SetButtonLabel(focusBackButton, showBookCloseButton ? "X" : (isBookshelfFocused ? "←" : "Back"));
+                SetButtonLabel(focusBackButton, showBookCloseButton ? "X" : (isBookshelfFocused || isViewingOtherSpace ? "←" : "Back"));
                 focusBackButton.gameObject.SetActive(showBackButton);
                 focusBackButton.interactable = showBackButton && (cameraController == null || !cameraController.IsTransitioning);
                 StyleHudButton(
@@ -4781,9 +5718,27 @@ namespace BookshelfPorting.Runtime
                     new Color32(255, 255, 255, 235),
                     new Color32(241, 235, 230, 255),
                     new Color32(224, 219, 214, 255),
-                    isBookshelfFocused ? 34 : 16,
+                    isBookshelfFocused || isViewingOtherSpace ? 34 : 16,
                     new Color32(45, 50, 58, 255),
                     true);
+            }
+
+            if (dashboardRefreshButton != null)
+            {
+                var isDashboardFocused = CurrentFocusArea == ExperienceFocusArea.Guestbook && ShouldUseExternalDashboardPanel;
+                dashboardRefreshButton.gameObject.SetActive(isDashboardFocused);
+                if (isDashboardFocused)
+                {
+                    dashboardRefreshButton.interactable = cameraController == null || !cameraController.IsTransitioning;
+                    StyleHudButton(
+                        dashboardRefreshButton,
+                        new Color32(255, 255, 255, 235),
+                        new Color32(241, 235, 230, 255),
+                        new Color32(224, 219, 214, 255),
+                        16,
+                        new Color32(45, 50, 58, 255),
+                        true);
+                }
             }
 
             RefreshBookshelfOverlay();
@@ -4797,6 +5752,8 @@ namespace BookshelfPorting.Runtime
             RefreshBookReviewWritePanel();
             RefreshBookReportWritePanel();
             RefreshBookReportReadPanel();
+            RefreshBookCoverSkinPanel();
+            RefreshAdvertisementBookAddPanel();
             RefreshBookEditPanel();
             RefreshSectionEditPanel();
             RefreshBookPlacementEditor();
@@ -5671,6 +6628,8 @@ namespace BookshelfPorting.Runtime
                 : new Vector2(-(safeMargins.z + edge), -sidePanelTop);
 
             SetHudObjectRect(bookDetailPanel, sidePanelAnchor, sidePanelPivot, sidePanelPosition, new Vector2(sidePanelWidth, detailPanelHeight));
+            SetHudObjectRect(bookCoverSkinPanel, sidePanelAnchor, sidePanelPivot, sidePanelPosition, new Vector2(sidePanelWidth, Mathf.Min(detailPanelHeight, 380f)));
+            SetHudObjectRect(advertisementBookAddPanel, sidePanelAnchor, sidePanelPivot, sidePanelPosition, new Vector2(sidePanelWidth, Mathf.Min(detailPanelHeight, 380f)));
             SetHudObjectRect(bookReportReadPanel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(writePanelWidth, writePanelHeight));
             SetHudObjectRect(bookReportWritePanel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(writePanelWidth, writePanelHeight));
             SetHudObjectRect(bookReviewWritePanel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(writePanelWidth, writePanelHeight));
@@ -5701,19 +6660,21 @@ namespace BookshelfPorting.Runtime
 
             var padding = Mathf.Clamp(panelWidth * 0.066f, 44f, 64f);
             var gap = Mathf.Clamp(panelWidth * 0.024f, 18f, 28f);
-            var buttonWidth = (panelWidth - padding * 2f - gap * 3f) / 4f;
+            var buttonWidth = (panelWidth - padding * 2f - gap * 2f) / 3f;
             var buttonHeight = panelHeight - Mathf.Clamp(panelHeight * 0.48f, 54f, 66f);
             var startX = -panelWidth * 0.5f + padding + buttonWidth * 0.5f;
             var fontSize = Mathf.RoundToInt(Mathf.Clamp(panelHeight * 0.15f, 14f, 18f));
 
             var detailButtonX = startX;
-            var ratingButtonX = startX + (buttonWidth + gap);
-            var likeButtonX = startX + (buttonWidth + gap) * 2f;
-            var placementButtonX = startX + (buttonWidth + gap) * 3f;
+            var coverButtonX = startX + (buttonWidth + gap);
+            var placementButtonX = startX + (buttonWidth + gap) * 2f;
             LayoutToolbarButton(bookFocusDetailButton, detailButtonX, buttonWidth, buttonHeight, fontSize);
-            LayoutToolbarButton(bookFocusRatingButton, ratingButtonX, buttonWidth, buttonHeight, fontSize);
-            LayoutToolbarButton(bookFocusReportButton, likeButtonX, buttonWidth, buttonHeight, fontSize);
+            LayoutToolbarButton(bookFocusRatingButton, coverButtonX, buttonWidth, buttonHeight, fontSize);
             LayoutToolbarButton(openBookPlacementEditorButton, placementButtonX, buttonWidth, buttonHeight, fontSize);
+            if (bookFocusReportButton != null)
+            {
+                bookFocusReportButton.gameObject.SetActive(false);
+            }
 
             if (bookFocusRatingText != null)
             {
@@ -6283,7 +7244,7 @@ namespace BookshelfPorting.Runtime
             }
 
             var isBookAddFlowOpen = isBookAddPanelOpen || isBookAddConfirmPanelOpen || isBookAddPlacementSelectionActive;
-            RefreshBookshelfBottomNav(showBookshelfOverlay && !isDraggingBook && !isBookshelfSwitching && !isBookAddFlowOpen);
+            RefreshBookshelfBottomNav(showBookshelfOverlay && !IsViewingOtherUserSpace() && !isDraggingBook && !isBookshelfSwitching && !isBookAddFlowOpen);
             RefreshBookshelfIndexIndicator(showBookshelfOverlay && !isBookAddFlowOpen);
         }
 
@@ -7643,6 +8604,432 @@ namespace BookshelfPorting.Runtime
             }
         }
 
+        private void OpenBookCoverSkinPanel()
+        {
+            var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
+            if (!CanChangeCoverSkin(book) || bookCoverSkinPanel == null)
+            {
+                ShowBookshelfTransientStatus(
+                    "표지 변경 불가",
+                    "이 책과 연결된 표지 스킨이 없습니다.",
+                    true);
+                return;
+            }
+
+            CloseOverlayPanels(bookCoverSkinPanel);
+            activeCoverSkinBook = book;
+            ActiveDetailBook = book;
+            isBookCoverSkinPanelOpen = true;
+            bookCoverSkinPanel.SetActive(true);
+            RefreshHud();
+        }
+
+        private void CloseBookCoverSkinPanel()
+        {
+            isBookCoverSkinPanelOpen = false;
+            activeCoverSkinBook = null;
+            if (bookCoverSkinPanel != null)
+            {
+                bookCoverSkinPanel.SetActive(false);
+            }
+
+            RefreshHud();
+        }
+
+        private void ApplyBookCoverSkinOption(int optionIndex)
+        {
+            if (!isBookCoverSkinPanelOpen ||
+                activeCoverSkinBook == null ||
+                optionIndex < 0 ||
+                optionIndex >= SponsoredBookCoverSkinOptions.Length)
+            {
+                return;
+            }
+
+            var option = SponsoredBookCoverSkinOptions[optionIndex];
+            if (!string.IsNullOrWhiteSpace(option.ResourcePath) &&
+                !BookshelfGenerator.TryGetBookCoverSkinSprite(option.ResourcePath, out _))
+            {
+                ShowBookshelfTransientStatus("표지 변경 실패", "선택한 표지 에셋을 찾을 수 없습니다.", true);
+                return;
+            }
+
+            var meta = dataStore != null ? dataStore.GetOrCreateBookMeta(activeCoverSkinBook) : null;
+            if (meta != null)
+            {
+                meta.coverSkinResourcePath = option.ResourcePath;
+                dataStore.ApplyBookMeta(activeCoverSkinBook, meta);
+            }
+
+            activeCoverSkinBook.coverSkinResourcePath = option.ResourcePath;
+            bookshelfGenerator?.ApplyBookCoverSkin(activeCoverSkinBook, option.ResourcePath);
+            ShowBookshelfTransientStatus("표지 변경 완료", $"{TryGetBookDisplayTitle(activeCoverSkinBook)} 표지를 변경했습니다.", false);
+            RefreshBookCoverSkinPanel();
+            RefreshHud();
+        }
+
+        private void RefreshBookCoverSkinPanel()
+        {
+            if (bookCoverSkinPanel == null)
+            {
+                return;
+            }
+
+            var show = isBookCoverSkinPanelOpen &&
+                       activeCoverSkinBook != null &&
+                       CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                       !IsBookshelfEditMode;
+            bookCoverSkinPanel.SetActive(show);
+            if (!show)
+            {
+                return;
+            }
+
+            if (bookCoverSkinTitleText != null)
+            {
+                bookCoverSkinTitleText.text = "표지 변경";
+            }
+
+            if (bookCoverSkinHintText != null)
+            {
+                bookCoverSkinHintText.text = $"{TryGetBookDisplayTitle(activeCoverSkinBook)}에 적용할 표지를 선택하세요.";
+            }
+
+            for (var i = 0; i < bookCoverSkinButtons.Length; i++)
+            {
+                var option = i < SponsoredBookCoverSkinOptions.Length ? SponsoredBookCoverSkinOptions[i] : null;
+                var button = bookCoverSkinButtons[i];
+                if (button == null)
+                {
+                    continue;
+                }
+
+                var hasOption = option != null &&
+                                (string.IsNullOrWhiteSpace(option.ResourcePath) ||
+                                 TryGetCoverSkinPreviewSprite(option.ResourcePath, out _));
+                button.gameObject.SetActive(hasOption);
+                if (!hasOption)
+                {
+                    continue;
+                }
+
+                var isSelected = string.Equals(activeCoverSkinBook.coverSkinResourcePath ?? string.Empty, option.ResourcePath ?? string.Empty, System.StringComparison.Ordinal);
+                SetButtonLabel(button, isSelected ? $"✓ {option.Label}" : option.Label);
+                StyleHudButton(
+                    button,
+                    isSelected ? new Color32(88, 133, 117, 245) : new Color32(255, 255, 255, 238),
+                    isSelected ? new Color32(105, 150, 132, 255) : new Color32(241, 235, 230, 255),
+                    new Color32(224, 219, 214, 140),
+                    13,
+                    isSelected ? Color.white : new Color32(63, 47, 38, 255),
+                    true);
+
+                var label = GetButtonLabelText(button);
+                if (label != null)
+                {
+                    label.alignment = TextAnchor.LowerCenter;
+                    label.rectTransform.offsetMin = new Vector2(6f, 8f);
+                    label.rectTransform.offsetMax = new Vector2(-6f, -90f);
+                }
+
+                var preview = bookCoverSkinPreviewImages[i];
+                if (preview != null)
+                {
+                    if (string.IsNullOrWhiteSpace(option.ResourcePath))
+                    {
+                        preview.sprite = null;
+                        preview.color = new Color32(238, 231, 221, 235);
+                    }
+                    else if (TryGetCoverSkinPreviewSprite(option.ResourcePath, out var sprite))
+                    {
+                        preview.sprite = sprite;
+                        preview.color = Color.white;
+                    }
+                }
+            }
+
+            if (bookCoverSkinStatusText != null)
+            {
+                bookCoverSkinStatusText.text = "기본 표지는 글만 표시되고, 스킨은 책 전면 표지에 적용됩니다.";
+            }
+
+            StyleHudButton(
+                closeBookCoverSkinButton,
+                new Color32(245, 237, 226, 245),
+                new Color32(255, 248, 236, 255),
+                new Color32(224, 219, 214, 140),
+                16,
+                new Color32(84, 74, 66, 255),
+                true);
+            bookCoverSkinPanel.transform.SetAsLastSibling();
+        }
+
+        private bool CanChangeCoverSkin(BookEntity book)
+        {
+            return book != null &&
+                   !book.isDecoration &&
+                   guestbookOwnerMode &&
+                   CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                   BookshelfSponsoredBook.MatchesSponsoredCatalog(book) &&
+                   HasAvailableSponsoredCoverSkin();
+        }
+
+        private static bool HasAvailableSponsoredCoverSkin()
+        {
+            for (var i = 0; i < SponsoredBookCoverSkinOptions.Length; i++)
+            {
+                var option = SponsoredBookCoverSkinOptions[i];
+                if (option != null &&
+                    !string.IsNullOrWhiteSpace(option.ResourcePath) &&
+                    BookshelfGenerator.TryGetBookCoverSkinSprite(option.ResourcePath, out _))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryGetCoverSkinPreviewSprite(string resourcePath, out Sprite sprite)
+        {
+            return BookshelfGenerator.TryGetBookCoverSkinSprite(resourcePath, out sprite);
+        }
+
+        private void OpenAdvertisementBookAddPanel()
+        {
+            var book = ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null);
+            if (!CanAddAdvertisementBookFromDetail(book) || advertisementBookAddPanel == null)
+            {
+                return;
+            }
+
+            CloseOverlayPanels(advertisementBookAddPanel);
+            ActiveDetailBook = book;
+            isAdvertisementBookAddPanelOpen = true;
+            advertisementBookAddPanel.SetActive(true);
+            RefreshHud();
+        }
+
+        private void CloseAdvertisementBookAddPanel()
+        {
+            CloseAdvertisementBookAddPanel(true);
+        }
+
+        private void CloseAdvertisementBookAddPanel(bool refresh)
+        {
+            isAdvertisementBookAddPanelOpen = false;
+            if (advertisementBookAddPanel != null)
+            {
+                advertisementBookAddPanel.SetActive(false);
+            }
+
+            if (refresh)
+            {
+                RefreshHud();
+            }
+        }
+
+        private void RefreshAdvertisementBookAddPanel()
+        {
+            if (advertisementBookAddPanel == null)
+            {
+                return;
+            }
+
+            var show = isAdvertisementBookAddPanelOpen &&
+                       CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                       bookshelfGenerator != null &&
+                       bookshelfGenerator.BookshelfCount > 0 &&
+                       !IsBookshelfEditMode;
+            advertisementBookAddPanel.SetActive(show);
+            if (!show)
+            {
+                return;
+            }
+
+            if (advertisementBookAddTitleText != null)
+            {
+                advertisementBookAddTitleText.text = "책장에 추가하기";
+            }
+
+            if (advertisementBookAddHintText != null)
+            {
+                advertisementBookAddHintText.text = "추가할 책장을 고른 뒤 빈 칸을 클릭해 위치를 선택하세요.";
+            }
+
+            var visibleShelfCount = Mathf.Min(bookshelfGenerator.BookshelfCount, advertisementBookShelfButtons.Length);
+            for (var i = 0; i < advertisementBookShelfButtons.Length; i++)
+            {
+                var button = advertisementBookShelfButtons[i];
+                if (button == null)
+                {
+                    continue;
+                }
+
+                var visible = i < visibleShelfCount;
+                button.gameObject.SetActive(visible);
+                if (!visible)
+                {
+                    continue;
+                }
+
+                var canUse = CanUseBookshelfServerPlacement(i);
+                SetButtonLabel(button, bookshelfGenerator.GetBookshelfName(i));
+                button.interactable = canUse;
+                StyleHudButton(
+                    button,
+                    canUse ? new Color32(255, 255, 255, 238) : new Color32(224, 219, 214, 140),
+                    canUse ? new Color32(241, 235, 230, 255) : new Color32(224, 219, 214, 140),
+                    new Color32(224, 219, 214, 140),
+                    13,
+                    canUse ? new Color32(63, 47, 38, 255) : new Color32(124, 111, 101, 190),
+                    true);
+            }
+
+            if (advertisementBookAddStatusText != null)
+            {
+                advertisementBookAddStatusText.text = bookshelfGenerator.BookshelfCount > advertisementBookShelfButtons.Length
+                    ? $"책장이 많아 앞 {advertisementBookShelfButtons.Length}개만 표시됩니다."
+                    : "책장을 선택하면 책장 화면으로 돌아가 배치 위치를 고릅니다.";
+            }
+
+            StyleHudButton(
+                closeAdvertisementBookAddButton,
+                new Color32(245, 237, 226, 245),
+                new Color32(255, 248, 236, 255),
+                new Color32(224, 219, 214, 140),
+                16,
+                new Color32(84, 74, 66, 255),
+                true);
+            advertisementBookAddPanel.transform.SetAsLastSibling();
+        }
+
+        private void BeginAdvertisementBookAddToShelf(int targetBookshelfIndex)
+        {
+            if (!isAdvertisementBookAddPanelOpen ||
+                bookshelfGenerator == null ||
+                targetBookshelfIndex < 0 ||
+                targetBookshelfIndex >= bookshelfGenerator.BookshelfCount)
+            {
+                return;
+            }
+
+            if (!CanUseBookshelfServerPlacement(targetBookshelfIndex))
+            {
+                ShowBookshelfServerPlacementPending();
+                RefreshAdvertisementBookAddPanel();
+                return;
+            }
+
+            pendingBookAddCatalogIndex = -1;
+            pendingBookAddBookshelfIndex = targetBookshelfIndex;
+            pendingBookAddCatalogItem = CreateSponsoredBookAddCatalogItem();
+            pendingBookAddOrientation = BookOrientation.Front;
+            pendingBookAddReadingStatus = App.Domain.ReadingStatus.Unread;
+            CloseAdvertisementBookAddPanel(false);
+            if (bookDetailPanel != null)
+            {
+                bookDetailPanel.SetActive(false);
+            }
+
+            ActiveDetailBook = null;
+            CloseActiveViewedBook();
+
+            if (targetBookshelfIndex != bookshelfGenerator.DisplayBookshelfIndex)
+            {
+                bookshelfGenerator.ShowBookshelf(targetBookshelfIndex);
+            }
+
+            if (pendingAdvertisementBookAddPlacementCoroutine != null)
+            {
+                StopCoroutine(pendingAdvertisementBookAddPlacementCoroutine);
+            }
+
+            pendingAdvertisementBookAddPlacementCoroutine = StartCoroutine(BeginAdvertisementBookAddPlacementWhenReady(targetBookshelfIndex));
+            RefreshHud();
+        }
+
+        private IEnumerator BeginAdvertisementBookAddPlacementWhenReady(int targetBookshelfIndex)
+        {
+            while (bookshelfGenerator != null && bookshelfGenerator.IsBookshelfSwitching)
+            {
+                yield return null;
+            }
+
+            pendingAdvertisementBookAddPlacementCoroutine = null;
+            if (pendingBookAddCatalogItem == null ||
+                bookshelfGenerator == null ||
+                targetBookshelfIndex < 0 ||
+                targetBookshelfIndex >= bookshelfGenerator.BookshelfCount)
+            {
+                ClearPendingBookAddSelection();
+                yield break;
+            }
+
+            if (bookshelfGenerator.DisplayBookshelfIndex != targetBookshelfIndex)
+            {
+                bookshelfGenerator.ShowBookshelf(targetBookshelfIndex);
+                while (bookshelfGenerator != null && bookshelfGenerator.IsBookshelfSwitching)
+                {
+                    yield return null;
+                }
+            }
+
+            if (bookshelfGenerator == null || bookshelfGenerator.DisplayBookshelfIndex != targetBookshelfIndex)
+            {
+                ShowBookshelfTransientStatus("책 추가 대기", "선택한 책장으로 이동한 뒤 다시 시도해 주세요.", true);
+                ClearPendingBookAddSelection();
+                RefreshHud();
+                yield break;
+            }
+
+            if (!CanOpenBookAddPanel())
+            {
+                ShowBookshelfTransientStatus("책 추가 대기", "책장을 조작할 수 있는 상태가 되면 다시 시도해 주세요.", true);
+                ClearPendingBookAddSelection();
+                RefreshHud();
+                yield break;
+            }
+
+            if (IsCatalogBookAlreadyOnActiveShelf(pendingBookAddCatalogItem))
+            {
+                ShowBookshelfTransientStatus("이미 추가된 책", GetCatalogBookDuplicateMessage(pendingBookAddCatalogItem), true);
+                ClearPendingBookAddSelection();
+                RefreshHud();
+                yield break;
+            }
+
+            isBookAddPlacementSelectionActive = true;
+            isBookAddPanelOpen = false;
+            isBookAddConfirmPanelOpen = false;
+            bookAddFeedbackMessage = "빈 칸을 클릭해 광고 책의 배치 위치를 선택하세요.";
+            RefreshHud();
+        }
+
+        private void ClearPendingBookAddSelection()
+        {
+            pendingBookAddCatalogIndex = -1;
+            pendingBookAddBookshelfIndex = -1;
+            pendingBookAddCatalogItem = null;
+        }
+
+        private static BookAddCatalogItem CreateSponsoredBookAddCatalogItem()
+        {
+            return new BookAddCatalogItem(
+                BookshelfSponsoredBook.Title,
+                BookshelfSponsoredBook.Author,
+                BookshelfSponsoredBook.Publisher,
+                BookshelfSponsoredBook.Description,
+                BookOrientation.Front,
+                null,
+                BookshelfSponsoredBook.Source,
+                BookshelfSponsoredBook.Isbn13,
+                BookshelfSponsoredBook.Isbn10,
+                BookshelfSponsoredBook.PublishedDate,
+                BookshelfSponsoredBook.CoverImageUrl,
+                BookshelfSponsoredBook.SourceUrl);
+        }
+
         private void ConfirmAddCatalogBookToShelf()
         {
             if (!CanOpenBookAddPanel() ||
@@ -7741,6 +9128,12 @@ namespace BookshelfPorting.Runtime
             }
 
             isBookAddPlacementSelectionActive = false;
+            if (pendingAdvertisementBookAddPlacementCoroutine != null)
+            {
+                StopCoroutine(pendingAdvertisementBookAddPlacementCoroutine);
+                pendingAdvertisementBookAddPlacementCoroutine = null;
+            }
+
             bookshelfGenerator?.HideBookAddPlacementGuide();
             pendingBookAddCatalogIndex = -1;
             pendingBookAddBookshelfIndex = -1;
@@ -10795,13 +12188,49 @@ namespace BookshelfPorting.Runtime
                    !isBookshelfDesignPanelOpen &&
                    !isBookshelfManagePanelOpen &&
                    !isBookshelfUnsavedConfirmPanelOpen &&
+                   !isBookCoverSkinPanelOpen &&
+                   !isAdvertisementBookAddPanelOpen &&
                    !isDeleteResultDialogOpen &&
                    (state == null || (!state.IsViewingBook && state.ActiveDraggedBook == null));
         }
 
         private bool CanMutateOwnedBookshelf()
         {
-            return guestbookOwnerMode;
+            return guestbookOwnerMode && !IsViewingOtherUserSpace();
+        }
+
+        private bool IsViewingOtherUserSpace()
+        {
+            return bookshelfApiSyncController != null &&
+                   bookshelfApiSyncController.IsViewingOtherUserSpace;
+        }
+
+        private void SyncVisitedSpaceOwnerMode()
+        {
+            var nextOwnerMode = bookshelfApiSyncController == null ||
+                                !bookshelfApiSyncController.IsViewingOtherUserSpace;
+            if (guestbookOwnerMode == nextOwnerMode)
+            {
+                return;
+            }
+
+            guestbookOwnerMode = nextOwnerMode;
+            if (!guestbookOwnerMode)
+            {
+                if (IsBookshelfEditMode)
+                {
+                    SetBookshelfEditMode(false);
+                }
+
+                CancelBookAddPlacementSelection(false, false);
+                CancelBookPlacementEdit(false);
+                CloseBookAddPanel(false);
+                CloseBookAddConfirmPanelSilently();
+                CloseBookshelfManagePanel();
+                CloseBookshelfNameEditPanel();
+                CloseBookshelfDeleteConfirmPanel();
+                CloseBookshelfDesignPanel();
+            }
         }
 
         private bool CanUseOwnerBookActions()
@@ -10810,6 +12239,16 @@ namespace BookshelfPorting.Runtime
                    CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
                    (ActiveDetailBook == null || !ActiveDetailBook.isDecoration) &&
                    (state == null || state.ActiveViewedBook == null || !state.ActiveViewedBook.isDecoration);
+        }
+
+        private bool CanAddAdvertisementBookFromDetail(BookEntity book)
+        {
+            return BookshelfSponsoredBook.IsAdvertisementBook(book) &&
+                   CanMutateOwnedBookshelf() &&
+                   CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                   bookshelfGenerator != null &&
+                   bookshelfGenerator.BookshelfCount > 0 &&
+                   !IsBookshelfEditMode;
         }
 
         private void RefreshBookshelfIndexDots(int displayIndex, int totalCount)
@@ -11124,8 +12563,12 @@ namespace BookshelfPorting.Runtime
             var averageRating = ResolveDisplayAverageRating(meta);
             var totalLikeCount = ResolveDisplayLikeCount(meta);
             var hasReport = !string.IsNullOrWhiteSpace(meta.reportBody);
-            var canDeleteBook = CanUseOwnerBookActions();
+            var isAdvertisementBook = BookshelfSponsoredBook.IsAdvertisementBook(ActiveDetailBook);
+            var canUseOwnerActions = CanUseOwnerBookActions();
+            var canAddAdvertisementBook = CanAddAdvertisementBookFromDetail(ActiveDetailBook);
+            var canDeleteBook = canUseOwnerActions && !isAdvertisementBook;
             var viewModel = new BookDetailPanelViewModel(
+                BuildBookDetailPanelIdentityKey(ActiveDetailBook),
                 TryGetBookDisplayTitle(ActiveDetailBook),
                 $"저자      {ResolveFallbackText(meta.author, "저자 미상")}\n" +
                 $"출판사    {ResolveFallbackText(meta.publisher, "출판사 미상")}\n" +
@@ -11136,8 +12579,37 @@ namespace BookshelfPorting.Runtime
                 ResolveFallbackText(meta.description, meta.memoPreview),
                 hasReport,
                 canDeleteBook,
+                canUseOwnerActions,
+                canAddAdvertisementBook,
+                meta.isLiked,
+                isAdvertisementBook,
                 pendingDeleteBook == ActiveDetailBook);
             bookDetailPanelController.Refresh(viewModel);
+        }
+
+        private static string BuildBookDetailPanelIdentityKey(BookEntity book)
+        {
+            if (book == null)
+            {
+                return string.Empty;
+            }
+
+            if (!string.IsNullOrWhiteSpace(book.bookshelfItemId))
+            {
+                return $"item:{book.bookshelfItemId}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(book.userBookId))
+            {
+                return $"user-book:{book.userBookId}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(book.bookId))
+            {
+                return $"book:{book.bookId}";
+            }
+
+            return $"runtime:{book.GetInstanceID()}";
         }
 
         private void RefreshBookFocusToolbar()
@@ -11155,7 +12627,9 @@ namespace BookshelfPorting.Runtime
                           !isBookPlacementEditorOpen &&
                           !isBookReviewWritePanelOpen &&
                           !isBookReportWritePanelOpen &&
-                          !isBookReportReadPanelOpen;
+                          !isBookReportReadPanelOpen &&
+                          !isBookCoverSkinPanelOpen &&
+                          !isAdvertisementBookAddPanelOpen;
             var canUseOwnerActions = canShow && CanUseOwnerBookActions();
             bookFocusToolbarPanel.SetActive(canUseOwnerActions);
             if (bookFocusWriteReportButton != null)
@@ -11176,17 +12650,16 @@ namespace BookshelfPorting.Runtime
             }
 
             var activeBook = state.ActiveViewedBook;
+            var canChangeCoverSkin = CanChangeCoverSkin(activeBook);
             var meta = dataStore != null ? dataStore.GetOrCreateBookMeta(activeBook) : null;
             if (meta != null)
             {
                 SetButtonLabel(bookFocusDetailButton, GetReadingStatusLabel(meta.readingStatus));
-                SetButtonLabel(bookFocusRatingButton, "리뷰 작성");
-                SetButtonLabel(bookFocusReportButton, meta.isLiked ? "좋아요 취소" : "좋아요");
+                SetButtonLabel(bookFocusRatingButton, "표지 변경");
             }
             else
             {
-                SetButtonLabel(bookFocusRatingButton, "리뷰 작성");
-                SetButtonLabel(bookFocusReportButton, "좋아요");
+                SetButtonLabel(bookFocusRatingButton, "표지 변경");
             }
 
             StyleHudButton(
@@ -11209,12 +12682,13 @@ namespace BookshelfPorting.Runtime
                 {
                     StyleHudButton(
                         bookFocusRatingButton,
-                        meta != null && meta.ownerRating > 0f ? new Color32(197, 128, 67, 245) : new Color32(255, 255, 255, 235),
-                        meta != null && meta.ownerRating > 0f ? new Color32(214, 145, 82, 255) : new Color32(241, 235, 230, 255),
+                        canChangeCoverSkin ? new Color32(238, 248, 241, 235) : new Color32(224, 219, 214, 140),
+                        canChangeCoverSkin ? new Color32(247, 255, 250, 255) : new Color32(224, 219, 214, 140),
                         new Color32(224, 219, 214, 140),
                         14,
-                        meta != null && meta.ownerRating > 0f ? Color.white : new Color32(63, 47, 38, 255),
+                        canChangeCoverSkin ? new Color32(53, 94, 73, 255) : new Color32(124, 111, 101, 190),
                         true);
+                    bookFocusRatingButton.interactable = canChangeCoverSkin;
                 }
             }
             if (openBookPlacementEditorButton != null)
@@ -11240,19 +12714,8 @@ namespace BookshelfPorting.Runtime
 
             if (bookFocusReportButton != null)
             {
-                bookFocusReportButton.gameObject.SetActive(canUseOwnerActions);
-                bookFocusReportButton.interactable = canUseOwnerActions;
-                if (canUseOwnerActions)
-                {
-                    StyleHudButton(
-                        bookFocusReportButton,
-                        meta != null && meta.isLiked ? new Color32(173, 122, 79, 245) : new Color32(238, 248, 241, 235),
-                        meta != null && meta.isLiked ? new Color32(151, 104, 64, 255) : new Color32(247, 255, 250, 255),
-                        new Color32(224, 219, 214, 140),
-                        14,
-                        meta != null && meta.isLiked ? Color.white : new Color32(53, 94, 73, 255),
-                        meta != null && meta.isLiked);
-                }
+                bookFocusReportButton.gameObject.SetActive(false);
+                bookFocusReportButton.interactable = false;
             }
             if (bookFocusWriteReportButton != null)
             {
@@ -12314,6 +13777,7 @@ namespace BookshelfPorting.Runtime
 
             RefreshBookDetailPanel();
             RefreshHud();
+            RefreshExternalDashboardRecords();
         }
 
         private void HandleBookReportSaveFailure(BookEntity book, BookReportMutationSnapshot rollback, string errorMessage)
@@ -12598,6 +14062,8 @@ namespace BookshelfPorting.Runtime
                                 !isDraggingBook &&
                                 !isBookshelfSwitching &&
                                 !isBookPlacementEditorOpen &&
+                                !isBookCoverSkinPanelOpen &&
+                                !isAdvertisementBookAddPanelOpen &&
                                 (ActiveDetailBook != null || state.ActiveViewedBook != null);
 
             if (openBookPlacementEditorButton != null)
@@ -13127,6 +14593,7 @@ namespace BookshelfPorting.Runtime
 
             if (controller != null)
             {
+                SyncExternalDashboardTarget(controller);
                 controller.SetDimmed(!isFocused);
                 controller.SetInteractionEnabled(isFocused);
             }
@@ -13137,6 +14604,29 @@ namespace BookshelfPorting.Runtime
             {
                 externalDashboardPanel.SetActive(true);
             }
+        }
+
+        private void SyncExternalDashboardTarget(DashboardScreenController controller)
+        {
+            if (controller == null)
+            {
+                return;
+            }
+
+            if (IsViewingOtherUserSpace())
+            {
+                var targetSpaceId = bookshelfApiSyncController != null
+                    ? bookshelfApiSyncController.CurrentSpaceId
+                    : null;
+                if (targetSpaceId.HasValue && targetSpaceId.Value > 0)
+                {
+                    controller.ShowVisitedSpaceDashboard(targetSpaceId.Value);
+                }
+
+                return;
+            }
+
+            controller.ShowMineDashboard();
         }
 
         private static void SetGuestbookBoardHitAreaColliderEnabled(bool enabled)
@@ -14269,6 +15759,19 @@ namespace BookshelfPorting.Runtime
                 SetBookReviewStatus(string.Empty);
             }
 
+            if (bookCoverSkinPanel != null && bookCoverSkinPanel != except)
+            {
+                bookCoverSkinPanel.SetActive(false);
+                isBookCoverSkinPanelOpen = false;
+                activeCoverSkinBook = null;
+            }
+
+            if (advertisementBookAddPanel != null && advertisementBookAddPanel != except)
+            {
+                advertisementBookAddPanel.SetActive(false);
+                isAdvertisementBookAddPanelOpen = false;
+            }
+
             if (except != bookReportWritePanel && except != bookReportReadPanel)
             {
                 activeReportBook = null;
@@ -14657,14 +16160,64 @@ namespace BookshelfPorting.Runtime
 
         private bool TryHitNotebook()
         {
+            if (Mouse.current == null)
+            {
+                return false;
+            }
+
+            return TryHitNotebook(Mouse.current.position.ReadValue());
+        }
+
+        private bool TryHitNotebook(Vector2 pointer)
+        {
             var sceneCamera = Camera.main;
             if (sceneCamera == null)
             {
                 return false;
             }
 
-            var ray = sceneCamera.ScreenPointToRay(Mouse.current.position.ReadValue());
-            return TryHitClosest<NotebookHitArea>(ray);
+            var ray = sceneCamera.ScreenPointToRay(pointer);
+            var hits = Physics.RaycastAll(ray, 100f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
+            if (hits.Length == 0)
+            {
+                return false;
+            }
+
+            System.Array.Sort(hits, (left, right) => left.distance.CompareTo(right.distance));
+            for (var i = 0; i < hits.Length; i++)
+            {
+                var collider = hits[i].collider;
+                if (collider == null || ShouldIgnoreSceneHitCollider(collider))
+                {
+                    continue;
+                }
+
+                return IsRoomNotebookCollider(collider);
+            }
+
+            return false;
+        }
+
+        private void QueueNotebookFocusIfClickedDuringTransition()
+        {
+            if (Mouse.current == null ||
+                !Mouse.current.leftButton.wasPressedThisFrame ||
+                IsViewingOtherUserSpace())
+            {
+                return;
+            }
+
+            var pointer = Mouse.current.position.ReadValue();
+            var isOverNotebookWorldUi = IsPointerOverRoomNotebookWorldUi(pointer);
+            if (IsPointerOverUi() && !isOverNotebookWorldUi)
+            {
+                return;
+            }
+
+            if (isOverNotebookWorldUi || TryHitNotebook(pointer))
+            {
+                pendingNotebookFocusAfterTransition = true;
+            }
         }
 
         private bool TryHitBookshelf()
@@ -14732,8 +16285,7 @@ namespace BookshelfPorting.Runtime
 
             if (notebookScreenController == null && notebookUiSceneLoader == null)
             {
-                var controllers = FindObjectsByType<NotebookScreenController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-                notebookScreenController = controllers != null && controllers.Length > 0 ? controllers[0] : null;
+                notebookScreenController = FindRoomNotebookScreenController();
             }
 
             if (notebookScreenController == null || Camera.main == null)
@@ -14778,13 +16330,22 @@ namespace BookshelfPorting.Runtime
             for (var i = 0; i < controllers.Length; i++)
             {
                 var controller = controllers[i];
-                if (controller != null && (notebookUiSceneLoader == null || !notebookUiSceneLoader.OwnsController(controller)))
+                if (controller != null &&
+                    !IsNotebookUiSceneController(controller) &&
+                    (notebookUiSceneLoader == null || !notebookUiSceneLoader.OwnsController(controller)))
                 {
                     return controller;
                 }
             }
 
             return null;
+        }
+
+        private static bool IsNotebookUiSceneController(NotebookScreenController controller)
+        {
+            return controller != null &&
+                   controller.gameObject.scene.IsValid() &&
+                   controller.gameObject.scene.name == SceneKeys.NotebookUi;
         }
 
         private void AttachNotebookApiCallbacks()
@@ -14800,6 +16361,7 @@ namespace BookshelfPorting.Runtime
             if (subscribedNotebookScreenController != null)
             {
                 subscribedNotebookScreenController.BookAddedToShelfThroughApi += HandleNotebookBookAddedToShelfThroughApi;
+                subscribedNotebookScreenController.SpaceVisitRequested += HandleNotebookSpaceVisitRequested;
             }
         }
 
@@ -14811,6 +16373,7 @@ namespace BookshelfPorting.Runtime
             }
 
             subscribedNotebookScreenController.BookAddedToShelfThroughApi -= HandleNotebookBookAddedToShelfThroughApi;
+            subscribedNotebookScreenController.SpaceVisitRequested -= HandleNotebookSpaceVisitRequested;
             subscribedNotebookScreenController = null;
         }
 
@@ -14820,11 +16383,144 @@ namespace BookshelfPorting.Runtime
             {
                 ShowBookshelfTransientStatus("책 추가 저장 완료", "책은 서버에 저장됐지만 이 화면에서는 책장 새로고침을 실행할 수 없습니다.", false);
                 RefreshHud();
+                RefreshExternalDashboardBooks();
                 return;
             }
 
             ShowBookshelfTransientStatus("책 추가 저장 완료", "책은 서버에 저장됐고 책장 새로고침을 시작합니다.", false);
             bookshelfApiSyncController.RefreshFromServer(HandleNotebookBookAddRefreshCompleted);
+            RefreshHud();
+            RefreshExternalDashboardBooks();
+        }
+
+        /// <summary>
+        /// externalDashboardPanel에서 DashboardScreenController를 찾는다.
+        /// GetComponent → GetComponentInChildren(includeInactive) 순으로 탐색.
+        /// </summary>
+        private DashboardScreenController GetExternalDashboardController()
+        {
+            if (externalDashboardPanel == null) return null;
+
+            var controller = externalDashboardPanel.GetComponent<DashboardScreenController>();
+            if (controller == null)
+            {
+                controller = externalDashboardPanel.GetComponentInChildren<DashboardScreenController>(true);
+            }
+            return controller;
+        }
+
+        /// <summary>
+        /// 책 추가 후 외부 대시보드 패널의 최근 추가한 책 캐러셀을 새로고침한다.
+        /// </summary>
+        private void RefreshExternalDashboardBooks()
+        {
+            GetExternalDashboardController()?.RefreshBooks();
+        }
+
+        /// <summary>
+        /// 독후감 저장 후 외부 대시보드 패널의 최근 독후감 캐러셀을 새로고침한다.
+        /// </summary>
+        private void RefreshExternalDashboardRecords()
+        {
+            GetExternalDashboardController()?.RefreshRecords();
+        }
+
+        /// <summary>
+        /// HUD 새로고침 버튼 클릭 — 대시보드 전체를 새로고침한다.
+        /// </summary>
+        private void OnDashboardRefreshClicked()
+        {
+            GetExternalDashboardController()?.RefreshAll();
+        }
+
+        private void HandleNotebookSpaceVisitRequested(long spaceId)
+        {
+            if (spaceId <= 0)
+            {
+                return;
+            }
+
+            if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
+            {
+                ShowBookshelfTransientStatus(
+                    "공간 방문 실패",
+                    "책장 API 동기화가 준비되지 않아 다른 공간을 불러올 수 없습니다.",
+                    true);
+                RefreshHud();
+                return;
+            }
+
+            if (!bookshelfApiSyncController.HasAccessToken)
+            {
+                ShowBookshelfTransientStatus(
+                    "로그인이 필요합니다",
+                    "다른 사람의 공간을 방문하려면 로그인 상태가 필요합니다.",
+                    true);
+                RefreshHud();
+                return;
+            }
+
+            if (bookshelfApiSyncController.IsRefreshing)
+            {
+                ShowBookshelfTransientStatus(
+                    "공간 방문 대기",
+                    "책장 정보를 불러오는 중입니다. 잠시 후 다시 시도해 주세요.",
+                    false);
+                RefreshHud();
+                return;
+            }
+
+            if (notebookScreenController != null)
+            {
+                notebookScreenController.SetImmersiveMode(false);
+                notebookScreenController.ReturnToScreenSaver(false);
+            }
+
+            ShowVisitedSpaceLoading();
+            bookshelfApiSyncController.EnterSpaceById(spaceId, HandleVisitedSpaceLoadCompleted);
+            RefreshHud();
+        }
+
+        private void HandleVisitedSpaceLoadCompleted(bool success, string message)
+        {
+            if (visitedSpaceLoadingCompletionRoutine != null)
+            {
+                StopCoroutine(visitedSpaceLoadingCompletionRoutine);
+                visitedSpaceLoadingCompletionRoutine = null;
+            }
+
+            var elapsed = Time.unscaledTime - visitedSpaceLoadingAnimationStartedAt;
+            var remainingSeconds = VisitedSpaceLoadingMinimumVisibleSeconds - elapsed;
+            if (remainingSeconds > 0f && isActiveAndEnabled)
+            {
+                visitedSpaceLoadingCompletionRoutine = StartCoroutine(CompleteVisitedSpaceLoadAfterDelay(success, message, remainingSeconds));
+                return;
+            }
+
+            CompleteVisitedSpaceLoad(success, message);
+        }
+
+        private IEnumerator CompleteVisitedSpaceLoadAfterDelay(bool success, string message, float delaySeconds)
+        {
+            yield return new WaitForSecondsRealtime(Mathf.Max(0f, delaySeconds));
+            visitedSpaceLoadingCompletionRoutine = null;
+            CompleteVisitedSpaceLoad(success, message);
+        }
+
+        private void CompleteVisitedSpaceLoad(bool success, string message)
+        {
+            HideVisitedSpaceLoading();
+            if (!success)
+            {
+                var detail = NormalizeMutationErrorMessage(message);
+                ShowBookshelfTransientStatus("공간 방문 실패", detail, true);
+                OpenOtherSpacesNotebookDirect();
+                RefreshHud();
+                return;
+            }
+
+            SyncVisitedSpaceOwnerMode();
+            FocusMainView();
             RefreshHud();
         }
 
@@ -14883,7 +16579,8 @@ namespace BookshelfPorting.Runtime
 
             if (notebookUiSceneLoader == null)
             {
-                return true;
+                ShowNotebookUiLoadFailure();
+                return false;
             }
 
             if (isNotebookFocusWaitingForScene)
@@ -14967,6 +16664,22 @@ namespace BookshelfPorting.Runtime
             {
                 notebookScreenController.Show();
             }
+        }
+
+        private void TryOpenOtherSpacesTabAfterNotebookFocus()
+        {
+            if (!openOtherSpacesTabAfterNotebookFocus || notebookScreenController == null)
+            {
+                return;
+            }
+
+            notebookScreenController.OpenOtherSpacesTab();
+            if (CurrentFocusArea == ExperienceFocusArea.Notebook)
+            {
+                notebookScreenController.ActivateDashboard();
+            }
+
+            openOtherSpacesTabAfterNotebookFocus = false;
         }
 
         private void HideNotebookScreen()
@@ -15178,6 +16891,59 @@ namespace BookshelfPorting.Runtime
             return DashboardRaycastFilter.IsPointerOverInteractiveDashboard(pointerScreen);
         }
 
+        private bool IsPointerOverRoomNotebookWorldUi(Vector2 pointerScreen)
+        {
+            var eventSystem = EventSystem.current;
+            if (eventSystem == null)
+            {
+                return false;
+            }
+
+            var eventData = new PointerEventData(eventSystem)
+            {
+                position = pointerScreen
+            };
+            var results = new List<RaycastResult>();
+            eventSystem.RaycastAll(eventData, results);
+            for (var i = 0; i < results.Count; i++)
+            {
+                if (IsRoomNotebookWorldUiRaycast(results[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsRoomNotebookWorldUiRaycast(RaycastResult result)
+        {
+            if (result.gameObject == null)
+            {
+                return false;
+            }
+
+            Canvas canvas = null;
+            if (result.module is GraphicRaycaster graphicRaycaster)
+            {
+                canvas = graphicRaycaster.GetComponent<Canvas>();
+            }
+
+            if (canvas == null)
+            {
+                canvas = result.gameObject.GetComponentInParent<Canvas>();
+            }
+
+            if (canvas == null || canvas.renderMode != RenderMode.WorldSpace)
+            {
+                return false;
+            }
+
+            var controller = result.gameObject.GetComponentInParent<NotebookScreenController>()
+                ?? canvas.GetComponentInParent<NotebookScreenController>();
+            return controller != null && !IsNotebookUiSceneController(controller);
+        }
+
         // origin/dev 의 의도된 동작 — RaycastAll 결과를 DashboardRaycastFilter.IsBlockingRaycastResult
         // 가 분류한다. 그 필터는 WorldSpaceRaycastPassthrough 마커가 붙은 WorldSpace 캔버스 hit
         // (guestbookPreviewPanel / guestbookPanel 등) 은 non-blocking 으로 처리해 메인룸 클릭이
@@ -15208,6 +16974,22 @@ namespace BookshelfPorting.Runtime
             }
 
             return false;
+        }
+
+        private static bool IsRoomNotebookCollider(Collider collider)
+        {
+            if (collider == null)
+            {
+                return false;
+            }
+
+            if (collider.GetComponent<NotebookHitArea>() != null)
+            {
+                return true;
+            }
+
+            var controller = collider.GetComponentInParent<NotebookScreenController>();
+            return controller != null && !IsNotebookUiSceneController(controller);
         }
 
         private static void EnsureEventSystem()

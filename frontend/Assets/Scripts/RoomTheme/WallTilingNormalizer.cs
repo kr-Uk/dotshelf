@@ -55,5 +55,28 @@ namespace Dotshelf.Scripts.RoomTheme
             SharedBlock.SetVector(MainTexStId, st);
             wallRenderer.SetPropertyBlock(SharedBlock);
         }
+
+        /// <summary>
+        /// Ceiling 같은 수평면에 wall wallpaper texture density 를 맞춰 적용.
+        /// </summary>
+        public static void ApplyHorizontalSurface(Renderer surfaceRenderer, Vector2 patternWorldSize)
+        {
+            if (surfaceRenderer == null) return;
+            if (patternWorldSize.x <= 0f || patternWorldSize.y <= 0f) return;
+
+            var size = surfaceRenderer.bounds.size;
+            float faceWidth = size.x;
+            float faceDepth = size.z;
+            if (faceWidth <= 0f || faceDepth <= 0f) return;
+
+            float tilingU = faceWidth / patternWorldSize.x;
+            float tilingV = faceDepth / patternWorldSize.y;
+            var st = new Vector4(tilingU, tilingV, 0f, 0f);
+
+            surfaceRenderer.GetPropertyBlock(SharedBlock);
+            SharedBlock.SetVector(BaseMapStId, st);
+            SharedBlock.SetVector(MainTexStId, st);
+            surfaceRenderer.SetPropertyBlock(SharedBlock);
+        }
     }
 }

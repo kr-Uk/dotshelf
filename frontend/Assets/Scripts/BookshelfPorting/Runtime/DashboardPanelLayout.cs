@@ -8,7 +8,7 @@ namespace BookshelfPorting.Runtime
         private const float HorizontalInset = 0.10f;
         private const float VerticalInset = 0.06f;
         private static readonly Vector3 SurfaceOffset = new(0.003f, 0f, 0f);
-        private static readonly Quaternion LocalRotation = Quaternion.Euler(0f, 90f, 0f);
+        private static readonly Quaternion LocalRotation = Quaternion.Euler(0f, -90f, 0f);
         private static readonly Vector2 ReferenceSize = new(1920f, 1080f);
 
         public static void Mount(Transform panel, Transform hitArea)
@@ -22,8 +22,9 @@ namespace BookshelfPorting.Runtime
             panel.position = hitArea.TransformPoint(SurfaceOffset);
             panel.rotation = hitArea.rotation * LocalRotation;
             var panelScale = ResolveScale(hitArea);
-            // Flip local X so the room-facing UI Toolkit panel reads left-to-right on the board.
-            panel.localScale = new Vector3(-panelScale, panelScale, panelScale);
+            // Keep the room-facing UI Toolkit panel readable without negative scale:
+            // UIDocument's generated BoxCollider does not support negative scale.
+            panel.localScale = new Vector3(panelScale, panelScale, panelScale);
         }
 
         private static float ResolveScale(Transform hitArea)

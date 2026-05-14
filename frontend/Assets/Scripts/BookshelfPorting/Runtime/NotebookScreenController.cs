@@ -213,6 +213,7 @@ namespace BookshelfPorting.Runtime
 
         public Transform ScreenTransform { get; private set; }
         public event Action BookAddedToShelfThroughApi;
+        public event Action<long> SpaceVisitRequested;
 
         // notebook 이 immersive overlay 모드인지 — 이때 ScreenSaverCanvas / DashboardCanvas / 노트북 UIDocument 가
         // ScreenSpaceOverlay 로 화면 전체를 덮는다. main scene 의 mouse click 은 모두 이 UI 를 위한 것으로
@@ -384,6 +385,11 @@ namespace BookshelfPorting.Runtime
         {
             openDashboardOnShow = false;
             SetState(NotebookUiState.Dashboard, animate);
+        }
+
+        public void OpenOtherSpacesTab()
+        {
+            toolkitController?.OpenOtherSpacesTab();
         }
 
         public void ReturnToScreenSaver(bool animate = true)
@@ -590,12 +596,14 @@ namespace BookshelfPorting.Runtime
             if (subscribedToolkitController != null)
             {
                 subscribedToolkitController.BookAddedToShelfThroughApi -= HandleToolkitBookAddedToShelfThroughApi;
+                subscribedToolkitController.SpaceVisitRequested -= HandleToolkitSpaceVisitRequested;
             }
 
             subscribedToolkitController = toolkitController;
             if (subscribedToolkitController != null)
             {
                 subscribedToolkitController.BookAddedToShelfThroughApi += HandleToolkitBookAddedToShelfThroughApi;
+                subscribedToolkitController.SpaceVisitRequested += HandleToolkitSpaceVisitRequested;
             }
         }
 
@@ -604,11 +612,17 @@ namespace BookshelfPorting.Runtime
             BookAddedToShelfThroughApi?.Invoke();
         }
 
+        private void HandleToolkitSpaceVisitRequested(long spaceId)
+        {
+            SpaceVisitRequested?.Invoke(spaceId);
+        }
+
         private void OnDestroy()
         {
             if (subscribedToolkitController != null)
             {
                 subscribedToolkitController.BookAddedToShelfThroughApi -= HandleToolkitBookAddedToShelfThroughApi;
+                subscribedToolkitController.SpaceVisitRequested -= HandleToolkitSpaceVisitRequested;
                 subscribedToolkitController = null;
             }
         }
