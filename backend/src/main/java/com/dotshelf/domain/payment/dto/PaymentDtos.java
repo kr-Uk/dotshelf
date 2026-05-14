@@ -9,6 +9,7 @@ import com.dotshelf.domain.asset.entity.AssetPurchase;
 import com.dotshelf.domain.payment.entity.PageWallet;
 import com.dotshelf.domain.payment.entity.PaymentOrder;
 import com.dotshelf.domain.payment.service.InicisPaymentFormFactory.InicisPaymentForm;
+import com.dotshelf.domain.payment.service.PaymentPolicyProperties;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Min;
@@ -220,5 +221,76 @@ public final class PaymentDtos {
     }
 
     public record PaymentMethodListResponse(List<String> methods) {
+    }
+
+    public record PaymentPolicyResponse(
+            int maxChargeKrwPerOrder,
+            String currency,
+            String paymentMethod,
+            String validityNotice,
+            String responsibilityNotice,
+            LegalUrlsView legalUrls,
+            MerchantView merchant,
+            ComplaintContactView complaintContact,
+            List<CardLimitView> cardLimits
+    ) {
+
+        public static PaymentPolicyResponse from(PaymentPolicyProperties properties) {
+            return new PaymentPolicyResponse(
+                    properties.maxChargeKrw(),
+                    "KRW",
+                    "CARD",
+                    "구매 포인트와 아이템 이용권한의 유효기간은 결제일로부터 1년이며, 서비스 운영 기간 동안 자동으로 갱신됩니다.",
+                    properties.responsibilityNotice(),
+                    LegalUrlsView.from(properties.legalUrls()),
+                    MerchantView.from(properties.merchant()),
+                    ComplaintContactView.from(properties.complaintContact()),
+                    properties.cardLimits().stream().map(CardLimitView::from).toList()
+            );
+        }
+
+        public record LegalUrlsView(String paymentTerms, String refundPolicy, String privacy, String businessInfo) {
+
+            public static LegalUrlsView from(PaymentPolicyProperties.LegalUrls urls) {
+                return new LegalUrlsView(urls.paymentTerms(), urls.refundPolicy(), urls.privacy(), urls.businessInfo());
+            }
+        }
+
+        public record MerchantView(
+                String name,
+                String registrationNumber,
+                String representative,
+                String address,
+                String tel,
+                String email,
+                String mailOrderRegistrationNumber
+        ) {
+
+            public static MerchantView from(PaymentPolicyProperties.Merchant merchant) {
+                return new MerchantView(
+                        merchant.name(),
+                        merchant.registrationNumber(),
+                        merchant.representative(),
+                        merchant.address(),
+                        merchant.tel(),
+                        merchant.email(),
+                        merchant.mailOrderRegistrationNumber()
+                );
+            }
+        }
+
+        public record ComplaintContactView(String name, String tel) {
+
+            public static ComplaintContactView from(PaymentPolicyProperties.ComplaintContact contact) {
+                return new ComplaintContactView(contact.name(), contact.tel());
+            }
+        }
+
+        public record CardLimitView(String issuer, String description) {
+
+            public static CardLimitView from(PaymentPolicyProperties.CardLimitInfo info) {
+                return new CardLimitView(info.issuer(), info.description());
+            }
+        }
     }
 }

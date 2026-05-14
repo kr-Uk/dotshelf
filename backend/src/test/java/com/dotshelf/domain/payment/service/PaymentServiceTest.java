@@ -9,11 +9,11 @@ import static org.mockito.BDDMockito.then;
 import java.util.Map;
 import java.util.Optional;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -22,6 +22,7 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.InicisAuthReturnRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeConfirmResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.WalletResponse;
 import com.dotshelf.domain.payment.entity.PaymentOrder;
 import com.dotshelf.domain.payment.repository.PageWalletRepository;
@@ -56,8 +57,24 @@ class PaymentServiceTest {
     @Mock
     private PaymentOrderCompletionService paymentOrderCompletionService;
 
-    @InjectMocks
+    private PaymentPolicyProperties paymentPolicyProperties;
+
     private PaymentService paymentService;
+
+    @BeforeEach
+    void setUp() {
+        paymentPolicyProperties = new PaymentPolicyProperties(100_000, null, null, null, null, null);
+        paymentService = new PaymentService(
+                pageWalletRepository,
+                paymentOrderRepository,
+                assetPurchaseRepository,
+                userService,
+                inicisPaymentFormFactory,
+                inicisPaymentClient,
+                paymentOrderCompletionService,
+                paymentPolicyProperties
+        );
+    }
 
     @Test
     @DisplayName("페이지 충전 주문 생성은 서버 금액 검증 후 READY 주문을 저장한다")
@@ -97,6 +114,31 @@ class PaymentServiceTest {
 
         then(paymentOrderRepository).shouldHaveNoInteractions();
         then(inicisPaymentFormFactory).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("KG이니시스 1회 결제 한도를 초과하는 충전 주문은 만들지 않는다")
+    void createPageChargeOrder_amountExceedsLimit_throwsException() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+
+        assertThatThrownBy(() -> paymentService.createPageChargeOrder(1L, orderRequest(100_001, 100_001)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.PAYMENT_AMOUNT_EXCEEDS_LIMIT);
+
+        then(paymentOrderRepository).shouldHaveNoInteractions();
+        then(inicisPaymentFormFactory).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("결제 정책 조회는 1회 한도와 카드결제 고정 정책을 응답에 담아 반환한다")
+    void getPolicy_exposesMaxChargeAndCardOnlyPolicy() {
+        PaymentPolicyResponse response = paymentService.getPolicy();
+
+        assertThat(response.maxChargeKrwPerOrder()).isEqualTo(100_000);
+        assertThat(response.currency()).isEqualTo("KRW");
+        assertThat(response.paymentMethod()).isEqualTo("CARD");
+        assertThat(response.validityNotice()).contains("1년").contains("자동");
     }
 
     @Test

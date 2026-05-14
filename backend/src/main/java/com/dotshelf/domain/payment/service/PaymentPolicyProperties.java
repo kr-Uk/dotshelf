@@ -1,0 +1,92 @@
+package com.dotshelf.domain.payment.service;
+
+import java.util.List;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+@ConfigurationProperties(prefix = "payment.policy")
+public record PaymentPolicyProperties(
+        int maxChargeKrw,
+        String responsibilityNotice,
+        LegalUrls legalUrls,
+        Merchant merchant,
+        ComplaintContact complaintContact,
+        List<CardLimitInfo> cardLimits
+) {
+
+    private static final int DEFAULT_MAX_CHARGE_KRW = 100_000;
+
+    public PaymentPolicyProperties {
+        if (maxChargeKrw <= 0) {
+            maxChargeKrw = DEFAULT_MAX_CHARGE_KRW;
+        }
+        responsibilityNotice = responsibilityNotice == null ? "" : responsibilityNotice.trim();
+        legalUrls = legalUrls == null ? LegalUrls.empty() : legalUrls;
+        merchant = merchant == null ? Merchant.empty() : merchant;
+        complaintContact = complaintContact == null ? ComplaintContact.empty() : complaintContact;
+        cardLimits = cardLimits == null ? List.of() : List.copyOf(cardLimits);
+    }
+
+    public record LegalUrls(String paymentTerms, String refundPolicy, String privacy, String businessInfo) {
+
+        public LegalUrls {
+            paymentTerms = nullToEmpty(paymentTerms);
+            refundPolicy = nullToEmpty(refundPolicy);
+            privacy = nullToEmpty(privacy);
+            businessInfo = nullToEmpty(businessInfo);
+        }
+
+        public static LegalUrls empty() {
+            return new LegalUrls("", "", "", "");
+        }
+    }
+
+    public record Merchant(
+            String name,
+            String registrationNumber,
+            String representative,
+            String address,
+            String tel,
+            String email,
+            String mailOrderRegistrationNumber
+    ) {
+
+        public Merchant {
+            name = nullToEmpty(name);
+            registrationNumber = nullToEmpty(registrationNumber);
+            representative = nullToEmpty(representative);
+            address = nullToEmpty(address);
+            tel = nullToEmpty(tel);
+            email = nullToEmpty(email);
+            mailOrderRegistrationNumber = nullToEmpty(mailOrderRegistrationNumber);
+        }
+
+        public static Merchant empty() {
+            return new Merchant("", "", "", "", "", "", "");
+        }
+    }
+
+    public record ComplaintContact(String name, String tel) {
+
+        public ComplaintContact {
+            name = nullToEmpty(name);
+            tel = nullToEmpty(tel);
+        }
+
+        public static ComplaintContact empty() {
+            return new ComplaintContact("", "");
+        }
+    }
+
+    public record CardLimitInfo(String issuer, String description) {
+
+        public CardLimitInfo {
+            issuer = nullToEmpty(issuer);
+            description = nullToEmpty(description);
+        }
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value.trim();
+    }
+}
