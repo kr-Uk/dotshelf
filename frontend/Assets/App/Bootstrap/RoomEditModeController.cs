@@ -9075,33 +9075,40 @@ namespace App.Bootstrap
 
             var root = new GameObject($"RemoteAsset_{SanitizeName(displayName)}");
             var gltf = new GltfImport();
-            var loadTask = gltf.LoadFile(path);
-            while (!loadTask.IsCompleted)
+            try
             {
-                yield return null;
-            }
+                var loadTask = gltf.LoadFile(path);
+                while (!loadTask.IsCompleted)
+                {
+                    yield return null;
+                }
 
-            if (loadTask.IsFaulted || !loadTask.Result)
+                if (loadTask.IsFaulted || !loadTask.Result)
+                {
+                    Destroy(root);
+                    onError?.Invoke(loadTask.Exception != null ? loadTask.Exception.GetBaseException().Message : $"glTF load failed: {path}");
+                    yield break;
+                }
+
+                var instantiateTask = gltf.InstantiateMainSceneAsync(root.transform);
+                while (!instantiateTask.IsCompleted)
+                {
+                    yield return null;
+                }
+
+                if (instantiateTask.IsFaulted || !instantiateTask.Result)
+                {
+                    Destroy(root);
+                    onError?.Invoke(instantiateTask.Exception != null ? instantiateTask.Exception.GetBaseException().Message : $"glTF instantiate failed: {path}");
+                    yield break;
+                }
+
+                onSuccess?.Invoke(root);
+            }
+            finally
             {
-                Destroy(root);
-                onError?.Invoke(loadTask.Exception != null ? loadTask.Exception.GetBaseException().Message : $"glTF load failed: {path}");
-                yield break;
+                gltf.Dispose();
             }
-
-            var instantiateTask = gltf.InstantiateMainSceneAsync(root.transform);
-            while (!instantiateTask.IsCompleted)
-            {
-                yield return null;
-            }
-
-            if (instantiateTask.IsFaulted || !instantiateTask.Result)
-            {
-                Destroy(root);
-                onError?.Invoke(instantiateTask.Exception != null ? instantiateTask.Exception.GetBaseException().Message : $"glTF instantiate failed: {path}");
-                yield break;
-            }
-
-            onSuccess?.Invoke(root);
         }
 
         private static string PickPrimaryRemoteModelPath(IReadOnlyList<string> paths)

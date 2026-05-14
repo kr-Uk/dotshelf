@@ -13,15 +13,18 @@ namespace App.Infrastructure.Assets
     public sealed class RemoteAssetCacheService
     {
         private const string CacheDirectoryName = "DotShelfRemoteAssets";
+        private const long DefaultMaxCacheBytes = 1024L * 1024L * 1024L;
 
-        public RemoteAssetCacheService(string cacheRoot = null)
+        public RemoteAssetCacheService(string cacheRoot = null, long maxCacheBytes = DefaultMaxCacheBytes)
         {
             CacheRoot = string.IsNullOrWhiteSpace(cacheRoot)
                 ? Path.Combine(UnityEngine.Application.persistentDataPath, CacheDirectoryName)
                 : cacheRoot;
+            MaxCacheBytes = maxCacheBytes;
         }
 
         public string CacheRoot { get; }
+        public long MaxCacheBytes { get; }
 
         public IEnumerator EnsureManifestCached(
             DownloadManifestResponseDto manifest,
@@ -39,8 +42,22 @@ namespace App.Infrastructure.Assets
             for (var i = 0; i < files.Count; i++)
             {
                 var file = files[i];
-                if (file == null || string.IsNullOrWhiteSpace(file.Url))
+                if (file == null)
                 {
+                    onError?.Invoke("Remote asset manifest contains an empty file entry.");
+                    yield break;
+                }
+
+                if (string.IsNullOrWhiteSpace(file.Url))
+                {
+                    var message = $"Remote asset url is empty: assetId={file.AssetId}, code={file.Code}";
+                    if (file.Required)
+                    {
+                        onError?.Invoke(message);
+                        yield break;
+                    }
+
+                    Debug.LogWarning($"[RemoteAssetCache] Skipping optional file with empty url: assetId={file.AssetId}, code={file.Code}");
                     continue;
                 }
 
@@ -86,6 +103,7 @@ namespace App.Infrastructure.Assets
             var cachePath = BuildCachePath(file);
             if (IsValidCachedFile(cachePath, file))
             {
+                TouchFile(cachePath);
                 onSuccess?.Invoke(cachePath);
                 yield break;
             }
@@ -120,6 +138,8 @@ namespace App.Infrastructure.Assets
 
             DeleteIfExists(cachePath);
             File.Move(tempPath, cachePath);
+            TouchFile(cachePath);
+            PruneCacheIfNeeded(cachePath);
             onSuccess?.Invoke(cachePath);
         }
 
@@ -166,9 +186,10 @@ namespace App.Infrastructure.Assets
                 normalized = normalized.Substring("sha256:".Length);
             }
 
-            if (normalized.Length != 64)
+            if (normalized.Length != 64 || !IsLowerOrUpperHex(normalized))
             {
-                return true;
+                Debug.LogWarning($"[RemoteAssetCache] Invalid sha256 hash format: {expectedHash}");
+                return false;
             }
 
             using (var stream = File.OpenRead(path))
@@ -177,6 +198,27 @@ namespace App.Infrastructure.Assets
                 var actual = ToLowerHex(sha256.ComputeHash(stream));
                 return string.Equals(actual, normalized, StringComparison.OrdinalIgnoreCase);
             }
+        }
+
+        private static bool IsLowerOrUpperHex(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return false;
+            }
+
+            for (var i = 0; i < value.Length; i++)
+            {
+                var ch = value[i];
+                if (!((ch >= '0' && ch <= '9') ||
+                      (ch >= 'a' && ch <= 'f') ||
+                      (ch >= 'A' && ch <= 'F')))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static string ToLowerHex(byte[] bytes)
@@ -267,6 +309,134 @@ namespace App.Infrastructure.Assets
             if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
             {
                 File.Delete(path);
+            }
+        }
+
+        private void PruneCacheIfNeeded(string protectedPath = null)
+        {
+            if (MaxCacheBytes <= 0 || !Directory.Exists(CacheRoot))
+            {
+                return;
+            }
+
+            try
+            {
+                var protectedFullPath = string.IsNullOrWhiteSpace(protectedPath)
+                    ? null
+                    : Path.GetFullPath(protectedPath);
+                var files = new List<FileInfo>();
+                long totalBytes = 0L;
+                foreach (var path in Directory.GetFiles(CacheRoot, "*", SearchOption.AllDirectories))
+                {
+                    var info = new FileInfo(path);
+                    if (!info.Exists)
+                    {
+                        continue;
+                    }
+
+                    files.Add(info);
+                    totalBytes += info.Length;
+                }
+
+                if (totalBytes <= MaxCacheBytes)
+                {
+                    return;
+                }
+
+                files.Sort((left, right) => EffectiveAccessTimeUtc(left).CompareTo(EffectiveAccessTimeUtc(right)));
+                for (var i = 0; i < files.Count && totalBytes > MaxCacheBytes; i++)
+                {
+                    var file = files[i];
+                    if (IsSamePath(file.FullName, protectedFullPath))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        var length = file.Length;
+                        file.Delete();
+                        totalBytes -= length;
+                    }
+                    catch (Exception exception)
+                    {
+                        Debug.LogWarning($"[RemoteAssetCache] Failed to evict cached file: {file.FullName}, {exception.Message}");
+                    }
+                }
+
+                DeleteEmptyDirectories(CacheRoot);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[RemoteAssetCache] Cache pruning failed: {exception.Message}");
+            }
+        }
+
+        private static bool IsSamePath(string left, string right)
+        {
+            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+            {
+                return false;
+            }
+
+            return string.Equals(
+                Path.GetFullPath(left),
+                Path.GetFullPath(right),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void TouchFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                return;
+            }
+
+            try
+            {
+                File.SetLastAccessTimeUtc(path, DateTime.UtcNow);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[RemoteAssetCache] Failed to touch cached file: {path}, {exception.Message}");
+            }
+        }
+
+        private static DateTime EffectiveAccessTimeUtc(FileInfo file)
+        {
+            if (file == null)
+            {
+                return DateTime.MinValue;
+            }
+
+            return file.LastAccessTimeUtc > DateTime.MinValue
+                ? file.LastAccessTimeUtc
+                : file.LastWriteTimeUtc;
+        }
+
+        private static void DeleteEmptyDirectories(string root)
+        {
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+            {
+                return;
+            }
+
+            var directories = Directory.GetDirectories(root, "*", SearchOption.AllDirectories);
+            Array.Sort(directories, (left, right) => right.Length.CompareTo(left.Length));
+            for (var i = 0; i < directories.Length; i++)
+            {
+                try
+                {
+                    if (Directory.Exists(directories[i]) &&
+                        Directory.GetFileSystemEntries(directories[i]).Length == 0)
+                    {
+                        Directory.Delete(directories[i]);
+                    }
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning($"[RemoteAssetCache] Failed to delete empty cache directory: {directories[i]}, {exception.Message}");
+                }
             }
         }
     }

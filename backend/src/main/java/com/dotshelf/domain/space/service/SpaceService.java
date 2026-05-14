@@ -136,6 +136,7 @@ public class SpaceService {
 
     public SpaceResponse getSpace(Long currentUserId, Long spaceId) {
         Space space = getSpaceEntity(spaceId);
+        ensureCanViewSpace(currentUserId, space);
         return SpaceResponse.from(space, isLiked(spaceId, currentUserId));
     }
 
@@ -209,6 +210,7 @@ public class SpaceService {
 
     public DashboardResponse getDashboard(Long currentUserId, Long spaceId, String period) {
         Space space = getSpaceEntity(spaceId);
+        ensureCanViewSpace(currentUserId, space);
         User owner = userService.getUser(space.getOwnerUserId());
         long weeklyVisitorCount = spaceVisitRepository
                 .countDistinctVisitorsBySpaceIdSince(spaceId, LocalDate.now().minusDays(7));
@@ -259,12 +261,16 @@ public class SpaceService {
         }
     }
 
-    private void ensureCanViewSpace(Long currentUserId, Space space) {
+    public void ensureCanViewSpace(Long currentUserId, Space space) {
         ensureNotBlockedAgainstOwner(currentUserId, space.getOwnerUserId());
         if (!Objects.equals(space.getOwnerUserId(), currentUserId)
                 && !"PUBLIC".equalsIgnoreCase(space.getVisibilityScope())) {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
+    }
+
+    public void ensureCanViewSpace(Long currentUserId, Long spaceId) {
+        ensureCanViewSpace(currentUserId, getSpaceEntity(spaceId));
     }
 
     private static void collectLayoutAssetReferences(String layoutPayload, Set<Long> inventoryIds, Set<Long> assetIds) {
@@ -285,9 +291,10 @@ public class SpaceService {
                 }
                 collectLayoutAssetReference(key, inventoryIds, assetIds);
             }
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
             // Layout payload is user-generated client JSON. A malformed old snapshot
             // must not block space visits; it simply contributes no remote asset refs.
+            log.warn("[SpaceLayout] Failed to parse layoutPayload for asset references: {}", ex.getMessage());
         }
     }
 
@@ -322,6 +329,7 @@ public class SpaceService {
     public ToggleResponse recordVisit(Long userId, Long spaceId) {
         Long currentUserId = userService.requireUserId(userId);
         Space space = getSpaceEntity(spaceId);
+        ensureCanViewSpace(currentUserId, space);
         if (space.getOwnerUserId().equals(currentUserId)) {
             return new ToggleResponse(false, space.getVisitCount());
         }
@@ -341,6 +349,7 @@ public class SpaceService {
     public ToggleResponse like(Long userId, Long spaceId) {
         Long currentUserId = userService.requireUserId(userId);
         Space space = getSpaceEntity(spaceId);
+        ensureCanViewSpace(currentUserId, space);
         if (!spaceLikeRepository.existsBySpaceIdAndUserId(spaceId, currentUserId)) {
             spaceLikeRepository.save(SpaceLike.builder()
                     .spaceId(spaceId)
@@ -355,6 +364,7 @@ public class SpaceService {
     public ToggleResponse unlike(Long userId, Long spaceId) {
         Long currentUserId = userService.requireUserId(userId);
         Space space = getSpaceEntity(spaceId);
+        ensureCanViewSpace(currentUserId, space);
         if (spaceLikeRepository.existsBySpaceIdAndUserId(spaceId, currentUserId)) {
             spaceLikeRepository.deleteBySpaceIdAndUserId(spaceId, currentUserId);
             space.unlike();
@@ -854,7 +864,7 @@ public class SpaceService {
      */
     public OwnedBookListResponse getOwnedBooks(Long viewerUserId, Long spaceId, String sort, String cursor, int limit) {
         Space space = getSpaceEntity(spaceId);
-        ensureNotBlockedAgainstOwner(viewerUserId, space.getOwnerUserId());
+        ensureCanViewSpace(viewerUserId, space);
 
         int validLimit = validateListLimit(limit);
         Long cursorId = CursorParser.parseId(cursor);

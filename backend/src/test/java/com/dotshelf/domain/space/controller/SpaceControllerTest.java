@@ -156,7 +156,7 @@ class SpaceControllerTest {
     }
 
     @Test
-    @DisplayName("방문/좋아요/좋아요 취소는 toggle 응답을 반환한다")
+    @DisplayName("방문 공간 asset manifest는 viewer와 spaceId를 전달한다")
     void getAssetManifests_passesViewerAndSpaceId() throws Exception {
         given(spaceService.getVisibleAssetManifests(1L, 10L))
                 .willReturn(new SpaceAssetManifestListResponse(
@@ -175,7 +175,7 @@ class SpaceControllerTest {
     }
 
     @Test
-    @DisplayName("諛⑸Ц/醫뗭븘??醫뗭븘??痍⑥냼??toggle ?묐떟??諛섑솚?쒕떎")
+    @DisplayName("공간 layout 조회는 viewer와 spaceId를 전달한다")
     void getLayout_passesViewerAndSpaceId() throws Exception {
         given(spaceService.getLayout(1L, 10L))
                 .willReturn(new LayoutResponse(10L, 3L, "{\"items\":[]}"));

@@ -84,6 +84,24 @@ class BookshelfServiceTest {
     private BookshelfService bookshelfService;
 
     @Test
+    @DisplayName("방문자 책장 목록 조회는 공간 접근 검증 후 공개 책장만 반환한다")
+    void getBookshelves_visitorGetsOnlyPublicBookshelves() {
+        var space = TestFixtures.space(10L, 1L);
+        var publicBookshelf = TestFixtures.bookshelf(3L, 10L, 0);
+        var privateBookshelf = TestFixtures.bookshelf(4L, 10L, 1);
+        privateBookshelf.update(null, null, "PRIVATE", null);
+        given(spaceService.getSpaceEntity(10L)).willReturn(space);
+        given(bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(10L, "ACTIVE"))
+                .willReturn(List.of(publicBookshelf, privateBookshelf));
+
+        var response = bookshelfService.getBookshelves(2L, 10L);
+
+        assertThat(response.bookshelves()).hasSize(1);
+        assertThat(response.bookshelves().getFirst().id()).isEqualTo(3L);
+        then(spaceService).should().ensureCanViewSpace(2L, space);
+    }
+
+    @Test
     @DisplayName("책장 생성은 소유자 검증 후 다음 displayOrder와 4x4 기본 섹션을 만든다")
     void create_ownerCreatesBookshelfAndDefaultSections() {
         given(userService.requireUserId(1L)).willReturn(1L);

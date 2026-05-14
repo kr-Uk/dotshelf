@@ -197,6 +197,33 @@ class SpaceServiceTest {
     }
 
     @Test
+    @DisplayName("비공개 공간 상세 조회는 소유자가 아니면 FORBIDDEN을 던진다")
+    void getSpace_privateOther_throwsForbidden() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeVisibility("PRIVATE");
+        given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
+
+        assertThatThrownBy(() -> spaceService.getSpace(2L, 10L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("비공개 공간 대시보드 조회는 소유자가 아니면 FORBIDDEN을 던진다")
+    void getDashboard_privateOther_throwsForbidden() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeVisibility("PRIVATE");
+        given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
+
+        assertThatThrownBy(() -> spaceService.getDashboard(2L, 10L, "WEEK"))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+        then(userService).should(never()).getUser(any());
+    }
+
+    @Test
     @DisplayName("공간 주인이 본인 공간을 방문하면 방문 수를 늘리지 않는다")
     void recordVisit_owner_doesNotIncreaseVisitCount() {
         Space space = TestFixtures.space(10L, 1L);
@@ -225,6 +252,21 @@ class SpaceServiceTest {
         assertThat(response.count()).isEqualTo(1L);
         then(spaceVisitRepository).should().save(captor.capture());
         assertThat(captor.getValue().getVisitorUserId()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("비공개 공간 방문 기록은 소유자가 아니면 FORBIDDEN을 던진다")
+    void recordVisit_privateOther_throwsForbidden() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeVisibility("PRIVATE");
+        given(userService.requireUserId(2L)).willReturn(2L);
+        given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
+
+        assertThatThrownBy(() -> spaceService.recordVisit(2L, 10L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+        then(spaceVisitRepository).shouldHaveNoInteractions();
     }
 
     @Test
@@ -257,6 +299,21 @@ class SpaceServiceTest {
         assertThat(response.count()).isEqualTo(1L);
         then(spaceLikeRepository).should().save(captor.capture());
         assertThat(captor.getValue().getUserId()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("비공개 공간 좋아요는 소유자가 아니면 FORBIDDEN을 던진다")
+    void like_privateOther_throwsForbidden() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeVisibility("PRIVATE");
+        given(userService.requireUserId(2L)).willReturn(2L);
+        given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
+
+        assertThatThrownBy(() -> spaceService.like(2L, 10L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+        then(spaceLikeRepository).shouldHaveNoInteractions();
     }
 
     @Test
@@ -731,7 +788,7 @@ class SpaceServiceTest {
     }
 
     @Test
-    @DisplayName("보유 책 목록은 차단 관계면 SPACE_ACCESS_BLOCKED를 던진다")
+    @DisplayName("공간 asset manifest는 소유자 적용 자산을 포함한다")
     void getVisibleAssetManifests_returnsOwnerAppliedAssetManifests() {
         Space space = TestFixtures.space(10L, 1L);
         space.changeDesk(101L);
@@ -805,7 +862,7 @@ class SpaceServiceTest {
     }
 
     @Test
-    @DisplayName("owned books blocked relation throws space access blocked")
+    @DisplayName("보유 책 목록은 차단 관계면 SPACE_ACCESS_BLOCKED를 던진다")
     void getOwnedBooks_blockedRelation_throwsSpaceAccessBlocked() {
         Space space = TestFixtures.space(10L, 1L);
         given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
