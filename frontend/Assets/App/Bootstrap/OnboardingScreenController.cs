@@ -817,6 +817,8 @@ namespace App.Bootstrap
             CreateSectionText(column, "Title", "프로필을 설정해주세요", 32f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center, 44f);
             CreateSectionText(column, "Subtitle", "프로필 이미지, 닉네임, 한줄소개를 먼저 입력합니다.", 16f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Center, 28f);
 
+            CreateSectionText(column, "ProfileImageLabel", "프로필 이미지", 15f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center, 24f);
+
             CreateSpacer(column, 12f);
 
             var profileFrame = CreateImage(column, "ProfileFrame", InputColor);
@@ -836,17 +838,6 @@ namespace App.Bootstrap
 
             profilePreviewImage = profileFrame;
             profilePreviewImage.preserveAspect = true;
-
-            CreateText(
-                profileFrame.transform,
-                "ProfilePlaceholder",
-                "프로필 이미지",
-                18f,
-                FontStyles.Bold,
-                MutedTextColor,
-                TextAlignmentOptions.Center,
-                Vector2.zero,
-                Vector2.zero);
 
             var photoButtonRow = CreateRow(column, "PhotoButtonRow", 0f, TextAnchor.MiddleCenter);
             var photoButton = CreateFixedButton(photoButtonRow, "AddPhotoButton", "사진 추가", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));

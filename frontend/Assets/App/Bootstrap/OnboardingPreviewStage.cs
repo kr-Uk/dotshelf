@@ -60,7 +60,10 @@ namespace App.Bootstrap
 
         // **Polished furniture target positions** — 책장 화면 중앙, desk 좌측 foreground, dashboard 좌측 wall.
         private static readonly Vector3 BookshelfTargetPos = new Vector3(0.25f, 0f, 1.05f);
-        private static readonly Vector3 NotebookTargetPos = new Vector3(-1.45f, 0f, -0.1f);
+        // MainScene 의 NotebookStation 배치와 일치 — GuestbookBoard.localPosition.x(=-2.395, RoomWidth=5
+        // 기준) + NotebookStation.localPosition(0.72, -1.18, 0) = world (-1.675, 0, 0.12). 좌측 벽 가까이,
+        // 카메라에서 약간 안쪽. vintage rug 의 중앙 영역에 깔리는 회귀 회피.
+        private static readonly Vector3 NotebookTargetPos = new Vector3(-1.675f, 0f, 0.12f);
         // Dashboard 는 wall-mount — bottom 이 아니라 center 기준. 좌측 wall (x=-2.1) 의 안쪽 face 에
         // 부착, mid-height 1.35m.
         private static readonly Vector3 DashboardTargetPos = new Vector3(-2.05f, 1.35f, 0.25f);
@@ -191,6 +194,9 @@ namespace App.Bootstrap
                     notebookStationInstance.name = "Preview_NotebookStation";
                     SetLayerRecursive(notebookStationInstance, PreviewLayer);
                     Debug.Log($"[OnboardingPreviewStage] Spawn desk/laptop prefab={config.NotebookStationPrefab.name}");
+                    // child Renderer 중 disabled 가 있으면 enable — prefab 작성 시 일부 mesh 가 의도와 다르게
+                    // disabled 인 회귀 케이스 (preview 에서 책상/노트북 안 보이는 원인) 보강.
+                    EnsureAllRenderersEnabled(notebookStationInstance, "NotebookStation");
                 }
                 if (config.CameraAnchorsPrefab != null)
                 {
@@ -283,7 +289,7 @@ namespace App.Bootstrap
                     wallSwap++;
                     continue;
                 }
-                if (theme.BookshelfMaterial != null && IsUnderNamedAncestor(r.transform, "BookshelfRoot"))
+                if (theme.BookshelfMaterial != null && IsBookshelfRendererForSwap(r))
                 {
                     r.material = SafeResolveMaterial(theme.BookshelfMaterial, PreviewKind.Bookshelf);
                     bookshelfSwap++;
@@ -319,6 +325,12 @@ namespace App.Bootstrap
             // 회색 base prefab 만 보이는 회귀 fix — 테마 카드 클릭 시 vintage_shelf / pastel_lamp 등
             // 테마별 실제 visual 자산이 화면에 들어감. RoomThemeApplier.SpawnDecoSpecs 와 동일 로직.
             SpawnThemeDecos(theme);
+
+            // 기본 prefab (특히 RoomBackground) 안에 모든 테마 자산이 다 포함돼 있을 때, 현재 테마 외 prefix
+            // (Natural_/Classic_/Modern_/Pastel_) 로 시작하는 자식을 hide. vintage 선택 시 "Natural_..." 등
+            // 다른 테마 mesh 가 화면에 같이 노출되는 회귀 차단. ApplyTheme 마다 idempotent — 이전 테마에서 hide
+            // 됐던 자식이 다시 visible 되어야 할 때도 SetActive(true) 로 명시 복원.
+            FilterPrefabSubsetByThemePrefix(theme);
 
             if (theme.WallMaterial != null)
                 Debug.Log($"[OnboardingPreviewStage] Apply theme wall material={theme.WallMaterial.name}");
@@ -377,10 +389,33 @@ namespace App.Bootstrap
         //
         // wall deco 도 wall surface anchor 변환 없이 단순 local 좌표 사용 — preview 라 정확한
         // wall mount 매칭보다 visual 표현이 우선. WallSide.None 인 deco 와 동일하게 처리.
+        // 본 호출 1회 동안 ThemeSlot.Shelf prefab 이 spawn 됐는지 — procedural BookshelfRig 의 visibility 결정.
+        private int themeShelfSpawnCountInLastApply;
+
         private void SpawnThemeDecos(RoomThemeAsset theme)
         {
             ClearSpawnedThemeDecos();
-            if (theme == null || previewRoomRoot == null) return;
+            themeShelfSpawnCountInLastApply = 0;
+            if (theme == null || previewRoomRoot == null)
+            {
+                ApplyBookshelfRigFallbackVisibility(theme);
+                return;
+            }
+
+            // **사용자 정책 (2026-05-13)**: 빈티지 테마만 GLB deco prefab 으로 책장/대시보드/소품 교체.
+            // 다른 테마 (내추럴/클래식/모던/파스텔) 는 *기본 BookshelfRig + DashboardScreenPanel prefab 그대로*
+            // 유지하고 material/색만 theme 적용 — deco prefab spawn 자체를 skip.
+            // 이유: 빈티지 외 테마는 아직 GLB 자산 정리 안 됨 + 사용자 경험상 기본 구도 + 색감 변경 만으로 충분.
+            // 매칭: theme.name 에 "Vintage" 포함 (case-insensitive) — RoomTheme_Vintage / RoomTheme_Vintage2 모두.
+            bool useThemeDecoPrefabs = IsThemeUsingGlbDecoPrefabs(theme);
+            if (!useThemeDecoPrefabs)
+            {
+                Debug.Log(
+                    $"[OnboardingPreviewStage] Theme={theme.name} — deco prefab spawn skipped " +
+                    $"(use base BookshelfRig + DashboardScreenPanel as-is, material/색만 theme apply).");
+                ApplyBookshelfRigFallbackVisibility(theme);
+                return;
+            }
 
             int spawned = 0;
             spawned += SpawnSpecList(theme.BookshelfDecoSpecs, "bookshelf");
@@ -391,6 +426,52 @@ namespace App.Bootstrap
                         + (theme.FloorDecoSpecs?.Count ?? 0)
                         + (theme.WallDecoSpecs?.Count ?? 0);
             Debug.Log($"[OnboardingPreviewStage] Theme deco spawned count={spawned}/{total} (theme={theme.name})");
+
+            // 테마 책장 prefab 이 spawn 됐으면 procedural BookshelfRig 를 hide — vintage GLB 책장만 보이게.
+            ApplyBookshelfRigFallbackVisibility(theme);
+        }
+
+        // 빈티지 테마만 GLB deco prefab 흐름 사용. RoomTheme_Vintage / RoomTheme_Vintage2 둘 다 매칭.
+        // 다른 테마는 BookshelfDecoSpecs / FloorDecoSpecs / WallDecoSpecs 에 spec 이 있어도 본 preview 에선 skip.
+        private static bool IsThemeUsingGlbDecoPrefabs(RoomThemeAsset theme)
+        {
+            if (theme == null) return false;
+            var n = theme.name;
+            return !string.IsNullOrEmpty(n)
+                && n.IndexOf("Vintage", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void ApplyBookshelfRigFallbackVisibility(RoomThemeAsset theme)
+        {
+            if (bookshelfRigInstance == null) return;
+            bool hasThemeShelf = themeShelfSpawnCountInLastApply > 0;
+            bool nextActive = !hasThemeShelf;
+            if (bookshelfRigInstance.activeSelf != nextActive)
+            {
+                bookshelfRigInstance.SetActive(nextActive);
+            }
+            if (hasThemeShelf)
+            {
+                Debug.Log(
+                    $"[OnboardingPreviewStage] Bookshelf prefab source=theme " +
+                    $"(ThemeSlot.Shelf spec count={themeShelfSpawnCountInLastApply}, procedural BookshelfRig hidden)");
+                return;
+            }
+            // procedural fallback — 정책에 따라 vintage 외 테마는 *정상*, vintage 인데 spec 없으면 *비정상*.
+            // 두 케이스를 log level 로 구분: 정상은 Log, 비정상은 LogWarning.
+            bool expectedFallback = !IsThemeUsingGlbDecoPrefabs(theme);
+            if (expectedFallback)
+            {
+                Debug.Log(
+                    $"[OnboardingPreviewStage] Bookshelf prefab source=procedural " +
+                    $"(base BookshelfRig 유지, material/색만 theme={(theme != null ? theme.name : "null")} 적용 — 정책상 정상)");
+            }
+            else
+            {
+                Debug.LogWarning(
+                    $"[OnboardingPreviewStage] Bookshelf theme prefab missing, fallback to procedural bookshelf " +
+                    $"(theme={(theme != null ? theme.name : "null")} — Vintage 매칭이지만 ThemeSlot.Shelf spec 없음)");
+            }
         }
 
         private int SpawnSpecList(IReadOnlyList<RoomThemeDecoSpec> specs, string label)
@@ -415,6 +496,7 @@ namespace App.Bootstrap
                 // 슬롯별 로그 — bookshelf/desk/dashboard 매핑 추적.
                 if (spec.ThemeSlot == ThemeSlot.Shelf)
                 {
+                    themeShelfSpawnCountInLastApply++;
                     Debug.Log($"[OnboardingPreviewStage] Apply theme bookshelf prefab={prefab.name}");
                 }
                 else if (spec.ThemeSlot == ThemeSlot.Table || spec.ThemeSlot == ThemeSlot.TableMini)
@@ -572,6 +654,9 @@ namespace App.Bootstrap
 
             // Desk/Notebook — 좌측 foreground, 살짝 안쪽으로 이동해 잘림 회피.
             SnapInstanceBottomCenterTo(notebookStationInstance, NotebookTargetPos, "Desk polished");
+            // 사용자 보고: "Spawn desk/laptop prefab=NotebookStation" 로그는 떴지만 화면에 안 보이는 회귀.
+            // 위치 / bounds / renderer enable 상태 진단 — 어느 단계에서 visual 이 빠지는지 즉시 파악.
+            LogFurnitureDiagnostic(notebookStationInstance, "NotebookStation");
 
             // Dashboard — 좌측 wall mount. scale ↓ + 90° 회전.
             if (dashboardScreenPanelInstance != null)
@@ -622,6 +707,71 @@ namespace App.Bootstrap
             Debug.Log($"[OnboardingPreviewStage] Furniture repositioned {label} target={target} offset={offset}");
         }
 
+        // Furniture 가 화면에 안 보이는 회귀 진단용. final transform / bounds / renderer 상태를 한 줄로 로깅.
+        // bounds 가 null 이면 모든 renderer 가 disabled 이거나 mesh 가 비어 있음 → 사용자 / 코드가 즉시 인지 가능.
+        // PreviewCamera frustum 안에 있는지도 함께 체크.
+        private void LogFurnitureDiagnostic(GameObject inst, string label)
+        {
+            if (inst == null)
+            {
+                Debug.LogWarning($"[OnboardingPreviewStage] {label} diagnostic skip — instance null.");
+                return;
+            }
+            var renderers = inst.GetComponentsInChildren<Renderer>(true);
+            int rendererTotal = renderers.Length;
+            int rendererEnabled = 0;
+            int rendererInHierarchyActive = 0;
+            for (int i = 0; i < rendererTotal; i++)
+            {
+                if (renderers[i] == null) continue;
+                if (renderers[i].enabled) rendererEnabled++;
+                if (renderers[i].gameObject.activeInHierarchy) rendererInHierarchyActive++;
+            }
+            var b = ComputeRenderersBounds(inst);
+            string boundsStr = b.HasValue
+                ? $"center={b.Value.center} size={b.Value.size}"
+                : "bounds=null (no enabled renderer or empty mesh)";
+            bool inFrustum = false;
+            if (b.HasValue && previewCamera != null)
+            {
+                var planes = GeometryUtility.CalculateFrustumPlanes(previewCamera);
+                inFrustum = GeometryUtility.TestPlanesAABB(planes, b.Value);
+            }
+            Debug.Log(
+                $"[OnboardingPreviewStage] {label} final position={inst.transform.position} {boundsStr} " +
+                $"renderers={rendererEnabled}/{rendererTotal} enabled (activeInHierarchy={rendererInHierarchyActive}) " +
+                $"layer={LayerMask.LayerToName(inst.layer)}/{inst.layer} inFrustum={inFrustum}");
+        }
+
+        // prefab 안의 모든 child Renderer 가 enabled=true 상태인지 보장. disabled 인 게 있으면 enable + 로그.
+        // 의도된 disabled (예: LOD swap 후보) 가 있을 수 있어 일괄 enable 은 부작용 가능성 0 아님 — 다만
+        // onboarding preview 는 visual-only 라 active 면 일단 visible 이 우선 (사용자 명시).
+        private void EnsureAllRenderersEnabled(GameObject inst, string label)
+        {
+            if (inst == null) return;
+            var renderers = inst.GetComponentsInChildren<Renderer>(true);
+            int enabledNow = 0;
+            int alreadyEnabled = 0;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null) continue;
+                if (r.enabled)
+                {
+                    alreadyEnabled++;
+                    continue;
+                }
+                r.enabled = true;
+                enabledNow++;
+            }
+            if (enabledNow > 0)
+            {
+                Debug.Log(
+                    $"[OnboardingPreviewStage] {label} renderers force-enabled — enabledNow={enabledNow} " +
+                    $"alreadyEnabled={alreadyEnabled} total={renderers.Length}");
+            }
+        }
+
         // RoomBackground prefab 의 기존 wall renderer (PreviewKind.Wall) 를 hide — procedural wall 과
         // 중복 / z-fight / "분리된 판처럼 보임" 회귀 방지. Floor / Bookshelf / Desk / Dashboard 는 보존.
         private void HideExistingRedundantWalls()
@@ -662,8 +812,7 @@ namespace App.Bootstrap
 
             // **Warm cream wallpaper tone** — user-spec polish 값 (회색/파랑 회귀 fix).
             var wallColor = new Color(0.93f, 0.88f, 0.78f);
-            var ceilingColor = new Color(0.97f, 0.94f, 0.88f);
-            var moldingColor = new Color(0.98f, 0.95f, 0.90f);
+            // ceiling / molding 변수는 ceiling 제거로 unused → 선언 자체 제거. 향후 ceiling 부활 시 재선언.
             Debug.Log("[OnboardingPreviewStage] Warm wall material applied");
 
             // Back wall (+Z, normal -Z 향함 — 카메라 -Z 에서 visible)
@@ -693,24 +842,15 @@ namespace App.Bootstrap
                 wallColor);
             Debug.Log("[OnboardingPreviewStage] Right wall created");
 
-            // Ceiling (+Y, normal -Y 향함 — camera below visible). **double-sided material** 사용으로
-            // 만약 카메라가 천장 위로 가는 회귀가 있어도 ceiling 이 invisible 회귀 방지.
-            ceilingInstance = BuildProceduralQuadSurface(
-                "Preview_Ceiling",
-                new Vector3(0f, RoomCeilingY, 0f),
-                Quaternion.Euler(90f, 0f, 0f),
-                new Vector3(RoomWidth, RoomDepth, 1f),
-                ceilingColor);
-            Debug.Log(
-                $"[OnboardingPreviewStage] Ceiling created position=(0, {RoomCeilingY:F2}, 0) " +
-                $"scale=({RoomWidth:F2}, {RoomDepth:F2}) visibleFromBelow=true");
-
-            // Ceiling molding — 천장-벽 모서리에 white trim cube (3개 변).
-            CreateCeilingMoldingFixed(moldingColor);
+            // Ceiling 제거: 미리보기는 화면 위에서 약간 내려보는 quarter-view 각도라 ceiling 자체가
+            // 카메라 frustum 의 상단을 가려 책장/책상/노트북 영역을 좁히는 부작용. 사용자 명시 — preview 모드는
+            // ceiling 없는 open-top 박스 (방 구도만 잡고 위는 trim). ceilingInstance / molding 모두 skip.
+            // 변수 참조 (Dispose) 호환 위해 null 유지.
+            ceilingInstance = null;
 
             Debug.Log(
-                "[OnboardingPreviewStage] Procedural surfaces created back=true left=true right=true ceiling=true");
-            Debug.Log("[OnboardingPreviewStage] Room structure sealed");
+                "[OnboardingPreviewStage] Procedural surfaces created back=true left=true right=true ceiling=false");
+            Debug.Log("[OnboardingPreviewStage] Room structure sealed (open-top — ceiling/molding skipped)");
         }
 
         // Procedural quad surface — wall/ceiling 공통 builder. stageRoot 자식 (world origin 기준).
@@ -1303,6 +1443,201 @@ namespace App.Bootstrap
             {
                 if (cur.gameObject.name == ancestorName) return true;
                 cur = cur.parent;
+            }
+            return false;
+        }
+
+        // ApplyTheme 의 bookshelf material swap 대상 판단. 기존 BookshelfRoot ancestor 만 매칭하면 GLB prefab 의
+        // 자식 hierarchy (BookshelfRoot 라는 이름 부모가 없는 케이스) 가 0 매칭 되어 책장이 vintage wallpaper 처럼
+        // 회색으로 남는 회귀 발생. 보완:
+        //   1) renderer/parent 이름에 "Shelf"/"Bookshelf"/"Bookcase"/"Cabinet" 포함 시 매칭 — case-insensitive.
+        //   2) SpawnThemeDecos 가 spawn 한 GLB prefab 의 자식이면 매칭 *제외* — prefab 의 원본 material 보존
+        //      (사용자 명시: "실제 GLB prefab 사용 시 prefab 자체 material 우선").
+        private bool IsBookshelfRendererForSwap(Renderer r)
+        {
+            if (r == null) return false;
+            // (1) 테마 deco GLB prefab 의 자식이면 swap 제외 — prefab original material 보존.
+            for (int i = 0; i < spawnedThemeDecos.Count; i++)
+            {
+                var deco = spawnedThemeDecos[i];
+                if (deco == null) continue;
+                if (r.transform.IsChildOf(deco.transform)) return false;
+            }
+            // (2) BookshelfRoot ancestor 매칭 (기존 정책).
+            if (IsUnderNamedAncestor(r.transform, "BookshelfRoot")) return true;
+            // (3) 이름 패턴 매칭 — renderer / parent / ancestor 중 한 이름이라도 패턴 포함이면 매칭.
+            //     case-insensitive — "Shelf", "shelf_node", "Bookcase01" 등 다양한 import 명명 흡수.
+            var cur = r.transform;
+            while (cur != null)
+            {
+                var name = cur.gameObject.name;
+                if (NameContainsBookshelfPattern(name)) return true;
+                cur = cur.parent;
+            }
+            return false;
+        }
+
+        private static readonly string[] BookshelfNamePatterns = { "Shelf", "Bookshelf", "Bookcase", "Cabinet" };
+
+        // 5 개 테마 prefix — RoomThemeAsset.name 또는 prefab 자식 이름에서 테마 식별. 자산 작명 규칙
+        // ("Vintage_Shelf", "Natural_Wall_Mesh" 등) 와 1:1 매칭. 매칭은 case-insensitive `StartsWith`.
+        private static readonly string[] AllThemePrefixes = { "Natural", "Classic", "Modern", "Vintage", "Pastel" };
+
+        // 사용자 정책 (2026-05-14):
+        //   - theme prefix (Natural/Classic/Modern/Vintage/Pastel) 로 시작하는 자식만 show/hide 대상.
+        //   - currentPrefix 와 같으면 visible, 다른 테마 prefix 면 hide.
+        //   - prefix 없는 generic/base 오브젝트 (Preview_RoomBackground, Preview_BookshelfRig,
+        //     Preview_NotebookStation, Preview_CameraAnchors, Preview_DashboardScreenPanel, 그 자식
+        //     Floor/Wall/Ceiling 등) 는 항상 visible — reset 후 그대로 두고 filter 가 건드리지 않음.
+        //   - vintage 전용 BookshelfRig 숨김은 본 함수가 아니라 ApplyBookshelfRigFallbackVisibility 책임.
+        //
+        // 회귀 fix (2026-05-14): 이전 구현은 vintage 일 때 "이름에 vintage 안 들어가는 자식 모두 hide" 였고
+        // non-vintage 전환 시 currentPrefix 로 시작하는 자식만 restore — generic/base 자식은 inactive 로
+        // 방치되어 vintage → 다른 테마 클릭 시 미리보기가 통째 빈 화면이 되는 문제. 본 호출 시작 시점에
+        // ResetPreviewVisibilityBeforeThemeFilter 가 이전 hide 를 모두 복구한 뒤, filter 는 이번 테마에 맞춰
+        // 다른-테마-prefix 자식만 다시 hide 한다. 마지막에 ApplyBookshelfRigFallbackVisibility 가 vintage
+        // 책장 정책을 reconcile.
+        private void FilterPrefabSubsetByThemePrefix(RoomThemeAsset theme)
+        {
+            if (previewRoomRoot == null || theme == null) return;
+
+            // Step 1 — 이전 테마 필터로 hide 됐던 모든 자식 복구. base/generic + 다른 테마 prefix 자식까지
+            //          전부 visible 로 되돌린 뒤, 이후 step 이 이번 테마에 맞춰 다시 hide.
+            int restoredByReset = ResetPreviewVisibilityBeforeThemeFilter();
+
+            // Step 2 — 현재 테마 prefix 결정.
+            var themeName = theme.name ?? string.Empty;
+            string currentPrefix = ResolveCurrentThemePrefix(themeName);
+            if (currentPrefix == null)
+            {
+                Debug.Log(
+                    $"[OnboardingPreviewStage] Theme prefix filter skip — theme.name='{themeName}' 에 " +
+                    $"매칭되는 prefix 없음. resetRestored={restoredByReset}");
+                // BookshelfRig 정책만 reconcile 하고 종료. (다른 prefix 자식 hide 는 안 함 — 알 수 없으니 전부 visible.)
+                ApplyBookshelfRigFallbackVisibility(theme);
+                return;
+            }
+
+            // Step 3 — currentPrefix 와 다른 theme prefix 자식만 hide. generic/base 는 reset 상태 그대로 visible.
+            ApplyThemePrefixFilter(currentPrefix, restoredByReset);
+
+            // Step 4 — vintage 전용 BookshelfRig hide 정책 reconcile. reset 가 bookshelfRigInstance 도
+            //          재활성화시켰으므로 themeShelfSpawnCountInLastApply 기준으로 다시 정확한 상태로 set.
+            ApplyBookshelfRigFallbackVisibility(theme);
+        }
+
+        // Theme filter 직전 호출 — previewRoomRoot subtree 의 모든 GameObject 를 SetActive(true) 로 복구.
+        // 이전 테마 필터 또는 ApplyBookshelfRigFallbackVisibility 가 inactive 시킨 base/generic 자식을 모두
+        // 살린다. 이후 FilterPrefabSubsetByThemePrefix 가 현재 테마에 맞게 다시 hide 할 것만 hide.
+        // bookshelfRigInstance 도 함께 재활성화되지만 호출자가 끝에서 ApplyBookshelfRigFallbackVisibility 로
+        // 다시 reconcile 하므로 안전.
+        private int ResetPreviewVisibilityBeforeThemeFilter()
+        {
+            if (previewRoomRoot == null) return 0;
+            var transforms = previewRoomRoot.GetComponentsInChildren<Transform>(true);
+            int restored = 0;
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                var t = transforms[i];
+                if (t == null) continue;
+                var go = t.gameObject;
+                if (!go.activeSelf)
+                {
+                    go.SetActive(true);
+                    restored++;
+                }
+            }
+            return restored;
+        }
+
+        // currentPrefix 와 다른 theme prefix 로 시작하는 자식만 hide. generic/base (theme prefix 없음) 는
+        // visible 유지 (reset 후 그대로 두고 건드리지 않음). currentPrefix 시작 자식은 visible (이미 reset 으로
+        // 활성). vintage 도 동일 규칙 — 이전엔 vintage 만 강한 hide 정책이었으나 base/generic 까지 hide 되는
+        // 회귀 원인이라 통일.
+        private void ApplyThemePrefixFilter(string currentPrefix, int restoredByReset)
+        {
+            var transforms = previewRoomRoot.GetComponentsInChildren<Transform>(true);
+            int hiddenCount = 0;
+            int keptOnCurrentPrefix = 0;
+            int baseKept = 0;
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                var t = transforms[i];
+                if (t == null) continue;
+                var go = t.gameObject;
+                var name = go.name;
+
+                if (IsCurrentThemePrefix(name, currentPrefix))
+                {
+                    keptOnCurrentPrefix++;
+                    continue;
+                }
+                if (IsOtherThemePrefix(name, currentPrefix))
+                {
+                    if (go.activeSelf)
+                    {
+                        go.SetActive(false);
+                        hiddenCount++;
+                    }
+                    continue;
+                }
+                // theme prefix 없음 → generic/base. reset 상태 (visible) 유지.
+                baseKept++;
+            }
+            Debug.Log(
+                $"[OnboardingPreviewStage] Theme prefix filter — current='{currentPrefix}' " +
+                $"resetRestored={restoredByReset} hidden={hiddenCount} " +
+                $"keptOnCurrentPrefix={keptOnCurrentPrefix} baseKept={baseKept}");
+        }
+
+        private static string ResolveCurrentThemePrefix(string themeName)
+        {
+            if (string.IsNullOrEmpty(themeName)) return null;
+            for (int i = 0; i < AllThemePrefixes.Length; i++)
+            {
+                if (themeName.IndexOf(AllThemePrefixes[i], System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return AllThemePrefixes[i];
+                }
+            }
+            return null;
+        }
+
+        private static bool HasThemePrefix(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            for (int i = 0; i < AllThemePrefixes.Length; i++)
+            {
+                if (name.StartsWith(AllThemePrefixes[i], System.StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        private static bool IsCurrentThemePrefix(string name, string currentPrefix)
+        {
+            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(currentPrefix)) return false;
+            return name.StartsWith(currentPrefix, System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsOtherThemePrefix(string name, string currentPrefix)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            for (int i = 0; i < AllThemePrefixes.Length; i++)
+            {
+                var other = AllThemePrefixes[i];
+                if (string.Equals(other, currentPrefix, System.StringComparison.OrdinalIgnoreCase)) continue;
+                if (name.StartsWith(other, System.StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        private static bool NameContainsBookshelfPattern(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            for (int i = 0; i < BookshelfNamePatterns.Length; i++)
+            {
+                if (name.IndexOf(BookshelfNamePatterns[i], System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
             }
             return false;
         }
