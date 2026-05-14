@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +46,8 @@ public class PaymentService {
     private static final int PAGE_UNIT_PRICE_KRW = 1;
     private static final Duration ORDER_TTL = Duration.ofMinutes(30);
     private static final String PAYMENT_PAGE_PATH_PREFIX = "/v1/payments/inicis/request/";
+    static final int TRANSACTIONS_DEFAULT_LIMIT = 100;
+    static final int TRANSACTIONS_MAX_LIMIT = 500;
 
     private final PageWalletRepository pageWalletRepository;
     private final PageTransactionRepository pageTransactionRepository;
@@ -169,13 +172,23 @@ public class PaymentService {
                 .toList());
     }
 
-    public PageTransactionListResponse getTransactions(Long userId) {
+    public PageTransactionListResponse getTransactions(Long userId, int limit) {
         Long currentUserId = userService.requireUserId(userId);
+        int effectiveLimit = clampLimit(limit);
         return new PageTransactionListResponse(
-                pageTransactionRepository.findByUserIdOrderByCreatedAtDesc(currentUserId).stream()
+                pageTransactionRepository
+                        .findByUserIdOrderByCreatedAtDesc(currentUserId, PageRequest.of(0, effectiveLimit))
+                        .stream()
                         .map(PageTransactionResponse::from)
                         .toList()
         );
+    }
+
+    private int clampLimit(int requested) {
+        if (requested <= 0) {
+            return TRANSACTIONS_DEFAULT_LIMIT;
+        }
+        return Math.min(requested, TRANSACTIONS_MAX_LIMIT);
     }
 
     public WalletResponse getWallet(Long userId) {

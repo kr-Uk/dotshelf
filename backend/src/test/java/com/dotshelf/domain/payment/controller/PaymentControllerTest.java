@@ -192,14 +192,15 @@ class PaymentControllerTest {
     }
 
     @Test
-    @DisplayName("페이지 충전·사용 내역 조회는 200 과 최신순 PageTransactionResponse 목록을 응답한다")
+    @DisplayName("페이지 충전·사용 내역 조회는 200 과 최신순 PageTransactionResponse 목록을 응답하고 limit을 service에 전달한다")
     void getTransactions_returnsTransactionList() throws Exception {
-        given(paymentService.getTransactions(1L)).willReturn(new PageTransactionListResponse(List.of(
+        given(paymentService.getTransactions(1L, 100)).willReturn(new PageTransactionListResponse(List.of(
                 new PageTransactionResponse(2L, "CHARGE", 50, 150, "INICIS_PAYMENT", "PAYMENT_ORDER", 11L,
                         Instant.parse("2026-05-14T02:00:00Z")),
                 new PageTransactionResponse(1L, "CHARGE", 100, 100, "INICIS_PAYMENT", "PAYMENT_ORDER", 10L,
                         Instant.parse("2026-05-14T01:00:00Z"))
         )));
+        given(paymentService.getTransactions(1L, 25)).willReturn(new PageTransactionListResponse(List.of()));
 
         mockMvc.perform(get("/v1/payments/transactions").header("X-Test-Admin-User-Id", "1"))
                 .andExpect(status().isOk())
@@ -213,7 +214,14 @@ class PaymentControllerTest {
                 .andExpect(jsonPath("$.result.transactions[0].referenceId").value(11))
                 .andExpect(jsonPath("$.result.transactions[1].balanceAfter").value(100));
 
-        then(paymentService).should().getTransactions(1L);
+        mockMvc.perform(get("/v1/payments/transactions")
+                        .header("X-Test-Admin-User-Id", "1")
+                        .param("limit", "25"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.transactions").isArray());
+
+        then(paymentService).should().getTransactions(1L, 100);
+        then(paymentService).should().getTransactions(1L, 25);
     }
 
     @Test
