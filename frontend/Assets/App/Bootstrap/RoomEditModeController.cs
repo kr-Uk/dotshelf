@@ -2073,7 +2073,7 @@ namespace App.Bootstrap
 
         // local-preview 테마는 PATCH skip 이라 server 가 모름 → 풀 로그아웃/로그인 후 자동 복원 못함.
         // 사용자 보고 회귀: Vintage 적용 → 로그아웃 → 로그인 → 메인씬에 walls/floor 가 default 로 보임.
-        // 마지막 적용한 local-preview 테마의 ScriptableObject 이름 (예: "RoomTheme_Vintage2") 을 저장해
+        // 마지막 적용한 local-preview 테마의 ScriptableObject 이름 (예: "RoomTheme_Vintage") 을 저장해
         // 다음 세션 ApplySpaceVisualsToRoom 에서 server null 응답이면 PlayerPrefs 값으로 복원.
         // non-local-preview 테마를 적용하면 이 키를 비워둠 (server 가 권위 상태 보유).
         // **소유 경계 — LastAppliedEntriesPrefsKey 와 동일하게 ScopedKey() 로 user 별 분리.**
@@ -2198,7 +2198,7 @@ namespace App.Bootstrap
         }
 
         // PlayerPrefs 에 저장된 local-preview 테마 이름으로 catalog 에서 lookup. 못 찾으면 null.
-        // ScriptableObject.name 은 자산 파일명 (예: "RoomTheme_Vintage2") 이라 unique.
+        // ScriptableObject.name 은 자산 파일명 (예: "RoomTheme_Vintage") 이라 unique.
         private RoomThemeAsset TryFindLastAppliedLocalPreviewTheme()
         {
             var key = ScopedKey(LastAppliedLocalPreviewThemePrefsKey);
@@ -2388,7 +2388,7 @@ namespace App.Bootstrap
         // ApplyThemeSelected 와 동일한 흐름이지만 *편집 모드 미진입 상태* 에서도 안전하게 호출 가능.
         // RoomThemeApplier 가 scene 에 있고 InitializeIfNeeded 가 끝나면 호출자 책임은 없다.
         //
-        // 5개 온보딩 테마 (Natural / Classic / Modern / Vintage2 / Pastel) 는 모두 isLocalPreview=true
+        // 5개 온보딩 테마 (Natural / Classic / Modern / Vintage / Pastel) 는 모두 isLocalPreview=true
         // 이므로 ApplyThemeSelected 내부에서 PATCH `/spaces/me/theme/.../apply` 가 자동 skip 됨 →
         // 백엔드 의존 없이 즉시 visual swap. 동시에 PersistLastAppliedLocalPreviewTheme 가 user-scoped
         // PlayerPrefs 에 저장 → 다음 세션 SceneInstall 시점에 RestoreLastLocalPreviewThemeOnSceneInstall
@@ -3728,7 +3728,7 @@ namespace App.Bootstrap
 
         // catalog (RoomThemeCatalog) 에서 assetKey 가 매칭되는 vintage spec 찾기. saved layout 의
         // InventoryKey ("path:Assets/...") 와 spec.AssetKey ("Assets/...") prefix 차이 모두 흡수.
-        // 한 자산이 여러 테마에 등장하면 첫 번째 매칭 반환 — vintage 는 RoomTheme_Vintage2 에만
+        // 한 자산이 여러 테마에 등장하면 첫 번째 매칭 반환 — vintage 는 RoomTheme_Vintage 에만
         // 있다고 가정 (다른 테마에서 vintage_ asset 재사용하지 않음).
         private bool TryFindVintageSpecByAssetKey(string savedKey, out RoomThemeDecoSpec spec)
         {

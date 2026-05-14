@@ -19,7 +19,7 @@ namespace App.Bootstrap
         public sealed class Entry
         {
             public ThemeSlot Slot;
-            public string ThemeAssetName; // ScriptableObject.name (예: "RoomTheme_Vintage2")
+            public string ThemeAssetName; // ScriptableObject.name (예: "RoomTheme_Vintage")
             public string AssetKey;       // spec.AssetKey (1:1 prefab key)
             public RoomThemeAsset OwnerTheme; // runtime reference — 직렬화 X (복원 시 catalog lookup)
             public RoomThemeDecoSpec Spec;    // runtime reference — 직렬화 X
@@ -77,7 +77,7 @@ namespace App.Bootstrap
             return sb.ToString();
         }
 
-        // 로그/요약용 — "Rug=Vintage2/vintage_rug; Lamp=Modern/modern_lamp; ..." 형태.
+        // 로그/요약용 — "Rug=Vintage/vintage_rug; Lamp=Modern/modern_lamp; ..." 형태.
         public string BuildSummary()
         {
             var sb = new StringBuilder();

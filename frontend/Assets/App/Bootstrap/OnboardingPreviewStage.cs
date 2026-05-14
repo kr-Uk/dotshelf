@@ -406,7 +406,7 @@ namespace App.Bootstrap
             // 다른 테마 (내추럴/클래식/모던/파스텔) 는 *기본 BookshelfRig + DashboardScreenPanel prefab 그대로*
             // 유지하고 material/색만 theme 적용 — deco prefab spawn 자체를 skip.
             // 이유: 빈티지 외 테마는 아직 GLB 자산 정리 안 됨 + 사용자 경험상 기본 구도 + 색감 변경 만으로 충분.
-            // 매칭: theme.name 에 "Vintage" 포함 (case-insensitive) — RoomTheme_Vintage / RoomTheme_Vintage2 모두.
+            // 매칭: theme.name 에 "Vintage" 포함 (case-insensitive) — RoomTheme_Vintage.
             bool useThemeDecoPrefabs = IsThemeUsingGlbDecoPrefabs(theme);
             if (!useThemeDecoPrefabs)
             {
@@ -431,7 +431,7 @@ namespace App.Bootstrap
             ApplyBookshelfRigFallbackVisibility(theme);
         }
 
-        // 빈티지 테마만 GLB deco prefab 흐름 사용. RoomTheme_Vintage / RoomTheme_Vintage2 둘 다 매칭.
+        // 빈티지 테마만 GLB deco prefab 흐름 사용. RoomTheme_Vintage 매칭.
         // 다른 테마는 BookshelfDecoSpecs / FloorDecoSpecs / WallDecoSpecs 에 spec 이 있어도 본 preview 에선 skip.
         private static bool IsThemeUsingGlbDecoPrefabs(RoomThemeAsset theme)
         {

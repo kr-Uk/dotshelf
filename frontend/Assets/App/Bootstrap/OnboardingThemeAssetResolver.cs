@@ -17,8 +17,8 @@ namespace App.Bootstrap
     //   - "내추럴"  → RoomTheme_Natural   (displayName="Natural")
     //   - "클래식"  → RoomTheme_Classic   (displayName="Classic")
     //   - "모던"    → RoomTheme_Modern    (displayName="Modern")
-    //   - "빈티지"  → RoomTheme_Vintage2  (displayName="빈티지"; vintage_shelf/dashboard/lamp 등
-    //                                      풀 자산 보유; 영문 RoomTheme_Vintage 는 legacy)
+    //   - "빈티지"  → RoomTheme_Vintage   (displayName="빈티지"; vintage_shelf/dashboard/lamp 등
+    //                                      풀 자산 보유)
     //   - "파스텔"  → RoomTheme_Pastel    (displayName="Pastel")
     //   - 5개 모두 isLocalPreview=true → PersistLastAppliedLocalPreviewTheme 호환.
     //
@@ -34,7 +34,7 @@ namespace App.Bootstrap
                 { "내추럴", "RoomTheme_Natural"  },
                 { "클래식", "RoomTheme_Classic"  },
                 { "모던",   "RoomTheme_Modern"   },
-                { "빈티지", "RoomTheme_Vintage2" },
+                { "빈티지", "RoomTheme_Vintage" },
                 { "파스텔", "RoomTheme_Pastel"   },
             };
 

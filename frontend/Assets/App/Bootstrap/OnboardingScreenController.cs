@@ -2006,7 +2006,7 @@ namespace App.Bootstrap
         // 적용 자체는 RoomEditModeController.ApplyExternalThemeSelection 가 single source —
         // themeApplier.Apply + RefreshWallVisibility + RebuildInventorySlots +
         // PersistLastAppliedLocalPreviewTheme + ApplyThemeDefaultEntries 를 한 번에 처리한다.
-        // 5개 온보딩 테마 (Natural/Classic/Modern/Vintage2/Pastel) 는 모두 isLocalPreview=true 라
+        // 5개 온보딩 테마 (Natural/Classic/Modern/Vintage/Pastel) 는 모두 isLocalPreview=true 라
         // PATCH `/spaces/me/theme/.../apply` 가 자동 skip → 백엔드 의존 없이 visual swap. 동시에
         // user-scoped PlayerPrefs 에 자산 이름 저장 → 다음 세션 SceneInstall 시점에
         // RestoreLastLocalPreviewThemeOnSceneInstall 가 자동 복원.
