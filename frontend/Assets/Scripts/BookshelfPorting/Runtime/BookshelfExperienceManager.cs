@@ -1619,6 +1619,12 @@ namespace BookshelfPorting.Runtime
             // raycast 경로는 Update 단의 AreSceneInteractionsSuppressed 가드로 이미 차단되지만, 다른
             // 경로 (canvas SetActive(false) 이어도 GraphicRaycaster 가 미세하게 deferred fire 하거나
             // 외부 코드에서 직접 FocusNotebook() 호출하는 케이스) 까지 한 번에 막기 위함. 테마 무관 정책.
+            if (IsViewingOtherUserSpace())
+            {
+                Debug.Log("[NotebookFocusBlock] FocusNotebook suppressed — visiting another user's space.");
+                return;
+            }
+
             if (AreSceneInteractionsSuppressed)
             {
                 Debug.Log("[NotebookFocusBlock] FocusNotebook suppressed — edit/scene interaction lock active. entry=public_FocusNotebook");
@@ -1638,6 +1644,12 @@ namespace BookshelfPorting.Runtime
             // FocusNotebook 공개 진입점에서 이미 가드하지만 TryPromptUnsavedBookshelfChanges 가 delegate
             // 로 비동기 호출하는 경로 (모달 확인 후 FocusNotebookImmediate 재진입) 에서 edit 진입 race 가
             // 발생할 수 있어 한 번 더 가드. 중복 비용은 bool 체크 1회.
+            if (IsViewingOtherUserSpace())
+            {
+                Debug.Log("[NotebookFocusBlock] FocusNotebookImmediate suppressed — visiting another user's space.");
+                return;
+            }
+
             if (AreSceneInteractionsSuppressed)
             {
                 Debug.Log("[NotebookFocusBlock] FocusNotebookImmediate suppressed — edit/scene interaction lock active. entry=immediate");
@@ -1742,6 +1754,12 @@ namespace BookshelfPorting.Runtime
 
             if (Keyboard.current.escapeKey.wasPressedThisFrame && isViewingOtherSpace)
             {
+                if (CurrentFocusArea != ExperienceFocusArea.QuarterView)
+                {
+                    FocusMainView();
+                    return true;
+                }
+
                 ReturnFromVisitedSpaceToOtherSpaces();
                 return true;
             }
@@ -4848,6 +4866,7 @@ namespace BookshelfPorting.Runtime
 
         private void ShowVisitedSpaceLoading()
         {
+            SpaceVisitorOverlayController.Instance?.SetLoadingBlocked(true);
             if (visitedSpaceLoadingBackdrop == null)
             {
                 return;
@@ -4880,6 +4899,7 @@ namespace BookshelfPorting.Runtime
             {
                 visitedSpaceLoadingBackdrop.SetActive(false);
             }
+            SpaceVisitorOverlayController.Instance?.SetLoadingBlocked(false);
         }
 
         private void AnimateVisitedSpaceLoading()
@@ -5394,6 +5414,12 @@ namespace BookshelfPorting.Runtime
 
             if (IsViewingOtherUserSpace())
             {
+                if (CurrentFocusArea != ExperienceFocusArea.QuarterView)
+                {
+                    FocusMainView();
+                    return;
+                }
+
                 ReturnFromVisitedSpaceToOtherSpaces();
                 return;
             }
@@ -5428,6 +5454,8 @@ namespace BookshelfPorting.Runtime
             CloseBookshelfDeleteConfirmPanel();
             CloseBookshelfDesignPanel();
             SpaceVisitorOverlayController.Instance?.HideOverlay();
+            SpaceVisitorOverlayController.Instance?.SetLoadingBlocked(false);
+            SetNotebookScreenSuppressed(false);
 
             openOtherSpacesTabAfterNotebookFocus = true;
             if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
@@ -16230,8 +16258,9 @@ namespace BookshelfPorting.Runtime
             RefreshHud();
         }
 
-        private void HandleNotebookSpaceVisitRequested(long spaceId)
+        private void HandleNotebookSpaceVisitRequested(NotebookSpaceVisitRequest request)
         {
+            var spaceId = request?.SpaceId ?? 0L;
             if (spaceId <= 0)
             {
                 return;
@@ -16271,10 +16300,13 @@ namespace BookshelfPorting.Runtime
             {
                 notebookScreenController.SetImmersiveMode(false);
                 notebookScreenController.ReturnToScreenSaver(false);
+                notebookScreenController.Hide();
             }
 
+            SetNotebookScreenSuppressed(true);
+            SpaceVisitorOverlayController.Instance?.SetLoadingBlocked(true);
             ShowVisitedSpaceLoading();
-            bookshelfApiSyncController.EnterSpaceById(spaceId, HandleVisitedSpaceLoadCompleted);
+            bookshelfApiSyncController.EnterSpaceById(request, HandleVisitedSpaceLoadCompleted);
             RefreshHud();
         }
 
@@ -16309,6 +16341,8 @@ namespace BookshelfPorting.Runtime
             HideVisitedSpaceLoading();
             if (!success)
             {
+                SetNotebookScreenSuppressed(false);
+                SpaceVisitorOverlayController.Instance?.HideOverlay();
                 var detail = NormalizeMutationErrorMessage(message);
                 ShowBookshelfTransientStatus("공간 방문 실패", detail, true);
                 OpenOtherSpacesNotebookDirect();
@@ -16316,6 +16350,12 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var isViewingOtherSpace = IsViewingOtherUserSpace();
+            SetNotebookScreenSuppressed(isViewingOtherSpace);
+            if (isViewingOtherSpace)
+            {
+                notebookScreenController?.Hide();
+            }
             SyncVisitedSpaceOwnerMode();
             FocusMainView();
             RefreshHud();

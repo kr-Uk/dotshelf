@@ -25,8 +25,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
 import com.dotshelf.domain.asset.entity.Asset;
+import com.dotshelf.domain.asset.dto.AssetDtos.DownloadManifestResponse;
 import com.dotshelf.domain.asset.repository.AssetRepository;
 import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
+import com.dotshelf.domain.asset.service.AssetService;
 import com.dotshelf.domain.book.dto.BookDtos.OwnedBookSummary;
 import com.dotshelf.domain.book.repository.UserBookRepository;
 import com.dotshelf.domain.bookshelf.entity.Bookshelf;
@@ -96,6 +98,9 @@ class SpaceServiceTest {
 
     @Mock
     private UserService userService;
+
+    @Mock
+    private AssetService assetService;
 
     @Mock
     private AssetRepository assetRepository;
@@ -727,6 +732,80 @@ class SpaceServiceTest {
 
     @Test
     @DisplayName("보유 책 목록은 차단 관계면 SPACE_ACCESS_BLOCKED를 던진다")
+    void getVisibleAssetManifests_returnsOwnerAppliedAssetManifests() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeDesk(101L);
+        given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
+        given(userBlockRepository.existsBlockBetween(2L, 1L)).willReturn(false);
+        given(userAssetInventoryRepository.findByUserId(1L))
+                .willReturn(List.of(TestFixtures.inventory(101L, 1L, 20L)));
+        given(assetService.getDownloadManifestForVisibleAsset(20L))
+                .willReturn(new DownloadManifestResponse(20L, "DESK", "NATURAL", 3, List.of()));
+
+        var response = spaceService.getVisibleAssetManifests(2L, 10L);
+
+        assertThat(response.spaceId()).isEqualTo(10L);
+        assertThat(response.manifests()).singleElement()
+                .satisfies(manifest -> assertThat(manifest.assetId()).isEqualTo(20L));
+    }
+
+    @Test
+    @DisplayName("공간 asset manifest는 최신 layoutPayload의 asset 참조도 포함한다")
+    void getVisibleAssetManifests_includesLayoutAssetReferences() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeDesk(101L);
+        SpaceLayoutSnapshot snapshot = SpaceLayoutSnapshot.builder()
+                .spaceId(10L)
+                .layoutVersion(2L)
+                .layoutPayload("""
+                        {"items":[{"AssetId":"asset:30"},{"AssetId":"inv:102"}]}
+                        """)
+                .savedByUserId(1L)
+                .build();
+        given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
+        given(userBlockRepository.existsBlockBetween(2L, 1L)).willReturn(false);
+        given(layoutSnapshotRepository.findFirstBySpaceIdOrderByLayoutVersionDesc(10L)).willReturn(Optional.of(snapshot));
+        given(userAssetInventoryRepository.findByUserId(1L)).willReturn(List.of(
+                TestFixtures.inventory(101L, 1L, 20L),
+                TestFixtures.inventory(102L, 1L, 40L),
+                TestFixtures.inventory(103L, 1L, 30L)));
+        given(assetService.getDownloadManifestForVisibleAsset(20L))
+                .willReturn(new DownloadManifestResponse(20L, "DESK", "NATURAL", 1, List.of()));
+        given(assetService.getDownloadManifestForVisibleAsset(30L))
+                .willReturn(new DownloadManifestResponse(30L, "PLANT", "NATURAL", 1, List.of()));
+        given(assetService.getDownloadManifestForVisibleAsset(40L))
+                .willReturn(new DownloadManifestResponse(40L, "RUG", "NATURAL", 1, List.of()));
+
+        var response = spaceService.getVisibleAssetManifests(2L, 10L);
+
+        assertThat(response.manifests())
+                .extracting(DownloadManifestResponse::assetId)
+                .containsExactlyInAnyOrder(20L, 30L, 40L);
+    }
+
+    @Test
+    @DisplayName("공간 layout 조회는 최신 스냅샷 payload를 반환한다")
+    void getLayout_returnsLatestSnapshot() {
+        Space space = TestFixtures.space(10L, 1L);
+        SpaceLayoutSnapshot snapshot = SpaceLayoutSnapshot.builder()
+                .spaceId(10L)
+                .layoutVersion(3L)
+                .layoutPayload("{\"items\":[{\"AssetId\":\"asset:30\"}]}")
+                .savedByUserId(1L)
+                .build();
+        given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
+        given(userBlockRepository.existsBlockBetween(2L, 1L)).willReturn(false);
+        given(layoutSnapshotRepository.findFirstBySpaceIdOrderByLayoutVersionDesc(10L)).willReturn(Optional.of(snapshot));
+
+        var response = spaceService.getLayout(2L, 10L);
+
+        assertThat(response.spaceId()).isEqualTo(10L);
+        assertThat(response.layoutVersion()).isEqualTo(3L);
+        assertThat(response.layoutPayload()).contains("asset:30");
+    }
+
+    @Test
+    @DisplayName("owned books blocked relation throws space access blocked")
     void getOwnedBooks_blockedRelation_throwsSpaceAccessBlocked() {
         Space space = TestFixtures.space(10L, 1L);
         given(spaceRepository.findById(10L)).willReturn(Optional.of(space));

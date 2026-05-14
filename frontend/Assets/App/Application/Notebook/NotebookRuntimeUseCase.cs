@@ -36,6 +36,21 @@ namespace App.Application.Notebook
             repository.LoadAssets(category, sort, limit, onSuccess, onError);
         }
 
+        public void LoadAssetInventory(Action<NotebookAssetInventoryResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            repository.LoadAssetInventory(onSuccess, onError);
+        }
+
+        public void LoadAssetDownloadManifest(long assetId, Action<NotebookAssetDownloadManifestResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            repository.LoadAssetDownloadManifest(assetId, onSuccess, onError);
+        }
+
+        public void LoadSpaceAssetDownloadManifests(long spaceId, Action<NotebookSpaceAssetManifestListResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            repository.LoadSpaceAssetDownloadManifests(spaceId, onSuccess, onError);
+        }
+
         public void WishAsset(long assetId, bool wished, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
             repository.WishAsset(assetId, wished, onSuccess, onError);

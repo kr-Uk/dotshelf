@@ -24,16 +24,19 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import com.dotshelf.domain.asset.dto.AssetDtos.DownloadManifestResponse;
 import com.dotshelf.domain.book.dto.BookDtos.OwnedBookListResponse;
 import com.dotshelf.domain.book.dto.BookDtos.OwnedBookSummary;
 import com.dotshelf.domain.space.dto.SpaceDtos.CategoryInventoryRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.DashboardResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.LayoutResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListItemResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.SpaceAssetManifestListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceMutationResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
@@ -150,6 +153,41 @@ class SpaceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.items[0].userBookId").value(100))
                 .andExpect(jsonPath("$.result.nextCursor").value("book_100"));
+    }
+
+    @Test
+    @DisplayName("방문/좋아요/좋아요 취소는 toggle 응답을 반환한다")
+    void getAssetManifests_passesViewerAndSpaceId() throws Exception {
+        given(spaceService.getVisibleAssetManifests(1L, 10L))
+                .willReturn(new SpaceAssetManifestListResponse(
+                        10L,
+                        2L,
+                        List.of(new DownloadManifestResponse(20L, "DESK", "NATURAL", 3, List.of()))));
+
+        mockMvc.perform(get("/v1/spaces/10/asset-manifests")
+                        .header("X-Test-Admin-User-Id", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.spaceId").value(10))
+                .andExpect(jsonPath("$.result.layoutVersion").value(2))
+                .andExpect(jsonPath("$.result.manifests[0].assetId").value(20));
+
+        then(spaceService).should().getVisibleAssetManifests(1L, 10L);
+    }
+
+    @Test
+    @DisplayName("諛⑸Ц/醫뗭븘??醫뗭븘??痍⑥냼??toggle ?묐떟??諛섑솚?쒕떎")
+    void getLayout_passesViewerAndSpaceId() throws Exception {
+        given(spaceService.getLayout(1L, 10L))
+                .willReturn(new LayoutResponse(10L, 3L, "{\"items\":[]}"));
+
+        mockMvc.perform(get("/v1/spaces/10/layout")
+                        .header("X-Test-Admin-User-Id", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.spaceId").value(10))
+                .andExpect(jsonPath("$.result.layoutVersion").value(3))
+                .andExpect(jsonPath("$.result.layoutPayload").value("{\"items\":[]}"));
+
+        then(spaceService).should().getLayout(1L, 10L);
     }
 
     @Test

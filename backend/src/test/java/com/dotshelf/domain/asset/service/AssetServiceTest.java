@@ -183,6 +183,10 @@ class AssetServiceTest {
                 TestFixtures.inventory(1L, 1L, 10L),
                 TestFixtures.inventory(2L, 1L, 11L)
         ));
+        given(assetRepository.findAllById(List.of(10L, 11L))).willReturn(List.of(
+                downloadableAsset(10L, "deep-sea-chair", "CHAIR", "https://cdn.test/assets/chair.glb"),
+                downloadableAsset(11L, "deep-sea-desk", "DESK", "https://cdn.test/assets/desk.glb")
+        ));
 
         var response = assetService.getInventory(1L);
 
@@ -193,6 +197,12 @@ class AssetServiceTest {
         assertThat(response.items())
                 .extracting(item -> item.assetId())
                 .containsExactly(10L, 11L);
+        assertThat(response.items())
+                .extracting(item -> item.asset().code())
+                .containsExactly("deep-sea-chair", "deep-sea-desk");
+        assertThat(response.items())
+                .extracting(item -> item.asset().owned())
+                .containsExactly(true, true);
     }
 
     @Test
