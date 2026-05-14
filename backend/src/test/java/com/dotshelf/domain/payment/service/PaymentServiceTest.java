@@ -63,7 +63,7 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() {
-        paymentPolicyProperties = new PaymentPolicyProperties(100_000, null, null, null, null, null);
+        paymentPolicyProperties = new PaymentPolicyProperties(100_000, null, null, null, null, null, null, null);
         paymentService = new PaymentService(
                 pageWalletRepository,
                 paymentOrderRepository,

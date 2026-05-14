@@ -240,7 +240,7 @@ public final class PaymentDtos {
                     properties.maxChargeKrw(),
                     "KRW",
                     "CARD",
-                    "구매 포인트와 아이템 이용권한의 유효기간은 결제일로부터 1년이며, 서비스 운영 기간 동안 자동으로 갱신됩니다.",
+                    properties.validityNotice(),
                     properties.responsibilityNotice(),
                     LegalUrlsView.from(properties.legalUrls()),
                     MerchantView.from(properties.merchant()),

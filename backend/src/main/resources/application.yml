@@ -97,6 +97,10 @@ payment:
   # 실제 값이 정해지면 GitLab Variables(prod) 또는 .env.local(local) 로 주입한다.
   policy:
     max-charge-krw: ${PAYMENT_MAX_CHARGE_KRW:100000}
+    # 결제·내역·약관 화면 공통 유효기간 안내 문구. 변호사·KG 협의 결과 바뀌면 env 한 곳에서 갱신.
+    validity-notice: ${PAYMENT_VALIDITY_NOTICE:구매 포인트와 아이템 이용권한의 유효기간은 결제일로부터 1년이며, 서비스 운영 기간 동안 자동으로 갱신됩니다.}
+    # PG/DB/결제 내역 orderName 에 붙는 짧은 suffix. KG 결제창 goodname 100자 제한 안에서 끝나야 함.
+    order-name-suffix: ${PAYMENT_ORDER_NAME_SUFFIX:(유효기간 1년/자동갱신)}
     responsibility-notice: ${PAYMENT_RESPONSIBILITY_NOTICE:DotShelf에서 운영되는 사이트 내 판매되는 모든 상품은 DotShelf에서 책임지고 있습니다.}
     legal-urls:
       payment-terms: ${LEGAL_URL_PAYMENT_TERMS:}

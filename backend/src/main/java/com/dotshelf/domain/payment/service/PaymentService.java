@@ -216,6 +216,6 @@ public class PaymentService {
     }
 
     private String orderName(int pagesAmount) {
-        return "DotShelf " + pagesAmount + "P 충전 (유효기간 1년/자동갱신)";
+        return "DotShelf " + pagesAmount + "P 충전 " + paymentPolicyProperties.orderNameSuffix();
     }
 }
