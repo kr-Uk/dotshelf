@@ -209,7 +209,16 @@ Unity Product Name 이 `Dotshelf` 로 설정되어 있어 빌드 산출물은 `D
 # 2) Unity Editor → File > Build Settings > Build (Windows64) — frontend\Build\Windows\
 
 # 3) zip + sha256
-Compress-Archive -Path .\frontend\Build\Windows\* -DestinationPath .\launcher\dist\Dotshelf-0.1.1.zip
+# PS 5.1 Compress-Archive 는 단일 입력 스트림 ~2 GiB 한도 (PowerShell/PowerShell#5577) 에서
+# "Stream was too long" 으로 throw 한다. Unity BuildDir 는 한도를 넘기기 쉬워서 — MR !188
+# 이후로는 publish-unity.ps1 도 .NET ZipFile API 로 갈아끼웠음 — fallback 도 동일 API 로 통일.
+Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
+Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    (Resolve-Path .\frontend\Build\Windows).Path,
+    (Join-Path (Resolve-Path .\launcher\dist).Path "Dotshelf-0.1.1.zip"),
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $false)   # includeBaseDirectory: false — zip 루트에 Dotshelf.exe 가 바로 들어감
 (Get-FileHash -Algorithm SHA256 -Path .\launcher\dist\Dotshelf-0.1.1.zip).Hash
 
 # 4) launcher/manifests/dev/windows/latest.json 의 sha256, releaseNotes 손편집
