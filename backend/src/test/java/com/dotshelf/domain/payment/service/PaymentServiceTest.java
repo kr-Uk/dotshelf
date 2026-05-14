@@ -75,7 +75,7 @@ class PaymentServiceTest {
         PaymentOrder order = captor.getValue();
         assertThat(order.getUserId()).isEqualTo(1L);
         assertThat(order.getOrderId()).startsWith("DS");
-        assertThat(order.getOrderName()).isEqualTo("DotShelf 100P 충전");
+        assertThat(order.getOrderName()).isEqualTo("DotShelf 100P 충전 (유효기간 1년/자동갱신)");
         assertThat(order.getPagesAmount()).isEqualTo(100);
         assertThat(order.getAmountKrw()).isEqualTo(100);
         assertThat(order.getBuyerTel()).isEqualTo("010-1234-5678");
@@ -190,7 +190,7 @@ class PaymentServiceTest {
         return PaymentOrder.builder()
                 .userId(1L)
                 .orderId("order-1")
-                .orderName("DotShelf 100P 충전")
+                .orderName("DotShelf 100P 충전 (유효기간 1년/자동갱신)")
                 .pagesAmount(100)
                 .amountKrw(100)
                 .buyerName("홍길동")
