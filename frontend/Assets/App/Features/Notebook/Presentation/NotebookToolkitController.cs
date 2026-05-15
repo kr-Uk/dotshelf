@@ -8096,7 +8096,7 @@ namespace App.Features.Notebook.Presentation
                     }
                     if (!string.IsNullOrWhiteSpace(result.FullPaymentPageUrl))
                     {
-                        Application.OpenURL(result.FullPaymentPageUrl);
+                        UnityEngine.Application.OpenURL(result.FullPaymentPageUrl);
                     }
                     OpenPaymentPendingOverlay(result.Order.OrderId);
                 },
