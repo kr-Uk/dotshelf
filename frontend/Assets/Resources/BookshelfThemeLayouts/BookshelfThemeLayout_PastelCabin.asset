@@ -15,7 +15,7 @@ MonoBehaviour:
   style: 1
   bookshelfPrefab: {fileID: 6156902042414624892, guid: ea53231e651d3734ba625d3d26728f3a, type: 3}
   prefabLocalPosition: {x: -0, y: -0, z: -0}
-  prefabLocalEulerAngles: {x: 0, y: 0, z: 0}
+  prefabLocalEulerAngles: {x: 0, y: 180, z: 0}
   prefabLocalScale: {x: 0.16, y: 0.16, z: 0.16}
   focusLocalPosition: {x: 0, y: 0.79999995, z: -0.2801928}
   focusSize: {x: 1.5372815, y: 1.6999999, z: 0.18}

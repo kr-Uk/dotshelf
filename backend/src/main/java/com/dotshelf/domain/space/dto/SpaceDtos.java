@@ -2,6 +2,7 @@ package com.dotshelf.domain.space.dto;
 
 import java.util.List;
 
+import com.dotshelf.domain.asset.dto.AssetDtos.DownloadManifestResponse;
 import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.entity.SpaceTemplate;
 import com.dotshelf.global.storage.S3StorageService.PresignedPut;
@@ -161,6 +162,9 @@ public final class SpaceDtos {
     public record SpaceListResponse(List<SpaceListItemResponse> spaces, String nextCursor) {
     }
 
+    public record SpaceAssetManifestListResponse(Long spaceId, long layoutVersion, List<DownloadManifestResponse> manifests) {
+    }
+
     public record LayoutSaveRequest(
             @NotBlank(message = "layoutPayload은 필수입니다.")
             String layoutPayload,
@@ -169,6 +173,9 @@ public final class SpaceDtos {
     }
 
     public record LayoutSaveResponse(Long spaceId, long layoutVersion) {
+    }
+
+    public record LayoutResponse(Long spaceId, long layoutVersion, String layoutPayload) {
     }
 
     public record VisibilityRequest(

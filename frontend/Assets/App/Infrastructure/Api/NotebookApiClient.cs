@@ -218,6 +218,11 @@ namespace App.Infrastructure.Api
             return Get<InventoryResponseDto>("/v1/assets/me/inventory", onSuccess, onError);
         }
 
+        public Coroutine GetAssetDownloadManifest(long assetId, Action<DownloadManifestResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<DownloadManifestResponseDto>($"/v1/assets/{assetId}/download-manifest", onSuccess, onError);
+        }
+
         public Coroutine WishAsset(long assetId, Action<ToggleResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Post<ToggleResponseDto>($"/v1/assets/{assetId}/wishlist", onSuccess, onError);
@@ -269,6 +274,11 @@ namespace App.Infrastructure.Api
             return Get<SpaceResponseDto>($"/v1/spaces/{spaceId}", onSuccess, onError);
         }
 
+        public Coroutine GetSpaceAssetManifests(long spaceId, Action<SpaceAssetManifestListResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<SpaceAssetManifestListResponseDto>($"/v1/spaces/{spaceId}/asset-manifests", onSuccess, onError);
+        }
+
         public Coroutine GetSpaceDashboard(long spaceId, string period, Action<DashboardResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Get<DashboardResponseDto>(WithQuery($"/v1/spaces/{spaceId}/dashboard", Query("period", string.IsNullOrWhiteSpace(period) ? "daily" : period)), onSuccess, onError);
@@ -292,6 +302,11 @@ namespace App.Infrastructure.Api
         public Coroutine SaveMySpaceLayout(LayoutSaveRequestDto request, Action<LayoutSaveResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Put<LayoutSaveRequestDto, LayoutSaveResponseDto>("/v1/spaces/me/layout", request, onSuccess, onError);
+        }
+
+        public Coroutine GetSpaceLayout(long spaceId, Action<LayoutResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Get<LayoutResponseDto>($"/v1/spaces/{spaceId}/layout", onSuccess, onError);
         }
 
         public Coroutine CreateMySpaceThumbnailUploadUrl(SpaceThumbnailUploadUrlRequestDto request, Action<SpaceThumbnailUploadUrlResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)

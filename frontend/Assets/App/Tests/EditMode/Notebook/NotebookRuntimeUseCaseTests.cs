@@ -105,6 +105,9 @@ namespace App.Tests.EditMode.Notebook
             public void LoadPurchaseHistory(Action<NotebookPurchaseHistoryResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookPurchaseHistoryResult(null));
             public void LoadPaymentMethods(Action<NotebookPaymentMethodResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookPaymentMethodResult(null));
             public void LoadAssets(string category, string sort, int limit, Action<NotebookAssetListResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookAssetListResult(null));
+            public void LoadAssetInventory(Action<NotebookAssetInventoryResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookAssetInventoryResult(null));
+            public void LoadAssetDownloadManifest(long assetId, Action<NotebookAssetDownloadManifestResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookAssetDownloadManifestResult { AssetId = assetId });
+            public void LoadSpaceAssetDownloadManifests(long spaceId, Action<NotebookSpaceAssetManifestListResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookSpaceAssetManifestListResult(null) { SpaceId = spaceId });
             public void WishAsset(long assetId, bool wished, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookToggleResult { Active = wished });
             public void PurchaseAsset(long assetId, Action<NotebookAssetPurchaseResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookAssetPurchaseResult { AssetId = assetId });
             public void LoadSpaces(int limit, Action<NotebookSpaceListResult> onSuccess, Action<NotebookApiError> onError) => LoadSpaces(null, null, limit, onSuccess, onError);

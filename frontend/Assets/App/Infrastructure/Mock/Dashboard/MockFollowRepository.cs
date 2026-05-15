@@ -81,7 +81,8 @@ namespace App.Infrastructure.Mock.Dashboard
                     profileImageUrl: null,
                     mutual: mutual,
                     following: mutual,
-                    blocked: false));
+                    blocked: false,
+                    spaceId: 1000 + i));
             }
             return list;
         }

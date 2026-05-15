@@ -1,5 +1,6 @@
 package com.dotshelf.domain.space.repository;
 
+import java.util.Collection;
 import java.util.Optional;
 import java.util.List;
 
@@ -18,6 +19,8 @@ public interface SpaceRepository extends JpaRepository<Space, Long> {
     Page<Space> findByOwnerUserIdAndDeletedAtIsNull(Long ownerUserId, Pageable pageable);
 
     Page<Space> findBySpaceNameContainingIgnoreCase(String spaceName, Pageable pageable);
+
+    List<Space> findByOwnerUserIdInAndDeletedAtIsNullOrderByIdAsc(Collection<Long> ownerUserIds);
 
     long countByDeletedAtIsNull();
 }

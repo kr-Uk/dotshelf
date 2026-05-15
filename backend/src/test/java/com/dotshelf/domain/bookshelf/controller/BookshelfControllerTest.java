@@ -53,12 +53,12 @@ class BookshelfControllerTest {
     }
 
     @Test
-    @DisplayName("공간 책장 목록 조회는 spaceId를 서비스로 전달한다")
+    @DisplayName("공간 책장 목록 조회는 current userId와 spaceId를 서비스로 전달한다")
     void getBookshelves_passesSpaceId() throws Exception {
-        given(bookshelfService.getBookshelves(10L))
+        given(bookshelfService.getBookshelves(1L, 10L))
                 .willReturn(new BookshelfListResponse(List.of(bookshelfResponse(3L))));
 
-        mockMvc.perform(get("/v1/spaces/10/bookshelves"))
+        mockMvc.perform(get("/v1/spaces/10/bookshelves").header("X-Test-Admin-User-Id", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.bookshelves[0].id").value(3));
     }

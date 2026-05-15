@@ -89,6 +89,39 @@ namespace App.Infrastructure.Api
                 error => onError?.Invoke(MapError(error)));
         }
 
+        public void LoadAssetInventory(Action<NotebookAssetInventoryResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            if (!RequireAuthenticatedApi(onError, "Asset inventory API requires an access token."))
+            {
+                return;
+            }
+
+            client.GetAssetInventory(
+                response => onSuccess?.Invoke(new NotebookAssetInventoryResult(MapAssetInventory(response))),
+                error => onError?.Invoke(MapError(error)));
+        }
+
+        public void LoadAssetDownloadManifest(long assetId, Action<NotebookAssetDownloadManifestResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            if (!RequireAuthenticatedApi(onError, "Asset download manifest API requires an access token."))
+            {
+                return;
+            }
+
+            client.GetAssetDownloadManifest(
+                assetId,
+                response => onSuccess?.Invoke(MapAssetDownloadManifest(response)),
+                error => onError?.Invoke(MapError(error)));
+        }
+
+        public void LoadSpaceAssetDownloadManifests(long spaceId, Action<NotebookSpaceAssetManifestListResult> onSuccess, Action<NotebookApiError> onError)
+        {
+            client.GetSpaceAssetManifests(
+                spaceId,
+                response => onSuccess?.Invoke(MapSpaceAssetDownloadManifests(response)),
+                error => onError?.Invoke(MapError(error)));
+        }
+
         public void WishAsset(long assetId, bool wished, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError)
         {
             if (!RequireAuthenticatedApi(onError, "Asset wishlist API requires an access token."))
@@ -363,21 +396,102 @@ namespace App.Infrastructure.Api
                 return Array.Empty<NotebookAssetItem>();
             }
 
-            return assets.Select((asset, index) => new NotebookAssetItem
+            return assets.Select((asset, index) => MapAsset(asset, index, 0L)).ToArray();
+        }
+
+        private static IReadOnlyList<NotebookAssetItem> MapAssetInventory(InventoryResponseDto response)
+        {
+            var items = response?.Items;
+            if (items == null || items.Count == 0)
             {
-                Id = asset.Id,
-                Code = asset.Code,
-                Name = FirstNonEmpty(asset.Name, asset.Code, $"Asset {index + 1}"),
-                Category = ResolveAssetCategoryCode(asset),
-                CategoryCode = ResolveAssetCategoryCode(asset),
-                Tier = asset.Tier,
-                AssetType = asset.AssetType,
-                PreviewImageUrl = asset.PreviewImageUrl,
-                PricePages = asset.PricePages,
+                return Array.Empty<NotebookAssetItem>();
+            }
+
+            return items
+                .Where(item => item != null)
+                .Select((item, index) =>
+                {
+                    var asset = item.Asset ?? new AssetResponseDto { Id = item.AssetId };
+                    return MapAsset(asset, index, item.InventoryId);
+                })
+                .ToArray();
+        }
+
+        private static NotebookAssetItem MapAsset(AssetResponseDto asset, int index, long inventoryId)
+        {
+            var category = ResolveAssetCategoryCode(asset);
+            return new NotebookAssetItem
+            {
+                Id = asset?.Id ?? 0L,
+                InventoryId = inventoryId,
+                Code = asset?.Code,
+                Name = FirstNonEmpty(asset?.Name, asset?.Code, $"Asset {index + 1}"),
+                Category = category,
+                CategoryCode = category,
+                Tier = asset?.Tier,
+                AssetType = asset?.AssetType,
+                CollectionCode = asset?.CollectionCode,
+                Theme = asset?.Theme,
+                Placement = asset?.Placement,
+                PreviewImageUrl = asset?.PreviewImageUrl,
+                FileSize = asset?.FileSize,
+                FileHash = asset?.FileHash,
+                ContentType = asset?.ContentType,
+                Version = asset != null && asset.Version > 0 ? asset.Version : 1,
+                PricePages = asset?.PricePages ?? 0,
                 Popularity = 0,
-                Owned = asset.Owned,
-                Wished = asset.Wished
-            }).ToArray();
+                Owned = asset?.Owned ?? inventoryId > 0L,
+                Wished = asset?.Wished ?? false
+            };
+        }
+
+        private static NotebookAssetDownloadManifestResult MapAssetDownloadManifest(DownloadManifestResponseDto response)
+        {
+            var files = response?.Files == null
+                ? Array.Empty<NotebookAssetDownloadFile>()
+                : response.Files
+                    .Where(file => file != null)
+                    .Select(file => new NotebookAssetDownloadFile
+                    {
+                        AssetId = file.AssetId,
+                        Code = file.Code,
+                        Name = file.Name,
+                        AssetType = file.AssetType,
+                        Role = file.Role,
+                        Url = file.Url,
+                        ContentType = file.ContentType,
+                        FileSize = file.FileSize,
+                        FileHash = file.FileHash,
+                        Version = file.Version > 0 ? file.Version : 1,
+                        Required = file.Required,
+                        DefaultTransform = file.DefaultTransform
+                    })
+                    .ToArray();
+
+            return new NotebookAssetDownloadManifestResult
+            {
+                AssetId = response?.AssetId ?? 0L,
+                AssetType = response?.AssetType,
+                CollectionCode = response?.CollectionCode,
+                Version = response != null && response.Version > 0 ? response.Version : 1,
+                Files = files
+            };
+        }
+
+        private static NotebookSpaceAssetManifestListResult MapSpaceAssetDownloadManifests(SpaceAssetManifestListResponseDto response)
+        {
+            var manifests = response?.Manifests == null
+                ? Array.Empty<NotebookAssetDownloadManifestResult>()
+                : response.Manifests
+                    .Where(manifest => manifest != null)
+                    .Select(MapAssetDownloadManifest)
+                    .ToArray();
+
+            return new NotebookSpaceAssetManifestListResult(manifests)
+            {
+                SpaceId = response?.SpaceId ?? 0L,
+                LayoutVersion = response?.LayoutVersion ?? 0L
+            };
         }
 
         private static IReadOnlyList<NotebookSpaceItem> MapSpaces(SpaceListResponseDto response, int limit, long currentUserId)
@@ -439,7 +553,8 @@ namespace App.Infrastructure.Api
                     ProfileImageUrl = user.ProfileImageUrl,
                     Mutual = user.Mutual,
                     Following = user.Following,
-                    Blocked = user.Blocked
+                    Blocked = user.Blocked,
+                    SpaceId = user.SpaceId
                 })
                 .ToArray();
         }

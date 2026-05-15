@@ -147,11 +147,48 @@ if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | O
 $zipPath = Join-Path $distDir $zipName
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 
+# PS 5.1 의 Compress-Archive cmdlet 은 내부적으로 MemoryStream 경로를 타서 단일
+# 입력 스트림 ~2 GiB 한도에서 "Stream was too long" 으로 throw 한다
+# (PowerShell/PowerShell#5577). 0.2.0 사이클에서 BuildDir 이 6.21 GiB 까지 커지며
+# 첫 자동화 실패가 발생해 수동 fallback 한 사이클을 돌아야 했다 — MR !187
+# description 참고. .NET ZipFile API 로 교체해 PS 버전 / BuildDir 크기 무관하게
+# 동작하게 한다. CreateFromDirectory 는 srcDir 의 *내용물* 을 zip 루트에 그대로
+# 펼쳐 넣어서 Compress-Archive `-Path "$BuildDir\*"` 와 동일한 zip 구조를 만든다.
+#
+# PS 7+ (.NET 5+) 에선 System.IO.Compression.FileSystem 이 BCL 에 통합돼 있어
+# Add-Type 가 noop 으로 안전 통과. 압축 후 4 GiB / 65535 entry 한도를 넘으면
+# .NET ZipFile 이 ZIP64 extension 을 자동으로 사용 — launcher 의 unzip 경로
+# (Expand-Archive / .NET ZipFile.ExtractToDirectory) 모두 ZIP64 지원.
+Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
+Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+if (-not ([System.Management.Automation.PSTypeName]'System.IO.Compression.ZipFile').Type) {
+    throw "[System.IO.Compression.ZipFile] 타입 로드 실패. .NET Framework 4.5+ 가 설치돼 있는지 확인하세요."
+}
+
+# includeBaseDirectory: false — zip 루트에 Dotshelf.exe 가 바로 들어가서 기존
+# Compress-Archive `-Path "$BuildDir\*"` 와 동일한 구조 유지. true 로 바꾸면
+# launcher 의 entrypoint 탐색이 깨진다.
+$includeBaseDirectory = $false
+
 Write-Host ""
-Write-Host "▶ Compress-Archive  $BuildDir\*  →  $zipPath"
-Compress-Archive -Path (Join-Path $BuildDir "*") -DestinationPath $zipPath -CompressionLevel Optimal
+Write-Host "▶ ZipFile.CreateFromDirectory  $BuildDir  →  $zipPath  (큰 BuildDir 은 수 분 소요 가능)"
+$zipStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+try {
+    [System.IO.Compression.ZipFile]::CreateFromDirectory(
+        $BuildDir,
+        $zipPath,
+        [System.IO.Compression.CompressionLevel]::Optimal,
+        $includeBaseDirectory)
+}
+catch {
+    # CreateFromDirectory 가 mid-process 에서 throw 하면 partial zip 이 남아
+    # 다음 사이클 verify 가 잘못된 sha256 을 잡을 수 있으니 명시적으로 정리.
+    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+    throw
+}
+$zipStopwatch.Stop()
 $zipSize = (Get-Item $zipPath).Length
-Write-Host ("  zip size: {0:N0} bytes" -f $zipSize)
+Write-Host ("  zip size: {0:N0} bytes  (elapsed: {1:N1}s)" -f $zipSize, $zipStopwatch.Elapsed.TotalSeconds)
 
 # --- 3. SHA256 + manifest patch (JSON parse 방식) -----------------------
 $sha256 = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToUpper()

@@ -39,8 +39,8 @@ public class BookshelfController {
 
     @Operation(summary = "공간 책장 목록 조회", description = "지정한 공간에 배치된 책장 목록을 조회합니다.")
     @GetMapping("/v1/spaces/{spaceId}/bookshelves")
-    public ApiResponse<BookshelfListResponse> getBookshelves(@PathVariable Long spaceId) {
-        return ApiResponse.success(bookshelfService.getBookshelves(spaceId));
+    public ApiResponse<BookshelfListResponse> getBookshelves(@CurrentUser Long userId, @PathVariable Long spaceId) {
+        return ApiResponse.success(bookshelfService.getBookshelves(userId, spaceId));
     }
 
     @Operation(summary = "책장 아이템 렌더링 조회", description = "책장에 배치된 책과 인테리어 오브젝트를 렌더링용 구조로 조회합니다.")

@@ -42,6 +42,16 @@ namespace App.Application.Notebook
         public long Count { get; set; }
     }
 
+    public sealed class NotebookSpaceVisitRequest
+    {
+        public long SpaceId { get; set; }
+        public long OwnerUserId { get; set; }
+        public bool Following { get; set; }
+        public bool Liked { get; set; }
+        public long LikeCount { get; set; }
+        public long FollowerCount { get; set; }
+    }
+
     public sealed class NotebookAssetListResult
     {
         public NotebookAssetListResult(IReadOnlyList<NotebookAssetItem> assets)
@@ -55,17 +65,72 @@ namespace App.Application.Notebook
     public sealed class NotebookAssetItem
     {
         public long Id { get; set; }
+        public long InventoryId { get; set; }
         public string Code { get; set; }
         public string Name { get; set; }
         public string Category { get; set; }
         public string CategoryCode { get; set; }
         public string Tier { get; set; }
         public string AssetType { get; set; }
+        public string CollectionCode { get; set; }
+        public string Theme { get; set; }
+        public string Placement { get; set; }
         public string PreviewImageUrl { get; set; }
+        public long? FileSize { get; set; }
+        public string FileHash { get; set; }
+        public string ContentType { get; set; }
+        public int Version { get; set; }
         public int PricePages { get; set; }
         public int Popularity { get; set; }
         public bool Owned { get; set; }
         public bool Wished { get; set; }
+    }
+
+    public sealed class NotebookAssetInventoryResult
+    {
+        public NotebookAssetInventoryResult(IReadOnlyList<NotebookAssetItem> assets)
+        {
+            Assets = assets ?? Array.Empty<NotebookAssetItem>();
+        }
+
+        public IReadOnlyList<NotebookAssetItem> Assets { get; }
+    }
+
+    public sealed class NotebookAssetDownloadManifestResult
+    {
+        public long AssetId { get; set; }
+        public string AssetType { get; set; }
+        public string CollectionCode { get; set; }
+        public int Version { get; set; }
+        public IReadOnlyList<NotebookAssetDownloadFile> Files { get; set; } = Array.Empty<NotebookAssetDownloadFile>();
+    }
+
+    public sealed class NotebookAssetDownloadFile
+    {
+        public long AssetId { get; set; }
+        public string Code { get; set; }
+        public string Name { get; set; }
+        public string AssetType { get; set; }
+        public string Role { get; set; }
+        public string Url { get; set; }
+        public string ContentType { get; set; }
+        public long? FileSize { get; set; }
+        public string FileHash { get; set; }
+        public int Version { get; set; }
+        public bool Required { get; set; }
+        public string DefaultTransform { get; set; }
+    }
+
+    public sealed class NotebookSpaceAssetManifestListResult
+    {
+        public NotebookSpaceAssetManifestListResult(IReadOnlyList<NotebookAssetDownloadManifestResult> manifests)
+        {
+            Manifests = manifests ?? Array.Empty<NotebookAssetDownloadManifestResult>();
+        }
+
+        public long SpaceId { get; set; }
+        public long LayoutVersion { get; set; }
+        public IReadOnlyList<NotebookAssetDownloadManifestResult> Manifests { get; }
     }
 
     public sealed class NotebookAssetPurchaseResult
@@ -133,6 +198,7 @@ namespace App.Application.Notebook
         public bool Mutual { get; set; }
         public bool Following { get; set; }
         public bool Blocked { get; set; }
+        public long? SpaceId { get; set; }
     }
 
     public sealed class NotebookShelfTarget

@@ -210,7 +210,7 @@ public final class TestFixtures {
         return PaymentOrder.builder()
                 .userId(userId)
                 .orderId(orderId)
-                .orderName("DotShelf " + amountKrw + "P 충전")
+                .orderName("DotShelf " + amountKrw + "P 충전 (유효기간 1년/자동갱신)")
                 .pagesAmount(amountKrw)
                 .amountKrw(amountKrw)
                 .buyerName("홍길동")

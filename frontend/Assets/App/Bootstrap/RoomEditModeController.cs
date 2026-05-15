@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using App.Application.Dashboard;
 using App.Application.Decoration;
 using App.Auth;
@@ -7,11 +9,13 @@ using App.Domain.Decoration;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dashboard;
 using App.Infrastructure.Api.Dtos;
+using App.Infrastructure.Assets;
 using App.Infrastructure.Catalogs;
 using App.Infrastructure.Decoration;
 using BookshelfPorting.Runtime;
 using Dotshelf.Scripts.Dashboard;
 using Dotshelf.Scripts.RoomTheme;
+using GLTFast;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -244,6 +248,16 @@ namespace App.Bootstrap
             // 카테고리 표준 크기에 추가로 곱하는 등방 multiplier. 0=비활성, 1.0=기본,
             // 0.8=80%, 1.2=120%. 비등방(X/Y/Z 개별) override 는 미래 확장.
             public float ScaleMultiplierOverride;
+            public bool IsRemoteAsset;
+            public long RemoteAssetId;
+            public long RemoteInventoryId;
+            public string PreviewImageUrl;
+        }
+
+        [Serializable]
+        private sealed class DecorationLayoutPayload
+        {
+            public List<DecorationLayoutItem> items = new List<DecorationLayoutItem>();
         }
 
         // 인벤토리 동일 자산 1회 배치 제한용 캐시. Key 는 BuildInventoryKey 가 만든 stable
@@ -266,12 +280,34 @@ namespace App.Bootstrap
             }
 
             IsReadOnlySpacePreview = isReadOnly;
+            if (!isReadOnly)
+            {
+                visibleRemoteAssetManifests.Clear();
+            }
             if (isReadOnly && IsDecorationPopupOpen)
             {
                 CloseDecorationPopupInternal();
             }
 
             UpdateButtonVisibility();
+        }
+
+        public void RegisterVisibleSpaceAssetManifests(IReadOnlyList<DownloadManifestResponseDto> manifests)
+        {
+            visibleRemoteAssetManifests.Clear();
+            if (manifests == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < manifests.Count; i++)
+            {
+                var manifest = manifests[i];
+                if (manifest != null && manifest.AssetId > 0L)
+                {
+                    visibleRemoteAssetManifests[manifest.AssetId] = manifest;
+                }
+            }
         }
 
         // Internal -----------------------------------------------------------------
@@ -629,6 +665,11 @@ namespace App.Bootstrap
 
         // Decoration catalog loaded from Resources (built by the editor menu item).
         private readonly List<InventoryEntry> inventoryEntries = new List<InventoryEntry>();
+        private RemoteAssetCacheService remoteAssetCacheService;
+        private bool isRemoteAssetInventoryLoading;
+        private int remoteAssetInventoryRequestVersion;
+        private readonly Dictionary<long, DownloadManifestResponseDto> visibleRemoteAssetManifests = new Dictionary<long, DownloadManifestResponseDto>();
+        private readonly Dictionary<string, Sprite> inventoryPreviewSpriteCache = new Dictionary<string, Sprite>(StringComparer.Ordinal);
 
         private BookshelfExperienceManager cachedExperienceManager;
         private BookshelfApiSyncController cachedBookshelfApiSyncController;
@@ -937,6 +978,7 @@ namespace App.Bootstrap
             WarmupGlyphs(fontAsset);
             EnsureEventSystem();
             LoadInventoryEntries();
+            remoteAssetCacheService ??= new RemoteAssetCacheService();
 
             BuildCanvas();
             BuildDecorationButton();
@@ -1030,6 +1072,136 @@ namespace App.Bootstrap
             {
                 Debug.LogWarning("[RoomEditModeController] No decoration entries available. Run Tools > Dotshelf > Refresh Decoration Catalog (in editor) or include EditableDecorationCatalog.asset under Assets/Resources for builds.");
             }
+        }
+
+        private void RefreshRemoteAssetInventory()
+        {
+            if (isRemoteAssetInventoryLoading)
+            {
+                return;
+            }
+
+            var apiManager = APIManager.Instance;
+            if (apiManager == null || !apiManager.HasAccessToken)
+            {
+                return;
+            }
+
+            NotebookApiClient apiClient;
+            try
+            {
+                apiClient = new NotebookApiClient(apiManager);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[RoomEdit][RemoteAsset] NotebookApiClient unavailable: {ex.GetType().Name} {ex.Message}");
+                return;
+            }
+
+            isRemoteAssetInventoryLoading = true;
+            var requestVersion = ++remoteAssetInventoryRequestVersion;
+            apiClient.GetAssetInventory(
+                inventory =>
+                {
+                    if (requestVersion != remoteAssetInventoryRequestVersion)
+                    {
+                        return;
+                    }
+
+                    isRemoteAssetInventoryLoading = false;
+                    MergeRemoteAssetInventory(inventory);
+                    RebuildInventorySlots();
+                },
+                error =>
+                {
+                    if (requestVersion == remoteAssetInventoryRequestVersion)
+                    {
+                        isRemoteAssetInventoryLoading = false;
+                    }
+
+                    Debug.LogWarning($"[RoomEdit][RemoteAsset] inventory load failed: {error?.Code}/{error?.Message}");
+                });
+        }
+
+        private void MergeRemoteAssetInventory(InventoryResponseDto inventory)
+        {
+            for (var i = inventoryEntries.Count - 1; i >= 0; i--)
+            {
+                if (inventoryEntries[i].IsRemoteAsset)
+                {
+                    inventoryEntries.RemoveAt(i);
+                }
+            }
+
+            var items = inventory?.Items;
+            if (items == null || items.Count == 0)
+            {
+                return;
+            }
+
+            var added = 0;
+            for (var i = 0; i < items.Count; i++)
+            {
+                var item = items[i];
+                if (item == null || item.AssetId <= 0L)
+                {
+                    continue;
+                }
+
+                var asset = item.Asset;
+                var displayName = FirstNonEmpty(asset?.Name, asset?.Code, $"Asset {item.AssetId}");
+                inventoryEntries.Add(new InventoryEntry
+                {
+                    DisplayName = displayName,
+                    Prefab = null,
+                    SourceAssetPath = string.Empty,
+                    PlacementCategory = ResolveRemotePlacementCategory(asset),
+                    AllowRotation = true,
+                    Kind = ResolveRemoteDecorationKind(asset),
+                    ScaleMultiplierOverride = 0f,
+                    IsRemoteAsset = true,
+                    RemoteAssetId = item.AssetId,
+                    RemoteInventoryId = item.InventoryId,
+                    PreviewImageUrl = asset?.PreviewImageUrl
+                });
+                added++;
+            }
+
+            if (added > 0)
+            {
+                Debug.Log($"[RoomEdit][RemoteAsset] merged {added} owned remote asset(s) into decoration inventory.");
+            }
+        }
+
+        private static CustomizationCategory ResolveRemotePlacementCategory(AssetResponseDto asset)
+        {
+            var placement = FirstNonEmpty(asset?.Placement, asset?.AssetType, asset?.CategoryCode, string.Empty).ToUpperInvariant();
+            if (placement.Contains("WALL") || placement.Contains("POSTER") || placement.Contains("WINDOW"))
+            {
+                return CustomizationCategory.WallDeco;
+            }
+
+            if (placement.Contains("BOOKSHELF_DECOR"))
+            {
+                return CustomizationCategory.BookshelfDeco;
+            }
+
+            return CustomizationCategory.FloorDeco;
+        }
+
+        private static DecorationObjectKind ResolveRemoteDecorationKind(AssetResponseDto asset)
+        {
+            var value = FirstNonEmpty(asset?.AssetType, asset?.CategoryCode, asset?.Placement, asset?.Name, asset?.Code, string.Empty).ToUpperInvariant();
+            if (value.Contains("DESK") || value.Contains("TABLE")) return DecorationObjectKind.Desk;
+            if (value.Contains("CHAIR")) return DecorationObjectKind.Chair;
+            if (value.Contains("BOOKSHELF") || value.Contains("SHELF")) return DecorationObjectKind.Bookshelf;
+            if (value.Contains("BED")) return DecorationObjectKind.Bed;
+            if (value.Contains("RUG") || value.Contains("CARPET")) return DecorationObjectKind.Rug;
+            if (value.Contains("LAMP") || value.Contains("LIGHT")) return DecorationObjectKind.Lamp;
+            if (value.Contains("PLANT") || value.Contains("FLOWER")) return DecorationObjectKind.Plant;
+            if (value.Contains("PILLOW") || value.Contains("CUSHION")) return DecorationObjectKind.Pillow;
+            if (value.Contains("MONITOR") || value.Contains("DASHBOARD")) return DecorationObjectKind.Monitor;
+            return DecorationObjectKind.Decoration;
         }
 
 #if UNITY_EDITOR
@@ -1879,6 +2051,7 @@ namespace App.Bootstrap
                 if (TryResolveFurnitureSubCategory(selectedFurnitureSubKey, out var furnitureCategory))
                 {
                     BuildCustomizationSlots(inventoryContentRoot.transform, furnitureCategory);
+                    BuildRemoteFurnitureSlots(inventoryContentRoot.transform, selectedFurnitureSubKey);
                     return;
                 }
             }
@@ -1938,6 +2111,49 @@ namespace App.Bootstrap
                 rendered++;
             }
             Debug.Log($"[RoomEditModeController] Theme={RoomEditThemeFilter.DescribeActive()}, Category={category}, ResultCount={rendered}");
+        }
+
+        private void BuildRemoteFurnitureSlots(Transform parent, string subKey)
+        {
+            var slotIndex = 0;
+            for (var i = 0; i < inventoryEntries.Count; i++)
+            {
+                var entry = inventoryEntries[i];
+                if (!MatchesRemoteFurnitureSubCategory(entry, subKey))
+                {
+                    continue;
+                }
+
+                BuildInventorySlot(parent, slotIndex, entry);
+                slotIndex++;
+            }
+        }
+
+        private static bool MatchesRemoteFurnitureSubCategory(InventoryEntry entry, string subKey)
+        {
+            if (!entry.IsRemoteAsset)
+            {
+                return false;
+            }
+
+            if (entry.PlacementCategory == CustomizationCategory.WallDeco ||
+                entry.PlacementCategory == CustomizationCategory.BookshelfDeco)
+            {
+                return false;
+            }
+
+            switch (subKey)
+            {
+                case "BOOKSHELF_SKIN":
+                    return entry.Kind == DecorationObjectKind.Bookshelf;
+                case "DASHBOARD_SKIN":
+                    return entry.Kind == DecorationObjectKind.Monitor;
+                case "DESK":
+                    return entry.Kind != DecorationObjectKind.Bookshelf &&
+                           entry.Kind != DecorationObjectKind.Monitor;
+                default:
+                    return false;
+            }
         }
 
         private CustomizationCatalogAsset LoadCategoryCatalog(CustomizationCategory category)
@@ -4885,6 +5101,10 @@ namespace App.Bootstrap
             var glyph = CreateText(thumb.transform, "Glyph",
                 ResolveSlotInitial(entry.DisplayName), 28f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center);
             StretchToParent(glyph.rectTransform);
+            if (!string.IsNullOrWhiteSpace(entry.PreviewImageUrl))
+            {
+                LoadInventoryPreview(entry.PreviewImageUrl, thumb, glyph);
+            }
 
             var labelText = CreateText(slot.transform, "Label", entry.DisplayName, 12f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
             labelText.overflowMode = TextOverflowModes.Ellipsis;
@@ -4940,8 +5160,81 @@ namespace App.Bootstrap
         //   3. DisplayName: 마지막 fallback. 동명 자산 위험 인지 후 사용.
         // 호출부(BuildInventorySlot / PlaceInventoryEntry / DeleteSelectedObject / DecorationItemMarker.InventoryKey
         //  scene scan) 모두 같은 메서드를 거치므로 여기서 prefix 만 일관되면 양쪽 매칭이 자동.
+        private void LoadInventoryPreview(string url, Image thumb, TMP_Text glyph)
+        {
+            if (string.IsNullOrWhiteSpace(url) || thumb == null)
+            {
+                return;
+            }
+
+            var normalizedUrl = url.Trim();
+            if (inventoryPreviewSpriteCache.TryGetValue(normalizedUrl, out var cached) && cached != null)
+            {
+                ApplyInventoryPreview(thumb, glyph, cached);
+                return;
+            }
+
+            StartCoroutine(LoadInventoryPreviewCoroutine(normalizedUrl, thumb, glyph));
+        }
+
+        private IEnumerator LoadInventoryPreviewCoroutine(string url, Image thumb, TMP_Text glyph)
+        {
+            using (var request = UnityEngine.Networking.UnityWebRequestTexture.GetTexture(url))
+            {
+                yield return request.SendWebRequest();
+                if (request.result != UnityEngine.Networking.UnityWebRequest.Result.Success)
+                {
+                    Debug.LogWarning($"[RoomEdit][RemoteAsset] preview image load failed: {request.responseCode} {request.error} ({url})");
+                    yield break;
+                }
+
+                var texture = UnityEngine.Networking.DownloadHandlerTexture.GetContent(request);
+                if (texture == null)
+                {
+                    Debug.LogWarning($"[RoomEdit][RemoteAsset] preview image response had no texture: {url}");
+                    yield break;
+                }
+
+                var sprite = Sprite.Create(
+                    texture,
+                    new Rect(0f, 0f, texture.width, texture.height),
+                    new Vector2(0.5f, 0.5f),
+                    100f);
+                inventoryPreviewSpriteCache[url] = sprite;
+                if (thumb != null)
+                {
+                    ApplyInventoryPreview(thumb, glyph, sprite);
+                }
+            }
+        }
+
+        private static void ApplyInventoryPreview(Image thumb, TMP_Text glyph, Sprite sprite)
+        {
+            if (thumb == null || sprite == null)
+            {
+                return;
+            }
+
+            thumb.sprite = sprite;
+            thumb.type = Image.Type.Simple;
+            thumb.preserveAspect = true;
+            thumb.color = Color.white;
+            if (glyph != null)
+            {
+                glyph.gameObject.SetActive(false);
+            }
+        }
+
         private static string BuildInventoryKey(InventoryEntry entry)
         {
+            if (entry.RemoteAssetId > 0L)
+            {
+                return "asset:" + entry.RemoteAssetId;
+            }
+            if (entry.RemoteInventoryId > 0L)
+            {
+                return "inv:" + entry.RemoteInventoryId;
+            }
             if (!string.IsNullOrEmpty(entry.SourceAssetPath))
             {
                 return "path:" + entry.SourceAssetPath;
@@ -5040,6 +5333,24 @@ namespace App.Bootstrap
             if (string.IsNullOrWhiteSpace(displayName)) return "■";
             var trimmed = displayName.Trim();
             return trimmed.Length > 0 ? trimmed.Substring(0, 1).ToUpperInvariant() : "■";
+        }
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            if (values == null)
+            {
+                return string.Empty;
+            }
+
+            for (var i = 0; i < values.Length; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(values[i]))
+                {
+                    return values[i].Trim();
+                }
+            }
+
+            return string.Empty;
         }
 
         private void BuildReturnButton(Transform parent)
@@ -6092,6 +6403,7 @@ namespace App.Bootstrap
             // source of truth 의도 무력화. 진입 시점에 한 번 GET /spaces/me 호출해
             // 캐시 채움. 응답 도착 전까지 lastAppliedEntries fallback이 동작.
             ReloadRoomState();
+            RefreshRemoteAssetInventory();
 
             // Order matters: canonical-scale existing decorations FIRST so
             // their renderer bounds reflect the final size, THEN fit blocker
@@ -6950,6 +7262,7 @@ namespace App.Bootstrap
                 onSuccess: () =>
                 {
                     Debug.Log($"[RoomEdit][Save] 저장 성공 — {items.Count}개 영속화 완료");
+                    TrySaveLayoutSnapshotToServer(items);
                     ClearDirty("save success");
                     TryUploadRoomThumbnail();
                     onSuccess?.Invoke();
@@ -6966,6 +7279,57 @@ namespace App.Bootstrap
         // 세션 간 안정적이지 않은 fallback (prefab-iid:) 인 경우 식별 불가 → skip + 경고 로그.
         // MR #120 skh1205 리뷰 #4 반영 — Prefab.GetInstanceID() 는 한 세션 내에서만 유효한
         // 런타임 ID 라 저장 파일에 들어가는 순간 다음 실행에서 매칭이 깨진다.
+        private void TrySaveLayoutSnapshotToServer(IReadOnlyList<DecorationLayoutItem> items)
+        {
+            var apiManager = APIManager.Instance;
+            if (apiManager == null || !apiManager.HasAccessToken)
+            {
+                Debug.Log("[RoomEdit][ServerLayout] skipped: API token is missing.");
+                return;
+            }
+
+            NotebookApiClient apiClient;
+            try
+            {
+                apiClient = new NotebookApiClient(apiManager);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[RoomEdit][ServerLayout] client init failed: {ex.GetType().Name} {ex.Message}");
+                return;
+            }
+
+            var request = new LayoutSaveRequestDto
+            {
+                LayoutPayload = SerializeDecorationLayoutItems(items),
+                BaseLayoutVersion = lastServerSpace != null && lastServerSpace.LayoutVersion > 0L ? (long?)lastServerSpace.LayoutVersion : null
+            };
+
+            apiClient.SaveMySpaceLayout(
+                request,
+                response =>
+                {
+                    if (lastServerSpace != null && response != null)
+                    {
+                        lastServerSpace.LayoutVersion = response.LayoutVersion;
+                    }
+
+                    Debug.Log($"[RoomEdit][ServerLayout] saved layout snapshot v{response?.LayoutVersion ?? 0L}.");
+                },
+                error =>
+                {
+                    Debug.LogWarning($"[RoomEdit][ServerLayout] save skipped/failed: {error?.Code}/{error?.Message}");
+                });
+        }
+
+        private static string SerializeDecorationLayoutItems(IReadOnlyList<DecorationLayoutItem> items)
+        {
+            return JsonUtility.ToJson(new DecorationLayoutPayload
+            {
+                items = new List<DecorationLayoutItem>(items ?? Array.Empty<DecorationLayoutItem>())
+            });
+        }
+
         private List<DecorationLayoutItem> CollectDecorationLayoutItems()
         {
             var list = new List<DecorationLayoutItem>();
@@ -7137,6 +7501,37 @@ namespace App.Bootstrap
             }
             entry = default;
             return false;
+        }
+
+        private static bool TryCreateRemoteInventoryEntryFromKey(string key, out InventoryEntry entry)
+        {
+            entry = default;
+            if (string.IsNullOrWhiteSpace(key) || !key.StartsWith("asset:", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var rawAssetId = key.Substring("asset:".Length);
+            if (!long.TryParse(rawAssetId, out var assetId) || assetId <= 0L)
+            {
+                return false;
+            }
+
+            entry = new InventoryEntry
+            {
+                DisplayName = "Remote Asset " + assetId,
+                Prefab = null,
+                SourceAssetPath = string.Empty,
+                PlacementCategory = CustomizationCategory.FloorDeco,
+                AllowRotation = true,
+                Kind = DecorationObjectKind.Decoration,
+                ScaleMultiplierOverride = 0f,
+                IsRemoteAsset = true,
+                RemoteAssetId = assetId,
+                RemoteInventoryId = 0L,
+                PreviewImageUrl = string.Empty
+            };
+            return true;
         }
 
         // "저장하지 않고 나가기" 롤백 — 진입 시점 스냅샷 기준으로 씬 상태 복원.
@@ -7425,6 +7820,76 @@ namespace App.Bootstrap
         // 저장된 layout item 1개를 prefab Instantiate 해서 씬에 복원. 성공 시 placedByInventoryKey 등록.
         // PlaceInventoryEntry 의 ring-search/bounds-clamp 는 건너뛴다 — 저장 시점에 valid 한 좌표였고
         // 같은 placement 를 그대로 되살리는 게 의도. 충돌은 사용자가 다음 편집 모드에서 직접 정리.
+        public void ApplyExternalDecorationLayoutPayload(string layoutPayload, bool clearExisting)
+        {
+            InitializeIfNeeded();
+            EnsurePlacedItemsRoot();
+
+            var items = ParseDecorationLayoutItems(layoutPayload);
+            if (clearExisting)
+            {
+                ClearAllPlacedDecos();
+                placedByInventoryKey.Clear();
+            }
+
+            RebuildPlacedByInventoryKeyFromScene();
+            var restored = RestoreDecorationLayoutItems(items);
+            Debug.Log($"[RoomEdit][ServerLayout] restored {restored} decoration item(s) from server layout.");
+        }
+
+        private int RestoreDecorationLayoutItems(IReadOnlyList<DecorationLayoutItem> items)
+        {
+            if (items == null || items.Count == 0)
+            {
+                return 0;
+            }
+
+            var restored = 0;
+            for (var i = 0; i < items.Count; i++)
+            {
+                var it = items[i];
+                if (it == null || string.IsNullOrEmpty(it.AssetId))
+                {
+                    continue;
+                }
+
+                if (placedByInventoryKey.TryGetValue(it.AssetId, out var existing) && existing != null)
+                {
+                    existing.transform.position = new Vector3(it.PositionX, it.PositionY, it.PositionZ);
+                    existing.transform.rotation = Quaternion.Euler(0f, it.RotationY, 0f);
+                    existing.transform.localScale = new Vector3(it.ScaleX, it.ScaleY, it.ScaleZ);
+                    restored++;
+                    continue;
+                }
+
+                if (TryInstantiateSavedItem(it))
+                {
+                    restored++;
+                }
+            }
+
+            return restored;
+        }
+
+        private static List<DecorationLayoutItem> ParseDecorationLayoutItems(string layoutPayload)
+        {
+            if (string.IsNullOrWhiteSpace(layoutPayload))
+            {
+                return new List<DecorationLayoutItem>();
+            }
+
+            try
+            {
+                var payload = JsonUtility.FromJson<DecorationLayoutPayload>(layoutPayload);
+                return payload?.items ?? new List<DecorationLayoutItem>();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[RoomEdit][ServerLayout] layout payload parse failed: {ex.GetType().Name} {ex.Message}");
+                return new List<DecorationLayoutItem>();
+            }
+        }
+
         private bool TryInstantiateSavedItem(DecorationLayoutItem it)
         {
             if (it == null || string.IsNullOrEmpty(it.AssetId))
@@ -7432,10 +7897,24 @@ namespace App.Bootstrap
                 Debug.LogWarning("[RoomEdit][Load] AssetId 비어있는 item — skip");
                 return false;
             }
-            if (!TryFindInventoryEntryByKey(it.AssetId, out var entry) || entry.Prefab == null)
+            if (!TryFindInventoryEntryByKey(it.AssetId, out var entry) &&
+                !TryCreateRemoteInventoryEntryFromKey(it.AssetId, out entry))
             {
                 Debug.LogWarning(
                     $"[RoomEdit][Load] '{it.AssetId}' prefab 매칭 실패 — 카탈로그 누락 또는 path 변경. 복원 skip.");
+                return false;
+            }
+
+            if (entry.IsRemoteAsset)
+            {
+                StartCoroutine(PlaceRemoteInventoryEntry(entry, it.AssetId, it));
+                return true;
+            }
+
+            if (entry.Prefab == null)
+            {
+                Debug.LogWarning(
+                    $"[RoomEdit][Load] '{it.AssetId}' prefab matching failed; restore skipped.");
                 return false;
             }
 
@@ -8542,11 +9021,6 @@ namespace App.Bootstrap
             {
                 return;
             }
-            if (entry.Prefab == null)
-            {
-                return;
-            }
-
             // 1회 배치 제한 — 동일 자산이 이미 씬에 살아있으면 새로 만들지 않는다.
             // 슬롯은 이미 disabled 처리되지만 race(첫 클릭 ~ Rebuild 사이) 방어로 여기서도 한 번 더 차단.
             // WallDeco/BookshelfDeco 분기보다 먼저 검사 — PlaceWallDecoEntry 가 향후 inventoryKey
@@ -8561,6 +9035,17 @@ namespace App.Bootstrap
             // placement category 분기. WallDeco 는 wall surface 부착 placement 로 별도 흐름.
             // BookshelfDeco 는 후속 (책장 섹션 anchoring 시스템 합류 시점). 그 외 (FloorDeco/
             // 미지정 default) 는 기존 floor placement 유지.
+            if (entry.IsRemoteAsset)
+            {
+                StartCoroutine(PlaceRemoteInventoryEntry(entry, inventoryKey, null));
+                return;
+            }
+
+            if (entry.Prefab == null)
+            {
+                return;
+            }
+
             switch (entry.PlacementCategory)
             {
                 case CustomizationCategory.WallDeco:
@@ -8687,6 +9172,281 @@ namespace App.Bootstrap
             // 때까지 반투명 ghost. 자동 선택해서 드래그/회전/삭제/확정 toolbar 가 즉시 보이도록.
             BeginPendingPlacement(go);
             SelectObject(go);
+        }
+
+        private IEnumerator PlaceRemoteInventoryEntry(InventoryEntry entry, string inventoryKey, DecorationLayoutItem savedItem)
+        {
+            if (entry.RemoteAssetId <= 0L)
+            {
+                Debug.LogWarning($"[RoomEdit][RemoteAsset] invalid remote asset id for '{entry.DisplayName}'.");
+                yield break;
+            }
+
+            GameObject go = null;
+            string loadError = null;
+            yield return LoadRemoteAssetGameObject(
+                entry,
+                loaded => go = loaded,
+                error => loadError = error);
+
+            if (go == null)
+            {
+                Debug.LogWarning($"[RoomEdit][RemoteAsset] placement skipped for '{entry.DisplayName}': {loadError}");
+                yield break;
+            }
+
+            EnsurePlacedItemsRoot();
+            go.name = $"Decoration_{SanitizeName(entry.DisplayName)}_{Guid.NewGuid():N}";
+            go.transform.SetParent(placedItemsRoot.transform, true);
+
+            if (savedItem != null)
+            {
+                go.transform.SetPositionAndRotation(
+                    new Vector3(savedItem.PositionX, savedItem.PositionY, savedItem.PositionZ),
+                    Quaternion.Euler(0f, savedItem.RotationY, 0f));
+                go.transform.localScale = new Vector3(savedItem.ScaleX, savedItem.ScaleY, savedItem.ScaleZ);
+                EnsureDecorationCollider(go);
+                var savedMarker = go.AddComponent<DecorationItemMarker>();
+                savedMarker.InventoryKey = inventoryKey;
+                if (!string.IsNullOrEmpty(inventoryKey))
+                {
+                    placedByInventoryKey[inventoryKey] = go;
+                }
+                yield break;
+            }
+
+            NormalizeSpawnedScale(go, entry);
+            Physics.SyncTransforms();
+
+            var existingCount = placedItemsRoot.transform.childCount - 1;
+            var lateral = (existingCount % 3 - 1) * InventorySpawnSpacing;
+            var depth = (existingCount / 3) * InventorySpawnSpacing;
+
+            var rendererBounds = ComputeRendererBounds(go);
+            var verticalOffset = rendererBounds.HasValue ? -rendererBounds.Value.min.y : 0f;
+            go.transform.position = InventoryPlacementCenter + new Vector3(lateral, verticalOffset, depth);
+
+            if (rendererBounds.HasValue)
+            {
+                var spawnBounds = ComputeFloorFootprintBounds(go) ?? rendererBounds.Value;
+                var pos = go.transform.position;
+                if (pos.z + spawnBounds.extents.z > InventorySpawnMaxZ)
+                {
+                    pos.z = InventorySpawnMaxZ - spawnBounds.extents.z;
+                    go.transform.position = pos;
+                }
+
+                go.transform.position = ClampToFloorBounds(go.transform.position, go.transform.position, spawnBounds);
+
+                spawnBounds = ComputeFloorFootprintBounds(go) ?? ComputeRendererBounds(go) ?? rendererBounds.Value;
+                if (!TryFindClearSpawnPosition(go, spawnBounds, go.transform.position, out var clearPosition))
+                {
+                    Debug.LogWarning($"[RoomEdit][RemoteAsset] spawn rejected for '{entry.DisplayName}': no clear floor cell.");
+                    Destroy(go);
+                    yield break;
+                }
+                go.transform.position = clearPosition;
+            }
+
+            EnsureDecorationCollider(go);
+
+            var marker = go.AddComponent<DecorationItemMarker>();
+            marker.InventoryKey = inventoryKey;
+            if (!string.IsNullOrEmpty(inventoryKey))
+            {
+                placedByInventoryKey[inventoryKey] = go;
+            }
+
+            RebuildInventorySlots();
+            SetDirty("PlaceRemoteInventoryEntry");
+            BeginPendingPlacement(go);
+            SelectObject(go);
+        }
+
+        private IEnumerator LoadRemoteAssetGameObject(InventoryEntry entry, Action<GameObject> onSuccess, Action<string> onError)
+        {
+            visibleRemoteAssetManifests.TryGetValue(entry.RemoteAssetId, out var manifest);
+            if (manifest == null)
+            {
+                var apiManager = APIManager.Instance;
+                if (apiManager == null || !apiManager.HasAccessToken)
+                {
+                    onError?.Invoke("API token is missing.");
+                    yield break;
+                }
+
+                NotebookApiClient apiClient;
+                try
+                {
+                    apiClient = new NotebookApiClient(apiManager);
+                }
+                catch (Exception ex)
+                {
+                    onError?.Invoke($"NotebookApiClient failed: {ex.GetType().Name} {ex.Message}");
+                    yield break;
+                }
+
+                string manifestError = null;
+                var manifestDone = false;
+                apiClient.GetAssetDownloadManifest(
+                    entry.RemoteAssetId,
+                    response =>
+                    {
+                        manifest = response;
+                        manifestDone = true;
+                    },
+                    error =>
+                    {
+                        manifestError = $"{error?.Code}/{error?.Message}";
+                        manifestDone = true;
+                    });
+
+                while (!manifestDone)
+                {
+                    yield return null;
+                }
+
+                if (manifest == null)
+                {
+                    onError?.Invoke($"download manifest failed: {manifestError}");
+                    yield break;
+                }
+            }
+
+            if (manifest == null)
+            {
+                onError?.Invoke("download manifest is missing.");
+                yield break;
+            }
+
+            remoteAssetCacheService ??= new RemoteAssetCacheService();
+            IReadOnlyList<string> cachedPaths = null;
+            string cacheError = null;
+            yield return remoteAssetCacheService.EnsureManifestCached(
+                manifest,
+                paths => cachedPaths = paths,
+                error => cacheError = error);
+
+            if (!string.IsNullOrWhiteSpace(cacheError))
+            {
+                onError?.Invoke(cacheError);
+                yield break;
+            }
+
+            var modelPath = PickPrimaryRemoteModelPath(cachedPaths);
+            if (string.IsNullOrWhiteSpace(modelPath))
+            {
+                onError?.Invoke("cached manifest has no loadable model file.");
+                yield break;
+            }
+
+            yield return InstantiateRemoteModel(modelPath, entry.DisplayName, onSuccess, onError);
+        }
+
+        private IEnumerator InstantiateRemoteModel(string path, string displayName, Action<GameObject> onSuccess, Action<string> onError)
+        {
+            var extension = Path.GetExtension(path);
+            if (string.Equals(extension, ".bundle", StringComparison.OrdinalIgnoreCase))
+            {
+                var bundle = AssetBundle.LoadFromFile(path);
+                if (bundle == null)
+                {
+                    onError?.Invoke($"AssetBundle load failed: {path}");
+                    yield break;
+                }
+
+                var assets = bundle.LoadAllAssets<GameObject>();
+                if (assets == null || assets.Length == 0 || assets[0] == null)
+                {
+                    bundle.Unload(false);
+                    onError?.Invoke($"AssetBundle has no GameObject: {path}");
+                    yield break;
+                }
+
+                var instance = Instantiate(assets[0]);
+                bundle.Unload(false);
+                onSuccess?.Invoke(instance);
+                yield break;
+            }
+
+            var root = new GameObject($"RemoteAsset_{SanitizeName(displayName)}");
+            var gltf = new GltfImport();
+            try
+            {
+                var loadTask = gltf.LoadFile(path);
+                while (!loadTask.IsCompleted)
+                {
+                    yield return null;
+                }
+
+                if (loadTask.IsFaulted || !loadTask.Result)
+                {
+                    Destroy(root);
+                    onError?.Invoke(loadTask.Exception != null ? loadTask.Exception.GetBaseException().Message : $"glTF load failed: {path}");
+                    yield break;
+                }
+
+                var instantiateTask = gltf.InstantiateMainSceneAsync(root.transform);
+                while (!instantiateTask.IsCompleted)
+                {
+                    yield return null;
+                }
+
+                if (instantiateTask.IsFaulted || !instantiateTask.Result)
+                {
+                    Destroy(root);
+                    onError?.Invoke(instantiateTask.Exception != null ? instantiateTask.Exception.GetBaseException().Message : $"glTF instantiate failed: {path}");
+                    yield break;
+                }
+
+                onSuccess?.Invoke(root);
+            }
+            finally
+            {
+                gltf.Dispose();
+            }
+        }
+
+        private static string PickPrimaryRemoteModelPath(IReadOnlyList<string> paths)
+        {
+            if (paths == null || paths.Count == 0)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < paths.Count; i++)
+            {
+                var ext = Path.GetExtension(paths[i]);
+                if (string.Equals(ext, ".glb", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(ext, ".gltf", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(ext, ".bundle", StringComparison.OrdinalIgnoreCase))
+                {
+                    return paths[i];
+                }
+            }
+
+            return paths[0];
+        }
+
+        private static void EnsureDecorationCollider(GameObject go)
+        {
+            if (go == null || go.GetComponentInChildren<Collider>() != null)
+            {
+                return;
+            }
+
+            var rendererBounds = ComputeRendererBounds(go);
+            if (!rendererBounds.HasValue)
+            {
+                return;
+            }
+
+            var bounds = rendererBounds.Value;
+            var collider = go.AddComponent<BoxCollider>();
+            var localCenter = go.transform.InverseTransformPoint(bounds.center);
+            var localSize = go.transform.InverseTransformVector(bounds.size);
+            collider.center = localCenter;
+            collider.size = new Vector3(Mathf.Abs(localSize.x), Mathf.Abs(localSize.y), Mathf.Abs(localSize.z));
         }
 
         // Search outward from `desiredPosition` in MinorGridStep rings for a

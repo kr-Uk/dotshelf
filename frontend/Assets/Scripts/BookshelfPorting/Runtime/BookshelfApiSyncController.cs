@@ -8,6 +8,7 @@ using App.Bootstrap;
 using App.Domain;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dtos;
+using App.Infrastructure.Assets;
 using UnityEngine;
 
 namespace BookshelfPorting.Runtime
@@ -16,6 +17,7 @@ namespace BookshelfPorting.Runtime
     {
         private NotebookApiClient client;
         private NotebookRuntimeUseCase notebookRuntimeUseCase;
+        private RemoteAssetCacheService remoteAssetCacheService;
         private BookshelfGenerator generator;
         private BookshelfExperienceManager experienceManager;
         private CameraController cameraController;
@@ -98,6 +100,7 @@ namespace BookshelfPorting.Runtime
             notebookRuntimeUseCase = runtimeUseCase ?? (apiClient != null
                 ? new NotebookRuntimeUseCase(new ApiNotebookRuntimeRepository(apiClient, () => APIManager.Instance != null && APIManager.Instance.HasAccessToken))
                 : null);
+            remoteAssetCacheService ??= new RemoteAssetCacheService();
             generator = bookshelfGenerator;
             experienceManager = manager;
             cameraController = controller;
@@ -147,6 +150,7 @@ namespace BookshelfPorting.Runtime
                 {
                     currentSpaceId = space?.Id;
                     SetViewingOtherUserSpace(false);
+                    experienceManager?.SetNotebookScreenSuppressed(false);
                     ApplyRoomVisuals(space, false);
                     // The main room is not a visitor-action surface; those
                     // actions live on notebook space cards.
@@ -191,11 +195,17 @@ namespace BookshelfPorting.Runtime
         // Own-space detection: SpaceResponse.OwnerUserId == AuthSession.UserId.
         public void EnterSpaceById(long spaceId, Action<bool, string> onCompleted = null)
         {
+            EnterSpaceById(new NotebookSpaceVisitRequest { SpaceId = spaceId }, onCompleted);
+        }
+
+        public void EnterSpaceById(NotebookSpaceVisitRequest request, Action<bool, string> onCompleted = null)
+        {
             if (!IsConfigured || isRefreshing)
             {
                 onCompleted?.Invoke(false, "책장 API 동기화가 준비되지 않았습니다.");
                 return;
             }
+            var spaceId = request?.SpaceId ?? 0L;
             if (spaceId <= 0)
             {
                 Debug.LogWarning($"[BookshelfApiSync] EnterSpaceById ignored — invalid spaceId={spaceId}.");
@@ -221,12 +231,18 @@ namespace BookshelfPorting.Runtime
                         {
                             currentSpaceId = space.Id;
                             SetViewingOtherUserSpace(isOtherUserSpace);
+                            experienceManager?.SetNotebookScreenSuppressed(isOtherUserSpace);
                             ApplyRoomVisuals(space, isOtherUserSpace);
-                            SpaceVisitorOverlayController.Instance?.HideOverlay();
 
                             if (isOtherUserSpace)
                             {
+                                SpaceVisitorOverlayController.Instance?.SetCurrentSpace(space, request);
+                                PrefetchVisibleSpaceAssets(space.Id, () => LoadRemoteSpaceLayout(space.Id));
                                 RecordVisitOnce(space.Id);
+                            }
+                            else
+                            {
+                                SpaceVisitorOverlayController.Instance?.HideOverlay();
                             }
 
                             LoadBookshelfItems(response);
@@ -244,6 +260,94 @@ namespace BookshelfPorting.Runtime
         private void SetViewingOtherUserSpace(bool value)
         {
             isViewingOtherUserSpace = value;
+        }
+
+        private void PrefetchVisibleSpaceAssets(long spaceId, Action onCompleted = null)
+        {
+            if (client == null || remoteAssetCacheService == null || spaceId <= 0L)
+            {
+                onCompleted?.Invoke();
+                return;
+            }
+
+            client.GetSpaceAssetManifests(
+                spaceId,
+                response =>
+                {
+                    var manifests = response?.Manifests;
+                    if (manifests == null || manifests.Count == 0)
+                    {
+                        onCompleted?.Invoke();
+                        return;
+                    }
+
+                    var roomEditModeController = FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
+                    roomEditModeController?.RegisterVisibleSpaceAssetManifests(manifests);
+                    StartCoroutine(PrefetchVisibleSpaceAssetManifests(spaceId, manifests));
+                    onCompleted?.Invoke();
+                },
+                error =>
+                {
+                    Debug.LogWarning(
+                        $"[BookshelfApiSync] Space asset manifest prefetch skipped: spaceId={spaceId}, code={error?.Code}, message={error?.Message}");
+                    onCompleted?.Invoke();
+                });
+        }
+
+        private void LoadRemoteSpaceLayout(long spaceId)
+        {
+            if (client == null || spaceId <= 0L)
+            {
+                return;
+            }
+
+            client.GetSpaceLayout(
+                spaceId,
+                response =>
+                {
+                    var roomEditModeController = FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
+                    roomEditModeController?.ApplyExternalDecorationLayoutPayload(response?.LayoutPayload, clearExisting: true);
+                },
+                error =>
+                {
+                    Debug.LogWarning(
+                        $"[BookshelfApiSync] Space layout load skipped: spaceId={spaceId}, code={error?.Code}, message={error?.Message}");
+                });
+        }
+
+        private IEnumerator PrefetchVisibleSpaceAssetManifests(long spaceId, IReadOnlyList<DownloadManifestResponseDto> manifests)
+        {
+            if (manifests == null || manifests.Count == 0)
+            {
+                yield break;
+            }
+
+            var cachedCount = 0;
+            for (var i = 0; i < manifests.Count; i++)
+            {
+                var manifest = manifests[i];
+                if (manifest == null)
+                {
+                    continue;
+                }
+
+                yield return remoteAssetCacheService.EnsureManifestCached(
+                    manifest,
+                    paths =>
+                    {
+                        cachedCount += paths?.Count ?? 0;
+                    },
+                    error =>
+                    {
+                        Debug.LogWarning(
+                            $"[BookshelfApiSync] Remote asset cache prefetch failed: spaceId={spaceId}, assetId={manifest.AssetId}, error={error}");
+                    });
+            }
+
+            if (cachedCount > 0)
+            {
+                Debug.Log($"[BookshelfApiSync] Remote asset cache prefetch completed: spaceId={spaceId}, files={cachedCount}");
+            }
         }
 
         private static void ApplyRoomVisuals(SpaceResponseDto space, bool isReadOnlyPreview)

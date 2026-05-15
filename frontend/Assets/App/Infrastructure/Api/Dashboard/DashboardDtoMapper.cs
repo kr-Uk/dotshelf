@@ -178,7 +178,8 @@ namespace App.Infrastructure.Api.Dashboard
                 profileImageUrl: dto.ProfileImageUrl,
                 mutual: dto.Mutual,
                 following: dto.Following,
-                blocked: dto.Blocked);
+                blocked: dto.Blocked,
+                spaceId: dto.SpaceId);
         }
 
         public static UserListPage MapUserListPage(UserListResponseDto dto)

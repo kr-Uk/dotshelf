@@ -350,7 +350,7 @@ class PaymentOrderCompletionServiceTest {
         return PaymentOrder.builder()
                 .userId(1L)
                 .orderId("order-1")
-                .orderName("DotShelf 100P 충전")
+                .orderName("DotShelf 100P 충전 (유효기간 1년/자동갱신)")
                 .pagesAmount(100)
                 .amountKrw(100)
                 .buyerName("홍길동")

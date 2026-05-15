@@ -71,6 +71,7 @@ public enum ErrorCode {
     PAYMENT_DIRECT_CHARGE_DISABLED(HttpStatus.BAD_REQUEST, "P006", "직접 페이지 충전은 지원하지 않습니다."),
     PAYMENT_CONFIGURATION_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, "P007", "결제 설정이 누락되었습니다."),
     PAYMENT_AUTHENTICATION_FAILED(HttpStatus.BAD_REQUEST, "P008", "결제 인증에 실패했습니다."),
+    PAYMENT_AMOUNT_EXCEEDS_LIMIT(HttpStatus.BAD_REQUEST, "P009", "1회 결제 한도를 초과했습니다."),
 
     // Guestbook
     GUESTBOOK_NOT_FOUND(HttpStatus.NOT_FOUND, "G001", "방명록을 찾을 수 없습니다."),
