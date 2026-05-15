@@ -26,8 +26,14 @@ namespace App.Infrastructure.Api
             Action<PageChargeOrderResponseDto> onSuccess,
             Action<ApiErrorResponseDto> onError = null)
         {
-            return RequireApi().Post<PageChargeOrderRequestDto, PageChargeOrderResponseDto>(
-                "/v1/payments/page-charge/orders", request, onSuccess, onError);
+            // BE 가 ApiResponse<T> wrapper (`{"code":"SUCCESS","result":{...}}`) 로 응답하는데
+            // APIManager.SendOnce 는 wrapper 풀지 않으므로 envelope 명시 + .Result 추출.
+            // AuthApiClient 의 동일 패턴.
+            return RequireApi().Post<PageChargeOrderRequestDto, ApiEnvelopeDto<PageChargeOrderResponseDto>>(
+                "/v1/payments/page-charge/orders",
+                request,
+                envelope => onSuccess?.Invoke(envelope?.Result),
+                onError);
         }
 
         public Coroutine GetOrderStatus(
@@ -36,8 +42,10 @@ namespace App.Infrastructure.Api
             Action<ApiErrorResponseDto> onError = null)
         {
             var safeOrderId = UnityWebRequest.EscapeURL(orderId ?? string.Empty);
-            return RequireApi().Get<PaymentOrderStatusResponseDto>(
-                $"/v1/payments/orders/{safeOrderId}", onSuccess, onError);
+            return RequireApi().Get<ApiEnvelopeDto<PaymentOrderStatusResponseDto>>(
+                $"/v1/payments/orders/{safeOrderId}",
+                envelope => onSuccess?.Invoke(envelope?.Result),
+                onError);
         }
 
         public Coroutine GetTransactions(
@@ -45,9 +53,9 @@ namespace App.Infrastructure.Api
             Action<PageTransactionListResponseDto> onSuccess,
             Action<ApiErrorResponseDto> onError = null)
         {
-            return RequireApi().Get<PageTransactionListResponseDto>(
+            return RequireApi().Get<ApiEnvelopeDto<PageTransactionListResponseDto>>(
                 $"/v1/payments/transactions?limit={Mathf.Clamp(limit, 1, 500)}",
-                onSuccess,
+                envelope => onSuccess?.Invoke(envelope?.Result),
                 onError);
         }
 
