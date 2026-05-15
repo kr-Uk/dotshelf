@@ -28,7 +28,8 @@ namespace App.Infrastructure.Catalogs
                     continue;
                 }
 
-                PostItStyle style = new PostItStyle(entry.AssetId, entry.DisplayName);
+                string hex = ColorToHex(catalogAsset.Entries[i].CellColor);
+                PostItStyle style = new PostItStyle(entry.AssetId, entry.DisplayName, hex);
                 if (styles.ContainsKey(entry.AssetId))
                 {
                     continue;
@@ -52,6 +53,14 @@ namespace App.Infrastructure.Catalogs
         public bool TryGetStyle(long assetId, out PostItStyle style)
         {
             return styles.TryGetValue(assetId, out style);
+        }
+
+        private static string ColorToHex(UnityEngine.Color c)
+        {
+            int r = UnityEngine.Mathf.RoundToInt(UnityEngine.Mathf.Clamp01(c.r) * 255f);
+            int g = UnityEngine.Mathf.RoundToInt(UnityEngine.Mathf.Clamp01(c.g) * 255f);
+            int b = UnityEngine.Mathf.RoundToInt(UnityEngine.Mathf.Clamp01(c.b) * 255f);
+            return $"{r:X2}{g:X2}{b:X2}";
         }
     }
 }

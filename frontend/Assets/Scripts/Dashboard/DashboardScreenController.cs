@@ -83,7 +83,6 @@ namespace Dotshelf.Scripts.Dashboard
         private ReportGuestbookUseCase reportGuestbookUseCase;
         private UpdateIntroductionUseCase updateIntroductionUseCase;
         private UpdateGuestbookVisibilityUseCase updateGuestbookVisibilityUseCase;
-        private UpdateGuestbookPostItWhitelistUseCase updateWhitelistUseCase;
 
         private VisualElement root;
         private Label nicknameLabel;
@@ -132,6 +131,7 @@ namespace Dotshelf.Scripts.Dashboard
         private IPostItStyleCatalog postItStyleCatalog;
 
         private VisualElement guestbookDetailModalRoot;
+        private VisualElement guestbookDetailCard;
         private Label guestbookDetailContentText;
         private Label guestbookDetailMeta;
         private Button guestbookDetailCloseButton;
@@ -183,13 +183,10 @@ namespace Dotshelf.Scripts.Dashboard
         private Button visibilityPublicButton;
         private Button visibilityFollowersButton;
         private Button visibilityPrivateButton;
-        private Toggle dashboardEditAllowAllToggle;
-        private ScrollView dashboardEditPostItList;
         private Button dashboardEditCloseButton;
         private Button dashboardEditCancelButton;
         private Button dashboardEditSubmitButton;
         private VisibilityScope selectedVisibility;
-        private readonly HashSet<long> selectedAllowedAssetIds = new HashSet<long>();
 
         private enum UserListMode
         {
@@ -228,7 +225,6 @@ namespace Dotshelf.Scripts.Dashboard
         private EventCallback<ClickEvent> onUserListModalBackdropHandler;
         private EventCallback<ChangeEvent<string>> onWriteContentChangedHandler;
         private EventCallback<ChangeEvent<string>> onReplyContentChangedHandler;
-        private EventCallback<ChangeEvent<bool>> onAllowAllToggleHandler;
 
         // OnEnable cycle 중복 등록 방지
         private bool eventsWired;
@@ -301,15 +297,13 @@ namespace Dotshelf.Scripts.Dashboard
                 int len = evt.newValue?.Length ?? 0;
                 if (guestbookDetailReplyCounter != null) guestbookDetailReplyCounter.text = $"{len} / 30";
             };
-            onAllowAllToggleHandler = evt => RefreshWhitelistPickerSelections(evt.newValue);
         }
 
         private void EnsureEventHandlersCached()
         {
             if (onOwnedBooksLoadMoreHandler != null &&
                 onUserListModalBackdropHandler != null &&
-                onWriteContentChangedHandler != null &&
-                onAllowAllToggleHandler != null)
+                onWriteContentChangedHandler != null)
             {
                 return;
             }
@@ -569,8 +563,7 @@ namespace Dotshelf.Scripts.Dashboard
                    deleteGuestbookReplyUseCase != null &&
                    reportGuestbookUseCase != null &&
                    updateIntroductionUseCase != null &&
-                   updateGuestbookVisibilityUseCase != null &&
-                   updateWhitelistUseCase != null;
+                   updateGuestbookVisibilityUseCase != null;
         }
 
         private void BuildUseCasesFromRepos(
@@ -597,7 +590,6 @@ namespace Dotshelf.Scripts.Dashboard
             reportGuestbookUseCase = new ReportGuestbookUseCase(guestbookRepo);
             updateIntroductionUseCase = new UpdateIntroductionUseCase(spaceSettingsRepo);
             updateGuestbookVisibilityUseCase = new UpdateGuestbookVisibilityUseCase(spaceSettingsRepo);
-            updateWhitelistUseCase = new UpdateGuestbookPostItWhitelistUseCase(spaceSettingsRepo);
         }
 
         private void QueryUI()
@@ -639,6 +631,7 @@ namespace Dotshelf.Scripts.Dashboard
             guestbookWriteSubmitButton = root.Q<Button>("guestbook-write-submit-button");
 
             guestbookDetailModalRoot = root.Q<VisualElement>("guestbook-detail-modal");
+            guestbookDetailCard = root.Q<VisualElement>("guestbook-detail-card");
             guestbookDetailContentText = root.Q<Label>("guestbook-detail-content-text");
             guestbookDetailMeta = root.Q<Label>("guestbook-detail-meta");
             guestbookDetailCloseButton = root.Q<Button>("guestbook-detail-close-button");
@@ -688,8 +681,6 @@ namespace Dotshelf.Scripts.Dashboard
             visibilityPublicButton = root.Q<Button>("visibility-public");
             visibilityFollowersButton = root.Q<Button>("visibility-followers");
             visibilityPrivateButton = root.Q<Button>("visibility-private");
-            dashboardEditAllowAllToggle = root.Q<Toggle>("dashboard-edit-allow-all-toggle");
-            dashboardEditPostItList = root.Q<ScrollView>("dashboard-edit-postit-list");
             dashboardEditCloseButton = root.Q<Button>("dashboard-edit-close-button");
             dashboardEditCancelButton = root.Q<Button>("dashboard-edit-cancel-button");
             dashboardEditSubmitButton = root.Q<Button>("dashboard-edit-submit-button");
@@ -746,8 +737,6 @@ namespace Dotshelf.Scripts.Dashboard
             if (visibilityPublicButton != null) visibilityPublicButton.clicked += onVisibilityPublicHandler;
             if (visibilityFollowersButton != null) visibilityFollowersButton.clicked += onVisibilityFollowersHandler;
             if (visibilityPrivateButton != null) visibilityPrivateButton.clicked += onVisibilityPrivateHandler;
-            if (dashboardEditAllowAllToggle != null) dashboardEditAllowAllToggle.RegisterValueChangedCallback(onAllowAllToggleHandler);
-
             // 캐러셀 드래그 스크롤
             if (booksCarousel != null) InstallCarouselDrag(booksCarousel, booksCarouselDrag);
             if (recordsCarousel != null) InstallCarouselDrag(recordsCarousel, recordsCarouselDrag);
@@ -805,9 +794,6 @@ namespace Dotshelf.Scripts.Dashboard
             if (visibilityPublicButton != null) visibilityPublicButton.clicked -= onVisibilityPublicHandler;
             if (visibilityFollowersButton != null) visibilityFollowersButton.clicked -= onVisibilityFollowersHandler;
             if (visibilityPrivateButton != null) visibilityPrivateButton.clicked -= onVisibilityPrivateHandler;
-            if (dashboardEditAllowAllToggle != null && onAllowAllToggleHandler != null)
-                dashboardEditAllowAllToggle.UnregisterValueChangedCallback(onAllowAllToggleHandler);
-
             if (booksCarousel != null) UninstallCarouselDrag(booksCarousel, booksCarouselDrag);
             if (recordsCarousel != null) UninstallCarouselDrag(recordsCarousel, recordsCarouselDrag);
         }
@@ -1417,6 +1403,7 @@ namespace Dotshelf.Scripts.Dashboard
             VisualElement cell = new VisualElement();
             cell.AddToClassList("guestbook-cell");
             cell.userData = guestbook;
+            cell.style.backgroundColor = ResolvePostItCellColor(guestbook.PostItInventoryId);
 
             Label content = new Label(guestbook.Content);
             content.AddToClassList("guestbook-cell-content");
@@ -1456,6 +1443,10 @@ namespace Dotshelf.Scripts.Dashboard
         {
             currentDetailGuestbook = guestbook;
             if (guestbookDetailContentText != null) guestbookDetailContentText.text = guestbook.Content;
+            if (guestbookDetailCard != null)
+            {
+                guestbookDetailCard.style.backgroundColor = ResolvePostItCellColor(guestbook.PostItInventoryId);
+            }
             if (guestbookDetailMeta != null)
             {
                 string nick = guestbook.Anonymous ? "익명" : guestbook.DisplayedNickname;
@@ -1597,6 +1588,47 @@ namespace Dotshelf.Scripts.Dashboard
             return dt.ToLocalTime().ToString("MM/dd HH:mm");
         }
 
+        private static readonly Color DefaultPostItColor = TryParseHex(PostItStyle.DefaultColorHex, out Color parsed)
+            ? parsed
+            : new Color(1f, 245f / 255f, 199f / 255f);
+
+        private static Color HexToColor(string hex)
+        {
+            return TryParseHex(hex, out Color result) ? result : DefaultPostItColor;
+        }
+
+        private static bool TryParseHex(string hex, out Color color)
+        {
+            color = default;
+            if (string.IsNullOrEmpty(hex) || hex.Length < 6) return false;
+            if (!byte.TryParse(hex.Substring(0, 2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out byte r)) return false;
+            if (!byte.TryParse(hex.Substring(2, 2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out byte g)) return false;
+            if (!byte.TryParse(hex.Substring(4, 2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out byte b)) return false;
+            color = new Color(r / 255f, g / 255f, b / 255f);
+            return true;
+        }
+
+        private Color ResolvePostItCellColor(long postItInventoryId)
+        {
+            if (postItInventoryId <= 0) return DefaultPostItColor;
+            IReadOnlyList<PostItStyle> styles = AvailablePostItStyles();
+            for (int i = 0; i < styles.Count; i++)
+            {
+                if (styles[i].AssetId == postItInventoryId) return HexToColor(styles[i].ColorHex);
+            }
+            return DefaultPostItColor;
+        }
+
+        public void CloseAllModals()
+        {
+            CloseGuestbookDetailModal();
+            CloseGuestbookWriteModal();
+            CloseDashboardEditModal();
+            CloseOwnedBooksModal();
+            CloseReadingRecordsModal();
+            CloseUserListModal();
+        }
+
         private void UpdateGuestbookCount(GuestbookListPage page)
         {
             if (guestbookCountLabel == null)
@@ -1679,24 +1711,6 @@ namespace Dotshelf.Scripts.Dashboard
             selectedVisibility = currentSnapshot.Space.GuestbookVisibility;
             UpdateVisibilityButtons();
 
-            // 화이트리스트 현재 상태 로드
-            updateWhitelistUseCase.LoadCurrent(
-                onSuccess: whitelist =>
-                {
-                    selectedAllowedAssetIds.Clear();
-                    if (whitelist.AllowedAssetIds != null)
-                    {
-                        for (int i = 0; i < whitelist.AllowedAssetIds.Count; i++)
-                        {
-                            selectedAllowedAssetIds.Add(whitelist.AllowedAssetIds[i]);
-                        }
-                    }
-                    if (dashboardEditAllowAllToggle != null) dashboardEditAllowAllToggle.value = whitelist.AllowAll;
-                    BuildWhitelistPicker();
-                    RefreshWhitelistPickerSelections(whitelist.AllowAll);
-                },
-                onError: OnError);
-
             dashboardEditModalRoot.RemoveFromClassList("hidden");
         }
 
@@ -1725,103 +1739,33 @@ namespace Dotshelf.Scripts.Dashboard
             else element.RemoveFromClassList("selected");
         }
 
-        private void BuildWhitelistPicker()
-        {
-            if (dashboardEditPostItList == null) return;
-            dashboardEditPostItList.Clear();
-            IReadOnlyList<PostItStyle> styles = AvailablePostItStyles();
-            for (int i = 0; i < styles.Count; i++)
-            {
-                long id = styles[i].AssetId;
-                string displayName = string.IsNullOrEmpty(styles[i].DisplayName) ? $"스타일 {id}" : styles[i].DisplayName;
-                VisualElement cell = new VisualElement();
-                cell.AddToClassList("postit-style-cell");
-                cell.userData = id;
-                Label name = new Label(displayName);
-                name.AddToClassList("postit-style-cell-name");
-                cell.Add(name);
-                cell.RegisterCallback<ClickEvent>(_ => OnWhitelistCellClicked(id, cell));
-                dashboardEditPostItList.Add(cell);
-            }
-        }
-
-        private void OnWhitelistCellClicked(long styleId, VisualElement cell)
-        {
-            if (dashboardEditAllowAllToggle != null && dashboardEditAllowAllToggle.value)
-            {
-                // allowAll 상태에선 개별 토글 무력화
-                return;
-            }
-
-            if (selectedAllowedAssetIds.Contains(styleId))
-            {
-                selectedAllowedAssetIds.Remove(styleId);
-                cell.RemoveFromClassList("selected");
-            }
-            else
-            {
-                selectedAllowedAssetIds.Add(styleId);
-                cell.AddToClassList("selected");
-            }
-        }
-
-        private void RefreshWhitelistPickerSelections(bool allowAll)
-        {
-            if (dashboardEditPostItList == null) return;
-            foreach (VisualElement cell in dashboardEditPostItList.Children())
-            {
-                if (cell.userData is long id)
-                {
-                    bool selected = allowAll || selectedAllowedAssetIds.Contains(id);
-                    if (selected) cell.AddToClassList("selected");
-                    else cell.RemoveFromClassList("selected");
-                }
-            }
-        }
-
         private void OnSubmitDashboardEdit()
         {
             if (currentSnapshot == null || dashboardEditSubmitButton == null) return;
-            if (dashboardEditAllowAllToggle == null)
-            {
-                // 토글이 query에서 누락된 비정상 상황 — 보수적으로 submit 차단 (security default-deny).
-                Debug.LogError("[Dashboard] allowAllToggle 미연결. 화이트리스트 fallback 안전 차단.");
-                return;
-            }
             dashboardEditSubmitButton.SetEnabled(false);
 
             string newIntroduction = dashboardEditIntroduction?.value ?? string.Empty;
             VisibilityScope newVisibility = selectedVisibility;
-            bool allowAll = dashboardEditAllowAllToggle.value;
-            List<long> allowedIds = new List<long>(selectedAllowedAssetIds);
-            GuestbookPostItWhitelist whitelist = new GuestbookPostItWhitelist(allowAll, allowedIds);
 
-            // sequential 실행 — 첫 실패에서 stop, 어디까지 저장됐는지 명시.
             updateIntroductionUseCase.Execute(newIntroduction,
                 onSuccess: () =>
                 {
                     updateGuestbookVisibilityUseCase.Execute(newVisibility,
-                        onSuccess: () =>
-                        {
-                            updateWhitelistUseCase.Execute(whitelist,
-                                onSuccess: () => FinishDashboardEdit(null, savedIntroduction: true, savedVisibility: true, savedWhitelist: true),
-                                onError: err => FinishDashboardEdit(err, savedIntroduction: true, savedVisibility: true, savedWhitelist: false));
-                        },
-                        onError: err => FinishDashboardEdit(err, savedIntroduction: true, savedVisibility: false, savedWhitelist: false));
+                        onSuccess: () => FinishDashboardEdit(null, savedIntroduction: true, savedVisibility: true),
+                        onError: err => FinishDashboardEdit(err, savedIntroduction: true, savedVisibility: false));
                 },
-                onError: err => FinishDashboardEdit(err, savedIntroduction: false, savedVisibility: false, savedWhitelist: false));
+                onError: err => FinishDashboardEdit(err, savedIntroduction: false, savedVisibility: false));
         }
 
-        private void FinishDashboardEdit(DashboardApiError error, bool savedIntroduction, bool savedVisibility, bool savedWhitelist)
+        private void FinishDashboardEdit(DashboardApiError error, bool savedIntroduction, bool savedVisibility)
         {
             if (dashboardEditSubmitButton != null) dashboardEditSubmitButton.SetEnabled(true);
             if (error != null)
             {
-                Debug.LogWarning($"[Dashboard] Edit 부분 실패: intro={savedIntroduction}, visibility={savedVisibility}, whitelist={savedWhitelist}. 에러={error.Code} {error.Message}");
+                Debug.LogWarning($"[Dashboard] Edit 부분 실패: intro={savedIntroduction}, visibility={savedVisibility}. 에러={error.Code} {error.Message}");
                 OnError(error);
                 if (savedIntroduction || savedVisibility)
                 {
-                    // 부분 성공 시에도 화면은 갱신 (사용자가 어디까지 저장됐는지 다시 열어 확인 가능).
                     if (viewMode == ViewMode.Mine)
                     {
                         LogDashboardFetch(DashboardCallSource.DashboardEditRefresh, explicitSpaceId: null);
@@ -1878,6 +1822,7 @@ namespace Dotshelf.Scripts.Dashboard
                 string displayName = string.IsNullOrEmpty(styles[i].DisplayName) ? $"스타일 {id}" : styles[i].DisplayName;
                 VisualElement cell = new VisualElement();
                 cell.AddToClassList("postit-style-cell");
+                cell.style.backgroundColor = HexToColor(styles[i].ColorHex);
                 Label name = new Label(displayName);
                 name.AddToClassList("postit-style-cell-name");
                 cell.Add(name);

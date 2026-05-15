@@ -5626,6 +5626,9 @@ namespace BookshelfPorting.Runtime
             CloseOverlayPanels();
             CloseGuestbookPanel();
 
+            var dashboardController = GetExternalDashboardController();
+            if (dashboardController != null) dashboardController.CloseAllModals();
+
             if (notebookScreenController != null)
             {
                 notebookScreenController.SetImmersiveMode(false);

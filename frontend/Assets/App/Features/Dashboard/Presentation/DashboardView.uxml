@@ -138,10 +138,6 @@
                     <ui:Button name="visibility-private" class="visibility-button" text="비공개" />
                 </ui:VisualElement>
 
-                <ui:Label class="form-label" text="허용할 포스트잇 스타일" />
-                <ui:Toggle name="dashboard-edit-allow-all-toggle" class="form-toggle" label="모든 스타일 허용" />
-                <ui:ScrollView name="dashboard-edit-postit-list" class="postit-style-scroll" mode="Horizontal" vertical-scroller-visibility="Hidden" horizontal-scroller-visibility="Hidden" />
-
                 <ui:VisualElement class="modal-footer">
                     <ui:Button name="dashboard-edit-cancel-button" class="modal-action-button secondary" text="취소" />
                     <ui:Button name="dashboard-edit-submit-button" class="modal-action-button primary" text="저장" />
@@ -157,7 +153,7 @@
                     <ui:Button name="guestbook-detail-close-button" class="modal-close-button" text="✕" />
                 </ui:VisualElement>
 
-                <ui:VisualElement class="guestbook-detail-card">
+                <ui:VisualElement name="guestbook-detail-card" class="guestbook-detail-card">
                     <ui:Label name="guestbook-detail-content-text" class="guestbook-detail-content-text" />
                     <ui:Label name="guestbook-detail-meta" class="guestbook-detail-meta" />
                 </ui:VisualElement>
