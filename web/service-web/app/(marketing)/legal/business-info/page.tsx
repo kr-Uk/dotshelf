@@ -5,6 +5,7 @@ import {
   getComplaintContact,
   getMerchantInfo,
   getResponsibilityNotice,
+  isMerchantInfoComplete,
 } from "@/lib/merchant-info";
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export default function BusinessInfoPage() {
   const merchant = getMerchantInfo();
   const complaint = getComplaintContact();
   const responsibilityNotice = getResponsibilityNotice();
+  const merchantReady = isMerchantInfoComplete(merchant);
 
   return (
     <LegalPage
@@ -25,6 +27,26 @@ export default function BusinessInfoPage() {
       effectiveDate="2026-05-14"
       status="정식 (사업자 정보 미설정 항목은 환경변수 주입 전까지 공란으로 표시)"
     >
+      {!merchantReady && (
+        <div
+          role="alert"
+          className="rounded-md border border-amber-400/60 bg-amber-50 px-4 py-3 text-[14px] text-amber-900"
+        >
+          <p className="font-semibold">⚠ 사업자 정보 일부가 환경변수에 미설정 상태입니다.</p>
+          <p className="mt-1 text-amber-800">
+            KG이니시스 충전업종 사전 심사 통과 + 사이트 하단 상점정보 표기
+            필수 요건상 prod 배포 전 다음 항목을 GitLab Variables 에 주입해야
+            합니다: <code className="mono">NEXT_PUBLIC_MERCHANT_NAME</code>,{" "}
+            <code className="mono">NEXT_PUBLIC_MERCHANT_REGISTRATION_NUMBER</code>,{" "}
+            <code className="mono">
+              NEXT_PUBLIC_MERCHANT_MAIL_ORDER_REGISTRATION_NUMBER
+            </code>
+            , <code className="mono">NEXT_PUBLIC_MERCHANT_ADDRESS</code> (최소
+            4종).
+          </p>
+        </div>
+      )}
+
       <LegalSection title="사업자 등록 정보">
         <dl className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-y-3 gap-x-6 text-[15px]">
           <BusinessRow label="상호명" value={merchant.name} />

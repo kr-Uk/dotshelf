@@ -50,6 +50,25 @@ export function getResponsibilityNotice(): string {
   );
 }
 
+export function getSiteHost(): string {
+  return env("NEXT_PUBLIC_SITE_HOST") || "dotshelf.digital";
+}
+
+/**
+ * KG이니시스 충전업종 사전 심사 \"사이트 하단 상점정보 표기 필수 사항\" 의
+ * 최소 필수 4개 필드 (상호명 / 사업자등록번호 / 통신판매업 신고번호 / 사업장 주소) 가
+ * 모두 set 되어 있는지. partial set 으로 footer 가 어색하게 표시되는 것 차단 +
+ * prod 배포 전 9종 env 주입 sentinel 용도.
+ */
+export function isMerchantInfoComplete(merchant: MerchantInfo): boolean {
+  return Boolean(
+    merchant.name &&
+      merchant.registrationNumber &&
+      merchant.mailOrderRegistrationNumber &&
+      merchant.address,
+  );
+}
+
 function env(key: string): string {
   // NEXT_PUBLIC_* 는 next 빌드 시점에 정적 inline 되므로 직접 process.env[key] 접근 불가.
   // 명시적 switch 로 inline 강제.
@@ -76,6 +95,8 @@ function env(key: string): string {
       return process.env.NEXT_PUBLIC_COMPLAINT_CONTACT_TEL ?? "";
     case "NEXT_PUBLIC_RESPONSIBILITY_NOTICE":
       return process.env.NEXT_PUBLIC_RESPONSIBILITY_NOTICE ?? "";
+    case "NEXT_PUBLIC_SITE_HOST":
+      return process.env.NEXT_PUBLIC_SITE_HOST ?? "";
     default:
       return "";
   }

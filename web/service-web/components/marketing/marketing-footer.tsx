@@ -1,11 +1,21 @@
 import Link from "next/link";
 
 import { MarketingLogo } from "@/components/marketing/logo";
-import { getMerchantInfo } from "@/lib/merchant-info";
+import {
+  getMerchantInfo,
+  getSiteHost,
+  isMerchantInfoComplete,
+} from "@/lib/merchant-info";
 
 export function MarketingFooter() {
   const merchant = getMerchantInfo();
-  const businessLine = buildBusinessLine(merchant);
+  const siteHost = getSiteHost();
+  // partial set 시 일관성 없는 한 줄 (예: "DotShelf · 대표 김지호") 노출 방지.
+  // 핵심 4개 (상호 / 사업자등록번호 / 통신판매업 / 주소) 모두 set 시에만 표시.
+  // KG 사전 심사 통과 + dev 환경 (env 미주입) 빌드 호환 양립.
+  const businessLine = isMerchantInfoComplete(merchant)
+    ? buildBusinessLine(merchant)
+    : "";
 
   return (
     <footer className="border-t border-beige/60 bg-[#EFE6D6] mt-24">
@@ -55,7 +65,7 @@ export function MarketingFooter() {
           )}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
             <p className="mono text-[11px] text-paper-muted">
-              dotshelf.digital
+              {siteHost}
               {merchant.email && ` · ${merchant.email}`}
             </p>
             <div className="flex items-center gap-4 mono text-[11px] text-paper-muted">
