@@ -841,7 +841,7 @@ class SpaceServiceTest {
     }
 
     @Test
-    @DisplayName("space asset manifest maps legacy path layout references to assets")
+    @DisplayName("공간 asset manifest는 layoutPayload의 path: 참조도 unityResourceKey 매칭으로 포함한다")
     void getVisibleAssetManifests_includesLegacyPathReferences() {
         Space space = TestFixtures.space(10L, 1L);
         SpaceLayoutSnapshot snapshot = SpaceLayoutSnapshot.builder()
@@ -880,7 +880,7 @@ class SpaceServiceTest {
     }
 
     @Test
-    @DisplayName("space layout returns the latest snapshot payload")
+    @DisplayName("공간 layout 조회는 최신 스냅샷 payload를 반환한다")
     void getLayout_returnsLatestSnapshot() {
         Space space = TestFixtures.space(10L, 1L);
         SpaceLayoutSnapshot snapshot = SpaceLayoutSnapshot.builder()

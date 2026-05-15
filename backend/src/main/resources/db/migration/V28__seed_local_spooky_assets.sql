@@ -2,6 +2,9 @@
 -- These rows intentionally do not require asset_url. The Unity client can
 -- resolve unity_resource_key to a prefab shipped in the build and only falls
 -- back to S3 when a URL is provided.
+-- Because the current Unity catalog exposes these built-in prefabs without a
+-- download step, treat them as default/free assets and grant them to active
+-- users so server ownership and client visibility stay consistent.
 
 INSERT INTO public.asset_categories (
     created_at,
@@ -90,13 +93,13 @@ SELECT
     null,
     1,
     null,
-    1000,
+    0,
     'DotShelf',
     'DotShelf Studio',
     null,
     now(),
     null,
-    false,
+    true,
     true,
     true,
     'SPOOKY',
@@ -124,3 +127,40 @@ ON CONFLICT (code) DO UPDATE SET
     allows_customization = excluded.allows_customization,
     theme = excluded.theme,
     placement = excluded.placement;
+
+INSERT INTO public.user_asset_inventories (
+    created_at,
+    updated_at,
+    user_id,
+    asset_id,
+    grant_type,
+    acquired_at
+)
+SELECT
+    now(),
+    now(),
+    users.id,
+    assets.id,
+    'DEFAULT',
+    now()
+FROM public.users users
+CROSS JOIN public.assets assets
+WHERE assets.code IN (
+        'SPOOKY_BED',
+        'SPOOKY_CHARACTER',
+        'SPOOKY_DESK',
+        'SPOOKY_LAMP',
+        'SPOOKY_PUMPKIN',
+        'SPOOKY_REPEATER',
+        'SPOOKY_SKULL',
+        'SPOOKY_WINDOW'
+    )
+  AND users.deleted_at IS NULL
+  AND UPPER(users.status) = 'ACTIVE'
+  AND NOT EXISTS (
+        SELECT 1
+        FROM public.user_asset_inventories inventory
+        WHERE inventory.user_id = users.id
+          AND inventory.asset_id = assets.id
+    )
+ON CONFLICT (user_id, asset_id) DO NOTHING;

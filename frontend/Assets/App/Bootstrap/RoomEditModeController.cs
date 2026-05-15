@@ -330,6 +330,8 @@ namespace App.Bootstrap
                 return false;
             }
 
+            // Server-linked local entry: instantiate the prefab already shipped in Unity,
+            // but preserve RemoteAssetId so layout save/restore uses asset:{id}.
             localEntry.DisplayName = FirstNonEmpty(manifest.Name, manifest.Code, localEntry.DisplayName);
             localEntry.RemoteAssetId = manifest.AssetId;
             localEntry.RemoteInventoryId = 0L;
@@ -1237,6 +1239,7 @@ namespace App.Bootstrap
                     continue;
                 }
 
+                // Owned built-in asset: local instantiate path, server identity for persistence.
                 entry.DisplayName = FirstNonEmpty(displayName, entry.DisplayName);
                 entry.RemoteAssetId = item.AssetId;
                 entry.RemoteInventoryId = item.InventoryId;
@@ -1266,6 +1269,8 @@ namespace App.Bootstrap
 
         private static DecorationObjectKind ResolveRemoteDecorationKind(AssetResponseDto asset)
         {
+            // AssetType can be a broad value such as "ASSET"; include name/code so
+            // built-in catalog rows like SPOOKY_DESK still resolve their object kind.
             var value = string.Concat(
                 asset?.AssetType, " ",
                 asset?.CategoryCode, " ",

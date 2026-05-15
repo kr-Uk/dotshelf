@@ -238,7 +238,7 @@ class AssetServiceTest {
     }
 
     @Test
-    @DisplayName("download manifest returns unity resource key for built-in local assets")
+    @DisplayName("로컬 Unity 내장 자산의 다운로드 manifest는 unityResourceKey만 내리고 files는 비어있다")
     void getDownloadManifest_ownedLocalUnityAsset_returnsEmptyFiles() {
         Asset asset = Asset.builder()
                 .categoryId(1L)
@@ -263,7 +263,7 @@ class AssetServiceTest {
     }
 
     @Test
-    @DisplayName("theme download manifest returns child asset files")
+    @DisplayName("테마 다운로드 manifest는 child asset을 배치 조회해 파일 목록을 만든다")
     void getDownloadManifest_ownedTheme_returnsChildFilesWithBatchQuery() {
         Asset theme = Asset.builder()
                 .categoryId(1L)
