@@ -131,10 +131,10 @@ class PaymentControllerTest {
         Map<String, String> parameters = new LinkedHashMap<>();
         parameters.put("oid", "order-1");
         parameters.put("buyername", "<script>");
-        given(paymentService.getInicisPaymentPage(1L, "order-1"))
+        given(paymentService.getInicisPaymentPage("order-1"))
                 .willReturn(new InicisPaymentPageResponse("order-1", "https://pay.example/stdpay.js", parameters));
 
-        mockMvc.perform(get("/v1/payments/inicis/request/order-1").header("X-Test-Admin-User-Id", "1"))
+        mockMvc.perform(get("/v1/payments/inicis/request/order-1"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("INIStdPay.pay")))

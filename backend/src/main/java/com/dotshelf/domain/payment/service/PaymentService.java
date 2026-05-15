@@ -89,13 +89,15 @@ public class PaymentService {
         return PageChargeOrderResponse.from(order, paymentPageUrl(order.getOrderId()), form);
     }
 
-    public InicisPaymentPageResponse getInicisPaymentPage(Long userId, String orderId) {
-        Long currentUserId = userService.requireUserId(userId);
+    /**
+     * INICIS 결제창 HTML 을 렌더링한다. PC 클라이언트가 외부 브라우저로 진입하므로 access token 없이 호출되며,
+     * orderId (DS + 32자 random hex) 자체가 추측 불가능한 secret 으로 기능한다.
+     * status (READY/AUTHENTICATED) / TTL (30분) 가드로 정보 노출 / 재사용을 차단하고, 결제 완료 시 충전 귀속은
+     * `order.userId` 기준이라 orderId 가 유출돼도 결제는 주문자 본인에게만 충전된다.
+     */
+    public InicisPaymentPageResponse getInicisPaymentPage(String orderId) {
         PaymentOrder order = paymentOrderRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new CustomException(ErrorCode.PAYMENT_ORDER_NOT_FOUND));
-        if (!order.belongsTo(currentUserId)) {
-            throw new CustomException(ErrorCode.PAYMENT_ORDER_NOT_FOUND);
-        }
         if (!order.isReady() && !order.isAuthenticated()) {
             throw new CustomException(ErrorCode.PAYMENT_ORDER_INVALID_STATE);
         }
