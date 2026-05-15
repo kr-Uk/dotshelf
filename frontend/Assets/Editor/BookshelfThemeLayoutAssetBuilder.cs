@@ -29,7 +29,7 @@ namespace BookshelfPorting.Editor
                 4,
                 4,
                 1f,
-                Vector3.zero,
+                new Vector3(0f, 180f, 0f),
                 0.14f,
                 0.20f,
                 0.08f,

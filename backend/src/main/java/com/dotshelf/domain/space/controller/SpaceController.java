@@ -19,9 +19,11 @@ import com.dotshelf.domain.space.dto.SpaceDtos.CategoryInventoryRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.DashboardResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.LayoutResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.SpaceAssetManifestListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceMutationResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
@@ -94,6 +96,27 @@ public class SpaceController {
             @RequestParam(defaultValue = "20") int limit
     ) {
         return ApiResponse.success(spaceService.getOwnedBooks(currentUserId, spaceId, sort, cursor, limit));
+    }
+
+    @Operation(
+            summary = "방문 공간 에셋 다운로드 manifest 조회",
+            description = "공개 공간에 현재 적용된 꾸미기 에셋의 다운로드 manifest를 조회합니다. 방문자는 에셋을 소유하지 않아도 공개 공간 렌더링용으로만 사용할 수 있습니다."
+    )
+    @GetMapping("/{spaceId}/asset-manifests")
+    public ApiResponse<SpaceAssetManifestListResponse> getAssetManifests(
+            @CurrentUser Long currentUserId,
+            @PathVariable Long spaceId
+    ) {
+        return ApiResponse.success(spaceService.getVisibleAssetManifests(currentUserId, spaceId));
+    }
+
+    @Operation(summary = "공간 레이아웃 조회", description = "방문 가능한 공간의 최신 배치 layoutPayload를 조회합니다.")
+    @GetMapping("/{spaceId}/layout")
+    public ApiResponse<LayoutResponse> getLayout(
+            @CurrentUser Long currentUserId,
+            @PathVariable Long spaceId
+    ) {
+        return ApiResponse.success(spaceService.getLayout(currentUserId, spaceId));
     }
 
     @Operation(summary = "공간 방문 기록", description = "현재 사용자의 공간 방문을 기록하고 현재 방문 토글 상태를 반환합니다.")

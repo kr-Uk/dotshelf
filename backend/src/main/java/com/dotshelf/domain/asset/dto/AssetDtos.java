@@ -2,6 +2,7 @@ package com.dotshelf.domain.asset.dto;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.entity.AssetCategory;
@@ -192,14 +193,40 @@ public final class AssetDtos {
                             .toList()
             );
         }
+
+        public static InventoryResponse from(List<UserAssetInventory> inventories, Map<Long, Asset> assetsById) {
+            return new InventoryResponse(
+                    inventories.stream()
+                            .map(UserAssetInventory::getAssetId)
+                            .toList(),
+                    inventories.stream()
+                            .map(inventory -> InventoryItemResponse.from(
+                                    inventory,
+                                    assetsById == null ? null : assetsById.get(inventory.getAssetId())))
+                            .toList()
+            );
+        }
     }
 
-    public record InventoryItemResponse(Long inventoryId, Long assetId) {
+    public record InventoryItemResponse(Long inventoryId, Long assetId, AssetResponse asset) {
+
+        public InventoryItemResponse(Long inventoryId, Long assetId) {
+            this(inventoryId, assetId, null);
+        }
 
         public static InventoryItemResponse from(UserAssetInventory inventory) {
             return new InventoryItemResponse(
                     inventory.getId(),
-                    inventory.getAssetId()
+                    inventory.getAssetId(),
+                    null
+            );
+        }
+
+        public static InventoryItemResponse from(UserAssetInventory inventory, Asset asset) {
+            return new InventoryItemResponse(
+                    inventory.getId(),
+                    inventory.getAssetId(),
+                    asset == null ? null : AssetResponse.from(asset, true, false)
             );
         }
     }

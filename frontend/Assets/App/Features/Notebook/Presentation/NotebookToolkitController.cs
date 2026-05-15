@@ -3,7 +3,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using App.Application.Notebook;
-using App.Core;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.Networking;
@@ -184,10 +183,36 @@ namespace App.Features.Notebook.Presentation
                 int releaseOrder,
                 Color color,
                 Color accentColor)
+                : this(
+                    id,
+                    name,
+                    category,
+                    LooksLikeRemoteUrl(description) ? description : string.Empty,
+                    LooksLikeRemoteUrl(description) ? "Remote asset" : description,
+                    price,
+                    popularity,
+                    releaseOrder,
+                    color,
+                    accentColor)
+            {
+            }
+
+            public DecorObjectViewModel(
+                string id,
+                string name,
+                string category,
+                string previewImageUrl,
+                string description,
+                int price,
+                int popularity,
+                int releaseOrder,
+                Color color,
+                Color accentColor)
             {
                 Id = id;
                 Name = name;
                 Category = category;
+                PreviewImageUrl = previewImageUrl;
                 Description = description;
                 Price = price;
                 Popularity = popularity;
@@ -199,20 +224,31 @@ namespace App.Features.Notebook.Presentation
             public string Id { get; }
             public string Name { get; }
             public string Category { get; }
+            public string PreviewImageUrl { get; }
             public string Description { get; }
             public int Price { get; }
             public int Popularity { get; }
             public int ReleaseOrder { get; }
             public Color Color { get; }
             public Color AccentColor { get; }
+
+            private static bool LooksLikeRemoteUrl(string value)
+            {
+                return !string.IsNullOrWhiteSpace(value) &&
+                       (value.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                        value.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
+            }
         }
 
         private const int RankingPageSize = 6;
         private const int DashboardSortingOrder = 320;
         private const int FallbackSortingOrder = -320;
         private const int DashboardInitializationRetryFrames = 30;
+        private const int MaxSpaceThumbnailTextureCacheCount = 32;
         private const int MaxRemoteSpaceThumbnailWidth = 2048;
         private const int MaxRemoteSpaceThumbnailHeight = 1152;
+        private const int MaxRemoteAssetPreviewWidth = 2048;
+        private const int MaxRemoteAssetPreviewHeight = 2048;
         private const int MaxBookCoverTextureCacheCount = 64;
         private const int MaxRemoteBookCoverWidth = 2048;
         private const int MaxRemoteBookCoverHeight = 3072;
@@ -234,6 +270,7 @@ namespace App.Features.Notebook.Presentation
         private static readonly Color DeepGreen = Hex(0x183B31);
         private static readonly Color Success = Hex(0x3F9B68);
         private static readonly Color Warning = Hex(0xD98F36);
+        private static readonly Color HeartRed = Hex(0xD9415D);
         private static readonly Color Night = Hex(0x091626);
         private static readonly Color WarmPaper = Hex(0xFFF7E8);
         private static readonly Color Coral = Hex(0xFF8A65);
@@ -272,7 +309,10 @@ namespace App.Features.Notebook.Presentation
         private readonly Dictionary<string, List<BookReviewViewModel>> bookReviewMap = new();
         private readonly List<UserViewModel> socialListUsers = new();
         private readonly HashSet<string> requestedBookReviewIds = new();
-        private readonly RemoteImageLoader spaceThumbnailLoader = new(maxCacheSize: 32);
+        private readonly Dictionary<string, Texture2D> spaceThumbnailTextureCache = new();
+        private readonly LinkedList<string> spaceThumbnailTextureCacheOrder = new();
+        private readonly Dictionary<string, LinkedListNode<string>> spaceThumbnailTextureCacheNodes = new();
+        private readonly Dictionary<string, Texture2D> assetPreviewTextureCache = new();
         private readonly Dictionary<string, Texture2D> bookCoverTextureCache = new();
         private readonly LinkedList<string> bookCoverTextureCacheOrder = new();
         private readonly Dictionary<string, LinkedListNode<string>> bookCoverTextureCacheNodes = new();
@@ -367,7 +407,7 @@ namespace App.Features.Notebook.Presentation
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
         private NotebookRuntimeUseCase notebookRuntimeUseCase;
         public event Action BookAddedToShelfThroughApi;
-        public event Action<long> SpaceVisitRequested;
+        public event Action<NotebookSpaceVisitRequest> SpaceVisitRequested;
         private BookViewModel[] marketBooks = Array.Empty<BookViewModel>();
         private BookViewModel[] recommendedBooks = Array.Empty<BookViewModel>();
         private BookViewModel[] searchResults = Array.Empty<BookViewModel>();
@@ -454,7 +494,8 @@ namespace App.Features.Notebook.Presentation
 
         private void OnDestroy()
         {
-            spaceThumbnailLoader.Dispose();
+            ClearSpaceThumbnailTextureCache();
+            ClearAssetPreviewTextureCache();
             ClearBookCoverTextureCache();
         }
 
@@ -2254,7 +2295,15 @@ namespace App.Features.Notebook.Presentation
                 return;
             }
 
-            SpaceVisitRequested?.Invoke(spaceId);
+            SpaceVisitRequested?.Invoke(new NotebookSpaceVisitRequest
+            {
+                SpaceId = spaceId,
+                OwnerUserId = TryParseApiId(space.OwnerId, out var ownerUserId) ? ownerUserId : 0L,
+                Following = followedUserIds.Contains(space.OwnerId),
+                Liked = likedSpaceIds.Contains(space.Id),
+                LikeCount = Mathf.Max(0, space.Likes),
+                FollowerCount = Mathf.Max(0, space.Followers)
+            });
         }
 
         private string GetOtherSpacesStatusText()
@@ -2313,7 +2362,15 @@ namespace App.Features.Notebook.Presentation
             card.style.overflow = Overflow.Hidden;
             Round(card, 18);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.10f));
-            card.RegisterCallback<ClickEvent>(_ => RequestSpaceVisit(space));
+            card.RegisterCallback<ClickEvent>(evt =>
+            {
+                if (IsSpaceCardActionTarget(evt.target as VisualElement))
+                {
+                    return;
+                }
+
+                RequestSpaceVisit(space);
+            });
 
             var thumbnail = new VisualElement { name = "space-thumbnail" };
             thumbnail.style.minHeight = 169;
@@ -2352,7 +2409,7 @@ namespace App.Features.Notebook.Presentation
             visitOverlay.style.bottom = 10;
             visitOverlay.style.height = 30;
             visitOverlay.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.94f);
-            visitOverlay.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            BlockCardClickThrough(visitOverlay);
             visitOverlay.clicked += () => RequestSpaceVisit(space);
             thumbnail.Add(visitOverlay);
 
@@ -2409,7 +2466,7 @@ namespace App.Features.Notebook.Presentation
             var visit = TextButton("방문하기", true);
             visit.style.height = 34;
             visit.style.marginRight = 8;
-            visit.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            BlockCardClickThrough(visit);
             visit.clicked += () => RequestSpaceVisit(space);
             actions.Add(visit);
 
@@ -2417,7 +2474,7 @@ namespace App.Features.Notebook.Presentation
             follow.style.height = 34;
             follow.style.minWidth = 76;
             follow.style.marginRight = 8;
-            follow.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            BlockCardClickThrough(follow);
             follow.clicked += () =>
             {
                 ToggleSpaceFollowThroughApi(space, follow, followers);
@@ -2438,14 +2495,16 @@ namespace App.Features.Notebook.Presentation
 
             var like = TextButton(string.Empty, false);
             like.style.height = 34;
-            like.style.minWidth = 88;
-            like.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            like.style.minWidth = 58;
+            like.style.paddingLeft = 10;
+            like.style.paddingRight = 10;
+            BlockCardClickThrough(like);
             like.clicked += () =>
             {
                 ToggleSpaceLikeThroughApi(space, like);
             };
             actions.Add(like);
-            RefreshToggleButton(like, likedSpaceIds.Contains(space.Id), "좋아요 취소", "공간 좋아요");
+            RefreshSpaceLikeButton(like, space);
 
             return card;
         }
@@ -2559,75 +2618,79 @@ namespace App.Features.Notebook.Presentation
         private VisualElement CreateObjectCard(DecorObjectViewModel item)
         {
             var card = new VisualElement { name = $"object-{item.Id}" };
-            card.style.width = Length.Percent(31.8f);
-            card.style.minWidth = 250;
-            card.style.minHeight = 252;
-            card.style.marginRight = 10;
-            card.style.marginBottom = 10;
-            card.style.paddingLeft = 14;
-            card.style.paddingRight = 14;
-            card.style.paddingTop = 14;
-            card.style.paddingBottom = 14;
+            card.style.width = Length.Percent(23.6f);
+            card.style.minWidth = 178;
+            card.style.minHeight = 236;
+            card.style.marginRight = 8;
+            card.style.marginBottom = 8;
+            card.style.paddingLeft = 10;
+            card.style.paddingRight = 10;
+            card.style.paddingTop = 10;
+            card.style.paddingBottom = 10;
             card.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.82f);
             card.style.overflow = Overflow.Hidden;
-            Round(card, 18);
+            Round(card, 14);
             Border(card, Rgba(0x0E, 0x1D, 0x2A, 0.10f));
             card.RegisterCallback<ClickEvent>(_ => ShowToast($"오브젝트 상세 화면 · {item.Name}"));
 
             var preview = new VisualElement { name = "object-preview" };
-            preview.style.height = 92;
-            preview.style.marginBottom = 12;
+            preview.style.height = 118;
+            preview.style.marginBottom = 9;
             preview.style.backgroundColor = Rgba(0xF0, 0xEE, 0xE9, 0.82f);
             preview.style.overflow = Overflow.Hidden;
-            Round(preview, 14);
+            Round(preview, 12);
             card.Add(preview);
 
-            var shape = new VisualElement();
-            shape.style.position = Position.Absolute;
-            shape.style.left = 24;
-            shape.style.top = 18;
-            shape.style.width = 96;
-            shape.style.height = 48;
-            shape.style.backgroundColor = item.Color;
-            Round(shape, 12);
-            preview.Add(shape);
+            if (!TryBuildObjectPreviewImage(preview, item.PreviewImageUrl))
+            {
+                var shape = new VisualElement();
+                shape.style.position = Position.Absolute;
+                shape.style.left = 18;
+                shape.style.top = 28;
+                shape.style.width = 106;
+                shape.style.height = 54;
+                shape.style.backgroundColor = item.Color;
+                Round(shape, 12);
+                preview.Add(shape);
 
-            var glow = new VisualElement();
-            glow.style.position = Position.Absolute;
-            glow.style.right = 22;
-            glow.style.top = 16;
-            glow.style.width = 54;
-            glow.style.height = 54;
-            glow.style.backgroundColor = item.AccentColor;
-            glow.style.opacity = 0.72f;
-            Round(glow, 27);
-            preview.Add(glow);
+                var glow = new VisualElement();
+                glow.style.position = Position.Absolute;
+                glow.style.right = 18;
+                glow.style.top = 24;
+                glow.style.width = 62;
+                glow.style.height = 62;
+                glow.style.backgroundColor = item.AccentColor;
+                glow.style.opacity = 0.72f;
+                Round(glow, 31);
+                preview.Add(glow);
+            }
 
             var category = Text(item.Category, 10, AccentDeep, FontStyle.Bold);
             category.style.letterSpacing = 1.1f;
             category.style.minHeight = 18;
             card.Add(category);
 
-            var title = Text(item.Name, 17, Ink, FontStyle.Bold);
+            var title = Text(item.Name, 14, Ink, FontStyle.Bold);
             title.style.whiteSpace = WhiteSpace.Normal;
-            title.style.minHeight = 28;
+            title.style.minHeight = 34;
             card.Add(title);
 
             var description = Text(item.Description, 12, SoftInk, FontStyle.Normal);
-            description.style.marginTop = 6;
+            description.style.marginTop = 4;
             description.style.whiteSpace = WhiteSpace.Normal;
-            description.style.minHeight = 42;
+            description.style.minHeight = 34;
             card.Add(description);
 
             var meta = Row("object-meta");
-            meta.style.marginTop = 10;
+            meta.style.marginTop = 8;
             meta.style.alignItems = Align.Center;
+            meta.style.flexWrap = Wrap.Wrap;
             card.Add(meta);
             meta.Add(MetricLabel($"{item.Price:N0}P", AccentDeep));
             meta.Add(MetricLabel($"인기 {item.Popularity:N0}", Ink));
 
             var actions = Row("object-actions");
-            actions.style.marginTop = 12;
+            actions.style.marginTop = 9;
             actions.style.alignItems = Align.Center;
             actions.style.flexWrap = Wrap.Wrap;
             card.Add(actions);
@@ -6219,7 +6282,7 @@ namespace App.Features.Notebook.Presentation
                 result =>
                 {
                     SetLocalState(followedUserIds, space.OwnerId, result?.Active ?? nextFollowing);
-                    space.Followers = result != null && result.Count > 0L
+                    space.Followers = result != null
                         ? ClampToInt(result.Count)
                         : Mathf.Max(0, space.Followers + (followedUserIds.Contains(space.OwnerId) == wasFollowing ? 0 : followedUserIds.Contains(space.OwnerId) ? 1 : -1));
                     RefreshFollowButton(button, space.OwnerId);
@@ -6284,7 +6347,11 @@ namespace App.Features.Notebook.Presentation
                 return;
             }
 
+            var wasLiked = likedSpaceIds.Contains(space.Id);
             var nextLiked = !likedSpaceIds.Contains(space.Id);
+            SetLocalState(likedSpaceIds, space.Id, nextLiked);
+            space.Likes = Mathf.Max(0, space.Likes + (nextLiked ? 1 : -1));
+            RefreshSpaceLikeButton(button, space);
             button?.SetEnabled(false);
             notebookRuntimeUseCase.LikeSpace(
                 spaceId,
@@ -6292,14 +6359,20 @@ namespace App.Features.Notebook.Presentation
                 result =>
                 {
                     SetLocalState(likedSpaceIds, space.Id, result?.Active ?? nextLiked);
-                    RefreshToggleButton(button, likedSpaceIds.Contains(space.Id), "좋아요 취소", "공간 좋아요");
+                    if (result != null && result.Count >= 0L)
+                    {
+                        space.Likes = ClampToInt(result.Count);
+                    }
+                    RefreshSpaceLikeButton(button, space);
                     button?.SetEnabled(true);
                     ShowToast(likedSpaceIds.Contains(space.Id) ? $"공간을 좋아요했습니다 · {space.Title}" : $"공간 좋아요를 취소했습니다 · {space.Title}");
                 },
                 error =>
                 {
+                    SetLocalState(likedSpaceIds, space.Id, wasLiked);
+                    space.Likes = Mathf.Max(0, space.Likes + (wasLiked == nextLiked ? 0 : wasLiked ? 1 : -1));
                     button?.SetEnabled(true);
-                    RefreshToggleButton(button, likedSpaceIds.Contains(space.Id), "좋아요 취소", "공간 좋아요");
+                    RefreshSpaceLikeButton(button, space);
                     UnityEngine.Debug.LogWarning($"Space like API failed. space={space.Id}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
                     ShowToast("공간 좋아요 API 요청에 실패했습니다.");
                 });
@@ -6462,13 +6535,44 @@ namespace App.Features.Notebook.Presentation
             button.style.color = color;
             button.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.05f);
             Border(button, Rgba(0x0E, 0x1D, 0x2A, 0.06f));
-            button.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            BlockCardClickThrough(button);
             button.clicked += () =>
             {
                 PulseElement(button);
                 onClick?.Invoke();
             };
             return button;
+        }
+
+        private static void BlockCardClickThrough(VisualElement element)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            element.AddToClassList("space-card-action");
+            element.RegisterCallback<ClickEvent>(evt => StopCardActionEvent(evt));
+        }
+
+        private static void StopCardActionEvent(EventBase evt)
+        {
+            evt.StopPropagation();
+        }
+
+        private static bool IsSpaceCardActionTarget(VisualElement element)
+        {
+            while (element != null)
+            {
+                if (element.ClassListContains("space-card-action"))
+                {
+                    return true;
+                }
+
+                element = element.parent;
+            }
+
+            return false;
         }
 
         private void RefreshFollowButton(Button button, string userId)
@@ -6513,6 +6617,23 @@ namespace App.Features.Notebook.Presentation
             button.style.backgroundColor = selected ? Ink : Rgba(0xFF, 0xFF, 0xFF, 0.52f);
             button.style.color = selected ? Surface : SoftInk;
             Border(button, selected ? Ink : Line);
+        }
+
+        private void RefreshSpaceLikeButton(Button button, SpaceViewModel space)
+        {
+            if (button == null || space == null)
+            {
+                return;
+            }
+
+            var selected = likedSpaceIds.Contains(space.Id);
+            button.text = $"{(selected ? "♥" : "♡")} {Mathf.Max(0, space.Likes):N0}";
+            button.tooltip = selected ? "공간 좋아요 취소" : "공간 좋아요";
+            button.style.backgroundColor = selected ? Rgba(0xD9, 0x41, 0x5D, 0.12f) : Rgba(0xFF, 0xFF, 0xFF, 0.58f);
+            button.style.color = HeartRed;
+            button.style.fontSize = 15;
+            button.style.unityFontStyleAndWeight = FontStyle.Bold;
+            Border(button, selected ? Rgba(0xD9, 0x41, 0x5D, 0.42f) : Rgba(0xD9, 0x41, 0x5D, 0.30f));
         }
 
         private void SetDetailMeta(BookViewModel book)
@@ -7073,7 +7194,7 @@ namespace App.Features.Notebook.Presentation
         {
             var key = string.IsNullOrEmpty(space.ThumbnailKey) ? space.Id : space.ThumbnailKey;
             var remoteUrl = string.IsNullOrWhiteSpace(space.ThumbnailUrl) ? string.Empty : space.ThumbnailUrl.Trim();
-            if (!string.IsNullOrEmpty(remoteUrl) && spaceThumbnailLoader.TryGet(remoteUrl, out var cached))
+            if (!string.IsNullOrEmpty(remoteUrl) && TryGetCachedSpaceThumbnailTexture(remoteUrl, out var cached))
             {
                 ApplySpaceThumbnailTexture(thumbnail, cached);
                 return;
@@ -7090,26 +7211,203 @@ namespace App.Features.Notebook.Presentation
             if (!string.IsNullOrEmpty(remoteUrl))
             {
                 thumbnail.userData = remoteUrl;
-                StartCoroutine(spaceThumbnailLoader.Load(remoteUrl, tex =>
-                {
-                    if (tex.width > MaxRemoteSpaceThumbnailWidth || tex.height > MaxRemoteSpaceThumbnailHeight)
-                    {
-                        UnityEngine.Debug.LogWarning($"[NotebookToolkit] Skipped oversized space thumbnail {tex.width}x{tex.height}: {remoteUrl}");
-                        spaceThumbnailLoader.Remove(remoteUrl);
-                        return;
-                    }
-
-                    if (thumbnail != null && thumbnail.panel != null && Equals(thumbnail.userData, remoteUrl))
-                    {
-                        ApplySpaceThumbnailTexture(thumbnail, tex);
-                    }
-                }));
+                StartCoroutine(LoadSpaceThumbnailTexture(remoteUrl, thumbnail));
             }
         }
 
         private static bool HasRemoteSpacePhoto(SpaceViewModel space)
         {
             return space != null && !string.IsNullOrWhiteSpace(space.ThumbnailUrl);
+        }
+
+        private IEnumerator LoadSpaceThumbnailTexture(string url, VisualElement thumbnail)
+        {
+            using (var request = UnityWebRequestTexture.GetTexture(url))
+            {
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    yield break;
+                }
+
+                var texture = DownloadHandlerTexture.GetContent(request);
+                if (texture == null)
+                {
+                    yield break;
+                }
+
+                if (texture.width > MaxRemoteSpaceThumbnailWidth || texture.height > MaxRemoteSpaceThumbnailHeight)
+                {
+                    UnityEngine.Debug.LogWarning($"[NotebookToolkit] Skipped oversized space thumbnail {texture.width}x{texture.height}: {url}");
+                    Destroy(texture);
+                    yield break;
+                }
+
+                CacheSpaceThumbnailTexture(url, texture);
+                if (thumbnail != null && thumbnail.panel != null && Equals(thumbnail.userData, url))
+                {
+                    ApplySpaceThumbnailTexture(thumbnail, texture);
+                }
+            }
+        }
+
+        private bool TryGetCachedSpaceThumbnailTexture(string url, out Texture2D texture)
+        {
+            if (!spaceThumbnailTextureCache.TryGetValue(url, out texture) || texture == null)
+            {
+                spaceThumbnailTextureCache.Remove(url);
+                if (spaceThumbnailTextureCacheNodes.TryGetValue(url, out var staleNode))
+                {
+                    spaceThumbnailTextureCacheOrder.Remove(staleNode);
+                    spaceThumbnailTextureCacheNodes.Remove(url);
+                }
+
+                texture = null;
+                return false;
+            }
+
+            if (spaceThumbnailTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                spaceThumbnailTextureCacheOrder.Remove(node);
+                spaceThumbnailTextureCacheOrder.AddLast(node);
+            }
+
+            return true;
+        }
+
+        private void CacheSpaceThumbnailTexture(string url, Texture2D texture)
+        {
+            if (spaceThumbnailTextureCache.TryGetValue(url, out var previous) && previous != null && previous != texture)
+            {
+                Destroy(previous);
+            }
+
+            spaceThumbnailTextureCache[url] = texture;
+
+            if (spaceThumbnailTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                spaceThumbnailTextureCacheOrder.Remove(node);
+                spaceThumbnailTextureCacheOrder.AddLast(node);
+            }
+            else
+            {
+                node = spaceThumbnailTextureCacheOrder.AddLast(url);
+                spaceThumbnailTextureCacheNodes[url] = node;
+            }
+
+            TrimSpaceThumbnailTextureCache();
+        }
+
+        private void TrimSpaceThumbnailTextureCache()
+        {
+            while (spaceThumbnailTextureCache.Count > MaxSpaceThumbnailTextureCacheCount && spaceThumbnailTextureCacheOrder.First != null)
+            {
+                var oldestUrl = spaceThumbnailTextureCacheOrder.First.Value;
+                spaceThumbnailTextureCacheOrder.RemoveFirst();
+                spaceThumbnailTextureCacheNodes.Remove(oldestUrl);
+
+                if (spaceThumbnailTextureCache.TryGetValue(oldestUrl, out var texture) && texture != null)
+                {
+                    Destroy(texture);
+                }
+
+                spaceThumbnailTextureCache.Remove(oldestUrl);
+            }
+        }
+
+        private void ClearSpaceThumbnailTextureCache()
+        {
+            foreach (var texture in spaceThumbnailTextureCache.Values)
+            {
+                if (texture != null)
+                {
+                    Destroy(texture);
+                }
+            }
+
+            spaceThumbnailTextureCache.Clear();
+            spaceThumbnailTextureCacheOrder.Clear();
+            spaceThumbnailTextureCacheNodes.Clear();
+        }
+
+        private bool TryBuildObjectPreviewImage(VisualElement preview, string previewImageUrl)
+        {
+            var url = string.IsNullOrWhiteSpace(previewImageUrl) ? string.Empty : previewImageUrl.Trim();
+            if (preview == null || string.IsNullOrEmpty(url))
+            {
+                return false;
+            }
+
+            preview.userData = url;
+            if (assetPreviewTextureCache.TryGetValue(url, out var cached) && cached != null)
+            {
+                ApplyObjectPreviewTexture(preview, cached);
+                return true;
+            }
+
+            StartCoroutine(LoadObjectPreviewTexture(url, preview));
+            return false;
+        }
+
+        private IEnumerator LoadObjectPreviewTexture(string url, VisualElement preview)
+        {
+            using (var request = UnityWebRequestTexture.GetTexture(url))
+            {
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    yield break;
+                }
+
+                var texture = DownloadHandlerTexture.GetContent(request);
+                if (texture == null)
+                {
+                    yield break;
+                }
+
+                if (texture.width > MaxRemoteAssetPreviewWidth || texture.height > MaxRemoteAssetPreviewHeight)
+                {
+                    UnityEngine.Debug.LogWarning($"[NotebookToolkit] Skipped oversized asset preview {texture.width}x{texture.height}: {url}");
+                    Destroy(texture);
+                    yield break;
+                }
+
+                if (assetPreviewTextureCache.TryGetValue(url, out var previous) && previous != null && previous != texture)
+                {
+                    Destroy(previous);
+                }
+
+                assetPreviewTextureCache[url] = texture;
+                if (preview != null && preview.panel != null && Equals(preview.userData, url))
+                {
+                    ApplyObjectPreviewTexture(preview, texture);
+                }
+            }
+        }
+
+        private void ClearAssetPreviewTextureCache()
+        {
+            foreach (var texture in assetPreviewTextureCache.Values)
+            {
+                if (texture != null)
+                {
+                    Destroy(texture);
+                }
+            }
+
+            assetPreviewTextureCache.Clear();
+        }
+
+        private static void ApplyObjectPreviewTexture(VisualElement preview, Texture2D texture)
+        {
+            preview.Clear();
+            preview.style.backgroundColor = Color.clear;
+            preview.style.backgroundImage = new StyleBackground(texture);
+            preview.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Contain);
+            preview.style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Center);
+            preview.style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center);
         }
 
         private static void ApplySpaceThumbnailTexture(VisualElement thumbnail, Texture2D texture)

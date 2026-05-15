@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using App.Application.Dashboard;
-using App.Core;
 using App.Domain.Dashboard;
 using App.Infrastructure.Catalogs;
 using App.Infrastructure.Mock.Dashboard;
@@ -60,8 +59,10 @@ namespace Dotshelf.Scripts.Dashboard
         private UIDocument document;
 
         private const int CarouselItemLimit = 10;
+        private const int MaxCoverTextureCacheCount = 32;
         private const int MaxRemoteBookCoverWidth = 2048;
         private const int MaxRemoteBookCoverHeight = 3072;
+        private const int RemoteBookCoverTimeoutSeconds = 8;
 
         private bool configured;
 
@@ -105,7 +106,9 @@ namespace Dotshelf.Scripts.Dashboard
         private ScrollView booksCarousel;
         private ScrollView recordsCarousel;
 
-        private RemoteImageLoader coverImageLoader;
+        private readonly Dictionary<string, Texture2D> coverTextureCache = new Dictionary<string, Texture2D>();
+        private readonly LinkedList<string> coverTextureCacheOrder = new LinkedList<string>();
+        private readonly Dictionary<string, LinkedListNode<string>> coverTextureCacheNodes = new Dictionary<string, LinkedListNode<string>>();
 
         private VisualElement userListModalRoot;
         private VisualElement userListModalBackdrop;
@@ -247,7 +250,6 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void Awake()
         {
-            coverImageLoader = new RemoteImageLoader(maxCacheSize: 32);
             EnsureDocument();
             if (document == null)
             {
@@ -534,7 +536,7 @@ namespace Dotshelf.Scripts.Dashboard
                 eventsWired = false;
             }
 
-            coverImageLoader?.Dispose();
+            ClearCoverTextureCache();
         }
 
         private void BuildMockUseCases()
@@ -1079,7 +1081,7 @@ namespace Dotshelf.Scripts.Dashboard
             if (!string.IsNullOrWhiteSpace(item.CoverImageUrl))
             {
                 var url = item.CoverImageUrl;
-                if (coverImageLoader.TryGet(url, out var cached))
+                if (TryGetCachedCoverTexture(url, out var cached))
                 {
                     ApplyCoverTexture(cover, cached);
                 }
@@ -1109,16 +1111,11 @@ namespace Dotshelf.Scripts.Dashboard
             element.style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center);
         }
 
-        // NOTE: RemoteImageLoader.Load(url, callback)를 쓰지 않고 인라인 코루틴으로 다운로드한다.
-        // 이유: RemoteImageLoader는 App.Core.asmdef에 있고, 이 컨트롤러는 Assembly-CSharp에 있다.
-        // cross-asmdef 경계를 넘어 반환된 IEnumerator를 StartCoroutine에 넘기면
-        // MoveNext 호출이 실패해 코루틴이 실행되지 않는 Unity 제한이 있다.
-        // 따라서 캐시(TryGet/Put)만 사용하고 다운로드는 여기서 직접 수행한다.
         private IEnumerator DownloadCover(string url, VisualElement target)
         {
             using (var request = UnityWebRequestTexture.GetTexture(url))
             {
-                request.timeout = coverImageLoader?.TimeoutSeconds ?? 8;
+                request.timeout = RemoteBookCoverTimeoutSeconds;
                 yield return request.SendWebRequest();
 
                 if (request.result != UnityWebRequest.Result.Success)
@@ -1139,16 +1136,103 @@ namespace Dotshelf.Scripts.Dashboard
                     yield break;
                 }
 
-                // 항상 캐시에 넣어 Texture2D 소유권을 이전한다.
-                // target이 detach된 경우에도 캐시가 소유하므로 텍스처 누수가 없다.
-                // Put은 이미 같은 URL이 캐시에 있으면 duplicate를 destroy하고
-                // canonical 텍스처를 반환한다 (concurrent download race 방지).
-                var canonical = coverImageLoader?.Put(url, texture) ?? texture;
+                var canonical = CacheCoverTexture(url, texture);
                 if (target?.panel != null)
                 {
                     ApplyCoverTexture(target, canonical);
                 }
             }
+        }
+
+        private bool TryGetCachedCoverTexture(string url, out Texture2D texture)
+        {
+            if (string.IsNullOrWhiteSpace(url) ||
+                !coverTextureCache.TryGetValue(url, out texture) ||
+                texture == null)
+            {
+                RemoveCoverTexture(url);
+                texture = null;
+                return false;
+            }
+
+            if (coverTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                coverTextureCacheOrder.Remove(node);
+                coverTextureCacheOrder.AddLast(node);
+            }
+
+            return true;
+        }
+
+        private Texture2D CacheCoverTexture(string url, Texture2D texture)
+        {
+            if (string.IsNullOrWhiteSpace(url) || texture == null)
+            {
+                return texture;
+            }
+
+            if (coverTextureCache.TryGetValue(url, out var existing) && existing != null)
+            {
+                if (existing != texture)
+                {
+                    UnityEngine.Object.Destroy(texture);
+                }
+                if (coverTextureCacheNodes.TryGetValue(url, out var existingNode))
+                {
+                    coverTextureCacheOrder.Remove(existingNode);
+                    coverTextureCacheOrder.AddLast(existingNode);
+                }
+                return existing;
+            }
+
+            coverTextureCache[url] = texture;
+            var node = coverTextureCacheOrder.AddLast(url);
+            coverTextureCacheNodes[url] = node;
+            TrimCoverTextureCache();
+            return texture;
+        }
+
+        private void TrimCoverTextureCache()
+        {
+            while (coverTextureCache.Count > MaxCoverTextureCacheCount && coverTextureCacheOrder.First != null)
+            {
+                RemoveCoverTexture(coverTextureCacheOrder.First.Value);
+            }
+        }
+
+        private void RemoveCoverTexture(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            if (coverTextureCache.TryGetValue(url, out var texture) && texture != null)
+            {
+                UnityEngine.Object.Destroy(texture);
+            }
+            coverTextureCache.Remove(url);
+
+            if (coverTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                coverTextureCacheOrder.Remove(node);
+                coverTextureCacheNodes.Remove(url);
+            }
+        }
+
+        private void ClearCoverTextureCache()
+        {
+            foreach (var texture in coverTextureCache.Values)
+            {
+                if (texture != null)
+                {
+                    UnityEngine.Object.Destroy(texture);
+                }
+            }
+
+            coverTextureCache.Clear();
+            coverTextureCacheOrder.Clear();
+            coverTextureCacheNodes.Clear();
         }
 
         private void RenderRecordsCarousel(ReadingRecordListPage page)

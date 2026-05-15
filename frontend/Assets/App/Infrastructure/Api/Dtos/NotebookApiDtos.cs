@@ -377,8 +377,29 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("assetType")]
         public string AssetType { get; set; }
 
+        [JsonProperty("collectionCode")]
+        public string CollectionCode { get; set; }
+
+        [JsonProperty("theme")]
+        public string Theme { get; set; }
+
+        [JsonProperty("placement")]
+        public string Placement { get; set; }
+
         [JsonProperty("previewImageUrl")]
         public string PreviewImageUrl { get; set; }
+
+        [JsonProperty("fileSize")]
+        public long? FileSize { get; set; }
+
+        [JsonProperty("fileHash")]
+        public string FileHash { get; set; }
+
+        [JsonProperty("contentType")]
+        public string ContentType { get; set; }
+
+        [JsonProperty("version")]
+        public int Version { get; set; }
 
         [JsonProperty("pricePages")]
         public int PricePages { get; set; }
@@ -442,6 +463,81 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("assetId")]
         public long AssetId { get; set; }
+
+        [JsonProperty("asset")]
+        public AssetResponseDto Asset { get; set; }
+    }
+
+    [Serializable]
+    public sealed class DownloadManifestResponseDto
+    {
+        [JsonProperty("assetId")]
+        public long AssetId { get; set; }
+
+        [JsonProperty("assetType")]
+        public string AssetType { get; set; }
+
+        [JsonProperty("collectionCode")]
+        public string CollectionCode { get; set; }
+
+        [JsonProperty("version")]
+        public int Version { get; set; }
+
+        [JsonProperty("files")]
+        public List<DownloadFileResponseDto> Files { get; set; }
+    }
+
+    [Serializable]
+    public sealed class DownloadFileResponseDto
+    {
+        [JsonProperty("assetId")]
+        public long AssetId { get; set; }
+
+        [JsonProperty("code")]
+        public string Code { get; set; }
+
+        [JsonProperty("name")]
+        public string Name { get; set; }
+
+        [JsonProperty("assetType")]
+        public string AssetType { get; set; }
+
+        [JsonProperty("role")]
+        public string Role { get; set; }
+
+        [JsonProperty("url")]
+        public string Url { get; set; }
+
+        [JsonProperty("contentType")]
+        public string ContentType { get; set; }
+
+        [JsonProperty("fileSize")]
+        public long? FileSize { get; set; }
+
+        [JsonProperty("fileHash")]
+        public string FileHash { get; set; }
+
+        [JsonProperty("version")]
+        public int Version { get; set; }
+
+        [JsonProperty("required")]
+        public bool Required { get; set; }
+
+        [JsonProperty("defaultTransform")]
+        public string DefaultTransform { get; set; }
+    }
+
+    [Serializable]
+    public sealed class SpaceAssetManifestListResponseDto
+    {
+        [JsonProperty("spaceId")]
+        public long SpaceId { get; set; }
+
+        [JsonProperty("layoutVersion")]
+        public long LayoutVersion { get; set; }
+
+        [JsonProperty("manifests")]
+        public List<DownloadManifestResponseDto> Manifests { get; set; }
     }
 
     [Serializable]
@@ -728,6 +824,19 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("layoutVersion")]
         public long LayoutVersion { get; set; }
+    }
+
+    [Serializable]
+    public sealed class LayoutResponseDto
+    {
+        [JsonProperty("spaceId")]
+        public long SpaceId { get; set; }
+
+        [JsonProperty("layoutVersion")]
+        public long LayoutVersion { get; set; }
+
+        [JsonProperty("layoutPayload")]
+        public string LayoutPayload { get; set; }
     }
 
     [Serializable]

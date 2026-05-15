@@ -5,18 +5,10 @@ using UnityEngine;
 
 namespace App.Auth
 {
-    // Static helper for "401 -> refresh -> retry once" flow.
-    //
-    // Why not bake this into APIManager / NotebookApiClient.SendRequest?
-    //   - Touching every request path is high blast-radius. Auto-retry
-    //     can mask BE bugs (idempotency violations on POSTs that already
-    //     mutated state) and double-fire side effects.
-    //   - Callers know whether their request is safe to retry (GETs and
-    //     idempotent PATCHes yes; non-idempotent POSTs case-by-case).
-    //
-    // Guest tokens have no refreshToken. TryRefreshAndRetry detects this
-    // and routes to onAbort directly so the caller cannot accidentally
-    // retry forever.
+    // Legacy helper for call sites that still handle auth retries explicitly.
+    // APIManager performs the common 401 -> refresh -> retry-once flow for
+    // ordinary API requests; this helper remains for custom flows that need
+    // to decide their own retry/abort UI.
     public static class SessionRefresh
     {
         private static bool isRefreshInFlight;

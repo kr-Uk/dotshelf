@@ -26,12 +26,15 @@ namespace App.Infrastructure.Api
     public sealed class APIManager : MonoBehaviour
     {
         private const int ErrorResponseBodyLogLimit = 512;
+        private const long UnauthorizedStatusCode = 401L;
 
         [SerializeField] private string baseUrl = ApiEndpointDefaults.DefaultBaseUrl;
         [SerializeField] private string accessToken;
         [SerializeField] private int timeoutSeconds = 10;
         [SerializeField] private bool enableVerboseLog;
         private long currentUserId;
+        private bool tokenRefreshInFlight;
+        private readonly List<Action<bool>> tokenRefreshWaiters = new List<Action<bool>>();
 
         public static APIManager Instance { get; private set; }
         public bool HasAccessToken => !string.IsNullOrWhiteSpace(accessToken);
@@ -175,6 +178,34 @@ namespace App.Infrastructure.Api
             return long.TryParse(raw, out var userId) ? userId : 0L;
         }
 
+        private static string ReadStoredRefreshToken()
+        {
+            return PlayerPrefs.GetString(AuthStorageKeys.RefreshToken, string.Empty);
+        }
+
+        private static void SaveRefreshedTokens(
+            long userId,
+            string newAccessToken,
+            string newRefreshToken,
+            long expiresInSeconds)
+        {
+            PlayerPrefs.DeleteKey(AuthStorageKeys.AccessToken);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.RefreshToken);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.UserId);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.ExpiresInSeconds);
+            PlayerPrefs.DeleteKey(AuthStorageKeys.AccessTokenExpiresAt);
+
+            PlayerPrefs.SetString(AuthStorageKeys.UserId, userId.ToString());
+            PlayerPrefs.SetString(AuthStorageKeys.AccessToken, newAccessToken ?? string.Empty);
+            PlayerPrefs.SetString(AuthStorageKeys.RefreshToken, newRefreshToken ?? string.Empty);
+            PlayerPrefs.SetString(AuthStorageKeys.ExpiresInSeconds, expiresInSeconds.ToString());
+
+            var safety = Math.Min(60L, Math.Max(0L, expiresInSeconds / 10L));
+            var expiresAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + Math.Max(0L, expiresInSeconds - safety);
+            PlayerPrefs.SetString(AuthStorageKeys.AccessTokenExpiresAt, expiresAt.ToString());
+            PlayerPrefs.Save();
+        }
+
         public Coroutine CheckHealth(
             Action<ApiHealthCheckResult> onComplete = null,
             string path = "/health",
@@ -191,9 +222,15 @@ namespace App.Infrastructure.Api
             Action<ApiErrorResponseDto> onError = null,
             Dictionary<string, string> headers = null)
         {
-            var request = UnityWebRequest.Get(BuildUrl(path));
-            ApplyHeaders(request, headers);
-            return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
+            return StartCoroutine(Send(
+                () =>
+                {
+                    var request = UnityWebRequest.Get(BuildUrl(path));
+                    ApplyHeaders(request, headers);
+                    return request;
+                },
+                onSuccess,
+                onError));
         }
 
         public Coroutine Post<TRequest, TResponse>(
@@ -204,9 +241,15 @@ namespace App.Infrastructure.Api
             Dictionary<string, string> headers = null)
         {
             var json = JsonConvert.SerializeObject(body);
-            var request = CreateJsonRequest(BuildUrl(path), UnityWebRequest.kHttpVerbPOST, json);
-            ApplyHeaders(request, headers);
-            return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
+            return StartCoroutine(Send(
+                () =>
+                {
+                    var request = CreateJsonRequest(BuildUrl(path), UnityWebRequest.kHttpVerbPOST, json);
+                    ApplyHeaders(request, headers);
+                    return request;
+                },
+                onSuccess,
+                onError));
         }
 
         public Coroutine Post<TResponse>(
@@ -215,9 +258,15 @@ namespace App.Infrastructure.Api
             Action<ApiErrorResponseDto> onError = null,
             Dictionary<string, string> headers = null)
         {
-            var request = CreateJsonRequest(BuildUrl(path), UnityWebRequest.kHttpVerbPOST, null);
-            ApplyHeaders(request, headers);
-            return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
+            return StartCoroutine(Send(
+                () =>
+                {
+                    var request = CreateJsonRequest(BuildUrl(path), UnityWebRequest.kHttpVerbPOST, null);
+                    ApplyHeaders(request, headers);
+                    return request;
+                },
+                onSuccess,
+                onError));
         }
 
         public Coroutine Put<TRequest, TResponse>(
@@ -228,9 +277,15 @@ namespace App.Infrastructure.Api
             Dictionary<string, string> headers = null)
         {
             var json = JsonConvert.SerializeObject(body);
-            var request = CreateJsonRequest(BuildUrl(path), UnityWebRequest.kHttpVerbPUT, json);
-            ApplyHeaders(request, headers);
-            return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
+            return StartCoroutine(Send(
+                () =>
+                {
+                    var request = CreateJsonRequest(BuildUrl(path), UnityWebRequest.kHttpVerbPUT, json);
+                    ApplyHeaders(request, headers);
+                    return request;
+                },
+                onSuccess,
+                onError));
         }
 
         public Coroutine PutRaw(
@@ -270,9 +325,15 @@ namespace App.Infrastructure.Api
             Dictionary<string, string> headers = null)
         {
             var json = JsonConvert.SerializeObject(body);
-            var request = CreateJsonRequest(BuildUrl(path), "PATCH", json);
-            ApplyHeaders(request, headers);
-            return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
+            return StartCoroutine(Send(
+                () =>
+                {
+                    var request = CreateJsonRequest(BuildUrl(path), "PATCH", json);
+                    ApplyHeaders(request, headers);
+                    return request;
+                },
+                onSuccess,
+                onError));
         }
 
         public Coroutine Patch<TResponse>(
@@ -281,9 +342,15 @@ namespace App.Infrastructure.Api
             Action<ApiErrorResponseDto> onError = null,
             Dictionary<string, string> headers = null)
         {
-            var request = CreateJsonRequest(BuildUrl(path), "PATCH", null);
-            ApplyHeaders(request, headers);
-            return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
+            return StartCoroutine(Send(
+                () =>
+                {
+                    var request = CreateJsonRequest(BuildUrl(path), "PATCH", null);
+                    ApplyHeaders(request, headers);
+                    return request;
+                },
+                onSuccess,
+                onError));
         }
 
         public Coroutine Delete<TResponse>(
@@ -292,12 +359,94 @@ namespace App.Infrastructure.Api
             Action<ApiErrorResponseDto> onError = null,
             Dictionary<string, string> headers = null)
         {
-            var request = new UnityWebRequest(BuildUrl(path), UnityWebRequest.kHttpVerbDELETE)
+            return StartCoroutine(Send(
+                () =>
+                {
+                    var request = new UnityWebRequest(BuildUrl(path), UnityWebRequest.kHttpVerbDELETE)
+                    {
+                        downloadHandler = new DownloadHandlerBuffer()
+                    };
+                    ApplyHeaders(request, headers);
+                    return request;
+                },
+                onSuccess,
+                onError));
+        }
+
+        private IEnumerator Send<TResponse>(
+            Func<UnityWebRequest> requestFactory,
+            Action<TResponse> onSuccess,
+            Action<ApiErrorResponseDto> onError)
+        {
+            var first = new RequestOutcome<TResponse>();
+            yield return SendOnce(requestFactory(), first);
+            if (first.Succeeded)
             {
-                downloadHandler = new DownloadHandlerBuffer()
-            };
-            ApplyHeaders(request, headers);
-            return StartCoroutine(Send<TResponse>(request, onSuccess, onError));
+                onSuccess?.Invoke(first.Response);
+                yield break;
+            }
+
+            if (ShouldRefreshAccessToken(first))
+            {
+                bool refreshSucceeded = false;
+                yield return RefreshAccessToken(result => refreshSucceeded = result);
+                if (refreshSucceeded)
+                {
+                    var retry = new RequestOutcome<TResponse>();
+                    yield return SendOnce(requestFactory(), retry);
+                    if (retry.Succeeded)
+                    {
+                        onSuccess?.Invoke(retry.Response);
+                        yield break;
+                    }
+
+                    LogApiFailure(retry);
+                    onError?.Invoke(retry.Error);
+                    yield break;
+                }
+            }
+
+            LogApiFailure(first);
+            onError?.Invoke(first.Error);
+        }
+
+        private IEnumerator SendOnce<TResponse>(
+            UnityWebRequest request,
+            RequestOutcome<TResponse> outcome)
+        {
+            request.timeout = Mathf.Max(1, timeoutSeconds);
+
+            using (request)
+            {
+                outcome.Method = request.method;
+                outcome.Url = request.url;
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    outcome.Error = CreateError(request, request.error);
+                    yield break;
+                }
+
+                var text = request.downloadHandler?.text;
+                try
+                {
+                    if (enableVerboseLog)
+                    {
+                        Debug.Log($"API {request.method} {request.url} OK: {request.responseCode}");
+                    }
+
+                    outcome.Response = string.IsNullOrWhiteSpace(text)
+                        ? default
+                        : JsonConvert.DeserializeObject<TResponse>(text);
+                    outcome.Succeeded = true;
+                }
+                catch (Exception exception)
+                {
+                    outcome.ParseFailed = true;
+                    outcome.Error = CreateError(request, exception.Message);
+                }
+            }
         }
 
         private IEnumerator Send<TResponse>(
@@ -352,6 +501,171 @@ namespace App.Infrastructure.Api
                     Debug.LogError($"API {request.method} {request.url} parse failed: {exception.Message} (response body omitted)");
                     onError?.Invoke(error);
                 }
+            }
+        }
+
+        private bool ShouldRefreshAccessToken<TResponse>(RequestOutcome<TResponse> outcome)
+        {
+            if (outcome == null || outcome.Succeeded || outcome.Error == null)
+            {
+                return false;
+            }
+
+            if (outcome.Error.StatusCode != UnauthorizedStatusCode)
+            {
+                return false;
+            }
+
+            if (IsAuthEndpoint(outcome.Url))
+            {
+                return false;
+            }
+
+            return !string.IsNullOrWhiteSpace(ReadStoredRefreshToken());
+        }
+
+        private IEnumerator RefreshAccessToken(Action<bool> onComplete)
+        {
+            if (tokenRefreshInFlight)
+            {
+                bool completed = false;
+                bool result = false;
+                tokenRefreshWaiters.Add(success =>
+                {
+                    result = success;
+                    completed = true;
+                });
+                yield return new WaitUntil(() => completed);
+                onComplete?.Invoke(result);
+                yield break;
+            }
+
+            var refreshToken = ReadStoredRefreshToken();
+            if (string.IsNullOrWhiteSpace(refreshToken))
+            {
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            tokenRefreshInFlight = true;
+            bool succeeded = false;
+            var requestBody = JsonConvert.SerializeObject(new TokenRefreshRequestDto { RefreshToken = refreshToken });
+            var request = CreateJsonRequest(BuildUrl("/v1/auth/token/refresh"), UnityWebRequest.kHttpVerbPOST, requestBody);
+            request.timeout = Mathf.Max(1, timeoutSeconds);
+            request.SetRequestHeader("Accept", "application/json");
+
+            using (request)
+            {
+                yield return request.SendWebRequest();
+
+                var responseText = request.downloadHandler?.text;
+                if (request.result == UnityWebRequest.Result.Success)
+                {
+                    try
+                    {
+                        var envelope = string.IsNullOrWhiteSpace(responseText)
+                            ? null
+                            : JsonConvert.DeserializeObject<ApiEnvelopeDto<AuthTokenResponseDto>>(responseText);
+                        var tokens = envelope != null && envelope.Succeeded ? envelope.Result : null;
+                        if (tokens != null && !string.IsNullOrWhiteSpace(tokens.AccessToken))
+                        {
+                            var userId = tokens.UserId > 0L ? tokens.UserId : ReadStoredUserId();
+                            SaveRefreshedTokens(
+                                userId,
+                                tokens.AccessToken,
+                                string.IsNullOrWhiteSpace(tokens.RefreshToken) ? refreshToken : tokens.RefreshToken,
+                                tokens.ExpiresIn);
+                            SetAccessToken(tokens.AccessToken);
+                            succeeded = true;
+                            if (enableVerboseLog)
+                            {
+                                Debug.Log("[APIManager] accessToken refreshed after 401.");
+                            }
+                        }
+                        else
+                        {
+                            Debug.LogWarning("[APIManager] token refresh response missing accessToken.");
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        Debug.LogWarning($"[APIManager] token refresh parse failed: {exception.Message}");
+                    }
+                }
+                else
+                {
+                    var error = ParseErrorBody(request.responseCode, responseText, request.error);
+                    Debug.LogWarning(
+                        $"[APIManager] token refresh failed: {error.StatusCode} " +
+                        $"{FirstNonEmpty(error.Code, error.Message, error.Error)}");
+                }
+            }
+
+            CompleteTokenRefresh(succeeded);
+            onComplete?.Invoke(succeeded);
+        }
+
+        private void CompleteTokenRefresh(bool succeeded)
+        {
+            tokenRefreshInFlight = false;
+            if (tokenRefreshWaiters.Count == 0)
+            {
+                return;
+            }
+
+            var waiters = tokenRefreshWaiters.ToArray();
+            tokenRefreshWaiters.Clear();
+            foreach (var waiter in waiters)
+            {
+                try
+                {
+                    waiter?.Invoke(succeeded);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning($"[APIManager] token refresh waiter failed: {exception.Message}");
+                }
+            }
+        }
+
+        private static bool IsAuthEndpoint(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return false;
+            }
+
+            return url.IndexOf("/v1/auth/token/refresh", StringComparison.OrdinalIgnoreCase) >= 0
+                || url.IndexOf("/v1/auth/social-login", StringComparison.OrdinalIgnoreCase) >= 0
+                || url.IndexOf("/v1/auth/logout", StringComparison.OrdinalIgnoreCase) >= 0
+                || url.IndexOf("/v1/auth/guest-session", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void LogApiFailure<TResponse>(RequestOutcome<TResponse> outcome)
+        {
+            if (outcome == null || outcome.Error == null)
+            {
+                return;
+            }
+
+            var error = outcome.Error;
+            if (outcome.ParseFailed)
+            {
+                Debug.LogError($"API {outcome.Method} {outcome.Url} parse failed: {error.Error} (response body omitted)");
+                return;
+            }
+
+            var message = string.IsNullOrWhiteSpace(error.Message) ? error.Error : error.Message;
+            var body = FormatResponseBodyForLog(error.Body);
+            var bodySuffix = string.IsNullOrWhiteSpace(body) ? string.Empty : $" body='{body}'";
+            Debug.LogError($"API {outcome.Method} {outcome.Url} failed: {error.StatusCode} {message}{bodySuffix}");
+
+            if (error.StatusCode == UnauthorizedStatusCode)
+            {
+                bool hasToken = !string.IsNullOrWhiteSpace(accessToken);
+                Debug.LogWarning(
+                    $"[APIManager] 401 diagnostic: baseUrl='{baseUrl}' method='{outcome.Method}' " +
+                    $"url='{outcome.Url}' tokenPresent={hasToken} errorCode={error.Code}.");
             }
         }
 
@@ -601,6 +915,16 @@ namespace App.Infrastructure.Api
         private static bool IsKnownAbsoluteScheme(string scheme)
         {
             return !string.IsNullOrEmpty(scheme) && KnownAbsoluteSchemes.Contains(scheme);
+        }
+
+        private sealed class RequestOutcome<TResponse>
+        {
+            public bool Succeeded;
+            public bool ParseFailed;
+            public TResponse Response;
+            public ApiErrorResponseDto Error;
+            public string Method;
+            public string Url;
         }
 
         private static string NormalizeBaseUrl(string candidate, string fallback)

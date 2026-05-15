@@ -1,4 +1,5 @@
 using System;
+using App.Application.Notebook;
 using App.Auth;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dtos;
@@ -10,7 +11,7 @@ using UnityEngine.UI;
 
 namespace App.Bootstrap
 {
-    // Top-center overlay shown only while visiting another user's space.
+    // Top-right overlay shown only while visiting another user's space.
     //
     // Owner detection runs against AuthSession.UserId — if the visited space's
     // OwnerUserId matches the local user, the overlay stays hidden so that
@@ -20,7 +21,7 @@ namespace App.Bootstrap
     // Lives on its own Canvas (sortingOrder above the bookshelf experience
     // manager's HUD) so the overlay survives camera transitions / focus mode
     // changes without coupling to BookshelfExperienceManager. The like button
-    // intentionally stays anchored top-center on every frame regardless of
+    // intentionally stays anchored top-right on every frame regardless of
     // 3D camera state, per spec.
     [DefaultExecutionOrder(-700)]
     [DisallowMultipleComponent]
@@ -38,10 +39,11 @@ namespace App.Bootstrap
         private const int UiLayer = 5;
 
         private static readonly Color CardColor = new Color(0.06f, 0.07f, 0.09f, 0.78f);
-        private static readonly Color FollowIdleColor = new Color(0.16f, 0.36f, 0.55f, 1f);
-        private static readonly Color FollowActiveColor = new Color(0.18f, 0.20f, 0.24f, 0.92f);
-        private static readonly Color LikeIdleColor = new Color(0.18f, 0.20f, 0.24f, 0.92f);
-        private static readonly Color LikeActiveColor = new Color(0.84f, 0.30f, 0.36f, 1f);
+        private static readonly Color FollowIdleColor = new Color32(163, 128, 105, 255);
+        private static readonly Color FollowActiveColor = new Color32(163, 128, 105, 255);
+        private static readonly Color LikeIdleColor = new Color(1f, 1f, 1f, 0.88f);
+        private static readonly Color LikeActiveBackgroundColor = new Color32(246, 242, 236, 245);
+        private static readonly Color LikeIconColor = new Color32(217, 65, 93, 255);
         private static readonly Color LabelColor = Color.white;
         private static readonly Color ErrorColor = new Color(0.95f, 0.55f, 0.55f, 1f);
 
@@ -53,10 +55,14 @@ namespace App.Bootstrap
         private Button likeButton;
         private Image likeBackground;
         private TMP_Text likeLabel;
+        private Image likeHeartImage;
+        private TMP_Text likeCountLabel;
         private TMP_Text errorLabel;
 
         private TMP_FontAsset fontAsset;
         private Sprite roundedRectSprite;
+        private Sprite heartFilledSprite;
+        private Sprite heartOutlineSprite;
 
         // Last-known server state for the visited space. currentSpaceId /
         // currentOwnerUserId stay nullable so a missing call (overlay never
@@ -74,6 +80,9 @@ namespace App.Bootstrap
         private bool isFollowKnown;
         private bool isLikeInFlight;
         private bool isFollowInFlight;
+        private bool loadingBlocked;
+        private bool hasVisibleVisitorSpace;
+        private long currentLikeCount;
 
         private NotebookApiClient apiClient;
 
@@ -155,7 +164,7 @@ namespace App.Bootstrap
         // External entry point: callers pass the space they just navigated to.
         // Hides for own space, shows + initializes button states otherwise.
         // Idempotent — calling repeatedly with the same dto is safe.
-        public void SetCurrentSpace(SpaceResponseDto space)
+        public void SetCurrentSpace(SpaceResponseDto space, NotebookSpaceVisitRequest visitRequest = null)
         {
             if (space == null || space.Id <= 0)
             {
@@ -166,15 +175,13 @@ namespace App.Bootstrap
 
             currentSpaceId = space.Id;
             currentOwnerUserId = space.OwnerUserId;
-            isLiked = space.Liked;
-            // BE's SpaceResponse has no `following` field yet — start in the
-            // "unknown" state (isFollowKnown=false). The first follow click
-            // forces a POST /follow regardless of the optimistic flip; the BE
-            // ToggleResponse.active then becomes the source of truth and
-            // flips isFollowKnown=true. When BE later adds a `following`
-            // field, swap these two lines for the server value.
-            isFollowed = false;
-            isFollowKnown = false;
+            var hasMatchingVisitState = visitRequest != null &&
+                                        visitRequest.SpaceId == space.Id &&
+                                        visitRequest.OwnerUserId == space.OwnerUserId;
+            isLiked = hasMatchingVisitState ? visitRequest.Liked : space.Liked;
+            currentLikeCount = hasMatchingVisitState ? Math.Max(0L, visitRequest.LikeCount) : Math.Max(0L, space.LikeCount);
+            isFollowed = hasMatchingVisitState && visitRequest.Following;
+            isFollowKnown = hasMatchingVisitState;
 
             var myUserId = AuthSession.UserId;
             // myUserId == 0 means "guest, no own user record" — they can
@@ -182,6 +189,7 @@ namespace App.Bootstrap
             // automatically false for them and the overlay shows.
             if (myUserId != 0 && currentOwnerUserId.HasValue && currentOwnerUserId.Value == myUserId)
             {
+                hasVisibleVisitorSpace = false;
                 HideOverlay();
                 return;
             }
@@ -190,10 +198,12 @@ namespace App.Bootstrap
             // (guest), BE's follow endpoint requires a target userId > 0.
             if (!currentOwnerUserId.HasValue || currentOwnerUserId.Value <= 0)
             {
+                hasVisibleVisitorSpace = false;
                 HideOverlay();
                 return;
             }
 
+            hasVisibleVisitorSpace = true;
             ShowOverlay();
             RefreshButtonVisuals();
             SetMessage(string.Empty);
@@ -201,9 +211,20 @@ namespace App.Bootstrap
 
         public void HideOverlay()
         {
+            hasVisibleVisitorSpace = false;
             if (overlayRoot != null)
             {
                 overlayRoot.SetActive(false);
+            }
+        }
+
+        public void SetLoadingBlocked(bool blocked)
+        {
+            loadingBlocked = blocked;
+            SetButtonsInteractable(!blocked);
+            if (overlayRoot != null)
+            {
+                overlayRoot.SetActive(hasVisibleVisitorSpace && !loadingBlocked);
             }
         }
 
@@ -211,7 +232,7 @@ namespace App.Bootstrap
         {
             if (overlayRoot != null)
             {
-                overlayRoot.SetActive(true);
+                overlayRoot.SetActive(hasVisibleVisitorSpace && !loadingBlocked);
                 overlayRoot.transform.SetAsLastSibling();
             }
         }
@@ -223,10 +244,13 @@ namespace App.Bootstrap
             isLiked = false;
             isFollowed = false;
             isFollowKnown = false;
+            currentLikeCount = 0L;
             // In-flight flags too: a stale callback from a now-irrelevant
             // request must not be allowed to write to a fresh space's state.
             isFollowInFlight = false;
             isLikeInFlight = false;
+            loadingBlocked = false;
+            hasVisibleVisitorSpace = false;
             SetMessage(string.Empty);
         }
 
@@ -234,7 +258,7 @@ namespace App.Bootstrap
 
         private void OnFollowButtonClicked()
         {
-            if (isFollowInFlight || !currentOwnerUserId.HasValue || currentOwnerUserId.Value <= 0)
+            if (loadingBlocked || isFollowInFlight || !currentOwnerUserId.HasValue || currentOwnerUserId.Value <= 0)
             {
                 return;
             }
@@ -280,6 +304,7 @@ namespace App.Bootstrap
             }
 
             isFollowInFlight = true;
+            SetButtonsInteractable(!loadingBlocked);
 
             void OnFailure(ApiErrorResponseDto error)
             {
@@ -326,13 +351,15 @@ namespace App.Bootstrap
 
         private void OnLikeButtonClicked()
         {
-            if (isLikeInFlight || !currentSpaceId.HasValue || currentSpaceId.Value <= 0)
+            if (loadingBlocked || isLikeInFlight || !currentSpaceId.HasValue || currentSpaceId.Value <= 0)
             {
                 return;
             }
 
             var previous = isLiked;
+            var previousCount = currentLikeCount;
             isLiked = !previous;
+            currentLikeCount = Math.Max(0L, currentLikeCount + (isLiked ? 1L : -1L));
             RefreshButtonVisuals();
             SetMessage(string.Empty);
 
@@ -352,6 +379,7 @@ namespace App.Bootstrap
             }
 
             isLikeInFlight = true;
+            SetButtonsInteractable(!loadingBlocked);
 
             void OnFailure(ApiErrorResponseDto error)
             {
@@ -361,6 +389,7 @@ namespace App.Bootstrap
                     return;
                 }
                 isLiked = previous;
+                currentLikeCount = previousCount;
                 RefreshButtonVisuals();
                 SetMessage("처리에 실패했습니다. 다시 시도해주세요.");
                 Debug.LogWarning(
@@ -377,6 +406,7 @@ namespace App.Bootstrap
                 if (response != null)
                 {
                     isLiked = response.Active;
+                    currentLikeCount = Math.Max(0L, response.Count);
                     RefreshButtonVisuals();
                 }
             }
@@ -414,6 +444,8 @@ namespace App.Bootstrap
         private void BuildOverlay()
         {
             roundedRectSprite = CreateRoundedRectSprite(48, 12);
+            heartFilledSprite = CreateHeartSprite(64, true);
+            heartOutlineSprite = CreateHeartSprite(64, false);
             fontAsset = ResolveFontAsset();
 
             var canvasObject = new GameObject(CanvasName, typeof(RectTransform));
@@ -442,11 +474,11 @@ namespace App.Bootstrap
 
             overlayRoot = CreateRect("OverlayRoot", canvasObject.transform);
             var rootRect = (RectTransform)overlayRoot.transform;
-            rootRect.anchorMin = new Vector2(0.5f, 1f);
-            rootRect.anchorMax = new Vector2(0.5f, 1f);
-            rootRect.pivot = new Vector2(0.5f, 1f);
-            rootRect.anchoredPosition = new Vector2(0f, -32f);
-            rootRect.sizeDelta = new Vector2(360f, 88f);
+            rootRect.anchorMin = new Vector2(1f, 1f);
+            rootRect.anchorMax = new Vector2(1f, 1f);
+            rootRect.pivot = new Vector2(1f, 1f);
+            rootRect.anchoredPosition = new Vector2(-28f, -28f);
+            rootRect.sizeDelta = new Vector2(286f, 70f);
 
             var card = CreateImage(overlayRoot.transform, "Card", CardColor);
             card.sprite = roundedRectSprite;
@@ -469,12 +501,17 @@ namespace App.Bootstrap
             layoutGroup.childControlHeight = true;
 
             (followButton, followBackground, followLabel) = CreatePillButton(
-                horizontal.transform, "FollowButton", "팔로우", FollowIdleColor, new Vector2(160f, 0f));
+                horizontal.transform, "FollowButton", "팔로우", FollowIdleColor, new Vector2(142f, 0f));
             followButton.onClick.AddListener(OnFollowButtonClicked);
 
             (likeButton, likeBackground, likeLabel) = CreatePillButton(
-                horizontal.transform, "LikeButton", "♡", LikeIdleColor, new Vector2(80f, 0f));
+                horizontal.transform, "LikeButton", "♡", LikeIdleColor, new Vector2(92f, 0f));
             likeButton.onClick.AddListener(OnLikeButtonClicked);
+            if (likeLabel != null)
+            {
+                likeLabel.gameObject.SetActive(false);
+            }
+            BuildLikeButtonContent(likeButton.transform);
 
             errorLabel = CreateText(overlayRoot.transform, "ErrorLabel", string.Empty, 13f, ErrorColor, TextAlignmentOptions.Center);
             var errorRect = errorLabel.rectTransform;
@@ -518,6 +555,40 @@ namespace App.Bootstrap
             return (button, image, label);
         }
 
+        private void BuildLikeButtonContent(Transform parent)
+        {
+            var contentRoot = CreateRect("LikeContent", parent);
+            var contentRect = (RectTransform)contentRoot.transform;
+            StretchToParent(contentRect);
+            var layout = contentRoot.AddComponent<HorizontalLayoutGroup>();
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.spacing = 6f;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+
+            likeHeartImage = CreateImage(contentRoot.transform, "HeartIcon", LikeIconColor);
+            likeHeartImage.sprite = heartOutlineSprite;
+            likeHeartImage.preserveAspect = true;
+            likeHeartImage.raycastTarget = false;
+            var iconRect = likeHeartImage.rectTransform;
+            iconRect.sizeDelta = new Vector2(22f, 22f);
+            var iconLayout = likeHeartImage.gameObject.AddComponent<LayoutElement>();
+            iconLayout.preferredWidth = 22f;
+            iconLayout.preferredHeight = 22f;
+            iconLayout.minWidth = 22f;
+            iconLayout.minHeight = 22f;
+
+            likeCountLabel = CreateText(contentRoot.transform, "LikeCount", "0", 15f, LikeIconColor, TextAlignmentOptions.MidlineLeft);
+            likeCountLabel.fontStyle = FontStyles.Bold;
+            likeCountLabel.raycastTarget = false;
+            var countLayout = likeCountLabel.gameObject.AddComponent<LayoutElement>();
+            countLayout.preferredWidth = 26f;
+            countLayout.minWidth = 18f;
+            countLayout.preferredHeight = 22f;
+        }
+
         private void RefreshButtonVisuals()
         {
             if (followLabel != null)
@@ -530,11 +601,35 @@ namespace App.Bootstrap
             }
             if (likeLabel != null)
             {
-                likeLabel.text = isLiked ? "♥" : "♡";
+                likeLabel.text = $"{(isLiked ? "♥" : "♡")} {currentLikeCount:N0}";
+                likeLabel.color = LikeIconColor;
+            }
+            if (likeHeartImage != null)
+            {
+                likeHeartImage.sprite = isLiked ? heartFilledSprite : heartOutlineSprite;
+                likeHeartImage.color = LikeIconColor;
+            }
+            if (likeCountLabel != null)
+            {
+                likeCountLabel.text = currentLikeCount.ToString("N0");
+                likeCountLabel.color = LikeIconColor;
             }
             if (likeBackground != null)
             {
-                likeBackground.color = isLiked ? LikeActiveColor : LikeIdleColor;
+                likeBackground.color = isLiked ? LikeActiveBackgroundColor : LikeIdleColor;
+            }
+            SetButtonsInteractable(!loadingBlocked);
+        }
+
+        private void SetButtonsInteractable(bool interactable)
+        {
+            if (followButton != null)
+            {
+                followButton.interactable = interactable && !isFollowInFlight;
+            }
+            if (likeButton != null)
+            {
+                likeButton.interactable = interactable && !isLikeInFlight;
             }
         }
 
@@ -600,6 +695,74 @@ namespace App.Bootstrap
             rectTransform.offsetMin = Vector2.zero;
             rectTransform.offsetMax = Vector2.zero;
             rectTransform.anchoredPosition = Vector2.zero;
+        }
+
+        private static Sprite CreateHeartSprite(int size, bool filled)
+        {
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = filled ? "SpaceVisitorHeartFilled" : "SpaceVisitorHeartOutline",
+                hideFlags = HideFlags.HideAndDontSave,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+
+            var pixels = new Color32[size * size];
+            var solid = new Color32(255, 255, 255, 255);
+            var transparent = new Color32(255, 255, 255, 0);
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    var inside = IsInsideHeart(x, y, size);
+                    var visible = filled ? inside : inside && IsHeartEdge(x, y, size);
+                    pixels[(y * size) + x] = visible ? solid : transparent;
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+            return Sprite.Create(
+                texture,
+                new Rect(0f, 0f, size, size),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0u,
+                SpriteMeshType.FullRect);
+        }
+
+        private static bool IsHeartEdge(int x, int y, int size)
+        {
+            const int radius = 2;
+            for (var oy = -radius; oy <= radius; oy++)
+            {
+                for (var ox = -radius; ox <= radius; ox++)
+                {
+                    if (ox == 0 && oy == 0)
+                    {
+                        continue;
+                    }
+                    if (!IsInsideHeart(x + ox, y + oy, size))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private static bool IsInsideHeart(int x, int y, int size)
+        {
+            if (x < 0 || y < 0 || x >= size || y >= size)
+            {
+                return false;
+            }
+
+            var normalizedX = (((x + 0.5f) / size) - 0.5f) * 2.55f;
+            var normalizedY = (((y + 0.5f) / size) - 0.42f) * 2.45f;
+            var value = Math.Pow((normalizedX * normalizedX) + (normalizedY * normalizedY) - 1f, 3) -
+                        (normalizedX * normalizedX * normalizedY * normalizedY * normalizedY);
+            return value <= 0d;
         }
 
         private static Sprite CreateRoundedRectSprite(int size, int radius)

@@ -73,9 +73,13 @@ public class BookshelfService {
     private final FollowRepository followRepository;
     private final UserService userService;
 
-    public BookshelfListResponse getBookshelves(Long spaceId) {
+    public BookshelfListResponse getBookshelves(Long userId, Long spaceId) {
+        Space space = spaceService.getSpaceEntity(spaceId);
+        spaceService.ensureCanViewSpace(userId, space);
+        boolean isOwner = space.getOwnerUserId().equals(userId);
         return new BookshelfListResponse(bookshelfRepository.findBySpaceIdAndStatusOrderByDisplayOrderAsc(spaceId, ACTIVE)
                 .stream()
+                .filter(bookshelf -> isOwner || "PUBLIC".equalsIgnoreCase(bookshelf.getVisibilityScope()))
                 .map(BookshelfResponse::from)
                 .toList());
     }
@@ -268,6 +272,7 @@ public class BookshelfService {
 
     private void requireReadable(Long userId, Bookshelf bookshelf) {
         Space space = spaceService.getSpaceEntity(bookshelf.getSpaceId());
+        spaceService.ensureCanViewSpace(userId, space);
         if (space.getOwnerUserId().equals(userId)) {
             return;
         }

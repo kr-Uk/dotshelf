@@ -14,6 +14,12 @@ namespace App.Application.Notebook
 
         void LoadAssets(string category, string sort, int limit, Action<NotebookAssetListResult> onSuccess, Action<NotebookApiError> onError);
 
+        void LoadAssetInventory(Action<NotebookAssetInventoryResult> onSuccess, Action<NotebookApiError> onError);
+
+        void LoadAssetDownloadManifest(long assetId, Action<NotebookAssetDownloadManifestResult> onSuccess, Action<NotebookApiError> onError);
+
+        void LoadSpaceAssetDownloadManifests(long spaceId, Action<NotebookSpaceAssetManifestListResult> onSuccess, Action<NotebookApiError> onError);
+
         void WishAsset(long assetId, bool wished, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError);
 
         void PurchaseAsset(long assetId, Action<NotebookAssetPurchaseResult> onSuccess, Action<NotebookApiError> onError);

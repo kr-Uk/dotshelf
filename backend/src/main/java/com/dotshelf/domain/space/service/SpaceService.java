@@ -18,10 +18,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.dotshelf.domain.asset.dto.AssetDtos.DownloadManifestResponse;
 import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.entity.UserAssetInventory;
 import com.dotshelf.domain.asset.repository.AssetRepository;
 import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
+import com.dotshelf.domain.asset.service.AssetService;
 import com.dotshelf.domain.book.dto.BookDtos.OwnedBookListResponse;
 import com.dotshelf.domain.book.dto.BookDtos.OwnedBookSummary;
 import com.dotshelf.domain.book.repository.UserBookRepository;
@@ -31,10 +33,12 @@ import com.dotshelf.domain.space.dto.SpaceDtos.CategoryInventoryRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.DashboardResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.LayoutResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListItemResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceListResponse;
+import com.dotshelf.domain.space.dto.SpaceDtos.SpaceAssetManifestListResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceMutationResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceResponse;
 import com.dotshelf.domain.space.dto.SpaceDtos.SpaceTemplateListResponse;
@@ -71,6 +75,8 @@ import com.dotshelf.global.storage.S3StorageProperties;
 import com.dotshelf.global.storage.S3StorageService;
 import com.dotshelf.global.storage.S3StorageService.ObjectMetadata;
 import com.dotshelf.global.storage.S3StorageService.PresignedPut;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -101,6 +107,7 @@ public class SpaceService {
             "image/png", "png",
             "image/webp", "webp");
     private static final AtomicLong LAST_THUMBNAIL_ISSUED_AT_MILLIS = new AtomicLong();
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final SpaceRepository spaceRepository;
     private final SpaceTemplateRepository spaceTemplateRepository;
@@ -113,6 +120,7 @@ public class SpaceService {
     private final UserBookRepository userBookRepository;
     private final UserRepository userRepository;
     private final UserService userService;
+    private final AssetService assetService;
     private final AssetRepository assetRepository;
     private final UserAssetInventoryRepository userAssetInventoryRepository;
     private final BookshelfRepository bookshelfRepository;
@@ -128,7 +136,56 @@ public class SpaceService {
 
     public SpaceResponse getSpace(Long currentUserId, Long spaceId) {
         Space space = getSpaceEntity(spaceId);
+        ensureCanViewSpace(currentUserId, space);
         return SpaceResponse.from(space, isLiked(spaceId, currentUserId));
+    }
+
+    public SpaceAssetManifestListResponse getVisibleAssetManifests(Long currentUserId, Long spaceId) {
+        Space space = getSpaceEntity(spaceId);
+        ensureCanViewSpace(currentUserId, space);
+
+        Set<Long> inventoryIds = new HashSet<>(currentInventoryIds(space));
+        Set<Long> layoutAssetIds = new HashSet<>();
+        layoutSnapshotRepository.findFirstBySpaceIdOrderByLayoutVersionDesc(space.getId())
+                .ifPresent(snapshot -> collectLayoutAssetReferences(snapshot.getLayoutPayload(), inventoryIds, layoutAssetIds));
+
+        List<UserAssetInventory> ownerInventories = userAssetInventoryRepository.findByUserId(space.getOwnerUserId());
+        Map<Long, UserAssetInventory> ownerInventoriesById = ownerInventories.stream()
+                .collect(Collectors.toMap(UserAssetInventory::getId, Function.identity(), (left, right) -> left));
+        Set<Long> ownedAssetIds = ownerInventories.stream()
+                .map(UserAssetInventory::getAssetId)
+                .collect(Collectors.toSet());
+
+        List<Long> assetIds = new ArrayList<>();
+        inventoryIds.stream()
+                .map(ownerInventoriesById::get)
+                .filter(Objects::nonNull)
+                .map(UserAssetInventory::getAssetId)
+                .forEach(assetIds::add);
+        layoutAssetIds.stream()
+                .filter(ownedAssetIds::contains)
+                .forEach(assetIds::add);
+
+        assetIds = assetIds.stream().distinct().toList();
+        if (assetIds.isEmpty()) {
+            return new SpaceAssetManifestListResponse(space.getId(), space.getLayoutVersion(), List.of());
+        }
+
+        List<DownloadManifestResponse> manifests = assetIds.stream()
+                .map(assetService::getDownloadManifestForVisibleAsset)
+                .toList();
+        return new SpaceAssetManifestListResponse(space.getId(), space.getLayoutVersion(), manifests);
+    }
+
+    public LayoutResponse getLayout(Long currentUserId, Long spaceId) {
+        Space space = getSpaceEntity(spaceId);
+        ensureCanViewSpace(currentUserId, space);
+        SpaceLayoutSnapshot snapshot = layoutSnapshotRepository.findFirstBySpaceIdOrderByLayoutVersionDesc(space.getId())
+                .orElse(null);
+        if (snapshot == null) {
+            return new LayoutResponse(space.getId(), space.getLayoutVersion(), "{\"items\":[]}");
+        }
+        return new LayoutResponse(space.getId(), snapshot.getLayoutVersion(), snapshot.getLayoutPayload());
     }
 
     public SpaceListResponse getSpaces(Long userId, String keyword, String sort, int limit) {
@@ -153,6 +210,7 @@ public class SpaceService {
 
     public DashboardResponse getDashboard(Long currentUserId, Long spaceId, String period) {
         Space space = getSpaceEntity(spaceId);
+        ensureCanViewSpace(currentUserId, space);
         User owner = userService.getUser(space.getOwnerUserId());
         long weeklyVisitorCount = spaceVisitRepository
                 .countDistinctVisitorsBySpaceIdSince(spaceId, LocalDate.now().minusDays(7));
@@ -175,10 +233,103 @@ public class SpaceService {
                 && spaceLikeRepository.existsBySpaceIdAndUserId(spaceId, viewerUserId);
     }
 
+    private static List<Long> currentInventoryIds(Space space) {
+        if (space == null) {
+            return List.of();
+        }
+
+        List<Long> ids = new ArrayList<>();
+        addPositive(ids, space.getCurrentThemeInventoryId());
+        addPositive(ids, space.getCurrentWallpaperInventoryId());
+        addPositive(ids, space.getCurrentFloorInventoryId());
+        addPositive(ids, space.getCurrentDeskInventoryId());
+        addPositive(ids, space.getCurrentDashboardInventoryId());
+        addPositive(ids, space.getCurrentInteriorLightInventoryId());
+        addPositive(ids, space.getCurrentExteriorLightInventoryId());
+        return ids.stream().distinct().toList();
+    }
+
+    private static void addPositive(List<Long> ids, Long value) {
+        if (value != null && value > 0L) {
+            ids.add(value);
+        }
+    }
+
+    private static void addPositive(Set<Long> ids, Long value) {
+        if (value != null && value > 0L) {
+            ids.add(value);
+        }
+    }
+
+    public void ensureCanViewSpace(Long currentUserId, Space space) {
+        ensureNotBlockedAgainstOwner(currentUserId, space.getOwnerUserId());
+        if (!Objects.equals(space.getOwnerUserId(), currentUserId)
+                && !"PUBLIC".equalsIgnoreCase(space.getVisibilityScope())) {
+            throw new CustomException(ErrorCode.FORBIDDEN);
+        }
+    }
+
+    public void ensureCanViewSpace(Long currentUserId, Long spaceId) {
+        ensureCanViewSpace(currentUserId, getSpaceEntity(spaceId));
+    }
+
+    private static void collectLayoutAssetReferences(String layoutPayload, Set<Long> inventoryIds, Set<Long> assetIds) {
+        if (layoutPayload == null || layoutPayload.isBlank()) {
+            return;
+        }
+
+        try {
+            JsonNode items = OBJECT_MAPPER.readTree(layoutPayload).path("items");
+            if (!items.isArray()) {
+                return;
+            }
+
+            for (JsonNode item : items) {
+                String key = textValue(item, "AssetId");
+                if (key == null) {
+                    key = textValue(item, "assetId");
+                }
+                collectLayoutAssetReference(key, inventoryIds, assetIds);
+            }
+        } catch (Exception ex) {
+            // Layout payload is user-generated client JSON. A malformed old snapshot
+            // must not block space visits; it simply contributes no remote asset refs.
+            log.warn("[SpaceLayout] Failed to parse layoutPayload for asset references: {}", ex.getMessage());
+        }
+    }
+
+    private static String textValue(JsonNode node, String fieldName) {
+        JsonNode value = node == null ? null : node.get(fieldName);
+        return value == null || value.isNull() ? null : value.asText(null);
+    }
+
+    private static void collectLayoutAssetReference(String key, Set<Long> inventoryIds, Set<Long> assetIds) {
+        if (key == null || key.isBlank()) {
+            return;
+        }
+        if (key.startsWith("asset:")) {
+            addPositive(assetIds, parsePositiveLong(key.substring("asset:".length())));
+            return;
+        }
+        if (key.startsWith("inv:")) {
+            addPositive(inventoryIds, parsePositiveLong(key.substring("inv:".length())));
+        }
+    }
+
+    private static Long parsePositiveLong(String raw) {
+        try {
+            long value = Long.parseLong(raw);
+            return value > 0L ? value : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     @Transactional
     public ToggleResponse recordVisit(Long userId, Long spaceId) {
         Long currentUserId = userService.requireUserId(userId);
         Space space = getSpaceEntity(spaceId);
+        ensureCanViewSpace(currentUserId, space);
         if (space.getOwnerUserId().equals(currentUserId)) {
             return new ToggleResponse(false, space.getVisitCount());
         }
@@ -198,6 +349,7 @@ public class SpaceService {
     public ToggleResponse like(Long userId, Long spaceId) {
         Long currentUserId = userService.requireUserId(userId);
         Space space = getSpaceEntity(spaceId);
+        ensureCanViewSpace(currentUserId, space);
         if (!spaceLikeRepository.existsBySpaceIdAndUserId(spaceId, currentUserId)) {
             spaceLikeRepository.save(SpaceLike.builder()
                     .spaceId(spaceId)
@@ -212,6 +364,7 @@ public class SpaceService {
     public ToggleResponse unlike(Long userId, Long spaceId) {
         Long currentUserId = userService.requireUserId(userId);
         Space space = getSpaceEntity(spaceId);
+        ensureCanViewSpace(currentUserId, space);
         if (spaceLikeRepository.existsBySpaceIdAndUserId(spaceId, currentUserId)) {
             spaceLikeRepository.deleteBySpaceIdAndUserId(spaceId, currentUserId);
             space.unlike();
@@ -711,7 +864,7 @@ public class SpaceService {
      */
     public OwnedBookListResponse getOwnedBooks(Long viewerUserId, Long spaceId, String sort, String cursor, int limit) {
         Space space = getSpaceEntity(spaceId);
-        ensureNotBlockedAgainstOwner(viewerUserId, space.getOwnerUserId());
+        ensureCanViewSpace(viewerUserId, space);
 
         int validLimit = validateListLimit(limit);
         Long cursorId = CursorParser.parseId(cursor);

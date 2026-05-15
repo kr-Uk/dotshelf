@@ -158,7 +158,18 @@ public class AssetService {
     }
 
     public InventoryResponse getInventory(Long userId) {
-        return InventoryResponse.from(inventoryRepository.findByUserId(userService.requireUserId(userId)));
+        List<UserAssetInventory> inventories = inventoryRepository.findByUserId(userService.requireUserId(userId));
+        if (inventories.isEmpty()) {
+            return InventoryResponse.from(inventories);
+        }
+
+        List<Long> assetIds = inventories.stream()
+                .map(UserAssetInventory::getAssetId)
+                .distinct()
+                .toList();
+        Map<Long, Asset> assetsById = assetRepository.findAllById(assetIds).stream()
+                .collect(Collectors.toMap(Asset::getId, Function.identity()));
+        return InventoryResponse.from(inventories, assetsById);
     }
 
     @Transactional
@@ -198,6 +209,14 @@ public class AssetService {
             throw new CustomException(ErrorCode.ASSET_NOT_OWNED);
         }
 
+        return buildDownloadManifest(root);
+    }
+
+    public DownloadManifestResponse getDownloadManifestForVisibleAsset(Long assetId) {
+        return buildDownloadManifest(getAsset(assetId));
+    }
+
+    private DownloadManifestResponse buildDownloadManifest(Asset root) {
         List<DownloadFileResponse> files;
         if ("THEME".equalsIgnoreCase(root.getAssetType())) {
             files = buildThemeDownloadFiles(root);
