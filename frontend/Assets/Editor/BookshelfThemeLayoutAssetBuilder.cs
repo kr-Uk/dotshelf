@@ -85,6 +85,67 @@ namespace BookshelfPorting.Editor
                 0f,
                 new[] { 0.165f, 0.535f, 0.820f, 1.145f },
                 new[] { 0.305f, 0.295f, 0.310f, 0.315f },
+                new[] { 0.006f, 0.006f, 0.006f, 0.006f }),
+
+            // 신규 5종 — 각 RoomTheme 자체 책장 layout. Vintage 시드값 복제 (일반 4×4),
+            // prefabLocalEulerAngles 만 GLB 별 native forward 에 맞춰 개별 지정.
+
+            new ThemeSpec(
+                BookshelfThemeStyle.Spooky, "Spooky",
+                "Assets/Arts/Models/spooky_shelf.glb",
+                $"{ThemeLayoutFolder}/BookshelfThemeLayout_Spooky.asset",
+                4, 4, 1f, new Vector3(0f, 180f, 0f),
+                0.13f, 0.18f, 0.13f, 0.065f, 0.030f, 0.04f, 0.04f, -0.020f, 0f,
+                new[] { 0.165f, 0.535f, 0.820f, 1.145f },
+                new[] { 0.305f, 0.295f, 0.310f, 0.315f },
+                new[] { 0.006f, 0.006f, 0.006f, 0.006f }),
+
+            new ThemeSpec(
+                BookshelfThemeStyle.DeepSea, "DeepSea",
+                "Assets/Arts/Models/deepsea_shelf.glb",
+                $"{ThemeLayoutFolder}/BookshelfThemeLayout_DeepSea.asset",
+                4, 4, 1f, new Vector3(0f, -180f, 0f),
+                0.13f, 0.18f, 0.13f, 0.065f, 0.030f, 0.04f, 0.04f, -0.020f, 0f,
+                new[] { 0.165f, 0.535f, 0.820f, 1.145f },
+                new[] { 0.305f, 0.295f, 0.310f, 0.315f },
+                new[] { 0.006f, 0.006f, 0.006f, 0.006f },
+                true,
+                new Vector3(0f, 0.82f, 1.23f),
+                new Vector3(0f, -180f, 0f),
+                new Vector3(0.86f, 0.86f, 0.55f)),
+
+            new ThemeSpec(
+                BookshelfThemeStyle.Fantasy, "Fantasy",
+                "Assets/Arts/Models/fantasy_shelf.glb",
+                $"{ThemeLayoutFolder}/BookshelfThemeLayout_Fantasy.asset",
+                4, 4, 1f, Vector3.zero,
+                0.13f, 0.18f, 0.13f, 0.065f, 0.030f, 0.04f, 0.04f, -0.020f, 0f,
+                new[] { 0.165f, 0.535f, 0.820f, 1.145f },
+                new[] { 0.305f, 0.295f, 0.310f, 0.315f },
+                new[] { 0.006f, 0.006f, 0.006f, 0.006f }),
+
+            new ThemeSpec(
+                BookshelfThemeStyle.Space, "Space",
+                "Assets/Arts/Models/space_shelf.glb",
+                $"{ThemeLayoutFolder}/BookshelfThemeLayout_Space.asset",
+                4, 4, 1f, new Vector3(0f, 180.66f, 0f),
+                0.13f, 0.18f, 0.13f, 0.065f, 0.030f, 0.04f, 0.04f, -0.020f, 0f,
+                new[] { 0.165f, 0.535f, 0.820f, 1.145f },
+                new[] { 0.305f, 0.295f, 0.310f, 0.315f },
+                new[] { 0.006f, 0.006f, 0.006f, 0.006f },
+                true,
+                new Vector3(-0.0003f, 0.8008f, 0.0007f),
+                new Vector3(0f, 180.66f, 0f),
+                new Vector3(0.8422f, 0.8422f, 0.8422f)),
+
+            new ThemeSpec(
+                BookshelfThemeStyle.GoodVibes, "GoodVibes",
+                "Assets/Arts/Models/default_shelf.glb",
+                $"{ThemeLayoutFolder}/BookshelfThemeLayout_GoodVibes.asset",
+                4, 4, 1f, Vector3.zero,
+                0.13f, 0.18f, 0.13f, 0.065f, 0.030f, 0.04f, 0.04f, -0.020f, 0f,
+                new[] { 0.165f, 0.535f, 0.820f, 1.145f },
+                new[] { 0.305f, 0.295f, 0.310f, 0.315f },
                 new[] { 0.006f, 0.006f, 0.006f, 0.006f })
         };
 
@@ -124,6 +185,7 @@ namespace BookshelfPorting.Editor
                     placement.LocalPosition,
                     placement.LocalEulerAngles,
                     placement.LocalScale,
+                    spec.PreservePrefabLocalTransform,
                     focusCenter,
                     focusSize,
                     sections);
@@ -143,8 +205,6 @@ namespace BookshelfPorting.Editor
         [MenuItem("Tools/DotShelf/Bookshelf/Verify Meshy Theme Layouts")]
         public static void VerifyMeshyThemeLayouts()
         {
-            CreateMeshyThemeLayouts();
-
             var outputDirectory = Path.GetFullPath(Path.Combine(Application.dataPath, "..", VerificationFolderName));
             Directory.CreateDirectory(outputDirectory);
 
@@ -160,6 +220,8 @@ namespace BookshelfPorting.Editor
                 if (layout == null)
                 {
                     report.AppendLine($"{spec.DisplayName}: missing layout asset");
+                    report.AppendLine($"Expected layout path: {spec.LayoutPath}");
+                    report.AppendLine("Run 'Create Meshy Theme Layouts' if you intentionally want to regenerate the asset.");
                     continue;
                 }
 
@@ -195,6 +257,13 @@ namespace BookshelfPorting.Editor
         private static VisualPlacement CalculateVisualPlacement(GameObject prefab, ThemeSpec spec)
         {
             var rawBounds = CalculatePrefabLocalRendererBounds(prefab);
+            if (spec.UseManualPlacement)
+            {
+                var manualRotation = Quaternion.Euler(spec.ManualLocalEulerAngles);
+                var manualBounds = TransformBounds(rawBounds, spec.ManualLocalPosition, spec.ManualLocalScale, manualRotation);
+                return new VisualPlacement(spec.ManualLocalPosition, spec.ManualLocalEulerAngles, spec.ManualLocalScale, manualBounds);
+            }
+
             var rawSize = rawBounds.size;
             var scale = Mathf.Min(
                 SafeDivide(TargetWidth, rawSize.x),
@@ -616,6 +685,11 @@ namespace BookshelfPorting.Editor
 
         private static Bounds TransformBounds(Bounds bounds, Vector3 position, float scale, Quaternion rotation)
         {
+            return TransformBounds(bounds, position, Vector3.one * scale, rotation);
+        }
+
+        private static Bounds TransformBounds(Bounds bounds, Vector3 position, Vector3 scale, Quaternion rotation)
+        {
             var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
             var max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
             var bMin = bounds.min;
@@ -632,9 +706,10 @@ namespace BookshelfPorting.Editor
             return new Bounds((min + max) * 0.5f, max - min);
         }
 
-        private static void EncapsulateTransformedPoint(Vector3 point, Vector3 position, float scale, Quaternion rotation, ref Vector3 min, ref Vector3 max)
+        private static void EncapsulateTransformedPoint(Vector3 point, Vector3 position, Vector3 scale, Quaternion rotation, ref Vector3 min, ref Vector3 max)
         {
-            var transformed = rotation * (point * scale) + position;
+            var scaledPoint = new Vector3(point.x * scale.x, point.y * scale.y, point.z * scale.z);
+            var transformed = rotation * scaledPoint + position;
             min = Vector3.Min(min, transformed);
             max = Vector3.Max(max, transformed);
         }
@@ -713,6 +788,11 @@ namespace BookshelfPorting.Editor
             public readonly float BackInset;
             public readonly float SectionYOffset;
             public readonly float BookYOffset;
+            public readonly bool PreservePrefabLocalTransform;
+            public readonly bool UseManualPlacement;
+            public readonly Vector3 ManualLocalPosition;
+            public readonly Vector3 ManualLocalEulerAngles;
+            public readonly Vector3 ManualLocalScale;
             private readonly float[] rowShelfTopY;
             private readonly float[] rowSectionHeight;
             private readonly float[] rowBookYOffset;
@@ -737,7 +817,11 @@ namespace BookshelfPorting.Editor
                 float bookYOffset,
                 float[] rowShelfTopY,
                 float[] rowSectionHeight,
-                float[] rowBookYOffset)
+                float[] rowBookYOffset,
+                bool preservePrefabLocalTransform = false,
+                Vector3? manualLocalPosition = null,
+                Vector3? manualLocalEulerAngles = null,
+                Vector3? manualLocalScale = null)
             {
                 Style = style;
                 DisplayName = displayName;
@@ -756,6 +840,11 @@ namespace BookshelfPorting.Editor
                 BackInset = backInset;
                 SectionYOffset = sectionYOffset;
                 BookYOffset = bookYOffset;
+                PreservePrefabLocalTransform = preservePrefabLocalTransform;
+                UseManualPlacement = manualLocalPosition.HasValue && manualLocalEulerAngles.HasValue && manualLocalScale.HasValue;
+                ManualLocalPosition = manualLocalPosition ?? Vector3.zero;
+                ManualLocalEulerAngles = manualLocalEulerAngles ?? prefabLocalEulerAngles;
+                ManualLocalScale = manualLocalScale ?? Vector3.one;
                 this.rowShelfTopY = rowShelfTopY;
                 this.rowSectionHeight = rowSectionHeight;
                 this.rowBookYOffset = rowBookYOffset;

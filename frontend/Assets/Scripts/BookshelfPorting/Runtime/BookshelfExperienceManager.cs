@@ -734,6 +734,12 @@ namespace BookshelfPorting.Runtime
         private bool isBookshelfDeleteConfirmPanelOpen;
         private bool isBookshelfDesignPanelOpen;
         private bool isBookAddPanelOpen;
+
+        // 외부 (OnboardingScreenController.RefreshStep3CompletionGate 등) 가 모달의 *실제 시각 상태* 를
+        // 알 수 있는 진입점. isBookAddPanelOpen 만으로는 transient hide 케이스 (HandleBookshelfSwitchStateChanged
+        // 의 canShowBookshelfOverlay=false 사이) 가 누락되므로 GameObject.activeInHierarchy 까지 함께 체크.
+        public bool IsBookAddPanelVisible =>
+            bookAddPanel != null && bookAddPanel.activeInHierarchy && isBookAddPanelOpen;
         private bool isBookAddConfirmPanelOpen;
         private bool isBookCoverSkinPanelOpen;
         private bool isAdvertisementBookAddPanelOpen;
@@ -1327,16 +1333,35 @@ namespace BookshelfPorting.Runtime
                     StopCoroutine(onboardingAutoOpenBookAddRoutine);
                     onboardingAutoOpenBookAddRoutine = null;
                 }
-                // No explicit re-show: chrome is restored by the existing
-                // SyncBookshelfBottomNav / focus-mode visibility code paths
-                // that run when onboarding ends and FocusMainView() is called.
+                // Most chrome is restored by the existing SyncBookshelfBottomNav / focus-mode visibility
+                // code paths that run when onboarding ends and FocusMainView() is called.
+                //
+                // 예외: closeBookAddButton 은 bookAddPanel 의 자식이라 RefreshHud 의 일반 sync 가 SetActive 를
+                // 안 건드림 (panel.SetActive 변화 시 자식 visibility 는 unity 가 자동 처리하지만, 우리가 명시적
+                // 으로 SetActive(false) 한 상태는 parent SetActive(true) 후에도 그대로 유지됨). onboarding 종료
+                // 시 명시 복원해야 일반 사용자가 다음 책 추가 panel 진입 시 × 버튼으로 close 가능.
+                if (closeBookAddButton != null && !closeBookAddButton.gameObject.activeSelf)
+                {
+                    closeBookAddButton.gameObject.SetActive(true);
+                }
             }
         }
 
         private IEnumerator AutoOpenBookAddPanelWhenReadyAsync()
         {
-            const float TimeoutSeconds = 6f;
-            var deadline = Time.unscaledTime + TimeoutSeconds;
+            // timeout 12초 — 정상 소셜 로그인 후 첫 책장 BE sync (HasServerPlacementIdsForBookshelf)
+            // race 를 흡수. silent fail 회피: timeout 시점에 DiagnoseBookAddPanelGate() 결과 1회 LogWarning.
+            //
+            // Stable window (0.5초): CanOpenBookAddPanel() 가 단발 frame 만 true 인 transient race 에서
+            // OpenBookAddPanel 호출하면 곧 다른 sync (RebuildInventorySlots / BookshelfSwitchStateChanged →
+            // RefreshHud → canShowBookshelfOverlay false) 가 모달을 hide 시키는 회귀. 0.5초 연속 stable 한
+            // 후에만 호출 → ApplyExternalThemeSelection 의 RebuildInventorySlots 부수효과가 끝난 안정 상태에서
+            // 모달 노출 → "잠깐 나왔다가 사라진다" 회귀 차단.
+            const float TimeoutSeconds = 12f;
+            const float StableReadyDurationSeconds = 0.5f;
+            var startedAt = Time.unscaledTime;
+            var deadline = startedAt + TimeoutSeconds;
+            float? readySince = null;
             while (Time.unscaledTime < deadline)
             {
                 if (!isOnboardingStep3Active)
@@ -1345,18 +1370,60 @@ namespace BookshelfPorting.Runtime
                 }
                 if (CanOpenBookAddPanel())
                 {
-                    OpenBookAddPanel();
-                    onboardingAutoOpenBookAddRoutine = null;
-                    yield break;
+                    if (readySince == null)
+                    {
+                        readySince = Time.unscaledTime;
+                    }
+                    else if (Time.unscaledTime - readySince.Value >= StableReadyDurationSeconds)
+                    {
+                        Debug.Log(
+                            $"[OnboardingStep3.AutoOpen] Conditions met after {Time.unscaledTime - startedAt:F1}s " +
+                            $"(stable {StableReadyDurationSeconds:F1}s) — opening BookAdd panel.");
+                        OpenBookAddPanel();
+                        onboardingAutoOpenBookAddRoutine = null;
+                        yield break;
+                    }
+                }
+                else
+                {
+                    // 조건 풀리면 stable timer reset — switching 등 transient flag 가 다시 true 됐다면
+                    // 그게 안정될 때까지 처음부터 0.5초 대기.
+                    readySince = null;
                 }
                 yield return null;
             }
-            // Timed out: the user can still finish the onboarding via the
-            // step3 panel "완료" button (it lives on the OnboardingScreenController
-            // canvas, not on the chrome we just hid). Leaving the routine null
-            // signals "not retrying" — re-flipping the flag will create a new
-            // routine.
+            Debug.LogWarning(
+                $"[OnboardingStep3.AutoOpen] TIMED OUT after {TimeoutSeconds}s — book-add panel was never opened. " +
+                $"Final state: {DiagnoseBookAddPanelGate()}");
             onboardingAutoOpenBookAddRoutine = null;
+        }
+
+        // CanOpenBookAddPanel 의 11개 검사 항목을 한 줄로 직렬화 — auto-open 코루틴이 어디서 막히는지
+        // console 에 즉시 노출. true 인 조건은 'OK' 로, false 면 그 사실을 명시.
+        private string DiagnoseBookAddPanelGate()
+        {
+            bool ownerMode = CanMutateOwnedBookshelf();
+            bool focusOk = CurrentFocusArea == ExperienceFocusArea.Bookshelf;
+            bool generatorOk = bookshelfGenerator != null;
+            int bookshelfCount = bookshelfGenerator != null ? bookshelfGenerator.BookshelfCount : -1;
+            int displayIndex = bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1;
+            bool serverPlacementOk = generatorOk && CanUseBookshelfServerPlacement(displayIndex);
+            bool tokenOk = bookshelfApiSyncController == null || bookshelfApiSyncController.HasAccessToken;
+            bool syncEnabled = bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled;
+            bool hasPlacementIds = generatorOk && displayIndex >= 0 &&
+                                   bookshelfGenerator.HasServerPlacementIdsForBookshelf(displayIndex);
+            bool switching = bookshelfGenerator != null && bookshelfGenerator.IsBookshelfSwitching;
+            return
+                $"ownerMode={ownerMode} focus={CurrentFocusArea}({focusOk}) generator={(generatorOk ? "OK" : "null")} " +
+                $"count={bookshelfCount} displayIndex={displayIndex} httpApi={usesHttpApiMode} " +
+                $"syncEnabled={syncEnabled} token={tokenOk} hasPlacementIds={hasPlacementIds} " +
+                $"serverPlacement={serverPlacementOk} switching={switching} " +
+                $"placementEditor={isBookPlacementEditorOpen} firstShelfTutorial={isFirstBookshelfTutorialOpen} " +
+                $"nameEdit={isBookshelfNameEditPanelOpen} deleteConfirm={isBookshelfDeleteConfirmPanelOpen} " +
+                $"design={isBookshelfDesignPanelOpen} manage={isBookshelfManagePanelOpen} " +
+                $"unsavedConfirm={isBookshelfUnsavedConfirmPanelOpen} deleteResult={isDeleteResultDialogOpen} " +
+                $"viewingBook={(state != null && state.IsViewingBook)} " +
+                $"dragging={(state != null && state.ActiveDraggedBook != null)}";
         }
 
         // Hides the focus-mode chrome that the onboarding "first book"
@@ -1388,6 +1455,13 @@ namespace BookshelfPorting.Runtime
             HideOnboardingChromeIfActive(deleteBookshelfButton != null ? deleteBookshelfButton.gameObject : null);
             HideOnboardingChromeIfActive(overlayPreviousFocusButton != null ? overlayPreviousFocusButton.gameObject : null);
             HideOnboardingChromeIfActive(overlayNextFocusButton != null ? overlayNextFocusButton.gameObject : null);
+            // 책 추가 모달의 우상단 × 버튼: onboarding Step 3 동안만 hide — 그 자리에 OnboardingScreenController
+            // 의 step3CompleteButton ("완료") 이 onboarding canvas (sortingOrder=5100) overlay 로 표시됨.
+            // × 코드 자체는 production 책 추가 흐름에서 panel close 의 유일한 진입점이라 그대로 보존. onboarding
+            // 종료 시점 (OnOnboardingStep3StateChanged(false)) 에 명시적으로 SetActive(true) 복원 — 다른 chrome
+            // 은 SyncBookshelfXxxxx 재계산으로 복원되지만 closeBookAddButton 은 bookAddPanel 의 자식이라
+            // RefreshHud 의 일반 sync 가 안 건드림.
+            HideOnboardingChromeIfActive(closeBookAddButton != null ? closeBookAddButton.gameObject : null);
         }
 
         private static void HideOnboardingChromeIfActive(GameObject go)
@@ -12081,6 +12155,20 @@ namespace BookshelfPorting.Runtime
 
             if (usesHttpApiMode && !bookshelfApiSyncController.HasAccessToken)
             {
+#if UNITY_EDITOR
+                // DEV 온보딩 테스트 진입 (LoginScreenController.OnDevOnboardingTestButtonClicked) 은 의도적으로
+                // AuthSession.Clear() 후라 token 이 없다. 그 결과 본 메서드가 false 를 반환 → CanOpenBookAddPanel
+                // 가 영구 false → 책 추가 panel 자동 노출 자체가 막힘 → DEV 흐름에서 UI 시각 검증 불가.
+                //
+                // DEV 모드일 때만 token / server-placement 의존성을 우회하고 panel 노출을 허용. 실제 책 추가/
+                // 삭제 API 호출은 어차피 401 로 fail 하지만 panel 자체와 검색/추천/랭킹 탭 layout 은 검증 가능.
+                // 정상 (production / 일반 로그인) 흐름에는 영향 0 — DevMainSceneMode 자체가 #if UNITY_EDITOR
+                // 가드되어 player build 엔 들어가지 않고, Activate() 는 dev 버튼이 명시적으로 호출할 때만 set.
+                if (App.Bootstrap.DevMainSceneMode.IsActive)
+                {
+                    return bookshelfGenerator != null && bookshelfIndex >= 0;
+                }
+#endif
                 return false;
             }
 

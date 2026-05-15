@@ -461,6 +461,10 @@ namespace BookshelfPorting.Runtime
             var table = desk.Find("table_natural");
             if (table == null)
             {
+                table = FindDeskSurfaceTransform(desk);
+            }
+            if (table == null)
+            {
                 return false;
             }
 
@@ -471,6 +475,44 @@ namespace BookshelfPorting.Runtime
             }
 
             return true;
+        }
+
+        private static Transform FindDeskSurfaceTransform(Transform desk)
+        {
+            if (desk == null)
+            {
+                return null;
+            }
+
+            var marker = desk.GetComponentInChildren<DeskSurfaceMarker>(true);
+            if (marker != null)
+            {
+                return marker.transform;
+            }
+
+            for (var i = 0; i < desk.childCount; i++)
+            {
+                var child = desk.GetChild(i);
+                if (child == null)
+                {
+                    continue;
+                }
+
+                var childName = child.gameObject.name;
+                if (string.IsNullOrWhiteSpace(childName))
+                {
+                    continue;
+                }
+
+                if (childName.Equals("table_natural", System.StringComparison.OrdinalIgnoreCase) ||
+                    childName.Equals("default_table_natural", System.StringComparison.OrdinalIgnoreCase) ||
+                    childName.StartsWith("fantasy_table", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return child;
+                }
+            }
+
+            return null;
         }
 
         // BookshelfSceneInstaller.InstallIntoActiveScene 한 사이클에 FindOrCreateRoot 가 system 별 N 회

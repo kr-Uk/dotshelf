@@ -1,3 +1,4 @@
+using System;
 using App.Infrastructure.Catalogs;
 using UnityEngine;
 
@@ -76,10 +77,12 @@ namespace App.Bootstrap
             // 기존 skin 제거 (이전 vintage 적용 후 다시 vintage 또는 다른 desk skin 적용)
             ClearSkinUnder(deskTransform, notebookTransform);
 
-            // laptop 의 native localPosition 스냅샷 — clear 시 정확히 복원하기 위한 reference.
-            // attach 직후 laptop y 를 skin top 으로 옮기는데, 다음 테마에서 default desk 로 돌아
-            // 가면 procedural BuildDeskSurface 의 deskTopY 기준 native y 로 되돌려야 함.
+            // laptop 의 native localPosition/Rotation/Scale 스냅샷 — clear 시 정확히 복원하기 위한
+            // reference. attach 후 entry.OverrideNotebookLocalTransform 활성 시 3축 전부 박히므로
+            // 다음 테마 적용 시 native 복원 못 하면 잔여 회전/스케일 회귀.
             var nativeLaptopLocal = notebookTransform.localPosition;
+            var nativeLaptopLocalRotation = notebookTransform.localRotation;
+            var nativeLaptopLocalScale = notebookTransform.localScale;
             var laptopBeforeWorld = notebookTransform.position;
 
             // skin instantiate as child of functional Desk transform.
@@ -88,11 +91,12 @@ namespace App.Bootstrap
             // (0, 90, 0) 으로 Y 축 90도). false 모드에선 zero (auto-fit 계산 단순화).
             // localScale 은 아래 분기에서 결정.
             // entry.PlacementAnchor 는 두 모드 모두에서 사용 안 함.
-            var go = Object.Instantiate(entry.Prefab, deskTransform);
+            var go = UnityEngine.Object.Instantiate(entry.Prefab, deskTransform);
             go.name = DeskVisualSkin.SkinChildName;
             go.transform.localPosition = Vector3.zero;
 
             bool preserveNative = entry.PreserveSkinNativeScale;
+            bool useManualDeskTransform = entry.UsePlacementTransformAsWorld;
             go.transform.localEulerAngles = preserveNative ? entry.PlacementRotation : Vector3.zero;
 
             DisableAllColliders(go);
@@ -115,7 +119,11 @@ namespace App.Bootstrap
             Vector3 multiplier = SanitizeMultiplier(entry.SkinScaleMultiplier);
             Vector3 placementScaleOverride = SanitizeMultiplier(entry.PlacementScale);
             bool multiplierApplied = false;
-            if (preserveNative)
+            if (useManualDeskTransform)
+            {
+                go.transform.localScale = SanitizeMultiplier(entry.PlacementScale);
+            }
+            else if (preserveNative)
             {
                 // preserveNative target worldScale = prefab.localScale × placementScaleOverride × multiplier.
                 // 이전 버그: multiplier (SkinScaleMultiplier) 가 분기에서 누락 → DeepSea (multiplier=3,3,3 +
@@ -157,7 +165,12 @@ namespace App.Bootstrap
             Vector3 worldOffset = Vector3.zero;
             Vector3 localPositionOverride = entry.SkinLocalPositionOverride;
             bool usedLocalPositionOverride = preserveNative && localPositionOverride.sqrMagnitude > 1e-10f;
-            if (usedLocalPositionOverride)
+            if (useManualDeskTransform)
+            {
+                go.transform.SetPositionAndRotation(entry.PlacementAnchor, Quaternion.Euler(entry.PlacementRotation));
+                go.transform.localScale = SanitizeMultiplier(entry.PlacementScale);
+            }
+            else if (usedLocalPositionOverride)
             {
                 go.transform.localPosition = localPositionOverride;
             }
@@ -180,10 +193,22 @@ namespace App.Bootstrap
             }
             var skinBoundsAfter = ComputeRendererBoundsSafe(go);
 
+            if (entry.LockVisualTransform)
+            {
+                AttachDeskVisualTransformLock(go, entry);
+            }
+
+            if (entry.TreatAsDeskSurface)
+            {
+                AttachDeskSurfaceMarker(go);
+            }
+
             // marker 부착 + 보관 데이터 set
             var marker = go.AddComponent<DeskVisualSkin>();
             marker.EntryAssetId = entry.AssetId;
             marker.NativeLaptopLocalPosition = nativeLaptopLocal;
+            marker.NativeLaptopLocalRotation = nativeLaptopLocalRotation;
+            marker.NativeLaptopLocalScale = nativeLaptopLocalScale;
             marker.HasNativeLaptopCapture = true;
 
             // native desk renderer hide — Notebook subtree 는 제외 (laptop 시각 보존).
@@ -228,6 +253,11 @@ namespace App.Bootstrap
                 finalScreenLocalScale = screenTransform.localScale;
             }
 
+            if (entry.TreatAsDeskSurface)
+            {
+                MoveDefaultTableNaturalToBackup(deskTransform, go.transform);
+            }
+
             // laptop Y 재정렬 — skin world top 을 Desk-local 로 변환 후 LaptopBottomOffset 더함.
             // X / Z 는 native 그대로 보존 (놓이는 평면 anchor 의 designer 의도 유지).
             //
@@ -239,7 +269,16 @@ namespace App.Bootstrap
             // 모니터 화면 align 을 위임.
             float deskTopLocalY = 0f;
             bool laptopYAdjusted = false;
-            if (!entry.LockNotebookStationToMonitor)
+            bool laptopFullOverride = entry.OverrideNotebookLocalTransform;
+            if (laptopFullOverride)
+            {
+                // entry 의 3 override 값을 Notebook transform 의 local 3축에 그대로 박는다.
+                // 자동 Y 재정렬 SKIP. native rot/scale 은 이미 marker 에 캡처돼 clear 시 복원.
+                notebookTransform.localPosition = entry.NotebookLocalPositionOverride;
+                notebookTransform.localEulerAngles = entry.NotebookLocalRotationOverride;
+                notebookTransform.localScale = entry.NotebookLocalScaleOverride;
+            }
+            else if (!entry.LockNotebookStationToMonitor)
             {
                 if (skinBoundsAfter.HasValue)
                 {
@@ -299,8 +338,9 @@ namespace App.Bootstrap
                       $"tableTopWorldY={tableTopWorldY:F4} deskTopLocalY={deskTopLocalY:F4} laptopBottomOffset={LaptopBottomOffset:F4} " +
                       $"laptopBeforeWorld={laptopBeforeWorld} laptopAfterWorld={laptopAfterWorld} laptopDelta={laptopDelta} source={source}");
 
-            // X / Z 변위는 0 이어야 정상 (Y 만 의도된 변화). 회귀 가드.
-            if (Mathf.Abs(laptopDelta.x) > 1e-3f || Mathf.Abs(laptopDelta.z) > 1e-3f)
+            // X / Z 변위는 0 이어야 정상 (Y 만 의도된 변화). 회귀 가드. laptopFullOverride 분기는
+            // 디자이너가 X/Z 를 의도적으로 박은 케이스라 suppress.
+            if (!laptopFullOverride && (Mathf.Abs(laptopDelta.x) > 1e-3f || Mathf.Abs(laptopDelta.z) > 1e-3f))
             {
                 Debug.LogWarning($"[DeskSkin] LAPTOP XZ DRIFTED — laptopDelta=({laptopDelta.x:F4},{laptopDelta.y:F4},{laptopDelta.z:F4}) entryAssetId={entry.AssetId}. " +
                                  "X / Z 는 native anchor 유지여야 정상 — Desk transform 자체가 흔들리지 않았는지 확인.");
@@ -527,6 +567,8 @@ namespace App.Bootstrap
             var existing = deskTransform.Find(DeskVisualSkin.SkinChildName);
             if (existing == null) return;
 
+            RestoreBackedUpDefaultTableNatural(existing, deskTransform);
+
             var marker = existing.GetComponent<DeskVisualSkin>();
             if (marker != null)
             {
@@ -548,10 +590,13 @@ namespace App.Bootstrap
                 }
                 hiddenLaptop.Clear();
 
-                // laptop native localPosition 복원 — attach 시 캡처한 값으로 정확히 되돌림.
+                // laptop native localPosition/Rotation/Scale 복원 — attach 시 캡처한 값으로 정확히
+                // 되돌림. OverrideNotebookLocalTransform 분기에서 3축 박혔던 경우 rot/scale 도 복원.
                 if (marker.HasNativeLaptopCapture && notebookTransform != null)
                 {
                     notebookTransform.localPosition = marker.NativeLaptopLocalPosition;
+                    notebookTransform.localRotation = marker.NativeLaptopLocalRotation;
+                    notebookTransform.localScale = marker.NativeLaptopLocalScale;
                 }
 
                 // Notebook/Screen native transform 복원 — monitor 모드에서 override 했을 경우.
@@ -575,6 +620,67 @@ namespace App.Bootstrap
                 }
             }
             UnityObjectSafeDestroy.Destroy(existing.gameObject);
+        }
+
+        private static void AttachDeskVisualTransformLock(GameObject go, CustomizationEntry entry)
+        {
+            if (go == null || entry == null) return;
+            var transformLock = go.GetComponent<ThemeDecoTransformLock>();
+            if (transformLock == null)
+            {
+                transformLock = go.AddComponent<ThemeDecoTransformLock>();
+            }
+
+            string lockKey = !string.IsNullOrWhiteSpace(entry.ThemeTag)
+                ? $"desk:{entry.ThemeTag}:{entry.AssetId}"
+                : $"desk:{entry.AssetId}";
+            transformLock.Configure(lockKey, go.transform.localPosition, go.transform.localEulerAngles, go.transform.localScale);
+        }
+
+        private static void AttachDeskSurfaceMarker(GameObject go)
+        {
+            if (go == null) return;
+            if (go.GetComponent<DeskSurfaceMarker>() != null) return;
+            go.AddComponent<DeskSurfaceMarker>();
+        }
+
+        private static void MoveDefaultTableNaturalToBackup(Transform deskTransform, Transform skinRoot)
+        {
+            if (deskTransform == null || skinRoot == null) return;
+
+            Transform nativeTable = FindNativeDeskTable(deskTransform);
+            if (nativeTable == null) return;
+
+            nativeTable.SetParent(skinRoot, true);
+            nativeTable.gameObject.name = DeskVisualSkin.NativeDeskBackupName;
+            nativeTable.gameObject.SetActive(false);
+        }
+
+        private static void RestoreBackedUpDefaultTableNatural(Transform skinRoot, Transform deskTransform)
+        {
+            if (skinRoot == null || deskTransform == null) return;
+
+            var backup = skinRoot.Find(DeskVisualSkin.NativeDeskBackupName);
+            if (backup == null) return;
+
+            backup.SetParent(deskTransform, true);
+            backup.gameObject.name = "table_natural";
+            backup.gameObject.SetActive(true);
+        }
+
+        private static Transform FindNativeDeskTable(Transform deskTransform)
+        {
+            if (deskTransform == null) return null;
+
+            for (int i = 0; i < deskTransform.childCount; i++)
+            {
+                var child = deskTransform.GetChild(i);
+                if (child == null) continue;
+                if (child.gameObject.name.Equals("table_natural", StringComparison.OrdinalIgnoreCase)) return child;
+                if (child.gameObject.name.Equals("default_table_natural", StringComparison.OrdinalIgnoreCase)) return child;
+            }
+
+            return null;
         }
 
         // roomRoot 아래에서 NotebookStation > Desk > Notebook 경로 탐색.

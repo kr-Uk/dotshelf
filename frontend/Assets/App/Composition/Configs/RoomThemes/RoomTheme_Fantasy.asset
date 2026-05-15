@@ -18,7 +18,7 @@ MonoBehaviour:
     \uBCF4\uB797\uBE5B \uC9C8\uAC10\uC73C\uB85C \uAFB8\uBBF8\uB294 \uB85C\uCEEC \uD504\uB9AC\uBDF0
     \uD14C\uB9C8."
   previewSprite: {fileID: 0}
-  bookshelfStyleIndex: 0
+  bookshelfStyleIndex: 5
   wallMaterial: {fileID: 2100000, guid: 78eee197e04f45d8ad4e08c8330f65e1, type: 2}
   floorMaterial: {fileID: 2100000, guid: 18800a5b9a124241a24d8b734ef81fe0, type: 2}
   bookshelfMaterial: {fileID: 2100000, guid: 4c24b59b33ae4f63ba6432d58846162d, type: 2}
@@ -43,6 +43,8 @@ MonoBehaviour:
   defaultEntries:
   - category: 0
     assetId: 400001
+  - category: 4
+    assetId: 400030
   bookshelfDecoSpecs: []
   floorDecoSpecs:
   - assetId: 0
@@ -103,8 +105,8 @@ MonoBehaviour:
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: 712b814690124370bf720e61ce9d4365, type: 3}
     wallSide: 3
-    localPosition: {x: -1.42, y: 0.27999997, z: 0.049999952}
-    localRotation: {x: 0, y: 180, z: 0}
+    localPosition: {x: 1.577, y: 1.6906, z: 1.2277}
+    localRotation: {x: 0, y: 359.8, z: 0}
     localScale: {x: 0.72, y: 0.72, z: 0.72}
     anchorTag: fantasyWindow
     themeSlot: 8

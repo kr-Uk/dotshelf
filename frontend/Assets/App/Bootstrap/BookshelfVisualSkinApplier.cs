@@ -70,72 +70,23 @@ namespace App.Bootstrap
 
             var go = Object.Instantiate(prefab, functionalRoot);
             go.name = BookshelfVisualSkin.SkinChildName;
-            // localPosition: spec.LocalPosition 은 placedItemsRoot (world origin) frame 기준
-            // 좌표라 그대로 박을 수 없다. 일단 zero 로 reset 한 뒤, scale 적용 후 renderer bounds
-            // 측정해서 functional shell 의 기대 center (BookshelfRoot local (0, height/2, 0))
-            // 와 정확히 일치하도록 bounds-center 정렬 translation 을 따로 적용한다 (아래).
-            // pivot 이 bottom-center / mesh-center / 임의 좌표 어느 쪽이든 동일하게 정렬됨.
-            //
-            // localRotation: spec.LocalRotation 은 그대로 적용. GLB 의 forward (정면 mesh
-            // 방향) 가 functional BookshelfRoot 의 forward 와 다른 경우 (예: vintage_shelf 는
-            // 180 회전 필요) 를 디자이너가 spec 에서 보정한다. 다른 shelf GLB 라도 forward 가
-            // 맞으면 spec.LocalRotation=zero 박으면 됨 — 일반화 유지.
-            //
-            // localScale: 일단 Vector3.one 으로 reset 후 아래에서 비등방 normalize 가 3축
-            // 각각 CanonicalShellSize 에 정확히 맞추는 factor 로 덮어쓴다. spec.LocalScale 은
-            // placedItemsRoot 시절 GLB raw 크기 보정용으로 박힌 값이라 skin 적용 시점엔 의미가
-            // 다르며, 사용자 요구 "기존 책장 크기와 똑같이" 를 정확히 충족하려면 무시하는 게 맞다.
-            go.transform.localPosition = Vector3.zero;
+            // spec.LocalPosition / LocalRotation / LocalScale 3종 모두 single source of truth.
+            // 이전 정책 (Vector3.zero/one reset + CanonicalShellSize 비등방 normalize + renderer
+            // bounds 기반 bounds-center alignment) 이 매 spawn 마다 Inspector 튜닝값을 덮어써
+            // play mode 진입 / 테마 변경 / 씬 재진입 시마다 값이 reset 되는 회귀가 있어 폐기.
+            // 대가: pivot 이 mesh-center 인 GLB 가 들어오면 디자이너가 spec.LocalPosition 의 Y 를
+            // 명시 보정해야 함. transition clone 도 transform 값 그대로 복사하므로 자동 합류.
+            go.transform.localPosition = spec.LocalPosition;
             go.transform.localEulerAngles = spec.LocalRotation;
-            go.transform.localScale = Vector3.one;
+            if (spec.LocalScale.sqrMagnitude > 1e-6f)
+            {
+                go.transform.localScale = spec.LocalScale;
+            }
 
             DisableAllColliders(go);
 
-            // 비등방 normalize — width/height/depth 각각 CanonicalShellSize 에 fit. height 만
-            // 맞추던 uniform 방식은 vintage_shelf 처럼 GLB 종횡비가 다른 자산에서 width/depth 가
-            // 어긋났다 (사용자 회귀: ref=(1.60,1.60,0.25) vs after=(1.44,1.60,0.46)).
-            var visualBoundsBefore = ComputeRendererBoundsSafe(go);
-            Vector3 scaleFactor = Vector3.one;
-            if (visualBoundsBefore.HasValue &&
-                visualBoundsBefore.Value.size.x > 1e-4f && referenceSize.x > 0f &&
-                visualBoundsBefore.Value.size.y > 1e-4f && referenceSize.y > 0f &&
-                visualBoundsBefore.Value.size.z > 1e-4f && referenceSize.z > 0f)
-            {
-                scaleFactor = new Vector3(
-                    Mathf.Clamp(referenceSize.x / visualBoundsBefore.Value.size.x, 0.01f, 100f),
-                    Mathf.Clamp(referenceSize.y / visualBoundsBefore.Value.size.y, 0.01f, 100f),
-                    Mathf.Clamp(referenceSize.z / visualBoundsBefore.Value.size.z, 0.01f, 100f));
-                go.transform.localScale = scaleFactor;
-            }
-
-            // bounds-center 정렬 — scale 적용 직후 측정한 skin 의 world-space renderer bounds
-            // center 를 functional shell 의 기대 world center 와 일치시키는 translation.
-            //
-            // 왜 이게 필요한가:
-            //   BookshelfRoot 의 pivot 은 shell bottom-center (BookshelfGenerator.BuildBookshelfShell
-            //   이 BottomBoard 를 y=boardThickness*0.5, TopBoard 를 y=height-boardThickness*0.5
-            //   에 배치 — local y ∈ [0, height] 점유). 책 anchor 도 동일 frame 의 양수 y 에
-            //   분포 (bottomY = boardThickness + row * (sectionHeight + boardThickness)).
-            //
-            //   GLB skin 의 pivot 이 mesh geometric center 인 경우 (Blender/Meshy 기본 export):
-            //   scale fit 후 bounds center 는 BookshelfRoot local origin (0,0,0) 근방, bounds 는
-            //   y ∈ [-height/2, +height/2] 점유 → skin top 이 y=+height/2 에서 끝, 그러나 책은
-            //   y=+height 까지 분포 → "책이 선반 위로 뜬다" 회귀 발생.
-            //
-            //   bottom-pivot GLB 만 우연히 잘 맞는 상태였으므로, 일반화하려면 pivot 무관하게
-            //   bounds.center 를 강제 정렬해야 한다.
-            //
-            // 구현: world-space 에서 desiredCenter - currentCenter 의 vector 를 transform.position
-            // 에 더한다. parent 의 lossyScale/rotation 은 Unity 가 inverse transform 으로 자동
-            // 반영하므로 별도 변환 불필요.
-            var visualBoundsAfterScale = ComputeRendererBoundsSafe(go);
-            Vector3 worldOffset = Vector3.zero;
-            Vector3 desiredWorldCenter = functionalRoot.TransformPoint(new Vector3(0f, referenceSize.y * 0.5f, 0f));
-            if (visualBoundsAfterScale.HasValue && visualBoundsAfterScale.Value.size.sqrMagnitude > 1e-8f)
-            {
-                worldOffset = desiredWorldCenter - visualBoundsAfterScale.Value.center;
-                go.transform.position += worldOffset;
-            }
+            // 진단용 bounds capture — transform 변경은 위에서 이미 끝났고 alignment 후속 처리도
+            // 없어 결과 transform 은 spec 값과 일치. verbose 로그에서 일치 검증용.
             var visualBoundsAfter = ComputeRendererBoundsSafe(go);
 
             var marker = go.AddComponent<BookshelfVisualSkin>();
@@ -149,7 +100,7 @@ namespace App.Bootstrap
                 ? (firstBookAfter.Value - firstBookBefore.Value)
                 : Vector3.zero;
 
-            VisualSkinLog.Verbose($"[BookshelfSkin] themeId={themeId} themeSlot={spec.ThemeSlot} assetKey={spec.AssetKey} functionalRoot={functionalRoot.name} functionalWorldPos={functionalRoot.position} visualAttached={go.name} visualWorldPos={go.transform.position} referenceBounds={referenceSize} visualBoundsBefore={(visualBoundsBefore?.size.ToString() ?? "null")} visualBoundsAfter={(visualBoundsAfter?.size.ToString() ?? "null")} visualBoundsCenter={(visualBoundsAfter?.center.ToString() ?? "null")} desiredCenter={desiredWorldCenter} worldOffset={worldOffset} scaleFactor=({scaleFactor.x:F3},{scaleFactor.y:F3},{scaleFactor.z:F3}) firstBookBefore={(firstBookBefore?.ToString() ?? "null")} firstBookAfter={(firstBookAfter?.ToString() ?? "null")} bookDelta={bookDelta} source={source}");
+            VisualSkinLog.Verbose($"[BookshelfSkin] themeId={themeId} themeSlot={spec.ThemeSlot} assetKey={spec.AssetKey} functionalRoot={functionalRoot.name} functionalWorldPos={functionalRoot.position} visualAttached={go.name} visualWorldPos={go.transform.position} visualLocalPos={go.transform.localPosition} visualLocalEuler={go.transform.localEulerAngles} visualLocalScale={go.transform.localScale} referenceBounds={referenceSize} visualBoundsAfter={(visualBoundsAfter?.size.ToString() ?? "null")} visualBoundsCenter={(visualBoundsAfter?.center.ToString() ?? "null")} specLocalPosition={spec.LocalPosition} specLocalRotation={spec.LocalRotation} specLocalScale={spec.LocalScale} firstBookBefore={(firstBookBefore?.ToString() ?? "null")} firstBookAfter={(firstBookAfter?.ToString() ?? "null")} bookDelta={bookDelta} source={source}");
 
             // bookDelta 가 의미 있게 0 이 아니면 functional state invariance 가 깨졌다는 신호.
             // 현재 경로상 발생하지 않아야 하지만 회귀 가드로 warning 남김.

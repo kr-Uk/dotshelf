@@ -9,6 +9,7 @@ using App.Domain;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dtos;
 using App.Infrastructure.Assets;
+using Dotshelf.Scripts.RoomTheme;
 using UnityEngine;
 
 namespace BookshelfPorting.Runtime
@@ -1837,6 +1838,7 @@ namespace BookshelfPorting.Runtime
             if (index >= shelves.Count)
             {
                 generator.ApplyServerBookshelves(snapshots);
+                SyncLocalPreviewBookshelfStyleFromCurrentTheme();
                 experienceManager?.NotifyBookshelfApiSynced();
                 FinishRefresh(true, null);
                 return;
@@ -1981,6 +1983,43 @@ namespace BookshelfPorting.Runtime
             }
 
             return snapshot;
+        }
+
+        private void SyncLocalPreviewBookshelfStyleFromCurrentTheme()
+        {
+            if (generator == null || isViewingOtherUserSpace)
+            {
+                return;
+            }
+
+            var themeApplier = FindFirstObjectByType<RoomThemeApplier>(FindObjectsInactive.Include);
+            var currentTheme = themeApplier != null ? themeApplier.CurrentTheme : null;
+            if (currentTheme == null || !currentTheme.IsLocalPreview)
+            {
+                return;
+            }
+
+            var styleIndex = currentTheme.BookshelfStyleIndex;
+            if (!Enum.IsDefined(typeof(BookshelfThemeStyle), styleIndex))
+            {
+                return;
+            }
+
+            var desiredStyle = (BookshelfThemeStyle)styleIndex;
+            if (desiredStyle == BookshelfThemeStyle.Default)
+            {
+                return;
+            }
+
+            if (generator.GetBookshelfDesignStyle(generator.ActiveBookshelfIndex) == desiredStyle)
+            {
+                return;
+            }
+
+            if (generator.SetActiveBookshelfDesignStyle(desiredStyle))
+            {
+                Debug.Log($"[BookshelfApiSync] Re-synced local preview bookshelf style to {desiredStyle} after initial server bookshelf load.");
+            }
         }
 
         private void TrackBookshelfItemsLoadFailure(BookshelfResponseDto shelf, ApiErrorResponseDto error)

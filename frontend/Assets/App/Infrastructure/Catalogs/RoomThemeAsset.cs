@@ -95,6 +95,26 @@ namespace App.Infrastructure.Catalogs
         // (LocalThemeAssetLoader vs RemoteThemeAssetLoader 만 swap).
         [SerializeField] private string assetKey;
 
+        // 온보딩 랜덤 조합 (slot 별 mix) 의 후보 풀에 포함될지 디자이너가 옵트아웃 가능.
+        // default true — 기존 asset 들은 Unity 직렬화 시 C# initializer 값으로 채워져 backward
+        // compatible (별도 마이그레이션 불필요). false 로 두면 OnboardingRandomThemeBuilder 의
+        // 후보 수집에서 제외 — 미공개 / 디버그 / WIP 자산을 랜덤에서 빼고 싶을 때 사용.
+        [SerializeField] private bool randomEligible = true;
+
+        // 온보딩 우측 RenderTexture preview 전용 lightweight prefab override. 옵션.
+        // null 이면 prefab (실제 MainScene 적용에 사용하는 GLB) 을 그대로 사용.
+        //
+        // 디자이너 활용:
+        //   - 원본 GLB 가 너무 무겁거나 (LOD0 5만 vert+) collider/audio/animation 같은 preview 에
+        //     불필요한 컴포넌트가 많으면 LOD2/3 trimmed 버전을 별도 prefab 으로 만들어 여기 wire.
+        //   - URP/Lit 외 커스텀 shader (예: stencil mask) 가 들어 있는 prefab 은 preview 에서
+        //     렌더 깨질 수 있어 URP/Lit 만 쓰는 simplified 버전을 wire 권장.
+        //
+        // OnboardingThemePreviewRenderer.ApplyRandomSelection 이 이 필드를 우선 lookup,
+        // 없으면 spec.Prefab fallback. PreviewOnly 컴포넌트 (Collider/Rigidbody/AudioSource/
+        // ParticleSystem 등) 는 instantiate 직후 일괄 disable 한다.
+        [SerializeField] private GameObject previewPrefab;
+
         public long AssetId => assetId;
         public GameObject Prefab => prefab;
         public WallSide WallSide => wallSide;
@@ -104,6 +124,8 @@ namespace App.Infrastructure.Catalogs
         public string AnchorTag => anchorTag;
         public ThemeSlot ThemeSlot => themeSlot;
         public string AssetKey => assetKey;
+        public bool RandomEligible => randomEligible;
+        public GameObject PreviewPrefab => previewPrefab;
     }
 
     [CreateAssetMenu(menuName = "Dotshelf/Room Theme", fileName = "RoomTheme")]

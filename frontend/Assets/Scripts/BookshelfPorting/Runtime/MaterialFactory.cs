@@ -9,7 +9,16 @@ namespace BookshelfPorting.Runtime
         Warm,
         Dark,
 
-        Vintage
+        Vintage,
+        // BookshelfThemeLayoutCatalog 의 TryGetLayout 이 enum 매칭 1:1 lookup 이라 각 RoomTheme
+        // 자체 책장 디자인을 카탈로그에 등록하려면 enum 항목이 필요. 끝에 추가해 기존 직렬화
+        // 인덱스 (Default=0/Warm=1/Dark=2/Vintage=3) 보존. switch 들은 모두 default → Default
+        // fallback 이라 회귀 없음.
+        Spooky,
+        Fantasy,
+        Space,
+        GoodVibes,
+        DeepSea
     }
 
     public class MaterialFactory : MonoBehaviour

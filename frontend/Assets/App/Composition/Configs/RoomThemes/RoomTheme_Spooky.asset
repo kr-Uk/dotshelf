@@ -18,7 +18,7 @@ MonoBehaviour:
     \uBCF4\uB797\uBE5B \uBCBD\uC9C0\uB85C \uAD6C\uC131\uD55C \uB85C\uCEEC \uD504\uB9AC\uBDF0
     \uD14C\uB9C8."
   previewSprite: {fileID: 0}
-  bookshelfStyleIndex: 0
+  bookshelfStyleIndex: 4
   wallMaterial: {fileID: 2100000, guid: 22f221f0716d439994e09157cb0cd0cf, type: 2}
   floorMaterial: {fileID: 2100000, guid: 4ab825f11c7740c3b3cba9e4f5c111e1, type: 2}
   bookshelfMaterial: {fileID: 2100000, guid: 771f319880734e27b45336ec706f8c7a, type: 2}
@@ -105,8 +105,8 @@ MonoBehaviour:
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: f22da3ace91d4533a4d99ec4cac3170b, type: 3}
     wallSide: 3
-    localPosition: {x: 1.624, y: 0.40100002, z: 0.05000007}
-    localRotation: {x: 0, y: 180, z: 0}
+    localPosition: {x: -1.624, y: 1.801, z: 1.328}
+    localRotation: {x: 0, y: 179.74, z: 0}
     localScale: {x: 0.72, y: 0.72, z: 0.72}
     anchorTag: spookyWindow
     themeSlot: 8

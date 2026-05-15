@@ -2374,11 +2374,22 @@ namespace App.Bootstrap
 
         // local-preview 테마는 PATCH skip 이라 server 가 모름 → 풀 로그아웃/로그인 후 자동 복원 못함.
         // 사용자 보고 회귀: Vintage 적용 → 로그아웃 → 로그인 → 메인씬에 walls/floor 가 default 로 보임.
-        // 마지막 적용한 local-preview 테마의 ScriptableObject 이름 (예: "RoomTheme_Vintage2") 을 저장해
+        // 마지막 적용한 local-preview 테마의 ScriptableObject 이름 (예: "RoomTheme_Vintage") 을 저장해
         // 다음 세션 ApplySpaceVisualsToRoom 에서 server null 응답이면 PlayerPrefs 값으로 복원.
         // non-local-preview 테마를 적용하면 이 키를 비워둠 (server 가 권위 상태 보유).
         // **소유 경계 — LastAppliedEntriesPrefsKey 와 동일하게 ScopedKey() 로 user 별 분리.**
         private const string LastAppliedLocalPreviewThemePrefsKey = "RoomEditMode.LastAppliedLocalPreviewTheme.v1";
+
+        // 마지막 적용 모드 — "THEME" (단일 RoomThemeAsset) / "RANDOM" (slot mix). 복원 시 분기 키.
+        // 일반 ApplyThemeSelected 가 "THEME" 으로, ApplyExternalRandomThemeSelection 이 "RANDOM" 으로 set.
+        // 값이 없거나 비로그인이면 THEME default — backward compat (기존 사용자 동작 보존).
+        private const string LastAppliedThemeModePrefsKey = "RoomEditMode.LastAppliedThemeMode.v1";
+        private const string ThemeModeSingle = "THEME";
+        private const string ThemeModeRandom = "RANDOM";
+
+        // 온보딩 랜덤 조합 (slot 별 mix) 직렬화. THEME 모드 키와 분리 — 같은 user 가 단일 테마 ↔ 랜덤
+        // 조합을 토글해도 양쪽 마지막 상태 보존 (mode 키가 우선순위 결정).
+        private const string LastAppliedRandomThemeSelectionPrefsKey = "RoomEditMode.LastAppliedRandomThemeSelection.v1";
 
         // AuthSession.UserId 로 scoped PlayerPrefs key 생성. 0 (비로그인/anon) 이면 null →
         // 호출자가 Persist/Restore 를 skip. 사용자 간 local-preview 누출 차단의 단일 진입점.
@@ -2488,7 +2499,7 @@ namespace App.Bootstrap
         }
 
         // PlayerPrefs 에 저장된 local-preview 테마 이름으로 catalog 에서 lookup. 못 찾으면 null.
-        // ScriptableObject.name 은 자산 파일명 (예: "RoomTheme_Vintage2") 이라 unique.
+        // ScriptableObject.name 은 자산 파일명 (예: "RoomTheme_Vintage") 이라 unique.
         private RoomThemeAsset TryFindLastAppliedLocalPreviewTheme()
         {
             var key = ScopedKey(LastAppliedLocalPreviewThemePrefsKey);
@@ -2673,7 +2684,255 @@ namespace App.Bootstrap
             ShowThemeApplyModeModal(theme);
         }
 
-        private void ApplyThemeSelected(RoomThemeAsset theme, ThemeApplyMode mode)
+        // 외부 (온보딩 Step3 / 시나리오 테스트 등) 에서 호출 가능한 public 진입점.
+        //
+        // ApplyThemeSelected 와 동일한 흐름이지만 *편집 모드 미진입 상태* 에서도 안전하게 호출 가능.
+        // RoomThemeApplier 가 scene 에 있고 InitializeIfNeeded 가 끝나면 호출자 책임은 없다.
+        //
+        // 5개 온보딩 테마 (Natural / Classic / Modern / Vintage / Pastel) 는 모두 isLocalPreview=true
+        // 이므로 ApplyThemeSelected 내부에서 PATCH `/spaces/me/theme/.../apply` 가 자동 skip 됨 →
+        // 백엔드 의존 없이 즉시 visual swap. 동시에 PersistLastAppliedLocalPreviewTheme 가 user-scoped
+        // PlayerPrefs 에 저장 → 다음 세션 SceneInstall 시점에 RestoreLastLocalPreviewThemeOnSceneInstall
+        // 가 자동 복원.
+        //
+        // mode=Reset 으로 고정한 이유: 온보딩 진입은 "이 사용자의 첫 룸 상태 결정" 이라 placement
+        // reset 의도가 맞음. 편집 모드에서 사용자가 명시 클릭하는 경로는 ShowThemeApplyModeModal
+        // 로 사용자 선택을 받는 별개 흐름이라 영향 없음.
+        public bool ApplyExternalThemeSelection(RoomThemeAsset theme, string source)
+        {
+            if (theme == null)
+            {
+                Debug.LogWarning(
+                    $"[RoomEditModeController] ApplyExternalThemeSelection theme=null source={source} — skip.");
+                return false;
+            }
+            InitializeIfNeeded();
+            Debug.Log(
+                $"[RoomEditModeController] ApplyExternalThemeSelection enter theme='{theme.DisplayName}' " +
+                $"(assetName={theme.name}, isLocalPreview={theme.IsLocalPreview}) source={source}");
+            // 일반 단일 테마 모드 — 이전에 RANDOM 적용 상태였으면 mode/selection 키 정리.
+            PersistLastAppliedThemeMode(ThemeModeSingle);
+            ClearLastAppliedRandomThemeSelection();
+            ApplyThemeSelected(theme, ThemeApplyMode.Reset);
+            return true;
+        }
+
+        // 온보딩 Step2 전용 preview API — visual 만 적용 (themeApplier.Apply + default entries + deco spawn),
+        // PlayerPrefs / mode 키 저장은 모두 skip. 사용자가 카드를 둘러보는 동안 in-session visual 만 갱신.
+        // "다음 단계" 클릭 시점에 ApplyExternalThemeSelection (persist 포함) 으로 최종 confirm.
+        // "이전 단계" / 취소 시 호출자가 snapshot 으로 rollback (themeApplier.Apply(snapshot)) 가능.
+        internal bool ApplyExternalThemePreview(RoomThemeAsset theme, string source)
+        {
+            if (theme == null)
+            {
+                Debug.LogWarning($"[RoomEditModeController] ApplyExternalThemePreview theme=null source={source} — skip.");
+                return false;
+            }
+            InitializeIfNeeded();
+            Debug.Log($"[RoomEditModeController] ApplyExternalThemePreview enter theme='{theme.DisplayName}' source={source} (no persist).");
+            ApplyThemeSelected(theme, ThemeApplyMode.Reset, persist: false);
+            return true;
+        }
+
+        // 온보딩 Step2 전용 random preview API — visual 만 적용, PlayerPrefs / mode 저장 skip.
+        internal bool ApplyExternalRandomThemePreview(OnboardingRandomThemeSelection selection, string source)
+        {
+            return ApplyExternalRandomThemeSelection(selection, source, persist: false);
+        }
+
+        // 온보딩 Step2 "랜덤" 버튼 클릭 → 다음 단계 → 본 메서드.
+        // OnboardingRandomThemeBuilder 가 생성한 slot mix 선택을 MainScene 에 적용 + user-scoped 저장.
+        //
+        // 적용 흐름 (ApplyThemeSelected 의 흐름을 *복제 + 변형* — slot deco 부분만 selection 으로 교체):
+        //   1) themeApplier.Apply(baseTheme) — material / lighting / wall fade swap
+        //   2) RefreshWallVisibilityAfterMaterialMutation — 편집 fade 일관
+        //   3) ClearAllThemeSpawnedDecos / RestoreAllMeshSwaps — 이전 잔존물 정리
+        //   4) baseTheme.DefaultEntries 적용 — 카테고리별 default 자산 (Wall/Floor/Desk/Light)
+        //   5) **selection.SelectedSpecs 의 slot 별 spec 으로 SpawnThemeFloorDecoFromSpec/Wall 호출**
+        //      — baseTheme 의 FloorDecoSpecs/WallDecoSpecs 는 사용하지 않음.
+        //   6) RebuildInventorySlots
+        //   7) PersistLastAppliedLocalPreviewTheme(baseTheme) + Mode=RANDOM + Selection 직렬화 저장
+        //
+        // baseTheme.IsLocalPreview 여야 함 — onboarding 5개 테마는 모두 true 라 안전. PATCH 자동 skip.
+        // internal — OnboardingRandomThemeSelection 자체가 internal sealed class 라 CS0051 회피 위해
+        // 메서드 access level 을 internal 로. 호출자 (OnboardingScreenController) 도 같은 assembly 라 OK.
+        // persist=false 호출 가능 — 온보딩 Step2 preview 동안 visual 만 적용, PlayerPrefs 저장 skip.
+        internal bool ApplyExternalRandomThemeSelection(OnboardingRandomThemeSelection selection, string source, bool persist = true)
+        {
+            if (selection == null || selection.SelectedSpecs == null || selection.SelectedSpecs.Count == 0)
+            {
+                Debug.LogWarning(
+                    $"[RoomEditModeController] ApplyExternalRandomThemeSelection skip — selection null/empty. source={source}");
+                return false;
+            }
+            InitializeIfNeeded();
+
+            var baseTheme = selection.BaseTheme;
+            if (baseTheme == null)
+            {
+                Debug.LogWarning(
+                    $"[RoomEditModeController] ApplyExternalRandomThemeSelection: baseTheme null — skip. source={source}");
+                return false;
+            }
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+            if (themeApplier == null)
+            {
+                Debug.LogWarning(
+                    "[RoomEditModeController] RoomThemeApplier 인스턴스 없음 — random selection apply skip.");
+                return false;
+            }
+
+            Debug.Log(
+                $"[RoomEditModeController] ApplyExternalRandomThemeSelection enter " +
+                $"baseTheme='{baseTheme.name}' slots={selection.SelectedSpecs.Count} source={source} " +
+                $"summary=[{selection.BuildSummary()}]");
+
+            // (1) base material / lighting
+            previousAppliedTheme = themeApplier.CurrentTheme;
+            themeApplier.Apply(baseTheme);
+            RefreshWallVisibilityAfterMaterialMutation("ApplyExternalRandomThemeSelection");
+            RebuildInventorySlots();
+
+            // (2) 이전 theme deco / mesh swap 정리
+            ClearAllThemeSpawnedDecos();
+            RemovePlacementsForIncomingTheme(baseTheme);
+            RestoreAllMeshSwaps();
+
+            // (3) baseTheme 의 카테고리 default (Wall/Floor/Desk/Light entries) 적용 — 일반
+            //     ApplyThemeDefaultEntries 의 동일 분기. floorDecoSpecs/wallDecoSpecs spawn 은 *skip*
+            //     해야 하므로 ApplyThemeDefaultEntries 를 통째 호출하지 않고 default entries 만 직접 적용.
+            var defaults = baseTheme.DefaultEntries;
+            if (defaults != null)
+            {
+                for (int i = 0; i < defaults.Count; i++)
+                {
+                    var def = defaults[i];
+                    if (def == null) continue;
+                    var catalog = LoadCategoryCatalog(def.Category);
+                    if (catalog == null || catalog.Entries == null) continue;
+                    var entry = catalog.FindByAssetId(def.AssetId);
+                    if (entry == null) continue;
+                    ApplyEntryVisual(def.Category, entry);
+                    if (entry.AssetId > 0) lastAppliedEntries[def.Category] = entry.AssetId;
+                }
+                if (persist) PersistLastAppliedEntries();
+            }
+
+            // (4) 랜덤 selection 의 slot 별 spec → SpawnThemeFloorDecoFromSpec / SpawnThemeWallDecoFromSpec.
+            //     Floor/Bookshelf/Dashboard 는 Floor 경로, Wall 은 Wall 경로. Floor 안에서
+            //     ThemeSlot.Shelf / Dashboard 면 자동으로 BookshelfVisualSkin / DashboardVisualSkin 분기.
+            int spawned = 0;
+            foreach (var kv in selection.SelectedSpecs)
+            {
+                var entry = kv.Value;
+                if (entry == null || entry.Spec == null) continue;
+                switch (entry.Category)
+                {
+                    case OnboardingRandomThemeSelection.DecoCategory.Wall:
+                        SpawnThemeWallDecoFromSpec(entry.Spec, baseTheme.AssetId);
+                        break;
+                    case OnboardingRandomThemeSelection.DecoCategory.Floor:
+                    case OnboardingRandomThemeSelection.DecoCategory.Bookshelf:
+                    default:
+                        SpawnThemeFloorDecoFromSpec(entry.Spec, baseTheme.AssetId);
+                        break;
+                }
+                spawned++;
+            }
+            RebuildInventorySlots();
+
+            // (5) 영속화 — base theme name + mode=RANDOM + serialized selection. persist=false 면 skip.
+            if (persist)
+            {
+                PersistLastAppliedLocalPreviewTheme(baseTheme);
+                PersistLastAppliedThemeMode(ThemeModeRandom);
+                PersistLastAppliedRandomThemeSelection(selection);
+            }
+
+            // (6) PATCH 흐름은 ApplyThemeSelected 와 동일 — baseTheme.IsLocalPreview 면 skip.
+            //     onboarding 5개 테마는 모두 isLocalPreview=true 라 PATCH 호출 없음.
+            if (!IsLocalPreviewTheme(baseTheme))
+            {
+                Debug.LogWarning(
+                    $"[RoomEditModeController] ApplyExternalRandomThemeSelection: baseTheme '{baseTheme.name}' " +
+                    "isLocalPreview=false — PATCH 흐름은 random selection 에서 지원하지 않음. visual 만 적용.");
+            }
+
+            Debug.Log(
+                $"[RoomEditModeController] Apply random selection OK. slots={selection.SelectedSpecs.Count} " +
+                $"spawned={spawned} baseTheme={baseTheme.name}");
+            return true;
+        }
+
+        // 일반 ApplyThemeSelected 흐름이 호출. RANDOM 모드에서 단일 테마로 돌아가면 mode 키 갱신.
+        private void PersistLastAppliedThemeMode(string mode)
+        {
+            var key = ScopedKey(LastAppliedThemeModePrefsKey);
+            if (key == null) return;
+            try
+            {
+                UnityEngine.PlayerPrefs.SetString(key, mode);
+                UnityEngine.PlayerPrefs.Save();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[RoomEditModeController] PersistLastAppliedThemeMode 실패 — {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private string TryFindLastAppliedThemeMode()
+        {
+            var key = ScopedKey(LastAppliedThemeModePrefsKey);
+            if (key == null) return ThemeModeSingle; // 비로그인 default — 단일 테마.
+            if (!UnityEngine.PlayerPrefs.HasKey(key)) return ThemeModeSingle;
+            var v = UnityEngine.PlayerPrefs.GetString(key, ThemeModeSingle);
+            return string.IsNullOrEmpty(v) ? ThemeModeSingle : v;
+        }
+
+        private void PersistLastAppliedRandomThemeSelection(OnboardingRandomThemeSelection selection)
+        {
+            var key = ScopedKey(LastAppliedRandomThemeSelectionPrefsKey);
+            if (key == null) return;
+            if (selection == null)
+            {
+                UnityEngine.PlayerPrefs.DeleteKey(key);
+                UnityEngine.PlayerPrefs.Save();
+                return;
+            }
+            try
+            {
+                UnityEngine.PlayerPrefs.SetString(key, selection.SerializeToPrefs());
+                UnityEngine.PlayerPrefs.Save();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[RoomEditModeController] PersistLastAppliedRandomThemeSelection 실패 — {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private void ClearLastAppliedRandomThemeSelection()
+        {
+            var key = ScopedKey(LastAppliedRandomThemeSelectionPrefsKey);
+            if (key == null) return;
+            UnityEngine.PlayerPrefs.DeleteKey(key);
+            UnityEngine.PlayerPrefs.Save();
+        }
+
+        private OnboardingRandomThemeSelection TryFindLastAppliedRandomThemeSelection()
+        {
+            var key = ScopedKey(LastAppliedRandomThemeSelectionPrefsKey);
+            if (key == null) return null;
+            if (!UnityEngine.PlayerPrefs.HasKey(key)) return null;
+            var serialized = UnityEngine.PlayerPrefs.GetString(key, string.Empty);
+            return string.IsNullOrEmpty(serialized) ? null : OnboardingRandomThemeBuilder.BuildFromSerialized(serialized);
+        }
+
+        // persist=false 호출 가능 — 온보딩 Step2 preview 처럼 사용자가 여러 카드를 둘러보는
+        // 동안 PlayerPrefs 저장은 하지 않고 visual 만 적용하는 모드. 호출자가 명시.
+        private void ApplyThemeSelected(RoomThemeAsset theme, ThemeApplyMode mode, bool persist = true)
         {
             if (theme == null) return;
             if (themeApplier == null)
@@ -2704,15 +2963,29 @@ namespace App.Bootstrap
             // 벽 sharedMaterial 이 swap 됐으므로 편집 모드 중이면 fade 즉시 재적용 (탑다운/사선에서 occlusion 복귀 방지).
             RefreshWallVisibilityAfterMaterialMutation("ApplyThemeSelected");
             RebuildInventorySlots();
-            // local-preview 테마 영속화 — 다음 세션 (로그아웃/로그인) 의 ApplySpaceVisualsToRoom 가
-            // server null 응답을 받았을 때 이 PlayerPrefs 값으로 복원해 wall/floor 자동 적용.
-            // non-local-preview 면 서버 권위라 키 제거.
-            PersistLastAppliedLocalPreviewTheme(theme);
+            if (persist)
+            {
+                // local-preview 테마 영속화 — 다음 세션 (로그아웃/로그인) 의 ApplySpaceVisualsToRoom 가
+                // server null 응답을 받았을 때 이 PlayerPrefs 값으로 복원해 wall/floor 자동 적용.
+                // non-local-preview 면 서버 권위라 키 제거.
+                PersistLastAppliedLocalPreviewTheme(theme);
+                // mode=THEME 으로 갱신 + 이전 RANDOM selection 정리. 일반 단일 테마 흐름 진입이라
+                // RestoreLastLocalPreviewThemeOnSceneInstall 가 다음 세션에 mode 보고 단일 흐름 선택.
+                PersistLastAppliedThemeMode(ThemeModeSingle);
+                ClearLastAppliedRandomThemeSelection();
+            }
 
             // 테마의 default entries 자동 적용 — visual 즉시 반영. PATCH 결과 무관 (401/네트워크
             // 실패해도 산뜻 자산 mesh swap 적용). 사용자가 BE 인증 안 된 dev 환경에서도 검증 가능.
             // PATCH 성공 후엔 BE 응답 themeReset 의 ReloadRoomState 가 server 권위 상태로 재동기화.
-            ApplyThemeDefaultEntries(theme);
+            ApplyThemeDefaultEntries(theme, persistEntries: persist);
+
+            // persist=false (온보딩 Step2 preview 등) — PATCH 도 skip. visual 만 적용하고 종료.
+            if (!persist)
+            {
+                DiscardPlacementRollbackHold();
+                return;
+            }
 
             // local preview 전용 테마 — placeholder (가구/벽지/바닥 미제작). 명시 플래그 + assetId<=0 fallback.
             // RoomThemeApplier 는 라이팅만 영향. POST /spaces/me/theme/{id}/apply 는 skip (401/403 회피).
@@ -2969,7 +3242,9 @@ namespace App.Bootstrap
         // 시 DeskCatalog 의 assetId=201 entry (GoodVibes_Desk) 자동 swap. 사용자가 추후
         // 다른 entry 선택하면 그것이 우선 (PATCH 별개 흐름).
         // PATCH 는 안 보냄 — visual 만. 사용자가 명시적으로 entry 클릭해야 BE 저장.
-        private void ApplyThemeDefaultEntries(RoomThemeAsset theme)
+        // persistEntries=false — 온보딩 Step2 preview. lastAppliedEntries dict 는 그대로 갱신
+        // (in-session visual 일관성) 되지만 PlayerPrefs 저장 호출은 skip → 다음 세션에 영향 없음.
+        private void ApplyThemeDefaultEntries(RoomThemeAsset theme, bool persistEntries = true)
         {
             if (theme == null) return;
             Debug.Log($"[RoomEditModeController] ApplyThemeDefaultEntries 진입 — theme={theme.DisplayName}, defaults={(theme.DefaultEntries?.Count ?? 0)}, floorDecos={(theme.FloorDecoSpecs?.Count ?? 0)}, wallDecos={(theme.WallDecoSpecs?.Count ?? 0)}");
@@ -2981,6 +3256,10 @@ namespace App.Bootstrap
             // 는 leftover hold-root 매칭 보강 용도로 호출 유지.
             ClearAllThemeSpawnedDecos();
             RemovePlacementsForIncomingTheme(theme);
+            // ThemeSlotMarker 없이 placedItemsRoot 에 남아있는 saved-restored / user-placed
+            // 자산 중 incoming 테마와 다른 prefix 를 가진 것들을 추가로 destroy. 위 두 cleanup
+            // 이 못 잡는 회귀 (이전 세션 spooky 자산이 vintage 적용 후에도 남는 케이스) 차단.
+            RemoveDecosWithMismatchedThemePrefix(theme);
 
             // 1.5) 이전 mesh swap 모두 native 복원. theme 의 defaultEntries 에 해당 카테고리
             // entry 가 있으면 step 2 에서 다시 swap 적용. 없으면 native 유지 (기본 책상/책장 복귀).
@@ -3011,7 +3290,7 @@ namespace App.Bootstrap
                     ApplyEntryVisual(def.Category, entry);
                     if (entry.AssetId > 0) lastAppliedEntries[def.Category] = entry.AssetId;
                 }
-                PersistLastAppliedEntries();
+                if (persistEntries) PersistLastAppliedEntries();
             }
 
             // 3) 설치 카테고리 (FloorDeco/WallDeco) — placedItemsRoot 자식으로 spawn,
@@ -3352,6 +3631,89 @@ namespace App.Bootstrap
             slot.AssetKey = spec.AssetKey;
         }
 
+        // Theme-prefix isolation pass — incoming theme 과 다른 theme 의 자산을 strip.
+        // ClearAllThemeSpawnedDecos 는 ThemeSlotMarker 자식만 destroy. saved-state restore
+        // (TryInstantiateSavedItem) / 일부 user placement 는 DecorationItemMarker 만 부착해
+        // ThemeSlotMarker 가 없는 자식이 남는다. 이런 자식이 InventoryKey 에 다른 theme 의 prefix
+        // (예: "spooky_bed.glb") 를 갖고 있고 incoming 이 vintage 이면 두 테마 자산 혼재 회귀.
+        // 본 메서드가 그 격차 보강.
+        //
+        // Theme-neutral (default_*, Meshy_*, ads_*, doll_*) 는 prefixes 에 없어 매칭 안 됨 → 보존.
+        private static readonly string[] ThemeAssetPrefixes =
+        {
+            "spooky_",
+            "vintage_",
+            "deepsea_",
+            "fantasy_",
+            "space_",
+            "goodvibes_",
+        };
+
+        private static string ResolveThemePrefixFromAsset(App.Infrastructure.Catalogs.RoomThemeAsset theme)
+        {
+            if (theme == null) return string.Empty;
+            string n = theme.name;
+            if (string.IsNullOrEmpty(n)) return string.Empty;
+            const string roomThemePrefix = "RoomTheme_";
+            if (n.StartsWith(roomThemePrefix, System.StringComparison.OrdinalIgnoreCase))
+            {
+                n = n.Substring(roomThemePrefix.Length);
+            }
+            return n.ToLowerInvariant() + "_";
+        }
+
+        private void RemoveDecosWithMismatchedThemePrefix(App.Infrastructure.Catalogs.RoomThemeAsset theme)
+        {
+            if (placedItemsRoot == null) return;
+            string currentPrefix = ResolveThemePrefixFromAsset(theme);
+            int removed = 0;
+            int inspected = 0;
+            for (int i = placedItemsRoot.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = placedItemsRoot.transform.GetChild(i).gameObject;
+                var marker = child.GetComponent<DecorationItemMarker>();
+                if (marker == null || string.IsNullOrEmpty(marker.InventoryKey)) continue;
+                inspected++;
+
+                string key = marker.InventoryKey;
+                const string pathColon = "path:";
+                if (key.StartsWith(pathColon, System.StringComparison.Ordinal))
+                {
+                    key = key.Substring(pathColon.Length);
+                }
+                int lastSlash = key.LastIndexOfAny(new[] { '/', '\\' });
+                string fileName = (lastSlash >= 0 ? key.Substring(lastSlash + 1) : key).ToLowerInvariant();
+
+                string matchedThemePrefix = null;
+                for (int p = 0; p < ThemeAssetPrefixes.Length; p++)
+                {
+                    if (fileName.StartsWith(ThemeAssetPrefixes[p], System.StringComparison.Ordinal))
+                    {
+                        matchedThemePrefix = ThemeAssetPrefixes[p];
+                        break;
+                    }
+                }
+                if (matchedThemePrefix == null) continue;
+                if (matchedThemePrefix == currentPrefix) continue;
+
+                if (selectedObject == child) selectedObject = null;
+                if (draggingObject == child) draggingObject = null;
+                if (placedByInventoryKey.TryGetValue(marker.InventoryKey, out var tracked) && tracked == child)
+                {
+                    placedByInventoryKey.Remove(marker.InventoryKey);
+                }
+                if (UnityEngine.Application.isPlaying) Destroy(child);
+                else DestroyImmediate(child);
+                removed++;
+            }
+            if (removed > 0)
+            {
+                Debug.Log(
+                    $"[RoomEditModeController][ThemePolicy] RemoveDecosWithMismatchedThemePrefix " +
+                    $"theme={theme?.name} currentPrefix='{currentPrefix}' inspected={inspected} removed={removed}.");
+            }
+        }
+
         // 사용자 요구: 테마 적용 시 그 테마 자산만 보여야 함. placedItemsRoot 자식 중
         // ThemeSlotMarker 부착된 자식 (= 이전 테마들이 spawn 한 deco) 을 모두 destroy.
         // ThemeSlotMarker 없는 자식 (= 사용자 직접 placement) 은 보존.
@@ -3626,6 +3988,7 @@ namespace App.Bootstrap
             if (spec == null || prefab == null) return;
             EnsurePlacedItemsRoot();
             if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            bool useLockedManualTransform = IsTransformLockedWallDecoAssetKey(spec.AssetKey);
 
             // wall surface anchor 변환 복구 — spec.LocalPosition 은 wall surface frame 기준
             // local. wall placement 시스템 (drag 매칭 + obstruction) 일관성 유지. 사용자가 캡처한
@@ -3633,7 +3996,9 @@ namespace App.Bootstrap
             // rotation × (worldPos - anchor.position)).
             Vector3 worldPos;
             Quaternion worldRot;
-            if (themeApplier != null && themeApplier.TryGetWallSurfaceAnchor(spec.WallSide, out var anchorPos, out var anchorRot))
+            if (!useLockedManualTransform &&
+                themeApplier != null &&
+                themeApplier.TryGetWallSurfaceAnchor(spec.WallSide, out var anchorPos, out var anchorRot))
             {
                 worldPos = anchorPos + anchorRot * spec.LocalPosition;
                 worldRot = anchorRot * Quaternion.Euler(spec.LocalRotation);
@@ -3641,6 +4006,10 @@ namespace App.Bootstrap
             else
             {
                 Debug.LogWarning($"[RoomEditModeController] WallDecoSpec WallSide={spec.WallSide} anchor 못 찾음 — localPosition 을 world fallback.");
+                if (useLockedManualTransform)
+                {
+                    worldRot = Quaternion.Euler(spec.LocalRotation);
+                }
                 worldPos = spec.LocalPosition;
                 worldRot = Quaternion.Euler(spec.LocalRotation);
             }
@@ -3654,7 +4023,7 @@ namespace App.Bootstrap
             // 빈티지 frame: 사용자 명시 transform 정확 적용 — anchor 변환 우회하고 spec 값을
             // localPosition/Rotation 그대로 박는다. placedItemsRoot 가 origin 이라 world == local.
             // 다른 wall deco (GoodVibes_NeonSign 등) 의 anchor 정책은 그대로 유지.
-            if (IsVintageFrameAssetKey(spec.AssetKey))
+            if (IsAnchorBypassedWallDecoAssetKey(spec.AssetKey))
             {
                 go.transform.localPosition = spec.LocalPosition;
                 go.transform.localEulerAngles = spec.LocalRotation;
@@ -3663,7 +4032,14 @@ namespace App.Bootstrap
 
             // 빈티지 자산 bounds 기반 추가 보정. wall 자산은 SnapBottomToFloor 안 함 — anchor 의
             // wall surface Y 가 이미 액자 적정 높이.
-            ApplyVintageScaleNormalization(go, spec.AssetKey, spec.LocalScale, "SpawnThemeWallDecoFromSpec");
+            if (!useLockedManualTransform)
+            {
+                ApplyVintageScaleNormalization(go, spec.AssetKey, spec.LocalScale, "SpawnThemeWallDecoFromSpec");
+            }
+            else
+            {
+                AttachThemeDecoTransformLock(go, spec);
+            }
 
             var marker = go.AddComponent<WallDecoMarker>();
             marker.CurrentWall = spec.WallSide;
@@ -3677,6 +4053,44 @@ namespace App.Bootstrap
         {
             return !string.IsNullOrEmpty(assetKey)
                 && assetKey.IndexOf("vintage_frame", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // SpawnThemeWallDecoFromSpec 에서 wall surface anchor 변환을 우회하고 spec.LocalPosition/
+        // Rotation/Scale 을 placedItemsRoot frame (= world) 의 값으로 직접 박는 자산 화이트리스트.
+        //   - vintage_frame: 디자이너가 액자 위치 직접 측정.
+        //   - space_*: 우주 테마 wall deco — Inspector 명시값 그대로 노출.
+        // 다른 wall deco (GoodVibes_NeonSign 등) 는 매칭 안 되므로 기존 anchor 변환 유지.
+        private static bool IsAnchorBypassedWallDecoAssetKey(string assetKey)
+        {
+            if (string.IsNullOrEmpty(assetKey)) return false;
+            if (assetKey.IndexOf("vintage_frame", System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            int lastSlash = assetKey.LastIndexOfAny(new[] { '/', '\\' });
+            string fileName = lastSlash >= 0 ? assetKey.Substring(lastSlash + 1) : assetKey;
+            if (fileName.StartsWith("space_", System.StringComparison.OrdinalIgnoreCase)) return true;
+            if (fileName.StartsWith("spooky_window", System.StringComparison.OrdinalIgnoreCase)) return true;
+            if (fileName.StartsWith("fantasy_window", System.StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        private static bool IsTransformLockedWallDecoAssetKey(string assetKey)
+        {
+            if (string.IsNullOrEmpty(assetKey)) return false;
+            int lastSlash = assetKey.LastIndexOfAny(new[] { '/', '\\' });
+            string fileName = lastSlash >= 0 ? assetKey.Substring(lastSlash + 1) : assetKey;
+            return fileName.StartsWith("spooky_window", System.StringComparison.OrdinalIgnoreCase) ||
+                   fileName.StartsWith("fantasy_window", System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void AttachThemeDecoTransformLock(GameObject go, RoomThemeDecoSpec spec)
+        {
+            if (go == null || spec == null) return;
+            var transformLock = go.GetComponent<ThemeDecoTransformLock>();
+            if (transformLock == null)
+            {
+                transformLock = go.AddComponent<ThemeDecoTransformLock>();
+            }
+
+            transformLock.Configure(spec.AssetKey, spec.LocalPosition, spec.LocalRotation, spec.LocalScale);
         }
 
         // 메인씬 진입 후 (로그인 → 메인씬, 또는 BookshelfSceneInstaller 이후) saved layout 복원
@@ -3754,7 +4168,7 @@ namespace App.Bootstrap
 
         // catalog (RoomThemeCatalog) 에서 assetKey 가 매칭되는 vintage spec 찾기. saved layout 의
         // InventoryKey ("path:Assets/...") 와 spec.AssetKey ("Assets/...") prefix 차이 모두 흡수.
-        // 한 자산이 여러 테마에 등장하면 첫 번째 매칭 반환 — vintage 는 RoomTheme_Vintage2 에만
+        // 한 자산이 여러 테마에 등장하면 첫 번째 매칭 반환 — vintage 는 RoomTheme_Vintage 에만
         // 있다고 가정 (다른 테마에서 vintage_ asset 재사용하지 않음).
         private bool TryFindVintageSpecByAssetKey(string savedKey, out RoomThemeDecoSpec spec)
         {
@@ -4747,6 +5161,9 @@ namespace App.Bootstrap
             bool clientHasLocalPreviewTheme = themeApplier != null && IsLocalPreviewTheme(themeApplier.CurrentTheme);
             if (serverHasNoTheme && clientHasLocalPreviewTheme)
             {
+                themeApplier.Apply(themeApplier.CurrentTheme);
+                RefreshWallVisibilityAfterMaterialMutation("ApplySpaceVisualsToRoom.reapplyCurrentLocalPreview");
+                ApplyThemeDefaultEntries(themeApplier.CurrentTheme);
                 RebuildInventorySlots();
                 return;
             }
@@ -7598,6 +8015,10 @@ namespace App.Bootstrap
         // 씬 install 시점에 PlayerPrefs 저장된 local-preview 테마 복원. server 가 알 수 없는 테마라
         // ApplySpaceVisualsToRoom 만 의존하면 풀 로그인 후 첫 메인씬에서 wall/floor 가 default 로 보인다.
         // 호출: BookshelfSceneInstaller 끝점 (Generate 직후) → walls/floor renderer 가 이미 존재해 swap 가능.
+        //
+        // mode 분기: LastAppliedThemeMode 가 "RANDOM" 이고 random selection 직렬화가 valid 하면
+        // ApplyExternalRandomThemeSelection 으로 복원. 그 외 ("THEME" / 키 없음 / selection 못 찾음)
+        // 기존 단일 테마 복원 흐름 — backward compat 보장.
         private void RestoreLastLocalPreviewThemeOnSceneInstall()
         {
             if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
@@ -7607,6 +8028,23 @@ namespace App.Bootstrap
             {
                 return;
             }
+
+            // mode=RANDOM 경로 — selection valid 시 우선 복원.
+            var mode = TryFindLastAppliedThemeMode();
+            if (string.Equals(mode, ThemeModeRandom, System.StringComparison.Ordinal))
+            {
+                var savedSelection = TryFindLastAppliedRandomThemeSelection();
+                if (savedSelection != null && savedSelection.SelectedSpecs.Count > 0 && savedSelection.BaseTheme != null)
+                {
+                    Debug.Log($"[RoomEditModeController] SceneInstall.restoreLocalPreview mode=RANDOM — applying random selection ({savedSelection.SelectedSpecs.Count} slots).");
+                    ApplyExternalRandomThemeSelection(savedSelection, "SceneInstall.restoreRandom");
+                    return;
+                }
+                Debug.LogWarning(
+                    "[RoomEditModeController] SceneInstall.restoreLocalPreview mode=RANDOM 이지만 selection 복원 실패 — 단일 테마 fallback.");
+            }
+
+            // mode=THEME (기본) 또는 RANDOM 복원 실패 fallback — 기존 단일 테마 흐름.
             var savedTheme = TryFindLastAppliedLocalPreviewTheme();
             if (savedTheme == null) return;
 
@@ -7660,11 +8098,21 @@ namespace App.Bootstrap
                                 existing.transform.position = presetSpec.LocalPosition;
                                 existing.transform.localEulerAngles = presetSpec.LocalRotation;
                                 existing.transform.localScale = presetSpec.LocalScale;
+                                if (IsTransformLockedWallDecoAssetKey(slotMarker.AssetKey))
+                                {
+                                    existing.transform.localPosition = presetSpec.LocalPosition;
+                                    existing.transform.localEulerAngles = presetSpec.LocalRotation;
+                                    existing.transform.localScale = presetSpec.LocalScale;
+                                    AttachThemeDecoTransformLock(existing, presetSpec);
+                                }
                                 // 빈티지 자산 bounds 기반 재보정 — saved 값이 stale 해도 매 restore 시
                                 // 기준 책장 기준 동일 크기로 재계산. wall 자산 + designer 가 명시한
                                 // preset y > 0 (lamp/rug) 은 floor snap skip — SpawnThemeFloorDecoFromSpec
                                 // 와 동일한 정책.
-                                ApplyVintageScaleNormalization(existing, slotMarker.AssetKey, presetSpec.LocalScale, "TryRestoreSavedDecorations.preset-override");
+                                if (!IsTransformLockedWallDecoAssetKey(slotMarker.AssetKey))
+                                {
+                                    ApplyVintageScaleNormalization(existing, slotMarker.AssetKey, presetSpec.LocalScale, "TryRestoreSavedDecorations.preset-override");
+                                }
                                 if (existing.GetComponent<WallDecoMarker>() == null && Mathf.Approximately(presetSpec.LocalPosition.y, 0f))
                                 {
                                     SnapBottomToFloor(existing);
@@ -9705,6 +10153,7 @@ namespace App.Bootstrap
             "NotebookStation",
             "Desk",
             "table_natural",
+            "fantasy_table(Clone)",
         };
 
         private void EnsureDecorationRootColliders()
