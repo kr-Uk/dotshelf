@@ -1,18 +1,15 @@
 {
-    "latestVersion":  "0.2.0",
+    "latestVersion":  "0.3.0",
     "mandatory":  false,
-    "packageUrl":  "https://cdn.dotshelf.digital/windows/Dotshelf-0.2.0.zip",
-    "sha256":  "F7BD91B1773CCDDD936B2C09019C088BC749DAB18C7EE7A60BCA81FC6CF7BF9B",
+    "packageUrl":  "https://cdn.dotshelf.digital/windows/Dotshelf-0.3.0.zip",
+    "sha256":  "1105B6E55E07338A8D148825BA4FC8A734333D1FE70625C16F51B269B99FD67C",
     "entrypoint":  "Dotshelf.exe",
     "minLauncherVersion":  "0.1.0",
     "releaseNotes":  [
-                         "빈티지·딥씨·판타지 스푸키 테마 3종 추가 + 책장 테마 저장 연동",
-                         "대시보드 책/독후감/책장 카운트 연동 + 닉네임 편집 PATCH 누락 수정",
-                         "대시보드 포커스 시 방 내부 가구·노트북·디스플레이 반투명 처리",
-                         "대시보드 책 표지 로딩·새로고침·독후감 버튼 복구",
-                         "책 상세 오버레이 + 책장 전환 개선, 책장 초기 로딩 대기 보강",
-                         "팔로우·팔로워 목록에서 다른 사용자 공간 방문 기능",
-                         "다른 공간 방문 + 노트북 UI 안정화 (S14P31F206-116 트랙)",
-                         "테마별 카메라 이동, 노트북 포커스, 재로그인 책장 오버레이 회귀 등 다수 안정성 개선"
+                         "페이지 충전 결제 기능 추가 (INICIS)",
+                         "원격 자산 캐시 도입 — 설치 후 신규 에셋 동적 로드",
+                         "노트북 툴킷 / 룸 편집 모드 / 메인 씬 전환 UX 대폭 개선",
+                         "공간 방문자 오버레이 / 세션 리프레시 안정화",
+                         "책장 테마 레이아웃 보강"
                      ]
 }
