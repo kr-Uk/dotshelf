@@ -22,6 +22,23 @@ public interface AssetPurchaseRepository extends JpaRepository<AssetPurchase, Lo
 
     Page<AssetPurchase> findByUserIdOrderByPurchasedAtDesc(Long userId, Pageable pageable);
 
+    List<AssetPurchase> findByUserIdOrderByPurchasedAtDescIdDesc(Long userId, Pageable pageable);
+
+    @Query("""
+            select purchase
+            from AssetPurchase purchase
+            where purchase.userId = :userId
+              and (purchase.purchasedAt < :cursorPurchasedAt
+                   or (purchase.purchasedAt = :cursorPurchasedAt and purchase.id < :cursorId))
+            order by purchase.purchasedAt desc, purchase.id desc
+            """)
+    List<AssetPurchase> findUserPurchasesBeforeCursor(
+            @Param("userId") Long userId,
+            @Param("cursorPurchasedAt") LocalDateTime cursorPurchasedAt,
+            @Param("cursorId") Long cursorId,
+            Pageable pageable
+    );
+
     Optional<AssetPurchase> findByIdAndUserId(Long id, Long userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

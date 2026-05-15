@@ -7,6 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "payment.policy")
 public record PaymentPolicyProperties(
         int maxChargeKrw,
+        int pageUnitPriceKrw,
         String validityNotice,
         String orderNameSuffix,
         String responsibilityNotice,
@@ -17,6 +18,7 @@ public record PaymentPolicyProperties(
 ) {
 
     private static final int DEFAULT_MAX_CHARGE_KRW = 100_000;
+    private static final int DEFAULT_PAGE_UNIT_PRICE_KRW = 1;
     private static final String DEFAULT_VALIDITY_NOTICE =
             "구매 포인트와 아이템 이용권한의 유효기간은 결제일로부터 1년이며, 서비스 운영 기간 동안 자동으로 갱신됩니다.";
     private static final String DEFAULT_ORDER_NAME_SUFFIX = "(유효기간 1년/자동갱신)";
@@ -24,6 +26,9 @@ public record PaymentPolicyProperties(
     public PaymentPolicyProperties {
         if (maxChargeKrw <= 0) {
             maxChargeKrw = DEFAULT_MAX_CHARGE_KRW;
+        }
+        if (pageUnitPriceKrw <= 0) {
+            pageUnitPriceKrw = DEFAULT_PAGE_UNIT_PRICE_KRW;
         }
         validityNotice = blankToDefault(validityNotice, DEFAULT_VALIDITY_NOTICE);
         orderNameSuffix = blankToDefault(orderNameSuffix, DEFAULT_ORDER_NAME_SUFFIX);

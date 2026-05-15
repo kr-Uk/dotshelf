@@ -4,6 +4,8 @@ import com.dotshelf.global.common.BaseEntity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -39,8 +41,9 @@ public class PageTransaction extends BaseEntity {
     @Column(nullable = false)
     private int balanceAfter;
 
+    @Enumerated(EnumType.STRING)
     @Column(length = 100)
-    private String reason;
+    private PaymentTransactionReason reason;
 
     @Column(length = 50)
     private String referenceType;
@@ -49,7 +52,7 @@ public class PageTransaction extends BaseEntity {
 
     @Builder
     private PageTransaction(Long userId, Long paymentOrderId, String type, int pagesDelta, int balanceAfter,
-                            String reason, String referenceType, Long referenceId) {
+                            PaymentTransactionReason reason, String referenceType, Long referenceId) {
         this.userId = userId;
         this.paymentOrderId = paymentOrderId;
         this.type = type;
@@ -67,7 +70,7 @@ public class PageTransaction extends BaseEntity {
                 .type(TYPE_CHARGE)
                 .pagesDelta(pagesAmount)
                 .balanceAfter(balanceAfter)
-                .reason("INICIS_PAYMENT")
+                .reason(PaymentTransactionReason.INICIS_PAYMENT)
                 .referenceType("PAYMENT_ORDER")
                 .referenceId(paymentOrderId)
                 .build();

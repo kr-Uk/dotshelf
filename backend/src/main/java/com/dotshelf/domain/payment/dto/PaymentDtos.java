@@ -9,10 +9,12 @@ import com.dotshelf.domain.asset.entity.AssetPurchase;
 import com.dotshelf.domain.payment.entity.PageTransaction;
 import com.dotshelf.domain.payment.entity.PageWallet;
 import com.dotshelf.domain.payment.entity.PaymentOrder;
+import com.dotshelf.domain.payment.entity.PaymentTransactionReason;
 import com.dotshelf.domain.payment.service.InicisPaymentFormFactory.InicisPaymentForm;
 import com.dotshelf.domain.payment.service.PaymentPolicyProperties;
 
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -25,8 +27,10 @@ public final class PaymentDtos {
 
     public record PageChargeRequest(
             @Min(value = 1, message = "충전 페이지는 1 이상입니다.")
+            @Max(value = 1_000_000, message = "충전 페이지는 1,000,000 이하여야 합니다.")
             int pagesAmount,
             @Min(value = 1, message = "결제 금액은 1 이상입니다.")
+            @Max(value = 1_000_000, message = "결제 금액은 1,000,000 이하여야 합니다.")
             int amountKrw,
             String platform
     ) {
@@ -34,8 +38,10 @@ public final class PaymentDtos {
 
     public record PageChargeOrderRequest(
             @Min(value = 1, message = "충전 페이지는 1 이상입니다.")
+            @Max(value = 1_000_000, message = "충전 페이지는 1,000,000 이하여야 합니다.")
             int pagesAmount,
             @Min(value = 1, message = "결제 금액은 1 이상입니다.")
+            @Max(value = 1_000_000, message = "결제 금액은 1,000,000 이하여야 합니다.")
             int amountKrw,
             String platform,
             @NotBlank(message = "구매자 이름은 필수입니다.")
@@ -229,9 +235,8 @@ public final class PaymentDtos {
             String type,
             int pagesDelta,
             int balanceAfter,
-            String reason,
-            String referenceType,
-            Long referenceId,
+            PaymentTransactionReason reason,
+            Long paymentOrderId,
             Instant createdAt
     ) {
 
@@ -242,8 +247,7 @@ public final class PaymentDtos {
                     transaction.getPagesDelta(),
                     transaction.getBalanceAfter(),
                     transaction.getReason(),
-                    transaction.getReferenceType(),
-                    transaction.getReferenceId(),
+                    transaction.getPaymentOrderId(),
                     transaction.getCreatedAt()
             );
         }
@@ -252,8 +256,20 @@ public final class PaymentDtos {
     public record PageTransactionListResponse(List<PageTransactionResponse> transactions) {
     }
 
+    public record CursorPageResponse<T>(
+            List<T> items,
+            String nextCursor,
+            boolean hasMore
+    ) {
+
+        public static <T> CursorPageResponse<T> of(List<T> items, String nextCursor) {
+            return new CursorPageResponse<>(items, nextCursor, nextCursor != null);
+        }
+    }
+
     public record PaymentPolicyResponse(
             int maxChargeKrwPerOrder,
+            int pageUnitPriceKrw,
             String currency,
             String paymentMethod,
             String validityNotice,
@@ -267,6 +283,7 @@ public final class PaymentDtos {
         public static PaymentPolicyResponse from(PaymentPolicyProperties properties) {
             return new PaymentPolicyResponse(
                     properties.maxChargeKrw(),
+                    properties.pageUnitPriceKrw(),
                     "KRW",
                     "CARD",
                     properties.validityNotice(),
