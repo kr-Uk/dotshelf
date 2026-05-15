@@ -1,5 +1,6 @@
 using App.Application.Books;
 using App.Application.Notebook;
+using App.Application.Payment;
 using App.Auth;
 using App.Bootstrap;
 using App.Config;
@@ -208,6 +209,11 @@ namespace BookshelfPorting.Runtime
             var addNotebookBookToShelfUseCase = new AddNotebookBookToShelfUseCase(notebookBookRepository);
             var notebookRuntimeRepository = CreateNotebookRuntimeRepository(apiManager);
             var notebookRuntimeUseCase = new NotebookRuntimeUseCase(notebookRuntimeRepository);
+            // KG이니시스 결제 흐름 (S14P31F206-265) — PaymentApiClient + ApiPaymentRepository 단일 인스턴스.
+            // Notebook 도메인과 분리하되 같은 APIManager 공유.
+            var paymentApiClient = new PaymentApiClient(apiManager);
+            var paymentRepository = new ApiPaymentRepository(paymentApiClient);
+            var paymentUseCase = new PaymentUseCase(paymentRepository);
             if (Application.isPlaying && usesHttpApi && !apiManager.HasAccessToken)
             {
                 Debug.LogWarning("Dotshelf RealApi mode has no access token. Public notebook APIs stay enabled, but authenticated actions are blocked until APIManager.SetAccessToken() is called.");
@@ -276,7 +282,7 @@ namespace BookshelfPorting.Runtime
             experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
             experienceManager.ConfigureApiMode(usesHttpApi);
             experienceManager.ConfigureNotebookUiSceneLoader(null);
-            experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase);
+            experienceManager.ConfigureNotebookBookUseCases(searchNotebookBooksUseCase, loadNotebookMarketBooksUseCase, addNotebookBookToShelfUseCase, notebookRuntimeUseCase, paymentUseCase);
             if (usesHttpApi)
             {
                 bookshelfApiSync.Configure(new NotebookApiClient(apiManager), generator, experienceManager, cameraController, notebookRuntimeUseCase);

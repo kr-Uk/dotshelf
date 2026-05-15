@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Linq;
 using App.Application.Notebook;
+using App.Application.Payment;
 using App.Features.Notebook.Presentation;
 using UnityEngine;
 using UnityEngine.Events;
@@ -210,6 +211,7 @@ namespace BookshelfPorting.Runtime
         private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
         private NotebookRuntimeUseCase notebookRuntimeUseCase;
+        private PaymentUseCase paymentUseCase;
 
         public Transform ScreenTransform { get; private set; }
         public event Action BookAddedToShelfThroughApi;
@@ -287,9 +289,10 @@ namespace BookshelfPorting.Runtime
             SearchNotebookBooksUseCase searchUseCase = null,
             LoadNotebookMarketBooksUseCase loadMarketUseCase = null,
             AddNotebookBookToShelfUseCase addUseCase = null,
-            NotebookRuntimeUseCase runtimeUseCase = null)
+            NotebookRuntimeUseCase runtimeUseCase = null,
+            PaymentUseCase paymentUseCase = null)
         {
-            ConfigureNotebookBookUseCases(searchUseCase, loadMarketUseCase, addUseCase, runtimeUseCase);
+            ConfigureNotebookBookUseCases(searchUseCase, loadMarketUseCase, addUseCase, runtimeUseCase, paymentUseCase);
             ScreenTransform = screenTransform;
             EnsureCanvases(screenTransform, eventCamera, onCloseDashboard, onCloseScreenSaver, onOpenScreenSaver);
             ApplyPresentationMode();
@@ -301,17 +304,20 @@ namespace BookshelfPorting.Runtime
             SearchNotebookBooksUseCase searchUseCase,
             LoadNotebookMarketBooksUseCase loadMarketUseCase,
             AddNotebookBookToShelfUseCase addUseCase,
-            NotebookRuntimeUseCase runtimeUseCase = null)
+            NotebookRuntimeUseCase runtimeUseCase = null,
+            PaymentUseCase paymentUseCase = null)
         {
             searchNotebookBooksUseCase = searchUseCase;
             loadNotebookMarketBooksUseCase = loadMarketUseCase;
             addNotebookBookToShelfUseCase = addUseCase;
             notebookRuntimeUseCase = runtimeUseCase;
+            this.paymentUseCase = paymentUseCase;
             toolkitController?.ConfigureNotebookBookUseCases(
                 searchNotebookBooksUseCase,
                 loadNotebookMarketBooksUseCase,
                 addNotebookBookToShelfUseCase,
-                notebookRuntimeUseCase);
+                notebookRuntimeUseCase,
+                paymentUseCase);
         }
 
         public void SetImmersiveMode(bool immersive)
@@ -582,7 +588,8 @@ namespace BookshelfPorting.Runtime
                 searchNotebookBooksUseCase,
                 loadNotebookMarketBooksUseCase,
                 addNotebookBookToShelfUseCase,
-                notebookRuntimeUseCase);
+                notebookRuntimeUseCase,
+                paymentUseCase);
             AttachToolkitCallbacks();
         }
 

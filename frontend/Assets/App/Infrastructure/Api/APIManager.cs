@@ -144,6 +144,13 @@ namespace App.Infrastructure.Api
             }
         }
 
+        /// <summary>
+        /// 현재 사용 중인 API base URL (예: "https://dev-api.dotshelf.digital"). 결제 페이지 같이 BE 가
+        /// relative path ("/v1/payments/inicis/request/{orderId}") 만 응답하는 경우 외부 브라우저에
+        /// 절대 URL 로 전달하기 위해 PaymentApiClient 등에서 사용.
+        /// </summary>
+        public string BaseUrl => baseUrl;
+
         public void Configure(string apiBaseUrl, string token = null, int timeout = 10, bool verboseLog = false)
         {
             baseUrl = NormalizeBaseUrl(apiBaseUrl, baseUrl);
