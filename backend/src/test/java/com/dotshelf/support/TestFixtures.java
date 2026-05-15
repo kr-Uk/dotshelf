@@ -30,6 +30,7 @@ import com.dotshelf.domain.bookshelf.entity.BookshelfItem;
 import com.dotshelf.domain.bookshelf.entity.BookshelfSection;
 import com.dotshelf.domain.notification.entity.Notification;
 import com.dotshelf.domain.payment.entity.PageTransaction;
+import com.dotshelf.domain.payment.entity.PaymentTransactionReason;
 import com.dotshelf.domain.payment.entity.PageWallet;
 import com.dotshelf.domain.payment.entity.PaymentOrder;
 import com.dotshelf.domain.readingrecord.entity.ReadingRecord;
@@ -180,7 +181,7 @@ public final class TestFixtures {
                 .type(PageTransaction.TYPE_CHARGE)
                 .pagesDelta(pagesDelta)
                 .balanceAfter(balanceAfter)
-                .reason("TEST")
+                .reason(PaymentTransactionReason.INICIS_PAYMENT)
                 .referenceType("PAYMENT_ORDER")
                 .referenceId(paymentOrderId)
                 .build();

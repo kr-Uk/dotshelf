@@ -15,14 +15,17 @@ import org.springframework.web.util.HtmlUtils;
 import com.dotshelf.domain.payment.dto.PaymentDtos.InicisAuthReturnRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.InicisPaymentPageResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.InicisReturnResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.CursorPageResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionListResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentMethodListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentOrderStatusResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryListResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.WalletResponse;
 import com.dotshelf.domain.payment.service.PaymentService;
 import com.dotshelf.global.common.ApiResponse;
@@ -105,17 +108,43 @@ public class PaymentController {
         return ApiResponse.success(paymentService.getPurchases(userId));
     }
 
-    @Operation(summary = "페이지 충전·사용 내역 조회",
+    @Operation(summary = "페이지 충전·사용 내역 조회 (list)",
             description = "현재 사용자의 페이지 충전(CHARGE) / 사용 내역을 최신순으로 조회합니다. "
-                    + "KG이니시스 충전업종 심사 요건 \"충전·차감 현황 노출\" 대응. "
                     + "응답 크기 cap: limit 미지정 시 100건, 최대 500건. "
-                    + "cursor 기반 paging 은 트랜잭션 누적 추이에 따라 별도 endpoint 로 도입 예정.")
+                    + "트랜잭션이 많이 누적된 사용자는 /transactions/cursor 를 우선 사용. "
+                    + "응답의 `referenceType` / `referenceId` 는 Phase 2 에서 제거 예정 — `paymentOrderId` 사용 권장.")
     @GetMapping("/transactions")
     public ApiResponse<PageTransactionListResponse> getTransactions(
             @CurrentUser Long userId,
             @RequestParam(defaultValue = "100") int limit
     ) {
         return ApiResponse.success(paymentService.getTransactions(userId, limit));
+    }
+
+    @Operation(summary = "페이지 충전·사용 내역 cursor paging 조회",
+            description = "(createdAt DESC, id DESC) 정렬 기준 cursor paging. "
+                    + "응답의 nextCursor 를 다음 요청 cursor 파라미터에 넣으면 다음 페이지. "
+                    + "limit 미지정 시 20건, 최대 500건.")
+    @GetMapping("/transactions/cursor")
+    public ApiResponse<CursorPageResponse<PageTransactionResponse>> getTransactionsCursor(
+            @CurrentUser Long userId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") int limit
+    ) {
+        return ApiResponse.success(paymentService.getTransactionsCursor(userId, cursor, limit));
+    }
+
+    @Operation(summary = "에셋 구매 내역 cursor paging 조회",
+            description = "(purchasedAt DESC, id DESC) 정렬 기준 cursor paging. "
+                    + "응답의 nextCursor 를 다음 요청 cursor 파라미터에 넣으면 다음 페이지. "
+                    + "limit 미지정 시 20건, 최대 500건.")
+    @GetMapping("/purchases/cursor")
+    public ApiResponse<CursorPageResponse<PurchaseHistoryResponse>> getPurchasesCursor(
+            @CurrentUser Long userId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") int limit
+    ) {
+        return ApiResponse.success(paymentService.getPurchasesCursor(userId, cursor, limit));
     }
 
     @Operation(summary = "지갑 조회", description = "현재 사용자의 페이지 잔액과 지갑 정보를 조회합니다.")

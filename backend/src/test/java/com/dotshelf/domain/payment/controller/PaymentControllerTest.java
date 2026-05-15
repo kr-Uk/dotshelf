@@ -30,6 +30,7 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.InicisReturnResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
+import com.dotshelf.domain.payment.dto.PaymentDtos.CursorPageResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentMethodListResponse;
@@ -40,7 +41,9 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse.Complai
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse.LegalUrlsView;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse.MerchantView;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryListResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.WalletResponse;
+import com.dotshelf.domain.payment.entity.PaymentTransactionReason;
 import com.dotshelf.domain.payment.service.PaymentService;
 import com.dotshelf.global.common.CurrentUserArgumentResolver;
 import com.dotshelf.global.error.GlobalExceptionHandler;
@@ -195,10 +198,10 @@ class PaymentControllerTest {
     @DisplayName("페이지 충전·사용 내역 조회는 200 과 최신순 PageTransactionResponse 목록을 응답하고 limit을 service에 전달한다")
     void getTransactions_returnsTransactionList() throws Exception {
         given(paymentService.getTransactions(1L, 100)).willReturn(new PageTransactionListResponse(List.of(
-                new PageTransactionResponse(2L, "CHARGE", 50, 150, "INICIS_PAYMENT", "PAYMENT_ORDER", 11L,
-                        Instant.parse("2026-05-14T02:00:00Z")),
-                new PageTransactionResponse(1L, "CHARGE", 100, 100, "INICIS_PAYMENT", "PAYMENT_ORDER", 10L,
-                        Instant.parse("2026-05-14T01:00:00Z"))
+                new PageTransactionResponse(2L, "CHARGE", 50, 150, PaymentTransactionReason.INICIS_PAYMENT, 11L,
+                        "PAYMENT_ORDER", 11L, Instant.parse("2026-05-14T02:00:00Z")),
+                new PageTransactionResponse(1L, "CHARGE", 100, 100, PaymentTransactionReason.INICIS_PAYMENT, 10L,
+                        "PAYMENT_ORDER", 10L, Instant.parse("2026-05-14T01:00:00Z"))
         )));
         given(paymentService.getTransactions(1L, 25)).willReturn(new PageTransactionListResponse(List.of()));
 
@@ -210,6 +213,7 @@ class PaymentControllerTest {
                 .andExpect(jsonPath("$.result.transactions[0].pagesDelta").value(50))
                 .andExpect(jsonPath("$.result.transactions[0].balanceAfter").value(150))
                 .andExpect(jsonPath("$.result.transactions[0].reason").value("INICIS_PAYMENT"))
+                .andExpect(jsonPath("$.result.transactions[0].paymentOrderId").value(11))
                 .andExpect(jsonPath("$.result.transactions[0].referenceType").value("PAYMENT_ORDER"))
                 .andExpect(jsonPath("$.result.transactions[0].referenceId").value(11))
                 .andExpect(jsonPath("$.result.transactions[1].balanceAfter").value(100));
@@ -222,6 +226,62 @@ class PaymentControllerTest {
 
         then(paymentService).should().getTransactions(1L, 100);
         then(paymentService).should().getTransactions(1L, 25);
+    }
+
+    @Test
+    @DisplayName("페이지 충전·사용 cursor 페이징 endpoint 는 200 과 items+nextCursor+hasMore 묶음을 응답한다")
+    void getTransactionsCursor_returnsCursorPage() throws Exception {
+        given(paymentService.getTransactionsCursor(1L, null, 20)).willReturn(new CursorPageResponse<>(
+                List.of(new PageTransactionResponse(2L, "CHARGE", 50, 150,
+                        PaymentTransactionReason.INICIS_PAYMENT, 11L,
+                        "PAYMENT_ORDER", 11L,
+                        Instant.parse("2026-05-15T02:00:00Z"))),
+                "ZW5jb2RlZA",
+                true
+        ));
+        given(paymentService.getTransactionsCursor(1L, "ZW5jb2RlZA", 5)).willReturn(new CursorPageResponse<>(
+                List.of(),
+                null,
+                false
+        ));
+
+        mockMvc.perform(get("/v1/payments/transactions/cursor").header("X-Test-Admin-User-Id", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items").isArray())
+                .andExpect(jsonPath("$.result.items[0].reason").value("INICIS_PAYMENT"))
+                .andExpect(jsonPath("$.result.items[0].paymentOrderId").value(11))
+                .andExpect(jsonPath("$.result.nextCursor").value("ZW5jb2RlZA"))
+                .andExpect(jsonPath("$.result.hasMore").value(true));
+
+        mockMvc.perform(get("/v1/payments/transactions/cursor")
+                        .header("X-Test-Admin-User-Id", "1")
+                        .param("cursor", "ZW5jb2RlZA")
+                        .param("limit", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items").isArray())
+                .andExpect(jsonPath("$.result.hasMore").value(false));
+
+        then(paymentService).should().getTransactionsCursor(1L, null, 20);
+        then(paymentService).should().getTransactionsCursor(1L, "ZW5jb2RlZA", 5);
+    }
+
+    @Test
+    @DisplayName("에셋 구매 cursor 페이징 endpoint 는 200 과 items+nextCursor+hasMore 묶음을 응답한다")
+    void getPurchasesCursor_returnsCursorPage() throws Exception {
+        given(paymentService.getPurchasesCursor(1L, null, 20)).willReturn(new CursorPageResponse<>(
+                List.of(new PurchaseHistoryResponse(7L, 99L, 100, "COMPLETED")),
+                null,
+                false
+        ));
+
+        mockMvc.perform(get("/v1/payments/purchases/cursor").header("X-Test-Admin-User-Id", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items").isArray())
+                .andExpect(jsonPath("$.result.items[0].assetId").value(99))
+                .andExpect(jsonPath("$.result.hasMore").value(false))
+                .andExpect(jsonPath("$.result.nextCursor").doesNotExist());
+
+        then(paymentService).should().getPurchasesCursor(1L, null, 20);
     }
 
     @Test
@@ -253,6 +313,7 @@ class PaymentControllerTest {
     private PaymentPolicyResponse policyResponseFixture() {
         return new PaymentPolicyResponse(
                 100_000,
+                1,
                 "KRW",
                 "CARD",
                 "구매 포인트와 아이템 이용권한의 유효기간은 결제일로부터 1년이며, 서비스 운영 기간 동안 자동으로 갱신됩니다.",

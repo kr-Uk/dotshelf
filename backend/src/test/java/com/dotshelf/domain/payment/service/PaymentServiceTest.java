@@ -7,9 +7,12 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+
+import org.springframework.test.util.ReflectionTestUtils;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +23,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.dotshelf.domain.asset.repository.AssetPurchaseRepository;
+import com.dotshelf.domain.payment.dto.PaymentDtos.CursorPageResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.InicisAuthReturnRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeConfirmResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderRequest;
@@ -29,6 +33,7 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.WalletResponse;
 import com.dotshelf.domain.payment.entity.PageTransaction;
 import com.dotshelf.domain.payment.entity.PaymentOrder;
+import com.dotshelf.domain.payment.entity.PaymentTransactionReason;
 import com.dotshelf.domain.payment.repository.PageTransactionRepository;
 import com.dotshelf.domain.payment.repository.PageWalletRepository;
 import com.dotshelf.domain.payment.repository.PaymentOrderRepository;
@@ -71,7 +76,7 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() {
-        paymentPolicyProperties = new PaymentPolicyProperties(100_000, null, null, null, null, null, null, null);
+        paymentPolicyProperties = new PaymentPolicyProperties(100_000, 1, null, null, null, null, null, null, null);
         paymentService = new PaymentService(
                 pageWalletRepository,
                 pageTransactionRepository,
@@ -170,10 +175,185 @@ class PaymentServiceTest {
         assertThat(response.transactions().get(0).balanceAfter()).isEqualTo(150);
         assertThat(response.transactions().get(0).pagesDelta()).isEqualTo(50);
         assertThat(response.transactions().get(0).type()).isEqualTo(PageTransaction.TYPE_CHARGE);
-        assertThat(response.transactions().get(0).reason()).isEqualTo("INICIS_PAYMENT");
-        assertThat(response.transactions().get(0).referenceType()).isEqualTo("PAYMENT_ORDER");
-        assertThat(response.transactions().get(0).referenceId()).isEqualTo(11L);
+        assertThat(response.transactions().get(0).reason()).isEqualTo(PaymentTransactionReason.INICIS_PAYMENT);
+        assertThat(response.transactions().get(0).paymentOrderId()).isEqualTo(11L);
         assertThat(response.transactions().get(1).balanceAfter()).isEqualTo(100);
+    }
+
+    @Test
+    @DisplayName("cursor 페이징 첫 페이지: fetchSize+1 결과 중 effectiveLimit 만 응답에 담고 hasMore=true + nextCursor 생성")
+    void getTransactionsCursor_firstPage_hasMore() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        PageTransaction first = transactionFixture(102L, Instant.parse("2026-05-15T10:00:00Z"));
+        PageTransaction second = transactionFixture(101L, Instant.parse("2026-05-15T09:50:00Z"));
+        PageTransaction overflow = transactionFixture(100L, Instant.parse("2026-05-15T09:40:00Z"));
+        given(pageTransactionRepository.findByUserIdOrderByCreatedAtDescIdDesc(eq(1L),
+                any(org.springframework.data.domain.Pageable.class)))
+                .willReturn(List.of(first, second, overflow));
+
+        CursorPageResponse<?> response = paymentService.getTransactionsCursor(1L, null, 2);
+
+        assertThat(response.items()).hasSize(2);
+        assertThat(response.hasMore()).isTrue();
+        assertThat(response.nextCursor()).isNotNull();
+        CursorCodec.CursorValue cv = CursorCodec.decode(response.nextCursor());
+        assertThat(cv.id()).isEqualTo(101L);
+        assertThat(cv.timestamp()).isEqualTo(Instant.parse("2026-05-15T09:50:00Z"));
+    }
+
+    @Test
+    @DisplayName("cursor 페이징 마지막 페이지: 결과가 limit 이하면 nextCursor=null, hasMore=false")
+    void getTransactionsCursor_lastPage_noCursor() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        PageTransaction only = transactionFixture(101L, Instant.parse("2026-05-15T10:00:00Z"));
+        given(pageTransactionRepository.findByUserIdOrderByCreatedAtDescIdDesc(eq(1L),
+                any(org.springframework.data.domain.Pageable.class)))
+                .willReturn(List.of(only));
+
+        CursorPageResponse<?> response = paymentService.getTransactionsCursor(1L, null, 5);
+
+        assertThat(response.items()).hasSize(1);
+        assertThat(response.hasMore()).isFalse();
+        assertThat(response.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("cursor 가 주어지면 decode 후 findUserTransactionsBeforeCursor 가 호출된다")
+    void getTransactionsCursor_withCursor_callsBeforeCursorQuery() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        String cursor = CursorCodec.encodeFromInstant(Instant.parse("2026-05-15T10:00:00Z"), 101L);
+        given(pageTransactionRepository.findUserTransactionsBeforeCursor(eq(1L), any(Instant.class), eq(101L),
+                any(org.springframework.data.domain.Pageable.class)))
+                .willReturn(List.of());
+
+        CursorPageResponse<?> response = paymentService.getTransactionsCursor(1L, cursor, 20);
+
+        assertThat(response.items()).isEmpty();
+        assertThat(response.hasMore()).isFalse();
+        then(pageTransactionRepository).should()
+                .findUserTransactionsBeforeCursor(eq(1L), any(Instant.class), eq(101L),
+                        any(org.springframework.data.domain.Pageable.class));
+    }
+
+    @Test
+    @DisplayName("microsecond 정밀도 cursor 는 round-trip 후 동일한 Instant 가 repo 호출 인자로 전달된다 (sub-millis row 누락 방지)")
+    void getTransactionsCursor_microsecondPrecision_passedToRepoUntruncated() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        Instant sourceTimestamp = Instant.parse("2026-05-15T10:00:00.123456Z");
+        String cursor = CursorCodec.encodeFromInstant(sourceTimestamp, 101L);
+        ArgumentCaptor<Instant> instantCaptor = ArgumentCaptor.forClass(Instant.class);
+        given(pageTransactionRepository.findUserTransactionsBeforeCursor(eq(1L), any(Instant.class), eq(101L),
+                any(org.springframework.data.domain.Pageable.class)))
+                .willReturn(List.of());
+
+        paymentService.getTransactionsCursor(1L, cursor, 20);
+
+        then(pageTransactionRepository).should()
+                .findUserTransactionsBeforeCursor(eq(1L), instantCaptor.capture(), eq(101L),
+                        any(org.springframework.data.domain.Pageable.class));
+        assertThat(instantCaptor.getValue()).isEqualTo(sourceTimestamp);
+        assertThat(instantCaptor.getValue().getNano()).isEqualTo(123_456_000);
+    }
+
+    @Test
+    @DisplayName("큰 pageUnitPriceKrw 환경에서도 long 곱셈으로 expectedAmount 가 계산되어 mismatch 가 정확히 잡힌다 (int overflow 회귀 회피)")
+    void createPageChargeOrder_largeUnitPrice_longArithmeticPreventsOverflow() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        // pageUnitPriceKrw=10_000 + pagesAmount=500_000 → expectedAmount(long)=5_000_000_000L (int max 초과).
+        // 기존 int 곱셈이면 wrap-around 로 우연히 amountKrw 와 일치할 수 있어 검증 우회. long 곱셈이면 mismatch.
+        PaymentPolicyProperties bigUnitProps = new PaymentPolicyProperties(
+                Integer.MAX_VALUE, 10_000, null, null, null, null, null, null, null);
+        PaymentService bigUnitService = new PaymentService(
+                pageWalletRepository, pageTransactionRepository, paymentOrderRepository,
+                assetPurchaseRepository, userService, inicisPaymentFormFactory,
+                inicisPaymentClient, paymentOrderCompletionService, bigUnitProps);
+
+        assertThatThrownBy(() -> bigUnitService.createPageChargeOrder(1L, orderRequest(500_000, 1_000_000)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+
+        then(paymentOrderRepository).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("구매 내역 cursor 페이징 첫 페이지: fetchSize+1 결과 중 effectiveLimit 만 응답에 담고 hasMore=true + nextCursor 생성")
+    void getPurchasesCursor_firstPage_hasMore() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        com.dotshelf.domain.asset.entity.AssetPurchase first =
+                purchaseFixture(202L, java.time.LocalDateTime.parse("2026-05-15T10:00:00"));
+        com.dotshelf.domain.asset.entity.AssetPurchase second =
+                purchaseFixture(201L, java.time.LocalDateTime.parse("2026-05-15T09:50:00"));
+        com.dotshelf.domain.asset.entity.AssetPurchase overflow =
+                purchaseFixture(200L, java.time.LocalDateTime.parse("2026-05-15T09:40:00"));
+        given(assetPurchaseRepository.findByUserIdOrderByPurchasedAtDescIdDesc(eq(1L),
+                any(org.springframework.data.domain.Pageable.class)))
+                .willReturn(List.of(first, second, overflow));
+
+        CursorPageResponse<?> response = paymentService.getPurchasesCursor(1L, null, 2);
+
+        assertThat(response.items()).hasSize(2);
+        assertThat(response.hasMore()).isTrue();
+        assertThat(response.nextCursor()).isNotNull();
+        CursorCodec.CursorValue cv = CursorCodec.decode(response.nextCursor());
+        assertThat(cv.id()).isEqualTo(201L);
+        assertThat(cv.asLocalDateTimeUtc()).isEqualTo(java.time.LocalDateTime.parse("2026-05-15T09:50:00"));
+    }
+
+    @Test
+    @DisplayName("구매 내역 cursor 페이징 마지막 페이지: 결과가 limit 이하면 nextCursor=null, hasMore=false")
+    void getPurchasesCursor_lastPage_noCursor() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        com.dotshelf.domain.asset.entity.AssetPurchase only =
+                purchaseFixture(201L, java.time.LocalDateTime.parse("2026-05-15T10:00:00"));
+        given(assetPurchaseRepository.findByUserIdOrderByPurchasedAtDescIdDesc(eq(1L),
+                any(org.springframework.data.domain.Pageable.class)))
+                .willReturn(List.of(only));
+
+        CursorPageResponse<?> response = paymentService.getPurchasesCursor(1L, null, 5);
+
+        assertThat(response.items()).hasSize(1);
+        assertThat(response.hasMore()).isFalse();
+        assertThat(response.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("구매 cursor 가 주어지면 decode 후 findUserPurchasesBeforeCursor 가 LocalDateTime UTC 인자로 호출된다")
+    void getPurchasesCursor_withCursor_callsBeforeCursorQuery() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        java.time.LocalDateTime cursorAt = java.time.LocalDateTime.parse("2026-05-15T10:00:00.123456");
+        String cursor = CursorCodec.encodeFromLocalDateTimeUtc(cursorAt, 201L);
+        ArgumentCaptor<java.time.LocalDateTime> ldtCaptor = ArgumentCaptor.forClass(java.time.LocalDateTime.class);
+        given(assetPurchaseRepository.findUserPurchasesBeforeCursor(eq(1L), any(java.time.LocalDateTime.class), eq(201L),
+                any(org.springframework.data.domain.Pageable.class)))
+                .willReturn(List.of());
+
+        paymentService.getPurchasesCursor(1L, cursor, 20);
+
+        then(assetPurchaseRepository).should()
+                .findUserPurchasesBeforeCursor(eq(1L), ldtCaptor.capture(), eq(201L),
+                        any(org.springframework.data.domain.Pageable.class));
+        assertThat(ldtCaptor.getValue()).isEqualTo(cursorAt);
+        assertThat(ldtCaptor.getValue().getNano()).isEqualTo(123_456_000);
+    }
+
+    private com.dotshelf.domain.asset.entity.AssetPurchase purchaseFixture(Long id, java.time.LocalDateTime purchasedAt) {
+        com.dotshelf.domain.asset.entity.AssetPurchase purchase =
+                com.dotshelf.domain.asset.entity.AssetPurchase.builder()
+                        .userId(1L)
+                        .assetId(id)
+                        .pricePages(100)
+                        .build();
+        ReflectionTestUtils.setField(purchase, "id", id);
+        ReflectionTestUtils.setField(purchase, "purchasedAt", purchasedAt);
+        return purchase;
+    }
+
+    private PageTransaction transactionFixture(Long id, Instant createdAt) {
+        PageTransaction transaction = PageTransaction.charge(1L, id, 50, 100);
+        ReflectionTestUtils.setField(transaction, "id", id);
+        ReflectionTestUtils.setField(transaction, "createdAt", createdAt);
+        return transaction;
     }
 
     @Test

@@ -9,10 +9,12 @@ import com.dotshelf.domain.asset.entity.AssetPurchase;
 import com.dotshelf.domain.payment.entity.PageTransaction;
 import com.dotshelf.domain.payment.entity.PageWallet;
 import com.dotshelf.domain.payment.entity.PaymentOrder;
+import com.dotshelf.domain.payment.entity.PaymentTransactionReason;
 import com.dotshelf.domain.payment.service.InicisPaymentFormFactory.InicisPaymentForm;
 import com.dotshelf.domain.payment.service.PaymentPolicyProperties;
 
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -25,8 +27,10 @@ public final class PaymentDtos {
 
     public record PageChargeRequest(
             @Min(value = 1, message = "충전 페이지는 1 이상입니다.")
+            @Max(value = 1_000_000, message = "충전 페이지는 1,000,000 이하여야 합니다.")
             int pagesAmount,
             @Min(value = 1, message = "결제 금액은 1 이상입니다.")
+            @Max(value = 1_000_000, message = "결제 금액은 1,000,000 이하여야 합니다.")
             int amountKrw,
             String platform
     ) {
@@ -34,8 +38,10 @@ public final class PaymentDtos {
 
     public record PageChargeOrderRequest(
             @Min(value = 1, message = "충전 페이지는 1 이상입니다.")
+            @Max(value = 1_000_000, message = "충전 페이지는 1,000,000 이하여야 합니다.")
             int pagesAmount,
             @Min(value = 1, message = "결제 금액은 1 이상입니다.")
+            @Max(value = 1_000_000, message = "결제 금액은 1,000,000 이하여야 합니다.")
             int amountKrw,
             String platform,
             @NotBlank(message = "구매자 이름은 필수입니다.")
@@ -224,16 +230,37 @@ public final class PaymentDtos {
     public record PaymentMethodListResponse(List<String> methods) {
     }
 
+    /**
+     * 페이지 충전·사용 내역 응답. {@code referenceType} / {@code referenceId} 는 backward-compat 보장을 위해
+     * 한 릴리즈 유지 후 Phase 2 에서 제거 예정 — 신규 사용처는 {@code paymentOrderId} 를 사용한다.
+     */
     public record PageTransactionResponse(
             Long id,
             String type,
             int pagesDelta,
             int balanceAfter,
-            String reason,
+            PaymentTransactionReason reason,
+            Long paymentOrderId,
             String referenceType,
             Long referenceId,
             Instant createdAt
     ) {
+
+        /**
+         * @deprecated Phase 2 에서 제거 예정. {@link #paymentOrderId()} 사용.
+         */
+        @Deprecated(forRemoval = true)
+        public String referenceType() {
+            return referenceType;
+        }
+
+        /**
+         * @deprecated Phase 2 에서 제거 예정. {@link #paymentOrderId()} 사용.
+         */
+        @Deprecated(forRemoval = true)
+        public Long referenceId() {
+            return referenceId;
+        }
 
         public static PageTransactionResponse from(PageTransaction transaction) {
             return new PageTransactionResponse(
@@ -242,6 +269,7 @@ public final class PaymentDtos {
                     transaction.getPagesDelta(),
                     transaction.getBalanceAfter(),
                     transaction.getReason(),
+                    transaction.getPaymentOrderId(),
                     transaction.getReferenceType(),
                     transaction.getReferenceId(),
                     transaction.getCreatedAt()
@@ -252,8 +280,20 @@ public final class PaymentDtos {
     public record PageTransactionListResponse(List<PageTransactionResponse> transactions) {
     }
 
+    public record CursorPageResponse<T>(
+            List<T> items,
+            String nextCursor,
+            boolean hasMore
+    ) {
+
+        public static <T> CursorPageResponse<T> of(List<T> items, String nextCursor) {
+            return new CursorPageResponse<>(items, nextCursor, nextCursor != null);
+        }
+    }
+
     public record PaymentPolicyResponse(
             int maxChargeKrwPerOrder,
+            int pageUnitPriceKrw,
             String currency,
             String paymentMethod,
             String validityNotice,
@@ -267,6 +307,7 @@ public final class PaymentDtos {
         public static PaymentPolicyResponse from(PaymentPolicyProperties properties) {
             return new PaymentPolicyResponse(
                     properties.maxChargeKrw(),
+                    properties.pageUnitPriceKrw(),
                     "KRW",
                     "CARD",
                     properties.validityNotice(),

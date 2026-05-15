@@ -17,6 +17,8 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.InicisReturnResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeConfirmResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderResponse;
+import com.dotshelf.domain.asset.entity.AssetPurchase;
+import com.dotshelf.domain.payment.dto.PaymentDtos.CursorPageResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionResponse;
@@ -26,6 +28,7 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.WalletResponse;
+import com.dotshelf.domain.payment.entity.PageTransaction;
 import com.dotshelf.domain.payment.entity.PaymentOrder;
 import com.dotshelf.domain.payment.repository.PageTransactionRepository;
 import com.dotshelf.domain.payment.repository.PageWalletRepository;
@@ -43,7 +46,6 @@ import lombok.RequiredArgsConstructor;
 @Transactional(readOnly = true)
 public class PaymentService {
 
-    private static final int PAGE_UNIT_PRICE_KRW = 1;
     private static final Duration ORDER_TTL = Duration.ofMinutes(30);
     private static final String PAYMENT_PAGE_PATH_PREFIX = "/v1/payments/inicis/request/";
     static final int TRANSACTIONS_DEFAULT_LIMIT = 100;
@@ -184,6 +186,58 @@ public class PaymentService {
         );
     }
 
+    public CursorPageResponse<PageTransactionResponse> getTransactionsCursor(Long userId, String cursor, int limit) {
+        Long currentUserId = userService.requireUserId(userId);
+        int effectiveLimit = clampLimit(limit);
+        int fetchSize = effectiveLimit + 1;
+        List<PageTransaction> rows;
+        if (cursor == null || cursor.isBlank()) {
+            rows = pageTransactionRepository.findByUserIdOrderByCreatedAtDescIdDesc(
+                    currentUserId, PageRequest.of(0, fetchSize)
+            );
+        } else {
+            CursorCodec.CursorValue cv = CursorCodec.decode(cursor);
+            rows = pageTransactionRepository.findUserTransactionsBeforeCursor(
+                    currentUserId, cv.timestamp(), cv.id(), PageRequest.of(0, fetchSize)
+            );
+        }
+        boolean hasMore = rows.size() > effectiveLimit;
+        List<PageTransaction> trimmed = hasMore ? rows.subList(0, effectiveLimit) : rows;
+        String nextCursor = (hasMore && !trimmed.isEmpty())
+                ? CursorCodec.encodeFromInstant(
+                trimmed.get(trimmed.size() - 1).getCreatedAt(),
+                trimmed.get(trimmed.size() - 1).getId())
+                : null;
+        List<PageTransactionResponse> items = trimmed.stream().map(PageTransactionResponse::from).toList();
+        return new CursorPageResponse<>(items, nextCursor, hasMore);
+    }
+
+    public CursorPageResponse<PurchaseHistoryResponse> getPurchasesCursor(Long userId, String cursor, int limit) {
+        Long currentUserId = userService.requireUserId(userId);
+        int effectiveLimit = clampLimit(limit);
+        int fetchSize = effectiveLimit + 1;
+        List<AssetPurchase> rows;
+        if (cursor == null || cursor.isBlank()) {
+            rows = assetPurchaseRepository.findByUserIdOrderByPurchasedAtDescIdDesc(
+                    currentUserId, PageRequest.of(0, fetchSize)
+            );
+        } else {
+            CursorCodec.CursorValue cv = CursorCodec.decode(cursor);
+            rows = assetPurchaseRepository.findUserPurchasesBeforeCursor(
+                    currentUserId, cv.asLocalDateTimeUtc(), cv.id(), PageRequest.of(0, fetchSize)
+            );
+        }
+        boolean hasMore = rows.size() > effectiveLimit;
+        List<AssetPurchase> trimmed = hasMore ? rows.subList(0, effectiveLimit) : rows;
+        String nextCursor = (hasMore && !trimmed.isEmpty())
+                ? CursorCodec.encodeFromLocalDateTimeUtc(
+                trimmed.get(trimmed.size() - 1).getPurchasedAt(),
+                trimmed.get(trimmed.size() - 1).getId())
+                : null;
+        List<PurchaseHistoryResponse> items = trimmed.stream().map(PurchaseHistoryResponse::from).toList();
+        return new CursorPageResponse<>(items, nextCursor, hasMore);
+    }
+
     private int clampLimit(int requested) {
         if (requested <= 0) {
             return TRANSACTIONS_DEFAULT_LIMIT;
@@ -208,8 +262,14 @@ public class PaymentService {
     }
 
     private void validatePageChargeAmount(int pagesAmount, int amountKrw) {
-        int expectedAmount = pagesAmount * PAGE_UNIT_PRICE_KRW;
-        if (amountKrw != expectedAmount) {
+        long expectedAmount;
+        try {
+            expectedAmount = Math.multiplyExact((long) pagesAmount, (long) paymentPolicyProperties.pageUnitPriceKrw());
+        } catch (ArithmeticException e) {
+            throw new CustomException(ErrorCode.PAYMENT_AMOUNT_EXCEEDS_LIMIT,
+                    "충전 페이지와 단가의 곱이 정수 범위를 초과했습니다.");
+        }
+        if ((long) amountKrw != expectedAmount) {
             throw new CustomException(ErrorCode.PAYMENT_AMOUNT_MISMATCH,
                     "충전 페이지와 결제 금액이 일치하지 않습니다.");
         }
