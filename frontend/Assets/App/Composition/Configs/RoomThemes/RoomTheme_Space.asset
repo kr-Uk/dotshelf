@@ -18,7 +18,7 @@ MonoBehaviour:
     \uCC28\uAC00\uC6B4 \uBE14\uB8E8 \uD1A4\uC73C\uB85C \uAD6C\uC131\uD55C \uB85C\uCEEC
     \uD504\uB9AC\uBDF0 \uD14C\uB9C8."
   previewSprite: {fileID: 0}
-  bookshelfStyleIndex: 0
+  bookshelfStyleIndex: 6
   wallMaterial: {fileID: 2100000, guid: 5e3dd637b147449e918940b3f590000e, type: 2}
   floorMaterial: {fileID: 2100000, guid: c900403698c64f14a187a596e5bd0eb9, type: 2}
   bookshelfMaterial: {fileID: 2100000, guid: 76ef1a766221455bb4cafe9b55934288, type: 2}
@@ -43,6 +43,8 @@ MonoBehaviour:
   defaultEntries:
   - category: 0
     assetId: 500001
+  - category: 4
+    assetId: 500030
   bookshelfDecoSpecs: []
   floorDecoSpecs:
   - assetId: 0
@@ -76,9 +78,9 @@ MonoBehaviour:
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: be40aa9cfed84e5abe4c941a6e84813f, type: 3}
     wallSide: 3
-    localPosition: {x: -1.5858977, y: 0.36865306, z: 0}
-    localRotation: {x: -0, y: 0.000005008956, z: 0}
-    localScale: {x: 0.74, y: 0.74, z: 0.74}
+    localPosition: {x: 1.53, y: 1.362, z: 1.381}
+    localRotation: {x: 0, y: 0, z: 0}
+    localScale: {x: 0.5, y: 0.5, z: 0.5}
     anchorTag: spaceWindow
     themeSlot: 8
     assetKey: Assets/Arts/Models/space_window.glb

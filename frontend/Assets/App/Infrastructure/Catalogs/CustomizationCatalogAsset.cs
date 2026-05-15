@@ -212,6 +212,19 @@ namespace App.Infrastructure.Catalogs
                  "1 로, 일반 laptop-on-desk 면 0 (default) 으로 박기.")]
         [SerializeField] private int notebookFocusCameraMode;
 
+        [Header("Desk 전용 — Notebook 자식 transform override (DeskVisualSkinApplier 의 laptop Y 자동 재정렬 우회)")]
+        [Tooltip("zero (default) 면 DeskVisualSkinApplier 가 skin top 기준으로 laptop.localPosition.y 만 " +
+                 "자동 재정렬하는 기존 로직 그대로 사용. 비-zero (활성 판정 = scaleOverride.sqrMagnitude > 0) " +
+                 "면 자동 Y 재정렬 SKIP 하고 아래 3 필드를 Notebook transform 의 localPosition/" +
+                 "localEulerAngles/localScale 에 그대로 박는다. 디자이너가 책상 위 Notebook 위치/회전을 " +
+                 "Inspector 에서 정확히 지정해야 할 때 사용. native rot/scale 은 marker 에 캡처 + clear 시 복원.")]
+        [SerializeField] private Vector3 notebookLocalPositionOverride;
+        [Tooltip("OverrideNotebookLocalTransform 활성 시 Notebook.localEulerAngles 로 set 할 값.")]
+        [SerializeField] private Vector3 notebookLocalRotationOverride;
+        [Tooltip("활성 판정 + Notebook.localScale. zero (default) 면 override 비활성, " +
+                 "(1,1,1) 또는 그 외 비-zero 면 활성.")]
+        [SerializeField] private Vector3 notebookLocalScaleOverride;
+
         public long AssetId => assetId;
         public string DisplayName => displayName;
         public string Description => description;
@@ -260,6 +273,13 @@ namespace App.Infrastructure.Catalogs
         public Vector2 ScreenSaverCanvasAnchorMax => screenSaverCanvasAnchorMax;
         public Vector2 ScreenSaverCanvasPivot => screenSaverCanvasPivot;
         public int NotebookFocusCameraMode => notebookFocusCameraMode;
+
+        public Vector3 NotebookLocalPositionOverride => notebookLocalPositionOverride;
+        public Vector3 NotebookLocalRotationOverride => notebookLocalRotationOverride;
+        public Vector3 NotebookLocalScaleOverride => notebookLocalScaleOverride;
+        // 활성 판정 — scaleOverride sqrMagnitude > 1e-10 일 때만 verbatim 분기. 다른 entry 는
+        // default zero 라 false → 기존 자동 Y 재정렬 동작 보존.
+        public bool OverrideNotebookLocalTransform => notebookLocalScaleOverride.sqrMagnitude > 1e-10f;
     }
 
     /// <summary>

@@ -18,7 +18,7 @@ MonoBehaviour:
     \uBCF4\uB797\uBE5B \uBCBD\uC9C0\uB85C \uAD6C\uC131\uD55C \uB85C\uCEEC \uD504\uB9AC\uBDF0
     \uD14C\uB9C8."
   previewSprite: {fileID: 0}
-  bookshelfStyleIndex: 0
+  bookshelfStyleIndex: 4
   wallMaterial: {fileID: 2100000, guid: 22f221f0716d439994e09157cb0cd0cf, type: 2}
   floorMaterial: {fileID: 2100000, guid: 4ab825f11c7740c3b3cba9e4f5c111e1, type: 2}
   bookshelfMaterial: {fileID: 2100000, guid: 771f319880734e27b45336ec706f8c7a, type: 2}

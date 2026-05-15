@@ -85,6 +85,59 @@ namespace BookshelfPorting.Editor
                 0f,
                 new[] { 0.165f, 0.535f, 0.820f, 1.145f },
                 new[] { 0.305f, 0.295f, 0.310f, 0.315f },
+                new[] { 0.006f, 0.006f, 0.006f, 0.006f }),
+
+            // 신규 5종 — 각 RoomTheme 자체 책장 layout. Vintage 시드값 복제 (일반 4×4),
+            // prefabLocalEulerAngles 만 GLB 별 native forward 에 맞춰 개별 지정.
+
+            new ThemeSpec(
+                BookshelfThemeStyle.Spooky, "Spooky",
+                "Assets/Arts/Models/spooky_shelf.glb",
+                $"{ThemeLayoutFolder}/BookshelfThemeLayout_Spooky.asset",
+                4, 4, 1f, new Vector3(0f, 180f, 0f),
+                0.13f, 0.18f, 0.13f, 0.065f, 0.030f, 0.04f, 0.04f, -0.020f, 0f,
+                new[] { 0.165f, 0.535f, 0.820f, 1.145f },
+                new[] { 0.305f, 0.295f, 0.310f, 0.315f },
+                new[] { 0.006f, 0.006f, 0.006f, 0.006f }),
+
+            new ThemeSpec(
+                BookshelfThemeStyle.DeepSea, "DeepSea",
+                "Assets/Arts/Models/deepsea_shelf.glb",
+                $"{ThemeLayoutFolder}/BookshelfThemeLayout_DeepSea.asset",
+                4, 4, 1f, new Vector3(0f, 180f, 0f),
+                0.13f, 0.18f, 0.13f, 0.065f, 0.030f, 0.04f, 0.04f, -0.020f, 0f,
+                new[] { 0.165f, 0.535f, 0.820f, 1.145f },
+                new[] { 0.305f, 0.295f, 0.310f, 0.315f },
+                new[] { 0.006f, 0.006f, 0.006f, 0.006f }),
+
+            new ThemeSpec(
+                BookshelfThemeStyle.Fantasy, "Fantasy",
+                "Assets/Arts/Models/default_shelf.glb",
+                $"{ThemeLayoutFolder}/BookshelfThemeLayout_Fantasy.asset",
+                4, 4, 1f, Vector3.zero,
+                0.13f, 0.18f, 0.13f, 0.065f, 0.030f, 0.04f, 0.04f, -0.020f, 0f,
+                new[] { 0.165f, 0.535f, 0.820f, 1.145f },
+                new[] { 0.305f, 0.295f, 0.310f, 0.315f },
+                new[] { 0.006f, 0.006f, 0.006f, 0.006f }),
+
+            new ThemeSpec(
+                BookshelfThemeStyle.Space, "Space",
+                "Assets/Arts/Models/space_shelf.glb",
+                $"{ThemeLayoutFolder}/BookshelfThemeLayout_Space.asset",
+                4, 4, 1f, Vector3.zero,
+                0.13f, 0.18f, 0.13f, 0.065f, 0.030f, 0.04f, 0.04f, -0.020f, 0f,
+                new[] { 0.165f, 0.535f, 0.820f, 1.145f },
+                new[] { 0.305f, 0.295f, 0.310f, 0.315f },
+                new[] { 0.006f, 0.006f, 0.006f, 0.006f }),
+
+            new ThemeSpec(
+                BookshelfThemeStyle.GoodVibes, "GoodVibes",
+                "Assets/Arts/Models/default_shelf.glb",
+                $"{ThemeLayoutFolder}/BookshelfThemeLayout_GoodVibes.asset",
+                4, 4, 1f, Vector3.zero,
+                0.13f, 0.18f, 0.13f, 0.065f, 0.030f, 0.04f, 0.04f, -0.020f, 0f,
+                new[] { 0.165f, 0.535f, 0.820f, 1.145f },
+                new[] { 0.305f, 0.295f, 0.310f, 0.315f },
                 new[] { 0.006f, 0.006f, 0.006f, 0.006f })
         };
 

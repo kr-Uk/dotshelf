@@ -3171,6 +3171,10 @@ namespace App.Bootstrap
             // 는 leftover hold-root 매칭 보강 용도로 호출 유지.
             ClearAllThemeSpawnedDecos();
             RemovePlacementsForIncomingTheme(theme);
+            // ThemeSlotMarker 없이 placedItemsRoot 에 남아있는 saved-restored / user-placed
+            // 자산 중 incoming 테마와 다른 prefix 를 가진 것들을 추가로 destroy. 위 두 cleanup
+            // 이 못 잡는 회귀 (이전 세션 spooky 자산이 vintage 적용 후에도 남는 케이스) 차단.
+            RemoveDecosWithMismatchedThemePrefix(theme);
 
             // 1.5) 이전 mesh swap 모두 native 복원. theme 의 defaultEntries 에 해당 카테고리
             // entry 가 있으면 step 2 에서 다시 swap 적용. 없으면 native 유지 (기본 책상/책장 복귀).
@@ -3542,6 +3546,89 @@ namespace App.Bootstrap
             slot.AssetKey = spec.AssetKey;
         }
 
+        // Theme-prefix isolation pass — incoming theme 과 다른 theme 의 자산을 strip.
+        // ClearAllThemeSpawnedDecos 는 ThemeSlotMarker 자식만 destroy. saved-state restore
+        // (TryInstantiateSavedItem) / 일부 user placement 는 DecorationItemMarker 만 부착해
+        // ThemeSlotMarker 가 없는 자식이 남는다. 이런 자식이 InventoryKey 에 다른 theme 의 prefix
+        // (예: "spooky_bed.glb") 를 갖고 있고 incoming 이 vintage 이면 두 테마 자산 혼재 회귀.
+        // 본 메서드가 그 격차 보강.
+        //
+        // Theme-neutral (default_*, Meshy_*, ads_*, doll_*) 는 prefixes 에 없어 매칭 안 됨 → 보존.
+        private static readonly string[] ThemeAssetPrefixes =
+        {
+            "spooky_",
+            "vintage_",
+            "deepsea_",
+            "fantasy_",
+            "space_",
+            "goodvibes_",
+        };
+
+        private static string ResolveThemePrefixFromAsset(App.Infrastructure.Catalogs.RoomThemeAsset theme)
+        {
+            if (theme == null) return string.Empty;
+            string n = theme.name;
+            if (string.IsNullOrEmpty(n)) return string.Empty;
+            const string roomThemePrefix = "RoomTheme_";
+            if (n.StartsWith(roomThemePrefix, System.StringComparison.OrdinalIgnoreCase))
+            {
+                n = n.Substring(roomThemePrefix.Length);
+            }
+            return n.ToLowerInvariant() + "_";
+        }
+
+        private void RemoveDecosWithMismatchedThemePrefix(App.Infrastructure.Catalogs.RoomThemeAsset theme)
+        {
+            if (placedItemsRoot == null) return;
+            string currentPrefix = ResolveThemePrefixFromAsset(theme);
+            int removed = 0;
+            int inspected = 0;
+            for (int i = placedItemsRoot.transform.childCount - 1; i >= 0; i--)
+            {
+                var child = placedItemsRoot.transform.GetChild(i).gameObject;
+                var marker = child.GetComponent<DecorationItemMarker>();
+                if (marker == null || string.IsNullOrEmpty(marker.InventoryKey)) continue;
+                inspected++;
+
+                string key = marker.InventoryKey;
+                const string pathColon = "path:";
+                if (key.StartsWith(pathColon, System.StringComparison.Ordinal))
+                {
+                    key = key.Substring(pathColon.Length);
+                }
+                int lastSlash = key.LastIndexOfAny(new[] { '/', '\\' });
+                string fileName = (lastSlash >= 0 ? key.Substring(lastSlash + 1) : key).ToLowerInvariant();
+
+                string matchedThemePrefix = null;
+                for (int p = 0; p < ThemeAssetPrefixes.Length; p++)
+                {
+                    if (fileName.StartsWith(ThemeAssetPrefixes[p], System.StringComparison.Ordinal))
+                    {
+                        matchedThemePrefix = ThemeAssetPrefixes[p];
+                        break;
+                    }
+                }
+                if (matchedThemePrefix == null) continue;
+                if (matchedThemePrefix == currentPrefix) continue;
+
+                if (selectedObject == child) selectedObject = null;
+                if (draggingObject == child) draggingObject = null;
+                if (placedByInventoryKey.TryGetValue(marker.InventoryKey, out var tracked) && tracked == child)
+                {
+                    placedByInventoryKey.Remove(marker.InventoryKey);
+                }
+                if (UnityEngine.Application.isPlaying) Destroy(child);
+                else DestroyImmediate(child);
+                removed++;
+            }
+            if (removed > 0)
+            {
+                Debug.Log(
+                    $"[RoomEditModeController][ThemePolicy] RemoveDecosWithMismatchedThemePrefix " +
+                    $"theme={theme?.name} currentPrefix='{currentPrefix}' inspected={inspected} removed={removed}.");
+            }
+        }
+
         // 사용자 요구: 테마 적용 시 그 테마 자산만 보여야 함. placedItemsRoot 자식 중
         // ThemeSlotMarker 부착된 자식 (= 이전 테마들이 spawn 한 deco) 을 모두 destroy.
         // ThemeSlotMarker 없는 자식 (= 사용자 직접 placement) 은 보존.
@@ -3844,7 +3931,7 @@ namespace App.Bootstrap
             // 빈티지 frame: 사용자 명시 transform 정확 적용 — anchor 변환 우회하고 spec 값을
             // localPosition/Rotation 그대로 박는다. placedItemsRoot 가 origin 이라 world == local.
             // 다른 wall deco (GoodVibes_NeonSign 등) 의 anchor 정책은 그대로 유지.
-            if (IsVintageFrameAssetKey(spec.AssetKey))
+            if (IsAnchorBypassedWallDecoAssetKey(spec.AssetKey))
             {
                 go.transform.localPosition = spec.LocalPosition;
                 go.transform.localEulerAngles = spec.LocalRotation;
@@ -3867,6 +3954,21 @@ namespace App.Bootstrap
         {
             return !string.IsNullOrEmpty(assetKey)
                 && assetKey.IndexOf("vintage_frame", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // SpawnThemeWallDecoFromSpec 에서 wall surface anchor 변환을 우회하고 spec.LocalPosition/
+        // Rotation/Scale 을 placedItemsRoot frame (= world) 의 값으로 직접 박는 자산 화이트리스트.
+        //   - vintage_frame: 디자이너가 액자 위치 직접 측정.
+        //   - space_*: 우주 테마 wall deco — Inspector 명시값 그대로 노출.
+        // 다른 wall deco (GoodVibes_NeonSign 등) 는 매칭 안 되므로 기존 anchor 변환 유지.
+        private static bool IsAnchorBypassedWallDecoAssetKey(string assetKey)
+        {
+            if (string.IsNullOrEmpty(assetKey)) return false;
+            if (assetKey.IndexOf("vintage_frame", System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            int lastSlash = assetKey.LastIndexOfAny(new[] { '/', '\\' });
+            string fileName = lastSlash >= 0 ? assetKey.Substring(lastSlash + 1) : assetKey;
+            if (fileName.StartsWith("space_", System.StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
         }
 
         // 메인씬 진입 후 (로그인 → 메인씬, 또는 BookshelfSceneInstaller 이후) saved layout 복원

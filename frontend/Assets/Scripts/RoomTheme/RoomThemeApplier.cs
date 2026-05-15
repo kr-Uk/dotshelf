@@ -156,11 +156,33 @@ namespace Dotshelf.Scripts.RoomTheme
                 if (System.Enum.IsDefined(typeof(BookshelfThemeStyle), style))
                 {
                     materialFactory.ApplyTheme(style);
+                    PropagateBookshelfDesignStyleToGenerator(style);
                 }
                 else
                 {
                     Debug.LogWarning($"[RoomThemeApplier] bookshelfStyleIndex={theme.BookshelfStyleIndex}는 BookshelfThemeStyle enum 범위 밖 — 책장 tint 적용 skip.");
                 }
+            }
+        }
+
+        // RoomTheme.bookshelfStyleIndex 가 Default 이외 값을 가리키면 절차생성 shell 대신
+        // BookshelfThemeLayoutCatalog 의 매칭 GLB 를 functional shell 로 spawn — BookshelfGenerator
+        // 의 bookshelfDesignStyles dict 까지 propagate 해야 활성화. materialFactory.ApplyTheme 만으론
+        // tint 만 바뀜.
+        private BookshelfGenerator cachedBookshelfGenerator;
+
+        private void PropagateBookshelfDesignStyleToGenerator(BookshelfThemeStyle style)
+        {
+            if (cachedBookshelfGenerator == null)
+            {
+                cachedBookshelfGenerator = FindFirstObjectByType<BookshelfGenerator>(FindObjectsInactive.Include);
+            }
+            if (cachedBookshelfGenerator == null) return;
+
+            bool applied = cachedBookshelfGenerator.SetActiveBookshelfDesignStyle(style);
+            if (!applied)
+            {
+                Debug.Log($"[RoomThemeApplier] BookshelfGenerator.SetActiveBookshelfDesignStyle({style}) skipped — bookshelf not ready 또는 동일 style. 다음 user 액션 시점에 자연 재동기화.");
             }
         }
 

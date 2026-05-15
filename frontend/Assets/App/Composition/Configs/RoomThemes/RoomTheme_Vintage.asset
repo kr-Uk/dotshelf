@@ -47,9 +47,9 @@ MonoBehaviour:
   - assetId: 0
     prefab: {fileID: 8919934127225428127, guid: eb92529aa9f17604d8b2a6f787de30fd, type: 3}
     wallSide: 0
-    localPosition: {x: 0, y: 0, z: 1.1}
-    localRotation: {x: 0, y: 180, z: 0}
-    localScale: {x: 1.2, y: 1.2, z: 1.2}
+    localPosition: {x: 0, y: -0.013, z: -0.087}
+    localRotation: {x: 0, y: -180, z: 0}
+    localScale: {x: 1, y: 1, z: 1}
     anchorTag: "vintageShelf"
     themeSlot: 1
     assetKey: "Assets/Arts/Models/vintage_shelf.glb"

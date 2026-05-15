@@ -178,6 +178,59 @@ MonoBehaviour:
     screenSaverCanvasAnchorMax: {x: 0.5, y: 0.5}
     screenSaverCanvasPivot: {x: 0.5, y: 0.5}
     notebookFocusCameraMode: 0
+  - assetId: 500030
+    displayName: "\uC6B0\uC8FC \uCC45\uC0C1"
+    description: "\uC6B0\uC8FC \uD14C\uB9C8 \uC804\uC6A9 \uCC45\uC0C1. preserveSkinNativeScale=1 +
+      skinLocalPositionOverride \uB85C bounds-based \uC815\uB82C \uC6B0\uD68C +
+      notebookLocalScaleOverride \uBE44-zero \uB77C Notebook \uC758 \uC790\uB3D9 Y \uC7AC\uC815\uB82C\uB3C4 SKIP.
+      Notebook 3\uCD95 transform \uBAA8\uB450 catalog \uBA85\uC2DC\uAC12 \uADF8\uB300\uB85C."
+    previewSprite: {fileID: 0}
+    themeTag: Space
+    isLocalPreview: 1
+    materials: []
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: -8098169881513260187, guid: 806b837d2167c744eaaae1cad5503b4e, type: 3}
+    placementAnchor: {x: -1.31, y: 0.496, z: -0.36}
+    placementRotation: {x: 0, y: 90, z: 0}
+    placementScale: {x: 1, y: 1, z: 1}
+    overrideNotebookStation: 0
+    lockNotebookStationToMonitor: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
+    skinScaleMultiplier: {x: 1, y: 1, z: 1}
+    preserveSkinNativeScale: 1
+    skinLocalPositionOverride: {x: 0.0003, y: 0.233, z: -0.329}
+    hideLaptopRenderers: 0
+    notebookScreenLocalPosition: {x: 0, y: 0, z: 0}
+    notebookScreenLocalRotation: {x: 0, y: 0, z: 0}
+    notebookScreenScaleMultiplier: {x: 1, y: 1, z: 1}
+    stretchCanvasAdImageOnDesk: 0
+    adImageAnchorMin: {x: 0, y: 0}
+    adImageAnchorMax: {x: 1, y: 1}
+    adImagePivot: {x: 0.5, y: 0.5}
+    adImageOffsetMin: {x: 0, y: 0}
+    adImageOffsetMax: {x: 0, y: 0}
+    adImageLocalScale: {x: 1, y: 1, z: 1}
+    overrideScreenSaverCanvasTransform: 0
+    screenSaverCanvasLocalPosition: {x: 0, y: 0, z: 0}
+    screenSaverCanvasLocalRotation: {x: 0, y: 0, z: 0}
+    screenSaverCanvasLocalScale: {x: 1, y: 1, z: 1}
+    screenSaverCanvasSizeDelta: {x: 0, y: 0}
+    overrideScreenSaverCanvasAnchors: 0
+    screenSaverCanvasAnchorMin: {x: 0.5, y: 0.5}
+    screenSaverCanvasAnchorMax: {x: 0.5, y: 0.5}
+    screenSaverCanvasPivot: {x: 0.5, y: 0.5}
+    notebookFocusCameraMode: 0
+    notebookLocalPositionOverride: {x: -0.038, y: 0.514, z: -0.408}
+    notebookLocalRotationOverride: {x: 0, y: 90, z: 0}
+    notebookLocalScaleOverride: {x: 1, y: 1, z: 1}
   - assetId: 200031
     displayName: "\uBE48\uD2F0\uC9C0 \uCC45\uC0C1"
     description: "Vintage \uD14C\uB9C8 \uC804\uC6A9 \uCC45\uC0C1. DeskVisualSkinApplier

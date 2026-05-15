@@ -33,6 +33,8 @@ namespace App.Bootstrap
         // screen saver UI 만 살아남음. 위와 같은 이유로 SerializeField 미지정.
         private readonly List<Renderer> hiddenLaptopRenderers = new List<Renderer>();
         [SerializeField] private Vector3 nativeLaptopLocalPosition;
+        [SerializeField] private Quaternion nativeLaptopLocalRotation = Quaternion.identity;
+        [SerializeField] private Vector3 nativeLaptopLocalScale = Vector3.one;
         [SerializeField] private bool hasNativeLaptopCapture;
 
         // Notebook/Screen transform 의 native (override 적용 전) 값. monitor 모드에서 entry 의
@@ -56,6 +58,18 @@ namespace App.Bootstrap
         {
             get => nativeLaptopLocalPosition;
             set => nativeLaptopLocalPosition = value;
+        }
+
+        public Quaternion NativeLaptopLocalRotation
+        {
+            get => nativeLaptopLocalRotation;
+            set => nativeLaptopLocalRotation = value;
+        }
+
+        public Vector3 NativeLaptopLocalScale
+        {
+            get => nativeLaptopLocalScale;
+            set => nativeLaptopLocalScale = value;
         }
 
         public bool HasNativeLaptopCapture
