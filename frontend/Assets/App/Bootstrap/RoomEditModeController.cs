@@ -2519,9 +2519,10 @@ namespace App.Bootstrap
                 }
             }
             // 저장된 이름이 catalog 에 없음 — 자산 삭제/이름 변경 등. 키 정리.
+            var fallbackTheme = themeCatalog.DefaultTheme;
             UnityEngine.PlayerPrefs.DeleteKey(key);
             UnityEngine.PlayerPrefs.Save();
-            return null;
+            return fallbackTheme;
         }
 
         private bool IsCategoryEntryCurrent(CustomizationCategory category, long assetId)
@@ -4400,6 +4401,11 @@ namespace App.Bootstrap
                 || category == CustomizationCategory.DashboardSkin;
         }
 
+        private const long DeepSeaBookshelfSkinAssetId = 300020L;
+        private static readonly Vector3 DeepSeaBookshelfSkinLocalPosition = new Vector3(0f, 0.82f, 1.292f);
+        private static readonly Vector3 DeepSeaBookshelfSkinLocalRotation = new Vector3(0f, -180f, 0f);
+        private static readonly Vector3 DeepSeaBookshelfSkinLocalScale = new Vector3(0.86f, 0.86f, 0.55f);
+
         // category 매칭 native renderer 들 disable + prefab 을 첫 매칭 anchor 자식으로 spawn.
         // NotebookStation 같은 자식 transform 은 native 그대로 → 인터랙션 보존.
         // 이전 swap spawn 한 prefab 있으면 destroy 후 새로.
@@ -4527,6 +4533,11 @@ namespace App.Bootstrap
             go.name = swapName;
             go.transform.SetPositionAndRotation(entry.PlacementAnchor, Quaternion.Euler(entry.PlacementRotation));
             go.transform.localScale = entry.PlacementScale != Vector3.zero ? entry.PlacementScale : Vector3.one;
+            if (category == CustomizationCategory.BookshelfSkin)
+            {
+                ApplyBookshelfSkinMeshSwapTransformOverride(go.transform, roomRoot, entry);
+                DisableAllCollidersOnVisual(go);
+            }
 
             // 5) Desk 카테고리 — NotebookStation override (모니터 진입 위치/스케일 fit).
             //    OverrideNotebookStation=true 면 entry 의 NotebookStation* 값 적용. false 면 native.
@@ -4541,6 +4552,43 @@ namespace App.Bootstrap
             else if (category == CustomizationCategory.DashboardSkin)
             {
                 ApplyDashboardBoardPlacement(roomRoot, entry);
+            }
+        }
+
+        private static void ApplyBookshelfSkinMeshSwapTransformOverride(
+            Transform visualTransform,
+            Transform roomRoot,
+            CustomizationEntry entry)
+        {
+            if (visualTransform == null || roomRoot == null || entry == null) return;
+            if (entry.AssetId != DeepSeaBookshelfSkinAssetId) return;
+
+            visualTransform.localPosition = DeepSeaBookshelfSkinLocalPosition;
+            visualTransform.localEulerAngles = DeepSeaBookshelfSkinLocalRotation;
+            visualTransform.localScale = DeepSeaBookshelfSkinLocalScale;
+
+            var lossyScale = roomRoot.lossyScale;
+            if (Mathf.Abs(lossyScale.x - 1f) > 0.001f
+                || Mathf.Abs(lossyScale.y - 1f) > 0.001f
+                || Mathf.Abs(lossyScale.z - 1f) > 0.001f)
+            {
+                Debug.LogWarning(
+                    $"[BookshelfMeshSwap] DeepSea local transform applied under scaled parent. " +
+                    $"roomRootLossyScale={lossyScale} actualScaleMayDiffer=true");
+            }
+        }
+
+        private static void DisableAllCollidersOnVisual(GameObject go)
+        {
+            if (go == null) return;
+
+            var colliders = go.GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                if (colliders[i] != null)
+                {
+                    colliders[i].enabled = false;
+                }
             }
         }
 

@@ -3005,59 +3005,17 @@ namespace App.Bootstrap
 
         private static string GetThemeDebugName(string themeName)
         {
-            switch (themeName)
-            {
-                case "내추럴":
-                    return "Natural";
-                case "클래식":
-                    return "Classic";
-                case "모던":
-                    return "Modern";
-                case "빈티지":
-                    return "Vintage";
-                case "파스텔":
-                    return "Pastel";
-                default:
-                    return "Unknown";
-            }
+            return OnboardingThemeRegistry.GetDebugName(themeName);
         }
 
         private static string GetThemePreviewCaption(string themeName)
         {
-            switch (themeName)
-            {
-                case "내추럴":
-                    return "따뜻한 우드 톤과 차분한 분위기를 가진 공간입니다.";
-                case "클래식":
-                    return "짙은 컬러와 균형감 있는 전통적인 분위기입니다.";
-                case "모던":
-                    return "정리된 선과 선명한 대비가 중심인 현대적인 분위기입니다.";
-                case "빈티지":
-                    return "세월감 있는 소재와 부드러운 채도가 어우러진 분위기입니다.";
-                case "파스텔":
-                    return "밝고 부드러운 컬러감이 강조된 가벼운 분위기입니다.";
-                default:
-                    return "테마를 선택하면 이 영역이 변경됩니다.";
-            }
+            return OnboardingThemeRegistry.GetCaption(themeName);
         }
 
         private static Color GetThemePreviewColor(string themeName)
         {
-            switch (themeName)
-            {
-                case "내추럴":
-                    return Hex("#E5D5BE");
-                case "클래식":
-                    return Hex("#D2C5B2");
-                case "모던":
-                    return Hex("#D6D9DF");
-                case "빈티지":
-                    return Hex("#E0D0C4");
-                case "파스텔":
-                    return Hex("#F1E4EC");
-                default:
-                    return PreviewAccentColor;
-            }
+            return OnboardingThemeRegistry.GetPreviewColor(themeName, PreviewAccentColor);
         }
 
         private void SetStepPresentationMode(bool isStep3Overlay)
@@ -4265,7 +4223,7 @@ namespace App.Bootstrap
                 "테마를 선택해주세요" +
                 "방과 책장의 분위기를 먼저 정해둘 수 있습니다." +
                 "랜덤" +
-                "내추럴클래식모던빈티지파스텔" +
+                "기본깊은바다빈티지판타지우주스푸키" +
                 "테마 미리보기" +
                 "테마를 선택하면 이 영역이 변경됩니다." +
                 "메인 화면으로 이동 중입니다." +

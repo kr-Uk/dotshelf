@@ -9,7 +9,6 @@ namespace BookshelfPorting.Editor
 {
     public sealed class BookshelfThemeLayoutTunerWindow : EditorWindow
     {
-        private const string PastelLayoutPath = "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_PastelCabin.asset";
         private const string UnderwaterLayoutPath = "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_UnderwaterShell.asset";
         private const float MinimumColumnWidth = 0.05f;
         private const float MinimumDepth = 0.05f;
@@ -31,7 +30,7 @@ namespace BookshelfPorting.Editor
         {
             var window = GetWindow<BookshelfThemeLayoutTunerWindow>("Bookshelf Layout Tuner");
             window.minSize = new Vector2(520f, 640f);
-            window.LoadLayout(PastelLayoutPath);
+            window.LoadLayout(UnderwaterLayoutPath);
         }
 
         private void OnEnable()
@@ -51,7 +50,7 @@ namespace BookshelfPorting.Editor
 
             if (layout == null)
             {
-                LoadLayout(PastelLayoutPath);
+                LoadLayout(UnderwaterLayoutPath);
             }
         }
 
@@ -64,11 +63,6 @@ namespace BookshelfPorting.Editor
         {
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Pastel Cabin", GUILayout.Height(28f)))
-                {
-                    LoadLayout(PastelLayoutPath);
-                }
-
                 if (GUILayout.Button("Underwater Shell", GUILayout.Height(28f)))
                 {
                     LoadLayout(UnderwaterLayoutPath);

@@ -26,8 +26,8 @@ MonoBehaviour:
     lightIntensity: 1
     colorTemperatureKelvin: 6500
     prefab: {fileID: -8098169881513260187, guid: c793007ec016eac41aa4472bad324b4c, type: 3}
-    placementAnchor: {x: 0, y: 0.82, z: 1.36}
-    placementRotation: {x: -0, y: 180, z: -0}
+    placementAnchor: {x: 0, y: 0.82, z: 1.292}
+    placementRotation: {x: 0, y: -180, z: 0}
     placementScale: {x: 0.86, y: 0.86, z: 0.55}
     overrideNotebookStation: 0
     notebookStationPosition: {x: 0, y: 0, z: 0}
