@@ -33,10 +33,11 @@ namespace App.Bootstrap
         private const int UiLayer = 5;
         private const int CanvasSortingOrder = 5100;
         private const float MainSceneLoadTimeoutSeconds = 8f;
-        private const float MainViewReadyTimeoutSeconds = 8f;
+        private const float MainViewReadyTimeoutSeconds = 12f;
         private const float BookshelfFocusTimeoutSeconds = 8f;
         private const float BookshelfFocusRetryIntervalSeconds = 0.75f;
-        private const float MainScenePreviewDelaySeconds = 0.7f;
+        private const float BookshelfVisualSettleSeconds = 3f;
+        private const float MainScenePreviewDelaySeconds = 0.25f;
         private const float MainScenePreviewCoverAlpha = 0.62f;
         private const string OnboardingBookshelfVisibility = "PUBLIC";
         private static readonly bool EnableDebugLogs = false;
@@ -1489,6 +1490,11 @@ namespace App.Bootstrap
             SetMessage(step3OverlayStatusLabel, message, TextColor);
         }
 
+        private void SetStep3LoadingMessage(string message)
+        {
+            SetMessage(step3LoadingMessageLabel, message, MutedTextColor);
+        }
+
         private void SetStep3LoadingCoverVisible(bool isVisible)
         {
             if (step3LoadingCover == null)
@@ -1763,13 +1769,29 @@ namespace App.Bootstrap
             }
 
             var readyDeadline = Time.unscaledTime + MainViewReadyTimeoutSeconds;
+            var visualReadySince = -1f;
             while (Time.unscaledTime < readyDeadline)
             {
                 if (TryGetBookshelfSceneDependencies(out experienceManager, out cameraController, out bookshelfGenerator) &&
                     IsMainViewReadyForBookshelfFocus(experienceManager, cameraController, bookshelfGenerator))
                 {
-                    isMainViewReady = true;
-                    break;
+                    if (visualReadySince < 0f)
+                    {
+                        visualReadySince = Time.unscaledTime;
+                        SetStep3OverlayStatus("책장을 정리하는 중입니다.");
+                        SetStep3LoadingMessage("책장과 책을 화면에 안정적으로 배치하고 있어요.");
+                    }
+
+                    if ((Time.unscaledTime - visualReadySince) >= BookshelfVisualSettleSeconds)
+                    {
+                        isMainViewReady = true;
+                        break;
+                    }
+                }
+                else
+                {
+                    visualReadySince = -1f;
+                    SetStep3LoadingMessage("책장 정보를 불러오고 있어요.");
                 }
 
                 yield return null;
@@ -1917,7 +1939,7 @@ namespace App.Bootstrap
                    cameraController.isActiveAndEnabled &&
                    !cameraController.IsTransitioning &&
                    IsInitialBookshelfRefreshComplete() &&
-                   (bookshelfGenerator == null || !bookshelfGenerator.IsBookshelfSwitching);
+                   IsBookshelfVisualReadyForOnboarding(bookshelfGenerator);
         }
 
         private bool IsInitialBookshelfRefreshComplete()
@@ -1931,6 +1953,37 @@ namespace App.Bootstrap
             return syncController == null ||
                    !syncController.IsServerSyncEnabled ||
                    syncController.HasCompletedInitialRefresh;
+        }
+
+        private bool IsBookshelfVisualReadyForOnboarding(BookshelfGenerator bookshelfGenerator)
+        {
+            if (bookshelfGenerator == null || bookshelfGenerator.IsBookshelfSwitching)
+            {
+                return false;
+            }
+
+            if (cachedBookshelfApiSyncController == null)
+            {
+                cachedBookshelfApiSyncController = UnityEngine.Object.FindFirstObjectByType<BookshelfApiSyncController>(FindObjectsInactive.Include);
+            }
+
+            var syncController = cachedBookshelfApiSyncController;
+            if (syncController == null || !syncController.IsServerSyncEnabled || !syncController.HasAccessToken)
+            {
+                return true;
+            }
+
+            if (!syncController.HasCompletedInitialRefresh)
+            {
+                return false;
+            }
+
+            if (!syncController.LastInitialRefreshSucceeded && !bookshelfGenerator.HasReceivedServerSnapshot)
+            {
+                return true;
+            }
+
+            return bookshelfGenerator.HasReceivedServerSnapshot;
         }
 
         private void ResetCachedMainSceneDependencies()

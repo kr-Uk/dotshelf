@@ -19,20 +19,44 @@ namespace App.Bootstrap
     // to main.
     public sealed class MainSceneTransitionCover : MonoBehaviour
     {
+        private enum LoadingStage
+        {
+            EnteringMainScene,
+            DecoratingRoom,
+            PlacingBookshelf,
+            CheckingBookshelf,
+            LoadingBookshelf,
+            ArrangingBooks,
+            Finalizing
+        }
+
         private const int CanvasSortingOrder = 7000;
         private const float MinCoverDurationSeconds = 0.25f;
-        private const float MaxCoverDurationSeconds = 24f;
+        private const float MaxCoverDurationSeconds = 16f;
         private const float ReadyRevealDelaySeconds = 3f;
-        private const float FailureNoticeDurationSeconds = 1.25f;
+        private const float FailureNoticeDurationSeconds = 1.75f;
         private const float ProgressBarWidth = 560f;
         private const float ProgressBarHeight = 18f;
-        private const float ProgressMoveSpeed = 0.85f;
+        private const float ProgressMoveSpeed = 1.15f;
+
+        private const float InitialProgress = 0.04f;
+        private const float EnteringMainSceneProgress = 0.14f;
+        private const float DecoratingRoomProgress = 0.28f;
+        private const float PlacingBookshelfProgress = 0.42f;
+        private const float CheckingBookshelfProgress = 0.54f;
+        private const float LoadingBookshelfProgress = 0.64f;
+        private const float GuestOrDevReadyProgress = 0.82f;
+        private const float ArrangingBooksProgress = 0.84f;
+        private const float FinalizingProgress = 0.9f;
 
         private static readonly Color BackgroundColor = new Color(0.96f, 0.94f, 0.90f, 1f);
         private static readonly Color TextColor = new Color(0.18f, 0.14f, 0.09f, 1f);
         private static readonly Color DetailTextColor = new Color(0.42f, 0.35f, 0.27f, 1f);
         private static readonly Color ProgressTrackColor = new Color(0.83f, 0.78f, 0.69f, 1f);
         private static readonly Color ProgressFillColor = new Color(0.48f, 0.25f, 0.12f, 1f);
+
+        private static bool hasResolvedPreferredFont;
+        private static TMP_FontAsset cachedPreferredFont;
 
         private bool hasRequestedInitialBookshelfRefresh;
         private bool initialBookshelfRefreshCompleted;
@@ -42,8 +66,8 @@ namespace App.Bootstrap
         private TextMeshProUGUI detailLabel;
         private TextMeshProUGUI percentLabel;
         private RectTransform progressFillRect;
-        private float targetProgress;
-        private float displayedProgress;
+        private float targetEstimatedProgress;
+        private float displayedEstimatedProgress;
         private BookshelfExperienceManager cachedExperienceManager;
         private BookshelfApiSyncController cachedSyncController;
         private BookshelfGenerator cachedBookshelfGenerator;
@@ -135,7 +159,7 @@ namespace App.Bootstrap
             percentRect.sizeDelta = new Vector2(240f, 44f);
             percentRect.anchoredPosition = new Vector2(0f, -94f);
 
-            SetProgress(0.04f, true);
+            SetEstimatedProgress(InitialProgress, true);
         }
 
         private IEnumerator WaitForMainSceneAndDestroy()
@@ -159,14 +183,14 @@ namespace App.Bootstrap
 
                     var settleProgress = Mathf.Clamp01((Time.unscaledTime - readyStartedAt) / ReadyRevealDelaySeconds);
                     SetLoadingStage(
-                        "책을 꽂는 중입니다.",
-                        "책장과 책이 화면에 안정적으로 자리 잡는 중입니다.",
-                        Mathf.Lerp(0.9f, 1f, settleProgress));
+                        LoadingStage.ArrangingBooks,
+                        Mathf.Lerp(FinalizingProgress, 1f, settleProgress),
+                        "책장과 책이 화면에 안정적으로 자리 잡는 중입니다.");
 
                     if (settleProgress >= 1f && minDurationElapsed)
                     {
                         readyForReveal = true;
-                        SetProgress(1f);
+                        SetEstimatedProgress(1f);
                         TickProgress(true);
                         if (initialBookshelfRefreshFailed)
                         {
@@ -181,7 +205,7 @@ namespace App.Bootstrap
                 else
                 {
                     readyStartedAt = -1f;
-                    UpdateLoadingStage(startTime);
+                    UpdateLoadingStage();
                 }
 
                 TickProgress();
@@ -324,21 +348,19 @@ namespace App.Bootstrap
             }
         }
 
-        private void SetLoadingStage(string title, string detail, float progress)
+        private void SetLoadingStage(LoadingStage stage, float? progressOverride = null, string detailOverride = null)
         {
+            GetLoadingStageCopy(stage, out var title, out var detail, out var progress);
             SetMessage(title);
-            SetDetailMessage(detail);
-            SetProgress(progress);
+            SetDetailMessage(detailOverride ?? detail);
+            SetEstimatedProgress(progressOverride ?? progress);
         }
 
-        private void UpdateLoadingStage(float startTime)
+        private void UpdateLoadingStage()
         {
-            var elapsed = Time.unscaledTime - startTime;
-            var pulse = Mathf.PingPong(elapsed * 0.08f, 0.04f);
-
             if (SceneManager.GetActiveScene().name != SceneKeys.Main)
             {
-                SetLoadingStage("방으로 들어가는 중입니다.", "조명을 켜고 가구를 정리하는 중입니다.", 0.14f + pulse);
+                SetLoadingStage(LoadingStage.EnteringMainScene);
                 return;
             }
 
@@ -349,14 +371,14 @@ namespace App.Bootstrap
 
             if (cachedExperienceManager == null)
             {
-                SetLoadingStage("방을 꾸미는 중입니다.", "책장을 놓을 공간을 준비하는 중입니다.", 0.28f + pulse);
+                SetLoadingStage(LoadingStage.DecoratingRoom);
                 return;
             }
 
             var generator = ResolveBookshelfGenerator();
             if (generator == null)
             {
-                SetLoadingStage("책장을 놓는 중입니다.", "책장 시스템을 준비하는 중입니다.", 0.42f + pulse);
+                SetLoadingStage(LoadingStage.PlacingBookshelf);
                 return;
             }
 
@@ -367,30 +389,72 @@ namespace App.Bootstrap
 
             if (!HasAuthenticatedSessionForMainScene())
             {
-                SetLoadingStage("마지막으로 정리하는 중입니다.", "곧 방으로 이동합니다.", 0.82f + pulse);
+                SetLoadingStage(LoadingStage.Finalizing, GuestOrDevReadyProgress, "곧 방으로 이동합니다.");
                 return;
             }
 
             var sync = cachedSyncController;
             if (sync == null || !sync.IsServerSyncEnabled || !sync.HasAccessToken)
             {
-                SetLoadingStage("책장을 확인하는 중입니다.", "로그인 정보를 확인하는 중입니다.", 0.54f + pulse);
+                SetLoadingStage(LoadingStage.CheckingBookshelf);
                 return;
             }
 
             if (!sync.HasCompletedInitialRefresh && !initialBookshelfRefreshCompleted)
             {
-                SetLoadingStage("책장을 불러오는 중입니다.", "내 책장 정보를 서버에서 가져오는 중입니다.", 0.64f + pulse);
+                SetLoadingStage(LoadingStage.LoadingBookshelf);
                 return;
             }
 
             if (!generator.HasReceivedServerSnapshot || generator.IsBookshelfSwitching)
             {
-                SetLoadingStage("책을 꽂는 중입니다.", "책장과 책 배치를 화면에 반영하는 중입니다.", 0.84f + pulse);
+                SetLoadingStage(LoadingStage.ArrangingBooks);
                 return;
             }
 
-            SetLoadingStage("마지막으로 정리하는 중입니다.", "방에 들어가기 전 화면을 안정화하는 중입니다.", 0.9f);
+            SetLoadingStage(LoadingStage.Finalizing);
+        }
+
+        private static void GetLoadingStageCopy(LoadingStage stage, out string title, out string detail, out float progress)
+        {
+            switch (stage)
+            {
+                case LoadingStage.EnteringMainScene:
+                    title = "방으로 들어가는 중입니다.";
+                    detail = "조명을 켜고 가구를 정리하는 중입니다.";
+                    progress = EnteringMainSceneProgress;
+                    break;
+                case LoadingStage.DecoratingRoom:
+                    title = "방을 꾸미는 중입니다.";
+                    detail = "책장을 놓을 공간을 준비하는 중입니다.";
+                    progress = DecoratingRoomProgress;
+                    break;
+                case LoadingStage.PlacingBookshelf:
+                    title = "책장을 놓는 중입니다.";
+                    detail = "책장 시스템을 준비하는 중입니다.";
+                    progress = PlacingBookshelfProgress;
+                    break;
+                case LoadingStage.CheckingBookshelf:
+                    title = "책장을 확인하는 중입니다.";
+                    detail = "로그인 정보를 확인하는 중입니다.";
+                    progress = CheckingBookshelfProgress;
+                    break;
+                case LoadingStage.LoadingBookshelf:
+                    title = "책장을 불러오는 중입니다.";
+                    detail = "내 책장 정보를 서버에서 가져오는 중입니다.";
+                    progress = LoadingBookshelfProgress;
+                    break;
+                case LoadingStage.ArrangingBooks:
+                    title = "책을 꽂는 중입니다.";
+                    detail = "책장과 책 배치를 화면에 반영하는 중입니다.";
+                    progress = ArrangingBooksProgress;
+                    break;
+                default:
+                    title = "마지막으로 정리하는 중입니다.";
+                    detail = "방에 들어가기 전 화면을 안정화하는 중입니다.";
+                    progress = FinalizingProgress;
+                    break;
+            }
         }
 
         private TextMeshProUGUI CreateLabel(Transform parent, string name, string text, float fontSize, Color color, FontStyles style)
@@ -415,6 +479,21 @@ namespace App.Bootstrap
 
         private static void ApplyPreferredFont(TextMeshProUGUI label)
         {
+            var preferredFont = ResolvePreferredFont();
+            if (preferredFont != null)
+            {
+                label.font = preferredFont;
+            }
+        }
+
+        private static TMP_FontAsset ResolvePreferredFont()
+        {
+            if (hasResolvedPreferredFont)
+            {
+                return cachedPreferredFont;
+            }
+
+            hasResolvedPreferredFont = true;
             var preferred = Resources.FindObjectsOfTypeAll<TMP_FontAsset>();
             for (var i = 0; i < preferred.Length; i++)
             {
@@ -423,19 +502,23 @@ namespace App.Bootstrap
                 if (string.Equals(candidate.name, "NotoSansKR-Regular", System.StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(candidate.name, "NOTOSANSKR SDF", System.StringComparison.OrdinalIgnoreCase))
                 {
-                    label.font = candidate;
+                    cachedPreferredFont = candidate;
                     break;
                 }
             }
+
+            return cachedPreferredFont;
         }
 
-        private void SetProgress(float progress, bool immediate = false)
+        // This is estimated progress by readiness stage. Unity scene loading and
+        // bookshelf API calls do not expose one shared byte-level progress value.
+        private void SetEstimatedProgress(float progress, bool immediate = false)
         {
-            targetProgress = Mathf.Max(targetProgress, Mathf.Clamp01(progress));
+            targetEstimatedProgress = Mathf.Max(targetEstimatedProgress, Mathf.Clamp01(progress));
             if (immediate)
             {
-                displayedProgress = targetProgress;
-                ApplyProgress(displayedProgress);
+                displayedEstimatedProgress = targetEstimatedProgress;
+                ApplyProgress(displayedEstimatedProgress);
             }
         }
 
@@ -443,17 +526,17 @@ namespace App.Bootstrap
         {
             if (immediate)
             {
-                displayedProgress = targetProgress;
+                displayedEstimatedProgress = targetEstimatedProgress;
             }
             else
             {
-                displayedProgress = Mathf.MoveTowards(
-                    displayedProgress,
-                    targetProgress,
+                displayedEstimatedProgress = Mathf.MoveTowards(
+                    displayedEstimatedProgress,
+                    targetEstimatedProgress,
                     ProgressMoveSpeed * Time.unscaledDeltaTime);
             }
 
-            ApplyProgress(displayedProgress);
+            ApplyProgress(displayedEstimatedProgress);
         }
 
         private void ApplyProgress(float progress)
