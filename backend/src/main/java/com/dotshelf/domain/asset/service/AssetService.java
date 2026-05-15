@@ -2,6 +2,7 @@ package com.dotshelf.domain.asset.service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -221,8 +222,10 @@ public class AssetService {
         if ("THEME".equalsIgnoreCase(root.getAssetType())) {
             files = buildThemeDownloadFiles(root);
         } else {
-            ensureDownloadable(root);
-            files = List.of(DownloadFileResponse.from(root, root.getAssetType(), true, null));
+            ensureDeliverable(root);
+            files = isDownloadable(root)
+                    ? List.of(DownloadFileResponse.from(root, root.getAssetType(), true, null))
+                    : List.of();
         }
         return DownloadManifestResponse.of(root, files);
     }
@@ -285,16 +288,21 @@ public class AssetService {
     private List<DownloadFileResponse> buildThemeDownloadFiles(Asset theme) {
         List<ThemeAssetItem> items = themeAssetItems(theme.getId());
         if (items.isEmpty()) {
-            ensureDownloadable(theme);
-            return List.of(DownloadFileResponse.from(theme, "THEME", true, null));
+            ensureDeliverable(theme);
+            return isDownloadable(theme)
+                    ? List.of(DownloadFileResponse.from(theme, "THEME", true, null))
+                    : List.of();
         }
         Map<Long, Asset> childrenById = childAssetsById(items);
         return items.stream()
                 .map(item -> {
                     Asset child = childAsset(childrenById, item);
-                    ensureDownloadable(child);
-                    return DownloadFileResponse.from(child, item.getRole(), item.isRequired(), item.getTransformJson());
+                    ensureDeliverable(child);
+                    return isDownloadable(child)
+                            ? DownloadFileResponse.from(child, item.getRole(), item.isRequired(), item.getTransformJson())
+                            : null;
                 })
+                .filter(Objects::nonNull)
                 .toList();
     }
 
@@ -331,10 +339,18 @@ public class AssetService {
         return items == null ? List.of() : items;
     }
 
-    private void ensureDownloadable(Asset asset) {
-        if (asset.getAssetUrl() == null || asset.getAssetUrl().isBlank()) {
+    private void ensureDeliverable(Asset asset) {
+        if (!isDownloadable(asset) && !hasUnityResourceKey(asset)) {
             throw new CustomException(ErrorCode.ASSET_FILE_NOT_READY);
         }
+    }
+
+    private boolean isDownloadable(Asset asset) {
+        return asset != null && asset.getAssetUrl() != null && !asset.getAssetUrl().isBlank();
+    }
+
+    private boolean hasUnityResourceKey(Asset asset) {
+        return asset != null && asset.getUnityResourceKey() != null && !asset.getUnityResourceKey().isBlank();
     }
 
     private boolean isOwned(Long userId, Long assetId) {

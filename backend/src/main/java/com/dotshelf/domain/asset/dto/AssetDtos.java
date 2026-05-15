@@ -35,6 +35,7 @@ public final class AssetDtos {
             String theme,
             String placement,
             String previewImageUrl,
+            String unityResourceKey,
             Long fileSize,
             String fileHash,
             String contentType,
@@ -58,7 +59,7 @@ public final class AssetDtos {
                 boolean wished,
                 boolean allowsCustomization) {
             this(id, categoryId, code, name, tier, assetType, null, null, null, previewImageUrl,
-                    null, null, null, 1, pricePages, owned, wished, allowsCustomization);
+                    null, null, null, null, 1, pricePages, owned, wished, allowsCustomization);
         }
 
         public static AssetResponse from(Asset asset, boolean owned, boolean wished) {
@@ -73,6 +74,7 @@ public final class AssetDtos {
                     asset.getTheme(),
                     asset.getPlacement(),
                     asset.getPreviewImageUrl(),
+                    asset.getUnityResourceKey(),
                     asset.getFileSize(),
                     asset.getFileHash(),
                     asset.getContentType(),
@@ -245,17 +247,38 @@ public final class AssetDtos {
 
     public record DownloadManifestResponse(
             Long assetId,
+            String code,
+            String name,
             String assetType,
             String collectionCode,
+            String theme,
+            String placement,
+            String unityResourceKey,
+            String previewImageUrl,
             int version,
             List<DownloadFileResponse> files
     ) {
 
+        public DownloadManifestResponse(
+                Long assetId,
+                String assetType,
+                String collectionCode,
+                int version,
+                List<DownloadFileResponse> files) {
+            this(assetId, null, null, assetType, collectionCode, null, null, null, null, version, files);
+        }
+
         public static DownloadManifestResponse of(Asset root, List<DownloadFileResponse> files) {
             return new DownloadManifestResponse(
                     root.getId(),
+                    root.getCode(),
+                    root.getName(),
                     root.getAssetType(),
                     root.getCollectionCode(),
+                    root.getTheme(),
+                    root.getPlacement(),
+                    root.getUnityResourceKey(),
+                    root.getPreviewImageUrl(),
                     root.getVersion(),
                     files
             );

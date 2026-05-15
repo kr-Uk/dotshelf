@@ -841,7 +841,46 @@ class SpaceServiceTest {
     }
 
     @Test
-    @DisplayName("공간 layout 조회는 최신 스냅샷 payload를 반환한다")
+    @DisplayName("space asset manifest maps legacy path layout references to assets")
+    void getVisibleAssetManifests_includesLegacyPathReferences() {
+        Space space = TestFixtures.space(10L, 1L);
+        SpaceLayoutSnapshot snapshot = SpaceLayoutSnapshot.builder()
+                .spaceId(10L)
+                .layoutVersion(2L)
+                .layoutPayload("""
+                        {"items":[{"AssetId":"path:Assets/Arts/Models/spooky_bed.glb"}]}
+                        """)
+                .savedByUserId(1L)
+                .build();
+        Asset asset = Asset.builder()
+                .categoryId(100L)
+                .code("SPOOKY_BED")
+                .name("Spooky Bed")
+                .assetScope("SPACE")
+                .assetType("ASSET")
+                .unityResourceKey("Assets/Arts/Models/spooky_bed.glb")
+                .pricePages(0)
+                .build();
+        TestFixtures.setId(asset, 30L);
+        given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
+        given(userBlockRepository.existsBlockBetween(2L, 1L)).willReturn(false);
+        given(layoutSnapshotRepository.findFirstBySpaceIdOrderByLayoutVersionDesc(10L)).willReturn(Optional.of(snapshot));
+        given(userAssetInventoryRepository.findByUserId(1L))
+                .willReturn(List.of(TestFixtures.inventory(103L, 1L, 30L)));
+        given(assetRepository.findByUnityResourceKeyIn(Set.of("Assets/Arts/Models/spooky_bed.glb")))
+                .willReturn(List.of(asset));
+        given(assetService.getDownloadManifestForVisibleAsset(30L))
+                .willReturn(new DownloadManifestResponse(30L, "ASSET", "SPOOKY", 1, List.of()));
+
+        var response = spaceService.getVisibleAssetManifests(2L, 10L);
+
+        assertThat(response.manifests())
+                .extracting(DownloadManifestResponse::assetId)
+                .containsExactly(30L);
+    }
+
+    @Test
+    @DisplayName("space layout returns the latest snapshot payload")
     void getLayout_returnsLatestSnapshot() {
         Space space = TestFixtures.space(10L, 1L);
         SpaceLayoutSnapshot snapshot = SpaceLayoutSnapshot.builder()

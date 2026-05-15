@@ -146,8 +146,13 @@ public class SpaceService {
 
         Set<Long> inventoryIds = new HashSet<>(currentInventoryIds(space));
         Set<Long> layoutAssetIds = new HashSet<>();
+        Set<String> layoutUnityResourceKeys = new HashSet<>();
         layoutSnapshotRepository.findFirstBySpaceIdOrderByLayoutVersionDesc(space.getId())
-                .ifPresent(snapshot -> collectLayoutAssetReferences(snapshot.getLayoutPayload(), inventoryIds, layoutAssetIds));
+                .ifPresent(snapshot -> collectLayoutAssetReferences(
+                        snapshot.getLayoutPayload(),
+                        inventoryIds,
+                        layoutAssetIds,
+                        layoutUnityResourceKeys));
 
         List<UserAssetInventory> ownerInventories = userAssetInventoryRepository.findByUserId(space.getOwnerUserId());
         Map<Long, UserAssetInventory> ownerInventoriesById = ownerInventories.stream()
@@ -165,6 +170,12 @@ public class SpaceService {
         layoutAssetIds.stream()
                 .filter(ownedAssetIds::contains)
                 .forEach(assetIds::add);
+        if (!layoutUnityResourceKeys.isEmpty()) {
+            assetRepository.findByUnityResourceKeyIn(layoutUnityResourceKeys).stream()
+                    .filter(asset -> ownedAssetIds.contains(asset.getId()))
+                    .map(Asset::getId)
+                    .forEach(assetIds::add);
+        }
 
         assetIds = assetIds.stream().distinct().toList();
         if (assetIds.isEmpty()) {
@@ -273,7 +284,11 @@ public class SpaceService {
         ensureCanViewSpace(currentUserId, getSpaceEntity(spaceId));
     }
 
-    private static void collectLayoutAssetReferences(String layoutPayload, Set<Long> inventoryIds, Set<Long> assetIds) {
+    private static void collectLayoutAssetReferences(
+            String layoutPayload,
+            Set<Long> inventoryIds,
+            Set<Long> assetIds,
+            Set<String> unityResourceKeys) {
         if (layoutPayload == null || layoutPayload.isBlank()) {
             return;
         }
@@ -289,7 +304,7 @@ public class SpaceService {
                 if (key == null) {
                     key = textValue(item, "assetId");
                 }
-                collectLayoutAssetReference(key, inventoryIds, assetIds);
+                collectLayoutAssetReference(key, inventoryIds, assetIds, unityResourceKeys);
             }
         } catch (Exception ex) {
             // Layout payload is user-generated client JSON. A malformed old snapshot
@@ -303,7 +318,11 @@ public class SpaceService {
         return value == null || value.isNull() ? null : value.asText(null);
     }
 
-    private static void collectLayoutAssetReference(String key, Set<Long> inventoryIds, Set<Long> assetIds) {
+    private static void collectLayoutAssetReference(
+            String key,
+            Set<Long> inventoryIds,
+            Set<Long> assetIds,
+            Set<String> unityResourceKeys) {
         if (key == null || key.isBlank()) {
             return;
         }
@@ -313,6 +332,13 @@ public class SpaceService {
         }
         if (key.startsWith("inv:")) {
             addPositive(inventoryIds, parsePositiveLong(key.substring("inv:".length())));
+            return;
+        }
+        if (key.startsWith("path:")) {
+            String unityResourceKey = key.substring("path:".length()).trim();
+            if (!unityResourceKey.isBlank()) {
+                unityResourceKeys.add(unityResourceKey);
+            }
         }
     }
 

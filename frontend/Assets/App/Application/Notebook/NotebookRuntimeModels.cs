@@ -76,6 +76,7 @@ namespace App.Application.Notebook
         public string Theme { get; set; }
         public string Placement { get; set; }
         public string PreviewImageUrl { get; set; }
+        public string UnityResourceKey { get; set; }
         public long? FileSize { get; set; }
         public string FileHash { get; set; }
         public string ContentType { get; set; }
@@ -99,8 +100,14 @@ namespace App.Application.Notebook
     public sealed class NotebookAssetDownloadManifestResult
     {
         public long AssetId { get; set; }
+        public string Code { get; set; }
+        public string Name { get; set; }
         public string AssetType { get; set; }
         public string CollectionCode { get; set; }
+        public string Theme { get; set; }
+        public string Placement { get; set; }
+        public string UnityResourceKey { get; set; }
+        public string PreviewImageUrl { get; set; }
         public int Version { get; set; }
         public IReadOnlyList<NotebookAssetDownloadFile> Files { get; set; } = Array.Empty<NotebookAssetDownloadFile>();
     }
