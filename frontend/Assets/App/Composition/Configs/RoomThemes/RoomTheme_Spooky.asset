@@ -105,8 +105,8 @@ MonoBehaviour:
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: f22da3ace91d4533a4d99ec4cac3170b, type: 3}
     wallSide: 3
-    localPosition: {x: 1.624, y: 0.40100002, z: 0.05000007}
-    localRotation: {x: 0, y: 180, z: 0}
+    localPosition: {x: -1.624, y: 1.801, z: 1.328}
+    localRotation: {x: 0, y: 179.74, z: 0}
     localScale: {x: 0.72, y: 0.72, z: 0.72}
     anchorTag: spookyWindow
     themeSlot: 8

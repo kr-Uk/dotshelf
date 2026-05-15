@@ -3903,6 +3903,7 @@ namespace App.Bootstrap
             if (spec == null || prefab == null) return;
             EnsurePlacedItemsRoot();
             if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            bool useLockedManualTransform = IsTransformLockedWallDecoAssetKey(spec.AssetKey);
 
             // wall surface anchor 변환 복구 — spec.LocalPosition 은 wall surface frame 기준
             // local. wall placement 시스템 (drag 매칭 + obstruction) 일관성 유지. 사용자가 캡처한
@@ -3910,7 +3911,9 @@ namespace App.Bootstrap
             // rotation × (worldPos - anchor.position)).
             Vector3 worldPos;
             Quaternion worldRot;
-            if (themeApplier != null && themeApplier.TryGetWallSurfaceAnchor(spec.WallSide, out var anchorPos, out var anchorRot))
+            if (!useLockedManualTransform &&
+                themeApplier != null &&
+                themeApplier.TryGetWallSurfaceAnchor(spec.WallSide, out var anchorPos, out var anchorRot))
             {
                 worldPos = anchorPos + anchorRot * spec.LocalPosition;
                 worldRot = anchorRot * Quaternion.Euler(spec.LocalRotation);
@@ -3918,6 +3921,10 @@ namespace App.Bootstrap
             else
             {
                 Debug.LogWarning($"[RoomEditModeController] WallDecoSpec WallSide={spec.WallSide} anchor 못 찾음 — localPosition 을 world fallback.");
+                if (useLockedManualTransform)
+                {
+                    worldRot = Quaternion.Euler(spec.LocalRotation);
+                }
                 worldPos = spec.LocalPosition;
                 worldRot = Quaternion.Euler(spec.LocalRotation);
             }
@@ -3940,7 +3947,14 @@ namespace App.Bootstrap
 
             // 빈티지 자산 bounds 기반 추가 보정. wall 자산은 SnapBottomToFloor 안 함 — anchor 의
             // wall surface Y 가 이미 액자 적정 높이.
-            ApplyVintageScaleNormalization(go, spec.AssetKey, spec.LocalScale, "SpawnThemeWallDecoFromSpec");
+            if (!useLockedManualTransform)
+            {
+                ApplyVintageScaleNormalization(go, spec.AssetKey, spec.LocalScale, "SpawnThemeWallDecoFromSpec");
+            }
+            else
+            {
+                AttachThemeDecoTransformLock(go, spec);
+            }
 
             var marker = go.AddComponent<WallDecoMarker>();
             marker.CurrentWall = spec.WallSide;
@@ -3968,7 +3982,30 @@ namespace App.Bootstrap
             int lastSlash = assetKey.LastIndexOfAny(new[] { '/', '\\' });
             string fileName = lastSlash >= 0 ? assetKey.Substring(lastSlash + 1) : assetKey;
             if (fileName.StartsWith("space_", System.StringComparison.OrdinalIgnoreCase)) return true;
+            if (fileName.StartsWith("spooky_window", System.StringComparison.OrdinalIgnoreCase)) return true;
+            if (fileName.StartsWith("fantasy_window", System.StringComparison.OrdinalIgnoreCase)) return true;
             return false;
+        }
+
+        private static bool IsTransformLockedWallDecoAssetKey(string assetKey)
+        {
+            if (string.IsNullOrEmpty(assetKey)) return false;
+            int lastSlash = assetKey.LastIndexOfAny(new[] { '/', '\\' });
+            string fileName = lastSlash >= 0 ? assetKey.Substring(lastSlash + 1) : assetKey;
+            return fileName.StartsWith("spooky_window", System.StringComparison.OrdinalIgnoreCase) ||
+                   fileName.StartsWith("fantasy_window", System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void AttachThemeDecoTransformLock(GameObject go, RoomThemeDecoSpec spec)
+        {
+            if (go == null || spec == null) return;
+            var transformLock = go.GetComponent<ThemeDecoTransformLock>();
+            if (transformLock == null)
+            {
+                transformLock = go.AddComponent<ThemeDecoTransformLock>();
+            }
+
+            transformLock.Configure(spec.AssetKey, spec.LocalPosition, spec.LocalRotation, spec.LocalScale);
         }
 
         // 메인씬 진입 후 (로그인 → 메인씬, 또는 BookshelfSceneInstaller 이후) saved layout 복원
@@ -5039,6 +5076,9 @@ namespace App.Bootstrap
             bool clientHasLocalPreviewTheme = themeApplier != null && IsLocalPreviewTheme(themeApplier.CurrentTheme);
             if (serverHasNoTheme && clientHasLocalPreviewTheme)
             {
+                themeApplier.Apply(themeApplier.CurrentTheme);
+                RefreshWallVisibilityAfterMaterialMutation("ApplySpaceVisualsToRoom.reapplyCurrentLocalPreview");
+                ApplyThemeDefaultEntries(themeApplier.CurrentTheme);
                 RebuildInventorySlots();
                 return;
             }
@@ -7875,11 +7915,21 @@ namespace App.Bootstrap
                                 existing.transform.position = presetSpec.LocalPosition;
                                 existing.transform.localEulerAngles = presetSpec.LocalRotation;
                                 existing.transform.localScale = presetSpec.LocalScale;
+                                if (IsTransformLockedWallDecoAssetKey(slotMarker.AssetKey))
+                                {
+                                    existing.transform.localPosition = presetSpec.LocalPosition;
+                                    existing.transform.localEulerAngles = presetSpec.LocalRotation;
+                                    existing.transform.localScale = presetSpec.LocalScale;
+                                    AttachThemeDecoTransformLock(existing, presetSpec);
+                                }
                                 // 빈티지 자산 bounds 기반 재보정 — saved 값이 stale 해도 매 restore 시
                                 // 기준 책장 기준 동일 크기로 재계산. wall 자산 + designer 가 명시한
                                 // preset y > 0 (lamp/rug) 은 floor snap skip — SpawnThemeFloorDecoFromSpec
                                 // 와 동일한 정책.
-                                ApplyVintageScaleNormalization(existing, slotMarker.AssetKey, presetSpec.LocalScale, "TryRestoreSavedDecorations.preset-override");
+                                if (!IsTransformLockedWallDecoAssetKey(slotMarker.AssetKey))
+                                {
+                                    ApplyVintageScaleNormalization(existing, slotMarker.AssetKey, presetSpec.LocalScale, "TryRestoreSavedDecorations.preset-override");
+                                }
                                 if (existing.GetComponent<WallDecoMarker>() == null && Mathf.Approximately(presetSpec.LocalPosition.y, 0f))
                                 {
                                     SnapBottomToFloor(existing);
@@ -9920,6 +9970,7 @@ namespace App.Bootstrap
             "NotebookStation",
             "Desk",
             "table_natural",
+            "fantasy_table(Clone)",
         };
 
         private void EnsureDecorationRootColliders()

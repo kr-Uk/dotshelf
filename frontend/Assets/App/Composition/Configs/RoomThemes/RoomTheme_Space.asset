@@ -50,8 +50,8 @@ MonoBehaviour:
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: c62352d438d24c7da7f840e5f398e193, type: 3}
     wallSide: 0
-    localPosition: {x: 1.049, y: 0.42, z: 0.771}
-    localRotation: {x: -0, y: 216.50612, z: 0}
+    localPosition: {x: 1.15, y: 0.42, z: 0.638}
+    localRotation: {x: 0, y: -143.4, z: 0}
     localScale: {x: 0.38, y: 0.38, z: 0.38}
     anchorTag: spaceExplorer
     themeSlot: 0
@@ -78,9 +78,9 @@ MonoBehaviour:
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: be40aa9cfed84e5abe4c941a6e84813f, type: 3}
     wallSide: 3
-    localPosition: {x: 1.53, y: 1.362, z: 1.381}
+    localPosition: {x: 1.73, y: 1.362, z: 1.381}
     localRotation: {x: 0, y: 0, z: 0}
-    localScale: {x: 0.5, y: 0.5, z: 0.5}
+    localScale: {x: 0.4, y: 0.4, z: 0.4}
     anchorTag: spaceWindow
     themeSlot: 8
     assetKey: Assets/Arts/Models/space_window.glb

@@ -129,6 +129,53 @@ MonoBehaviour:
     screenSaverCanvasAnchorMax: {x: 0.5, y: 0.5}
     screenSaverCanvasPivot: {x: 0.5, y: 0.5}
     notebookFocusCameraMode: 1
+  - assetId: 400030
+    displayName: "\uD310\uD0C0\uC9C0 \uCC45\uC0C1"
+    description: "Fantasy \uD14C\uB9C8 \uC804\uC6A9 \uCC45\uC0C1. functional Desk transform \uC704\uC5D0 visual skin \uC73C\uB85C \uBD80\uCC29\uD574 \uAE30\uC874 \uCC45\uC0C1\uACFC \uBE44\uC2B7\uD55C \uD06C\uAE30\uB85C \uBCF4\uC774\uB3C4\uB85D \uC870\uC815."
+    previewSprite: {fileID: 0}
+    themeTag: Fantasy
+    isLocalPreview: 1
+    materials: []
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: -8098169881513260187, guid: c361e1e04e554cd4abf3f37a08ed87dd, type: 3}
+    placementAnchor: {x: -1.751, y: 0.224, z: -0.275}
+    placementRotation: {x: 0, y: 90.22, z: 0}
+    placementScale: {x: 0.7, y: 0.7, z: 0.7}
+    overrideNotebookStation: 0
+    lockNotebookStationToMonitor: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
+    skinScaleMultiplier: {x: 1, y: 1, z: 1}
+    preserveSkinNativeScale: 1
+    skinLocalPositionOverride: {x: 0, y: 0, z: 0}
+    hideLaptopRenderers: 0
+    notebookScreenLocalPosition: {x: 0, y: 0, z: 0}
+    notebookScreenLocalRotation: {x: 0, y: 0, z: 0}
+    notebookScreenScaleMultiplier: {x: 1, y: 1, z: 1}
+    stretchCanvasAdImageOnDesk: 0
+    adImageAnchorMin: {x: 0, y: 0}
+    adImageAnchorMax: {x: 1, y: 1}
+    adImagePivot: {x: 0.5, y: 0.5}
+    adImageOffsetMin: {x: 0, y: 0}
+    adImageOffsetMax: {x: 0, y: 0}
+    adImageLocalScale: {x: 1, y: 1, z: 1}
+    overrideScreenSaverCanvasTransform: 0
+    screenSaverCanvasLocalPosition: {x: 0, y: 0, z: 0}
+    screenSaverCanvasLocalRotation: {x: 0, y: 0, z: 0}
+    screenSaverCanvasLocalScale: {x: 1, y: 1, z: 1}
+    screenSaverCanvasSizeDelta: {x: 0, y: 0}
+    overrideScreenSaverCanvasAnchors: 0
+    screenSaverCanvasAnchorMin: {x: 0.5, y: 0.5}
+    screenSaverCanvasAnchorMax: {x: 0.5, y: 0.5}
+    screenSaverCanvasPivot: {x: 0.5, y: 0.5}
+    notebookFocusCameraMode: 0
   - assetId: 600030
     displayName: "\uC2A4\uD478\uD0A4 \uCC45\uC0C1"
     description: "\uC2A4\uD478\uD0A4 \uD14C\uB9C8 \uC804\uC6A9 \uCC45\uC0C1. functional

@@ -139,6 +139,13 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 6
     ScaleMultiplierOverride: 0
+  - DisplayName: Default Shelf
+    Prefab: {fileID: -8098169881513260187, guid: ab5b3c3199d47784c93e263fd5236c34, type: 3}
+    SourceAssetPath: Assets/Arts/Models/default_shelf.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 3
+    ScaleMultiplierOverride: 0
   - DisplayName: Default Table Natural
     Prefab: {fileID: -8098169881513260187, guid: 6e5e1cd8910cedc468a37ef0c772b180, type: 3}
     SourceAssetPath: Assets/Arts/Models/default_table_natural.glb
@@ -194,6 +201,20 @@ MonoBehaviour:
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 7
+    ScaleMultiplierOverride: 0
+  - DisplayName: Fantasy Shelf
+    Prefab: {fileID: -8098169881513260187, guid: 86c0c58d11d085a4bb7199b9b10138ac, type: 3}
+    SourceAssetPath: Assets/Arts/Models/fantasy_shelf.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 3
+    ScaleMultiplierOverride: 0
+  - DisplayName: Fantasy Table
+    Prefab: {fileID: 8919934127225428127, guid: c361e1e04e554cd4abf3f37a08ed87dd, type: 3}
+    SourceAssetPath: Assets/Arts/Models/fantasy_table.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 1
     ScaleMultiplierOverride: 0
   - DisplayName: Fantasy Window
     Prefab: {fileID: -8098169881513260187, guid: 712b814690124370bf720e61ce9d4365, type: 3}
@@ -265,6 +286,20 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 11
     ScaleMultiplierOverride: 0
+  - DisplayName: Space Shelf
+    Prefab: {fileID: -8098169881513260187, guid: e79e6900b59a60246809ca0577d9ad64, type: 3}
+    SourceAssetPath: Assets/Arts/Models/space_shelf.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 3
+    ScaleMultiplierOverride: 0
+  - DisplayName: Space Table
+    Prefab: {fileID: -8098169881513260187, guid: 806b837d2167c744eaaae1cad5503b4e, type: 3}
+    SourceAssetPath: Assets/Arts/Models/space_table.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 1
+    ScaleMultiplierOverride: 0
   - DisplayName: Space Window
     Prefab: {fileID: -8098169881513260187, guid: be40aa9cfed84e5abe4c941a6e84813f, type: 3}
     SourceAssetPath: Assets/Arts/Models/space_window.glb
@@ -321,6 +356,13 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 11
     ScaleMultiplierOverride: 0
+  - DisplayName: Spooky Shelf
+    Prefab: {fileID: -8098169881513260187, guid: a6d8007ac1d24da49a3970d6fcbac5fd, type: 3}
+    SourceAssetPath: Assets/Arts/Models/spooky_shelf.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 3
+    ScaleMultiplierOverride: 0
   - DisplayName: Spooky Skull
     Prefab: {fileID: -8098169881513260187, guid: 699fc0ee84d648c69cc6b4259018f980, type: 3}
     SourceAssetPath: Assets/Arts/Models/spooky_skull.glb
@@ -362,6 +404,13 @@ MonoBehaviour:
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 6
+    ScaleMultiplierOverride: 0
+  - DisplayName: Vintage Shelf
+    Prefab: {fileID: 8919934127225428127, guid: ce90547ec3e001746ba40ff8b92cd3da, type: 3}
+    SourceAssetPath: Assets/Arts/Models/vintage_shelf.glb
+    PlacementCategory: 0
+    AllowRotation: 1
+    Kind: 3
     ScaleMultiplierOverride: 0
   - DisplayName: Vintage Table
     Prefab: {fileID: -8098169881513260187, guid: a2b781486c47bc348a186474f5773a08, type: 3}

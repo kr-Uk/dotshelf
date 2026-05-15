@@ -22,6 +22,7 @@ namespace App.Bootstrap
     public sealed class DeskVisualSkin : MonoBehaviour
     {
         public const string SkinChildName = "ThemeDeskVisual";
+        public const string NativeDeskBackupName = "DeskNativeBackup";
 
         [SerializeField] private long entryAssetId;
         // [SerializeField] 미지정 — runtime-only. scene save 시 destroyed Renderer 의 fake-null

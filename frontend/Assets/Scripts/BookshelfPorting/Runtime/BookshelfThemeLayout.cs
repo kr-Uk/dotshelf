@@ -12,6 +12,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private Vector3 prefabLocalPosition = Vector3.zero;
         [SerializeField] private Vector3 prefabLocalEulerAngles = Vector3.zero;
         [SerializeField] private Vector3 prefabLocalScale = Vector3.one;
+        [SerializeField] private bool preservePrefabLocalTransform;
         [SerializeField] private Vector3 focusLocalPosition = new Vector3(0f, 0.8f, -0.175f);
         [SerializeField] private Vector3 focusSize = new Vector3(1.7f, 1.7f, 0.18f);
         [SerializeField] private List<BookshelfSectionLayout> sections = new List<BookshelfSectionLayout>();
@@ -35,6 +36,18 @@ namespace BookshelfPorting.Runtime
             instance.transform.localPosition = prefabLocalPosition;
             instance.transform.localRotation = Quaternion.Euler(prefabLocalEulerAngles);
             instance.transform.localScale = prefabLocalScale;
+
+            if (preservePrefabLocalTransform)
+            {
+                var transformLock = instance.GetComponent<BookshelfThemeLayoutTransformLock>();
+                if (transformLock == null)
+                {
+                    transformLock = instance.AddComponent<BookshelfThemeLayoutTransformLock>();
+                }
+
+                transformLock.Configure(name, prefabLocalPosition, prefabLocalEulerAngles, prefabLocalScale);
+            }
+
             return instance;
         }
 
@@ -68,6 +81,7 @@ namespace BookshelfPorting.Runtime
             Vector3 nextPrefabLocalPosition,
             Vector3 nextPrefabLocalEulerAngles,
             Vector3 nextPrefabLocalScale,
+            bool nextPreservePrefabLocalTransform,
             Vector3 nextFocusLocalPosition,
             Vector3 nextFocusSize,
             List<BookshelfSectionLayout> nextSections)
@@ -77,6 +91,7 @@ namespace BookshelfPorting.Runtime
             prefabLocalPosition = nextPrefabLocalPosition;
             prefabLocalEulerAngles = nextPrefabLocalEulerAngles;
             prefabLocalScale = nextPrefabLocalScale;
+            preservePrefabLocalTransform = nextPreservePrefabLocalTransform;
             focusLocalPosition = nextFocusLocalPosition;
             focusSize = nextFocusSize;
             sections = nextSections != null

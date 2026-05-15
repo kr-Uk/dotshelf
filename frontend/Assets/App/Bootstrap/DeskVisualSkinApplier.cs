@@ -1,3 +1,4 @@
+using System;
 using App.Infrastructure.Catalogs;
 using UnityEngine;
 
@@ -90,11 +91,12 @@ namespace App.Bootstrap
             // (0, 90, 0) 으로 Y 축 90도). false 모드에선 zero (auto-fit 계산 단순화).
             // localScale 은 아래 분기에서 결정.
             // entry.PlacementAnchor 는 두 모드 모두에서 사용 안 함.
-            var go = Object.Instantiate(entry.Prefab, deskTransform);
+            var go = UnityEngine.Object.Instantiate(entry.Prefab, deskTransform);
             go.name = DeskVisualSkin.SkinChildName;
             go.transform.localPosition = Vector3.zero;
 
             bool preserveNative = entry.PreserveSkinNativeScale;
+            bool useManualFantasyDeskTransform = IsFantasyDeskEntry(entry);
             go.transform.localEulerAngles = preserveNative ? entry.PlacementRotation : Vector3.zero;
 
             DisableAllColliders(go);
@@ -117,7 +119,11 @@ namespace App.Bootstrap
             Vector3 multiplier = SanitizeMultiplier(entry.SkinScaleMultiplier);
             Vector3 placementScaleOverride = SanitizeMultiplier(entry.PlacementScale);
             bool multiplierApplied = false;
-            if (preserveNative)
+            if (useManualFantasyDeskTransform)
+            {
+                go.transform.localScale = SanitizeMultiplier(entry.PlacementScale);
+            }
+            else if (preserveNative)
             {
                 // preserveNative target worldScale = prefab.localScale × placementScaleOverride × multiplier.
                 // 이전 버그: multiplier (SkinScaleMultiplier) 가 분기에서 누락 → DeepSea (multiplier=3,3,3 +
@@ -159,7 +165,12 @@ namespace App.Bootstrap
             Vector3 worldOffset = Vector3.zero;
             Vector3 localPositionOverride = entry.SkinLocalPositionOverride;
             bool usedLocalPositionOverride = preserveNative && localPositionOverride.sqrMagnitude > 1e-10f;
-            if (usedLocalPositionOverride)
+            if (useManualFantasyDeskTransform)
+            {
+                go.transform.SetPositionAndRotation(entry.PlacementAnchor, Quaternion.Euler(entry.PlacementRotation));
+                go.transform.localScale = SanitizeMultiplier(entry.PlacementScale);
+            }
+            else if (usedLocalPositionOverride)
             {
                 go.transform.localPosition = localPositionOverride;
             }
@@ -181,6 +192,11 @@ namespace App.Bootstrap
                 go.transform.position += worldOffset;
             }
             var skinBoundsAfter = ComputeRendererBoundsSafe(go);
+
+            if (ShouldLockDeskVisualTransform(entry))
+            {
+                AttachDeskVisualTransformLock(go, entry);
+            }
 
             // marker 부착 + 보관 데이터 set
             var marker = go.AddComponent<DeskVisualSkin>();
@@ -230,6 +246,11 @@ namespace App.Bootstrap
                 finalScreenLocalPos = screenTransform.localPosition;
                 finalScreenLocalEuler = screenTransform.localEulerAngles;
                 finalScreenLocalScale = screenTransform.localScale;
+            }
+
+            if (useManualFantasyDeskTransform)
+            {
+                MoveDefaultTableNaturalToBackup(deskTransform, go.transform);
             }
 
             // laptop Y 재정렬 — skin world top 을 Desk-local 로 변환 후 LaptopBottomOffset 더함.
@@ -541,6 +562,8 @@ namespace App.Bootstrap
             var existing = deskTransform.Find(DeskVisualSkin.SkinChildName);
             if (existing == null) return;
 
+            RestoreBackedUpDefaultTableNatural(existing, deskTransform);
+
             var marker = existing.GetComponent<DeskVisualSkin>();
             if (marker != null)
             {
@@ -592,6 +615,72 @@ namespace App.Bootstrap
                 }
             }
             UnityObjectSafeDestroy.Destroy(existing.gameObject);
+        }
+
+        private static bool ShouldLockDeskVisualTransform(CustomizationEntry entry)
+        {
+            if (entry == null) return false;
+            return entry.AssetId == 400030L;
+        }
+
+        private static bool IsFantasyDeskEntry(CustomizationEntry entry)
+        {
+            if (entry == null) return false;
+            return entry.AssetId == 400030L;
+        }
+
+        private static void AttachDeskVisualTransformLock(GameObject go, CustomizationEntry entry)
+        {
+            if (go == null || entry == null) return;
+            var transformLock = go.GetComponent<ThemeDecoTransformLock>();
+            if (transformLock == null)
+            {
+                transformLock = go.AddComponent<ThemeDecoTransformLock>();
+            }
+
+            string lockKey = !string.IsNullOrWhiteSpace(entry.ThemeTag)
+                ? $"desk:{entry.ThemeTag}:{entry.AssetId}"
+                : $"desk:{entry.AssetId}";
+            transformLock.Configure(lockKey, go.transform.localPosition, go.transform.localEulerAngles, go.transform.localScale);
+        }
+
+        private static void MoveDefaultTableNaturalToBackup(Transform deskTransform, Transform skinRoot)
+        {
+            if (deskTransform == null || skinRoot == null) return;
+
+            Transform nativeTable = FindNativeDeskTable(deskTransform);
+            if (nativeTable == null) return;
+
+            nativeTable.SetParent(skinRoot, true);
+            nativeTable.gameObject.name = DeskVisualSkin.NativeDeskBackupName;
+            nativeTable.gameObject.SetActive(false);
+        }
+
+        private static void RestoreBackedUpDefaultTableNatural(Transform skinRoot, Transform deskTransform)
+        {
+            if (skinRoot == null || deskTransform == null) return;
+
+            var backup = skinRoot.Find(DeskVisualSkin.NativeDeskBackupName);
+            if (backup == null) return;
+
+            backup.SetParent(deskTransform, true);
+            backup.gameObject.name = "table_natural";
+            backup.gameObject.SetActive(true);
+        }
+
+        private static Transform FindNativeDeskTable(Transform deskTransform)
+        {
+            if (deskTransform == null) return null;
+
+            for (int i = 0; i < deskTransform.childCount; i++)
+            {
+                var child = deskTransform.GetChild(i);
+                if (child == null) continue;
+                if (child.gameObject.name.Equals("table_natural", StringComparison.OrdinalIgnoreCase)) return child;
+                if (child.gameObject.name.Equals("default_table_natural", StringComparison.OrdinalIgnoreCase)) return child;
+            }
+
+            return null;
         }
 
         // roomRoot 아래에서 NotebookStation > Desk > Notebook 경로 탐색.
