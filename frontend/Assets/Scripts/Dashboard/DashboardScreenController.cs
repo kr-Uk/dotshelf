@@ -82,7 +82,6 @@ namespace Dotshelf.Scripts.Dashboard
         private ReportGuestbookUseCase reportGuestbookUseCase;
         private UpdateIntroductionUseCase updateIntroductionUseCase;
         private UpdateGuestbookVisibilityUseCase updateGuestbookVisibilityUseCase;
-        private UpdateGuestbookPostItWhitelistUseCase updateWhitelistUseCase;
 
         private VisualElement root;
         private Label nicknameLabel;
@@ -562,8 +561,7 @@ namespace Dotshelf.Scripts.Dashboard
                    deleteGuestbookReplyUseCase != null &&
                    reportGuestbookUseCase != null &&
                    updateIntroductionUseCase != null &&
-                   updateGuestbookVisibilityUseCase != null &&
-                   updateWhitelistUseCase != null;
+                   updateGuestbookVisibilityUseCase != null;
         }
 
         private void BuildUseCasesFromRepos(
@@ -590,7 +588,6 @@ namespace Dotshelf.Scripts.Dashboard
             reportGuestbookUseCase = new ReportGuestbookUseCase(guestbookRepo);
             updateIntroductionUseCase = new UpdateIntroductionUseCase(spaceSettingsRepo);
             updateGuestbookVisibilityUseCase = new UpdateGuestbookVisibilityUseCase(spaceSettingsRepo);
-            updateWhitelistUseCase = new UpdateGuestbookPostItWhitelistUseCase(spaceSettingsRepo);
         }
 
         private void QueryUI()
@@ -1322,19 +1319,7 @@ namespace Dotshelf.Scripts.Dashboard
             VisualElement cell = new VisualElement();
             cell.AddToClassList("guestbook-cell");
             cell.userData = guestbook;
-
-            if (guestbook.PostItInventoryId > 0)
-            {
-                IReadOnlyList<PostItStyle> styles = AvailablePostItStyles();
-                for (int s = 0; s < styles.Count; s++)
-                {
-                    if (styles[s].AssetId == guestbook.PostItInventoryId)
-                    {
-                        cell.style.backgroundColor = HexToColor(styles[s].ColorHex);
-                        break;
-                    }
-                }
-            }
+            cell.style.backgroundColor = ResolvePostItCellColor(guestbook.PostItInventoryId);
 
             Label content = new Label(guestbook.Content);
             content.AddToClassList("guestbook-cell-content");
@@ -1374,17 +1359,9 @@ namespace Dotshelf.Scripts.Dashboard
         {
             currentDetailGuestbook = guestbook;
             if (guestbookDetailContentText != null) guestbookDetailContentText.text = guestbook.Content;
-            if (guestbookDetailCard != null && guestbook.PostItInventoryId > 0)
+            if (guestbookDetailCard != null)
             {
-                IReadOnlyList<PostItStyle> styles = AvailablePostItStyles();
-                for (int s = 0; s < styles.Count; s++)
-                {
-                    if (styles[s].AssetId == guestbook.PostItInventoryId)
-                    {
-                        guestbookDetailCard.style.backgroundColor = HexToColor(styles[s].ColorHex);
-                        break;
-                    }
-                }
+                guestbookDetailCard.style.backgroundColor = ResolvePostItCellColor(guestbook.PostItInventoryId);
             }
             if (guestbookDetailMeta != null)
             {
@@ -1527,13 +1504,35 @@ namespace Dotshelf.Scripts.Dashboard
             return dt.ToLocalTime().ToString("MM/dd HH:mm");
         }
 
+        private static readonly Color DefaultPostItColor = TryParseHex(PostItStyle.DefaultColorHex, out Color parsed)
+            ? parsed
+            : new Color(1f, 245f / 255f, 199f / 255f);
+
         private static Color HexToColor(string hex)
         {
-            if (string.IsNullOrEmpty(hex) || hex.Length < 6) return new Color(1f, 0.96f, 0.78f);
-            int r = Convert.ToInt32(hex.Substring(0, 2), 16);
-            int g = Convert.ToInt32(hex.Substring(2, 2), 16);
-            int b = Convert.ToInt32(hex.Substring(4, 2), 16);
-            return new Color(r / 255f, g / 255f, b / 255f);
+            return TryParseHex(hex, out Color result) ? result : DefaultPostItColor;
+        }
+
+        private static bool TryParseHex(string hex, out Color color)
+        {
+            color = default;
+            if (string.IsNullOrEmpty(hex) || hex.Length < 6) return false;
+            if (!byte.TryParse(hex.Substring(0, 2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out byte r)) return false;
+            if (!byte.TryParse(hex.Substring(2, 2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out byte g)) return false;
+            if (!byte.TryParse(hex.Substring(4, 2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out byte b)) return false;
+            color = new Color(r / 255f, g / 255f, b / 255f);
+            return true;
+        }
+
+        private Color ResolvePostItCellColor(long postItInventoryId)
+        {
+            if (postItInventoryId <= 0) return DefaultPostItColor;
+            IReadOnlyList<PostItStyle> styles = AvailablePostItStyles();
+            for (int i = 0; i < styles.Count; i++)
+            {
+                if (styles[i].AssetId == postItInventoryId) return HexToColor(styles[i].ColorHex);
+            }
+            return DefaultPostItColor;
         }
 
         public void CloseAllModals()

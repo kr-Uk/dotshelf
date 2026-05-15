@@ -4,6 +4,8 @@ namespace App.Domain.Dashboard
 {
     public sealed class PostItStyle
     {
+        public const string DefaultColorHex = "FFF5C7";
+
         public long AssetId { get; }
         public string DisplayName { get; }
         public string ColorHex { get; }
@@ -17,7 +19,7 @@ namespace App.Domain.Dashboard
 
             AssetId = assetId;
             DisplayName = displayName ?? string.Empty;
-            ColorHex = colorHex ?? "FFF5C8";
+            ColorHex = colorHex ?? DefaultColorHex;
         }
     }
 }

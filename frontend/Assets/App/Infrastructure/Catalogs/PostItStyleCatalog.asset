@@ -16,7 +16,7 @@ MonoBehaviour:
   - assetId: 1
     displayName: "\uB178\uB791"
     previewSprite: {fileID: 0}
-    cellColor: {r: 1, g: 0.96, b: 0.78, a: 1}
+    cellColor: {r: 1, g: 0.96078431, b: 0.78039217, a: 1}
   - assetId: 2
     displayName: "\uD551\uD06C"
     previewSprite: {fileID: 0}

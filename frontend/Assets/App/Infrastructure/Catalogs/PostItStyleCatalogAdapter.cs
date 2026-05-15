@@ -57,7 +57,10 @@ namespace App.Infrastructure.Catalogs
 
         private static string ColorToHex(UnityEngine.Color c)
         {
-            return $"{(int)(c.r * 255):X2}{(int)(c.g * 255):X2}{(int)(c.b * 255):X2}";
+            int r = UnityEngine.Mathf.RoundToInt(UnityEngine.Mathf.Clamp01(c.r) * 255f);
+            int g = UnityEngine.Mathf.RoundToInt(UnityEngine.Mathf.Clamp01(c.g) * 255f);
+            int b = UnityEngine.Mathf.RoundToInt(UnityEngine.Mathf.Clamp01(c.b) * 255f);
+            return $"{r:X2}{g:X2}{b:X2}";
         }
     }
 }
