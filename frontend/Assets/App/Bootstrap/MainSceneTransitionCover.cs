@@ -32,12 +32,13 @@ namespace App.Bootstrap
 
         private const int CanvasSortingOrder = 7000;
         private const float MinCoverDurationSeconds = 0.25f;
-        private const float MaxCoverDurationSeconds = 16f;
         private const float ReadyRevealDelaySeconds = 3f;
         private const float FailureNoticeDurationSeconds = 1.75f;
         private const float ProgressBarWidth = 560f;
         private const float ProgressBarHeight = 18f;
         private const float ProgressMoveSpeed = 1.15f;
+        private const float ProgressShimmerWidth = 96f;
+        private const float ProgressShimmerCycleSeconds = 1.35f;
 
         private const float InitialProgress = 0.04f;
         private const float EnteringMainSceneProgress = 0.14f;
@@ -54,6 +55,8 @@ namespace App.Bootstrap
         private static readonly Color DetailTextColor = new Color(0.42f, 0.35f, 0.27f, 1f);
         private static readonly Color ProgressTrackColor = new Color(0.83f, 0.78f, 0.69f, 1f);
         private static readonly Color ProgressFillColor = new Color(0.48f, 0.25f, 0.12f, 1f);
+        private static readonly Color ProgressFillPulseColor = new Color(0.60f, 0.33f, 0.16f, 1f);
+        private static readonly Color ProgressShimmerColor = new Color(1f, 0.92f, 0.72f, 0.42f);
 
         private static bool hasResolvedPreferredFont;
         private static TMP_FontAsset cachedPreferredFont;
@@ -66,6 +69,9 @@ namespace App.Bootstrap
         private TextMeshProUGUI detailLabel;
         private TextMeshProUGUI percentLabel;
         private RectTransform progressFillRect;
+        private Image progressFillImage;
+        private RectTransform progressShimmerRect;
+        private Image progressShimmerImage;
         private float targetEstimatedProgress;
         private float displayedEstimatedProgress;
         private BookshelfExperienceManager cachedExperienceManager;
@@ -152,7 +158,21 @@ namespace App.Bootstrap
             progressFillRect.pivot = new Vector2(0f, 0.5f);
             progressFillRect.sizeDelta = new Vector2(0f, 0f);
             progressFillRect.anchoredPosition = Vector2.zero;
-            progressFill.GetComponent<Image>().color = ProgressFillColor;
+            progressFillImage = progressFill.GetComponent<Image>();
+            progressFillImage.color = ProgressFillColor;
+            progressFill.AddComponent<RectMask2D>();
+
+            var progressShimmer = new GameObject("ProgressShimmer", typeof(RectTransform), typeof(Image));
+            progressShimmer.transform.SetParent(progressFill.transform, false);
+            progressShimmerRect = (RectTransform)progressShimmer.transform;
+            progressShimmerRect.anchorMin = new Vector2(0f, 0f);
+            progressShimmerRect.anchorMax = new Vector2(0f, 1f);
+            progressShimmerRect.pivot = new Vector2(0.5f, 0.5f);
+            progressShimmerRect.sizeDelta = new Vector2(ProgressShimmerWidth, 0f);
+            progressShimmerRect.anchoredPosition = Vector2.zero;
+            progressShimmerImage = progressShimmer.GetComponent<Image>();
+            progressShimmerImage.color = ProgressShimmerColor;
+            progressShimmerImage.raycastTarget = false;
 
             percentLabel = CreateLabel(contentObject.transform, "Percent", "0%", 22f, DetailTextColor, FontStyles.Bold);
             var percentRect = (RectTransform)percentLabel.transform;
@@ -165,11 +185,10 @@ namespace App.Bootstrap
         private IEnumerator WaitForMainSceneAndDestroy()
         {
             var startTime = Time.unscaledTime;
-            var deadline = startTime + MaxCoverDurationSeconds;
             var readyForReveal = false;
             var readyStartedAt = -1f;
 
-            while (Time.unscaledTime < deadline)
+            while (!readyForReveal)
             {
                 var mainSceneReady = IsMainSceneReadyForReveal();
                 var minDurationElapsed = (Time.unscaledTime - startTime) >= MinCoverDurationSeconds;
@@ -210,13 +229,6 @@ namespace App.Bootstrap
 
                 TickProgress();
                 yield return null;
-            }
-
-            if (!readyForReveal && Time.unscaledTime >= deadline)
-            {
-                SetMessage("책장 로딩이 지연되어 메인 화면으로 이동합니다.");
-                SetDetailMessage("잠시 후 다시 동기화됩니다.");
-                yield return new WaitForSecondsRealtime(FailureNoticeDurationSeconds);
             }
 
             yield return new WaitForEndOfFrame();
@@ -541,15 +553,52 @@ namespace App.Bootstrap
 
         private void ApplyProgress(float progress)
         {
+            var clampedProgress = Mathf.Clamp01(progress);
+            var fillWidth = ProgressBarWidth * clampedProgress;
             if (progressFillRect != null)
             {
-                progressFillRect.sizeDelta = new Vector2(ProgressBarWidth * Mathf.Clamp01(progress), 0f);
+                progressFillRect.sizeDelta = new Vector2(fillWidth, 0f);
             }
 
             if (percentLabel != null)
             {
-                percentLabel.text = $"{Mathf.RoundToInt(Mathf.Clamp01(progress) * 100f)}%";
+                percentLabel.text = $"{Mathf.RoundToInt(clampedProgress * 100f)}%";
             }
+
+            ApplyProgressActivityAnimation(clampedProgress, fillWidth);
+        }
+
+        private void ApplyProgressActivityAnimation(float progress, float fillWidth)
+        {
+            var cycle = Mathf.Repeat(Time.unscaledTime, ProgressShimmerCycleSeconds) / ProgressShimmerCycleSeconds;
+            var pulse = 0.5f + Mathf.Sin(Time.unscaledTime * 5.2f) * 0.5f;
+
+            if (progressFillImage != null)
+            {
+                progressFillImage.color = Color.Lerp(ProgressFillColor, ProgressFillPulseColor, pulse * 0.28f);
+            }
+
+            if (progressShimmerRect == null || progressShimmerImage == null)
+            {
+                return;
+            }
+
+            var hasVisibleFill = progress > 0.015f;
+            progressShimmerImage.enabled = hasVisibleFill;
+            if (!hasVisibleFill)
+            {
+                return;
+            }
+
+            var travelWidth = Mathf.Max(fillWidth, ProgressShimmerWidth);
+            var easedCycle = Mathf.SmoothStep(0f, 1f, cycle);
+            var shimmerX = Mathf.Lerp(-ProgressShimmerWidth, travelWidth + ProgressShimmerWidth, easedCycle);
+            progressShimmerRect.anchoredPosition = new Vector2(shimmerX, 0f);
+            progressShimmerRect.sizeDelta = new Vector2(ProgressShimmerWidth, 0f);
+            progressShimmerImage.color = Color.Lerp(
+                new Color(ProgressShimmerColor.r, ProgressShimmerColor.g, ProgressShimmerColor.b, 0.20f),
+                ProgressShimmerColor,
+                pulse);
         }
 
         private string BuildInitialRefreshFailureMessage()
