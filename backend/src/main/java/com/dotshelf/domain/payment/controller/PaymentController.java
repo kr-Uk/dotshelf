@@ -63,13 +63,14 @@ public class PaymentController {
         return ApiResponse.success(paymentService.createPageChargeOrder(userId, request));
     }
 
-    @Operation(summary = "INICIS 결제 페이지 렌더링", description = "생성된 주문 ID로 INICIS 표준 결제창을 호출하는 HTML 페이지를 반환합니다.")
+    @Operation(summary = "INICIS 결제 페이지 렌더링",
+            description = "생성된 주문 ID 로 INICIS 표준 결제창을 호출하는 HTML 페이지를 반환합니다. "
+                    + "PC 클라이언트가 외부 브라우저로 호출하므로 access token 없이 접근 가능하며, "
+                    + "주문 ID (DS + 32자 random hex) 자체가 추측 불가능한 secret 으로 기능하고, "
+                    + "주문 TTL (30분) / status 가드 (READY/AUTHENTICATED) / 금액 서명 (KG SignKey) 으로 보호됩니다.")
     @GetMapping(value = "/inicis/request/{orderId}", produces = MediaType.TEXT_HTML_VALUE)
-    public String renderInicisPaymentPage(
-            @CurrentUser Long userId,
-            @PathVariable String orderId
-    ) {
-        return renderPaymentPage(paymentService.getInicisPaymentPage(userId, orderId));
+    public String renderInicisPaymentPage(@PathVariable String orderId) {
+        return renderPaymentPage(paymentService.getInicisPaymentPage(orderId));
     }
 
     @Operation(summary = "INICIS 인증 결과 수신", description = "INICIS 표준 결제창에서 전달한 인증 결과를 받아 승인 처리 후 결과 HTML을 반환합니다.")

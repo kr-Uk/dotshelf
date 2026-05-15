@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using App.Application.Notebook;
+using App.Application.Payment;
+using App.Domain.Payment;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.Networking;
@@ -406,6 +408,23 @@ namespace App.Features.Notebook.Presentation
         private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
         private NotebookRuntimeUseCase notebookRuntimeUseCase;
+        private PaymentUseCase paymentUseCase;
+
+        // Payment overlay UI elements + state — KG이니시스 결제 흐름 (MR S14P31F206-265).
+        // 기존 ChargePagesThroughApi(1000) deprecated 흐름을 대체. NotebookToolkit 안에 통합한 이유: composition root
+        // 추가 변경 최소화 + UI Toolkit 같은 패턴 (VisualElement 코드 빌드) 일관.
+        private VisualElement paymentOverlayRoot;
+        private VisualElement paymentChargePanel;
+        private VisualElement paymentPendingPanel;
+        private VisualElement paymentHistoryPanel;
+        private Label paymentPendingStatusLabel;
+        private Label paymentHistoryEmptyLabel;
+        private VisualElement paymentHistoryListBody;
+        private ChargePreset paymentSelectedPreset = ChargePreset.Pages1000;
+        private string paymentPendingOrderId;
+        private Coroutine paymentPollCoroutine;
+        private const float PaymentPollIntervalSeconds = 2f;
+        private const float PaymentPollTimeoutSeconds = 300f;
         public event Action BookAddedToShelfThroughApi;
         public event Action<NotebookSpaceVisitRequest> SpaceVisitRequested;
         private BookViewModel[] marketBooks = Array.Empty<BookViewModel>();
@@ -539,10 +558,11 @@ namespace App.Features.Notebook.Presentation
             SearchNotebookBooksUseCase searchUseCase = null,
             LoadNotebookMarketBooksUseCase loadMarketUseCase = null,
             AddNotebookBookToShelfUseCase addUseCase = null,
-            NotebookRuntimeUseCase runtimeUseCase = null)
+            NotebookRuntimeUseCase runtimeUseCase = null,
+            PaymentUseCase paymentUseCase = null)
         {
             closeRequested = onCloseRequested;
-            ConfigureNotebookBookUseCases(searchUseCase, loadMarketUseCase, addUseCase, runtimeUseCase);
+            ConfigureNotebookBookUseCases(searchUseCase, loadMarketUseCase, addUseCase, runtimeUseCase, paymentUseCase);
             ResolveDocument();
         }
 
@@ -550,12 +570,14 @@ namespace App.Features.Notebook.Presentation
             SearchNotebookBooksUseCase searchUseCase,
             LoadNotebookMarketBooksUseCase loadMarketUseCase,
             AddNotebookBookToShelfUseCase addUseCase,
-            NotebookRuntimeUseCase runtimeUseCase = null)
+            NotebookRuntimeUseCase runtimeUseCase = null,
+            PaymentUseCase paymentUseCase = null)
         {
             searchNotebookBooksUseCase = searchUseCase;
             loadNotebookMarketBooksUseCase = loadMarketUseCase;
             addNotebookBookToShelfUseCase = addUseCase;
             notebookRuntimeUseCase = runtimeUseCase;
+            this.paymentUseCase = paymentUseCase;
             marketBooksRequested = false;
             marketBooksLoading = false;
             runtimeDataRequested = false;
@@ -1189,7 +1211,7 @@ namespace App.Features.Notebook.Presentation
             charge.style.marginLeft = 8;
             charge.clicked += () =>
             {
-                ChargePagesThroughApi(1000);
+                OpenPaymentChargeOverlay();
             };
             right.Add(charge);
 
@@ -1273,12 +1295,12 @@ namespace App.Features.Notebook.Presentation
             walletPanelBalanceLabel = Text(string.Empty, 28, AccentDeep, FontStyle.Bold);
             balanceColumn.Add(walletPanelBalanceLabel);
 
-            var charge = TextButton("+1,000P", true);
+            var charge = TextButton("+ 충전", true);
             charge.style.height = 36;
             charge.clicked += () =>
             {
                 PulseElement(charge);
-                ChargePagesThroughApi(1000);
+                OpenPaymentChargeOverlay();
             };
             balanceCard.Add(charge);
 
@@ -6230,32 +6252,9 @@ namespace App.Features.Notebook.Presentation
             ShowToast(book.Price > 0 ? $"구매 완료 · {book.Title}" : $"내 책장에 추가됨 · {book.Title}");
         }
 
-        private void ChargePagesThroughApi(int amount)
-        {
-            if (notebookRuntimeUseCase == null)
-            {
-                ShowToast("페이지 충전 API가 설정되지 않았습니다.");
-                return;
-            }
-
-            notebookRuntimeUseCase.ChargePages(
-                Mathf.Max(1, amount),
-                wallet =>
-                {
-                    pages = Mathf.Max(0, wallet?.BalancePages ?? pages);
-                    RefreshWallet();
-                    if (walletPanelOpen)
-                    {
-                        RequestWalletDetails();
-                    }
-                    ShowToast($"+{amount:N0}P 충전 완료");
-                },
-                error =>
-                {
-                    UnityEngine.Debug.LogWarning($"Page charge API failed. code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
-                    ShowToast("페이지 충전 API 요청에 실패했습니다.");
-                });
-        }
+        // (구) ChargePagesThroughApi(int amount) — deprecated `/v1/payments/page-charge` (BE P006) 호출.
+        // 새 결제 흐름은 OpenPaymentChargeOverlay → CreateChargeOrder → 외부 브라우저 + PendingOverlay 폴링.
+        // 새 메서드는 본 파일 하단의 Payment 통합 영역 참조.
 
         private void ToggleSpaceFollowThroughApi(SpaceViewModel space, Button button, Button followersButton = null)
         {
@@ -7780,6 +7779,499 @@ namespace App.Features.Notebook.Presentation
         private static Color Rgba(byte r, byte g, byte b, float a)
         {
             return new Color(r / 255f, g / 255f, b / 255f, a);
+        }
+
+        // -----------------------------------------------------------------------------
+        // Payment 통합 (KG이니시스 충전 흐름 — S14P31F206-265)
+        // 기존 ChargePagesThroughApi(deprecated /v1/payments/page-charge) 대체.
+        // 흐름: OpenPaymentChargeOverlay → 프리셋 선택 → StartCharge → Application.OpenURL +
+        //       OpenPaymentPendingOverlay → 2초 간격 폴링 (max 5분) → DONE 시 wallet 갱신.
+        // -----------------------------------------------------------------------------
+
+        private void OpenPaymentChargeOverlay()
+        {
+            if (paymentUseCase == null)
+            {
+                ShowToast("결제 모듈이 아직 준비되지 않았습니다.");
+                return;
+            }
+            EnsurePaymentOverlayBuilt();
+            ShowPaymentPanel(paymentChargePanel);
+            paymentOverlayRoot.style.display = DisplayStyle.Flex;
+            RefreshPaymentChargePresetSelection();
+        }
+
+        private void OpenPaymentPendingOverlay(string orderId)
+        {
+            paymentPendingOrderId = orderId;
+            EnsurePaymentOverlayBuilt();
+            ShowPaymentPanel(paymentPendingPanel);
+            if (paymentPendingStatusLabel != null)
+            {
+                paymentPendingStatusLabel.text = "결제창에서 결제를 완료해 주세요.\n완료 후 자동으로 잔액이 갱신됩니다.";
+            }
+            paymentOverlayRoot.style.display = DisplayStyle.Flex;
+            StopPaymentPolling();
+            paymentPollCoroutine = StartCoroutine(PaymentPollingRoutine(orderId));
+        }
+
+        private void OpenPaymentHistoryOverlay()
+        {
+            EnsurePaymentOverlayBuilt();
+            ShowPaymentPanel(paymentHistoryPanel);
+            paymentOverlayRoot.style.display = DisplayStyle.Flex;
+            RequestPaymentTransactions();
+        }
+
+        private void ClosePaymentOverlay()
+        {
+            StopPaymentPolling();
+            paymentPendingOrderId = null;
+            if (paymentOverlayRoot != null)
+            {
+                paymentOverlayRoot.style.display = DisplayStyle.None;
+            }
+        }
+
+        private void StopPaymentPolling()
+        {
+            if (paymentPollCoroutine != null)
+            {
+                StopCoroutine(paymentPollCoroutine);
+                paymentPollCoroutine = null;
+            }
+        }
+
+        private IEnumerator PaymentPollingRoutine(string orderId)
+        {
+            float elapsed = 0f;
+            while (elapsed < PaymentPollTimeoutSeconds)
+            {
+                yield return new WaitForSeconds(PaymentPollIntervalSeconds);
+                elapsed += PaymentPollIntervalSeconds;
+                if (string.IsNullOrEmpty(paymentPendingOrderId) || paymentPendingOrderId != orderId)
+                {
+                    yield break;
+                }
+                paymentUseCase?.PollOrderStatus(
+                    orderId,
+                    result => HandlePaymentPollResult(result, orderId),
+                    error => HandlePaymentPollError(error, orderId));
+            }
+            HandlePaymentPollTimeout(orderId);
+        }
+
+        private void HandlePaymentPollResult(PaymentPollResult result, string orderId)
+        {
+            if (result == null || paymentPendingOrderId != orderId)
+            {
+                return;
+            }
+            if (paymentPendingStatusLabel != null)
+            {
+                paymentPendingStatusLabel.text = $"상태: {result.Status}";
+            }
+            if (!result.IsTerminal)
+            {
+                return;
+            }
+            StopPaymentPolling();
+            paymentPendingOrderId = null;
+            if (result.Status == PaymentStatus.Done)
+            {
+                if (result.WalletBalancePagesAfter.HasValue)
+                {
+                    pages = Mathf.Max(0, result.WalletBalancePagesAfter.Value);
+                    RefreshWallet();
+                    if (walletPanelOpen)
+                    {
+                        RequestWalletDetails();
+                    }
+                }
+                ShowToast("결제가 완료되었습니다.");
+                ClosePaymentOverlay();
+            }
+            else
+            {
+                ShowToast(result.Status == PaymentStatus.Canceled
+                    ? "결제가 취소되었습니다."
+                    : "결제에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+                ClosePaymentOverlay();
+            }
+        }
+
+        private void HandlePaymentPollError(PaymentApiError error, string orderId)
+        {
+            if (paymentPendingOrderId != orderId)
+            {
+                return;
+            }
+            UnityEngine.Debug.LogWarning(
+                $"Payment poll failed. orderId={orderId}, code={error?.Code}, message={error?.Message}");
+            // 폴링 중 일시 에러는 다음 tick 에서 재시도 — 즉시 fail 처리하지 않는다.
+        }
+
+        private void HandlePaymentPollTimeout(string orderId)
+        {
+            if (paymentPendingOrderId != orderId)
+            {
+                return;
+            }
+            StopPaymentPolling();
+            paymentPendingOrderId = null;
+            ShowToast("결제 확인 시간이 초과되었습니다. 결제 내역에서 상태를 확인해 주세요.");
+            ClosePaymentOverlay();
+        }
+
+        private void EnsurePaymentOverlayBuilt()
+        {
+            if (paymentOverlayRoot != null)
+            {
+                return;
+            }
+
+            var doc = GetComponent<UIDocument>();
+            var rootSurface = doc != null ? doc.rootVisualElement : null;
+            if (rootSurface == null)
+            {
+                return;
+            }
+
+            paymentOverlayRoot = new VisualElement { name = "payment-overlay" };
+            paymentOverlayRoot.style.position = Position.Absolute;
+            paymentOverlayRoot.style.left = 0;
+            paymentOverlayRoot.style.top = 0;
+            paymentOverlayRoot.style.right = 0;
+            paymentOverlayRoot.style.bottom = 0;
+            paymentOverlayRoot.style.backgroundColor = new Color(0f, 0f, 0f, 0.55f);
+            paymentOverlayRoot.style.display = DisplayStyle.None;
+            paymentOverlayRoot.style.alignItems = Align.Center;
+            paymentOverlayRoot.style.justifyContent = Justify.Center;
+            paymentOverlayRoot.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            rootSurface.Add(paymentOverlayRoot);
+
+            paymentChargePanel = BuildPaymentChargePanel();
+            paymentPendingPanel = BuildPaymentPendingPanel();
+            paymentHistoryPanel = BuildPaymentHistoryPanel();
+            paymentOverlayRoot.Add(paymentChargePanel);
+            paymentOverlayRoot.Add(paymentPendingPanel);
+            paymentOverlayRoot.Add(paymentHistoryPanel);
+            paymentChargePanel.style.display = DisplayStyle.Flex;
+            paymentPendingPanel.style.display = DisplayStyle.None;
+            paymentHistoryPanel.style.display = DisplayStyle.None;
+        }
+
+        private void ShowPaymentPanel(VisualElement target)
+        {
+            if (paymentChargePanel != null)
+            {
+                paymentChargePanel.style.display = target == paymentChargePanel ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+            if (paymentPendingPanel != null)
+            {
+                paymentPendingPanel.style.display = target == paymentPendingPanel ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+            if (paymentHistoryPanel != null)
+            {
+                paymentHistoryPanel.style.display = target == paymentHistoryPanel ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+        }
+
+        private VisualElement BuildPaymentChargePanel()
+        {
+            var panel = new VisualElement { name = "payment-charge-panel" };
+            panel.style.width = 480;
+            panel.style.paddingLeft = 28;
+            panel.style.paddingRight = 28;
+            panel.style.paddingTop = 28;
+            panel.style.paddingBottom = 28;
+            panel.style.backgroundColor = Color.white;
+            Round(panel, 18);
+
+            var title = Text("페이지 충전", 22, Ink, FontStyle.Bold);
+            panel.Add(title);
+
+            var subtitle = Text("결제 수단: 카드 결제만 가능 · 유효기간 1년 (서비스 운영 중 자동 갱신)", 11, SoftInk, FontStyle.Normal);
+            subtitle.style.marginTop = 4;
+            subtitle.style.whiteSpace = WhiteSpace.Normal;
+            panel.Add(subtitle);
+
+            var presetGrid = new VisualElement();
+            presetGrid.style.flexDirection = FlexDirection.Row;
+            presetGrid.style.flexWrap = Wrap.Wrap;
+            presetGrid.style.marginTop = 18;
+            panel.Add(presetGrid);
+
+            foreach (var preset in ChargePresets.All)
+            {
+                var pages = ChargePresets.PagesOf(preset);
+                var presetButton = TextButton($"{pages:N0} P", true);
+                presetButton.style.width = 130;
+                presetButton.style.height = 48;
+                presetButton.style.marginRight = 8;
+                presetButton.style.marginBottom = 8;
+                var capturedPreset = preset;
+                presetButton.clicked += () =>
+                {
+                    paymentSelectedPreset = capturedPreset;
+                    RefreshPaymentChargePresetSelection();
+                };
+                presetButton.userData = preset;
+                presetGrid.Add(presetButton);
+            }
+
+            var notice = Text(
+                "결제는 외부 브라우저의 KG이니시스 결제창에서 진행됩니다. 결제 완료 후 자동으로 페이지가 충전됩니다.",
+                11,
+                SoftInk,
+                FontStyle.Normal);
+            notice.style.marginTop = 12;
+            notice.style.whiteSpace = WhiteSpace.Normal;
+            panel.Add(notice);
+
+            var buttonsRow = Row("payment-charge-buttons");
+            buttonsRow.style.marginTop = 18;
+            buttonsRow.style.justifyContent = Justify.SpaceBetween;
+            panel.Add(buttonsRow);
+
+            var cancelButton = TextButton("취소", false);
+            cancelButton.style.width = 100;
+            cancelButton.style.height = 44;
+            cancelButton.clicked += ClosePaymentOverlay;
+            buttonsRow.Add(cancelButton);
+
+            var startButton = TextButton("결제 시작", true);
+            startButton.style.width = 140;
+            startButton.style.height = 44;
+            startButton.clicked += StartPaymentChargeFromOverlay;
+            buttonsRow.Add(startButton);
+
+            return panel;
+        }
+
+        private void RefreshPaymentChargePresetSelection()
+        {
+            if (paymentChargePanel == null)
+            {
+                return;
+            }
+            paymentChargePanel.Query<Button>().ForEach(button =>
+            {
+                if (button.userData is ChargePreset preset)
+                {
+                    button.style.borderTopWidth = preset == paymentSelectedPreset ? 2 : 1;
+                    button.style.borderRightWidth = preset == paymentSelectedPreset ? 2 : 1;
+                    button.style.borderBottomWidth = preset == paymentSelectedPreset ? 2 : 1;
+                    button.style.borderLeftWidth = preset == paymentSelectedPreset ? 2 : 1;
+                    button.style.borderTopColor = preset == paymentSelectedPreset ? Accent : Rgba(0x0E, 0x1D, 0x2A, 0.18f);
+                    button.style.borderRightColor = preset == paymentSelectedPreset ? Accent : Rgba(0x0E, 0x1D, 0x2A, 0.18f);
+                    button.style.borderBottomColor = preset == paymentSelectedPreset ? Accent : Rgba(0x0E, 0x1D, 0x2A, 0.18f);
+                    button.style.borderLeftColor = preset == paymentSelectedPreset ? Accent : Rgba(0x0E, 0x1D, 0x2A, 0.18f);
+                }
+            });
+        }
+
+        private void StartPaymentChargeFromOverlay()
+        {
+            if (paymentUseCase == null)
+            {
+                ShowToast("결제 모듈이 준비되지 않았습니다.");
+                return;
+            }
+            var buyerName = TryGetBuyerName();
+            var buyerTel = TryGetBuyerTel();
+            var buyerEmail = TryGetBuyerEmail();
+
+            paymentUseCase.StartCharge(
+                paymentSelectedPreset,
+                buyerName,
+                buyerTel,
+                buyerEmail,
+                result =>
+                {
+                    if (result == null || result.Order == null)
+                    {
+                        ShowToast("결제 주문 생성에 실패했습니다.");
+                        return;
+                    }
+                    if (!string.IsNullOrWhiteSpace(result.FullPaymentPageUrl))
+                    {
+                        UnityEngine.Application.OpenURL(result.FullPaymentPageUrl);
+                    }
+                    OpenPaymentPendingOverlay(result.Order.OrderId);
+                },
+                error =>
+                {
+                    UnityEngine.Debug.LogWarning(
+                        $"Charge order create failed. code={error?.Code}, message={error?.Message}");
+                    ShowToast($"결제 주문 생성 실패: {error?.Message ?? "알 수 없는 오류"}");
+                });
+        }
+
+        private string TryGetBuyerName()
+        {
+            // Phase 1 — 사용자 프로필 또는 입력 폼 미연동. BE 가 임시 필드 받게 placeholder.
+            // Phase 2 에서 입력 폼 또는 user.me 응답에서 가져옴.
+            return "DotShelf 사용자";
+        }
+
+        private string TryGetBuyerTel()
+        {
+            return "010-0000-0000";
+        }
+
+        private string TryGetBuyerEmail()
+        {
+            return "buyer@dotshelf.digital";
+        }
+
+        private VisualElement BuildPaymentPendingPanel()
+        {
+            var panel = new VisualElement { name = "payment-pending-panel" };
+            panel.style.width = 420;
+            panel.style.paddingLeft = 28;
+            panel.style.paddingRight = 28;
+            panel.style.paddingTop = 28;
+            panel.style.paddingBottom = 28;
+            panel.style.backgroundColor = Color.white;
+            Round(panel, 18);
+
+            var title = Text("결제 진행 중", 20, Ink, FontStyle.Bold);
+            panel.Add(title);
+
+            paymentPendingStatusLabel = Text(
+                "결제창에서 결제를 완료해 주세요.\n완료 후 자동으로 잔액이 갱신됩니다.",
+                12,
+                SoftInk,
+                FontStyle.Normal);
+            paymentPendingStatusLabel.style.marginTop = 12;
+            paymentPendingStatusLabel.style.whiteSpace = WhiteSpace.Normal;
+            panel.Add(paymentPendingStatusLabel);
+
+            var buttonsRow = Row("payment-pending-buttons");
+            buttonsRow.style.marginTop = 22;
+            buttonsRow.style.justifyContent = Justify.FlexEnd;
+            panel.Add(buttonsRow);
+
+            var cancelButton = TextButton("닫기", false);
+            cancelButton.style.width = 110;
+            cancelButton.style.height = 44;
+            cancelButton.clicked += ClosePaymentOverlay;
+            buttonsRow.Add(cancelButton);
+
+            return panel;
+        }
+
+        private VisualElement BuildPaymentHistoryPanel()
+        {
+            var panel = new VisualElement { name = "payment-history-panel" };
+            panel.style.width = 540;
+            panel.style.maxHeight = 600;
+            panel.style.paddingLeft = 28;
+            panel.style.paddingRight = 28;
+            panel.style.paddingTop = 28;
+            panel.style.paddingBottom = 28;
+            panel.style.backgroundColor = Color.white;
+            Round(panel, 18);
+
+            var title = Text("페이지 충전·사용 내역", 20, Ink, FontStyle.Bold);
+            panel.Add(title);
+
+            paymentHistoryEmptyLabel = Text("내역을 불러오는 중...", 12, SoftInk, FontStyle.Normal);
+            paymentHistoryEmptyLabel.style.marginTop = 12;
+            panel.Add(paymentHistoryEmptyLabel);
+
+            var scroll = new ScrollView();
+            scroll.style.flexGrow = 1f;
+            scroll.style.marginTop = 12;
+            panel.Add(scroll);
+
+            paymentHistoryListBody = new VisualElement();
+            scroll.Add(paymentHistoryListBody);
+
+            var buttonsRow = Row("payment-history-buttons");
+            buttonsRow.style.marginTop = 16;
+            buttonsRow.style.justifyContent = Justify.FlexEnd;
+            panel.Add(buttonsRow);
+
+            var closeButton = TextButton("닫기", false);
+            closeButton.style.width = 110;
+            closeButton.style.height = 44;
+            closeButton.clicked += ClosePaymentOverlay;
+            buttonsRow.Add(closeButton);
+
+            return panel;
+        }
+
+        private void RequestPaymentTransactions()
+        {
+            if (paymentUseCase == null || paymentHistoryListBody == null)
+            {
+                return;
+            }
+            paymentHistoryListBody.Clear();
+            if (paymentHistoryEmptyLabel != null)
+            {
+                paymentHistoryEmptyLabel.text = "내역을 불러오는 중...";
+                paymentHistoryEmptyLabel.style.display = DisplayStyle.Flex;
+            }
+            paymentUseCase.FetchTransactions(
+                100,
+                result =>
+                {
+                    if (result == null || result.Transactions == null || result.Transactions.Count == 0)
+                    {
+                        if (paymentHistoryEmptyLabel != null)
+                        {
+                            paymentHistoryEmptyLabel.text = "내역이 없습니다.";
+                        }
+                        return;
+                    }
+                    if (paymentHistoryEmptyLabel != null)
+                    {
+                        paymentHistoryEmptyLabel.style.display = DisplayStyle.None;
+                    }
+                    foreach (var view in result.Transactions)
+                    {
+                        paymentHistoryListBody.Add(BuildPaymentHistoryRow(view));
+                    }
+                },
+                error =>
+                {
+                    if (paymentHistoryEmptyLabel != null)
+                    {
+                        paymentHistoryEmptyLabel.text = $"불러오기 실패: {error?.Message ?? "알 수 없는 오류"}";
+                    }
+                });
+        }
+
+        private VisualElement BuildPaymentHistoryRow(PageTransactionView view)
+        {
+            var row = Row("payment-history-row");
+            row.style.justifyContent = Justify.SpaceBetween;
+            row.style.marginBottom = 8;
+            row.style.paddingTop = 8;
+            row.style.paddingBottom = 8;
+            BorderBottom(row, Rgba(0x0E, 0x1D, 0x2A, 0.08f));
+
+            var left = new VisualElement();
+            left.style.flexDirection = FlexDirection.Column;
+            row.Add(left);
+
+            var reasonLabel = Text(string.IsNullOrEmpty(view.Reason) ? view.Type : view.Reason, 13, Ink, FontStyle.Bold);
+            left.Add(reasonLabel);
+
+            var meta = Text(view.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 10, FaintInk, FontStyle.Normal);
+            left.Add(meta);
+
+            var delta = Text(
+                (view.PagesDelta >= 0 ? "+" : string.Empty) + view.PagesDelta.ToString("N0") + "P",
+                14,
+                view.PagesDelta >= 0 ? Accent : Ink,
+                FontStyle.Bold);
+            row.Add(delta);
+
+            return row;
         }
     }
 }

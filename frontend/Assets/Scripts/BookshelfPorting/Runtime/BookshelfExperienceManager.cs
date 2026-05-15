@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using App.Application.Notebook;
+using App.Application.Payment;
 using App.Bootstrap;
 using Dotshelf.Scripts.Dashboard;
 using UnityEngine;
@@ -537,6 +538,7 @@ namespace BookshelfPorting.Runtime
         private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
         private AddNotebookBookToShelfUseCase addNotebookBookToShelfUseCase;
         private NotebookRuntimeUseCase notebookRuntimeUseCase;
+        private PaymentUseCase paymentUseCase;
 
         private Canvas hudCanvas;
         private bool isNotebookFocusWaitingForScene;
@@ -16257,7 +16259,8 @@ namespace BookshelfPorting.Runtime
                 searchNotebookBooksUseCase,
                 loadNotebookMarketBooksUseCase,
                 addNotebookBookToShelfUseCase,
-                notebookRuntimeUseCase);
+                notebookRuntimeUseCase,
+                paymentUseCase);
             AttachNotebookApiCallbacks();
             notebookUiSceneLoader?.MeasureCanvasActivationCost(notebookScreenController);
         }
@@ -16595,17 +16598,20 @@ namespace BookshelfPorting.Runtime
             SearchNotebookBooksUseCase searchUseCase,
             LoadNotebookMarketBooksUseCase loadMarketUseCase,
             AddNotebookBookToShelfUseCase addUseCase,
-            NotebookRuntimeUseCase runtimeUseCase = null)
+            NotebookRuntimeUseCase runtimeUseCase = null,
+            PaymentUseCase paymentUseCase = null)
         {
             searchNotebookBooksUseCase = searchUseCase;
             loadNotebookMarketBooksUseCase = loadMarketUseCase;
             addNotebookBookToShelfUseCase = addUseCase;
             notebookRuntimeUseCase = runtimeUseCase;
+            this.paymentUseCase = paymentUseCase;
             notebookScreenController?.ConfigureNotebookBookUseCases(
                 searchNotebookBooksUseCase,
                 loadNotebookMarketBooksUseCase,
                 addNotebookBookToShelfUseCase,
-                notebookRuntimeUseCase);
+                notebookRuntimeUseCase,
+                paymentUseCase);
         }
 
         private void ShowNotebookScreen()

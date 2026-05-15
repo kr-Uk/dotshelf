@@ -390,16 +390,42 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("KG이니시스 결제창 HTML은 주문 소유자만 열 수 있다")
-    void getInicisPaymentPage_otherUser_throwsNotFound() {
-        given(userService.requireUserId(2L)).willReturn(2L);
-        given(paymentOrderRepository.findByOrderId("order-1")).willReturn(Optional.of(order()));
+    @DisplayName("KG이니시스 결제창 HTML 은 존재하지 않는 주문이면 NOT_FOUND")
+    void getInicisPaymentPage_unknownOrder_throwsNotFound() {
+        given(paymentOrderRepository.findByOrderId("order-x")).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> paymentService.getInicisPaymentPage(2L, "order-1"))
+        assertThatThrownBy(() -> paymentService.getInicisPaymentPage("order-x"))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.PAYMENT_ORDER_NOT_FOUND);
 
+        then(inicisPaymentFormFactory).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("KG이니시스 결제창 HTML 은 만료된 주문이면 INVALID_STATE")
+    void getInicisPaymentPage_expiredOrder_throwsInvalidState() {
+        java.time.Instant now = java.time.Instant.now();
+        PaymentOrder expired = PaymentOrder.builder()
+                .userId(1L)
+                .orderId("order-1")
+                .orderName("DotShelf 100P 충전 (유효기간 1년/자동갱신)")
+                .pagesAmount(100)
+                .amountKrw(100)
+                .buyerName("홍길동")
+                .buyerTel("010-1234-5678")
+                .buyerEmail("buyer@example.com")
+                .requestedAt(now.minusSeconds(3600))
+                .expiresAt(now.minusSeconds(1))
+                .build();
+        given(paymentOrderRepository.findByOrderId("order-1")).willReturn(Optional.of(expired));
+
+        assertThatThrownBy(() -> paymentService.getInicisPaymentPage("order-1"))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.PAYMENT_ORDER_INVALID_STATE);
+
+        then(paymentOrderCompletionService).should().failExpiredOrder(1L, "order-1");
         then(inicisPaymentFormFactory).shouldHaveNoInteractions();
     }
 
