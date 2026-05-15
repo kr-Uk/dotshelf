@@ -16256,7 +16256,8 @@ namespace BookshelfPorting.Runtime
                 searchNotebookBooksUseCase,
                 loadNotebookMarketBooksUseCase,
                 addNotebookBookToShelfUseCase,
-                notebookRuntimeUseCase);
+                notebookRuntimeUseCase,
+                paymentUseCase);
             AttachNotebookApiCallbacks();
             notebookUiSceneLoader?.MeasureCanvasActivationCost(notebookScreenController);
         }
