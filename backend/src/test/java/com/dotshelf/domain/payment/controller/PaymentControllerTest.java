@@ -30,6 +30,8 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.InicisReturnResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionListResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentMethodListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentOrderStatusResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
@@ -187,6 +189,39 @@ class PaymentControllerTest {
                 .andExpect(jsonPath("$.result.methods[0]").value("INICIS"));
 
         then(paymentService).should().getOrderStatus(1L, "order-1");
+    }
+
+    @Test
+    @DisplayName("페이지 충전·사용 내역 조회는 200 과 최신순 PageTransactionResponse 목록을 응답하고 limit을 service에 전달한다")
+    void getTransactions_returnsTransactionList() throws Exception {
+        given(paymentService.getTransactions(1L, 100)).willReturn(new PageTransactionListResponse(List.of(
+                new PageTransactionResponse(2L, "CHARGE", 50, 150, "INICIS_PAYMENT", "PAYMENT_ORDER", 11L,
+                        Instant.parse("2026-05-14T02:00:00Z")),
+                new PageTransactionResponse(1L, "CHARGE", 100, 100, "INICIS_PAYMENT", "PAYMENT_ORDER", 10L,
+                        Instant.parse("2026-05-14T01:00:00Z"))
+        )));
+        given(paymentService.getTransactions(1L, 25)).willReturn(new PageTransactionListResponse(List.of()));
+
+        mockMvc.perform(get("/v1/payments/transactions").header("X-Test-Admin-User-Id", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.transactions").isArray())
+                .andExpect(jsonPath("$.result.transactions[0].id").value(2))
+                .andExpect(jsonPath("$.result.transactions[0].type").value("CHARGE"))
+                .andExpect(jsonPath("$.result.transactions[0].pagesDelta").value(50))
+                .andExpect(jsonPath("$.result.transactions[0].balanceAfter").value(150))
+                .andExpect(jsonPath("$.result.transactions[0].reason").value("INICIS_PAYMENT"))
+                .andExpect(jsonPath("$.result.transactions[0].referenceType").value("PAYMENT_ORDER"))
+                .andExpect(jsonPath("$.result.transactions[0].referenceId").value(11))
+                .andExpect(jsonPath("$.result.transactions[1].balanceAfter").value(100));
+
+        mockMvc.perform(get("/v1/payments/transactions")
+                        .header("X-Test-Admin-User-Id", "1")
+                        .param("limit", "25"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.transactions").isArray());
+
+        then(paymentService).should().getTransactions(1L, 100);
+        then(paymentService).should().getTransactions(1L, 25);
     }
 
     @Test

@@ -18,6 +18,7 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.InicisReturnResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentMethodListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentOrderStatusResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
@@ -102,6 +103,19 @@ public class PaymentController {
     @GetMapping("/purchases")
     public ApiResponse<PurchaseHistoryListResponse> getPurchases(@CurrentUser Long userId) {
         return ApiResponse.success(paymentService.getPurchases(userId));
+    }
+
+    @Operation(summary = "페이지 충전·사용 내역 조회",
+            description = "현재 사용자의 페이지 충전(CHARGE) / 사용 내역을 최신순으로 조회합니다. "
+                    + "KG이니시스 충전업종 심사 요건 \"충전·차감 현황 노출\" 대응. "
+                    + "응답 크기 cap: limit 미지정 시 100건, 최대 500건. "
+                    + "cursor 기반 paging 은 트랜잭션 누적 추이에 따라 별도 endpoint 로 도입 예정.")
+    @GetMapping("/transactions")
+    public ApiResponse<PageTransactionListResponse> getTransactions(
+            @CurrentUser Long userId,
+            @RequestParam(defaultValue = "100") int limit
+    ) {
+        return ApiResponse.success(paymentService.getTransactions(userId, limit));
     }
 
     @Operation(summary = "지갑 조회", description = "현재 사용자의 페이지 잔액과 지갑 정보를 조회합니다.")

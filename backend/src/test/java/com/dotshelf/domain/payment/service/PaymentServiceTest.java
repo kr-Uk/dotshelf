@@ -3,9 +3,11 @@ package com.dotshelf.domain.payment.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -22,9 +24,12 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.InicisAuthReturnRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeConfirmResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.WalletResponse;
+import com.dotshelf.domain.payment.entity.PageTransaction;
 import com.dotshelf.domain.payment.entity.PaymentOrder;
+import com.dotshelf.domain.payment.repository.PageTransactionRepository;
 import com.dotshelf.domain.payment.repository.PageWalletRepository;
 import com.dotshelf.domain.payment.repository.PaymentOrderRepository;
 import com.dotshelf.domain.payment.service.InicisPaymentClient.InicisApprovalResult;
@@ -38,6 +43,9 @@ class PaymentServiceTest {
 
     @Mock
     private PageWalletRepository pageWalletRepository;
+
+    @Mock
+    private PageTransactionRepository pageTransactionRepository;
 
     @Mock
     private PaymentOrderRepository paymentOrderRepository;
@@ -66,6 +74,7 @@ class PaymentServiceTest {
         paymentPolicyProperties = new PaymentPolicyProperties(100_000, null, null, null, null, null, null, null);
         paymentService = new PaymentService(
                 pageWalletRepository,
+                pageTransactionRepository,
                 paymentOrderRepository,
                 assetPurchaseRepository,
                 userService,
@@ -139,6 +148,52 @@ class PaymentServiceTest {
         assertThat(response.currency()).isEqualTo("KRW");
         assertThat(response.paymentMethod()).isEqualTo("CARD");
         assertThat(response.validityNotice()).contains("1년").contains("자동");
+    }
+
+    @Test
+    @DisplayName("페이지 충전·사용 내역 조회는 limit을 반영한 PageRequest로 repository를 호출하고 결과를 매핑한다")
+    void getTransactions_mapsRepositoryResultToResponse() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        PageTransaction earlier = PageTransaction.charge(1L, 10L, 100, 100);
+        PageTransaction later = PageTransaction.charge(1L, 11L, 50, 150);
+        ArgumentCaptor<org.springframework.data.domain.Pageable> pageableCaptor =
+                ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
+        given(pageTransactionRepository.findByUserIdOrderByCreatedAtDesc(eq(1L), any(org.springframework.data.domain.Pageable.class)))
+                .willReturn(List.of(later, earlier));
+
+        PageTransactionListResponse response = paymentService.getTransactions(1L, 50);
+
+        then(pageTransactionRepository).should().findByUserIdOrderByCreatedAtDesc(eq(1L), pageableCaptor.capture());
+        assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(50);
+        assertThat(pageableCaptor.getValue().getPageNumber()).isEqualTo(0);
+        assertThat(response.transactions()).hasSize(2);
+        assertThat(response.transactions().get(0).balanceAfter()).isEqualTo(150);
+        assertThat(response.transactions().get(0).pagesDelta()).isEqualTo(50);
+        assertThat(response.transactions().get(0).type()).isEqualTo(PageTransaction.TYPE_CHARGE);
+        assertThat(response.transactions().get(0).reason()).isEqualTo("INICIS_PAYMENT");
+        assertThat(response.transactions().get(0).referenceType()).isEqualTo("PAYMENT_ORDER");
+        assertThat(response.transactions().get(0).referenceId()).isEqualTo(11L);
+        assertThat(response.transactions().get(1).balanceAfter()).isEqualTo(100);
+    }
+
+    @Test
+    @DisplayName("페이지 충전·사용 내역 조회의 limit은 0 이하면 기본 100, 상한 초과면 500으로 clamp된다")
+    void getTransactions_clampsLimitBoundaries() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(pageTransactionRepository.findByUserIdOrderByCreatedAtDesc(eq(1L), any(org.springframework.data.domain.Pageable.class)))
+                .willReturn(List.of());
+        ArgumentCaptor<org.springframework.data.domain.Pageable> pageableCaptor =
+                ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
+
+        paymentService.getTransactions(1L, 0);
+        paymentService.getTransactions(1L, -5);
+        paymentService.getTransactions(1L, 10_000);
+
+        then(pageTransactionRepository).should(org.mockito.Mockito.times(3))
+                .findByUserIdOrderByCreatedAtDesc(eq(1L), pageableCaptor.capture());
+        assertThat(pageableCaptor.getAllValues())
+                .extracting(org.springframework.data.domain.Pageable::getPageSize)
+                .containsExactly(100, 100, 500);
     }
 
     @Test

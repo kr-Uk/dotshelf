@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,8 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeConfirmResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderRequest;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeOrderResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PageChargeRequest;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionListResponse;
+import com.dotshelf.domain.payment.dto.PaymentDtos.PageTransactionResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentMethodListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentOrderStatusResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PaymentPolicyResponse;
@@ -24,6 +27,7 @@ import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryListResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.PurchaseHistoryResponse;
 import com.dotshelf.domain.payment.dto.PaymentDtos.WalletResponse;
 import com.dotshelf.domain.payment.entity.PaymentOrder;
+import com.dotshelf.domain.payment.repository.PageTransactionRepository;
 import com.dotshelf.domain.payment.repository.PageWalletRepository;
 import com.dotshelf.domain.payment.repository.PaymentOrderRepository;
 import com.dotshelf.domain.payment.service.InicisPaymentClient.InicisApprovalResult;
@@ -42,8 +46,11 @@ public class PaymentService {
     private static final int PAGE_UNIT_PRICE_KRW = 1;
     private static final Duration ORDER_TTL = Duration.ofMinutes(30);
     private static final String PAYMENT_PAGE_PATH_PREFIX = "/v1/payments/inicis/request/";
+    static final int TRANSACTIONS_DEFAULT_LIMIT = 100;
+    static final int TRANSACTIONS_MAX_LIMIT = 500;
 
     private final PageWalletRepository pageWalletRepository;
+    private final PageTransactionRepository pageTransactionRepository;
     private final PaymentOrderRepository paymentOrderRepository;
     private final AssetPurchaseRepository assetPurchaseRepository;
     private final UserService userService;
@@ -163,6 +170,25 @@ public class PaymentService {
         return new PurchaseHistoryListResponse(assetPurchaseRepository.findByUserIdOrderByPurchasedAtDesc(currentUserId).stream()
                 .map(PurchaseHistoryResponse::from)
                 .toList());
+    }
+
+    public PageTransactionListResponse getTransactions(Long userId, int limit) {
+        Long currentUserId = userService.requireUserId(userId);
+        int effectiveLimit = clampLimit(limit);
+        return new PageTransactionListResponse(
+                pageTransactionRepository
+                        .findByUserIdOrderByCreatedAtDesc(currentUserId, PageRequest.of(0, effectiveLimit))
+                        .stream()
+                        .map(PageTransactionResponse::from)
+                        .toList()
+        );
+    }
+
+    private int clampLimit(int requested) {
+        if (requested <= 0) {
+            return TRANSACTIONS_DEFAULT_LIMIT;
+        }
+        return Math.min(requested, TRANSACTIONS_MAX_LIMIT);
     }
 
     public WalletResponse getWallet(Long userId) {
