@@ -389,6 +389,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("previewImageUrl")]
         public string PreviewImageUrl { get; set; }
 
+        [JsonProperty("unityResourceKey")]
+        public string UnityResourceKey { get; set; }
+
         [JsonProperty("fileSize")]
         public long? FileSize { get; set; }
 
@@ -474,11 +477,29 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("assetId")]
         public long AssetId { get; set; }
 
+        [JsonProperty("code")]
+        public string Code { get; set; }
+
+        [JsonProperty("name")]
+        public string Name { get; set; }
+
         [JsonProperty("assetType")]
         public string AssetType { get; set; }
 
         [JsonProperty("collectionCode")]
         public string CollectionCode { get; set; }
+
+        [JsonProperty("theme")]
+        public string Theme { get; set; }
+
+        [JsonProperty("placement")]
+        public string Placement { get; set; }
+
+        [JsonProperty("unityResourceKey")]
+        public string UnityResourceKey { get; set; }
+
+        [JsonProperty("previewImageUrl")]
+        public string PreviewImageUrl { get; set; }
 
         [JsonProperty("version")]
         public int Version { get; set; }

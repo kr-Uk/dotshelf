@@ -1,5 +1,6 @@
 package com.dotshelf.domain.asset.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,6 +21,8 @@ public interface AssetRepository extends JpaRepository<Asset, Long> {
     Optional<Asset> findByCode(String code);
 
     boolean existsByCode(String code);
+
+    List<Asset> findByUnityResourceKeyIn(Collection<String> unityResourceKeys);
 
     // 같은 named parameter 를 `:x is null` 가드와 `upper(:x)` 비교에 동시에 쓰면
     // Hibernate 7 의 SQM 가 parameter 의 SQL type 을 byte[] (bytea) 로 잘못 추론하는 회귀가 있어

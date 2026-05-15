@@ -283,6 +283,7 @@ namespace App.Bootstrap
             if (!isReadOnly)
             {
                 visibleRemoteAssetManifests.Clear();
+                visibleLocalAssetEntries.Clear();
             }
             if (isReadOnly && IsDecorationPopupOpen)
             {
@@ -294,7 +295,9 @@ namespace App.Bootstrap
 
         public void RegisterVisibleSpaceAssetManifests(IReadOnlyList<DownloadManifestResponseDto> manifests)
         {
+            InitializeIfNeeded();
             visibleRemoteAssetManifests.Clear();
+            visibleLocalAssetEntries.Clear();
             if (manifests == null)
             {
                 return;
@@ -306,8 +309,36 @@ namespace App.Bootstrap
                 if (manifest != null && manifest.AssetId > 0L)
                 {
                     visibleRemoteAssetManifests[manifest.AssetId] = manifest;
+                    if (TryBuildLocalEntryFromManifest(manifest, out var localEntry))
+                    {
+                        visibleLocalAssetEntries[manifest.AssetId] = localEntry;
+                    }
                 }
             }
+        }
+
+        private bool TryBuildLocalEntryFromManifest(DownloadManifestResponseDto manifest, out InventoryEntry entry)
+        {
+            entry = default;
+            if (manifest == null || manifest.AssetId <= 0L)
+            {
+                return false;
+            }
+
+            if (!TryFindLocalCatalogEntryByUnityResourceKey(manifest.UnityResourceKey, out var localEntry))
+            {
+                return false;
+            }
+
+            // Server-linked local entry: instantiate the prefab already shipped in Unity,
+            // but preserve RemoteAssetId so layout save/restore uses asset:{id}.
+            localEntry.DisplayName = FirstNonEmpty(manifest.Name, manifest.Code, localEntry.DisplayName);
+            localEntry.RemoteAssetId = manifest.AssetId;
+            localEntry.RemoteInventoryId = 0L;
+            localEntry.IsRemoteAsset = false;
+            localEntry.PreviewImageUrl = FirstNonEmpty(manifest.PreviewImageUrl, localEntry.PreviewImageUrl);
+            entry = localEntry;
+            return true;
         }
 
         // Internal -----------------------------------------------------------------
@@ -669,6 +700,7 @@ namespace App.Bootstrap
         private bool isRemoteAssetInventoryLoading;
         private int remoteAssetInventoryRequestVersion;
         private readonly Dictionary<long, DownloadManifestResponseDto> visibleRemoteAssetManifests = new Dictionary<long, DownloadManifestResponseDto>();
+        private readonly Dictionary<long, InventoryEntry> visibleLocalAssetEntries = new Dictionary<long, InventoryEntry>();
         private readonly Dictionary<string, Sprite> inventoryPreviewSpriteCache = new Dictionary<string, Sprite>(StringComparer.Ordinal);
 
         private BookshelfExperienceManager cachedExperienceManager;
@@ -1130,7 +1162,14 @@ namespace App.Bootstrap
                 if (inventoryEntries[i].IsRemoteAsset)
                 {
                     inventoryEntries.RemoveAt(i);
+                    continue;
                 }
+
+                var localEntry = inventoryEntries[i];
+                localEntry.RemoteAssetId = 0L;
+                localEntry.RemoteInventoryId = 0L;
+                localEntry.PreviewImageUrl = string.Empty;
+                inventoryEntries[i] = localEntry;
             }
 
             var items = inventory?.Items;
@@ -1150,6 +1189,12 @@ namespace App.Bootstrap
 
                 var asset = item.Asset;
                 var displayName = FirstNonEmpty(asset?.Name, asset?.Code, $"Asset {item.AssetId}");
+                if (TryBindOwnedLocalAsset(item, asset, displayName))
+                {
+                    added++;
+                    continue;
+                }
+
                 inventoryEntries.Add(new InventoryEntry
                 {
                     DisplayName = displayName,
@@ -1173,6 +1218,39 @@ namespace App.Bootstrap
             }
         }
 
+        private bool TryBindOwnedLocalAsset(InventoryItemResponseDto item, AssetResponseDto asset, string displayName)
+        {
+            if (item == null || item.AssetId <= 0L || string.IsNullOrWhiteSpace(asset?.UnityResourceKey))
+            {
+                return false;
+            }
+
+            var normalizedResourceKey = NormalizeUnityResourceKey(asset.UnityResourceKey);
+            for (var i = 0; i < inventoryEntries.Count; i++)
+            {
+                var entry = inventoryEntries[i];
+                if (entry.IsRemoteAsset || string.IsNullOrWhiteSpace(entry.SourceAssetPath))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(NormalizeUnityResourceKey(entry.SourceAssetPath), normalizedResourceKey, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                // Owned built-in asset: local instantiate path, server identity for persistence.
+                entry.DisplayName = FirstNonEmpty(displayName, entry.DisplayName);
+                entry.RemoteAssetId = item.AssetId;
+                entry.RemoteInventoryId = item.InventoryId;
+                entry.PreviewImageUrl = asset.PreviewImageUrl;
+                inventoryEntries[i] = entry;
+                return true;
+            }
+
+            return false;
+        }
+
         private static CustomizationCategory ResolveRemotePlacementCategory(AssetResponseDto asset)
         {
             var placement = FirstNonEmpty(asset?.Placement, asset?.AssetType, asset?.CategoryCode, string.Empty).ToUpperInvariant();
@@ -1191,7 +1269,14 @@ namespace App.Bootstrap
 
         private static DecorationObjectKind ResolveRemoteDecorationKind(AssetResponseDto asset)
         {
-            var value = FirstNonEmpty(asset?.AssetType, asset?.CategoryCode, asset?.Placement, asset?.Name, asset?.Code, string.Empty).ToUpperInvariant();
+            // AssetType can be a broad value such as "ASSET"; include name/code so
+            // built-in catalog rows like SPOOKY_DESK still resolve their object kind.
+            var value = string.Concat(
+                asset?.AssetType, " ",
+                asset?.CategoryCode, " ",
+                asset?.Placement, " ",
+                asset?.Name, " ",
+                asset?.Code).ToUpperInvariant();
             if (value.Contains("DESK") || value.Contains("TABLE")) return DecorationObjectKind.Desk;
             if (value.Contains("CHAIR")) return DecorationObjectKind.Chair;
             if (value.Contains("BOOKSHELF") || value.Contains("SHELF")) return DecorationObjectKind.Bookshelf;
@@ -4847,8 +4932,7 @@ namespace App.Bootstrap
 
             // 동일 inventoryKey 가 이미 배치되어 있으면 슬롯 자체를 비활성 + "배치됨" 오버레이로 가린다.
             // 삭제하면 RebuildInventorySlots 가 다시 돌면서 자동 복구된다.
-            var key = BuildInventoryKey(entry);
-            if (IsInventoryKeyPlaced(key))
+            if (IsInventoryEntryPlaced(entry))
             {
                 button.interactable = false;
                 slot.color = WithAlpha(CardColor, 0.55f);
@@ -5018,6 +5102,22 @@ namespace App.Bootstrap
                 return false;
             }
             return true;
+        }
+
+        private bool IsInventoryEntryPlaced(InventoryEntry entry)
+        {
+            var primaryKey = BuildInventoryKey(entry);
+            if (IsInventoryKeyPlaced(primaryKey))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(entry.SourceAssetPath))
+            {
+                return IsInventoryKeyPlaced(BuildInventoryKeyFromAssetKey(entry.SourceAssetPath));
+            }
+
+            return false;
         }
 
         // [#5 P1] EnterEditMode 시 scene 전체의 DecorationItemMarker 를 훑어 placedByInventoryKey 를
@@ -7207,6 +7307,33 @@ namespace App.Bootstrap
         // 단순 string 비교로 충분.
         // 추가로 평탄화(MR #154) 이전 저장본 호환 — old path key 면 LegacyInventoryKeyAliases 로
         // 새 평탄 경로 key 로 매핑 후 매칭. 한 번 매칭되면 다음 저장 시 새 key 로 자동 갱신.
+        private bool TryFindLocalCatalogEntryByUnityResourceKey(string unityResourceKey, out InventoryEntry entry)
+        {
+            entry = default;
+            if (string.IsNullOrWhiteSpace(unityResourceKey))
+            {
+                return false;
+            }
+
+            var normalizedResourceKey = NormalizeUnityResourceKey(unityResourceKey);
+            for (var i = 0; i < inventoryEntries.Count; i++)
+            {
+                var candidate = inventoryEntries[i];
+                if (candidate.IsRemoteAsset || string.IsNullOrWhiteSpace(candidate.SourceAssetPath))
+                {
+                    continue;
+                }
+
+                if (string.Equals(NormalizeUnityResourceKey(candidate.SourceAssetPath), normalizedResourceKey, StringComparison.Ordinal))
+                {
+                    entry = candidate;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private bool TryFindInventoryEntryByKey(string key, out InventoryEntry entry)
         {
             if (!string.IsNullOrEmpty(key))
@@ -7217,15 +7344,71 @@ namespace App.Bootstrap
                 }
                 for (int i = 0; i < inventoryEntries.Count; i++)
                 {
-                    if (BuildInventoryKey(inventoryEntries[i]) == key)
+                    if (InventoryEntryMatchesKey(inventoryEntries[i], key))
                     {
                         entry = inventoryEntries[i];
                         return true;
                     }
                 }
+
+                if (TryParseInventoryKeyId(key, "asset:", out var visibleAssetId) &&
+                    visibleLocalAssetEntries.TryGetValue(visibleAssetId, out entry))
+                {
+                    return true;
+                }
             }
             entry = default;
             return false;
+        }
+
+        private static bool InventoryEntryMatchesKey(InventoryEntry entry, string key)
+        {
+            if (string.IsNullOrEmpty(key))
+            {
+                return false;
+            }
+
+            var primaryKey = BuildInventoryKey(entry);
+            if (string.Equals(primaryKey, key, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(entry.SourceAssetPath) &&
+                string.Equals(BuildInventoryKeyFromAssetKey(entry.SourceAssetPath), key, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (TryParseInventoryKeyId(key, "asset:", out var assetId) && entry.RemoteAssetId == assetId)
+            {
+                return true;
+            }
+
+            if (TryParseInventoryKeyId(key, "inv:", out var inventoryId) && entry.RemoteInventoryId == inventoryId)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryParseInventoryKeyId(string key, string prefix, out long id)
+        {
+            id = 0L;
+            if (string.IsNullOrWhiteSpace(key) || !key.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return long.TryParse(key.Substring(prefix.Length), out id) && id > 0L;
+        }
+
+        private static string NormalizeUnityResourceKey(string key)
+        {
+            return string.IsNullOrWhiteSpace(key)
+                ? string.Empty
+                : key.Trim().Replace('\\', '/').TrimStart('/').ToLowerInvariant();
         }
 
         private static bool TryCreateRemoteInventoryEntryFromKey(string key, out InventoryEntry entry)
@@ -8730,7 +8913,7 @@ namespace App.Bootstrap
             // WallDeco/BookshelfDeco 분기보다 먼저 검사 — PlaceWallDecoEntry 가 향후 inventoryKey
             // 시스템에 합류해도 별도 수정 없이 1회 제한이 자동 적용되도록.
             var inventoryKey = BuildInventoryKey(entry);
-            if (IsInventoryKeyPlaced(inventoryKey))
+            if (IsInventoryEntryPlaced(entry))
             {
                 Debug.Log($"[RoomEdit][Inventory] 배치 차단 — '{entry.DisplayName}' (key={inventoryKey}) 는 이미 씬에 1개 배치되어 있습니다.");
                 return;

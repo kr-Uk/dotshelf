@@ -264,6 +264,7 @@ namespace BookshelfPorting.Runtime
 
         private void PrefetchVisibleSpaceAssets(long spaceId, Action onCompleted = null)
         {
+            ClearVisibleSpaceAssetManifests();
             if (client == null || remoteAssetCacheService == null || spaceId <= 0L)
             {
                 onCompleted?.Invoke();
@@ -277,11 +278,12 @@ namespace BookshelfPorting.Runtime
                     var manifests = response?.Manifests;
                     if (manifests == null || manifests.Count == 0)
                     {
+                        ClearVisibleSpaceAssetManifests();
                         onCompleted?.Invoke();
                         return;
                     }
 
-                    var roomEditModeController = FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
+                    var roomEditModeController = FindRoomEditModeController();
                     roomEditModeController?.RegisterVisibleSpaceAssetManifests(manifests);
                     StartCoroutine(PrefetchVisibleSpaceAssetManifests(spaceId, manifests));
                     onCompleted?.Invoke();
@@ -292,6 +294,17 @@ namespace BookshelfPorting.Runtime
                         $"[BookshelfApiSync] Space asset manifest prefetch skipped: spaceId={spaceId}, code={error?.Code}, message={error?.Message}");
                     onCompleted?.Invoke();
                 });
+        }
+
+        private static void ClearVisibleSpaceAssetManifests()
+        {
+            var roomEditModeController = FindRoomEditModeController();
+            roomEditModeController?.RegisterVisibleSpaceAssetManifests(Array.Empty<DownloadManifestResponseDto>());
+        }
+
+        private static RoomEditModeController FindRoomEditModeController()
+        {
+            return FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
         }
 
         private void LoadRemoteSpaceLayout(long spaceId)

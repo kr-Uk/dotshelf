@@ -238,6 +238,31 @@ class AssetServiceTest {
     }
 
     @Test
+    @DisplayName("로컬 Unity 내장 자산의 다운로드 manifest는 unityResourceKey만 내리고 files는 비어있다")
+    void getDownloadManifest_ownedLocalUnityAsset_returnsEmptyFiles() {
+        Asset asset = Asset.builder()
+                .categoryId(1L)
+                .code("SPOOKY_BED")
+                .name("Spooky Bed")
+                .assetScope("SPACE")
+                .assetType("ASSET")
+                .collectionCode("spooky")
+                .unityResourceKey("Assets/Arts/Models/spooky_bed.glb")
+                .version(1)
+                .build();
+        TestFixtures.setId(asset, 10L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(assetRepository.findById(10L)).willReturn(Optional.of(asset));
+        given(inventoryRepository.existsByUserIdAndAssetId(1L, 10L)).willReturn(true);
+
+        var response = assetService.getDownloadManifest(1L, 10L);
+
+        assertThat(response.assetId()).isEqualTo(10L);
+        assertThat(response.unityResourceKey()).isEqualTo("Assets/Arts/Models/spooky_bed.glb");
+        assertThat(response.files()).isEmpty();
+    }
+
+    @Test
     @DisplayName("테마 다운로드 manifest는 child asset을 배치 조회해 파일 목록을 만든다")
     void getDownloadManifest_ownedTheme_returnsChildFilesWithBatchQuery() {
         Asset theme = Asset.builder()

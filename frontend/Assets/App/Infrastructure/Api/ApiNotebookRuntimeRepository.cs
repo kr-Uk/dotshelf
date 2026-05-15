@@ -434,6 +434,7 @@ namespace App.Infrastructure.Api
                 Theme = asset?.Theme,
                 Placement = asset?.Placement,
                 PreviewImageUrl = asset?.PreviewImageUrl,
+                UnityResourceKey = asset?.UnityResourceKey,
                 FileSize = asset?.FileSize,
                 FileHash = asset?.FileHash,
                 ContentType = asset?.ContentType,
@@ -471,8 +472,14 @@ namespace App.Infrastructure.Api
             return new NotebookAssetDownloadManifestResult
             {
                 AssetId = response?.AssetId ?? 0L,
+                Code = response?.Code,
+                Name = response?.Name,
                 AssetType = response?.AssetType,
                 CollectionCode = response?.CollectionCode,
+                Theme = response?.Theme,
+                Placement = response?.Placement,
+                UnityResourceKey = response?.UnityResourceKey,
+                PreviewImageUrl = response?.PreviewImageUrl,
                 Version = response != null && response.Version > 0 ? response.Version : 1,
                 Files = files
             };
