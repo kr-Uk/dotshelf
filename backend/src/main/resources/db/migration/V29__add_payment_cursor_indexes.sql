@@ -1,5 +1,6 @@
 -- 결제 도메인 cursor paging keyset (timestamp DESC, id DESC) tie-breaker 정렬 활용을 위한 인덱스 정리.
--- MR !192 (S14P31F206-263) 의 리뷰 follow-up.
+-- MR !192 (S14P31F206-263) 의 리뷰 follow-up. MR !192 머지 시 V28__seed_local_spooky_assets.sql 와
+-- 버전 번호 충돌이 났던 hotfix — 본 파일은 V29 로 재배치.
 --
 -- page_transactions:
 --   기존 idx_page_transactions_user_id_created_at 는 (user_id, created_at DESC) 만 다룸.
