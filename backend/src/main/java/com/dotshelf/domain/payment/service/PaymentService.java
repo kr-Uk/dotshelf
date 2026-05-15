@@ -198,7 +198,7 @@ public class PaymentService {
         } else {
             CursorCodec.CursorValue cv = CursorCodec.decode(cursor);
             rows = pageTransactionRepository.findUserTransactionsBeforeCursor(
-                    currentUserId, cv.asInstant(), cv.id(), PageRequest.of(0, fetchSize)
+                    currentUserId, cv.timestamp(), cv.id(), PageRequest.of(0, fetchSize)
             );
         }
         boolean hasMore = rows.size() > effectiveLimit;
@@ -262,8 +262,14 @@ public class PaymentService {
     }
 
     private void validatePageChargeAmount(int pagesAmount, int amountKrw) {
-        int expectedAmount = pagesAmount * paymentPolicyProperties.pageUnitPriceKrw();
-        if (amountKrw != expectedAmount) {
+        long expectedAmount;
+        try {
+            expectedAmount = Math.multiplyExact((long) pagesAmount, (long) paymentPolicyProperties.pageUnitPriceKrw());
+        } catch (ArithmeticException e) {
+            throw new CustomException(ErrorCode.PAYMENT_AMOUNT_EXCEEDS_LIMIT,
+                    "충전 페이지와 단가의 곱이 정수 범위를 초과했습니다.");
+        }
+        if ((long) amountKrw != expectedAmount) {
             throw new CustomException(ErrorCode.PAYMENT_AMOUNT_MISMATCH,
                     "충전 페이지와 결제 금액이 일치하지 않습니다.");
         }

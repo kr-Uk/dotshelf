@@ -108,10 +108,11 @@ public class PaymentController {
         return ApiResponse.success(paymentService.getPurchases(userId));
     }
 
-    @Operation(summary = "페이지 충전·사용 내역 조회 (list, backward-compat)",
+    @Operation(summary = "페이지 충전·사용 내역 조회 (list)",
             description = "현재 사용자의 페이지 충전(CHARGE) / 사용 내역을 최신순으로 조회합니다. "
                     + "응답 크기 cap: limit 미지정 시 100건, 최대 500건. "
-                    + "트랜잭션이 많이 누적된 사용자는 /transactions/cursor 를 우선 사용.")
+                    + "트랜잭션이 많이 누적된 사용자는 /transactions/cursor 를 우선 사용. "
+                    + "응답의 `referenceType` / `referenceId` 는 Phase 2 에서 제거 예정 — `paymentOrderId` 사용 권장.")
     @GetMapping("/transactions")
     public ApiResponse<PageTransactionListResponse> getTransactions(
             @CurrentUser Long userId,

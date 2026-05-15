@@ -230,6 +230,10 @@ public final class PaymentDtos {
     public record PaymentMethodListResponse(List<String> methods) {
     }
 
+    /**
+     * 페이지 충전·사용 내역 응답. {@code referenceType} / {@code referenceId} 는 backward-compat 보장을 위해
+     * 한 릴리즈 유지 후 Phase 2 에서 제거 예정 — 신규 사용처는 {@code paymentOrderId} 를 사용한다.
+     */
     public record PageTransactionResponse(
             Long id,
             String type,
@@ -237,8 +241,26 @@ public final class PaymentDtos {
             int balanceAfter,
             PaymentTransactionReason reason,
             Long paymentOrderId,
+            String referenceType,
+            Long referenceId,
             Instant createdAt
     ) {
+
+        /**
+         * @deprecated Phase 2 에서 제거 예정. {@link #paymentOrderId()} 사용.
+         */
+        @Deprecated(forRemoval = true)
+        public String referenceType() {
+            return referenceType;
+        }
+
+        /**
+         * @deprecated Phase 2 에서 제거 예정. {@link #paymentOrderId()} 사용.
+         */
+        @Deprecated(forRemoval = true)
+        public Long referenceId() {
+            return referenceId;
+        }
 
         public static PageTransactionResponse from(PageTransaction transaction) {
             return new PageTransactionResponse(
@@ -248,6 +270,8 @@ public final class PaymentDtos {
                     transaction.getBalanceAfter(),
                     transaction.getReason(),
                     transaction.getPaymentOrderId(),
+                    transaction.getReferenceType(),
+                    transaction.getReferenceId(),
                     transaction.getCreatedAt()
             );
         }

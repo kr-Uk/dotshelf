@@ -199,9 +199,9 @@ class PaymentControllerTest {
     void getTransactions_returnsTransactionList() throws Exception {
         given(paymentService.getTransactions(1L, 100)).willReturn(new PageTransactionListResponse(List.of(
                 new PageTransactionResponse(2L, "CHARGE", 50, 150, PaymentTransactionReason.INICIS_PAYMENT, 11L,
-                        Instant.parse("2026-05-14T02:00:00Z")),
+                        "PAYMENT_ORDER", 11L, Instant.parse("2026-05-14T02:00:00Z")),
                 new PageTransactionResponse(1L, "CHARGE", 100, 100, PaymentTransactionReason.INICIS_PAYMENT, 10L,
-                        Instant.parse("2026-05-14T01:00:00Z"))
+                        "PAYMENT_ORDER", 10L, Instant.parse("2026-05-14T01:00:00Z"))
         )));
         given(paymentService.getTransactions(1L, 25)).willReturn(new PageTransactionListResponse(List.of()));
 
@@ -214,6 +214,8 @@ class PaymentControllerTest {
                 .andExpect(jsonPath("$.result.transactions[0].balanceAfter").value(150))
                 .andExpect(jsonPath("$.result.transactions[0].reason").value("INICIS_PAYMENT"))
                 .andExpect(jsonPath("$.result.transactions[0].paymentOrderId").value(11))
+                .andExpect(jsonPath("$.result.transactions[0].referenceType").value("PAYMENT_ORDER"))
+                .andExpect(jsonPath("$.result.transactions[0].referenceId").value(11))
                 .andExpect(jsonPath("$.result.transactions[1].balanceAfter").value(100));
 
         mockMvc.perform(get("/v1/payments/transactions")
@@ -232,6 +234,7 @@ class PaymentControllerTest {
         given(paymentService.getTransactionsCursor(1L, null, 20)).willReturn(new CursorPageResponse<>(
                 List.of(new PageTransactionResponse(2L, "CHARGE", 50, 150,
                         PaymentTransactionReason.INICIS_PAYMENT, 11L,
+                        "PAYMENT_ORDER", 11L,
                         Instant.parse("2026-05-15T02:00:00Z"))),
                 "ZW5jb2RlZA",
                 true
