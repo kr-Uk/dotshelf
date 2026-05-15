@@ -96,7 +96,7 @@ namespace App.Bootstrap
             go.transform.localPosition = Vector3.zero;
 
             bool preserveNative = entry.PreserveSkinNativeScale;
-            bool useManualFantasyDeskTransform = IsFantasyDeskEntry(entry);
+            bool useManualDeskTransform = entry.UsePlacementTransformAsWorld;
             go.transform.localEulerAngles = preserveNative ? entry.PlacementRotation : Vector3.zero;
 
             DisableAllColliders(go);
@@ -119,7 +119,7 @@ namespace App.Bootstrap
             Vector3 multiplier = SanitizeMultiplier(entry.SkinScaleMultiplier);
             Vector3 placementScaleOverride = SanitizeMultiplier(entry.PlacementScale);
             bool multiplierApplied = false;
-            if (useManualFantasyDeskTransform)
+            if (useManualDeskTransform)
             {
                 go.transform.localScale = SanitizeMultiplier(entry.PlacementScale);
             }
@@ -165,7 +165,7 @@ namespace App.Bootstrap
             Vector3 worldOffset = Vector3.zero;
             Vector3 localPositionOverride = entry.SkinLocalPositionOverride;
             bool usedLocalPositionOverride = preserveNative && localPositionOverride.sqrMagnitude > 1e-10f;
-            if (useManualFantasyDeskTransform)
+            if (useManualDeskTransform)
             {
                 go.transform.SetPositionAndRotation(entry.PlacementAnchor, Quaternion.Euler(entry.PlacementRotation));
                 go.transform.localScale = SanitizeMultiplier(entry.PlacementScale);
@@ -193,9 +193,14 @@ namespace App.Bootstrap
             }
             var skinBoundsAfter = ComputeRendererBoundsSafe(go);
 
-            if (ShouldLockDeskVisualTransform(entry))
+            if (entry.LockVisualTransform)
             {
                 AttachDeskVisualTransformLock(go, entry);
+            }
+
+            if (entry.TreatAsDeskSurface)
+            {
+                AttachDeskSurfaceMarker(go);
             }
 
             // marker 부착 + 보관 데이터 set
@@ -248,7 +253,7 @@ namespace App.Bootstrap
                 finalScreenLocalScale = screenTransform.localScale;
             }
 
-            if (useManualFantasyDeskTransform)
+            if (entry.TreatAsDeskSurface)
             {
                 MoveDefaultTableNaturalToBackup(deskTransform, go.transform);
             }
@@ -617,18 +622,6 @@ namespace App.Bootstrap
             UnityObjectSafeDestroy.Destroy(existing.gameObject);
         }
 
-        private static bool ShouldLockDeskVisualTransform(CustomizationEntry entry)
-        {
-            if (entry == null) return false;
-            return entry.AssetId == 400030L;
-        }
-
-        private static bool IsFantasyDeskEntry(CustomizationEntry entry)
-        {
-            if (entry == null) return false;
-            return entry.AssetId == 400030L;
-        }
-
         private static void AttachDeskVisualTransformLock(GameObject go, CustomizationEntry entry)
         {
             if (go == null || entry == null) return;
@@ -642,6 +635,13 @@ namespace App.Bootstrap
                 ? $"desk:{entry.ThemeTag}:{entry.AssetId}"
                 : $"desk:{entry.AssetId}";
             transformLock.Configure(lockKey, go.transform.localPosition, go.transform.localEulerAngles, go.transform.localScale);
+        }
+
+        private static void AttachDeskSurfaceMarker(GameObject go)
+        {
+            if (go == null) return;
+            if (go.GetComponent<DeskSurfaceMarker>() != null) return;
+            go.AddComponent<DeskSurfaceMarker>();
         }
 
         private static void MoveDefaultTableNaturalToBackup(Transform deskTransform, Transform skinRoot)

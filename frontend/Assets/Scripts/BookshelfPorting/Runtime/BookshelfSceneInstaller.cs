@@ -478,6 +478,12 @@ namespace BookshelfPorting.Runtime
                 return null;
             }
 
+            var marker = desk.GetComponentInChildren<DeskSurfaceMarker>(true);
+            if (marker != null)
+            {
+                return marker.transform;
+            }
+
             for (var i = 0; i < desk.childCount; i++)
             {
                 var child = desk.GetChild(i);

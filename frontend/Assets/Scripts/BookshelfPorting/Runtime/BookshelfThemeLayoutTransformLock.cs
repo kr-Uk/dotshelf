@@ -1,3 +1,4 @@
+using App.Bootstrap;
 using UnityEngine;
 
 namespace BookshelfPorting.Runtime
@@ -69,23 +70,11 @@ namespace BookshelfPorting.Runtime
 
         private bool HasTransformDrift()
         {
-            return !Approximately(transform.localPosition, lockedLocalPosition) ||
-                   !ApproximatelyEuler(transform.localEulerAngles, lockedLocalEulerAngles) ||
-                   !Approximately(transform.localScale, lockedLocalScale);
-        }
-
-        private static bool Approximately(Vector3 left, Vector3 right)
-        {
-            return Mathf.Abs(left.x - right.x) <= 0.0001f &&
-                   Mathf.Abs(left.y - right.y) <= 0.0001f &&
-                   Mathf.Abs(left.z - right.z) <= 0.0001f;
-        }
-
-        private static bool ApproximatelyEuler(Vector3 left, Vector3 right)
-        {
-            return Mathf.Abs(Mathf.DeltaAngle(left.x, right.x)) <= 0.01f &&
-                   Mathf.Abs(Mathf.DeltaAngle(left.y, right.y)) <= 0.01f &&
-                   Mathf.Abs(Mathf.DeltaAngle(left.z, right.z)) <= 0.01f;
+            return TransformLockUtility.HasTransformDrift(
+                transform,
+                lockedLocalPosition,
+                lockedLocalEulerAngles,
+                lockedLocalScale);
         }
     }
 }

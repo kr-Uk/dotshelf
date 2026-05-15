@@ -30,6 +30,9 @@ MonoBehaviour:
     placementAnchor: {x: -1.31, y: 0.496, z: -0.36}
     placementRotation: {x: 0, y: -90, z: 0}
     placementScale: {x: 0.6, y: 0.6, z: 0.6}
+    usePlacementTransformAsWorld: 0
+    lockVisualTransform: 0
+    treatAsDeskSurface: 0
     overrideNotebookStation: 1
     lockNotebookStationToMonitor: 0
     notebookStationPosition: {x: 0.323, y: -0.349, z: -0.41}
@@ -96,6 +99,9 @@ MonoBehaviour:
     placementAnchor: {x: -2.03, y: 0.35, z: -0.36}
     placementRotation: {x: 0, y: 0, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    usePlacementTransformAsWorld: 0
+    lockVisualTransform: 0
+    treatAsDeskSurface: 0
     overrideNotebookStation: 1
     lockNotebookStationToMonitor: 1
     notebookStationPosition: {x: 0, y: -0.012, z: 0}
@@ -143,6 +149,9 @@ MonoBehaviour:
     placementAnchor: {x: -1.751, y: 0.224, z: -0.275}
     placementRotation: {x: 0, y: 90.22, z: 0}
     placementScale: {x: 0.7, y: 0.7, z: 0.7}
+    usePlacementTransformAsWorld: 1
+    lockVisualTransform: 1
+    treatAsDeskSurface: 1
     overrideNotebookStation: 0
     lockNotebookStationToMonitor: 0
     notebookStationPosition: {x: 0, y: 0, z: 0}
@@ -192,6 +201,9 @@ MonoBehaviour:
     placementAnchor: {x: -1.31, y: 0.496, z: -0.36}
     placementRotation: {x: 0, y: 90, z: 0}
     placementScale: {x: 0.62, y: 0.62, z: 0.62}
+    usePlacementTransformAsWorld: 0
+    lockVisualTransform: 0
+    treatAsDeskSurface: 0
     overrideNotebookStation: 0
     lockNotebookStationToMonitor: 0
     notebookStationPosition: {x: 0, y: 0, z: 0}

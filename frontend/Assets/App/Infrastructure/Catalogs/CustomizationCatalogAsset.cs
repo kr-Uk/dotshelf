@@ -66,6 +66,9 @@ namespace App.Infrastructure.Catalogs
         [SerializeField] private Vector3 placementRotation;
         [Tooltip("spawn 된 prefab 의 transform.localScale. Vector3.one 기본.")]
         [SerializeField] private Vector3 placementScale = Vector3.one;
+        [SerializeField] private bool usePlacementTransformAsWorld;
+        [SerializeField] private bool lockVisualTransform;
+        [SerializeField] private bool treatAsDeskSurface;
 
         [Header("Desk 전용 — NotebookStation override (모니터 진입 위치 fit)")]
         [Tooltip("true 면 Desk swap 시 NotebookStation 의 transform 을 아래 값들로 override. " +
@@ -240,6 +243,9 @@ namespace App.Infrastructure.Catalogs
         public Vector3 PlacementAnchor => placementAnchor;
         public Vector3 PlacementRotation => placementRotation;
         public Vector3 PlacementScale => placementScale;
+        public bool UsePlacementTransformAsWorld => usePlacementTransformAsWorld;
+        public bool LockVisualTransform => lockVisualTransform;
+        public bool TreatAsDeskSurface => treatAsDeskSurface;
         public bool OverrideNotebookStation => overrideNotebookStation;
         public bool LockNotebookStationToMonitor => lockNotebookStationToMonitor;
         public Vector3 NotebookStationPosition => notebookStationPosition;
