@@ -1,8 +1,12 @@
 import Link from "next/link";
 
 import { MarketingLogo } from "@/components/marketing/logo";
+import { getMerchantInfo } from "@/lib/merchant-info";
 
 export function MarketingFooter() {
+  const merchant = getMerchantInfo();
+  const businessLine = buildBusinessLine(merchant);
+
   return (
     <footer className="border-t border-beige/60 bg-[#EFE6D6] mt-24">
       <div className="max-w-6xl mx-auto px-5 sm:px-8 py-14 grid grid-cols-2 md:grid-cols-5 gap-10">
@@ -35,26 +39,48 @@ export function MarketingFooter() {
         <FooterColumn
           title="법적 고지"
           items={[
-            { label: "이용 약관", href: "#" },
-            { label: "개인정보 처리방침", href: "#" },
-            { label: "쿠키 설정", href: "#" },
+            { label: "이용 약관", href: "/legal/payment-terms" },
+            { label: "개인정보 처리방침", href: "/legal/privacy" },
+            { label: "환불 규정", href: "/legal/refund-policy" },
+            { label: "사업자 정보", href: "/legal/business-info" },
           ]}
         />
       </div>
       <div className="border-t border-beige/60">
-        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <p className="mono text-[11px] text-paper-muted">
-            dotshelf.digital · 서울특별시 · contact@dotshelf.digital
-          </p>
-          <div className="flex items-center gap-4 mono text-[11px] text-paper-muted">
-            <span>v1.4.0</span>
-            <span>·</span>
-            <span>한국어</span>
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-5 flex flex-col gap-3">
+          {businessLine && (
+            <p className="mono text-[11px] text-paper-muted leading-relaxed">
+              {businessLine}
+            </p>
+          )}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <p className="mono text-[11px] text-paper-muted">
+              dotshelf.digital
+              {merchant.email && ` · ${merchant.email}`}
+            </p>
+            <div className="flex items-center gap-4 mono text-[11px] text-paper-muted">
+              <span>v1.4.0</span>
+              <span>·</span>
+              <span>한국어</span>
+            </div>
           </div>
         </div>
       </div>
     </footer>
   );
+}
+
+function buildBusinessLine(merchant: ReturnType<typeof getMerchantInfo>): string {
+  const parts: string[] = [];
+  if (merchant.name) parts.push(merchant.name);
+  if (merchant.representative) parts.push(`대표 ${merchant.representative}`);
+  if (merchant.registrationNumber)
+    parts.push(`사업자등록번호 ${merchant.registrationNumber}`);
+  if (merchant.mailOrderRegistrationNumber)
+    parts.push(`통신판매업 ${merchant.mailOrderRegistrationNumber}`);
+  if (merchant.address) parts.push(merchant.address);
+  if (merchant.tel) parts.push(merchant.tel);
+  return parts.join(" · ");
 }
 
 type FooterItem = {
