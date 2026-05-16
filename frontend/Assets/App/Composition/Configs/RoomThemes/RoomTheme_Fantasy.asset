@@ -45,7 +45,18 @@ MonoBehaviour:
     assetId: 400001
   - category: 4
     assetId: 400030
-  bookshelfDecoSpecs: []
+  bookshelfDecoSpecs:
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: 86c0c58d11d085a4bb7199b9b10138ac, type: 3}
+    wallSide: 0
+    localPosition: {x: 0, y: 0.929, z: 1.969}
+    localRotation: {x: 0, y: 0, z: 0}
+    localScale: {x: 0, y: 0, z: 0}
+    anchorTag: 
+    themeSlot: 0
+    assetKey: 
+    randomEligible: 0
+    previewPrefab: {fileID: 0}
   floorDecoSpecs:
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: d47b2633f2014e1a9d75002e533c49c3, type: 3}
@@ -56,15 +67,19 @@ MonoBehaviour:
     anchorTag: fantasyBed
     themeSlot: 7
     assetKey: Assets/Arts/Models/fantasy_bed.glb
+    randomEligible: 1
+    previewPrefab: {fileID: 0}
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: fda37af71976429db1b8f095904dea42, type: 3}
     wallSide: 0
     localPosition: {x: -1.85, y: 0.63, z: 0.83}
-    localRotation: {x: -0, y: 28.000002, z: -0}
+    localRotation: {x: -0, y: 28.000004, z: -0}
     localScale: {x: 0.56, y: 0.56, z: 0.56}
     anchorTag: fantasyLampTall
     themeSlot: 4
     assetKey: Assets/Arts/Models/fantasy_lamp1.glb
+    randomEligible: 1
+    previewPrefab: {fileID: 0}
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: cd14d0d6281541f187e79eab5e204dea, type: 3}
     wallSide: 0
@@ -74,15 +89,19 @@ MonoBehaviour:
     anchorTag: fantasyLampSmall
     themeSlot: 0
     assetKey: Assets/Arts/Models/fantasy_lamp2.glb
+    randomEligible: 1
+    previewPrefab: {fileID: 0}
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: d8c1653807804653813c5fb32c91ddb8, type: 3}
     wallSide: 0
     localPosition: {x: -0.793, y: 0.16, z: 0.841}
-    localRotation: {x: -0, y: 18.000002, z: -0}
+    localRotation: {x: -0, y: 18.000004, z: -0}
     localScale: {x: 0.22, y: 0.22, z: 0.22}
     anchorTag: fantasyBooks
     themeSlot: 0
     assetKey: Assets/Arts/Models/fantasy_books.glb
+    randomEligible: 1
+    previewPrefab: {fileID: 0}
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: 30a05569096c49029cf464ffd8a3aeb1, type: 3}
     wallSide: 0
@@ -92,6 +111,8 @@ MonoBehaviour:
     anchorTag: fantasyCandle
     themeSlot: 0
     assetKey: Assets/Arts/Models/fantasy_candle.glb
+    randomEligible: 1
+    previewPrefab: {fileID: 0}
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: 2dbe743360574f198db0639df859b83f, type: 3}
     wallSide: 0
@@ -101,13 +122,17 @@ MonoBehaviour:
     anchorTag: fantasyCrystalBall
     themeSlot: 0
     assetKey: Assets/Arts/Models/fantasy_crystalball.glb
+    randomEligible: 1
+    previewPrefab: {fileID: 0}
   wallDecoSpecs:
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: 712b814690124370bf720e61ce9d4365, type: 3}
     wallSide: 3
-    localPosition: {x: 1.577, y: 1.6906, z: 1.2277}
-    localRotation: {x: 0, y: 359.8, z: 0}
+    localPosition: {x: 1.6, y: 1.6, z: 1.3}
+    localRotation: {x: -0, y: 0, z: 0}
     localScale: {x: 0.72, y: 0.72, z: 0.72}
     anchorTag: fantasyWindow
     themeSlot: 8
     assetKey: Assets/Arts/Models/fantasy_window.glb
+    randomEligible: 1
+    previewPrefab: {fileID: 0}

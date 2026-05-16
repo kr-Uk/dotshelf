@@ -137,7 +137,9 @@ MonoBehaviour:
     notebookFocusCameraMode: 1
   - assetId: 400030
     displayName: "\uD310\uD0C0\uC9C0 \uCC45\uC0C1"
-    description: "Fantasy \uD14C\uB9C8 \uC804\uC6A9 \uCC45\uC0C1. functional Desk transform \uC704\uC5D0 visual skin \uC73C\uB85C \uBD80\uCC29\uD574 \uAE30\uC874 \uCC45\uC0C1\uACFC \uBE44\uC2B7\uD55C \uD06C\uAE30\uB85C \uBCF4\uC774\uB3C4\uB85D \uC870\uC815."
+    description: "Fantasy theme desk skin. Uses fixed default transforms for fantasy_table
+      and Notebook so the same placement is restored on theme apply, edit-mode entry,
+      and reload."
     previewSprite: {fileID: 0}
     themeTag: Fantasy
     isLocalPreview: 1
@@ -146,8 +148,8 @@ MonoBehaviour:
     lightIntensity: 1
     colorTemperatureKelvin: 6500
     prefab: {fileID: -8098169881513260187, guid: c361e1e04e554cd4abf3f37a08ed87dd, type: 3}
-    placementAnchor: {x: -1.751, y: 0.224, z: -0.275}
-    placementRotation: {x: 0, y: 90.22, z: 0}
+    placementAnchor: {x: -1.78, y: 0.32, z: -0.324}
+    placementRotation: {x: 0, y: 90, z: 0}
     placementScale: {x: 0.7, y: 0.7, z: 0.7}
     usePlacementTransformAsWorld: 1
     lockVisualTransform: 1
@@ -185,6 +187,9 @@ MonoBehaviour:
     screenSaverCanvasAnchorMax: {x: 0.5, y: 0.5}
     screenSaverCanvasPivot: {x: 0.5, y: 0.5}
     notebookFocusCameraMode: 0
+    notebookLocalPositionOverride: {x: -0.015, y: 0.592, z: -0.405}
+    notebookLocalRotationOverride: {x: 0, y: 90, z: 0}
+    notebookLocalScaleOverride: {x: 1, y: 1, z: 1}
   - assetId: 600030
     displayName: "\uC2A4\uD478\uD0A4 \uCC45\uC0C1"
     description: "\uC2A4\uD478\uD0A4 \uD14C\uB9C8 \uC804\uC6A9 \uCC45\uC0C1. functional

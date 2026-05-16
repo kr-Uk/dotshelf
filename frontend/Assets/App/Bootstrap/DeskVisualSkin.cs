@@ -45,6 +45,7 @@ namespace App.Bootstrap
         [SerializeField] private Quaternion nativeScreenLocalRotation = Quaternion.identity;
         [SerializeField] private Vector3 nativeScreenLocalScale = Vector3.one;
         [SerializeField] private bool hasNativeScreenCapture;
+        [SerializeField] private string nativeDeskBackupOriginalName;
 
         public long EntryAssetId
         {
@@ -101,6 +102,12 @@ namespace App.Bootstrap
         {
             get => hasNativeScreenCapture;
             set => hasNativeScreenCapture = value;
+        }
+
+        public string NativeDeskBackupOriginalName
+        {
+            get => nativeDeskBackupOriginalName;
+            set => nativeDeskBackupOriginalName = value;
         }
     }
 }

@@ -456,9 +456,10 @@ namespace App.Bootstrap
         private static bool IsThemeUsingGlbDecoPrefabs(RoomThemeAsset theme)
         {
             if (theme == null) return false;
-            var n = theme.name;
-            return !string.IsNullOrEmpty(n)
-                && n.IndexOf("Vintage", System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+            return (theme.BookshelfDecoSpecs != null && theme.BookshelfDecoSpecs.Count > 0)
+                || (theme.FloorDecoSpecs != null && theme.FloorDecoSpecs.Count > 0)
+                || (theme.WallDecoSpecs != null && theme.WallDecoSpecs.Count > 0);
         }
 
         private void ApplyBookshelfRigFallbackVisibility(RoomThemeAsset theme)
@@ -1501,7 +1502,7 @@ namespace App.Bootstrap
 
         // 5 개 테마 prefix — RoomThemeAsset.name 또는 prefab 자식 이름에서 테마 식별. 자산 작명 규칙
         // ("Vintage_Shelf", "Natural_Wall_Mesh" 등) 와 1:1 매칭. 매칭은 case-insensitive `StartsWith`.
-        private static readonly string[] AllThemePrefixes = { "Natural", "Classic", "Modern", "Vintage", "Pastel" };
+        private static readonly string[] AllThemePrefixes = { "Vintage" };
 
         // 사용자 정책 (2026-05-14):
         //   - theme prefix (Natural/Classic/Modern/Vintage/Pastel) 로 시작하는 자식만 show/hide 대상.

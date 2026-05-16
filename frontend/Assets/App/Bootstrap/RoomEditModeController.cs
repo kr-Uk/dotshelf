@@ -22,6 +22,9 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace App.Bootstrap
 {
@@ -2103,7 +2106,7 @@ namespace App.Bootstrap
                 rt.anchoredPosition = new Vector2(24f, -8f);
                 rt.sizeDelta = new Vector2(360f, 24f);
             }
-            themeFilterLabel.text = $"현재 테마 필터: {RoomEditThemeFilter.DescribeActive()}";
+            //themeFilterLabel.text = $"현재 테마 필터: {RoomEditThemeFilter.DescribeActive()}";
         }
 
         // Clears the inventory content row and rebuilds it from the entries that
@@ -2390,6 +2393,8 @@ namespace App.Bootstrap
         // 온보딩 랜덤 조합 (slot 별 mix) 직렬화. THEME 모드 키와 분리 — 같은 user 가 단일 테마 ↔ 랜덤
         // 조합을 토글해도 양쪽 마지막 상태 보존 (mode 키가 우선순위 결정).
         private const string LastAppliedRandomThemeSelectionPrefsKey = "RoomEditMode.LastAppliedRandomThemeSelection.v1";
+        private const long FantasyThemeAssetId = 400000L;
+        private const long FantasyDeskAssetId = 400030L;
 
         // AuthSession.UserId 로 scoped PlayerPrefs key 생성. 0 (비로그인/anon) 이면 null →
         // 호출자가 Persist/Restore 를 skip. 사용자 간 local-preview 누출 차단의 단일 진입점.
@@ -2398,6 +2403,160 @@ namespace App.Bootstrap
             long uid = AuthSession.UserId;
             if (uid <= 0) return null;
             return $"{baseKey}.user{uid}";
+        }
+
+        private static bool IsFantasyTheme(RoomThemeAsset theme)
+        {
+            if (theme == null)
+            {
+                return false;
+            }
+
+            if (theme.AssetId == FantasyThemeAssetId)
+            {
+                return true;
+            }
+
+            return string.Equals(theme.name, "RoomTheme_Fantasy", StringComparison.Ordinal) ||
+                   string.Equals(theme.DisplayName, "판타지", StringComparison.Ordinal);
+        }
+
+        private static bool IsFantasyDeskEntry(CustomizationEntry entry)
+        {
+            return entry != null && entry.AssetId == FantasyDeskAssetId;
+        }
+
+        private static bool IsFantasyDeskCatalogEntry(CustomizationCategory category, CustomizationEntry entry)
+        {
+            return category == CustomizationCategory.Desk && IsFantasyDeskEntry(entry);
+        }
+
+        private static void WarnMissingDeskPrefab(CustomizationCategory category, CustomizationEntry entry, string source)
+        {
+            if (category != CustomizationCategory.Desk || entry == null || entry.Prefab != null)
+            {
+                return;
+            }
+
+            Debug.LogWarning(
+                $"[FantasyDesk] Missing desk prefab source={source} category={category} assetId={entry.AssetId} " +
+                $"themeTag={entry.ThemeTag} displayName={entry.DisplayName}");
+        }
+
+#if UNITY_EDITOR
+        private static readonly System.Reflection.FieldInfo CustomizationEntryPrefabField =
+            typeof(CustomizationEntry).GetField("prefab", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+        private static bool TryRepairFantasyDeskPrefabReference(CustomizationCatalogAsset catalog, CustomizationEntry entry, string source)
+        {
+            if (!IsFantasyDeskCatalogEntry(CustomizationCategory.Desk, entry) || entry.Prefab != null)
+            {
+                return false;
+            }
+
+            var fallback = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Arts/Models/fantasy_table.glb");
+            if (fallback == null)
+            {
+                Debug.LogWarning($"[FantasyDesk] DeskCatalog repair failed source={source} assetId={entry.AssetId} path=Assets/Arts/Models/fantasy_table.glb");
+                return false;
+            }
+
+            if (CustomizationEntryPrefabField == null)
+            {
+                Debug.LogWarning($"[FantasyDesk] DeskCatalog repair failed source={source} assetId={entry.AssetId} reason=prefab_field_not_found");
+                return false;
+            }
+
+            CustomizationEntryPrefabField.SetValue(entry, fallback);
+            if (catalog != null)
+            {
+                EditorUtility.SetDirty(catalog);
+                AssetDatabase.SaveAssetIfDirty(catalog);
+            }
+
+            Debug.Log($"[FantasyDesk] DeskCatalog prefab repaired source={source} assetId={entry.AssetId} prefab={fallback.name}");
+            return true;
+        }
+#else
+        private static bool TryRepairFantasyDeskPrefabReference(CustomizationCatalogAsset catalog, CustomizationEntry entry, string source)
+        {
+            return false;
+        }
+#endif
+
+        private bool TryResolveProtectedFantasyLocalPreviewTheme(out RoomThemeAsset theme, out string source)
+        {
+            theme = null;
+            source = null;
+
+            var mode = TryFindLastAppliedThemeMode();
+            if (string.Equals(mode, ThemeModeRandom, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (themeApplier != null &&
+                themeApplier.CurrentTheme != null &&
+                IsLocalPreviewTheme(themeApplier.CurrentTheme) &&
+                IsFantasyTheme(themeApplier.CurrentTheme))
+            {
+                theme = themeApplier.CurrentTheme;
+                source = "current_theme";
+                return true;
+            }
+
+            var savedTheme = TryFindLastAppliedLocalPreviewTheme();
+            if (savedTheme != null && IsFantasyTheme(savedTheme))
+            {
+                theme = savedTheme;
+                source = "player_prefs";
+                return true;
+            }
+
+            return false;
+        }
+
+        private void LogFantasyDeskHierarchyState(string source)
+        {
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+
+            var roomRoot = themeApplier != null ? themeApplier.RoomRoot : null;
+            if (roomRoot == null)
+            {
+                Debug.Log($"[FantasyDesk] {source} roomRoot=null");
+                return;
+            }
+
+            var notebook = FindChildByName(roomRoot, "Notebook");
+            var skin = FindChildByName(roomRoot, DeskVisualSkin.SkinChildName);
+            if (skin == null)
+            {
+                var skins = roomRoot.GetComponentsInChildren<DeskVisualSkin>(true);
+                for (int i = 0; i < skins.Length; i++)
+                {
+                    if (skins[i] != null && skins[i].EntryAssetId == FantasyDeskAssetId)
+                    {
+                        skin = skins[i].transform;
+                        break;
+                    }
+                }
+            }
+
+            Debug.Log(
+                $"[FantasyDesk] {source} currentTheme={(themeApplier.CurrentTheme != null ? themeApplier.CurrentTheme.name : "null")} " +
+                $"skin={(skin != null ? skin.name : "null")} skinWorldPos={(skin != null ? skin.position.ToString() : "null")} " +
+                $"skinWorldRot={(skin != null ? skin.eulerAngles.ToString() : "null")} skinWorldScale={(skin != null ? skin.lossyScale.ToString() : "null")} " +
+                $"skinLocalPos={(skin != null ? skin.localPosition.ToString() : "null")} skinLocalRot={(skin != null ? skin.localEulerAngles.ToString() : "null")} " +
+                $"skinLocalScale={(skin != null ? skin.localScale.ToString() : "null")} " +
+                $"notebookLocalPos={(notebook != null ? notebook.localPosition.ToString() : "null")} " +
+                $"notebookLocalRot={(notebook != null ? notebook.localEulerAngles.ToString() : "null")} " +
+                $"notebookLocalScale={(notebook != null ? notebook.localScale.ToString() : "null")} " +
+                $"notebookWorldPos={(notebook != null ? notebook.position.ToString() : "null")} " +
+                $"notebookWorldRot={(notebook != null ? notebook.eulerAngles.ToString() : "null")} " +
+                $"notebookWorldScale={(notebook != null ? notebook.lossyScale.ToString() : "null")}");
         }
 
         private void PersistLastAppliedEntries()
@@ -2519,9 +2678,10 @@ namespace App.Bootstrap
                 }
             }
             // 저장된 이름이 catalog 에 없음 — 자산 삭제/이름 변경 등. 키 정리.
+            var fallbackTheme = themeCatalog.DefaultTheme;
             UnityEngine.PlayerPrefs.DeleteKey(key);
             UnityEngine.PlayerPrefs.Save();
-            return null;
+            return fallbackTheme;
         }
 
         private bool IsCategoryEntryCurrent(CustomizationCategory category, long assetId)
@@ -3286,6 +3446,11 @@ namespace App.Bootstrap
                     {
                         Debug.LogWarning($"[RoomEditModeController] {theme.DisplayName} default entry {def.Category}:{def.AssetId} 못 찾음 — catalog 에 등록되어 있는지 확인.");
                         continue;
+                    }
+                    TryRepairFantasyDeskPrefabReference(catalog, entry, "ApplyThemeDefaultEntries");
+                    if (IsFantasyTheme(theme) && def.Category == CustomizationCategory.Desk)
+                    {
+                        Debug.Log($"[FantasyDesk] ApplyThemeDefaultEntries theme={theme.DisplayName} category={def.Category} assetId={def.AssetId}");
                     }
                     ApplyEntryVisual(def.Category, entry);
                     if (entry.AssetId > 0) lastAppliedEntries[def.Category] = entry.AssetId;
@@ -4287,6 +4452,11 @@ namespace App.Bootstrap
         private void ApplyEntryVisual(CustomizationCategory category, CustomizationEntry entry)
         {
             Debug.Log($"[ApplyEntryVisual] enter category={category} entry.AssetId={(entry != null ? entry.AssetId : -1)} entry.Prefab={(entry != null && entry.Prefab != null ? entry.Prefab.name : "null")} isMeshSwap={IsMeshSwapCategory(category)}");
+            if (category == CustomizationCategory.Desk && IsFantasyDeskEntry(entry))
+            {
+                Debug.Log($"[FantasyDesk] ApplyEntryVisual category={category} assetId={entry.AssetId} prefab={(entry.Prefab != null ? entry.Prefab.name : "null")}");
+            }
+            WarnMissingDeskPrefab(category, entry, "ApplyEntryVisual");
 
             // Desk 카테고리는 새 DeskVisualSkinApplier 가 참조하는 fields 가 다양하므로, 실제 Unity 가
             // YAML 에서 deserialize 한 값을 한 줄로 dump. 사용자가 catalog asset 을 외부 편집했는데
@@ -4420,6 +4590,14 @@ namespace App.Bootstrap
             // 이 남아 있으면 정리 (legacy 잔존물 cleanup).
             if (category == CustomizationCategory.Desk)
             {
+                if (IsFantasyDeskEntry(entry))
+                {
+                    Debug.Log($"[FantasyDesk] ApplyCategoryMeshSwap category={category} prefab={(entry.Prefab != null ? entry.Prefab.name : "null")} assetId={entry.AssetId}");
+                    if (entry.Prefab == null)
+                    {
+                        Debug.LogWarning($"[FantasyDesk] ApplyCategoryMeshSwap aborted category={category} assetId={entry.AssetId} reason=prefab_null");
+                    }
+                }
                 // legacy MeshSwap_Desk (roomRoot 자식) 잔존물 정리 — 이전 경로 출신
                 string legacySwapName = $"MeshSwap_{category}";
                 for (int i = roomRoot.childCount - 1; i >= 0; i--)
@@ -4433,6 +4611,10 @@ namespace App.Bootstrap
                 }
 
                 DeskVisualSkinApplier.TryAttach(entry, roomRoot, "ApplyCategoryMeshSwap");
+                if (IsFantasyDeskEntry(entry))
+                {
+                    LogFantasyDeskHierarchyState("ApplyCategoryMeshSwap.afterTryAttach");
+                }
                 // theme swap 직후 — 편집 모드 진입 후 desk skin 을 바꾸면 ApplyCanvasPresentation /
                 // FadeCanvas 등 부수 효과로 ScreenSaverCanvas / DashboardCanvas 가 SetActive(true)
                 // 로 돌아갈 가능성이 있어, suppression 이 active 면 즉시 다시 hide. 비활성이면 no-op.
@@ -4523,10 +4705,25 @@ namespace App.Bootstrap
             // 4) prefab spawn — entry.PlacementAnchor/Rotation/Scale 을 world 로 직접 해석.
             // 사용자가 Unity scene 에서 시각으로 잡은 transform 값을 catalog Inspector 에 그대로
             // 입력 가능. native anchor 위치 무시 — 책상별 크기/높이 자유 fit.
+            // BookshelfSkin + entry.LockVisualTransform=true 면 world 대신 local 공간 적용 —
+            // placementAnchor/Rotation/Scale 이 BookshelfRoot-local 값으로 해석되어 catalog Inspector
+            // 에서 직접 튜닝 가능. AssetId 별 하드코딩 override 를 data 로 대체.
             var go = Instantiate(entry.Prefab, roomRoot);
             go.name = swapName;
-            go.transform.SetPositionAndRotation(entry.PlacementAnchor, Quaternion.Euler(entry.PlacementRotation));
+            if (category == CustomizationCategory.BookshelfSkin && entry.LockVisualTransform)
+            {
+                go.transform.localPosition = entry.PlacementAnchor;
+                go.transform.localEulerAngles = entry.PlacementRotation;
+            }
+            else
+            {
+                go.transform.SetPositionAndRotation(entry.PlacementAnchor, Quaternion.Euler(entry.PlacementRotation));
+            }
             go.transform.localScale = entry.PlacementScale != Vector3.zero ? entry.PlacementScale : Vector3.one;
+            if (category == CustomizationCategory.BookshelfSkin)
+            {
+                DisableAllCollidersOnVisual(go);
+            }
 
             // 5) Desk 카테고리 — NotebookStation override (모니터 진입 위치/스케일 fit).
             //    OverrideNotebookStation=true 면 entry 의 NotebookStation* 값 적용. false 면 native.
@@ -4541,6 +4738,20 @@ namespace App.Bootstrap
             else if (category == CustomizationCategory.DashboardSkin)
             {
                 ApplyDashboardBoardPlacement(roomRoot, entry);
+            }
+        }
+
+        private static void DisableAllCollidersOnVisual(GameObject go)
+        {
+            if (go == null) return;
+
+            var colliders = go.GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                if (colliders[i] != null)
+                {
+                    colliders[i].enabled = false;
+                }
             }
         }
 
@@ -5157,6 +5368,22 @@ namespace App.Bootstrap
             //   (b) 풀 로그인 직후 (client.CurrentTheme = null) PlayerPrefs 에 마지막 local-preview
             //       이름이 저장돼 있으면 그 테마를 복원 적용 → wall/floor 자동 복원
             // 사용자가 명시적으로 다른 테마를 클릭하면 그 경로에서 정상 갱신 (PersistLastAppliedLocalPreviewTheme 갱신).
+            if (TryResolveProtectedFantasyLocalPreviewTheme(out var protectedFantasyTheme, out var protectedFantasySource))
+            {
+                Debug.Log(
+                    $"[FantasyDesk] ApplySpaceVisualsToRoom protecting local-preview fantasy source={protectedFantasySource} " +
+                    $"serverThemeId={space.CurrentThemeInventoryId?.ToString() ?? "null"} serverDeskId={space.CurrentDeskInventoryId?.ToString() ?? "null"}");
+                if (themeApplier != null && themeApplier.CurrentTheme != protectedFantasyTheme)
+                {
+                    themeApplier.Apply(protectedFantasyTheme);
+                    RefreshWallVisibilityAfterMaterialMutation("ApplySpaceVisualsToRoom.protectFantasyLocalPreview");
+                }
+                ApplyThemeDefaultEntries(protectedFantasyTheme);
+                RebuildInventorySlots();
+                LogFantasyDeskHierarchyState("ApplySpaceVisualsToRoom.protectFantasyLocalPreview");
+                return;
+            }
+
             bool serverHasNoTheme = !space.CurrentThemeInventoryId.HasValue || space.CurrentThemeInventoryId.Value <= 0;
             bool clientHasLocalPreviewTheme = themeApplier != null && IsLocalPreviewTheme(themeApplier.CurrentTheme);
             if (serverHasNoTheme && clientHasLocalPreviewTheme)
@@ -5214,12 +5441,25 @@ namespace App.Bootstrap
             ApplyCategoryById(CustomizationCategory.InteriorLight, space.CurrentInteriorLightInventoryId);
             ApplyCategoryById(CustomizationCategory.ExteriorLight, space.CurrentExteriorLightInventoryId);
             RebuildInventorySlots();
+            if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
+            {
+                Debug.Log(
+                    $"[FantasyDesk] ApplySpaceVisualsToRoom.afterServerCategories theme={themeApplier.CurrentTheme.DisplayName} " +
+                    $"serverDeskId={space.CurrentDeskInventoryId?.ToString() ?? "null"}");
+                LogFantasyDeskHierarchyState("ApplySpaceVisualsToRoom.afterServerCategories");
+            }
         }
 
         private void ApplyCategoryById(CustomizationCategory category, long? inventoryId)
         {
             var catalog = LoadCategoryCatalog(category);
             if (catalog == null || catalog.Entries == null || catalog.Entries.Count == 0) return;
+            if (category == CustomizationCategory.Desk &&
+                themeApplier != null &&
+                IsFantasyTheme(themeApplier.CurrentTheme))
+            {
+                Debug.Log($"[FantasyDesk] ApplyCategoryById category=Desk inventoryId={inventoryId?.ToString() ?? "null"}");
+            }
 
             CustomizationEntry entry = null;
             if (inventoryId.HasValue && inventoryId.Value > 0)
@@ -5275,6 +5515,8 @@ namespace App.Bootstrap
                 entry = catalog.Entries[0];
             }
             if (entry == null) return;
+            TryRepairFantasyDeskPrefabReference(catalog, entry, "ApplyCategoryById");
+            WarnMissingDeskPrefab(category, entry, "ApplyCategoryById.afterRepair");
 
             // Idempotency: 이미 같은 entry 가 적용되어 있으면 visual 작업 skip.
             // (MR #154 user 보고: 편집 모드 진입 시 ReloadRoomState 가 매번 ApplyCategoryById 호출 →
@@ -6645,6 +6887,10 @@ namespace App.Bootstrap
             // source of truth 의도 무력화. 진입 시점에 한 번 GET /spaces/me 호출해
             // 캐시 채움. 응답 도착 전까지 lastAppliedEntries fallback이 동작.
             ReloadRoomState();
+            if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
+            {
+                LogFantasyDeskHierarchyState("EnterEditMode.afterReloadRequested");
+            }
             RefreshRemoteAssetInventory();
 
             // Order matters: canonical-scale existing decorations FIRST so
@@ -6704,6 +6950,10 @@ namespace App.Bootstrap
                 TryRestoreSavedDecorations(onCompleted: success =>
                 {
                     if (success) hasLoadedSavedDecorationsOnSceneInit = true;
+                    if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
+                    {
+                        LogFantasyDeskHierarchyState($"EnterEditMode.afterTryRestoreSavedDecorations success={success}");
+                    }
                 });
             }
             // 진입 시점 marker 스냅샷 — "저장하지 않고 나가기" 롤백 기준점. load 후 캡처 순서가 중요:
@@ -8009,6 +8259,10 @@ namespace App.Bootstrap
                         StartCoroutine(RenormalizeVintagePlacementsWhenBookshelfReady("LoadSavedDecorationsAfterSceneInstall"));
                     }
                 }
+                if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
+                {
+                    LogFantasyDeskHierarchyState($"LoadSavedDecorationsAfterSceneInstall.afterRestore success={success}");
+                }
             });
         }
 
@@ -8066,6 +8320,10 @@ namespace App.Bootstrap
         // success=false: useCase 미초기화 또는 repository onError 발사된 경우 — 호출자가 retry 가능.
         private void TryRestoreSavedDecorations(Action<bool> onCompleted = null)
         {
+            if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
+            {
+                Debug.Log("[FantasyDesk] TryRestoreSavedDecorations begin — decoration layout restore path does not target Desk/Notebook directly unless they were serialized as placements.");
+            }
             EnsureDecorationUseCases();
             if (loadDecorationsUseCase == null)
             {

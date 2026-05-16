@@ -18,7 +18,7 @@ MonoBehaviour:
     \uC0DD\uBB3C \uC18C\uD488\uC744 \uBC30\uCE58\uD558\uB294 \uB85C\uCEEC \uD504\uB9AC\uBDF0
     \uD14C\uB9C8."
   previewSprite: {fileID: 0}
-  bookshelfStyleIndex: 0
+  bookshelfStyleIndex: 8
   wallMaterial: {fileID: 2100000, guid: b4c52a8874e24d99994158ba2512e070, type: 2}
   floorMaterial: {fileID: 2100000, guid: 40d482e3c24f4ef283fcb72880d2f0ec, type: 2}
   bookshelfMaterial: {fileID: 2100000, guid: ec15496bf34a4da9b3490de1ec02630d, type: 2}
@@ -41,8 +41,6 @@ MonoBehaviour:
   accentSecondary: {r: 0.9490196, g: 0.654902, b: 0.627451, a: 1}
   accentTertiary: {r: 0.9019608, g: 0.8156863, b: 0.47843137, a: 1}
   defaultEntries:
-  - category: 2
-    assetId: 300020
   - category: 4
     assetId: 300030
   - category: 3

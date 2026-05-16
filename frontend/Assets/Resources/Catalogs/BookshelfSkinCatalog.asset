@@ -26,10 +26,14 @@ MonoBehaviour:
     lightIntensity: 1
     colorTemperatureKelvin: 6500
     prefab: {fileID: -8098169881513260187, guid: c793007ec016eac41aa4472bad324b4c, type: 3}
-    placementAnchor: {x: 0, y: 0.82, z: 1.36}
-    placementRotation: {x: -0, y: 180, z: -0}
+    placementAnchor: {x: 0, y: 0.82, z: 1.292}
+    placementRotation: {x: 0, y: -180, z: 0}
     placementScale: {x: 0.86, y: 0.86, z: 0.55}
+    usePlacementTransformAsWorld: 0
+    lockVisualTransform: 1
+    treatAsDeskSurface: 0
     overrideNotebookStation: 0
+    lockNotebookStationToMonitor: 0
     notebookStationPosition: {x: 0, y: 0, z: 0}
     notebookStationRotation: {x: 0, y: 0, z: 0}
     notebookStationScale: {x: 1, y: 1, z: 1}
@@ -37,3 +41,30 @@ MonoBehaviour:
     monitorPosition: {x: 0, y: 0, z: 0}
     monitorRotation: {x: 0, y: 0, z: 0}
     monitorScale: {x: 1, y: 1, z: 1}
+    skinScaleMultiplier: {x: 1, y: 1, z: 1}
+    preserveSkinNativeScale: 0
+    skinLocalPositionOverride: {x: 0, y: 0, z: 0}
+    hideLaptopRenderers: 0
+    notebookScreenLocalPosition: {x: 0, y: 0, z: 0}
+    notebookScreenLocalRotation: {x: 0, y: 0, z: 0}
+    notebookScreenScaleMultiplier: {x: 1, y: 1, z: 1}
+    stretchCanvasAdImageOnDesk: 0
+    adImageAnchorMin: {x: 0, y: 0}
+    adImageAnchorMax: {x: 1, y: 1}
+    adImagePivot: {x: 0.5, y: 0.5}
+    adImageOffsetMin: {x: 0, y: 0}
+    adImageOffsetMax: {x: 0, y: 0}
+    adImageLocalScale: {x: 1, y: 1, z: 1}
+    overrideScreenSaverCanvasTransform: 0
+    screenSaverCanvasLocalPosition: {x: 0, y: 0, z: 0}
+    screenSaverCanvasLocalRotation: {x: 0, y: 0, z: 0}
+    screenSaverCanvasLocalScale: {x: 1, y: 1, z: 1}
+    screenSaverCanvasSizeDelta: {x: 0, y: 0}
+    overrideScreenSaverCanvasAnchors: 0
+    screenSaverCanvasAnchorMin: {x: 0.5, y: 0.5}
+    screenSaverCanvasAnchorMax: {x: 0.5, y: 0.5}
+    screenSaverCanvasPivot: {x: 0.5, y: 0.5}
+    notebookFocusCameraMode: 0
+    notebookLocalPositionOverride: {x: 0, y: 0, z: 0}
+    notebookLocalRotationOverride: {x: 0, y: 0, z: 0}
+    notebookLocalScaleOverride: {x: 0, y: 0, z: 0}

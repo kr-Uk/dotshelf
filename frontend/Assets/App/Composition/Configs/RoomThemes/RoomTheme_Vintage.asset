@@ -16,7 +16,7 @@ MonoBehaviour:
   displayName: "\uBE48\uD2F0\uC9C0"
   description: "Vintage theme"
   previewSprite: {fileID: 0}
-  bookshelfStyleIndex: 0
+  bookshelfStyleIndex: 3
   wallMaterial: {fileID: 2100000, guid: e60df8fdb1cf8d14d8de443badf6d55d, type: 2}
   floorMaterial: {fileID: 2100000, guid: a1f0c4e29b76b6c4a83d6e1f0c4e29b7, type: 2}
   bookshelfMaterial: {fileID: 0}
@@ -44,15 +44,6 @@ MonoBehaviour:
     assetId: 200031
   bookshelfDecoSpecs: []
   floorDecoSpecs:
-  - assetId: 0
-    prefab: {fileID: 8919934127225428127, guid: eb92529aa9f17604d8b2a6f787de30fd, type: 3}
-    wallSide: 0
-    localPosition: {x: 0, y: -0.013, z: -0.087}
-    localRotation: {x: 0, y: -180, z: 0}
-    localScale: {x: 1, y: 1, z: 1}
-    anchorTag: "vintageShelf"
-    themeSlot: 1
-    assetKey: "Assets/Arts/Models/vintage_shelf.glb"
   - assetId: 0
     prefab: {fileID: -8098169881513260187, guid: 2ea81d849b8d72b47a1290a0e09f53f4, type: 3}
     wallSide: 0
