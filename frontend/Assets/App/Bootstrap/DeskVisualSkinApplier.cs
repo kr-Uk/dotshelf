@@ -651,9 +651,17 @@ namespace App.Bootstrap
             Transform nativeTable = FindNativeDeskTable(deskTransform);
             if (nativeTable == null) return;
 
+            var originalName = nativeTable.gameObject.name;
             nativeTable.SetParent(skinRoot, true);
             nativeTable.gameObject.name = DeskVisualSkin.NativeDeskBackupName;
             nativeTable.gameObject.SetActive(false);
+            var marker = skinRoot.GetComponent<DeskVisualSkin>();
+            if (marker != null)
+            {
+                marker.NativeDeskBackupOriginalName = string.IsNullOrWhiteSpace(originalName)
+                    ? "table_natural"
+                    : originalName;
+            }
         }
 
         private static void RestoreBackedUpDefaultTableNatural(Transform skinRoot, Transform deskTransform)
@@ -663,8 +671,12 @@ namespace App.Bootstrap
             var backup = skinRoot.Find(DeskVisualSkin.NativeDeskBackupName);
             if (backup == null) return;
 
+            var marker = skinRoot.GetComponent<DeskVisualSkin>();
+            var restoredName = marker != null && !string.IsNullOrWhiteSpace(marker.NativeDeskBackupOriginalName)
+                ? marker.NativeDeskBackupOriginalName
+                : "table_natural";
             backup.SetParent(deskTransform, true);
-            backup.gameObject.name = "table_natural";
+            backup.gameObject.name = restoredName;
             backup.gameObject.SetActive(true);
         }
 
@@ -676,8 +688,23 @@ namespace App.Bootstrap
             {
                 var child = deskTransform.GetChild(i);
                 if (child == null) continue;
-                if (child.gameObject.name.Equals("table_natural", StringComparison.OrdinalIgnoreCase)) return child;
-                if (child.gameObject.name.Equals("default_table_natural", StringComparison.OrdinalIgnoreCase)) return child;
+                var match = FindNativeDeskTableRecursive(child);
+                if (match != null) return match;
+            }
+
+            return null;
+        }
+
+        private static Transform FindNativeDeskTableRecursive(Transform root)
+        {
+            if (root == null) return null;
+            if (root.gameObject.name.Equals("table_natural", StringComparison.OrdinalIgnoreCase)) return root;
+            if (root.gameObject.name.Equals("default_table_natural", StringComparison.OrdinalIgnoreCase)) return root;
+
+            for (int i = 0; i < root.childCount; i++)
+            {
+                var match = FindNativeDeskTableRecursive(root.GetChild(i));
+                if (match != null) return match;
             }
 
             return null;

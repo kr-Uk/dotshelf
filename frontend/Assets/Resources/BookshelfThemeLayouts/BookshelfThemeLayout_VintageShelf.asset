@@ -13,10 +13,11 @@ MonoBehaviour:
   m_Name: BookshelfThemeLayout_VintageShelf
   m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfThemeLayout
   style: 3
-  bookshelfPrefab: {fileID: 8919934127225428127, guid: eb92529aa9f17604d8b2a6f787de30fd, type: 3}
+  bookshelfPrefab: {fileID: 8919934127225428127, guid: ce90547ec3e001746ba40ff8b92cd3da, type: 3}
   prefabLocalPosition: {x: -0, y: -0, z: -0}
-  prefabLocalEulerAngles: {x: 0, y: 0, z: 0}
+  prefabLocalEulerAngles: {x: 0, y: 180, z: 0}
   prefabLocalScale: {x: 0.8, y: 0.8, z: 0.8}
+  preservePrefabLocalTransform: 0
   focusLocalPosition: {x: 0, y: 0.8, z: -0.28019282}
   focusSize: {x: 1.5372815, y: 1.7, z: 0.18}
   sections:

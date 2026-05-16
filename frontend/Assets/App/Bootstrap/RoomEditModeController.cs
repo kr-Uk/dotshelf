@@ -4402,9 +4402,13 @@ namespace App.Bootstrap
         }
 
         private const long DeepSeaBookshelfSkinAssetId = 300020L;
+        private const long FantasyBookshelfSkinAssetId = 400020L;
         private static readonly Vector3 DeepSeaBookshelfSkinLocalPosition = new Vector3(0f, 0.82f, 1.292f);
         private static readonly Vector3 DeepSeaBookshelfSkinLocalRotation = new Vector3(0f, -180f, 0f);
         private static readonly Vector3 DeepSeaBookshelfSkinLocalScale = new Vector3(0.86f, 0.86f, 0.55f);
+        private static readonly Vector3 FantasyBookshelfSkinLocalPosition = new Vector3(0f, -0.013f, -0.087f);
+        private static readonly Vector3 FantasyBookshelfSkinLocalRotation = new Vector3(0f, -180f, 0f);
+        private static readonly Vector3 FantasyBookshelfSkinLocalScale = new Vector3(1f, 1f, 1f);
 
         // category 매칭 native renderer 들 disable + prefab 을 첫 매칭 anchor 자식으로 spawn.
         // NotebookStation 같은 자식 transform 은 native 그대로 → 인터랙션 보존.
@@ -4561,11 +4565,22 @@ namespace App.Bootstrap
             CustomizationEntry entry)
         {
             if (visualTransform == null || roomRoot == null || entry == null) return;
-            if (entry.AssetId != DeepSeaBookshelfSkinAssetId) return;
-
-            visualTransform.localPosition = DeepSeaBookshelfSkinLocalPosition;
-            visualTransform.localEulerAngles = DeepSeaBookshelfSkinLocalRotation;
-            visualTransform.localScale = DeepSeaBookshelfSkinLocalScale;
+            if (entry.AssetId == DeepSeaBookshelfSkinAssetId)
+            {
+                visualTransform.localPosition = DeepSeaBookshelfSkinLocalPosition;
+                visualTransform.localEulerAngles = DeepSeaBookshelfSkinLocalRotation;
+                visualTransform.localScale = DeepSeaBookshelfSkinLocalScale;
+            }
+            else if (entry.AssetId == FantasyBookshelfSkinAssetId)
+            {
+                visualTransform.localPosition = FantasyBookshelfSkinLocalPosition;
+                visualTransform.localEulerAngles = FantasyBookshelfSkinLocalRotation;
+                visualTransform.localScale = FantasyBookshelfSkinLocalScale;
+            }
+            else
+            {
+                return;
+            }
 
             var lossyScale = roomRoot.lossyScale;
             if (Mathf.Abs(lossyScale.x - 1f) > 0.001f

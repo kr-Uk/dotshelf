@@ -10,6 +10,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private BookshelfThemeStyle style = BookshelfThemeStyle.Default;
         [SerializeField] private GameObject bookshelfPrefab = null;
         [SerializeField] private Vector3 prefabLocalPosition = Vector3.zero;
+        //[SerializeField] private Vector3 prefabLocalPosition = new Vector3(-0.0010000000474974514f, 0.800812840461731f, 1.2320001125335694f);
         [SerializeField] private Vector3 prefabLocalEulerAngles = Vector3.zero;
         [SerializeField] private Vector3 prefabLocalScale = Vector3.one;
         [SerializeField] private bool preservePrefabLocalTransform;
