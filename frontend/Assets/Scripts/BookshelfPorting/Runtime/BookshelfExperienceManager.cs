@@ -3803,6 +3803,18 @@ namespace BookshelfPorting.Runtime
                 TryOpenOtherSpacesTabAfterNotebookFocus();
             }
 
+            if (mode == CameraMode.Whiteboard && CurrentFocusArea == ExperienceFocusArea.Guestbook)
+            {
+                Debug.Log("[MonitorScreen] Focus enter dashboard");
+            }
+
+            if (mode == CameraMode.Overview)
+            {
+                Debug.Log("[MonitorScreen] Focus exit dashboard");
+                var roomEdit = ResolveRoomEditModeController();
+                roomEdit?.ReapplyActiveDeskOverlayAfterFocusTransition("camera_transition_completed");
+            }
+
             RefreshHud();
         }
 

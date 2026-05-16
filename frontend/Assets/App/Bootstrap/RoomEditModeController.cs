@@ -4610,6 +4610,11 @@ namespace App.Bootstrap
                     }
                 }
 
+                if (entry.MonitorPrefab != null)
+                {
+                    Debug.Log($"[MonitorScreen] Apply monitor skin theme={entry.ThemeTag} prefab={entry.MonitorPrefab.name}");
+                }
+
                 DeskVisualSkinApplier.TryAttach(entry, roomRoot, "ApplyCategoryMeshSwap");
                 if (IsFantasyDeskEntry(entry))
                 {
@@ -4937,8 +4942,19 @@ namespace App.Bootstrap
             if (!lastAppliedEntries.TryGetValue(CustomizationCategory.Desk, out var deskAssetId)) return;
             var deskCatalog = LoadCategoryCatalog(CustomizationCategory.Desk);
             var deskEntry = deskCatalog != null ? deskCatalog.FindByAssetId(deskAssetId) : null;
-            if (deskEntry == null || !deskEntry.OverrideNotebookStation) return;
-            ApplyNotebookStationPlacement(roomRoot, deskEntry, FindDeskMonitor(roomRoot));
+            if (deskEntry == null) return;
+            if (deskEntry.OverrideNotebookStation)
+            {
+                ApplyNotebookStationPlacement(roomRoot, deskEntry, FindDeskMonitor(roomRoot));
+            }
+            DeskVisualSkinApplier.ReapplyMonitorScreenState(roomRoot, deskEntry, "ReapplyActiveDeskOverlay");
+        }
+
+        public void ReapplyActiveDeskOverlayAfterFocusTransition(string source)
+        {
+            if (themeApplier == null || themeApplier.RoomRoot == null) return;
+            ReapplyActiveDeskOverlay(themeApplier.RoomRoot);
+            Debug.Log($"[MonitorScreen] Reapply screensaver canvas transform after focus return source={source}");
         }
 
         private static Transform FindChildByName(Transform root, string name)
@@ -5526,6 +5542,10 @@ namespace App.Bootstrap
             // 직접 호출하므로 이 guard 영향 없음.
             if (lastAppliedEntries.TryGetValue(category, out var prevId) && prevId == entry.AssetId)
             {
+                if (category == CustomizationCategory.Desk && themeApplier != null && themeApplier.RoomRoot != null)
+                {
+                    ReapplyActiveDeskOverlay(themeApplier.RoomRoot);
+                }
                 return;
             }
 
