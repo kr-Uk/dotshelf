@@ -2103,7 +2103,7 @@ namespace App.Bootstrap
                 rt.anchoredPosition = new Vector2(24f, -8f);
                 rt.sizeDelta = new Vector2(360f, 24f);
             }
-            themeFilterLabel.text = $"현재 테마 필터: {RoomEditThemeFilter.DescribeActive()}";
+            //themeFilterLabel.text = $"현재 테마 필터: {RoomEditThemeFilter.DescribeActive()}";
         }
 
         // Clears the inventory content row and rebuilds it from the entries that
