@@ -23,177 +23,177 @@ MonoBehaviour:
   sections:
   - row: 0
     column: 0
-    leftBound: -0.6699771
-    rightBound: -0.38373858
-    shelfTopY: 0.165
+    leftBound: -0.6999771
+    rightBound: -0.41373855
+    shelfTopY: 0.29500002
     sectionHeight: 0.305
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 0
     column: 1
-    leftBound: -0.31873858
-    rightBound: -0.03250003
-    shelfTopY: 0.165
+    leftBound: -0.34373856
+    rightBound: -0.057500023
+    shelfTopY: 0.29500002
     sectionHeight: 0.305
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 0
     column: 2
-    leftBound: 0.03249997
-    rightBound: 0.31873852
-    shelfTopY: 0.165
+    leftBound: 0.0024999725
+    rightBound: 0.28873855
+    shelfTopY: 0.29500002
     sectionHeight: 0.305
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 0
     column: 3
-    leftBound: 0.38373852
-    rightBound: 0.66997707
-    shelfTopY: 0.165
+    leftBound: 0.35373855
+    rightBound: 0.6399771
+    shelfTopY: 0.29500002
     sectionHeight: 0.305
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 1
     column: 0
-    leftBound: -0.6699771
-    rightBound: -0.38373858
-    shelfTopY: 0.535
+    leftBound: -0.6999771
+    rightBound: -0.41373855
+    shelfTopY: 0.62499994
     sectionHeight: 0.295
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 1
     column: 1
-    leftBound: -0.31873858
-    rightBound: -0.03250003
-    shelfTopY: 0.535
+    leftBound: -0.34373856
+    rightBound: -0.057500023
+    shelfTopY: 0.62499994
     sectionHeight: 0.295
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 1
     column: 2
-    leftBound: 0.03249997
-    rightBound: 0.31873852
-    shelfTopY: 0.535
+    leftBound: 0.0024999725
+    rightBound: 0.28873855
+    shelfTopY: 0.62499994
     sectionHeight: 0.295
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 1
     column: 3
-    leftBound: 0.38373852
-    rightBound: 0.66997707
-    shelfTopY: 0.535
+    leftBound: 0.35373855
+    rightBound: 0.6399771
+    shelfTopY: 0.62499994
     sectionHeight: 0.295
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 2
     column: 0
-    leftBound: -0.6699771
-    rightBound: -0.38373858
-    shelfTopY: 0.82
+    leftBound: -0.6999771
+    rightBound: -0.41373855
+    shelfTopY: 0.9299999
     sectionHeight: 0.31
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 2
     column: 1
-    leftBound: -0.31873858
-    rightBound: -0.03250003
-    shelfTopY: 0.82
+    leftBound: -0.34373856
+    rightBound: -0.057500023
+    shelfTopY: 0.9299999
     sectionHeight: 0.31
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 2
     column: 2
-    leftBound: 0.03249997
-    rightBound: 0.31873852
-    shelfTopY: 0.82
+    leftBound: 0.0024999725
+    rightBound: 0.28873855
+    shelfTopY: 0.9299999
     sectionHeight: 0.31
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 2
     column: 3
-    leftBound: 0.38373852
-    rightBound: 0.66997707
-    shelfTopY: 0.82
+    leftBound: 0.35373855
+    rightBound: 0.6399771
+    shelfTopY: 0.9299999
     sectionHeight: 0.31
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 3
     column: 0
-    leftBound: -0.6699771
-    rightBound: -0.38373858
-    shelfTopY: 1.145
+    leftBound: -0.6999771
+    rightBound: -0.41373855
+    shelfTopY: 1.2349999
     sectionHeight: 0.315
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 3
     column: 1
-    leftBound: -0.31873858
-    rightBound: -0.03250003
-    shelfTopY: 1.145
+    leftBound: -0.34373856
+    rightBound: -0.057500023
+    shelfTopY: 1.2349999
     sectionHeight: 0.315
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 3
     column: 2
-    leftBound: 0.03249997
-    rightBound: 0.31873852
-    shelfTopY: 1.145
+    leftBound: 0.0024999725
+    rightBound: 0.28873855
+    shelfTopY: 1.2349999
     sectionHeight: 0.315
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 0
   - row: 3
     column: 3
-    leftBound: 0.38373852
-    rightBound: 0.66997707
-    shelfTopY: 1.145
+    leftBound: 0.35373855
+    rightBound: 0.6399771
+    shelfTopY: 1.2349999
     sectionHeight: 0.315
     bookYOffset: 0.006
-    frontBoundZ: -0.35041502
-    backBoundZ: 0.35041502
+    frontBoundZ: -0.17541519
+    backBoundZ: 0.5254149
     alignment: 0
     isAdvertisementSection: 1
