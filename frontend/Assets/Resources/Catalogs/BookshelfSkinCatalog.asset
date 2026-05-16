@@ -30,7 +30,7 @@ MonoBehaviour:
     placementRotation: {x: 0, y: -180, z: 0}
     placementScale: {x: 0.86, y: 0.86, z: 0.55}
     usePlacementTransformAsWorld: 0
-    lockVisualTransform: 0
+    lockVisualTransform: 1
     treatAsDeskSurface: 0
     overrideNotebookStation: 0
     lockNotebookStationToMonitor: 0

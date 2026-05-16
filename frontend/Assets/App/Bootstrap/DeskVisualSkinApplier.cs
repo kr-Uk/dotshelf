@@ -36,6 +36,8 @@ namespace App.Bootstrap
     //     는 거의 0 이어야 정상. delta 가 의도와 다르면 warning.
     public static class DeskVisualSkinApplier
     {
+        private const long FantasyDeskAssetId = 400030L;
+
         // procedural BookshelfGenerator.BuildNotebookStation (line 4201) 의 laptop y offset.
         // 책 두께 0.018 의 절반 (~0.009) — laptop 의 UnibodyBase 가 책상 위에 자연스럽게 닿는
         // hint. skin top + 이 offset 으로 laptop y 결정.
@@ -84,6 +86,16 @@ namespace App.Bootstrap
             var nativeLaptopLocalRotation = notebookTransform.localRotation;
             var nativeLaptopLocalScale = notebookTransform.localScale;
             var laptopBeforeWorld = notebookTransform.position;
+            bool isFantasyDesk = entry.AssetId == FantasyDeskAssetId;
+            if (isFantasyDesk)
+            {
+                Debug.Log(
+                    $"[FantasyDesk] TryAttach table BEFORE pos={(deskTransform != null ? deskTransform.position.ToString() : "null")} " +
+                    $"rot={(deskTransform != null ? deskTransform.eulerAngles.ToString() : "null")} scale={(deskTransform != null ? deskTransform.lossyScale.ToString() : "null")} " +
+                    $"existingSkin={(deskTransform != null ? deskTransform.Find(DeskVisualSkin.SkinChildName) != null : false)} source={source}");
+                Debug.Log(
+                    $"[FantasyDesk] Notebook override BEFORE pos={notebookTransform.localPosition} rot={notebookTransform.localEulerAngles} scale={notebookTransform.localScale} source={source}");
+            }
 
             // skin instantiate as child of functional Desk transform.
             // localPosition=zero 으로 reset (아래 bounds-translation 으로 재정렬).
@@ -302,6 +314,30 @@ namespace App.Bootstrap
 
             var finalLocalScale = go.transform.localScale;
             var finalWorldScale = go.transform.lossyScale;
+            if (isFantasyDesk)
+            {
+                Debug.Log(
+                    $"[FantasyDesk] TryAttach table AFTER pos={go.transform.position} rot={go.transform.eulerAngles} scale={go.transform.lossyScale} " +
+                    $"localPos={go.transform.localPosition} localRot={go.transform.localEulerAngles} localScale={go.transform.localScale} source={source}");
+                Debug.Log(
+                    $"[FantasyDesk] Notebook override AFTER pos={notebookTransform.localPosition} rot={notebookTransform.localEulerAngles} scale={notebookTransform.localScale} source={source}");
+                AttachFantasyProbe(
+                    go,
+                    "fantasy_table(Clone)",
+                    trackWorld: true,
+                    position: go.transform.position,
+                    eulerAngles: go.transform.eulerAngles,
+                    scale: go.transform.lossyScale,
+                    source: source);
+                AttachFantasyProbe(
+                    notebookTransform.gameObject,
+                    "Notebook",
+                    trackWorld: false,
+                    position: notebookTransform.localPosition,
+                    eulerAngles: notebookTransform.localEulerAngles,
+                    scale: notebookTransform.localScale,
+                    source: source);
+            }
 
             // monitor 화면 fit 진단용 metric — Canvas 가 결국 어디에 어떤 크기로 떠 있는지 직접 측정.
             // ScreenSaverCanvas / DashboardCanvas 는 Screen 자식 (런타임 생성) 이라 Screen.position +
@@ -367,6 +403,29 @@ namespace App.Bootstrap
             }
 
             return true;
+        }
+
+        private static void AttachFantasyProbe(
+            GameObject target,
+            string probeName,
+            bool trackWorld,
+            Vector3 position,
+            Vector3 eulerAngles,
+            Vector3 scale,
+            string source)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            var probe = target.GetComponent<FantasyDeskTransformProbe>();
+            if (probe == null)
+            {
+                probe = target.AddComponent<FantasyDeskTransformProbe>();
+            }
+
+            probe.Configure(probeName, trackWorld, position, eulerAngles, scale, source);
         }
 
         // monitor 모드 (hideLaptopRenderers + lockNotebookStationToMonitor) 에서 ApplyMonitorMeshSwap

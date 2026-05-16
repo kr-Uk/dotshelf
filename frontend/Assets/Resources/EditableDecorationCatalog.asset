@@ -34,13 +34,6 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 5
     ScaleMultiplierOverride: 0
-  - DisplayName: Deepsea Board
-    Prefab: {fileID: -8098169881513260187, guid: 0019d394fd84f4d45a30e6b5dfae0f4c, type: 3}
-    SourceAssetPath: Assets/Arts/Models/deepsea_board.glb
-    PlacementCategory: 9
-    AllowRotation: 0
-    Kind: 11
-    ScaleMultiplierOverride: 0
   - DisplayName: Deepsea Chair
     Prefab: {fileID: -8098169881513260187, guid: cfb805f65fdf0b041bd07b983816d5a8, type: 3}
     SourceAssetPath: Assets/Arts/Models/deepsea_chair.glb
@@ -62,13 +55,6 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 11
     ScaleMultiplierOverride: 1.4
-  - DisplayName: Deepsea Desk
-    Prefab: {fileID: -8098169881513260187, guid: 5a4a18c84d5cbba449957b9886f2e23d, type: 3}
-    SourceAssetPath: Assets/Arts/Models/deepsea_desk.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 1
-    ScaleMultiplierOverride: 0
   - DisplayName: Deepsea Dolphin
     Prefab: {fileID: -8098169881513260187, guid: df959cf8c66228e4bb4c31df06d96633, type: 3}
     SourceAssetPath: Assets/Arts/Models/deepsea_dolphin.glb
@@ -90,13 +76,6 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 11
     ScaleMultiplierOverride: 1.7
-  - DisplayName: Deepsea Shelf
-    Prefab: {fileID: -8098169881513260187, guid: c793007ec016eac41aa4472bad324b4c, type: 3}
-    SourceAssetPath: Assets/Arts/Models/deepsea_shelf.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 3
-    ScaleMultiplierOverride: 0
   - DisplayName: Deepsea Shell
     Prefab: {fileID: -8098169881513260187, guid: 7b6bec135cc82f348a39b6320834fe63, type: 3}
     SourceAssetPath: Assets/Arts/Models/deepsea_shell.glb
@@ -118,13 +97,6 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 11
     ScaleMultiplierOverride: 0
-  - DisplayName: Default Dashboard
-    Prefab: {fileID: -8098169881513260187, guid: d67a8578d71dc1d42908bfd7c8154f38, type: 3}
-    SourceAssetPath: Assets/Arts/Models/default_dashboard.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 11
-    ScaleMultiplierOverride: 0
   - DisplayName: Default Lamp Floor
     Prefab: {fileID: -8098169881513260187, guid: 6386ddd70e8d2e7439c1961311c3bb2f, type: 3}
     SourceAssetPath: Assets/Arts/Models/default_lamp_floor.glb
@@ -138,20 +110,6 @@ MonoBehaviour:
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 6
-    ScaleMultiplierOverride: 0
-  - DisplayName: Default Shelf
-    Prefab: {fileID: -8098169881513260187, guid: ab5b3c3199d47784c93e263fd5236c34, type: 3}
-    SourceAssetPath: Assets/Arts/Models/default_shelf.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 3
-    ScaleMultiplierOverride: 0
-  - DisplayName: Default Table Natural
-    Prefab: {fileID: -8098169881513260187, guid: 6e5e1cd8910cedc468a37ef0c772b180, type: 3}
-    SourceAssetPath: Assets/Arts/Models/default_table_natural.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 1
     ScaleMultiplierOverride: 0
   - DisplayName: Doll Hamham
     Prefab: {fileID: -8098169881513260187, guid: 4f9ca772872790543895cc1371706137, type: 3}
@@ -202,20 +160,6 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 7
     ScaleMultiplierOverride: 0
-  - DisplayName: Fantasy Shelf
-    Prefab: {fileID: -8098169881513260187, guid: 86c0c58d11d085a4bb7199b9b10138ac, type: 3}
-    SourceAssetPath: Assets/Arts/Models/fantasy_shelf.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 3
-    ScaleMultiplierOverride: 0
-  - DisplayName: Fantasy Table
-    Prefab: {fileID: 8919934127225428127, guid: c361e1e04e554cd4abf3f37a08ed87dd, type: 3}
-    SourceAssetPath: Assets/Arts/Models/fantasy_table.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 1
-    ScaleMultiplierOverride: 0
   - DisplayName: Fantasy Window
     Prefab: {fileID: -8098169881513260187, guid: 712b814690124370bf720e61ce9d4365, type: 3}
     SourceAssetPath: Assets/Arts/Models/fantasy_window.glb
@@ -229,20 +173,6 @@ MonoBehaviour:
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 5
-    ScaleMultiplierOverride: 0
-  - DisplayName: Goodvibes Desk
-    Prefab: {fileID: -8098169881513260187, guid: e2f3a4b5c6d7890123456789abcdef02, type: 3}
-    SourceAssetPath: Assets/Arts/Models/goodvibes_Desk.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 1
-    ScaleMultiplierOverride: 0
-  - DisplayName: Goodvibes Monitor
-    Prefab: {fileID: -8098169881513260187, guid: e3f4a5b6c7d8901234567890abcdef03, type: 3}
-    SourceAssetPath: Assets/Arts/Models/goodvibes_Monitor.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 10
     ScaleMultiplierOverride: 0
   - DisplayName: Goodvibes Neonsign
     Prefab: {fileID: -8098169881513260187, guid: e4f5a6b7c8d9012345678901abcdef04, type: 3}
@@ -286,20 +216,6 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 11
     ScaleMultiplierOverride: 0
-  - DisplayName: Space Shelf
-    Prefab: {fileID: -8098169881513260187, guid: e79e6900b59a60246809ca0577d9ad64, type: 3}
-    SourceAssetPath: Assets/Arts/Models/space_shelf.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 3
-    ScaleMultiplierOverride: 0
-  - DisplayName: Space Table
-    Prefab: {fileID: -8098169881513260187, guid: 806b837d2167c744eaaae1cad5503b4e, type: 3}
-    SourceAssetPath: Assets/Arts/Models/space_table.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 1
-    ScaleMultiplierOverride: 0
   - DisplayName: Space Window
     Prefab: {fileID: -8098169881513260187, guid: be40aa9cfed84e5abe4c941a6e84813f, type: 3}
     SourceAssetPath: Assets/Arts/Models/space_window.glb
@@ -328,13 +244,6 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 11
     ScaleMultiplierOverride: 0
-  - DisplayName: Spooky Desk
-    Prefab: {fileID: -8098169881513260187, guid: be35d7e61a5e4798b79f873c56e37b2c, type: 3}
-    SourceAssetPath: Assets/Arts/Models/spooky_desk.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 1
-    ScaleMultiplierOverride: 0
   - DisplayName: Spooky Lamp
     Prefab: {fileID: -8098169881513260187, guid: 9c19359bd6fc4a7ab6de939d4e42e59f, type: 3}
     SourceAssetPath: Assets/Arts/Models/spooky_lamp.glb
@@ -356,13 +265,6 @@ MonoBehaviour:
     AllowRotation: 1
     Kind: 11
     ScaleMultiplierOverride: 0
-  - DisplayName: Spooky Shelf
-    Prefab: {fileID: -8098169881513260187, guid: a6d8007ac1d24da49a3970d6fcbac5fd, type: 3}
-    SourceAssetPath: Assets/Arts/Models/spooky_shelf.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 3
-    ScaleMultiplierOverride: 0
   - DisplayName: Spooky Skull
     Prefab: {fileID: -8098169881513260187, guid: 699fc0ee84d648c69cc6b4259018f980, type: 3}
     SourceAssetPath: Assets/Arts/Models/spooky_skull.glb
@@ -377,20 +279,6 @@ MonoBehaviour:
     AllowRotation: 0
     Kind: 12
     ScaleMultiplierOverride: 0
-  - DisplayName: Vintage Dashboard
-    Prefab: {fileID: 7983643115131895607, guid: aa3ab19392bb02d468db34d43ed9d050, type: 3}
-    SourceAssetPath: Assets/Arts/Models/vintage_dashboard.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 11
-    ScaleMultiplierOverride: 0
-  - DisplayName: Vintage Frame
-    Prefab: {fileID: -8098169881513260187, guid: 0b1e54b06c039a24cb76c630e502d0f3, type: 3}
-    SourceAssetPath: Assets/Arts/Models/vintage_frame.glb
-    PlacementCategory: 9
-    AllowRotation: 0
-    Kind: 11
-    ScaleMultiplierOverride: 0
   - DisplayName: Vintage Lamp Mint
     Prefab: {fileID: -8098169881513260187, guid: fcb105d263d32fc458bfd05601e56cac, type: 3}
     SourceAssetPath: Assets/Arts/Models/vintage_lamp_mint.glb
@@ -404,20 +292,6 @@ MonoBehaviour:
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 6
-    ScaleMultiplierOverride: 0
-  - DisplayName: Vintage Shelf
-    Prefab: {fileID: 8919934127225428127, guid: ce90547ec3e001746ba40ff8b92cd3da, type: 3}
-    SourceAssetPath: Assets/Arts/Models/vintage_shelf.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 3
-    ScaleMultiplierOverride: 0
-  - DisplayName: Vintage Table
-    Prefab: {fileID: -8098169881513260187, guid: a2b781486c47bc348a186474f5773a08, type: 3}
-    SourceAssetPath: Assets/Arts/Models/vintage_table.glb
-    PlacementCategory: 0
-    AllowRotation: 1
-    Kind: 1
     ScaleMultiplierOverride: 0
   - DisplayName: Vintage Table Mini
     Prefab: {fileID: -8098169881513260187, guid: 2ea81d849b8d72b47a1290a0e09f53f4, type: 3}

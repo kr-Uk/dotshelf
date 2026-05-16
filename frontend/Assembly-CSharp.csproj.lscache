@@ -75,6 +75,7 @@ Assets/App/Bootstrap/
  EditableDecorationCatalog.cs
  EnvironmentResolver.cs
  Exterior/ExteriorApplier.cs
+ FantasyDeskTransformProbe.cs
  IThemeAssetLoader.cs
  LoginSceneController.cs
  LoginScreenController.cs
