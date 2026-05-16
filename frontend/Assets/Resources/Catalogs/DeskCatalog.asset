@@ -66,6 +66,9 @@ MonoBehaviour:
     screenSaverCanvasAnchorMax: {x: 0.5, y: 0.5}
     screenSaverCanvasPivot: {x: 0.5, y: 0.5}
     notebookFocusCameraMode: 0
+    notebookLocalPositionOverride: {x: 0, y: 0, z: 0}
+    notebookLocalRotationOverride: {x: 0, y: 0, z: 0}
+    notebookLocalScaleOverride: {x: 0, y: 0, z: 0}
   - assetId: 300030
     displayName: "\uAE4A\uC740\uBC14\uB2E4 \uCC45\uC0C1"
     description: "\uAE4A\uC740\uBC14\uB2E4 \uD14C\uB9C8 \uC804\uC6A9 \uCC45\uC0C1.
@@ -135,11 +138,14 @@ MonoBehaviour:
     screenSaverCanvasAnchorMax: {x: 0.5, y: 0.5}
     screenSaverCanvasPivot: {x: 0.5, y: 0.5}
     notebookFocusCameraMode: 1
+    notebookLocalPositionOverride: {x: 0, y: 0, z: 0}
+    notebookLocalRotationOverride: {x: 0, y: 0, z: 0}
+    notebookLocalScaleOverride: {x: 0, y: 0, z: 0}
   - assetId: 400030
     displayName: "\uD310\uD0C0\uC9C0 \uCC45\uC0C1"
-    description: "Fantasy theme desk skin. Uses fixed default transforms for fantasy_table
+    description: Fantasy theme desk skin. Uses fixed default transforms for fantasy_table
       and Notebook so the same placement is restored on theme apply, edit-mode entry,
-      and reload."
+      and reload.
     previewSprite: {fileID: 0}
     themeTag: Fantasy
     isLocalPreview: 1
@@ -147,7 +153,7 @@ MonoBehaviour:
     lightColor: {r: 1, g: 1, b: 1, a: 1}
     lightIntensity: 1
     colorTemperatureKelvin: 6500
-    prefab: {fileID: -8098169881513260187, guid: c361e1e04e554cd4abf3f37a08ed87dd, type: 3}
+    prefab: {fileID: 8919934127225428127, guid: c361e1e04e554cd4abf3f37a08ed87dd, type: 3}
     placementAnchor: {x: -1.78, y: 0.32, z: -0.324}
     placementRotation: {x: 0, y: 90, z: 0}
     placementScale: {x: 0.7, y: 0.7, z: 0.7}
@@ -242,12 +248,16 @@ MonoBehaviour:
     screenSaverCanvasAnchorMax: {x: 0.5, y: 0.5}
     screenSaverCanvasPivot: {x: 0.5, y: 0.5}
     notebookFocusCameraMode: 0
+    notebookLocalPositionOverride: {x: 0, y: 0, z: 0}
+    notebookLocalRotationOverride: {x: 0, y: 0, z: 0}
+    notebookLocalScaleOverride: {x: 0, y: 0, z: 0}
   - assetId: 500030
     displayName: "\uC6B0\uC8FC \uCC45\uC0C1"
-    description: "\uC6B0\uC8FC \uD14C\uB9C8 \uC804\uC6A9 \uCC45\uC0C1. preserveSkinNativeScale=1 +
-      skinLocalPositionOverride \uB85C bounds-based \uC815\uB82C \uC6B0\uD68C +
-      notebookLocalScaleOverride \uBE44-zero \uB77C Notebook \uC758 \uC790\uB3D9 Y \uC7AC\uC815\uB82C\uB3C4 SKIP.
-      Notebook 3\uCD95 transform \uBAA8\uB450 catalog \uBA85\uC2DC\uAC12 \uADF8\uB300\uB85C."
+    description: "\uC6B0\uC8FC \uD14C\uB9C8 \uC804\uC6A9 \uCC45\uC0C1. preserveSkinNativeScale=1
+      + skinLocalPositionOverride \uB85C bounds-based \uC815\uB82C \uC6B0\uD68C +
+      notebookLocalScaleOverride \uBE44-zero \uB77C Notebook \uC758 \uC790\uB3D9
+      Y \uC7AC\uC815\uB82C\uB3C4 SKIP. Notebook 3\uCD95 transform \uBAA8\uB450 catalog
+      \uBA85\uC2DC\uAC12 \uADF8\uB300\uB85C."
     previewSprite: {fileID: 0}
     themeTag: Space
     isLocalPreview: 1
@@ -259,6 +269,9 @@ MonoBehaviour:
     placementAnchor: {x: -1.31, y: 0.496, z: -0.36}
     placementRotation: {x: 0, y: 90, z: 0}
     placementScale: {x: 1, y: 1, z: 1}
+    usePlacementTransformAsWorld: 0
+    lockVisualTransform: 0
+    treatAsDeskSurface: 0
     overrideNotebookStation: 0
     lockNotebookStationToMonitor: 0
     notebookStationPosition: {x: 0, y: 0, z: 0}
@@ -319,6 +332,9 @@ MonoBehaviour:
     placementAnchor: {x: -1.31, y: 0.496, z: -0.36}
     placementRotation: {x: 0, y: 90, z: 0}
     placementScale: {x: 0.5, y: 0.5, z: 0.4}
+    usePlacementTransformAsWorld: 0
+    lockVisualTransform: 0
+    treatAsDeskSurface: 0
     overrideNotebookStation: 1
     lockNotebookStationToMonitor: 0
     notebookStationPosition: {x: 0.323, y: -0.349, z: -0.41}
@@ -352,3 +368,6 @@ MonoBehaviour:
     screenSaverCanvasAnchorMax: {x: 0, y: 0}
     screenSaverCanvasPivot: {x: 0.5, y: 0.5}
     notebookFocusCameraMode: 0
+    notebookLocalPositionOverride: {x: 0, y: 0, z: 0}
+    notebookLocalRotationOverride: {x: 0, y: 0, z: 0}
+    notebookLocalScaleOverride: {x: 0, y: 0, z: 0}
