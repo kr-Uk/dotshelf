@@ -35,6 +35,13 @@ namespace App.Bootstrap
         private const float Step2ThemeCardWidth = 286f;
         private const float Step2ThemeCardHeight = 252f;
         private const float Step2ThemePreviewHeight = 170f;
+        private const float Step1ColumnSpacing = 14f;
+        private const float Step1SectionSpacerHeight = 8f;
+        private const float Step1MessageHeight = 22f;
+        private const float IntroInputHeight = 84f;
+        private const float Step1IntroToNavigationSpacing = 28f;
+        private const int IntroCharacterLimit = 100;
+        private const int IntroCharacterWarningThreshold = 90;
         private const int UiLayer = 5;
         private const int CanvasSortingOrder = 5100;
         private const float MainSceneLoadTimeoutSeconds = 8f;
@@ -65,6 +72,8 @@ namespace App.Bootstrap
         private static readonly Color SuccessColor = Hex("#2F8B57");
         private static readonly Color InputColor = Hex("#FDF9F3");
         private static readonly Color PreviewAccentColor = Hex("#EFE6D6");
+        private static readonly Color PreviewBorderColor = Hex("#E1D6C7");
+        private static readonly Color PreviewIconColor = Hex("#B29C80");
 
         [SerializeField] private int currentStep = 1;
 
@@ -73,6 +82,8 @@ namespace App.Bootstrap
         private TMP_FontAsset fallbackFontAsset;
         private Sprite whiteSprite;
         private Sprite roundedRectSprite;
+        private Sprite circleSprite;
+        private Sprite profilePlaceholderIconSprite;
 
         private GameObject backgroundRoot;
         private GameObject cardRoot;
@@ -81,9 +92,13 @@ namespace App.Bootstrap
         private GameObject step3Panel;
         private GameObject completionModalRoot;
 
+        private Image profilePreviewFrameImage;
         private Image profilePreviewImage;
+        private AspectRatioFitter profilePreviewAspectFitter;
+        private GameObject profilePreviewPlaceholderIconRoot;
         private TMP_InputField nicknameInput;
         private TMP_InputField introInput;
+        private TMP_Text introCharacterCountLabel;
         private TMP_Text step1MessageLabel;
         private Button step1NextButton;
 
@@ -214,6 +229,8 @@ namespace App.Bootstrap
             isInitialized = true;
             whiteSprite = CreateWhiteSprite();
             roundedRectSprite = CreateRoundedRectSprite(64, 14);
+            circleSprite = CreateCircleSprite(64);
+            profilePlaceholderIconSprite = LoadProfilePlaceholderIconSprite();
             // Provider must exist before BuildOnboardingCanvas → BuildStep2Panel
             // wires the preview area; UpdateThemePreview reads it.
             themePreviewProvider = new OnboardingThemePreviewProvider(roundedRectSprite);
@@ -554,6 +571,8 @@ namespace App.Bootstrap
                 introInput.text = string.Empty;
             }
 
+            UpdateIntroCharacterCount();
+
             SetMessage(step2MessageLabel, string.Empty, ErrorColor);
             SetStep1Feedback(string.Empty, MutedTextColor, false);
             ResetProfilePreview();
@@ -829,7 +848,7 @@ namespace App.Bootstrap
             var panel = CreateRectObject("Step1_ProfilePanel", parent);
             StretchToParent((RectTransform)panel.transform);
 
-            var column = CreateColumn(panel.transform, "Layout", 18f, new RectOffset(0, 0, 0, 0), TextAnchor.UpperCenter);
+            var column = CreateColumn(panel.transform, "Layout", Step1ColumnSpacing, new RectOffset(0, 0, 0, 0), TextAnchor.UpperCenter);
             StretchToParent(column);
 
             CreateSectionText(column, "StepCaption", "STEP 1", 14f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center, 28f, 2f);
@@ -838,31 +857,63 @@ namespace App.Bootstrap
 
             CreateSectionText(column, "ProfileImageLabel", "프로필 이미지", 15f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center, 24f);
 
-            CreateSpacer(column, 12f);
+            CreateSpacer(column, Step1SectionSpacerHeight);
 
-            var profileFrame = CreateImage(column, "ProfileFrame", InputColor);
-            profileFrame.sprite = roundedRectSprite;
-            profileFrame.type = Image.Type.Sliced;
-            profileFrame.raycastTarget = false;
-
-            var profileLayout = profileFrame.gameObject.AddComponent<LayoutElement>();
+            var profilePreviewRoot = CreateRectObject("ProfilePreviewRoot", column);
+            var profileLayout = profilePreviewRoot.AddComponent<LayoutElement>();
             profileLayout.preferredWidth = ProfilePreviewSize;
             profileLayout.preferredHeight = ProfilePreviewSize;
             profileLayout.minWidth = ProfilePreviewSize;
             profileLayout.minHeight = ProfilePreviewSize;
 
+            var profileFrame = CreateImage(profilePreviewRoot.transform, "PreviewCard", InputColor);
+            profileFrame.sprite = roundedRectSprite;
+            profileFrame.type = Image.Type.Sliced;
+            profileFrame.raycastTarget = false;
+            profileFrame.color = InputColor;
+
+            StretchToParent(profileFrame.rectTransform);
+
             var profileOutline = profileFrame.gameObject.AddComponent<Outline>();
-            profileOutline.effectColor = WithAlpha(BorderColor, 0.95f);
+            profileOutline.effectColor = WithAlpha(PreviewBorderColor, 0.95f);
             profileOutline.effectDistance = new Vector2(1f, -1f);
 
-            profilePreviewImage = profileFrame;
-            profilePreviewImage.preserveAspect = true;
+            var profileMask = profileFrame.gameObject.AddComponent<Mask>();
+            profileMask.showMaskGraphic = true;
+
+            profilePreviewFrameImage = profileFrame;
+
+            var topHighlight = CreateImage(profileFrame.transform, "TopHighlight", WithAlpha(Color.white, 0.2f));
+            topHighlight.sprite = roundedRectSprite;
+            topHighlight.type = Image.Type.Sliced;
+            topHighlight.raycastTarget = false;
+            var topHighlightRect = topHighlight.rectTransform;
+            topHighlightRect.anchorMin = new Vector2(0f, 1f);
+            topHighlightRect.anchorMax = new Vector2(1f, 1f);
+            topHighlightRect.pivot = new Vector2(0.5f, 1f);
+            topHighlightRect.sizeDelta = new Vector2(0f, 44f);
+            topHighlightRect.anchoredPosition = new Vector2(0f, -6f);
+
+            var previewImage = CreateImage(profileFrame.transform, "ProfileImage", Color.white);
+            previewImage.sprite = null;
+            previewImage.type = Image.Type.Simple;
+            previewImage.raycastTarget = false;
+            previewImage.preserveAspect = true;
+            StretchToParent(previewImage.rectTransform);
+
+            var previewAspect = previewImage.gameObject.AddComponent<AspectRatioFitter>();
+            previewAspect.aspectMode = AspectRatioFitter.AspectMode.EnvelopeParent;
+            previewAspect.aspectRatio = 1f;
+            profilePreviewAspectFitter = previewAspect;
+            profilePreviewImage = previewImage;
+
+            profilePreviewPlaceholderIconRoot = CreateProfilePreviewPlaceholderIcon(profileFrame.transform);
 
             var photoButtonRow = CreateRow(column, "PhotoButtonRow", 0f, TextAnchor.MiddleCenter);
             var photoButton = CreateFixedButton(photoButtonRow, "AddPhotoButton", "사진 추가", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));
             photoButton.onClick.AddListener(OnAddPhotoButtonClicked);
 
-            CreateSpacer(column, 12f);
+            CreateSpacer(column, Step1SectionSpacerHeight);
 
             CreateSectionText(column, "NicknameLabel", "닉네임", 15f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Left, 24f);
 
@@ -873,12 +924,23 @@ namespace App.Bootstrap
             var duplicateButton = CreateFixedButton(nicknameRow, "DuplicateCheckButton", "중복확인", PrimaryColor, Color.white, false, BorderColor, new Vector2(180f, PrimaryControlHeight));
             duplicateButton.onClick.AddListener(OnDuplicateCheckButtonClicked);
 
-            step1MessageLabel = CreateSectionText(column, "Step1Message", string.Empty, 15f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Left, 28f);
+            step1MessageLabel = CreateSectionText(column, "Step1Message", string.Empty, 15f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Left, Step1MessageHeight);
 
             CreateSectionText(column, "IntroLabel", "한줄소개", 15f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Left, 24f);
-            introInput = CreateFlexibleInput(column, "IntroInputField", "한줄소개를 입력하세요", false);
+            introInput = CreateFlexibleInput(column, "IntroInputField", "한줄소개를 입력하세요", false, true, IntroInputHeight, true);
+            introInput.characterLimit = IntroCharacterLimit;
+            introInput.onValueChanged.AddListener(OnIntroChanged);
 
-            CreateFlexibleSpacer(column);
+            var introMetaRow = CreateRow(column, "IntroMetaRow", 0f, TextAnchor.MiddleRight);
+            if (introMetaRow.TryGetComponent<LayoutElement>(out var introMetaLayout))
+            {
+                introMetaLayout.preferredHeight = 20f;
+                introMetaLayout.minHeight = 20f;
+            }
+            introCharacterCountLabel = CreateSectionText(introMetaRow, "IntroCharacterCount", string.Empty, 13f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Right, 20f);
+            UpdateIntroCharacterCount();
+
+            CreateSpacer(column, Step1IntroToNavigationSpacing);
 
             var navigationRow = CreateRow(column, "Step1NavigationRow", 14f, TextAnchor.MiddleRight);
             CreateFlexibleSpacer(navigationRow);
@@ -1595,6 +1657,11 @@ namespace App.Bootstrap
         {
             nicknameChecked = false;
             SetStep1Feedback("닉네임 중복확인을 해주세요.", MutedTextColor, false);
+        }
+
+        private void OnIntroChanged(string _)
+        {
+            UpdateIntroCharacterCount();
         }
 
         private void OnStep1NextButtonClicked()
@@ -3338,11 +3405,17 @@ namespace App.Bootstrap
                 profilePreviewImage.preserveAspect = true;
             }
 
-            var placeholder = profilePreviewImage != null ? profilePreviewImage.GetComponentInChildren<TMP_Text>(true) : null;
-            if (placeholder != null)
+            if (profilePreviewFrameImage != null)
             {
-                placeholder.gameObject.SetActive(false);
+                profilePreviewFrameImage.color = InputColor;
             }
+
+            if (profilePreviewAspectFitter != null)
+            {
+                profilePreviewAspectFitter.aspectRatio = (float)texture.width / texture.height;
+            }
+
+            SetProfilePreviewPlaceholderVisible(false);
 
             LogDebug($"[OnboardingDemo] Loaded profile preview from '{imagePath}'.");
             return true;
@@ -3497,11 +3570,17 @@ namespace App.Bootstrap
                     profilePreviewImage.preserveAspect = true;
                 }
 
-                var placeholder = profilePreviewImage != null ? profilePreviewImage.GetComponentInChildren<TMP_Text>(true) : null;
-                if (placeholder != null)
+                if (profilePreviewFrameImage != null)
                 {
-                    placeholder.gameObject.SetActive(false);
+                    profilePreviewFrameImage.color = InputColor;
                 }
+
+                if (profilePreviewAspectFitter != null)
+                {
+                    profilePreviewAspectFitter.aspectRatio = (float)texture.width / texture.height;
+                }
+
+                SetProfilePreviewPlaceholderVisible(false);
 
                 LogDebug($"[OnboardingDemo] Loaded profile preview from '{imagePath}'.");
                 return true;
@@ -3520,17 +3599,87 @@ namespace App.Bootstrap
 
             if (profilePreviewImage != null)
             {
-                profilePreviewImage.sprite = roundedRectSprite;
-                profilePreviewImage.type = Image.Type.Sliced;
-                profilePreviewImage.color = InputColor;
-                profilePreviewImage.preserveAspect = false;
+                profilePreviewImage.sprite = null;
+                profilePreviewImage.type = Image.Type.Simple;
+                profilePreviewImage.color = Color.clear;
+                profilePreviewImage.preserveAspect = true;
             }
 
-            var placeholder = profilePreviewImage != null ? profilePreviewImage.GetComponentInChildren<TMP_Text>(true) : null;
-            if (placeholder != null)
+            if (profilePreviewFrameImage != null)
             {
-                placeholder.gameObject.SetActive(true);
+                profilePreviewFrameImage.color = InputColor;
             }
+
+            if (profilePreviewAspectFitter != null)
+            {
+                profilePreviewAspectFitter.aspectRatio = 1f;
+            }
+
+            SetProfilePreviewPlaceholderVisible(true);
+        }
+
+        private void SetProfilePreviewPlaceholderVisible(bool isVisible)
+        {
+            if (profilePreviewPlaceholderIconRoot != null)
+            {
+                profilePreviewPlaceholderIconRoot.SetActive(isVisible);
+            }
+        }
+
+        private GameObject CreateProfilePreviewPlaceholderIcon(Transform parent)
+        {
+            var root = CreateRectObject("ProfilePlaceholderRoot", parent);
+            var rootRect = (RectTransform)root.transform;
+            rootRect.anchorMin = new Vector2(0.5f, 0.5f);
+            rootRect.anchorMax = new Vector2(0.5f, 0.5f);
+            rootRect.pivot = new Vector2(0.5f, 0.5f);
+            rootRect.sizeDelta = new Vector2(128f, 104f);
+            rootRect.anchoredPosition = Vector2.zero;
+
+            var layout = root.AddComponent<VerticalLayoutGroup>();
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.childControlWidth = true;
+            layout.childControlHeight = false;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+            layout.spacing = 6f;
+            layout.padding = new RectOffset(0, 0, 0, 0);
+
+            var icon = CreateImage(root.transform, "PlaceholderIcon", WithAlpha(PreviewIconColor, 0.92f));
+            icon.sprite = profilePlaceholderIconSprite != null ? profilePlaceholderIconSprite : whiteSprite;
+            icon.type = Image.Type.Simple;
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            var iconLayout = icon.gameObject.AddComponent<LayoutElement>();
+            iconLayout.preferredWidth = 52f;
+            iconLayout.preferredHeight = 52f;
+            iconLayout.minWidth = 52f;
+            iconLayout.minHeight = 52f;
+
+            var label = CreateText(
+                root.transform,
+                "PlaceholderLabel",
+                "프로필 사진",
+                15f,
+                FontStyles.Normal,
+                WithAlpha(PreviewIconColor, 0.92f),
+                TextAlignmentOptions.Center,
+                Vector2.zero,
+                new Vector2(128f, 24f),
+                0f,
+                new Vector2(0.5f, 0.5f));
+            label.raycastTarget = false;
+            var labelRect = label.rectTransform;
+            labelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            labelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            labelRect.pivot = new Vector2(0.5f, 0.5f);
+            labelRect.anchoredPosition = Vector2.zero;
+            var labelLayout = label.gameObject.AddComponent<LayoutElement>();
+            labelLayout.preferredWidth = 128f;
+            labelLayout.preferredHeight = 24f;
+            labelLayout.minHeight = 24f;
+
+            return root;
         }
 
         private void ReleaseProfilePreview()
@@ -3576,13 +3725,25 @@ namespace App.Bootstrap
 
         private TMP_InputField CreateFlexibleInput(Transform parent, string objectName, string placeholderText, bool isPassword)
         {
+            return CreateFlexibleInput(parent, objectName, placeholderText, isPassword, false, PrimaryControlHeight, false);
+        }
+
+        private TMP_InputField CreateFlexibleInput(
+            Transform parent,
+            string objectName,
+            string placeholderText,
+            bool isPassword,
+            bool isMultiline,
+            float preferredHeight,
+            bool useMaskedViewport)
+        {
             var fieldBackground = CreateImage(parent, objectName, InputColor);
             fieldBackground.sprite = roundedRectSprite;
             fieldBackground.type = Image.Type.Sliced;
 
             var fieldLayout = fieldBackground.gameObject.AddComponent<LayoutElement>();
-            fieldLayout.preferredHeight = PrimaryControlHeight;
-            fieldLayout.minHeight = PrimaryControlHeight;
+            fieldLayout.preferredHeight = preferredHeight;
+            fieldLayout.minHeight = preferredHeight;
             fieldLayout.flexibleWidth = 1f;
 
             var fieldOutline = fieldBackground.gameObject.AddComponent<Outline>();
@@ -3591,22 +3752,23 @@ namespace App.Bootstrap
 
             var input = fieldBackground.gameObject.AddComponent<TMP_InputField>();
             input.targetGraphic = fieldBackground;
-            input.textViewport = CreateViewport(fieldBackground.transform);
+            input.textViewport = CreateViewport(fieldBackground.transform, useMaskedViewport);
             input.contentType = isPassword ? TMP_InputField.ContentType.Password : TMP_InputField.ContentType.Standard;
-            input.lineType = TMP_InputField.LineType.SingleLine;
+            input.lineType = isMultiline ? TMP_InputField.LineType.MultiLineNewline : TMP_InputField.LineType.SingleLine;
             input.caretColor = TextColor;
             input.selectionColor = WithAlpha(PrimaryColor, 0.25f);
             input.customCaretColor = true;
 
-            var textComponent = CreateText(input.textViewport, "Text", string.Empty, 17f, FontStyles.Normal, TextColor, TextAlignmentOptions.MidlineLeft, Vector2.zero, Vector2.zero, 0f);
+            var textAlignment = isMultiline ? TextAlignmentOptions.TopLeft : TextAlignmentOptions.MidlineLeft;
+            var textComponent = CreateText(input.textViewport, "Text", string.Empty, 17f, FontStyles.Normal, TextColor, textAlignment, Vector2.zero, Vector2.zero, 0f);
             StretchWithPadding(textComponent.rectTransform, new Vector2(16f, 10f), new Vector2(-16f, -10f));
-            textComponent.textWrappingMode = TextWrappingModes.NoWrap;
-            textComponent.overflowMode = TextOverflowModes.Ellipsis;
+            textComponent.textWrappingMode = isMultiline ? TextWrappingModes.Normal : TextWrappingModes.NoWrap;
+            textComponent.overflowMode = isMultiline ? TextOverflowModes.Masking : TextOverflowModes.Ellipsis;
 
-            var placeholder = CreateText(input.textViewport, "Placeholder", placeholderText, 17f, FontStyles.Normal, WithAlpha(MutedTextColor, 0.7f), TextAlignmentOptions.MidlineLeft, Vector2.zero, Vector2.zero, 0f);
+            var placeholder = CreateText(input.textViewport, "Placeholder", placeholderText, 17f, FontStyles.Normal, WithAlpha(MutedTextColor, 0.7f), textAlignment, Vector2.zero, Vector2.zero, 0f);
             StretchWithPadding(placeholder.rectTransform, new Vector2(16f, 10f), new Vector2(-16f, -10f));
-            placeholder.textWrappingMode = TextWrappingModes.NoWrap;
-            placeholder.overflowMode = TextOverflowModes.Ellipsis;
+            placeholder.textWrappingMode = isMultiline ? TextWrappingModes.Normal : TextWrappingModes.NoWrap;
+            placeholder.overflowMode = isMultiline ? TextOverflowModes.Masking : TextOverflowModes.Ellipsis;
 
             input.textComponent = textComponent;
             input.placeholder = placeholder;
@@ -3688,12 +3850,28 @@ namespace App.Bootstrap
             return button;
         }
 
-        private RectTransform CreateViewport(Transform parent)
+        private RectTransform CreateViewport(Transform parent, bool useMask = false)
         {
             var viewportObject = CreateRectObject("TextArea", parent);
             var viewport = (RectTransform)viewportObject.transform;
             StretchToParent(viewport);
+            if (useMask)
+            {
+                viewportObject.AddComponent<RectMask2D>();
+            }
             return viewport;
+        }
+
+        private void UpdateIntroCharacterCount()
+        {
+            if (introCharacterCountLabel == null)
+            {
+                return;
+            }
+
+            var currentLength = introInput != null ? (introInput.text ?? string.Empty).Length : 0;
+            introCharacterCountLabel.text = $"{currentLength} / {IntroCharacterLimit}";
+            introCharacterCountLabel.color = currentLength >= IntroCharacterWarningThreshold ? PrimaryColor : MutedTextColor;
         }
 
         private TMP_Text CreateText(
@@ -3987,6 +4165,23 @@ namespace App.Bootstrap
             return sprite;
         }
 
+        private Sprite LoadProfilePlaceholderIconSprite()
+        {
+#if UNITY_EDITOR
+            var primaryPath = "Assets/Arts/UI/Onboarding/Icons/icon_add_photo.png";
+            var fallbackPath = "Assets/Arts/Onboarding/Icons/icon_add_photo.png";
+            var sprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(primaryPath);
+            if (sprite != null)
+            {
+                return sprite;
+            }
+
+            return UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(fallbackPath);
+#else
+            return null;
+#endif
+        }
+
         private Sprite CreateRoundedRectSprite(int size, int radius)
         {
             var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
@@ -4021,6 +4216,46 @@ namespace App.Bootstrap
                 border);
 
             sprite.name = "OnboardingUiRoundedSprite";
+            return sprite;
+        }
+
+        private Sprite CreateCircleSprite(int size)
+        {
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            texture.name = "OnboardingUiCircle";
+            texture.hideFlags = HideFlags.HideAndDontSave;
+            texture.wrapMode = TextureWrapMode.Clamp;
+            texture.filterMode = FilterMode.Bilinear;
+
+            var pixels = new Color32[size * size];
+            var solid = new Color32(255, 255, 255, 255);
+            var transparent = new Color32(255, 255, 255, 0);
+            var center = (size - 1) * 0.5f;
+            var radius = center;
+            var radiusSqr = radius * radius;
+
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    var dx = x - center;
+                    var dy = y - center;
+                    pixels[(y * size) + x] = ((dx * dx) + (dy * dy) <= radiusSqr) ? solid : transparent;
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+
+            var sprite = Sprite.Create(
+                texture,
+                new Rect(0f, 0f, size, size),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0u,
+                SpriteMeshType.FullRect);
+
+            sprite.name = "OnboardingUiCircleSprite";
             return sprite;
         }
 
