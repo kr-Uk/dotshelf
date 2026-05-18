@@ -2601,7 +2601,7 @@ namespace App.Bootstrap
             return false;
         }
 
-        public bool TryGetCurrentTheme(out RoomThemeAsset theme)
+        internal bool TryGetCurrentTheme(out RoomThemeAsset theme)
         {
             theme = themeApplier != null ? themeApplier.CurrentTheme : null;
             return theme != null;
@@ -2650,7 +2650,7 @@ namespace App.Bootstrap
                 $"notebookWorldScale={(notebook != null ? notebook.lossyScale.ToString() : "null")}");
         }
 
-        public void LogCurrentDeskNotebookHierarchyState(string source)
+        internal void LogCurrentDeskNotebookHierarchyState(string source)
         {
             if (themeApplier == null)
             {

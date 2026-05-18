@@ -801,9 +801,13 @@ namespace App.Bootstrap
             // the main-scene chrome and focus-mode chrome resume their normal visibility.
             if (TryGetBookshelfExperienceManager(out var experienceManager) && experienceManager != null)
             {
-                if (TryGetRoomEditModeController(out var roomEditModeController) &&
-                    roomEditModeController.TryGetCurrentTheme(out var currentTheme) &&
-                    IsVintageTheme(currentTheme))
+                RoomEditModeController roomEditModeController = null;
+                RoomThemeAsset currentTheme = null;
+                var isVintage = TryGetRoomEditModeController(out roomEditModeController) &&
+                                roomEditModeController.TryGetCurrentTheme(out currentTheme) &&
+                                IsVintageTheme(currentTheme);
+
+                if (isVintage)
                 {
                     roomEditModeController.LogCurrentDeskNotebookHierarchyState("OnboardingComplete.beforeFocusMainView");
                 }
@@ -811,9 +815,7 @@ namespace App.Bootstrap
                 experienceManager.IsOnboardingStep3Active = false;
                 experienceManager.FocusMainView();
 
-                if (TryGetRoomEditModeController(out roomEditModeController) &&
-                    roomEditModeController.TryGetCurrentTheme(out currentTheme) &&
-                    IsVintageTheme(currentTheme))
+                if (isVintage)
                 {
                     roomEditModeController.LogCurrentDeskNotebookHierarchyState("OnboardingComplete.afterFocusMainView");
                 }
