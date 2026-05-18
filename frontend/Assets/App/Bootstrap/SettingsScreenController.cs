@@ -225,6 +225,7 @@ namespace App.Bootstrap
 
         private void OnDestroy()
         {
+            CancelRemoteProfileImageLoad();
             ReleaseSelectedProfileImagePreview();
             ReleaseRemoteProfileImagePreview();
         }
@@ -272,6 +273,7 @@ namespace App.Bootstrap
         public void CloseSettings()
         {
             HideAllNotices();
+            DiscardSelectedProfileImageEditSession();
             SetPanelVisible(false);
             currentView = ViewKey.None;
         }
@@ -283,6 +285,7 @@ namespace App.Bootstrap
 
         public void ShowProfileEdit()
         {
+            DiscardSelectedProfileImageEditSession();
             ApplyProfileAvatarPreview();
             ShowView(ViewKey.ProfileEdit, "계정");
         }
@@ -1183,7 +1186,7 @@ namespace App.Bootstrap
             changeRect.anchorMax = new Vector2(0.5f, 0.5f);
             changeRect.pivot = new Vector2(0f, 0.5f);
             changeRect.anchoredPosition = new Vector2(12f, 0f);
-            changePhotoButton.onClick.AddListener(OnProfileImageChangeButtonClicked);
+            changePhotoButton.onClick.AddListener(OnProfileImageChangeRequested);
 
             profileFormNicknameInput = CreateLabeledInput(view.transform, "NicknameField", "닉네임", "닉네임 입력", false);
             profileFormPasswordInput = CreateLabeledInput(view.transform, "PasswordField", "비밀번호", "비밀번호 입력", true);
@@ -1206,7 +1209,7 @@ namespace App.Bootstrap
 
             var submitButton = CreateButton(actionRow.transform, "SubmitButton", "완료", PrimaryColor, Color.white, Vector2.zero, Vector2.zero, false, BorderColor);
             ResetButtonRectForLayout(submitButton);
-            submitButton.onClick.AddListener(OnProfileEditFormSubmit);
+            submitButton.onClick.AddListener(OnProfileEditFormSubmitReviewed);
 
             return view;
         }
@@ -1285,6 +1288,9 @@ namespace App.Bootstrap
                             {
                                 isProfileSaveInFlight = false;
                                 cachedProfile = uploadedProfile ?? cachedProfile;
+                                ReleaseSelectedProfileImagePreview();
+                                ClearSelectedProfileImageUploadState();
+                                LoadRemoteProfileImage(cachedProfile?.ProfileImageUrl);
                                 Debug.Log(
                                     $"[Settings] PATCH /v1/users/me ?묐떟 ??STATUS=2xx (onSuccess) " +
                                     $"BODY={{id={cachedProfile?.Id},nickname='{cachedProfile?.Nickname}',onboarded={cachedProfile?.Onboarded}}}");
@@ -1320,6 +1326,8 @@ namespace App.Bootstrap
 
         private void ResetProfileEditForm()
         {
+            DiscardSelectedProfileImageEditSession();
+
             if (profileFormNicknameInput != null)
             {
                 profileFormNicknameInput.text = string.Empty;
@@ -1334,6 +1342,178 @@ namespace App.Bootstrap
             }
 
             SetMessage(profileEditFormMessageLabel, string.Empty, ErrorColor);
+        }
+
+        private void OnProfileEditFormSubmitReviewed()
+        {
+            if (isProfileSaveInFlight)
+            {
+                return;
+            }
+
+            var nickname = profileFormNicknameInput != null ? profileFormNicknameInput.text.Trim() : string.Empty;
+            var password = profileFormPasswordInput != null ? profileFormPasswordInput.text : string.Empty;
+            var confirmPassword = profileFormConfirmPasswordInput != null ? profileFormConfirmPasswordInput.text : string.Empty;
+
+            if (string.IsNullOrWhiteSpace(nickname))
+            {
+                SetMessage(profileEditFormMessageLabel, "Enter a nickname.", ErrorColor);
+                return;
+            }
+
+            if (!string.Equals(password, confirmPassword, StringComparison.Ordinal))
+            {
+                SetMessage(profileEditFormMessageLabel, "Passwords do not match.", ErrorColor);
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                SetMessage(profileEditFormMessageLabel, "[DEV] Changes were applied locally only.", MutedTextColor);
+                ShowProfileEdit();
+                return;
+            }
+#endif
+
+            var request = new UpdateProfileRequestDto
+            {
+                Nickname = nickname,
+                ProfileImageUrl = cachedProfile?.ProfileImageUrl,
+                Introduction = cachedProfile?.Introduction
+            };
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                SetMessage(profileEditFormMessageLabel, "Failed to save profile. Please try again.", ErrorColor);
+                return;
+            }
+
+            isProfileSaveInFlight = true;
+            SetMessage(profileEditFormMessageLabel, "Saving profile...", MutedTextColor);
+
+            client.UpdateMe(
+                request,
+                onSuccess: response =>
+                {
+                    cachedProfile = response;
+                    if (HasSelectedProfileImageForUpload())
+                    {
+                        UploadSelectedProfileImage(
+                            client,
+                            onSuccess: uploadedProfile =>
+                            {
+                                isProfileSaveInFlight = false;
+                                cachedProfile = uploadedProfile ?? cachedProfile;
+                                DiscardSelectedProfileImageEditSession();
+                                LoadRemoteProfileImage(cachedProfile?.ProfileImageUrl);
+                                SetMessage(profileEditFormMessageLabel, "Profile saved.", SuccessColor);
+                                ShowProfileEdit();
+                            },
+                            onError: error =>
+                            {
+                                isProfileSaveInFlight = false;
+                                SetMessage(profileEditFormMessageLabel, "Profile saved, but profile image upload failed. Please try again.", ErrorColor);
+                                Debug.LogWarning(
+                                    $"[Settings] Profile image upload failed: code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)}");
+                            });
+                        return;
+                    }
+
+                    isProfileSaveInFlight = false;
+                    SetMessage(profileEditFormMessageLabel, "Profile saved.", SuccessColor);
+                    ShowProfileEdit();
+                },
+                onError: error =>
+                {
+                    isProfileSaveInFlight = false;
+                    SetMessage(profileEditFormMessageLabel, "Failed to save profile. Please try again.", ErrorColor);
+                    Debug.LogWarning(
+                        $"[Settings] PATCH /v1/users/me failed STATUS={(error != null ? error.StatusCode.ToString() : "?")} code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)}");
+                });
+        }
+
+        private void OnProfileImageChangeRequested()
+        {
+            if (!TryOpenImageFilePanelReviewed(out var selectedPath, out var pickerError))
+            {
+                if (!string.IsNullOrWhiteSpace(pickerError))
+                {
+                    ShowNoticeToast(pickerError);
+                }
+                return;
+            }
+
+            if (!TryLoadSelectedProfileImageReviewed(selectedPath, out var loadError))
+            {
+                if (!string.IsNullOrWhiteSpace(loadError))
+                {
+                    ShowNoticeToast(loadError);
+                }
+            }
+        }
+
+        private bool TryOpenImageFilePanelReviewed(out string selectedPath, out string errorMessage)
+        {
+            selectedPath = string.Empty;
+            errorMessage = null;
+
+            if (TryOpenWithStandaloneFileBrowser(out selectedPath, out var handledByPlugin))
+            {
+                return true;
+            }
+
+            if (handledByPlugin)
+            {
+                return false;
+            }
+
+#if UNITY_EDITOR
+            selectedPath = UnityEditor.EditorUtility.OpenFilePanelWithFilters(
+                "Select profile image",
+                string.Empty,
+                new[] { "Image Files", "png,jpg,jpeg" });
+            return !string.IsNullOrWhiteSpace(selectedPath);
+#else
+            errorMessage = "Profile image selection is not supported in this build yet.";
+            return false;
+#endif
+        }
+
+        private bool TryLoadSelectedProfileImageReviewed(string imagePath, out string errorMessage)
+        {
+            errorMessage = null;
+            if (!ProfileImageSelectionUtility.TryLoadPreviewTexture(
+                    imagePath,
+                    "SettingsProfilePreview",
+                    out var imageBytes,
+                    out var texture,
+                    out var contentType,
+                    out errorMessage))
+            {
+                return false;
+            }
+
+            DiscardSelectedProfileImageEditSession();
+            selectedProfileImageBytes = imageBytes;
+            selectedProfileImageContentType = contentType;
+            selectedProfileImageTexture = texture;
+            selectedProfileImageSprite = Sprite.Create(
+                texture,
+                new Rect(0f, 0f, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f),
+                100f);
+            selectedProfileImageSprite.name = "SettingsProfilePreviewSprite";
+            selectedProfileImageSprite.hideFlags = HideFlags.HideAndDontSave;
+            ApplyProfileAvatarPreview(profileFormAvatarImage);
+            return true;
+        }
+
+        private void DiscardSelectedProfileImageEditSession()
+        {
+            ReleaseSelectedProfileImagePreview();
+            ClearSelectedProfileImageUploadState();
         }
 
         private void OnProfileImageChangeButtonClicked()
@@ -1593,13 +1773,13 @@ namespace App.Bootstrap
         {
             if (selectedProfileImageSprite != null)
             {
-                Destroy(selectedProfileImageSprite);
+                UnityObjectSafeDestroy.Destroy(selectedProfileImageSprite);
                 selectedProfileImageSprite = null;
             }
 
             if (selectedProfileImageTexture != null)
             {
-                Destroy(selectedProfileImageTexture);
+                UnityObjectSafeDestroy.Destroy(selectedProfileImageTexture);
                 selectedProfileImageTexture = null;
             }
         }
@@ -1694,15 +1874,17 @@ namespace App.Bootstrap
         {
             if (remoteProfileImageSprite != null)
             {
-                Destroy(remoteProfileImageSprite);
+                UnityObjectSafeDestroy.Destroy(remoteProfileImageSprite);
                 remoteProfileImageSprite = null;
             }
 
             if (remoteProfileImageTexture != null)
             {
-                Destroy(remoteProfileImageTexture);
+                UnityObjectSafeDestroy.Destroy(remoteProfileImageTexture);
                 remoteProfileImageTexture = null;
             }
+
+            loadedRemoteProfileImageUrl = null;
         }
 
         private void ClearSelectedProfileImageUploadState()
@@ -2001,6 +2183,7 @@ namespace App.Bootstrap
                 return;
             }
 
+            DiscardSelectedProfileImageEditSession();
             ApplyProfileAvatarPreview();
             LoadRemoteProfileImage(profile.ProfileImageUrl);
 

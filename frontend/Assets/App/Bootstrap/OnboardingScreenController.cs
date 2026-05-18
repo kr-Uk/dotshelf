@@ -242,6 +242,7 @@ namespace App.Bootstrap
         private void OnDestroy()
         {
             ReleaseProfilePreview();
+            ClearSelectedProfileImageUploadState();
             DisposeThemePreviewRenderer();
             DisposeOnboardingPreviewStage();
         }
@@ -1484,14 +1485,21 @@ namespace App.Bootstrap
 
         private void OnAddPhotoButtonClicked()
         {
-            if (!TryOpenImageFilePanel(out var selectedPath))
+            if (!TryOpenImageFilePanelReviewed(out var selectedPath, out var pickerError))
             {
+                if (!string.IsNullOrWhiteSpace(pickerError))
+                {
+                    SetStep1Feedback(pickerError, ErrorColor, false);
+                }
                 return;
             }
 
-            if (!TryLoadProfilePreview(selectedPath))
+            if (!TryLoadProfilePreviewReviewed(selectedPath, out var loadError))
             {
-                Debug.LogWarning("[OnboardingDemo] Failed to load selected profile image.");
+                SetStep1Feedback(
+                    string.IsNullOrWhiteSpace(loadError) ? "Failed to load selected profile image." : loadError,
+                    ErrorColor,
+                    false);
             }
         }
 
@@ -1712,7 +1720,7 @@ namespace App.Bootstrap
                         UploadSelectedProfileImage(
                             client,
                             onSuccess: __ => HandleProfileUpdateSuccess(),
-                            onError: HandleProfileImageUploadError);
+                            onError: HandleProfileImageUploadErrorReviewed);
                         return;
                     }
 
@@ -1801,6 +1809,7 @@ namespace App.Bootstrap
                             new ProfileImageConfirmRequestDto { Key = ticket.Key },
                             response =>
                             {
+                                ReleaseProfilePreview();
                                 ClearSelectedProfileImageUploadState();
                                 onSuccess?.Invoke(response);
                             },
@@ -1808,6 +1817,14 @@ namespace App.Bootstrap
                         error => onError?.Invoke(error));
                 },
                 error => onError?.Invoke(error));
+        }
+
+        private void HandleProfileImageUploadErrorReviewed(ApiErrorResponseDto error)
+        {
+            isSubmittingProfile = false;
+            SetStep1Feedback("Profile saved, but profile image upload failed. Please try again.", ErrorColor, true);
+            Debug.LogWarning(
+                $"[OnboardingDemo] Profile image upload failed: code={error?.Code} message={error?.Message}");
         }
 
         private void OnRandomThemeButtonClicked()
@@ -3745,6 +3762,85 @@ namespace App.Bootstrap
             ResetStep3FlowState();
         }
 
+        private bool TryOpenImageFilePanelReviewed(out string selectedPath, out string errorMessage)
+        {
+            selectedPath = string.Empty;
+            errorMessage = null;
+
+            if (TryOpenWithStandaloneFileBrowser(out selectedPath, out var handledByPlugin))
+            {
+                return true;
+            }
+
+            if (handledByPlugin)
+            {
+                return false;
+            }
+
+#if UNITY_EDITOR
+            selectedPath = UnityEditor.EditorUtility.OpenFilePanelWithFilters(
+                "Select profile image",
+                string.Empty,
+                new[] { "Image Files", "png,jpg,jpeg" });
+
+            if (string.IsNullOrWhiteSpace(selectedPath))
+            {
+                LogDebug("[OnboardingDemo] Profile image selection canceled.");
+                return false;
+            }
+
+            return true;
+#else
+            errorMessage = "Profile image selection is not supported in this build yet.";
+            return false;
+#endif
+        }
+
+        private bool TryLoadProfilePreviewReviewed(string imagePath, out string errorMessage)
+        {
+            errorMessage = null;
+            if (!ProfileImageSelectionUtility.TryLoadPreviewTexture(
+                    imagePath,
+                    "OnboardingProfilePreview",
+                    out var imageBytes,
+                    out var texture,
+                    out var contentType,
+                    out errorMessage))
+            {
+                return false;
+            }
+
+            ReleaseProfilePreview();
+            ClearSelectedProfileImageUploadState();
+            selectedProfileImageBytes = imageBytes;
+            selectedProfileImageContentType = contentType;
+            profileTexture = texture;
+            profileSprite = Sprite.Create(
+                texture,
+                new Rect(0f, 0f, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f),
+                100f);
+            profileSprite.name = "OnboardingProfilePreviewSprite";
+            profileSprite.hideFlags = HideFlags.HideAndDontSave;
+
+            if (profilePreviewImage != null)
+            {
+                profilePreviewImage.sprite = profileSprite;
+                profilePreviewImage.color = Color.white;
+                profilePreviewImage.type = Image.Type.Simple;
+                profilePreviewImage.preserveAspect = true;
+            }
+
+            var placeholder = profilePreviewImage != null ? profilePreviewImage.GetComponentInChildren<TMP_Text>(true) : null;
+            if (placeholder != null)
+            {
+                placeholder.gameObject.SetActive(false);
+            }
+
+            LogDebug($"[OnboardingDemo] Loaded profile preview from '{imagePath}'.");
+            return true;
+        }
+
         private bool TryOpenImageFilePanel(out string selectedPath)
         {
             selectedPath = string.Empty;
@@ -3934,13 +4030,13 @@ namespace App.Bootstrap
         {
             if (profileSprite != null)
             {
-                Destroy(profileSprite);
+                UnityObjectSafeDestroy.Destroy(profileSprite);
                 profileSprite = null;
             }
 
             if (profileTexture != null)
             {
-                Destroy(profileTexture);
+                UnityObjectSafeDestroy.Destroy(profileTexture);
                 profileTexture = null;
             }
         }
@@ -3953,12 +4049,7 @@ namespace App.Bootstrap
 
         private static string GetImageContentType(string extension)
         {
-            if (string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase))
-            {
-                return "image/png";
-            }
-
-            return "image/jpeg";
+            return ProfileImageSelectionUtility.GetImageContentType(extension);
         }
 
         private void EnsureEventSystem()

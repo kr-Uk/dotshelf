@@ -151,8 +151,8 @@ namespace App.Bootstrap
 
             var rect = screenSaverCanvas.GetComponent<RectTransform>();
             var parentName = screenSaverCanvas.parent != null ? screenSaverCanvas.parent.name : "null";
-            Debug.Log($"[MonitorScreen] Attach ScreenSaverCanvas parent={parentName}");
-            Debug.Log($"[MonitorScreen] BEFORE canvas localPos/localRot/localScale={screenSaverCanvas.localPosition} / {screenSaverCanvas.localEulerAngles} / {screenSaverCanvas.localScale}");
+            VisualSkinLog.Verbose($"[MonitorScreen] Attach ScreenSaverCanvas parent={parentName}");
+            VisualSkinLog.Verbose($"[MonitorScreen] BEFORE canvas localPos/localRot/localScale={screenSaverCanvas.localPosition} / {screenSaverCanvas.localEulerAngles} / {screenSaverCanvas.localScale}");
 
             // anchor/pivot 먼저 — sizeDelta 의 의미는 anchor 에 따라 달라지므로 anchor 가 먼저 잡혀야 함.
             // Unity 의 RectTransform 은 anchor/pivot 변경 시 자동으로 anchoredPosition / sizeDelta 를 재계산
@@ -178,7 +178,7 @@ namespace App.Bootstrap
                 rect.sizeDelta = sizeDelta;
             }
 
-            Debug.Log($"[MonitorScreen] AFTER canvas localPos/localRot/localScale={screenSaverCanvas.localPosition} / {screenSaverCanvas.localEulerAngles} / {screenSaverCanvas.localScale}");
+            VisualSkinLog.Verbose($"[MonitorScreen] AFTER canvas localPos/localRot/localScale={screenSaverCanvas.localPosition} / {screenSaverCanvas.localEulerAngles} / {screenSaverCanvas.localScale}");
 
             // verification log — Inspector 에서 동일 수치인지 검증 가능하도록 final RectTransform 값을
             // entryAssetId 와 함께 출력. assetId 200031=Vintage / 300030=DeepSea / etc.
