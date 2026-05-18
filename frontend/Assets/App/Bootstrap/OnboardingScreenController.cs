@@ -65,6 +65,8 @@ namespace App.Bootstrap
         private static readonly Color SuccessColor = Hex("#2F8B57");
         private static readonly Color InputColor = Hex("#FDF9F3");
         private static readonly Color PreviewAccentColor = Hex("#EFE6D6");
+        private static readonly Color PreviewBorderColor = Hex("#E1D6C7");
+        private static readonly Color PreviewIconColor = Hex("#B29C80");
 
         [SerializeField] private int currentStep = 1;
 
@@ -74,6 +76,7 @@ namespace App.Bootstrap
         private Sprite whiteSprite;
         private Sprite roundedRectSprite;
         private Sprite circleSprite;
+        private Sprite profilePlaceholderIconSprite;
 
         private GameObject backgroundRoot;
         private GameObject cardRoot;
@@ -85,7 +88,7 @@ namespace App.Bootstrap
         private Image profilePreviewFrameImage;
         private Image profilePreviewImage;
         private AspectRatioFitter profilePreviewAspectFitter;
-        private TMP_Text profilePreviewPlaceholderLabel;
+        private GameObject profilePreviewPlaceholderIconRoot;
         private TMP_InputField nicknameInput;
         private TMP_InputField introInput;
         private TMP_Text step1MessageLabel;
@@ -219,6 +222,7 @@ namespace App.Bootstrap
             whiteSprite = CreateWhiteSprite();
             roundedRectSprite = CreateRoundedRectSprite(64, 14);
             circleSprite = CreateCircleSprite(64);
+            profilePlaceholderIconSprite = LoadProfilePlaceholderIconSprite();
             // Provider must exist before BuildOnboardingCanvas → BuildStep2Panel
             // wires the preview area; UpdateThemePreview reads it.
             themePreviewProvider = new OnboardingThemePreviewProvider(roundedRectSprite);
@@ -852,16 +856,16 @@ namespace App.Bootstrap
             profileLayout.minWidth = ProfilePreviewSize;
             profileLayout.minHeight = ProfilePreviewSize;
 
-            var profileFrame = CreateImage(profilePreviewRoot.transform, "CircleMaskContainer", InputColor);
-            profileFrame.sprite = circleSprite != null ? circleSprite : roundedRectSprite;
-            profileFrame.type = Image.Type.Simple;
+            var profileFrame = CreateImage(profilePreviewRoot.transform, "PreviewCard", InputColor);
+            profileFrame.sprite = roundedRectSprite;
+            profileFrame.type = Image.Type.Sliced;
             profileFrame.raycastTarget = false;
             profileFrame.color = InputColor;
 
             StretchToParent(profileFrame.rectTransform);
 
             var profileOutline = profileFrame.gameObject.AddComponent<Outline>();
-            profileOutline.effectColor = WithAlpha(BorderColor, 0.95f);
+            profileOutline.effectColor = WithAlpha(PreviewBorderColor, 0.95f);
             profileOutline.effectDistance = new Vector2(1f, -1f);
 
             var profileMask = profileFrame.gameObject.AddComponent<Mask>();
@@ -869,14 +873,23 @@ namespace App.Bootstrap
 
             profilePreviewFrameImage = profileFrame;
 
+            var topHighlight = CreateImage(profileFrame.transform, "TopHighlight", WithAlpha(Color.white, 0.2f));
+            topHighlight.sprite = roundedRectSprite;
+            topHighlight.type = Image.Type.Sliced;
+            topHighlight.raycastTarget = false;
+            var topHighlightRect = topHighlight.rectTransform;
+            topHighlightRect.anchorMin = new Vector2(0f, 1f);
+            topHighlightRect.anchorMax = new Vector2(1f, 1f);
+            topHighlightRect.pivot = new Vector2(0.5f, 1f);
+            topHighlightRect.sizeDelta = new Vector2(0f, 44f);
+            topHighlightRect.anchoredPosition = new Vector2(0f, -6f);
+
             var previewImage = CreateImage(profileFrame.transform, "ProfileImage", Color.white);
             previewImage.sprite = null;
             previewImage.type = Image.Type.Simple;
             previewImage.raycastTarget = false;
             previewImage.preserveAspect = true;
             StretchToParent(previewImage.rectTransform);
-            previewImage.rectTransform.offsetMin = new Vector2(8f, 8f);
-            previewImage.rectTransform.offsetMax = new Vector2(-8f, -8f);
 
             var previewAspect = previewImage.gameObject.AddComponent<AspectRatioFitter>();
             previewAspect.aspectMode = AspectRatioFitter.AspectMode.EnvelopeParent;
@@ -884,23 +897,7 @@ namespace App.Bootstrap
             profilePreviewAspectFitter = previewAspect;
             profilePreviewImage = previewImage;
 
-            var placeholder = CreateSectionText(
-                profileFrame.transform,
-                "ProfilePlaceholder",
-                "사진 추가",
-                16f,
-                FontStyles.Bold,
-                WithAlpha(MutedTextColor, 0.68f),
-                TextAlignmentOptions.Center,
-                0f);
-            placeholder.raycastTarget = false;
-            var placeholderRect = placeholder.rectTransform;
-            placeholderRect.anchorMin = new Vector2(0.5f, 0.5f);
-            placeholderRect.anchorMax = new Vector2(0.5f, 0.5f);
-            placeholderRect.pivot = new Vector2(0.5f, 0.5f);
-            placeholderRect.sizeDelta = new Vector2(120f, 28f);
-            placeholderRect.anchoredPosition = Vector2.zero;
-            profilePreviewPlaceholderLabel = placeholder;
+            profilePreviewPlaceholderIconRoot = CreateProfilePreviewPlaceholderIcon(profileFrame.transform);
 
             var photoButtonRow = CreateRow(column, "PhotoButtonRow", 0f, TextAnchor.MiddleCenter);
             var photoButton = CreateFixedButton(photoButtonRow, "AddPhotoButton", "사진 추가", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));
@@ -3392,10 +3389,7 @@ namespace App.Bootstrap
                 profilePreviewAspectFitter.aspectRatio = (float)texture.width / texture.height;
             }
 
-            if (profilePreviewPlaceholderLabel != null)
-            {
-                profilePreviewPlaceholderLabel.gameObject.SetActive(false);
-            }
+            SetProfilePreviewPlaceholderVisible(false);
 
             LogDebug($"[OnboardingDemo] Loaded profile preview from '{imagePath}'.");
             return true;
@@ -3560,10 +3554,7 @@ namespace App.Bootstrap
                     profilePreviewAspectFitter.aspectRatio = (float)texture.width / texture.height;
                 }
 
-                if (profilePreviewPlaceholderLabel != null)
-                {
-                    profilePreviewPlaceholderLabel.gameObject.SetActive(false);
-                }
+                SetProfilePreviewPlaceholderVisible(false);
 
                 LogDebug($"[OnboardingDemo] Loaded profile preview from '{imagePath}'.");
                 return true;
@@ -3598,10 +3589,71 @@ namespace App.Bootstrap
                 profilePreviewAspectFitter.aspectRatio = 1f;
             }
 
-            if (profilePreviewPlaceholderLabel != null)
+            SetProfilePreviewPlaceholderVisible(true);
+        }
+
+        private void SetProfilePreviewPlaceholderVisible(bool isVisible)
+        {
+            if (profilePreviewPlaceholderIconRoot != null)
             {
-                profilePreviewPlaceholderLabel.gameObject.SetActive(true);
+                profilePreviewPlaceholderIconRoot.SetActive(isVisible);
             }
+        }
+
+        private GameObject CreateProfilePreviewPlaceholderIcon(Transform parent)
+        {
+            var root = CreateRectObject("ProfilePlaceholderRoot", parent);
+            var rootRect = (RectTransform)root.transform;
+            rootRect.anchorMin = new Vector2(0.5f, 0.5f);
+            rootRect.anchorMax = new Vector2(0.5f, 0.5f);
+            rootRect.pivot = new Vector2(0.5f, 0.5f);
+            rootRect.sizeDelta = new Vector2(128f, 104f);
+            rootRect.anchoredPosition = Vector2.zero;
+
+            var layout = root.AddComponent<VerticalLayoutGroup>();
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.childControlWidth = true;
+            layout.childControlHeight = false;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+            layout.spacing = 6f;
+            layout.padding = new RectOffset(0, 0, 0, 0);
+
+            var icon = CreateImage(root.transform, "PlaceholderIcon", WithAlpha(PreviewIconColor, 0.92f));
+            icon.sprite = profilePlaceholderIconSprite != null ? profilePlaceholderIconSprite : whiteSprite;
+            icon.type = Image.Type.Simple;
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            var iconLayout = icon.gameObject.AddComponent<LayoutElement>();
+            iconLayout.preferredWidth = 52f;
+            iconLayout.preferredHeight = 52f;
+            iconLayout.minWidth = 52f;
+            iconLayout.minHeight = 52f;
+
+            var label = CreateText(
+                root.transform,
+                "PlaceholderLabel",
+                "프로필 사진",
+                15f,
+                FontStyles.Normal,
+                WithAlpha(PreviewIconColor, 0.92f),
+                TextAlignmentOptions.Center,
+                Vector2.zero,
+                new Vector2(128f, 24f),
+                0f,
+                new Vector2(0.5f, 0.5f));
+            label.raycastTarget = false;
+            var labelRect = label.rectTransform;
+            labelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            labelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            labelRect.pivot = new Vector2(0.5f, 0.5f);
+            labelRect.anchoredPosition = Vector2.zero;
+            var labelLayout = label.gameObject.AddComponent<LayoutElement>();
+            labelLayout.preferredWidth = 128f;
+            labelLayout.preferredHeight = 24f;
+            labelLayout.minHeight = 24f;
+
+            return root;
         }
 
         private void ReleaseProfilePreview()
@@ -4056,6 +4108,23 @@ namespace App.Bootstrap
             var sprite = Sprite.Create(texture, new Rect(0f, 0f, 1f, 1f), new Vector2(0.5f, 0.5f), 1f);
             sprite.name = "OnboardingUiWhiteSprite";
             return sprite;
+        }
+
+        private Sprite LoadProfilePlaceholderIconSprite()
+        {
+#if UNITY_EDITOR
+            var primaryPath = "Assets/Arts/UI/Onboarding/Icons/icon_add_photo.png";
+            var fallbackPath = "Assets/Arts/Onboarding/Icons/icon_add_photo.png";
+            var sprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(primaryPath);
+            if (sprite != null)
+            {
+                return sprite;
+            }
+
+            return UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(fallbackPath);
+#else
+            return null;
+#endif
         }
 
         private Sprite CreateRoundedRectSprite(int size, int radius)
