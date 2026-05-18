@@ -36,6 +36,7 @@ import com.dotshelf.domain.bookshelf.repository.BookshelfRepository;
 import com.dotshelf.domain.space.dto.SpaceDtos.CategoryInventoryRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.GuestbookPostItWhitelistRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.LayoutSaveRequest;
+import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThemeApplyMode;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailConfirmRequest;
 import com.dotshelf.domain.space.dto.SpaceDtos.ThumbnailUploadUrlRequest;
@@ -638,6 +639,56 @@ class SpaceServiceTest {
 
         assertThat(response.guestbookVisibilityScope()).isEqualTo("FOLLOWERS");
         assertThat(space.getVisibilityScope()).isEqualTo("PUBLIC");
+    }
+
+    @Test
+    @DisplayName("구형 테마 적용도 보유 THEME 인벤토리를 검증한 뒤 저장한다")
+    void applyTheme_verifiesOwnedThemeInventory() {
+        Space space = TestFixtures.space(10L, 1L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(userAssetInventoryRepository.findByIdAndUserId(30L, 1L))
+                .willReturn(Optional.of(TestFixtures.inventory(30L, 1L, 50L)));
+        given(assetRepository.findById(50L)).willReturn(Optional.of(TestFixtures.themeAsset(50L, 1L, "SPACE", true)));
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+
+        var response = spaceService.applyTheme(1L, new ThemeApplyRequest(30L));
+
+        assertThat(response.currentThemeInventoryId()).isEqualTo(30L);
+        assertThat(space.getCurrentThemeInventoryId()).isEqualTo(30L);
+    }
+
+    @Test
+    @DisplayName("구형 테마 적용도 보유하지 않은 인벤토리면 THEME_NOT_OWNED를 던진다")
+    void applyTheme_notOwnedInventory_throwsThemeNotOwned() {
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(userAssetInventoryRepository.findByIdAndUserId(30L, 1L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> spaceService.applyTheme(1L, new ThemeApplyRequest(30L)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.THEME_NOT_OWNED);
+    }
+
+    @Test
+    @DisplayName("구형 테마 적용도 THEME 타입이 아니면 CATEGORY_INVENTORY_TYPE_MISMATCH를 던진다")
+    void applyTheme_assetTypeMismatch_throwsException() {
+        Asset floorAsset = Asset.builder()
+                .categoryId(1L)
+                .code("floor")
+                .name("floor")
+                .assetScope("SPACE")
+                .assetType("FLOOR")
+                .pricePages(100)
+                .build();
+        TestFixtures.setId(floorAsset, 20L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(userAssetInventoryRepository.findByIdAndUserId(30L, 1L)).willReturn(Optional.of(TestFixtures.inventory(30L, 1L, 20L)));
+        given(assetRepository.findById(20L)).willReturn(Optional.of(floorAsset));
+
+        assertThatThrownBy(() -> spaceService.applyTheme(1L, new ThemeApplyRequest(30L)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.CATEGORY_INVENTORY_TYPE_MISMATCH);
     }
 
     @Test

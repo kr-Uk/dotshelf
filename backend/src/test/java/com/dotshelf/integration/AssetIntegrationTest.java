@@ -1,8 +1,12 @@
 package com.dotshelf.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -10,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.dotshelf.domain.asset.entity.Asset;
@@ -20,6 +25,7 @@ import com.dotshelf.domain.asset.repository.AssetWishlistRepository;
 import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
 import com.dotshelf.domain.payment.entity.PageWallet;
 import com.dotshelf.domain.payment.repository.PageWalletRepository;
+import com.dotshelf.domain.space.repository.SpaceRepository;
 import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.support.IntegrationTestSupport;
 import com.dotshelf.support.TestFixtures;
@@ -49,6 +55,9 @@ class AssetIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     private PageWalletRepository walletRepository;
+
+    @Autowired
+    private SpaceRepository spaceRepository;
 
     @Test
     @DisplayName("HTTP wishlist 토글과 에셋 구매 성공은 inventory, purchase, wallet 상태를 DB에 반영한다")
@@ -160,6 +169,60 @@ class AssetIntegrationTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.result.themeAssetId").value(theme.getId()))
                 .andExpect(jsonPath("$.result.wallpaper").value(11))
                 .andExpect(jsonPath("$.result.bookshelfSkinDefault").value(17));
+    }
+
+    @Test
+    @DisplayName("Unity 테마 적용 플로우는 assetId가 아니라 inventoryId로만 성공한다")
+    void themeApply_usesInventoryIdFromInventoryEndpoint() throws Exception {
+        var user = userRepository.saveAndFlush(TestFixtures.user("unity-theme-user"));
+        var category = categoryRepository.saveAndFlush(TestFixtures.assetCategory("THEME"));
+        Asset theme = assetRepository.saveAndFlush(TestFixtures.themeAsset(null, category.getId(), "{}", true));
+        // assetId와 inventoryId가 우연히 같아지는 false positive를 피하려고 inventory sequence를 먼저 민다.
+        var dummyCategory = categoryRepository.saveAndFlush(TestFixtures.assetCategory("DUMMY_THEME_TEST"));
+        Asset dummyOne = assetRepository.saveAndFlush(TestFixtures.asset(null, dummyCategory.getId(), "dummy-one", 0));
+        Asset dummyTwo = assetRepository.saveAndFlush(TestFixtures.asset(null, dummyCategory.getId(), "dummy-two", 0));
+        inventoryRepository.saveAndFlush(TestFixtures.inventory(null, user.getId(), dummyOne.getId()));
+        inventoryRepository.saveAndFlush(TestFixtures.inventory(null, user.getId(), dummyTwo.getId()));
+        var inventory = inventoryRepository.saveAndFlush(TestFixtures.inventory(null, user.getId(), theme.getId()));
+        assertThat(inventory.getId()).isNotEqualTo(theme.getId());
+
+        mockMvc.perform(get("/v1/assets/me/inventory")
+                        .header(TEST_USER_HEADER, user.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.assetIds", hasItem(theme.getId().intValue())))
+                .andExpect(jsonPath(
+                        "$.result.items[?(@.assetId == " + theme.getId() + ")].inventoryId",
+                        hasItem(inventory.getId().intValue())));
+
+        mockMvc.perform(post("/v1/spaces/me/theme/{inventoryId}/apply", theme.getId())
+                        .header(TEST_USER_HEADER, user.getId().toString())
+                        .param("mode", "RESET"))
+                .andExpect(status().is4xxClientError())
+                .andExpect(jsonPath("$.code", anyOf(is("S006"), is("S008"))));
+
+        mockMvc.perform(patch("/v1/spaces/me/theme")
+                        .header(TEST_USER_HEADER, user.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"inventoryId\":" + theme.getId() + "}"))
+                .andExpect(status().is4xxClientError())
+                .andExpect(jsonPath("$.code", anyOf(is("S006"), is("S008"))));
+
+        mockMvc.perform(post("/v1/spaces/me/theme/{inventoryId}/apply", inventory.getId())
+                        .header(TEST_USER_HEADER, user.getId().toString())
+                        .param("mode", "RESET"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.themeReset").value(true))
+                .andExpect(jsonPath("$.result.space.currentThemeInventoryId").value(inventory.getId()));
+
+        mockMvc.perform(patch("/v1/spaces/me/theme")
+                        .header(TEST_USER_HEADER, user.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"inventoryId\":" + inventory.getId() + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.currentThemeInventoryId").value(inventory.getId()));
+
+        var space = spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(user.getId()).orElseThrow();
+        assertThat(space.getCurrentThemeInventoryId()).isEqualTo(inventory.getId());
     }
 
     @Test
