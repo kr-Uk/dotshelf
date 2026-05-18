@@ -17,6 +17,7 @@ namespace Dotshelf.Scripts.Dashboard
     [RequireComponent(typeof(UIDocument))]
     public sealed class DashboardScreenController : MonoBehaviour
     {
+
         public enum ViewMode
         {
             Mine,
@@ -922,7 +923,7 @@ namespace Dotshelf.Scripts.Dashboard
                 ? $"/v1/spaces/{explicitSpaceId.Value}/dashboard?period=weekly"
                 : "/v1/spaces/me → /v1/spaces/{id}/dashboard?period=weekly";
             string targetText = explicitSpaceId.HasValue ? explicitSpaceId.Value.ToString() : "(unresolved — /me 응답 후 결정)";
-            Debug.Log(
+            App.Core.AppLog.Dashboard(
                 $"[Dashboard][fetch] source={source} viewMode={viewMode} useMockRepositories={useMockRepositories} " +
                 $"targetSpaceId={targetText} url={url}");
         }
@@ -960,11 +961,11 @@ namespace Dotshelf.Scripts.Dashboard
                 PlayerPrefs.DeleteKey(key);
                 if (legacyValue <= 1L)
                 {
-                    Debug.Log($"[Dashboard] Cleared stale visitedSpaceId={legacyValue} (PlayerPrefs key='{key}').");
+                    App.Core.AppLog.Dashboard($"[Dashboard] Cleared stale visitedSpaceId={legacyValue} (PlayerPrefs key='{key}').");
                 }
                 else
                 {
-                    Debug.Log($"[Dashboard] Cleared legacy PlayerPrefs key='{key}' value={legacyValue} (이 빌드는 dashboard target id 를 영속화하지 않음).");
+                    App.Core.AppLog.Dashboard($"[Dashboard] Cleared legacy PlayerPrefs key='{key}' value={legacyValue} (이 빌드는 dashboard target id 를 영속화하지 않음).");
                 }
             }
             PlayerPrefs.Save();
@@ -1099,7 +1100,7 @@ namespace Dotshelf.Scripts.Dashboard
 
         private IEnumerator DownloadCover(string url, VisualElement target)
         {
-            using (var request = UnityWebRequestTexture.GetTexture(url))
+            using (var request = UnityWebRequestTexture.GetTexture(url, true))
             {
                 request.timeout = RemoteBookCoverTimeoutSeconds;
                 yield return request.SendWebRequest();
@@ -1569,7 +1570,7 @@ namespace Dotshelf.Scripts.Dashboard
             reportGuestbookUseCase.Execute(command,
                 onSuccess: () =>
                 {
-                    Debug.Log("[Dashboard] Reported guestbook " + command.TargetId);
+                    App.Core.AppLog.Dashboard("[Dashboard] Reported guestbook " + command.TargetId);
                     CloseGuestbookDetailModal();
                 },
                 onError: OnError);

@@ -249,6 +249,7 @@ namespace App.Features.Notebook.Presentation
         private const int MaxSpaceThumbnailTextureCacheCount = 32;
         private const int MaxRemoteSpaceThumbnailWidth = 2048;
         private const int MaxRemoteSpaceThumbnailHeight = 1152;
+        private const int MaxAssetPreviewTextureCacheCount = 64;
         private const int MaxRemoteAssetPreviewWidth = 2048;
         private const int MaxRemoteAssetPreviewHeight = 2048;
         private const int MaxBookCoverTextureCacheCount = 64;
@@ -315,6 +316,8 @@ namespace App.Features.Notebook.Presentation
         private readonly LinkedList<string> spaceThumbnailTextureCacheOrder = new();
         private readonly Dictionary<string, LinkedListNode<string>> spaceThumbnailTextureCacheNodes = new();
         private readonly Dictionary<string, Texture2D> assetPreviewTextureCache = new();
+        private readonly LinkedList<string> assetPreviewTextureCacheOrder = new();
+        private readonly Dictionary<string, LinkedListNode<string>> assetPreviewTextureCacheNodes = new();
         private readonly Dictionary<string, Texture2D> bookCoverTextureCache = new();
         private readonly LinkedList<string> bookCoverTextureCacheOrder = new();
         private readonly Dictionary<string, LinkedListNode<string>> bookCoverTextureCacheNodes = new();
@@ -339,6 +342,8 @@ namespace App.Features.Notebook.Presentation
         private VisualElement bookDetailContent;
         private VisualElement bookDetailModalPanel;
         private ScrollView bookDetailScrollView;
+        private VisualElement bookDetailScrollRail;
+        private VisualElement bookDetailScrollThumb;
         private VisualElement otherSpacesContent;
         private VisualElement otherSpacesList;
         private VisualElement socialListPanel;
@@ -383,7 +388,6 @@ namespace App.Features.Notebook.Presentation
         private Label bookDetailPublisher;
         private Label bookDetailSummary;
         private Label bookDetailMeta;
-        private Label bookDetailPrice;
         private Label bookDetailReviewCount;
         private Label detailTitle;
         private Label detailAuthor;
@@ -394,7 +398,6 @@ namespace App.Features.Notebook.Presentation
         private Label detailViews;
         private Label detailSummary;
         private Label detailShelf;
-        private Label detailPrice;
         private Label toastLabel;
         private VisualElement toast;
         private ScrollView pageScrollView;
@@ -462,11 +465,15 @@ namespace App.Features.Notebook.Presentation
         private int pageIndex;
         private int pages;
         private int pageScrollbarPointerId = -1;
+        private int bookDetailScrollbarPointerId = -1;
         private float pageScrollbarStartPointerY;
         private float pageScrollbarStartOffsetY;
+        private float bookDetailScrollbarStartPointerY;
+        private float bookDetailScrollbarStartOffsetY;
         private bool initialized;
         private bool visible;
         private bool draggingPageScrollbar;
+        private bool draggingBookDetailScrollbar;
         private bool showingAllBookReviews;
         private bool bookReviewsOpen;
         private bool searchPageOpen;
@@ -981,6 +988,8 @@ namespace App.Features.Notebook.Presentation
             bookDetailContent = null;
             bookDetailModalPanel = null;
             bookDetailScrollView = null;
+            bookDetailScrollRail = null;
+            bookDetailScrollThumb = null;
             otherSpacesContent = null;
             otherSpacesList = null;
             socialListPanel = null;
@@ -1025,7 +1034,6 @@ namespace App.Features.Notebook.Presentation
             bookDetailPublisher = null;
             bookDetailSummary = null;
             bookDetailMeta = null;
-            bookDetailPrice = null;
             bookDetailReviewCount = null;
             detailTitle = null;
             detailAuthor = null;
@@ -1036,7 +1044,6 @@ namespace App.Features.Notebook.Presentation
             detailViews = null;
             detailSummary = null;
             detailShelf = null;
-            detailPrice = null;
             toastLabel = null;
             toast = null;
             pageScrollView = null;
@@ -1046,10 +1053,12 @@ namespace App.Features.Notebook.Presentation
             nextPageButton = null;
             addButton = null;
             draggingPageScrollbar = false;
+            draggingBookDetailScrollbar = false;
             walletPanelOpen = false;
             walletDetailsLoading = false;
             walletHistoryMessage = string.Empty;
             pageScrollbarPointerId = -1;
+            bookDetailScrollbarPointerId = -1;
         }
 
         private void AddBackdrop(VisualElement parent)
@@ -1810,12 +1819,27 @@ namespace App.Features.Notebook.Presentation
             detailScroll.style.flexGrow = 1f;
             detailScroll.style.minHeight = 0;
             detailScroll.style.width = Length.Percent(100);
+            detailScroll.style.paddingRight = 14;
             detailScroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
-            detailScroll.verticalScrollerVisibility = ScrollerVisibility.Auto;
-            detailScroll.RegisterCallback<WheelEvent>(evt => evt.StopPropagation());
+            detailScroll.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+            detailScroll.RegisterCallback<AttachToPanelEvent>(_ => HideNativeScroller(detailScroll));
+            detailScroll.RegisterCallback<GeometryChangedEvent>(_ => UpdateBookDetailScrollThumb());
+            detailScroll.RegisterCallback<WheelEvent>(evt =>
+            {
+                detailScroll.schedule.Execute(UpdateBookDetailScrollThumb).StartingIn(1);
+                evt.StopPropagation();
+            });
+            detailScroll.verticalScroller.valueChanged += _ => UpdateBookDetailScrollThumb();
             detailScroll.contentContainer.style.flexDirection = FlexDirection.Column;
             detailScroll.contentContainer.style.alignItems = Align.Stretch;
+            detailScroll.contentContainer.RegisterCallback<GeometryChangedEvent>(_ => UpdateBookDetailScrollThumb());
             panel.Add(detailScroll);
+            BuildBookDetailScrollRail(panel);
+            detailScroll.schedule.Execute(() =>
+            {
+                HideNativeScroller(detailScroll);
+                UpdateBookDetailScrollThumb();
+            }).StartingIn(1);
 
             var top = Row("book-detail-top");
             top.style.width = Length.Percent(100);
@@ -1938,30 +1962,11 @@ namespace App.Features.Notebook.Presentation
             purchasePanel.style.paddingTop = 8;
             purchasePanel.style.paddingBottom = 8;
             purchasePanel.style.alignItems = Align.Center;
+            purchasePanel.style.justifyContent = Justify.FlexEnd;
             purchasePanel.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.04f);
             Round(purchasePanel, 16);
             Border(purchasePanel, Rgba(0x58, 0xB9, 0xFF, 0.18f));
             info.Add(purchasePanel);
-
-            var priceColumn = new VisualElement { name = "book-detail-price-column" };
-            priceColumn.style.flexGrow = 1f;
-            priceColumn.style.minWidth = 0;
-            priceColumn.style.height = 48;
-            priceColumn.style.alignSelf = Align.Center;
-            priceColumn.style.justifyContent = Justify.Center;
-            purchasePanel.Add(priceColumn);
-
-            var priceLabel = Text("표지 가격", 12, FaintInk, FontStyle.Normal);
-            priceLabel.style.height = 16;
-            priceLabel.style.letterSpacing = 2f;
-            priceLabel.style.unityTextAlign = TextAnchor.MiddleLeft;
-            priceColumn.Add(priceLabel);
-
-            bookDetailPrice = Text(string.Empty, 21, AccentDeep, FontStyle.Bold);
-            bookDetailPrice.style.height = 28;
-            bookDetailPrice.style.marginTop = 0;
-            bookDetailPrice.style.unityTextAlign = TextAnchor.MiddleLeft;
-            priceColumn.Add(bookDetailPrice);
 
             bookDetailAddButton = TextButton("구매하고 책장에 추가", true);
             bookDetailAddButton.style.width = 162;
@@ -3051,10 +3056,6 @@ namespace App.Features.Notebook.Presentation
             detailPublisher.style.minHeight = 16;
             info.Add(detailPublisher);
 
-            detailPrice = Text(string.Empty, 12, AccentDeep, FontStyle.Bold);
-            detailPrice.style.marginTop = 10;
-            info.Add(detailPrice);
-
             detailMetaRow = Row("detail-meta");
             detailMetaRow.style.marginTop = 12;
             detailMetaRow.style.minHeight = 22;
@@ -3158,6 +3159,35 @@ namespace App.Features.Notebook.Presentation
             scrollThumb.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.78f);
             Round(scrollThumb, 5);
             scrollRail.Add(scrollThumb);
+        }
+
+        private void BuildBookDetailScrollRail(VisualElement parent)
+        {
+            bookDetailScrollRail = new VisualElement { name = "book-detail-scroll-rail" };
+            bookDetailScrollRail.pickingMode = PickingMode.Position;
+            bookDetailScrollRail.style.position = Position.Absolute;
+            bookDetailScrollRail.style.right = 10;
+            bookDetailScrollRail.style.top = 42;
+            bookDetailScrollRail.style.bottom = 28;
+            bookDetailScrollRail.style.width = 12;
+            bookDetailScrollRail.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.18f);
+            Round(bookDetailScrollRail, 6);
+            bookDetailScrollRail.RegisterCallback<PointerDownEvent>(OnBookDetailScrollRailPointerDown);
+            bookDetailScrollRail.RegisterCallback<PointerMoveEvent>(OnBookDetailScrollRailPointerMove);
+            bookDetailScrollRail.RegisterCallback<PointerUpEvent>(OnBookDetailScrollRailPointerUp);
+            bookDetailScrollRail.RegisterCallback<PointerCancelEvent>(OnBookDetailScrollRailPointerCancel);
+            parent.Add(bookDetailScrollRail);
+
+            bookDetailScrollThumb = new VisualElement { name = "book-detail-scroll-thumb" };
+            bookDetailScrollThumb.pickingMode = PickingMode.Position;
+            bookDetailScrollThumb.style.position = Position.Absolute;
+            bookDetailScrollThumb.style.left = 2;
+            bookDetailScrollThumb.style.right = 2;
+            bookDetailScrollThumb.style.top = 4;
+            bookDetailScrollThumb.style.height = 64;
+            bookDetailScrollThumb.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.78f);
+            Round(bookDetailScrollThumb, 5);
+            bookDetailScrollRail.Add(bookDetailScrollThumb);
         }
 
         private void ScrollNotebookBy(float delta)
@@ -3286,6 +3316,117 @@ namespace App.Features.Notebook.Presentation
             SetNotebookScrollOffset(targetThumbTop / thumbTravel * max);
         }
 
+        private void SetBookDetailScrollOffset(float y)
+        {
+            if (bookDetailScrollView == null)
+            {
+                return;
+            }
+
+            var offset = bookDetailScrollView.scrollOffset;
+            offset.y = Mathf.Clamp(y, 0f, GetBookDetailMaxScroll());
+            bookDetailScrollView.scrollOffset = offset;
+            UpdateBookDetailScrollThumb();
+        }
+
+        private void OnBookDetailScrollRailPointerDown(PointerDownEvent evt)
+        {
+            if (bookDetailScrollView == null || bookDetailScrollRail == null || bookDetailScrollThumb == null || evt.button != 0)
+            {
+                return;
+            }
+
+            draggingBookDetailScrollbar = true;
+            bookDetailScrollbarPointerId = evt.pointerId;
+            bookDetailScrollRail.CapturePointer(evt.pointerId);
+
+            if (evt.target != bookDetailScrollThumb)
+            {
+                ScrollBookDetailToPointer(evt.position.y);
+            }
+
+            bookDetailScrollbarStartPointerY = evt.position.y;
+            bookDetailScrollbarStartOffsetY = bookDetailScrollView.scrollOffset.y;
+            bookDetailScrollThumb.style.backgroundColor = AccentDeep;
+            evt.StopPropagation();
+        }
+
+        private void OnBookDetailScrollRailPointerMove(PointerMoveEvent evt)
+        {
+            if (!draggingBookDetailScrollbar || bookDetailScrollbarPointerId != evt.pointerId || bookDetailScrollRail == null || !bookDetailScrollRail.HasPointerCapture(evt.pointerId))
+            {
+                return;
+            }
+
+            var max = GetBookDetailMaxScroll();
+            GetBookDetailScrollThumbMetrics(out _, out var thumbTravel);
+            if (max <= 0f || thumbTravel <= 0f)
+            {
+                evt.StopPropagation();
+                return;
+            }
+
+            var pointerDelta = evt.position.y - bookDetailScrollbarStartPointerY;
+            SetBookDetailScrollOffset(bookDetailScrollbarStartOffsetY + pointerDelta / thumbTravel * max);
+            evt.StopPropagation();
+        }
+
+        private void OnBookDetailScrollRailPointerUp(PointerUpEvent evt)
+        {
+            if (bookDetailScrollbarPointerId != evt.pointerId)
+            {
+                return;
+            }
+
+            EndBookDetailScrollRailDrag(evt.pointerId);
+            evt.StopPropagation();
+        }
+
+        private void OnBookDetailScrollRailPointerCancel(PointerCancelEvent evt)
+        {
+            if (bookDetailScrollbarPointerId != evt.pointerId)
+            {
+                return;
+            }
+
+            EndBookDetailScrollRailDrag(evt.pointerId);
+            evt.StopPropagation();
+        }
+
+        private void EndBookDetailScrollRailDrag(int pointerId)
+        {
+            if (bookDetailScrollRail != null && bookDetailScrollRail.HasPointerCapture(pointerId))
+            {
+                bookDetailScrollRail.ReleasePointer(pointerId);
+            }
+
+            draggingBookDetailScrollbar = false;
+            bookDetailScrollbarPointerId = -1;
+            if (bookDetailScrollThumb != null)
+            {
+                bookDetailScrollThumb.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.78f);
+            }
+        }
+
+        private void ScrollBookDetailToPointer(float panelY)
+        {
+            if (bookDetailScrollRail == null)
+            {
+                return;
+            }
+
+            var max = GetBookDetailMaxScroll();
+            GetBookDetailScrollThumbMetrics(out var thumbHeight, out var thumbTravel);
+            if (max <= 0f || thumbTravel <= 0f)
+            {
+                return;
+            }
+
+            var localY = panelY - bookDetailScrollRail.worldBound.y;
+            var targetThumbTop = Mathf.Clamp(localY - thumbHeight * 0.5f - 4f, 0f, thumbTravel);
+            SetBookDetailScrollOffset(targetThumbTop / thumbTravel * max);
+        }
+
         private void OnNotebookPageWheel(WheelEvent evt)
         {
             if (IsBookDetailModalOpen())
@@ -3378,6 +3519,29 @@ namespace App.Features.Notebook.Presentation
             return Mathf.Max(0f, contentHeight - viewHeight);
         }
 
+        private float GetBookDetailMaxScroll()
+        {
+            if (bookDetailScrollView == null)
+            {
+                return 0f;
+            }
+
+            var contentHeight = Mathf.Max(
+                bookDetailScrollView.contentContainer.resolvedStyle.height,
+                bookDetailScrollView.contentContainer.layout.height,
+                1f);
+            foreach (var child in bookDetailScrollView.contentContainer.Children())
+            {
+                contentHeight = Mathf.Max(contentHeight, child.layout.yMax + child.resolvedStyle.marginBottom);
+            }
+
+            var viewHeight = Mathf.Max(
+                bookDetailScrollView.resolvedStyle.height,
+                bookDetailScrollView.layout.height,
+                1f);
+            return Mathf.Max(0f, contentHeight - viewHeight);
+        }
+
         private void UpdateScrollThumb()
         {
             if (pageScrollView == null || scrollRail == null || scrollThumb == null)
@@ -3391,6 +3555,22 @@ namespace App.Features.Notebook.Presentation
 
             scrollThumb.style.height = thumbHeight;
             scrollThumb.style.top = 4f + (thumbTravel * ratio);
+        }
+
+        private void UpdateBookDetailScrollThumb()
+        {
+            if (bookDetailScrollView == null || bookDetailScrollRail == null || bookDetailScrollThumb == null)
+            {
+                return;
+            }
+
+            var max = GetBookDetailMaxScroll();
+            GetBookDetailScrollThumbMetrics(out var thumbHeight, out var thumbTravel);
+            var ratio = max <= 0f ? 0f : Mathf.Clamp01(bookDetailScrollView.scrollOffset.y / max);
+
+            bookDetailScrollRail.style.display = max <= 0.5f ? DisplayStyle.None : DisplayStyle.Flex;
+            bookDetailScrollThumb.style.height = thumbHeight;
+            bookDetailScrollThumb.style.top = 4f + (thumbTravel * ratio);
         }
 
         private void GetScrollThumbMetrics(out float thumbHeight, out float thumbTravel)
@@ -3412,6 +3592,33 @@ namespace App.Features.Notebook.Presentation
                 pageScrollView.layout.height,
                 1f);
             thumbHeight = Mathf.Clamp(railHeight * viewHeight / contentHeight, 44f, 112f);
+            thumbTravel = Mathf.Max(0f, railHeight - thumbHeight - 8f);
+        }
+
+        private void GetBookDetailScrollThumbMetrics(out float thumbHeight, out float thumbTravel)
+        {
+            if (bookDetailScrollView == null || bookDetailScrollRail == null)
+            {
+                thumbHeight = 64f;
+                thumbTravel = 0f;
+                return;
+            }
+
+            var railHeight = Mathf.Max(bookDetailScrollRail.resolvedStyle.height, bookDetailScrollRail.layout.height, 1f);
+            var contentHeight = Mathf.Max(
+                bookDetailScrollView.contentContainer.resolvedStyle.height,
+                bookDetailScrollView.contentContainer.layout.height,
+                1f);
+            foreach (var child in bookDetailScrollView.contentContainer.Children())
+            {
+                contentHeight = Mathf.Max(contentHeight, child.layout.yMax + child.resolvedStyle.marginBottom);
+            }
+
+            var viewHeight = Mathf.Max(
+                bookDetailScrollView.resolvedStyle.height,
+                bookDetailScrollView.layout.height,
+                1f);
+            thumbHeight = Mathf.Clamp(railHeight * viewHeight / Mathf.Max(contentHeight, 1f), 44f, 112f);
             thumbTravel = Mathf.Max(0f, railHeight - thumbHeight - 8f);
         }
 
@@ -4054,11 +4261,6 @@ namespace App.Features.Notebook.Presentation
                 ScheduleBookDetailSummaryAutoHeight();
             }
 
-            if (bookDetailPrice != null)
-            {
-                bookDetailPrice.text = book.Price == 0 ? "FREE" : $"{book.Price:N0} P";
-            }
-
             if (bookDetailReviewCount != null)
             {
                 bookDetailReviewCount.text = $"★ {book.Rating:0.0} · 리뷰 {GetBookReviews(book).Count:N0}개 · 조회 {book.Views:N0}";
@@ -4069,6 +4271,7 @@ namespace App.Features.Notebook.Presentation
             RefreshBookReviews(book);
             RefreshBookReviewToggle();
             RefreshRatingStars();
+            bookDetailScrollView?.schedule.Execute(UpdateBookDetailScrollThumb).StartingIn(1);
         }
 
         private void ScheduleBookDetailSummaryAutoHeight()
@@ -4130,6 +4333,7 @@ namespace App.Features.Notebook.Presentation
             var targetHeight = Mathf.Ceil(Mathf.Max(48f, lineCount * lineHeight + verticalPadding + 4f));
             bookDetailSummary.style.minHeight = targetHeight;
             bookDetailSummary.style.height = targetHeight;
+            bookDetailScrollView?.schedule.Execute(UpdateBookDetailScrollThumb).StartingIn(1);
         }
 
         private void RefreshFavoriteBookButton(BookViewModel book)
@@ -4320,6 +4524,7 @@ namespace App.Features.Notebook.Presentation
             if (bookDetailScrollView != null)
             {
                 bookDetailScrollView.scrollOffset = Vector2.zero;
+                bookDetailScrollView.schedule.Execute(UpdateBookDetailScrollThumb).StartingIn(1);
             }
 
             if (bookDetailModalPanel != null)
@@ -4964,7 +5169,7 @@ namespace App.Features.Notebook.Presentation
                         RequestRecommendedBooks(requestVersion);
                         selectedBookOverride = null;
                         selectedBookIndex = 0;
-                        UnityEngine.Debug.Log($"Notebook market API loaded {marketBooks.Length} item(s).");
+                        App.Core.AppLog.Notebook($"Notebook market API loaded {marketBooks.Length} item(s).");
                         RefreshAll();
                     },
                     error =>
@@ -5014,7 +5219,7 @@ namespace App.Features.Notebook.Presentation
                             UnityEngine.Debug.LogWarning("Notebook recommended API returned no items; using rating/review fallback.");
                         }
 
-                        UnityEngine.Debug.Log($"Notebook recommended API loaded {recommendedBooks.Length} item(s).");
+                        App.Core.AppLog.Notebook($"Notebook recommended API loaded {recommendedBooks.Length} item(s).");
                         RefreshAll();
                     },
                     error =>
@@ -5374,17 +5579,8 @@ namespace App.Features.Notebook.Presentation
             top.style.flexShrink = 0;
             info.Add(top);
 
-            var price = Text(book.Price == 0 ? "FREE" : $"{book.Price:N0}P", 9, book.Price == 0 ? Success : AccentDeep, FontStyle.Bold);
-            price.style.height = 18;
-            price.style.paddingLeft = 6;
-            price.style.paddingRight = 6;
-            price.style.unityTextAlign = TextAnchor.MiddleCenter;
-            price.style.backgroundColor = book.Price == 0 ? Rgba(0x3F, 0x9B, 0x68, 0.14f) : Rgba(0x58, 0xB9, 0xFF, 0.18f);
-            Round(price, 4);
-            top.Add(price);
-
             var genre = Text(book.Genre, 10, FaintInk, FontStyle.Normal);
-            genre.style.marginLeft = 8;
+            genre.style.marginLeft = 0;
             top.Add(genre);
 
             var title = Text(book.Title, 13, Ink, FontStyle.Bold);
@@ -5509,18 +5705,6 @@ namespace App.Features.Notebook.Presentation
 
             var cover = CreateBookCover(book, 138, 200, true);
             cover.style.alignSelf = Align.Center;
-
-            var priceBadge = Text(book.Price == 0 ? "FREE" : $"{book.Price:N0}P", 12, Surface, FontStyle.Bold);
-            priceBadge.style.position = Position.Absolute;
-            priceBadge.style.left = 8;
-            priceBadge.style.top = 10;
-            priceBadge.style.height = 28;
-            priceBadge.style.paddingLeft = 10;
-            priceBadge.style.paddingRight = 10;
-            priceBadge.style.unityTextAlign = TextAnchor.MiddleCenter;
-            priceBadge.style.backgroundColor = book.Price == 0 ? Success : AccentDeep;
-            Round(priceBadge, 6);
-            cover.Add(priceBadge);
             card.Add(cover);
 
             var title = Text(book.Title, 15, Ink, FontStyle.Bold);
@@ -5532,7 +5716,7 @@ namespace App.Features.Notebook.Presentation
             title.style.unityTextAlign = TextAnchor.UpperCenter;
             card.Add(title);
 
-            var meta = Text($"{book.Author} · {(book.Price == 0 ? "FREE" : $"{book.Price:N0}P")}", 9, SoftInk, FontStyle.Normal);
+            var meta = Text(string.Empty, 9, SoftInk, FontStyle.Normal);
             meta.style.width = Length.Percent(100);
             meta.text = $"{book.Author} · {book.Publisher}\n★ {book.Rating:0.0}";
             meta.style.fontSize = 12;
@@ -5598,17 +5782,8 @@ namespace App.Features.Notebook.Presentation
             badgeRow.style.alignItems = Align.Center;
             info.Add(badgeRow);
 
-            var price = Text(book.Price == 0 ? "FREE" : $"{book.Price:N0}P", 9, book.Price == 0 ? Success : AccentDeep, FontStyle.Bold);
-            price.style.height = 20;
-            price.style.paddingLeft = 7;
-            price.style.paddingRight = 7;
-            price.style.unityTextAlign = TextAnchor.MiddleCenter;
-            price.style.backgroundColor = book.Price == 0 ? Rgba(0x3F, 0x9B, 0x68, 0.14f) : Rgba(0x58, 0xB9, 0xFF, 0.18f);
-            Round(price, 4);
-            badgeRow.Add(price);
-
             var genre = Text(book.Genre, 10, FaintInk, FontStyle.Normal);
-            genre.style.marginLeft = 8;
+            genre.style.marginLeft = 0;
             genre.style.minWidth = 0;
             genre.style.flexShrink = 1f;
             badgeRow.Add(genre);
@@ -5807,12 +5982,6 @@ namespace App.Features.Notebook.Presentation
             if (detailPublisher != null)
             {
                 detailPublisher.text = book.Publisher;
-            }
-
-            if (detailPrice != null)
-            {
-                detailPrice.text = book.Price == 0 ? "Free" : $"{book.Price:N0} P";
-                detailPrice.style.color = book.Price == 0 ? Success : AccentDeep;
             }
 
             SetDetailMeta(book);
@@ -6193,7 +6362,7 @@ namespace App.Features.Notebook.Presentation
 
             ApplyBookAddedFromApi(book);
             SyncWalletFromApi();
-            UnityEngine.Debug.Log($"Book added to shelf through API. book={book.Id}, userBookId={response?.Id}");
+            App.Core.AppLog.Notebook($"Book added to shelf through API. book={book.Id}, userBookId={response?.Id}");
             NotifyBookAddedToShelfThroughApi();
         }
 
@@ -6973,7 +7142,7 @@ namespace App.Features.Notebook.Presentation
 
         private IEnumerator LoadBookCoverTexture(string url, VisualElement cover)
         {
-            using (var request = UnityWebRequestTexture.GetTexture(url))
+            using (var request = UnityWebRequestTexture.GetTexture(url, true))
             {
                 yield return request.SendWebRequest();
 
@@ -7221,7 +7390,7 @@ namespace App.Features.Notebook.Presentation
 
         private IEnumerator LoadSpaceThumbnailTexture(string url, VisualElement thumbnail)
         {
-            using (var request = UnityWebRequestTexture.GetTexture(url))
+            using (var request = UnityWebRequestTexture.GetTexture(url, true))
             {
                 yield return request.SendWebRequest();
 
@@ -7339,7 +7508,7 @@ namespace App.Features.Notebook.Presentation
             }
 
             preview.userData = url;
-            if (assetPreviewTextureCache.TryGetValue(url, out var cached) && cached != null)
+            if (TryGetCachedAssetPreviewTexture(url, out var cached))
             {
                 ApplyObjectPreviewTexture(preview, cached);
                 return true;
@@ -7351,7 +7520,7 @@ namespace App.Features.Notebook.Presentation
 
         private IEnumerator LoadObjectPreviewTexture(string url, VisualElement preview)
         {
-            using (var request = UnityWebRequestTexture.GetTexture(url))
+            using (var request = UnityWebRequestTexture.GetTexture(url, true))
             {
                 yield return request.SendWebRequest();
 
@@ -7373,16 +7542,86 @@ namespace App.Features.Notebook.Presentation
                     yield break;
                 }
 
-                if (assetPreviewTextureCache.TryGetValue(url, out var previous) && previous != null && previous != texture)
-                {
-                    Destroy(previous);
-                }
-
-                assetPreviewTextureCache[url] = texture;
+                texture = CacheAssetPreviewTexture(url, texture);
                 if (preview != null && preview.panel != null && Equals(preview.userData, url))
                 {
                     ApplyObjectPreviewTexture(preview, texture);
                 }
+            }
+        }
+
+        private bool TryGetCachedAssetPreviewTexture(string url, out Texture2D texture)
+        {
+            if (!assetPreviewTextureCache.TryGetValue(url, out texture) || texture == null)
+            {
+                RemoveAssetPreviewTexture(url);
+                texture = null;
+                return false;
+            }
+
+            if (assetPreviewTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                assetPreviewTextureCacheOrder.Remove(node);
+                assetPreviewTextureCacheOrder.AddLast(node);
+            }
+
+            return true;
+        }
+
+        private Texture2D CacheAssetPreviewTexture(string url, Texture2D texture)
+        {
+            if (string.IsNullOrWhiteSpace(url) || texture == null)
+            {
+                return texture;
+            }
+
+            if (assetPreviewTextureCache.TryGetValue(url, out var previous) && previous != null)
+            {
+                if (previous != texture)
+                {
+                    Destroy(texture);
+                }
+
+                if (assetPreviewTextureCacheNodes.TryGetValue(url, out var node))
+                {
+                    assetPreviewTextureCacheOrder.Remove(node);
+                    assetPreviewTextureCacheOrder.AddLast(node);
+                }
+
+                return previous;
+            }
+
+            assetPreviewTextureCache[url] = texture;
+            assetPreviewTextureCacheNodes[url] = assetPreviewTextureCacheOrder.AddLast(url);
+            TrimAssetPreviewTextureCache();
+            return texture;
+        }
+
+        private void TrimAssetPreviewTextureCache()
+        {
+            while (assetPreviewTextureCache.Count > MaxAssetPreviewTextureCacheCount && assetPreviewTextureCacheOrder.First != null)
+            {
+                RemoveAssetPreviewTexture(assetPreviewTextureCacheOrder.First.Value);
+            }
+        }
+
+        private void RemoveAssetPreviewTexture(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            if (assetPreviewTextureCache.TryGetValue(url, out var texture) && texture != null)
+            {
+                Destroy(texture);
+            }
+
+            assetPreviewTextureCache.Remove(url);
+            if (assetPreviewTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                assetPreviewTextureCacheOrder.Remove(node);
+                assetPreviewTextureCacheNodes.Remove(url);
             }
         }
 
@@ -7397,6 +7636,8 @@ namespace App.Features.Notebook.Presentation
             }
 
             assetPreviewTextureCache.Clear();
+            assetPreviewTextureCacheOrder.Clear();
+            assetPreviewTextureCacheNodes.Clear();
         }
 
         private static void ApplyObjectPreviewTexture(VisualElement preview, Texture2D texture)

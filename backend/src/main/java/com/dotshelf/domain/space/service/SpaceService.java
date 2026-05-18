@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -145,6 +146,9 @@ public class SpaceService {
         ensureCanViewSpace(currentUserId, space);
 
         Set<Long> inventoryIds = new HashSet<>(currentInventoryIds(space));
+        bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(space.getId()).stream()
+                .map(Bookshelf::getSkinInventoryId)
+                .forEach(inventoryId -> addPositive(inventoryIds, inventoryId));
         Set<Long> layoutAssetIds = new HashSet<>();
         Set<String> layoutUnityResourceKeys = new HashSet<>();
         layoutSnapshotRepository.findFirstBySpaceIdOrderByLayoutVersionDesc(space.getId())
@@ -157,16 +161,20 @@ public class SpaceService {
         List<UserAssetInventory> ownerInventories = userAssetInventoryRepository.findByUserId(space.getOwnerUserId());
         Map<Long, UserAssetInventory> ownerInventoriesById = ownerInventories.stream()
                 .collect(Collectors.toMap(UserAssetInventory::getId, Function.identity(), (left, right) -> left));
+        Map<Long, Long> categoryInventoryIdByAssetId = new HashMap<>();
         Set<Long> ownedAssetIds = ownerInventories.stream()
                 .map(UserAssetInventory::getAssetId)
                 .collect(Collectors.toSet());
 
         List<Long> assetIds = new ArrayList<>();
-        inventoryIds.stream()
-                .map(ownerInventoriesById::get)
-                .filter(Objects::nonNull)
-                .map(UserAssetInventory::getAssetId)
-                .forEach(assetIds::add);
+        for (Long inventoryId : inventoryIds) {
+            UserAssetInventory inventory = ownerInventoriesById.get(inventoryId);
+            if (inventory == null) {
+                continue;
+            }
+            assetIds.add(inventory.getAssetId());
+            categoryInventoryIdByAssetId.putIfAbsent(inventory.getAssetId(), inventory.getId());
+        }
         layoutAssetIds.stream()
                 .filter(ownedAssetIds::contains)
                 .forEach(assetIds::add);
@@ -183,7 +191,8 @@ public class SpaceService {
         }
 
         List<DownloadManifestResponse> manifests = assetIds.stream()
-                .map(assetService::getDownloadManifestForVisibleAsset)
+                .map(assetId -> assetService.getDownloadManifestForVisibleAsset(assetId)
+                        .withInventoryId(categoryInventoryIdByAssetId.get(assetId)))
                 .toList();
         return new SpaceAssetManifestListResponse(space.getId(), space.getLayoutVersion(), manifests);
     }

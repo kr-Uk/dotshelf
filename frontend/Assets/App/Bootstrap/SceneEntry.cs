@@ -7,6 +7,7 @@ namespace App.Bootstrap
 {
     public sealed class SceneEntry : MonoBehaviour
     {
+
         [SerializeField] private string mainSceneName = SceneKeys.Main;
         [SerializeField] private string notebookUiSceneName = SceneKeys.NotebookUi;
         [SerializeField] private bool loadMainSceneOnStart = true;
@@ -88,7 +89,7 @@ namespace App.Bootstrap
                     RunSceneInstallers(mainScene, forceGenerateOnBootstrapLoad);
                 }
 
-                Debug.Log($"Dotshelf bootstrap loaded {mainSceneName} (additive={loadAdditively}, preloadNotebookUi={loadNotebookUiScene}).");
+                App.Core.AppLog.SceneInstall($"Dotshelf bootstrap loaded {mainSceneName} (additive={loadAdditively}, preloadNotebookUi={loadNotebookUiScene}).");
             }
             finally
             {

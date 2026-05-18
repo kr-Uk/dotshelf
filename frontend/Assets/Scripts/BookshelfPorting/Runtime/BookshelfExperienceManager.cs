@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using App.Application.Notebook;
 using App.Application.Payment;
@@ -86,6 +86,7 @@ namespace BookshelfPorting.Runtime
         private const float VisitedSpaceLoadingPageWidth = 124f;
         private const float VisitedSpaceLoadingPageHeight = 148f;
         private const float VisitedSpaceLoadingHalfPageWidth = VisitedSpaceLoadingPageWidth * 0.5f;
+
         private static readonly Color32 DeleteButtonBackground = new(196, 78, 72, 255);
         private static readonly Color32 DeleteButtonHighlighted = new(176, 62, 58, 255);
         private static readonly Color32 DeleteButtonConfirmBackground = new(176, 50, 48, 255);
@@ -1376,7 +1377,7 @@ namespace BookshelfPorting.Runtime
                     }
                     else if (Time.unscaledTime - readySince.Value >= StableReadyDurationSeconds)
                     {
-                        Debug.Log(
+                        App.Core.AppLog.Experience(
                             $"[OnboardingStep3.AutoOpen] Conditions met after {Time.unscaledTime - startedAt:F1}s " +
                             $"(stable {StableReadyDurationSeconds:F1}s) — opening BookAdd panel.");
                         OpenBookAddPanel();
@@ -1698,13 +1699,13 @@ namespace BookshelfPorting.Runtime
             // 외부 코드에서 직접 FocusNotebook() 호출하는 케이스) 까지 한 번에 막기 위함. 테마 무관 정책.
             if (IsViewingOtherUserSpace())
             {
-                Debug.Log("[NotebookFocusBlock] FocusNotebook suppressed — visiting another user's space.");
+                App.Core.AppLog.Experience("[NotebookFocusBlock] FocusNotebook suppressed — visiting another user's space.");
                 return;
             }
 
             if (AreSceneInteractionsSuppressed)
             {
-                Debug.Log("[NotebookFocusBlock] FocusNotebook suppressed — edit/scene interaction lock active. entry=public_FocusNotebook");
+                App.Core.AppLog.Experience("[NotebookFocusBlock] FocusNotebook suppressed — edit/scene interaction lock active. entry=public_FocusNotebook");
                 return;
             }
 
@@ -1723,13 +1724,13 @@ namespace BookshelfPorting.Runtime
             // 발생할 수 있어 한 번 더 가드. 중복 비용은 bool 체크 1회.
             if (IsViewingOtherUserSpace())
             {
-                Debug.Log("[NotebookFocusBlock] FocusNotebookImmediate suppressed — visiting another user's space.");
+                App.Core.AppLog.Experience("[NotebookFocusBlock] FocusNotebookImmediate suppressed — visiting another user's space.");
                 return;
             }
 
             if (AreSceneInteractionsSuppressed)
             {
-                Debug.Log("[NotebookFocusBlock] FocusNotebookImmediate suppressed — edit/scene interaction lock active. entry=immediate");
+                App.Core.AppLog.Experience("[NotebookFocusBlock] FocusNotebookImmediate suppressed — edit/scene interaction lock active. entry=immediate");
                 return;
             }
 
@@ -3932,7 +3933,7 @@ namespace BookshelfPorting.Runtime
         {
             var roomEdit = ResolveRoomEditModeController();
             bool shouldFade = CurrentFocusArea == ExperienceFocusArea.Guestbook;
-            Debug.Log($"[GuestbookFocus][Hook] SyncFromCameraMode → ApplyGuestbookFocusRoomFade focus={CurrentFocusArea} shouldFade={shouldFade} roomEditModeController={(roomEdit != null ? "found" : "NULL")}");
+            App.Core.AppLog.Experience($"[GuestbookFocus][Hook] SyncFromCameraMode → ApplyGuestbookFocusRoomFade focus={CurrentFocusArea} shouldFade={shouldFade} roomEditModeController={(roomEdit != null ? "found" : "NULL")}");
             if (roomEdit == null)
             {
                 return;
@@ -5925,13 +5926,11 @@ namespace BookshelfPorting.Runtime
             var buttonHeight = Mathf.Clamp(canvasSize.y * 0.05f, 48f, 62f);
             var gap = Mathf.Clamp(canvasSize.x * 0.008f, 12f, 18f);
             var saveWidth = Mathf.Clamp(canvasSize.x * 0.064f, 112f, 136f);
-            var designWidth = Mathf.Clamp(canvasSize.x * 0.084f, 144f, 178f);
             var manageWidth = Mathf.Clamp(canvasSize.x * 0.078f, 136f, 166f);
             var rightOffset = safeMargins.z + edge;
 
             SetTopRightButtonRect(bookshelfEditModeButton, rightOffset, topOffset, saveWidth, buttonHeight);
-            SetTopRightButtonRect(openBookshelfDesignButton, rightOffset + saveWidth + gap, topOffset, designWidth, buttonHeight);
-            SetTopRightButtonRect(openBookshelfManageButton, rightOffset + saveWidth + gap + designWidth + gap, topOffset, manageWidth, buttonHeight);
+            SetTopRightButtonRect(openBookshelfManageButton, rightOffset + saveWidth + gap, topOffset, manageWidth, buttonHeight);
         }
 
         private static void SetTopRightButtonRect(Button button, float rightOffset, float topOffset, float width, float height)
@@ -7959,20 +7958,13 @@ namespace BookshelfPorting.Runtime
                 ? "책장 삭제"
                 : "삭제 불가");
 
-            openBookshelfDesignButton.gameObject.SetActive(shouldShowEditControls);
-            openBookshelfDesignButton.interactable = shouldShowEditControls;
-            StyleHudButton(
-                openBookshelfDesignButton,
-                new Color32(255, 248, 236, 235),
-                new Color32(255, 255, 255, 245),
-                new Color32(224, 219, 214, 140),
-                14,
-                new Color32(63, 47, 38, 255),
-                true);
+            isBookshelfDesignPanelOpen = false;
+            openBookshelfDesignButton.gameObject.SetActive(false);
+            openBookshelfDesignButton.interactable = false;
 
             var showNamePanel = shouldShowEditControls && isBookshelfNameEditPanelOpen;
             var showDeletePanel = shouldShowEditControls && isBookshelfDeleteConfirmPanelOpen;
-            var showDesignPanel = shouldShowEditControls && isBookshelfDesignPanelOpen;
+            var showDesignPanel = false;
             var showBookAddPanel = canShowBookshelfOverlay && isBookAddPanelOpen;
             var showBookAddConfirmPanel = canShowBookshelfOverlay && isBookAddConfirmPanelOpen;
             var showBookshelfManagePanel = shouldShowEditControls && isBookshelfManagePanelOpen;
@@ -11587,7 +11579,7 @@ namespace BookshelfPorting.Runtime
 
         private IEnumerator LoadBookAddCoverImage(Image image, string url)
         {
-            using (var request = UnityWebRequestTexture.GetTexture(url))
+            using (var request = UnityWebRequestTexture.GetTexture(url, true))
             {
                 request.timeout = 8;
                 yield return request.SendWebRequest();
@@ -14768,7 +14760,7 @@ namespace BookshelfPorting.Runtime
             if (!externalDashboardPanelMountLogged || usedVisualSkin != externalDashboardPanelMountLastHadSkin)
             {
                 float distFromVisualCenter = usedVisualSkin ? Vector3.Distance(panelTransform.position, visualBounds.center) : -1f;
-                Debug.Log($"[ExternalDashboardPanel] MountExternalDashboardPanel result — " +
+                App.Core.AppLog.Experience($"[ExternalDashboardPanel] MountExternalDashboardPanel result — " +
                           $"usedVisualSkin={usedVisualSkin} " +
                           (usedVisualSkin
                               ? $"visualBounds.center={visualBounds.center} visualBounds.size={visualBounds.size} halfThickness={halfThickness:F4} tinyOffset={ExternalDashboardPanelTinyForwardOffset:F4} "

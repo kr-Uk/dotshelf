@@ -23,6 +23,7 @@ namespace App.Bootstrap
     [DisallowMultipleComponent]
     public sealed class SettingsScreenController : MonoBehaviour
     {
+
         private const string CanvasName = "SettingsCanvas";
         private const string PreferredKoreanFontAssetName = "NotoSansKR-Regular";
         private const string FallbackKoreanFontAssetName = "NOTOSANSKR SDF";
@@ -1061,7 +1062,7 @@ namespace App.Bootstrap
 
         private static void QuitApplication()
         {
-            Debug.Log("Quit application requested");
+            App.Core.AppLog.Settings("Quit application requested");
 #if UNITY_EDITOR
             UnityEditor.EditorApplication.isPlaying = false;
 #else
@@ -1385,7 +1386,7 @@ namespace App.Bootstrap
             SetMessage(profileEditFormMessageLabel, "프로필을 저장하는 중입니다...", MutedTextColor);
 
             string fullUrl = App.Domain.ApiEndpointDefaults.DefaultBaseUrl.TrimEnd('/') + "/v1/users/me";
-            Debug.Log(
+            App.Core.AppLog.Settings(
                 $"[Settings] PATCH /v1/users/me 요청 → {fullUrl} payload={{nickname='{request.Nickname}',hasIntro={request.Introduction != null},hasProfileImg={request.ProfileImageUrl != null}}}");
 
             client.UpdateMe(
@@ -1404,7 +1405,7 @@ namespace App.Bootstrap
                                 ReleaseSelectedProfileImagePreview();
                                 ClearSelectedProfileImageUploadState();
                                 LoadRemoteProfileImage(cachedProfile?.ProfileImageUrl);
-                                Debug.Log(
+                                App.Core.AppLog.Settings(
                                     $"[Settings] PATCH /v1/users/me ?묐떟 ??STATUS=2xx (onSuccess) " +
                                     $"BODY={{id={cachedProfile?.Id},nickname='{cachedProfile?.Nickname}',onboarded={cachedProfile?.Onboarded}}}");
                                 SetMessage(profileEditFormMessageLabel, "?꾨줈?꾩씠 ??λ릺?덉뒿?덈떎.", SuccessColor);
@@ -1421,7 +1422,7 @@ namespace App.Bootstrap
                     }
 
                     isProfileSaveInFlight = false;
-                    Debug.Log(
+                    App.Core.AppLog.Settings(
                         $"[Settings] PATCH /v1/users/me 응답 → STATUS=2xx (onSuccess) " +
                         $"BODY={{id={response?.Id},nickname='{response?.Nickname}',onboarded={response?.Onboarded}}}");
                     SetMessage(profileEditFormMessageLabel, "프로필이 저장되었습니다.", SuccessColor);
@@ -1947,7 +1948,7 @@ namespace App.Bootstrap
 
         private IEnumerator LoadRemoteProfileImageRoutine(string imageUrl, int loadVersion)
         {
-            using (var request = UnityWebRequestTexture.GetTexture(imageUrl))
+            using (var request = UnityWebRequestTexture.GetTexture(imageUrl, true))
             {
                 yield return request.SendWebRequest();
 
@@ -2268,13 +2269,13 @@ namespace App.Bootstrap
             string getMeUrl = App.Domain.ApiEndpointDefaults.DefaultBaseUrl.TrimEnd('/') + "/v1/users/me";
             void DoLoadCurrentProfile(NotebookApiClient apiClient)
             {
-                Debug.Log($"[Settings] GET /v1/users/me 요청 → {getMeUrl}");
+                App.Core.AppLog.Settings($"[Settings] GET /v1/users/me 요청 → {getMeUrl}");
                 apiClient.GetMe(
                     onSuccess: profile =>
                     {
                         isProfileLoadInFlight = false;
                         cachedProfile = profile;
-                        Debug.Log(
+                        App.Core.AppLog.Settings(
                             $"[Settings] GET /v1/users/me 응답 → STATUS=2xx (onSuccess) " +
                             $"BODY={{id={profile?.Id},nickname='{profile?.Nickname}',onboarded={profile?.Onboarded}}}");
                         ApplyProfileToUi(profile);

@@ -2,6 +2,7 @@
   "name": "App.Infrastructure",
   "rootNamespace": "App.Infrastructure",
   "references": [
+    "App.Core",
     "App.Domain",
     "App.Application"
   ],

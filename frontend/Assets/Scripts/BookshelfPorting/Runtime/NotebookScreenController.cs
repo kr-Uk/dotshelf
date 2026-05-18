@@ -17,6 +17,7 @@ namespace BookshelfPorting.Runtime
 {
     public class NotebookScreenController : MonoBehaviour
     {
+
         private static readonly string[] DefaultAdFolders =
         {
             "Assets/Resources/UI/Ads",
@@ -248,7 +249,7 @@ namespace BookshelfPorting.Runtime
                     dashboardCanvas.gameObject.SetActive(currentState == NotebookUiState.Dashboard);
                 }
             }
-            Debug.Log($"[NotebookFocusBlock] SetSceneInteractionSuppressed suppressed={suppressed} " +
+            App.Core.AppLog.Notebook($"[NotebookFocusBlock] SetSceneInteractionSuppressed suppressed={suppressed} " +
                       $"screenSaverActive={(screenSaverCanvas != null ? screenSaverCanvas.gameObject.activeSelf : false)} " +
                       $"dashboardActive={(dashboardCanvas != null ? dashboardCanvas.gameObject.activeSelf : false)} currentState={currentState}");
         }
@@ -262,12 +263,12 @@ namespace BookshelfPorting.Runtime
             if (screenSaverCanvas != null && screenSaverCanvas.gameObject.activeSelf)
             {
                 screenSaverCanvas.gameObject.SetActive(false);
-                Debug.Log($"[NotebookFocusBlock] reasserted ScreenSaverCanvas SetActive(false) reason={reason}");
+                App.Core.AppLog.Notebook($"[NotebookFocusBlock] reasserted ScreenSaverCanvas SetActive(false) reason={reason}");
             }
             if (dashboardCanvas != null && dashboardCanvas.gameObject.activeSelf)
             {
                 dashboardCanvas.gameObject.SetActive(false);
-                Debug.Log($"[NotebookFocusBlock] reasserted DashboardCanvas SetActive(false) reason={reason}");
+                App.Core.AppLog.Notebook($"[NotebookFocusBlock] reasserted DashboardCanvas SetActive(false) reason={reason}");
             }
         }
 
