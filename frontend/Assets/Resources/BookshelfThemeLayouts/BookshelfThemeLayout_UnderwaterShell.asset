@@ -28,8 +28,8 @@ MonoBehaviour:
     shelfTopY: 0.17
     sectionHeight: 0.269
     bookYOffset: 0.011
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 0
@@ -39,8 +39,8 @@ MonoBehaviour:
     shelfTopY: 0.17
     sectionHeight: 0.269
     bookYOffset: 0.011
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 0
@@ -50,8 +50,8 @@ MonoBehaviour:
     shelfTopY: 0.17
     sectionHeight: 0.269
     bookYOffset: 0.011
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 0
@@ -61,8 +61,8 @@ MonoBehaviour:
     shelfTopY: 0.17
     sectionHeight: 0.269
     bookYOffset: 0.011
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 1
@@ -72,8 +72,8 @@ MonoBehaviour:
     shelfTopY: 0.463
     sectionHeight: 0.268
     bookYOffset: 0.01
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 1
@@ -83,8 +83,8 @@ MonoBehaviour:
     shelfTopY: 0.463
     sectionHeight: 0.268
     bookYOffset: 0.01
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 1
@@ -94,8 +94,8 @@ MonoBehaviour:
     shelfTopY: 0.463
     sectionHeight: 0.268
     bookYOffset: 0.01
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 1
@@ -105,8 +105,8 @@ MonoBehaviour:
     shelfTopY: 0.463
     sectionHeight: 0.268
     bookYOffset: 0.01
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 2
@@ -116,8 +116,8 @@ MonoBehaviour:
     shelfTopY: 0.76699996
     sectionHeight: 0.267
     bookYOffset: 0.01
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 2
@@ -127,8 +127,8 @@ MonoBehaviour:
     shelfTopY: 0.76699996
     sectionHeight: 0.267
     bookYOffset: 0.01
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 2
@@ -138,8 +138,8 @@ MonoBehaviour:
     shelfTopY: 0.76699996
     sectionHeight: 0.267
     bookYOffset: 0.01
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 2
@@ -149,8 +149,8 @@ MonoBehaviour:
     shelfTopY: 0.76699996
     sectionHeight: 0.267
     bookYOffset: 0.01
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 3
@@ -160,8 +160,8 @@ MonoBehaviour:
     shelfTopY: 1.0799999
     sectionHeight: 0.257
     bookYOffset: 0.01
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 3
@@ -171,8 +171,8 @@ MonoBehaviour:
     shelfTopY: 1.0799999
     sectionHeight: 0.257
     bookYOffset: 0.01
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 3
@@ -182,8 +182,8 @@ MonoBehaviour:
     shelfTopY: 1.0799999
     sectionHeight: 0.257
     bookYOffset: 0.01
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 0
   - row: 3
@@ -193,7 +193,7 @@ MonoBehaviour:
     shelfTopY: 1.0799999
     sectionHeight: 0.257
     bookYOffset: 0.01
-    frontBoundZ: -0.07367905
-    backBoundZ: 0.20367903
+    frontBoundZ: -0.06867905
+    backBoundZ: 0.20867902
     alignment: 0
     isAdvertisementSection: 1
