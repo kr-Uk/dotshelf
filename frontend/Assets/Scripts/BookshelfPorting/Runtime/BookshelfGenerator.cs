@@ -173,6 +173,10 @@ namespace BookshelfPorting.Runtime
         private readonly List<int> navigableBookshelfIndices = new List<int>();
         private RoomThemeApplier cachedRoomThemeApplier;
         private string lastNavigationCandidateLogSignature;
+        private bool navigableBookshelfIndicesDirty = true;
+        private long lastNavigableThemeAssetId = long.MinValue;
+        private BookshelfThemeStyle lastNavigableThemeStyle = (BookshelfThemeStyle)(-1);
+        private int lastNavigableBookshelfCount = -1;
 
         public Transform BooksRoot => booksRoot;
 
@@ -272,6 +276,7 @@ namespace BookshelfPorting.Runtime
             bookshelfNames.Clear();
             bookshelfDesignStyles.Clear();
             bookshelfVisibilityScopes.Clear();
+            MarkNavigableBookshelfIndicesDirty();
 
             if (orderedShelves.Count == 0)
             {
@@ -881,12 +886,31 @@ namespace BookshelfPorting.Runtime
             return GetBookshelfDesignStyle(index);
         }
 
+        private void MarkNavigableBookshelfIndicesDirty()
+        {
+            navigableBookshelfIndicesDirty = true;
+        }
+
         private void BuildNavigableBookshelfIndices()
         {
-            navigableBookshelfIndices.Clear();
             var activeTheme = ResolveActiveNavigationTheme();
             var activeThemeStyle = ResolveActiveNavigationThemeStyle();
+            var activeThemeAssetId = activeTheme != null ? activeTheme.AssetId : 0L;
             var totalCandidateCount = Mathf.Max(0, bookshelfCount);
+
+            if (!navigableBookshelfIndicesDirty &&
+                lastNavigableThemeAssetId == activeThemeAssetId &&
+                lastNavigableThemeStyle == activeThemeStyle &&
+                lastNavigableBookshelfCount == totalCandidateCount)
+            {
+                return;
+            }
+
+            navigableBookshelfIndicesDirty = false;
+            lastNavigableThemeAssetId = activeThemeAssetId;
+            lastNavigableThemeStyle = activeThemeStyle;
+            lastNavigableBookshelfCount = totalCandidateCount;
+            navigableBookshelfIndices.Clear();
             var excludedEntries = new List<string>();
 
             if (totalCandidateCount <= 0)
@@ -1027,10 +1051,18 @@ namespace BookshelfPorting.Runtime
             }
 
             var activeTheme = ResolveActiveNavigationTheme();
-            Debug.LogWarning(
+            var fallbackMessage =
                 $"[BookshelfNav] procedural_fallback activeThemeId={activeTheme?.AssetId ?? 0L} activeThemeName={activeTheme?.DisplayName ?? "none"} " +
                 $"shellRoot={(shellRoot != null ? shellRoot.name : "null")} style={style} includeFocusHitArea={includeFocusHitArea} " +
-                $"reason={(themeLayout == null ? "layout_missing" : "layout_invalid")}");
+                $"reason={(themeLayout == null ? "layout_missing" : "layout_invalid")}";
+            if (style == BookshelfThemeStyle.Default)
+            {
+                Debug.Log(fallbackMessage);
+            }
+            else
+            {
+                Debug.LogWarning(fallbackMessage);
+            }
 
             CreateBox("LeftPanel", shellRoot, new Vector3(-width * 0.5f + boardThickness * 0.5f, height * 0.5f, 0f), new Vector3(boardThickness, height, depth), wood);
             CreateBox("RightPanel", shellRoot, new Vector3(width * 0.5f - boardThickness * 0.5f, height * 0.5f, 0f), new Vector3(boardThickness, height, depth), wood);
@@ -2446,6 +2478,7 @@ namespace BookshelfPorting.Runtime
             bookshelfNames[newIndex] = GetDefaultBookshelfName(newIndex);
             activeBookshelfIndex = newIndex;
             pendingBookshelfIndex = -1;
+            MarkNavigableBookshelfIndicesDirty();
             RebuildActiveBookshelfVariant(activeBookshelfIndex);
             BookshelfSwitchStateChanged?.Invoke();
             return true;
@@ -2470,6 +2503,7 @@ namespace BookshelfPorting.Runtime
             bookshelfCount--;
             activeBookshelfIndex = Mathf.Clamp(deletedIndex, 0, bookshelfCount - 1);
             pendingBookshelfIndex = -1;
+            MarkNavigableBookshelfIndicesDirty();
             RebuildActiveBookshelfVariant(activeBookshelfIndex);
             BookshelfSwitchStateChanged?.Invoke();
             return true;
@@ -2549,6 +2583,7 @@ namespace BookshelfPorting.Runtime
                 bookshelfDesignStyles[index] = style;
             }
 
+            MarkNavigableBookshelfIndicesDirty();
             RebuildActiveBookshelfVariant(index);
             BookshelfSwitchStateChanged?.Invoke();
             return true;
@@ -2570,6 +2605,7 @@ namespace BookshelfPorting.Runtime
 
             SaveActiveBookshelfLayoutSnapshot();
             bookshelfDesignStyles.Clear();
+            MarkNavigableBookshelfIndicesDirty();
             RebuildActiveBookshelfVariant(GetWrappedBookshelfIndex(activeBookshelfIndex));
             BookshelfSwitchStateChanged?.Invoke();
             return true;
