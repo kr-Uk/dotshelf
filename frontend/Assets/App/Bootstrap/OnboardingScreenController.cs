@@ -801,8 +801,22 @@ namespace App.Bootstrap
             // the main-scene chrome and focus-mode chrome resume their normal visibility.
             if (TryGetBookshelfExperienceManager(out var experienceManager) && experienceManager != null)
             {
+                if (TryGetRoomEditModeController(out var roomEditModeController) &&
+                    roomEditModeController.TryGetCurrentTheme(out var currentTheme) &&
+                    IsVintageTheme(currentTheme))
+                {
+                    roomEditModeController.LogCurrentDeskNotebookHierarchyState("OnboardingComplete.beforeFocusMainView");
+                }
+
                 experienceManager.IsOnboardingStep3Active = false;
                 experienceManager.FocusMainView();
+
+                if (TryGetRoomEditModeController(out roomEditModeController) &&
+                    roomEditModeController.TryGetCurrentTheme(out currentTheme) &&
+                    IsVintageTheme(currentTheme))
+                {
+                    roomEditModeController.LogCurrentDeskNotebookHierarchyState("OnboardingComplete.afterFocusMainView");
+                }
             }
 
             CompleteOnboarding();
@@ -2819,6 +2833,26 @@ namespace App.Bootstrap
             return experienceManager != null;
         }
 
+        private bool TryGetRoomEditModeController(out RoomEditModeController controller)
+        {
+            controller = UnityEngine.Object.FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
+            return controller != null;
+        }
+
+        private static bool IsVintageTheme(RoomThemeAsset theme)
+        {
+            if (theme == null)
+            {
+                return false;
+            }
+
+            return theme.AssetId == 200031L ||
+                   (!string.IsNullOrWhiteSpace(theme.DisplayName) &&
+                    theme.DisplayName.IndexOf("vintage", StringComparison.OrdinalIgnoreCase) >= 0) ||
+                   (!string.IsNullOrWhiteSpace(theme.name) &&
+                    theme.name.IndexOf("vintage", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
         // Best-effort: if the bookshelf manager isn't reachable yet (e.g. main scene
         // hasn't loaded), the flag will be set on the next opportunity through
         // OnCompletionConfirmClicked / CompleteOnboarding, so silently no-op here.
@@ -2837,6 +2871,7 @@ namespace App.Bootstrap
             SetStep3StatusVisible(false);
             SetStep3LoadingCoverVisible(true);
             SetStep3LoadingCoverAlpha(1f);
+            Debug.Log("[OnboardingStep3] start");
             SetStep3OverlayStatus("메인 화면을 준비 중입니다.");
 
             if (SceneManager.GetActiveScene().name != SceneKeys.Main)
@@ -2868,42 +2903,61 @@ namespace App.Bootstrap
             BookshelfExperienceManager experienceManager = null;
             CameraController cameraController = null;
             BookshelfGenerator bookshelfGenerator = null;
-
-            // Step 3 special case: the player must see QuarterView (not the new MainView
-            // default) before the bookshelf-focus transition kicks in. Snap before the
-            // loading cover hides so there is no MainView flash.
-            if (TryGetBookshelfSceneDependencies(out var initialExperienceManager, out var initialCameraController, out _))
-            {
-                if (initialExperienceManager != null)
-                {
-                    // Manager is now reachable — propagate the Step 3 flag in case the
-                    // earlier ShowStep(3) call ran before the main scene finished loading.
-                    initialExperienceManager.IsOnboardingStep3Active = true;
-                }
-                if (initialCameraController != null)
-                {
-                    initialCameraController.ApplyQuarterView();
-                }
-            }
+            var selectedThemeApplied = false;
+            var mainViewSnapRequested = false;
+            var mainViewRevealRequested = false;
 
             var readyDeadline = Time.unscaledTime + MainViewReadyTimeoutSeconds;
             var visualReadySince = -1f;
             while (Time.unscaledTime < readyDeadline)
             {
-                if (TryGetBookshelfSceneDependencies(out experienceManager, out cameraController, out bookshelfGenerator) &&
-                    IsMainViewReadyForBookshelfFocus(experienceManager, cameraController, bookshelfGenerator))
+                if (TryGetBookshelfSceneDependencies(out experienceManager, out cameraController, out bookshelfGenerator))
                 {
-                    if (visualReadySince < 0f)
+                    if (!selectedThemeApplied)
                     {
-                        visualReadySince = Time.unscaledTime;
-                        SetStep3OverlayStatus("책장을 정리하는 중입니다.");
-                        SetStep3LoadingMessage("책장과 책을 화면에 안정적으로 배치하고 있어요.");
+                        Debug.Log($"[OnboardingStep3] selected theme={selectedTheme ?? "<null>"}");
+                        if (experienceManager != null)
+                        {
+                            experienceManager.IsOnboardingStep3Active = true;
+                        }
+
+                        ApplySelectedThemeIfAvailable("EnterMainAndBookshelfFocusFlow");
+                        Debug.Log("[OnboardingStep3] theme apply complete");
+                        selectedThemeApplied = true;
                     }
 
-                    if ((Time.unscaledTime - visualReadySince) >= BookshelfVisualSettleSeconds)
+                    if (!mainViewSnapRequested && experienceManager != null)
                     {
-                        isMainViewReady = true;
-                        break;
+                        Debug.Log("[OnboardingStep3] set main front view");
+                        experienceManager.SnapToMainView();
+                        mainViewSnapRequested = true;
+                    }
+
+                    if (IsMainViewReadyForBookshelfFocus(experienceManager, cameraController, bookshelfGenerator))
+                    {
+                        if (visualReadySince < 0f)
+                        {
+                            visualReadySince = Time.unscaledTime;
+                            SetStep3OverlayStatus("책장을 정리하는 중입니다.");
+                            SetStep3LoadingMessage("책장과 책을 화면에 안정적으로 배치하고 있어요.");
+                        }
+
+                        if ((Time.unscaledTime - visualReadySince) >= BookshelfVisualSettleSeconds)
+                        {
+                            isMainViewReady = true;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        visualReadySince = -1f;
+                        SetStep3LoadingMessage("책장 정보를 불러오고 있어요.");
+                    }
+
+                    if (selectedThemeApplied && mainViewSnapRequested && !mainViewRevealRequested)
+                    {
+                        SetStep3LoadingCoverVisible(false);
+                        mainViewRevealRequested = true;
                     }
                 }
                 else
@@ -2926,20 +2980,17 @@ namespace App.Bootstrap
                     yield break;
                 }
             }
-            else
+
+            if (!mainViewRevealRequested)
             {
                 SetStep3LoadingCoverVisible(false);
-                yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
+                mainViewRevealRequested = true;
             }
 
-            // Step2 에서 선택한 테마 (또는 랜덤 버튼이 선택한 테마) 를 MainScene 에 적용 + 영속화.
-            // MainView 의존성이 ready 된 직후 + 책장 포커스 진입 전 시점이 자연스러움 — 사용자가
-            // 책장 focus 로 카메라가 이동하기 시작할 때 이미 새 테마 visual 이 반영돼 있음.
-            // RoomEditModeController.ApplyExternalThemeSelection 가 themeApplier.Apply + Persist
-            // LastAppliedLocalPreviewTheme + ApplyThemeDefaultEntries 를 single source 로 처리.
-            ApplySelectedThemeIfAvailable("EnterMainAndBookshelfFocusFlow");
+            yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
 
             SetStep3OverlayStatus("책장 포커스 화면으로 이동 중입니다.");
+            Debug.Log("[OnboardingStep3] start bookshelf focus transition");
             var focusDeadline = Time.unscaledTime + BookshelfFocusTimeoutSeconds;
             var nextRetryAt = Time.unscaledTime;
             while (Time.unscaledTime < focusDeadline)

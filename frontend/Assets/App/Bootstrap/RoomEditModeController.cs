@@ -2601,6 +2601,12 @@ namespace App.Bootstrap
             return false;
         }
 
+        public bool TryGetCurrentTheme(out RoomThemeAsset theme)
+        {
+            theme = themeApplier != null ? themeApplier.CurrentTheme : null;
+            return theme != null;
+        }
+
         private void LogFantasyDeskHierarchyState(string source)
         {
             if (themeApplier == null)
@@ -2641,6 +2647,38 @@ namespace App.Bootstrap
                 $"notebookLocalScale={(notebook != null ? notebook.localScale.ToString() : "null")} " +
                 $"notebookWorldPos={(notebook != null ? notebook.position.ToString() : "null")} " +
                 $"notebookWorldRot={(notebook != null ? notebook.eulerAngles.ToString() : "null")} " +
+                $"notebookWorldScale={(notebook != null ? notebook.lossyScale.ToString() : "null")}");
+        }
+
+        public void LogCurrentDeskNotebookHierarchyState(string source)
+        {
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+
+            var theme = themeApplier != null ? themeApplier.CurrentTheme : null;
+            var roomRoot = themeApplier != null ? themeApplier.RoomRoot : null;
+            if (roomRoot == null)
+            {
+                Debug.Log($"[VintageDesk] {source} roomRoot=null theme={(theme != null ? theme.DisplayName : "null")}");
+                return;
+            }
+
+            var notebookStation = FindNotebookStation(roomRoot);
+            var desk = FindChildByName(roomRoot, "Desk");
+            var notebook = FindChildByName(roomRoot, "Notebook");
+            Debug.Log(
+                $"[VintageDesk] {source} theme={(theme != null ? theme.DisplayName : "null")} assetId={(theme != null ? theme.AssetId.ToString() : "null")} " +
+                $"notebookStation={(notebookStation != null ? notebookStation.name : "null")} " +
+                $"notebookStationLocalPos={(notebookStation != null ? notebookStation.localPosition.ToString() : "null")} " +
+                $"notebookStationLocalRot={(notebookStation != null ? notebookStation.localEulerAngles.ToString() : "null")} " +
+                $"notebookStationLocalScale={(notebookStation != null ? notebookStation.localScale.ToString() : "null")} " +
+                $"desk={(desk != null ? desk.name : "null")} deskLocalPos={(desk != null ? desk.localPosition.ToString() : "null")} " +
+                $"deskLocalRot={(desk != null ? desk.localEulerAngles.ToString() : "null")} deskLocalScale={(desk != null ? desk.localScale.ToString() : "null")} " +
+                $"notebook={(notebook != null ? notebook.name : "null")} notebookLocalPos={(notebook != null ? notebook.localPosition.ToString() : "null")} " +
+                $"notebookLocalRot={(notebook != null ? notebook.localEulerAngles.ToString() : "null")} notebookLocalScale={(notebook != null ? notebook.localScale.ToString() : "null")} " +
+                $"notebookWorldPos={(notebook != null ? notebook.position.ToString() : "null")} notebookWorldRot={(notebook != null ? notebook.eulerAngles.ToString() : "null")} " +
                 $"notebookWorldScale={(notebook != null ? notebook.lossyScale.ToString() : "null")}");
         }
 
@@ -5058,6 +5096,11 @@ namespace App.Bootstrap
         public void ReapplyActiveDeskOverlayAfterFocusTransition(string source)
         {
             if (themeApplier == null || themeApplier.RoomRoot == null) return;
+            if (IsVintageTheme(themeApplier.CurrentTheme))
+            {
+                Debug.Log($"[VintageDesk] ReapplyActiveDeskOverlayAfterFocusTransition skipped source={source} theme={(themeApplier.CurrentTheme != null ? themeApplier.CurrentTheme.DisplayName : "null")}");
+                return;
+            }
             ReapplyActiveDeskOverlay(themeApplier.RoomRoot);
             Debug.Log($"[MonitorScreen] Reapply screensaver canvas transform after focus return source={source}");
         }
@@ -5173,6 +5216,20 @@ namespace App.Bootstrap
                 current = current.parent;
             }
             return false;
+        }
+
+        private static bool IsVintageTheme(RoomThemeAsset theme)
+        {
+            if (theme == null)
+            {
+                return false;
+            }
+
+            return theme.AssetId == 200031L ||
+                   (!string.IsNullOrWhiteSpace(theme.DisplayName) &&
+                    theme.DisplayName.IndexOf("vintage", System.StringComparison.OrdinalIgnoreCase) >= 0) ||
+                   (!string.IsNullOrWhiteSpace(theme.name) &&
+                    theme.name.IndexOf("vintage", System.StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         private static void SetRenderersEnabled(Transform root, bool enabled)
