@@ -3203,7 +3203,8 @@ namespace App.Bootstrap
             // 슬롯 정책 (MR #157 후속): incoming 테마가 차지할 슬롯/자산에 매칭되는 placement
             // 만 hold 로 detach. 매칭 안 되는 사용자 placement 는 placedItemsRoot 에 그대로
             // 남아 테마 교체 후에도 visible 유지.
-            DetachPlacementForRollback(theme);
+            var resetAllPlacements = mode == ThemeApplyMode.Reset;
+            DetachPlacementForRollback(theme, resetAllPlacements);
 
             themeApplier.Apply(theme);
             // 벽 sharedMaterial 이 swap 됐으므로 편집 모드 중이면 fade 즉시 재적용 (탑다운/사선에서 occlusion 복귀 방지).
@@ -3224,7 +3225,7 @@ namespace App.Bootstrap
             // 테마의 default entries 자동 적용 — visual 즉시 반영. PATCH 결과 무관 (401/네트워크
             // 실패해도 산뜻 자산 mesh swap 적용). 사용자가 BE 인증 안 된 dev 환경에서도 검증 가능.
             // PATCH 성공 후엔 BE 응답 themeReset 의 ReloadRoomState 가 server 권위 상태로 재동기화.
-            ApplyThemeDefaultEntries(theme, persistEntries: persist);
+            ApplyThemeDefaultEntries(theme, persistEntries: persist, resetExistingPlacements: resetAllPlacements);
 
             // persist=false (온보딩 Step2 preview 등) — PATCH 도 skip. visual 만 적용하고 종료.
             if (!persist)
@@ -3232,6 +3233,7 @@ namespace App.Bootstrap
                 DiscardPlacementRollbackHold();
                 return;
             }
+
 
             // local preview 전용 테마 — placeholder (가구/벽지/바닥 미제작). 명시 플래그 + assetId<=0 fallback.
             // RoomThemeApplier 는 라이팅만 영향. POST /spaces/me/theme/{id}/apply 는 skip (401/403 회피).
@@ -3284,7 +3286,9 @@ namespace App.Bootstrap
                         ApplyThemeResetVisualFallback();
                         // reset 후 default entries 재적용 (fallback 이 lastAppliedEntries clear 함).
                         // DetachPlacementForRollback 가 다시 hold root 로 detach 하므로 그 직후 discard.
-                        ApplyThemeDefaultEntries(theme);
+                        ApplyThemeDefaultEntries(theme, persistEntries: persist, resetExistingPlacements: resetAllPlacements);
+                        DiscardPlacementRollbackHold();
+                        PersistThemeResetLayoutIfNeeded(resetAllPlacements, "theme apply success");
                     }
                     // PATCH 성공 — rollback hold root 의 이전 placement 는 더 이상 필요 없으므로 destroy.
                     DiscardPlacementRollbackHold();
@@ -3509,7 +3513,8 @@ namespace App.Bootstrap
         // PATCH 는 안 보냄 — visual 만. 사용자가 명시적으로 entry 클릭해야 BE 저장.
         // persistEntries=false — 온보딩 Step2 preview. lastAppliedEntries dict 는 그대로 갱신
         // (in-session visual 일관성) 되지만 PlayerPrefs 저장 호출은 skip → 다음 세션에 영향 없음.
-        private void ApplyThemeDefaultEntries(RoomThemeAsset theme, bool persistEntries = true)
+        private void ApplyThemeDefaultEntries(RoomThemeAsset theme, bool persistEntries = true, bool resetExistingPlacements = false)
+
         {
             if (theme == null) return;
             Debug.Log($"[RoomEditModeController] ApplyThemeDefaultEntries 진입 — theme={theme.DisplayName}, defaults={(theme.DefaultEntries?.Count ?? 0)}, floorDecos={(theme.FloorDecoSpecs?.Count ?? 0)}, wallDecos={(theme.WallDecoSpecs?.Count ?? 0)}");
@@ -3519,12 +3524,20 @@ namespace App.Bootstrap
             // (마커 없음) 는 보존. MR #157 의 슬롯 매칭 정책은 spec 에 themeSlot 이 비어
             // 있을 때 중복 spawn 회귀를 일으켜 폐기. RemovePlacementsForIncomingTheme
             // 는 leftover hold-root 매칭 보강 용도로 호출 유지.
-            ClearAllThemeSpawnedDecos();
-            RemovePlacementsForIncomingTheme(theme);
-            // ThemeSlotMarker 없이 placedItemsRoot 에 남아있는 saved-restored / user-placed
-            // 자산 중 incoming 테마와 다른 prefix 를 가진 것들을 추가로 destroy. 위 두 cleanup
-            // 이 못 잡는 회귀 (이전 세션 spooky 자산이 vintage 적용 후에도 남는 케이스) 차단.
-            RemoveDecosWithMismatchedThemePrefix(theme);
+            if (resetExistingPlacements)
+            {
+                ClearAllPlacedDecos();
+                ClearSlotVisualSkinsForThemeReset();
+            }
+            else
+            {
+                ClearAllThemeSpawnedDecos();
+                RemovePlacementsForIncomingTheme(theme);
+                // ThemeSlotMarker 없이 placedItemsRoot 에 남아있는 saved-restored / user-placed
+                // 자산 중 incoming 테마와 다른 prefix 를 가진 것들을 추가로 destroy. 위 두 cleanup
+                // 이 못 잡는 회귀 (이전 세션 spooky 자산이 vintage 적용 후에도 남는 케이스) 차단.
+                RemoveDecosWithMismatchedThemePrefix(theme);
+            }
 
             // 1.5) 이전 mesh swap 모두 native 복원. theme 의 defaultEntries 에 해당 카테고리
             // entry 가 있으면 step 2 에서 다시 swap 적용. 없으면 native 유지 (기본 책상/책장 복귀).
@@ -3594,6 +3607,66 @@ namespace App.Bootstrap
         //   2. DecorationItemMarker.InventoryKey 동일 (incoming spec 들의 assetKey 와 매칭)
         //
         // 좌표 기반 매칭은 의도적으로 사용 안 함 — 사용자가 슬롯 자산을 옮겨도 슬롯/자산 신원으로 식별.
+        // Shelf and dashboard theme assets are attached to functional scene roots, not placedItemsRoot.
+        // RESET must clear them separately so a previous theme skin cannot survive the full reset.
+        private static void ClearSlotVisualSkinsForThemeReset()
+        {
+            BookshelfVisualSkinApplier.ClearSkin("theme reset");
+            DashboardVisualSkinApplier.ClearSkin("theme reset");
+        }
+
+        // RESET mode makes the theme defaults the new persisted room layout.
+        private void PersistThemeResetLayoutIfNeeded(bool shouldPersist, string reason)
+        {
+            if (!shouldPersist)
+            {
+                return;
+            }
+
+            if (UnityEngine.Application.isPlaying && isActiveAndEnabled)
+            {
+                StartCoroutine(PersistThemeResetLayoutNextFrame(reason));
+                return;
+            }
+
+            PersistThemeResetLayoutNow(reason);
+        }
+
+        private IEnumerator PersistThemeResetLayoutNextFrame(string reason)
+        {
+            yield return null;
+            PersistThemeResetLayoutNow(reason);
+        }
+
+        private void PersistThemeResetLayoutNow(string reason)
+        {
+            EnsureDecorationUseCases();
+            var items = CollectDecorationLayoutItems(scopeToPlacedItemsRoot: true);
+            Debug.Log($"[RoomEdit][Theme] Persist reset layout ({reason}) - {items.Count} item(s).");
+
+            if (saveDecorationsUseCase == null)
+            {
+                TrySaveLayoutSnapshotToServer(items);
+                TryUploadRoomThumbnail();
+                return;
+            }
+
+            saveDecorationsUseCase.Execute(
+                items,
+                onSuccess: () =>
+                {
+                    TrySaveLayoutSnapshotToServer(items);
+                    TryUploadRoomThumbnail();
+                    ClearDirty("theme reset layout persisted");
+                },
+                onError: msg =>
+                {
+                    Debug.LogWarning($"[RoomEdit][Theme] local reset layout save failed ({reason}): {msg}");
+                    TrySaveLayoutSnapshotToServer(items);
+                    TryUploadRoomThumbnail();
+                });
+        }
+
         private void RemovePlacementsForIncomingTheme(RoomThemeAsset theme)
         {
             if (placedItemsRoot == null) return;
@@ -4040,6 +4113,7 @@ namespace App.Bootstrap
         private void ClearAllPlacedDecos()
         {
             if (placedItemsRoot == null) return;
+            placedByInventoryKey.Clear();
             for (int i = placedItemsRoot.transform.childCount - 1; i >= 0; i--)
             {
                 var child = placedItemsRoot.transform.GetChild(i).gameObject;
@@ -4061,7 +4135,7 @@ namespace App.Bootstrap
         // placement 만 hidden hold root 로 detach. 매칭 안 되는 사용자 placement 는 placedItemsRoot
         // 에 그대로 남아 보존. 이전에 detach 된 hold 가 남아 있으면 (예: 같은 프레임 연속 클릭)
         // destroy 후 다시 시작.
-        private void DetachPlacementForRollback(RoomThemeAsset incomingTheme)
+        private void DetachPlacementForRollback(RoomThemeAsset incomingTheme, bool detachAllPlacements = false)
         {
             DiscardPlacementRollbackHold();
             if (placedItemsRoot == null) return;
@@ -4082,7 +4156,7 @@ namespace App.Bootstrap
             {
                 var child = placedItemsRoot.transform.GetChild(i);
                 // 매칭 안 됨 → 사용자 placement 로 간주, placedItemsRoot 에 그대로 보존.
-                if (!ShouldReplaceForIncomingTheme(child.gameObject, incomingSlots, incomingAssetKeys))
+                if (!detachAllPlacements && !ShouldReplaceForIncomingTheme(child.gameObject, incomingSlots, incomingAssetKeys))
                 {
                     preserved++;
                     continue;
@@ -4523,32 +4597,32 @@ namespace App.Bootstrap
             // mesh 자식에도 MeshCollider 합성 (정밀 hit 가 필요한 케이스 대비 — drag/select 는
             // root BoxCollider 만으로도 동작하지만, 향후 다른 사용처에서 mesh-precise hit 필요할
             // 수도 있어 retain).
-            var meshFilters = go.GetComponentsInChildren<MeshFilter>(true);
-            for (int i = 0; i < meshFilters.Length; i++)
-            {
-                var mf = meshFilters[i];
-                if (mf == null || mf.sharedMesh == null) continue;
-                if (mf.gameObject.name == "WallMaskQuad") continue;
-                if (mf.GetComponent<Collider>() != null) continue;
-                var collider = mf.gameObject.AddComponent<MeshCollider>();
-                collider.sharedMesh = mf.sharedMesh;
-                collider.convex = false;
-            }
-
+            // Remote GLB decorations only need a broad hit target for select/drag.
+            // Runtime MeshCollider creation bakes PhysX collision meshes and caused
+            // multi-second profiler spikes when a room with many remote assets loaded.
             // root 에 BoxCollider 가 이미 있으면 skip (중복 회피). 없으면 renderer bounds 로 합성.
             // PlaceInventoryEntry 와 동일 좌표 변환 (world → local, 음수 size 방지 Mathf.Abs).
-            if (go.GetComponent<BoxCollider>() == null)
+            EnsureRootBoxColliderFromRendererBounds(go, skipWallMaskQuad: true);
+        }
+
+        private static void EnsureRootBoxColliderFromRendererBounds(GameObject go, bool skipWallMaskQuad)
+        {
+            if (go == null || go.GetComponent<BoxCollider>() != null)
             {
-                var rendererBounds = ComputeRendererBounds(go);
-                if (rendererBounds.HasValue)
-                {
-                    var box = go.AddComponent<BoxCollider>();
-                    var localCenter = go.transform.InverseTransformPoint(rendererBounds.Value.center);
-                    var localSize = go.transform.InverseTransformVector(rendererBounds.Value.size);
-                    box.center = localCenter;
-                    box.size = new Vector3(Mathf.Abs(localSize.x), Mathf.Abs(localSize.y), Mathf.Abs(localSize.z));
-                }
+                return;
             }
+
+            var rendererBounds = ComputeRendererBounds(go, skipWallMaskQuad ? "WallMaskQuad" : null);
+            if (!rendererBounds.HasValue)
+            {
+                return;
+            }
+
+            var box = go.AddComponent<BoxCollider>();
+            var localCenter = go.transform.InverseTransformPoint(rendererBounds.Value.center);
+            var localSize = go.transform.InverseTransformVector(rendererBounds.Value.size);
+            box.center = localCenter;
+            box.size = new Vector3(Mathf.Abs(localSize.x), Mathf.Abs(localSize.y), Mathf.Abs(localSize.z));
         }
 
         // 카테고리별 visual swap. RoomThemeApplier의 RoomRoot/DirectionalLight reference를
@@ -7972,7 +8046,7 @@ namespace App.Bootstrap
             });
         }
 
-        private List<DecorationLayoutItem> CollectDecorationLayoutItems()
+        private List<DecorationLayoutItem> CollectDecorationLayoutItems(bool scopeToPlacedItemsRoot = false)
         {
             var list = new List<DecorationLayoutItem>();
             var markers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
@@ -7984,6 +8058,10 @@ namespace App.Bootstrap
                 // MR #122 — preview 상태(미확정 신규 추가) 항목은 저장에서 제외. 사용자가 "배치 확정"
                 // 누른 항목만 영속화 대상. 미저장 종료 시엔 RollbackToEditEntrySnapshot 가 alive
                 // 비교로 자동 destroy 한다.
+                if (scopeToPlacedItemsRoot && (placedItemsRoot == null || !m.transform.IsChildOf(placedItemsRoot.transform)))
+                {
+                    continue;
+                }
                 if (pendingPlacements.Contains(m.gameObject))
                 {
                     pending++;
@@ -10178,18 +10256,7 @@ namespace App.Bootstrap
                 return;
             }
 
-            var rendererBounds = ComputeRendererBounds(go);
-            if (!rendererBounds.HasValue)
-            {
-                return;
-            }
-
-            var bounds = rendererBounds.Value;
-            var collider = go.AddComponent<BoxCollider>();
-            var localCenter = go.transform.InverseTransformPoint(bounds.center);
-            var localSize = go.transform.InverseTransformVector(bounds.size);
-            collider.center = localCenter;
-            collider.size = new Vector3(Mathf.Abs(localSize.x), Mathf.Abs(localSize.y), Mathf.Abs(localSize.z));
+            EnsureRootBoxColliderFromRendererBounds(go, skipWallMaskQuad: false);
         }
 
         // Search outward from `desiredPosition` in MinorGridStep rings for a
@@ -10660,7 +10727,7 @@ namespace App.Bootstrap
             return DefaultGenericTargetSizeMeters;
         }
 
-        private static Bounds? ComputeRendererBounds(GameObject go)
+        private static Bounds? ComputeRendererBounds(GameObject go, string excludedRendererObjectName = null)
         {
             // includeInactive = true so a .glb whose visual root is
             // temporarily disabled still reports a usable AABB. UpdateDrag
@@ -10694,6 +10761,7 @@ namespace App.Bootstrap
                 if (r == null) { skipped++; continue; }
                 if (!r.enabled) { skipped++; continue; }
                 if (r.gameObject == null || !r.gameObject.activeInHierarchy) { skipped++; continue; }
+                if (!string.IsNullOrEmpty(excludedRendererObjectName) && r.gameObject.name == excludedRendererObjectName) { skipped++; continue; }
                 if (r is ParticleSystemRenderer || r is TrailRenderer || r is LineRenderer) { skipped++; continue; }
                 // SkinnedMeshRenderer 가 첫 frame 에 sentinel bounds 를 반환할 수 있어 size 0 이면 skip.
                 var rb = r.bounds;
@@ -10705,7 +10773,14 @@ namespace App.Bootstrap
             if (!aggregate.HasValue && renderers.Length > 0)
             {
                 // 모든 Renderer 가 필터됐으면 fallback — 첫 renderer.bounds 라도 반환해 회귀 (null) 회피.
-                aggregate = renderers[0].bounds;
+                for (var i = 0; i < renderers.Length; i++)
+                {
+                    var fallbackRenderer = renderers[i];
+                    if (fallbackRenderer == null) continue;
+                    if (!string.IsNullOrEmpty(excludedRendererObjectName) && fallbackRenderer.gameObject.name == excludedRendererObjectName) continue;
+                    aggregate = fallbackRenderer.bounds;
+                    break;
+                }
             }
             return aggregate;
         }
@@ -10888,17 +10963,7 @@ namespace App.Bootstrap
         // 전용이라 collider 추가 X — 사용자 raycast 가 그걸 hit 하면 안 되고 wall 까지 통과해야 함.
         private static void EnsureCollidersForWallDeco(GameObject go)
         {
-            var meshFilters = go.GetComponentsInChildren<MeshFilter>(true);
-            for (int i = 0; i < meshFilters.Length; i++)
-            {
-                var mf = meshFilters[i];
-                if (mf == null || mf.sharedMesh == null) continue;
-                if (mf.gameObject.name == "WallMaskQuad") continue;
-                if (mf.GetComponent<Collider>() != null) continue;
-                var collider = mf.gameObject.AddComponent<MeshCollider>();
-                collider.sharedMesh = mf.sharedMesh;
-                collider.convex = false; // raycast 용도라 충돌 처리 불필요
-            }
+            EnsureRootBoxColliderFromRendererBounds(go, skipWallMaskQuad: true);
         }
 
         // ray 와 4 wall 의 inner face plane 교차 → 가장 가까운 wall 의 hit 위치 반환.

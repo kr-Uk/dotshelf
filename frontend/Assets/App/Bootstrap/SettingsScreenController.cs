@@ -37,6 +37,8 @@ namespace App.Bootstrap
         private const float SettingsButtonHeight = 60f;
         private const float SettingsButtonMargin = 32f;
         private const float SettingsButtonStackGap = 12f;
+        private const string MainViewModeLabel = "정면뷰";
+        private const string QuarterViewModeLabel = "쿼터뷰";
         private const float LeftPaneRatio = 0.3f;
         private const float LeftMenuItemHeight = 60f;
 
@@ -82,6 +84,7 @@ namespace App.Bootstrap
 
         private GameObject settingsButtonRoot;
         private GameObject modeChangeButtonRoot;
+        private TMP_Text modeChangeButtonLabel;
         private BookshelfExperienceManager cachedExperienceManager;
         private RoomEditModeController cachedEditModeController;
         private BookshelfApiSyncController cachedBookshelfApiSyncController;
@@ -414,6 +417,8 @@ namespace App.Bootstrap
             {
                 modeChangeButtonRoot.SetActive(shouldShow);
             }
+
+            RefreshModeChangeButtonLabel(experienceManager);
         }
 
         private BookshelfExperienceManager ResolveExperienceManager()
@@ -565,7 +570,7 @@ namespace App.Bootstrap
             var button = CreateButton(
                 modeChangeButtonRoot.transform,
                 "ModeChangeButton",
-                "모드 변경",
+                MainViewModeLabel,
                 PrimaryColor,
                 Color.white,
                 Vector2.zero,
@@ -579,6 +584,7 @@ namespace App.Bootstrap
             buttonRect.offsetMin = Vector2.zero;
             buttonRect.offsetMax = Vector2.zero;
             buttonRect.anchoredPosition = Vector2.zero;
+            modeChangeButtonLabel = button.GetComponentInChildren<TMP_Text>(true);
             button.onClick.AddListener(OnModeChangeClicked);
 
             var shadow = button.gameObject.AddComponent<Shadow>();
@@ -593,12 +599,29 @@ namespace App.Bootstrap
                 return;
             }
 
-            var manager = UnityEngine.Object.FindFirstObjectByType<BookshelfExperienceManager>();
+            var manager = ResolveExperienceManager();
             if (manager == null)
             {
                 return;
             }
             manager.ToggleMainViewMode();
+            RefreshModeChangeButtonLabel(manager);
+        }
+
+        private void RefreshModeChangeButtonLabel(BookshelfExperienceManager manager = null)
+        {
+            if (modeChangeButtonLabel == null)
+            {
+                return;
+            }
+
+            manager ??= ResolveExperienceManager();
+            var isQuarterView = manager != null && manager.CurrentMainViewMode == MainCameraViewMode.QuarterView;
+            var nextLabel = isQuarterView ? QuarterViewModeLabel : MainViewModeLabel;
+            if (!string.Equals(modeChangeButtonLabel.text, nextLabel, StringComparison.Ordinal))
+            {
+                modeChangeButtonLabel.text = nextLabel;
+            }
         }
 
         private void BuildSettingsPanel()

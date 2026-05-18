@@ -14,6 +14,7 @@ namespace App.Infrastructure.Assets
     {
         private const string CacheDirectoryName = "DotShelfRemoteAssets";
         private const long DefaultMaxCacheBytes = 1024L * 1024L * 1024L;
+        private const string VerifiedMarkerExtension = ".verified";
 
         public RemoteAssetCacheService(string cacheRoot = null, long maxCacheBytes = DefaultMaxCacheBytes)
         {
@@ -111,6 +112,7 @@ namespace App.Infrastructure.Assets
             Directory.CreateDirectory(Path.GetDirectoryName(cachePath) ?? CacheRoot);
             var tempPath = cachePath + ".download";
             DeleteIfExists(tempPath);
+            DeleteVerifiedMarkerIfExists(tempPath);
 
             using (var request = UnityWebRequest.Get(file.Url))
             {
@@ -124,6 +126,7 @@ namespace App.Infrastructure.Assets
                 if (request.result != UnityWebRequest.Result.Success)
                 {
                     DeleteIfExists(tempPath);
+                    DeleteVerifiedMarkerIfExists(tempPath);
                     onError?.Invoke($"Remote asset download failed: assetId={file.AssetId}, error={request.error}");
                     yield break;
                 }
@@ -132,12 +135,16 @@ namespace App.Infrastructure.Assets
             if (!IsValidCachedFile(tempPath, file))
             {
                 DeleteIfExists(tempPath);
+                DeleteVerifiedMarkerIfExists(tempPath);
                 onError?.Invoke($"Remote asset validation failed: assetId={file.AssetId}, code={file.Code}");
                 yield break;
             }
 
             DeleteIfExists(cachePath);
+            DeleteVerifiedMarkerIfExists(cachePath);
             File.Move(tempPath, cachePath);
+            WriteVerifiedMarker(cachePath, file);
+            DeleteVerifiedMarkerIfExists(tempPath);
             TouchFile(cachePath);
             PruneCacheIfNeeded(cachePath);
             onSuccess?.Invoke(cachePath);
@@ -170,17 +177,49 @@ namespace App.Infrastructure.Assets
                 return false;
             }
 
-            return HashMatches(path, file?.FileHash);
+            if (IsVerifiedMarkerValid(path, file, info))
+            {
+                return true;
+            }
+
+            if (!HashMatches(path, file?.FileHash))
+            {
+                return false;
+            }
+
+            WriteVerifiedMarker(path, file, info);
+            return true;
         }
 
         private static bool HashMatches(string path, string expectedHash)
         {
+            if (!TryNormalizeSha256Hash(expectedHash, out var normalized))
+            {
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(normalized))
+            {
+                return true;
+            }
+
+            using (var stream = File.OpenRead(path))
+            using (var sha256 = SHA256.Create())
+            {
+                var actual = ToLowerHex(sha256.ComputeHash(stream));
+                return string.Equals(actual, normalized, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        private static bool TryNormalizeSha256Hash(string expectedHash, out string normalized)
+        {
+            normalized = null;
             if (string.IsNullOrWhiteSpace(expectedHash))
             {
                 return true;
             }
 
-            var normalized = expectedHash.Trim();
+            normalized = expectedHash.Trim();
             if (normalized.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
             {
                 normalized = normalized.Substring("sha256:".Length);
@@ -189,14 +228,101 @@ namespace App.Infrastructure.Assets
             if (normalized.Length != 64 || !IsLowerOrUpperHex(normalized))
             {
                 Debug.LogWarning($"[RemoteAssetCache] Invalid sha256 hash format: {expectedHash}");
+                normalized = null;
                 return false;
             }
 
-            using (var stream = File.OpenRead(path))
-            using (var sha256 = SHA256.Create())
+            normalized = normalized.ToLowerInvariant();
+            return true;
+        }
+
+        private static bool IsVerifiedMarkerValid(string path, DownloadFileResponseDto file, FileInfo info)
+        {
+            if (!TryBuildVerifiedMarkerPayload(path, file, info, out var expectedPayload))
             {
-                var actual = ToLowerHex(sha256.ComputeHash(stream));
-                return string.Equals(actual, normalized, StringComparison.OrdinalIgnoreCase);
+                return false;
+            }
+
+            var markerPath = VerifiedMarkerPath(path);
+            if (!File.Exists(markerPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                var actualPayload = File.ReadAllText(markerPath, Encoding.UTF8);
+                return string.Equals(actualPayload, expectedPayload, StringComparison.Ordinal);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[RemoteAssetCache] Failed to read cache verification marker: {markerPath}, {exception.Message}");
+                return false;
+            }
+        }
+
+        private static void WriteVerifiedMarker(string path, DownloadFileResponseDto file, FileInfo info = null)
+        {
+            if (!TryBuildVerifiedMarkerPayload(path, file, info, out var payload))
+            {
+                return;
+            }
+
+            var markerPath = VerifiedMarkerPath(path);
+            try
+            {
+                var directory = Path.GetDirectoryName(markerPath);
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                File.WriteAllText(markerPath, payload, Encoding.UTF8);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[RemoteAssetCache] Failed to write cache verification marker: {markerPath}, {exception.Message}");
+            }
+        }
+
+        private static bool TryBuildVerifiedMarkerPayload(
+            string path,
+            DownloadFileResponseDto file,
+            FileInfo info,
+            out string payload)
+        {
+            payload = null;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            info ??= new FileInfo(path);
+            if (!info.Exists)
+            {
+                return false;
+            }
+
+            if (!TryNormalizeSha256Hash(file?.FileHash, out var normalizedHash))
+            {
+                return false;
+            }
+
+            payload = $"v1\nlength={info.Length}\nlastWriteUtcTicks={info.LastWriteTimeUtc.Ticks}\nhash={normalizedHash ?? string.Empty}";
+            return true;
+        }
+
+        private static string VerifiedMarkerPath(string path)
+        {
+            return string.IsNullOrWhiteSpace(path) ? string.Empty : path + VerifiedMarkerExtension;
+        }
+
+        private static void DeleteVerifiedMarkerIfExists(string path)
+        {
+            var markerPath = VerifiedMarkerPath(path);
+            if (!string.IsNullOrWhiteSpace(markerPath) && File.Exists(markerPath))
+            {
+                File.Delete(markerPath);
             }
         }
 
@@ -328,6 +454,11 @@ namespace App.Infrastructure.Assets
                 long totalBytes = 0L;
                 foreach (var path in Directory.GetFiles(CacheRoot, "*", SearchOption.AllDirectories))
                 {
+                    if (IsVerifiedMarkerFile(path))
+                    {
+                        continue;
+                    }
+
                     var info = new FileInfo(path);
                     if (!info.Exists)
                     {
@@ -356,6 +487,7 @@ namespace App.Infrastructure.Assets
                     {
                         var length = file.Length;
                         file.Delete();
+                        DeleteVerifiedMarkerIfExists(file.FullName);
                         totalBytes -= length;
                     }
                     catch (Exception exception)
@@ -383,6 +515,12 @@ namespace App.Infrastructure.Assets
                 Path.GetFullPath(left),
                 Path.GetFullPath(right),
                 StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsVerifiedMarkerFile(string path)
+        {
+            return !string.IsNullOrWhiteSpace(path) &&
+                   path.EndsWith(VerifiedMarkerExtension, StringComparison.OrdinalIgnoreCase);
         }
 
         private static void TouchFile(string path)
