@@ -149,7 +149,7 @@ namespace App.Bootstrap
         private bool isNotificationLoadInFlight;
         private UserProfileResponseDto cachedProfile;
         private bool suppressVisibilityRequest;
-        private int confirmedPrivacyIndex;
+        private int confirmedPrivacyIndex = -1;
         // Suppresses the per-toggle PATCH while LoadCurrentNotificationSettings
         // is applying the server response — otherwise SetIsOnWithoutNotify
         // would fire onValueChanged → OnNotificationToggleChanged → echo PATCH.
@@ -1018,7 +1018,8 @@ namespace App.Bootstrap
             }
 
             profilePrivacyHintLabel = CreateLayoutText(view.transform, "PrivacyHint", "선택한 공개 범위는 데모 화면에서만 적용됩니다.", 14f, FontStyles.Italic, MutedTextColor, TextAlignmentOptions.Left, 22f);
-            SelectPrivacyOption(selectedPrivacyIndex);
+            ApplyPrivacyOptionWithoutRequest(selectedPrivacyIndex);
+            RefreshPrivacyOptionInteractable();
 
             var logoutButton = CreateButton(view.transform, "LogoutButton", "로그아웃", PrimaryColor, Color.white, Vector2.zero, Vector2.zero, false, BorderColor);
             ConfigureLayoutHeight(logoutButton.gameObject, SecondaryControlHeight);
@@ -1083,6 +1084,11 @@ namespace App.Bootstrap
 
         private void ApplyPrivacyOptionWithoutRequest(int index)
         {
+            if (index < 0)
+            {
+                return;
+            }
+
             suppressVisibilityRequest = true;
             try
             {
@@ -1101,6 +1107,12 @@ namespace App.Bootstrap
             // don't want to echo that back as a PATCH).
             if (suppressVisibilityRequest)
             {
+                return;
+            }
+
+            if (confirmedPrivacyIndex < 0)
+            {
+                ShowNoticeToast("공개 범위 정보를 불러오는 중입니다.");
                 return;
             }
 
@@ -1134,6 +1146,7 @@ namespace App.Bootstrap
             }
 
             isVisibilityUpdateInFlight = true;
+            RefreshPrivacyOptionInteractable();
             var hasRetried = false;
             void DoUpdateMySpaceVisibility(NotebookApiClient apiClient)
             {
@@ -1146,6 +1159,7 @@ namespace App.Bootstrap
                             ? MapScopeToPrivacyIndex(response.VisibilityScope)
                             : requestedPrivacyIndex;
                         ApplyPrivacyOptionWithoutRequest(confirmedPrivacyIndex);
+                        RefreshPrivacyOptionInteractable();
                     },
                     onError: error =>
                     {
@@ -1158,6 +1172,7 @@ namespace App.Bootstrap
                                 {
                                     isVisibilityUpdateInFlight = false;
                                     ApplyPrivacyOptionWithoutRequest(rollbackPrivacyIndex);
+                                    RefreshPrivacyOptionInteractable();
                                     ShowNoticeToast("세션이 만료되었습니다. 다시 로그인해주세요.");
                                 });
                             return;
@@ -1165,11 +1180,26 @@ namespace App.Bootstrap
 
                         isVisibilityUpdateInFlight = false;
                         ApplyPrivacyOptionWithoutRequest(rollbackPrivacyIndex);
+                        RefreshPrivacyOptionInteractable();
                         ShowNoticeToast("공개 범위 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
                         Debug.LogWarning($"[Settings] UpdateMySpaceVisibility failed: code={error?.Code} message={error?.Message}");
                     });
             }
             DoUpdateMySpaceVisibility(client);
+        }
+
+        private void RefreshPrivacyOptionInteractable()
+        {
+            var canInteract = confirmedPrivacyIndex >= 0 &&
+                              !isSpaceVisibilityLoadInFlight &&
+                              !isVisibilityUpdateInFlight;
+            for (var i = 0; i < privacyOptionButtons.Count; i++)
+            {
+                if (privacyOptionButtons[i] != null)
+                {
+                    privacyOptionButtons[i].interactable = canInteract;
+                }
+            }
         }
 
         private static string MapPrivacyIndexToScope(int index)
@@ -2281,6 +2311,8 @@ namespace App.Bootstrap
 #if UNITY_EDITOR
             if (DevMainSceneMode.IsActive)
             {
+                confirmedPrivacyIndex = selectedPrivacyIndex;
+                RefreshPrivacyOptionInteractable();
                 return;
             }
 #endif
@@ -2292,6 +2324,7 @@ namespace App.Bootstrap
             }
 
             isSpaceVisibilityLoadInFlight = true;
+            RefreshPrivacyOptionInteractable();
             var hasRetried = false;
             void DoLoadCurrentSpaceVisibility(NotebookApiClient apiClient)
             {
@@ -2300,6 +2333,7 @@ namespace App.Bootstrap
                     {
                         isSpaceVisibilityLoadInFlight = false;
                         ApplySpaceVisibilityToUi(space);
+                        RefreshPrivacyOptionInteractable();
                     },
                     onError: error =>
                     {
@@ -2311,11 +2345,13 @@ namespace App.Bootstrap
                                 onAbort: () =>
                                 {
                                     isSpaceVisibilityLoadInFlight = false;
+                                    RefreshPrivacyOptionInteractable();
                                 });
                             return;
                         }
 
                         isSpaceVisibilityLoadInFlight = false;
+                        RefreshPrivacyOptionInteractable();
                         Debug.LogWarning(
                             $"[Settings] GetMySpace for visibility failed: code={error?.Code} message={error?.Message}");
                     });
@@ -3008,7 +3044,7 @@ namespace App.Bootstrap
                     CreatePurchaseHistoryRow(
                         purchaseHistoryListRoot.transform,
                         FormatPurchaseStatus(purchase.Status),
-                        $"Asset #{purchase.AssetId}",
+                        FormatPurchaseItemName(purchase),
                         $"{Mathf.Max(0, purchase.PricePages):N0} P");
                     renderedCount++;
                 }
@@ -3070,6 +3106,11 @@ namespace App.Bootstrap
                 "REFUNDED" => "환불됨",
                 _ => string.IsNullOrWhiteSpace(status) ? "상태 없음" : status
             };
+        }
+
+        private static string FormatPurchaseItemName(PurchaseHistoryResponseDto purchase)
+        {
+            return purchase != null && purchase.AssetId > 0L ? "에셋 구매" : "구매 항목";
         }
 
         // ---------------------------------------------------------------------
@@ -3309,7 +3350,7 @@ namespace App.Bootstrap
             nameRect.anchorMax = new Vector2(0f, 0.5f);
             nameRect.anchoredPosition = new Vector2(24f, 18f);
 
-            var dateText = CreateText(row.transform, "BlockedDate", $"User ID {user?.Id ?? 0L}", 15f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.MidlineLeft, Vector2.zero, new Vector2(420f, 22f), 0f, new Vector2(0f, 0.5f));
+            var dateText = CreateText(row.transform, "BlockedMeta", "차단일 정보 없음", 15f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.MidlineLeft, Vector2.zero, new Vector2(420f, 22f), 0f, new Vector2(0f, 0.5f));
             var dateRect = dateText.rectTransform;
             dateRect.anchorMin = new Vector2(0f, 0.5f);
             dateRect.anchorMax = new Vector2(0f, 0.5f);
@@ -3623,8 +3664,24 @@ namespace App.Bootstrap
                 return "신고 대상 없음";
             }
 
-            var targetType = string.IsNullOrWhiteSpace(report.TargetType) ? "TARGET" : report.TargetType.Trim();
-            return $"{targetType} #{report.TargetId}";
+            var targetType = string.IsNullOrWhiteSpace(report.TargetType)
+                ? string.Empty
+                : report.TargetType.Trim().ToUpperInvariant();
+            var targetLabel = targetType switch
+            {
+                "GUESTBOOK_POST_IT" => "방명록 포스트잇",
+                "GUESTBOOK" => "방명록",
+                "GUESTBOOK_REPLY" => "방명록 답글",
+                "BOOK_REVIEW" => "독서 리뷰",
+                "READING_RECORD" => "독서 기록",
+                "USER_PROFILE" => "사용자 프로필",
+                "USER" => "사용자",
+                "SPACE" => "사용자 공간",
+                "BOOK" => "책",
+                _ => "신고 대상"
+            };
+
+            return report.TargetId > 0L ? $"{targetLabel} #{report.TargetId}" : targetLabel;
         }
 
         private static string FormatReportReason(string reasonType)

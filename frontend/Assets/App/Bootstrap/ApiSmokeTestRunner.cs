@@ -682,7 +682,6 @@ namespace App.Bootstrap
                     done = true;
                     if (env != null && env.Succeeded && env.Result != null && env.Result.Items != null && env.Result.Items.Count > 0)
                     {
-                        InventoryItemResponseDto fallback = null;
                         for (int i = 0; i < env.Result.Items.Count; i++)
                         {
                             var item = env.Result.Items[i];
@@ -691,7 +690,6 @@ namespace App.Bootstrap
                                 continue;
                             }
 
-                            fallback ??= item;
                             if (string.Equals(item.Asset?.AssetType, "THEME", StringComparison.OrdinalIgnoreCase))
                             {
                                 picked = item.InventoryId;
@@ -701,12 +699,10 @@ namespace App.Bootstrap
                             }
                         }
 
-                        if (picked <= 0L && fallback != null)
+                        if (picked <= 0L)
                         {
-                            picked = fallback.InventoryId;
                             Debug.LogWarning(
-                                $"[ApiSmokeTest][theme-apply] THEME assetType item이 없어 첫 usable inventory item 사용 → " +
-                                $"inventoryId={fallback.InventoryId}, assetId={fallback.AssetId}");
+                                "[ApiSmokeTest][theme-apply] THEME assetType inventory item이 없어 Theme Apply 본 호출을 SKIP합니다.");
                         }
                     }
                     else
