@@ -186,6 +186,8 @@ namespace App.Bootstrap
         private bool isPreparingOnboardingBookshelf;
         private Texture2D profileTexture;
         private Sprite profileSprite;
+        private byte[] selectedProfileImageBytes;
+        private string selectedProfileImageContentType;
         private bool isInitialized;
         private bool hasEnabledCrossScenePersistence;
         private bool isMainViewReady;
@@ -239,6 +241,7 @@ namespace App.Bootstrap
         // RenderTexture 는 명시 Release + Destroy 가 필요해 leak 회피.
         private void OnDestroy()
         {
+            ReleaseProfilePreview();
             DisposeThemePreviewRenderer();
             DisposeOnboardingPreviewStage();
         }
@@ -1702,7 +1705,19 @@ namespace App.Bootstrap
 
             client.UpdateMe(
                 request,
-                onSuccess: _ => HandleProfileUpdateSuccess(),
+                onSuccess: _ =>
+                {
+                    if (HasSelectedProfileImageForUpload())
+                    {
+                        UploadSelectedProfileImage(
+                            client,
+                            onSuccess: __ => HandleProfileUpdateSuccess(),
+                            onError: HandleProfileImageUploadError);
+                        return;
+                    }
+
+                    HandleProfileUpdateSuccess();
+                },
                 onError: error => HandleProfileUpdateError(error));
         }
 
@@ -1723,6 +1738,76 @@ namespace App.Bootstrap
             // BE-supplied error metadata only.
             Debug.LogWarning(
                 $"[OnboardingDemo] Profile update failed: code={error?.Code} message={error?.Message}");
+        }
+
+        private void HandleProfileImageUploadError(ApiErrorResponseDto error)
+        {
+            isSubmittingProfile = false;
+            SetStep1Feedback("?꾨줈?꾩? ??λ릺?덉?留? ?대?吏 ?낅줈??泥섎━?먯꽌 ?ㅽ뙣?덉뒿?덈떎. ?ㅼ떆 ?쒕룄?댁＜?몄슂.", ErrorColor, true);
+            Debug.LogWarning(
+                $"[OnboardingDemo] Profile image upload failed: code={error?.Code} message={error?.Message}");
+        }
+
+        private bool HasSelectedProfileImageForUpload()
+        {
+            return selectedProfileImageBytes != null &&
+                   selectedProfileImageBytes.Length > 0 &&
+                   !string.IsNullOrWhiteSpace(selectedProfileImageContentType);
+        }
+
+        private void UploadSelectedProfileImage(NotebookApiClient client, Action<UserProfileResponseDto> onSuccess, Action<ApiErrorResponseDto> onError)
+        {
+            if (client == null)
+            {
+                onError?.Invoke(new ApiErrorResponseDto
+                {
+                    Code = "PROFILE_IMAGE_CLIENT_UNAVAILABLE",
+                    Message = "Profile image upload client is unavailable."
+                });
+                return;
+            }
+
+            if (!HasSelectedProfileImageForUpload())
+            {
+                onSuccess?.Invoke(null);
+                return;
+            }
+
+            var imageBytes = selectedProfileImageBytes;
+            var contentType = selectedProfileImageContentType;
+            client.CreateMyProfileImageUploadUrl(
+                new ProfileImageUploadUrlRequestDto
+                {
+                    ContentType = contentType,
+                    ByteLength = imageBytes.LongLength
+                },
+                ticket =>
+                {
+                    if (ticket == null || string.IsNullOrWhiteSpace(ticket.UploadUrl) || string.IsNullOrWhiteSpace(ticket.Key))
+                    {
+                        onError?.Invoke(new ApiErrorResponseDto
+                        {
+                            Code = "PROFILE_IMAGE_UPLOAD_URL_EMPTY",
+                            Message = "Profile image upload URL was not returned."
+                        });
+                        return;
+                    }
+
+                    client.UploadRawObject(
+                        ticket.UploadUrl,
+                        imageBytes,
+                        contentType,
+                        () => client.ConfirmMyProfileImage(
+                            new ProfileImageConfirmRequestDto { Key = ticket.Key },
+                            response =>
+                            {
+                                ClearSelectedProfileImageUploadState();
+                                onSuccess?.Invoke(response);
+                            },
+                            error => onError?.Invoke(error)),
+                        error => onError?.Invoke(error));
+                },
+                error => onError?.Invoke(error));
         }
 
         private void OnRandomThemeButtonClicked()
@@ -3790,6 +3875,8 @@ namespace App.Bootstrap
                 }
 
                 ReleaseProfilePreview();
+                selectedProfileImageBytes = imageBytes;
+                selectedProfileImageContentType = GetImageContentType(extension);
                 profileTexture = texture;
                 profileSprite = Sprite.Create(
                     texture,
@@ -3826,6 +3913,7 @@ namespace App.Bootstrap
         private void ResetProfilePreview()
         {
             ReleaseProfilePreview();
+            ClearSelectedProfileImageUploadState();
 
             if (profilePreviewImage != null)
             {
@@ -3855,6 +3943,22 @@ namespace App.Bootstrap
                 Destroy(profileTexture);
                 profileTexture = null;
             }
+        }
+
+        private void ClearSelectedProfileImageUploadState()
+        {
+            selectedProfileImageBytes = null;
+            selectedProfileImageContentType = null;
+        }
+
+        private static string GetImageContentType(string extension)
+        {
+            if (string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase))
+            {
+                return "image/png";
+            }
+
+            return "image/jpeg";
         }
 
         private void EnsureEventSystem()

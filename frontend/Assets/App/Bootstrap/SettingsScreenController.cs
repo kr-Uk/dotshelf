@@ -1,5 +1,8 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
 using App.Auth;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dtos;
@@ -7,6 +10,7 @@ using BookshelfPorting.Runtime;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.Networking;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 #if ENABLE_INPUT_SYSTEM
@@ -113,6 +117,17 @@ namespace App.Bootstrap
         private TMP_InputField profileFormNicknameInput;
         private TMP_InputField profileFormPasswordInput;
         private TMP_InputField profileFormConfirmPasswordInput;
+        private Image profileSummaryAvatarImage;
+        private Image profileFormAvatarImage;
+        private Texture2D selectedProfileImageTexture;
+        private Sprite selectedProfileImageSprite;
+        private byte[] selectedProfileImageBytes;
+        private string selectedProfileImageContentType;
+        private Texture2D remoteProfileImageTexture;
+        private Sprite remoteProfileImageSprite;
+        private string loadedRemoteProfileImageUrl;
+        private Coroutine remoteProfileImageLoadRoutine;
+        private int remoteProfileImageLoadVersion;
 
         // ---- Account API wiring (logout / profile / visibility / withdrawal) ----
         // Cached BE clients (lazy-initialized when the user opens Settings) and
@@ -208,6 +223,12 @@ namespace App.Bootstrap
             InitializeIfNeeded();
         }
 
+        private void OnDestroy()
+        {
+            ReleaseSelectedProfileImagePreview();
+            ReleaseRemoteProfileImagePreview();
+        }
+
         public void InitializeIfNeeded()
         {
             if (isInitialized)
@@ -262,6 +283,7 @@ namespace App.Bootstrap
 
         public void ShowProfileEdit()
         {
+            ApplyProfileAvatarPreview();
             ShowView(ViewKey.ProfileEdit, "계정");
         }
 
@@ -304,6 +326,7 @@ namespace App.Bootstrap
         private void ShowProfileEditForm()
         {
             ResetProfileEditForm();
+            ApplyProfileAvatarPreview();
             ShowView(ViewKey.ProfileEditForm, "프로필 수정");
         }
 
@@ -891,6 +914,7 @@ namespace App.Bootstrap
             avatar.sprite = roundedRectSprite;
             avatar.type = Image.Type.Sliced;
             avatar.raycastTarget = false;
+            profileSummaryAvatarImage = avatar;
             var avatarRect = avatar.rectTransform;
             avatarRect.anchorMin = new Vector2(0f, 0.5f);
             avatarRect.anchorMax = new Vector2(0f, 0.5f);
@@ -1145,6 +1169,7 @@ namespace App.Bootstrap
             avatar.sprite = roundedRectSprite;
             avatar.type = Image.Type.Sliced;
             avatar.raycastTarget = false;
+            profileFormAvatarImage = avatar;
             var avatarRect = avatar.rectTransform;
             avatarRect.anchorMin = new Vector2(0.5f, 0.5f);
             avatarRect.anchorMax = new Vector2(0.5f, 0.5f);
@@ -1158,7 +1183,7 @@ namespace App.Bootstrap
             changeRect.anchorMax = new Vector2(0.5f, 0.5f);
             changeRect.pivot = new Vector2(0f, 0.5f);
             changeRect.anchoredPosition = new Vector2(12f, 0f);
-            changePhotoButton.onClick.AddListener(() => ShowNoticeToast("사진 변경은 데모로 처리되었습니다."));
+            changePhotoButton.onClick.AddListener(OnProfileImageChangeButtonClicked);
 
             profileFormNicknameInput = CreateLabeledInput(view.transform, "NicknameField", "닉네임", "닉네임 입력", false);
             profileFormPasswordInput = CreateLabeledInput(view.transform, "PasswordField", "비밀번호", "비밀번호 입력", true);
@@ -1251,8 +1276,32 @@ namespace App.Bootstrap
                 request,
                 onSuccess: response =>
                 {
-                    isProfileSaveInFlight = false;
                     cachedProfile = response;
+                    if (HasSelectedProfileImageForUpload())
+                    {
+                        UploadSelectedProfileImage(
+                            client,
+                            onSuccess: uploadedProfile =>
+                            {
+                                isProfileSaveInFlight = false;
+                                cachedProfile = uploadedProfile ?? cachedProfile;
+                                Debug.Log(
+                                    $"[Settings] PATCH /v1/users/me ?묐떟 ??STATUS=2xx (onSuccess) " +
+                                    $"BODY={{id={cachedProfile?.Id},nickname='{cachedProfile?.Nickname}',onboarded={cachedProfile?.Onboarded}}}");
+                                SetMessage(profileEditFormMessageLabel, "?꾨줈?꾩씠 ??λ릺?덉뒿?덈떎.", SuccessColor);
+                                ShowProfileEdit();
+                            },
+                            onError: error =>
+                            {
+                                isProfileSaveInFlight = false;
+                                SetMessage(profileEditFormMessageLabel, "?꾨줈?꾩? ??λ릺?덉?留? ?대?吏 ?낅줈??泥섎━?먯꽌 ?ㅽ뙣?덉뒿?덈떎. ?ㅼ떆 ?쒕룄?댁＜?몄슂.", ErrorColor);
+                                Debug.LogWarning(
+                                    $"[Settings] Profile image upload failed: code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)}");
+                            });
+                        return;
+                    }
+
+                    isProfileSaveInFlight = false;
                     Debug.Log(
                         $"[Settings] PATCH /v1/users/me 응답 → STATUS=2xx (onSuccess) " +
                         $"BODY={{id={response?.Id},nickname='{response?.Nickname}',onboarded={response?.Onboarded}}}");
@@ -1285,6 +1334,391 @@ namespace App.Bootstrap
             }
 
             SetMessage(profileEditFormMessageLabel, string.Empty, ErrorColor);
+        }
+
+        private void OnProfileImageChangeButtonClicked()
+        {
+            if (!TryOpenImageFilePanel(out var selectedPath))
+            {
+                return;
+            }
+
+            if (!TryLoadSelectedProfileImage(selectedPath))
+            {
+                ShowNoticeToast("프로필 이미지를 불러오지 못했습니다.");
+            }
+        }
+
+        private bool HasSelectedProfileImageForUpload()
+        {
+            return selectedProfileImageBytes != null &&
+                   selectedProfileImageBytes.Length > 0 &&
+                   !string.IsNullOrWhiteSpace(selectedProfileImageContentType);
+        }
+
+        private void UploadSelectedProfileImage(NotebookApiClient client, Action<UserProfileResponseDto> onSuccess, Action<ApiErrorResponseDto> onError)
+        {
+            if (client == null)
+            {
+                onError?.Invoke(new ApiErrorResponseDto
+                {
+                    Code = "PROFILE_IMAGE_CLIENT_UNAVAILABLE",
+                    Message = "Profile image upload client is unavailable."
+                });
+                return;
+            }
+
+            if (!HasSelectedProfileImageForUpload())
+            {
+                onSuccess?.Invoke(null);
+                return;
+            }
+
+            var imageBytes = selectedProfileImageBytes;
+            var contentType = selectedProfileImageContentType;
+            client.CreateMyProfileImageUploadUrl(
+                new ProfileImageUploadUrlRequestDto
+                {
+                    ContentType = contentType,
+                    ByteLength = imageBytes.LongLength
+                },
+                ticket =>
+                {
+                    if (ticket == null || string.IsNullOrWhiteSpace(ticket.UploadUrl) || string.IsNullOrWhiteSpace(ticket.Key))
+                    {
+                        onError?.Invoke(new ApiErrorResponseDto
+                        {
+                            Code = "PROFILE_IMAGE_UPLOAD_URL_EMPTY",
+                            Message = "Profile image upload URL was not returned."
+                        });
+                        return;
+                    }
+
+                    client.UploadRawObject(
+                        ticket.UploadUrl,
+                        imageBytes,
+                        contentType,
+                        () => client.ConfirmMyProfileImage(
+                            new ProfileImageConfirmRequestDto { Key = ticket.Key },
+                            response =>
+                            {
+                                ClearSelectedProfileImageUploadState();
+                                onSuccess?.Invoke(response);
+                            },
+                            error => onError?.Invoke(error)),
+                        error => onError?.Invoke(error));
+                },
+                error => onError?.Invoke(error));
+        }
+
+        private bool TryOpenImageFilePanel(out string selectedPath)
+        {
+            selectedPath = string.Empty;
+
+            if (TryOpenWithStandaloneFileBrowser(out selectedPath, out var handledByPlugin))
+            {
+                return true;
+            }
+
+            if (handledByPlugin)
+            {
+                return false;
+            }
+
+#if UNITY_EDITOR
+            selectedPath = UnityEditor.EditorUtility.OpenFilePanelWithFilters(
+                "프로필 이미지 선택",
+                string.Empty,
+                new[] { "Image Files", "png,jpg,jpeg" });
+
+            return !string.IsNullOrWhiteSpace(selectedPath);
+#else
+            Debug.LogWarning("Profile image selection is unavailable in this environment.");
+            return false;
+#endif
+        }
+
+        private bool TryOpenWithStandaloneFileBrowser(out string selectedPath, out bool handled)
+        {
+            selectedPath = string.Empty;
+            handled = false;
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type fileBrowserType;
+                try
+                {
+                    fileBrowserType = assembly.GetType("SFB.StandaloneFileBrowser");
+                }
+                catch
+                {
+                    fileBrowserType = null;
+                }
+
+                if (fileBrowserType == null)
+                {
+                    continue;
+                }
+
+                var extensionFilterType = assembly.GetType("SFB.ExtensionFilter");
+                if (extensionFilterType == null)
+                {
+                    continue;
+                }
+
+                handled = true;
+
+                try
+                {
+                    var filter = Activator.CreateInstance(extensionFilterType, "Image Files", new[] { "png", "jpg", "jpeg" });
+                    var openFilePanel = fileBrowserType.GetMethod(
+                        "OpenFilePanel",
+                        BindingFlags.Public | BindingFlags.Static,
+                        null,
+                        new[] { typeof(string), typeof(string), extensionFilterType.MakeArrayType(), typeof(bool) },
+                        null);
+
+                    if (openFilePanel == null)
+                    {
+                        continue;
+                    }
+
+                    var filters = Array.CreateInstance(extensionFilterType, 1);
+                    filters.SetValue(filter, 0);
+                    var result = openFilePanel.Invoke(null, new object[] { "프로필 이미지 선택", string.Empty, filters, false });
+                    if (result is string[] paths && paths.Length > 0 && !string.IsNullOrWhiteSpace(paths[0]))
+                    {
+                        selectedPath = paths[0];
+                        return true;
+                    }
+
+                    return false;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryLoadSelectedProfileImage(string imagePath)
+        {
+            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
+            {
+                return false;
+            }
+
+            var extension = Path.GetExtension(imagePath);
+            if (!string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(extension, ".jpg", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(extension, ".jpeg", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            try
+            {
+                var imageBytes = File.ReadAllBytes(imagePath);
+                var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                texture.name = "SettingsProfilePreview";
+                texture.hideFlags = HideFlags.HideAndDontSave;
+
+                if (!texture.LoadImage(imageBytes))
+                {
+                    Destroy(texture);
+                    return false;
+                }
+
+                ReleaseSelectedProfileImagePreview();
+                selectedProfileImageBytes = imageBytes;
+                selectedProfileImageContentType = GetImageContentType(extension);
+                selectedProfileImageTexture = texture;
+                selectedProfileImageSprite = Sprite.Create(
+                    texture,
+                    new Rect(0f, 0f, texture.width, texture.height),
+                    new Vector2(0.5f, 0.5f),
+                    100f);
+                selectedProfileImageSprite.name = "SettingsProfilePreviewSprite";
+                selectedProfileImageSprite.hideFlags = HideFlags.HideAndDontSave;
+                ApplyProfileAvatarPreview();
+                return true;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[Settings] Failed to read selected profile image: {exception.Message}");
+                return false;
+            }
+        }
+
+        private void ApplyProfileAvatarPreview()
+        {
+            ApplyProfileAvatarPreview(profileSummaryAvatarImage);
+            ApplyProfileAvatarPreview(profileFormAvatarImage);
+        }
+
+        private void ApplyProfileAvatarPreview(Image target)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            if (selectedProfileImageSprite != null)
+            {
+                target.sprite = selectedProfileImageSprite;
+                target.color = Color.white;
+                target.type = Image.Type.Simple;
+                target.preserveAspect = true;
+                return;
+            }
+
+            if (remoteProfileImageSprite != null)
+            {
+                target.sprite = remoteProfileImageSprite;
+                target.color = Color.white;
+                target.type = Image.Type.Simple;
+                target.preserveAspect = true;
+                return;
+            }
+
+            target.sprite = roundedRectSprite;
+            target.color = AccentTint;
+            target.type = Image.Type.Sliced;
+            target.preserveAspect = false;
+        }
+
+        private void ReleaseSelectedProfileImagePreview()
+        {
+            if (selectedProfileImageSprite != null)
+            {
+                Destroy(selectedProfileImageSprite);
+                selectedProfileImageSprite = null;
+            }
+
+            if (selectedProfileImageTexture != null)
+            {
+                Destroy(selectedProfileImageTexture);
+                selectedProfileImageTexture = null;
+            }
+        }
+
+        private void LoadRemoteProfileImage(string imageUrl)
+        {
+            if (selectedProfileImageSprite != null)
+            {
+                ApplyProfileAvatarPreview();
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(imageUrl))
+            {
+                CancelRemoteProfileImageLoad();
+                ReleaseRemoteProfileImagePreview();
+                loadedRemoteProfileImageUrl = null;
+                ApplyProfileAvatarPreview();
+                return;
+            }
+
+            var normalizedUrl = imageUrl.Trim();
+            if (remoteProfileImageSprite != null &&
+                string.Equals(loadedRemoteProfileImageUrl, normalizedUrl, StringComparison.Ordinal))
+            {
+                ApplyProfileAvatarPreview();
+                return;
+            }
+
+            CancelRemoteProfileImageLoad();
+            var loadVersion = ++remoteProfileImageLoadVersion;
+            remoteProfileImageLoadRoutine = StartCoroutine(LoadRemoteProfileImageRoutine(normalizedUrl, loadVersion));
+        }
+
+        private IEnumerator LoadRemoteProfileImageRoutine(string imageUrl, int loadVersion)
+        {
+            using (var request = UnityWebRequestTexture.GetTexture(imageUrl))
+            {
+                yield return request.SendWebRequest();
+
+                if (loadVersion != remoteProfileImageLoadVersion)
+                {
+                    yield break;
+                }
+
+                remoteProfileImageLoadRoutine = null;
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    Debug.LogWarning($"[Settings] Failed to load remote profile image: url={imageUrl} error={request.error}");
+                    ReleaseRemoteProfileImagePreview();
+                    loadedRemoteProfileImageUrl = null;
+                    ApplyProfileAvatarPreview();
+                    yield break;
+                }
+
+                var texture = DownloadHandlerTexture.GetContent(request);
+                if (texture == null)
+                {
+                    ReleaseRemoteProfileImagePreview();
+                    loadedRemoteProfileImageUrl = null;
+                    ApplyProfileAvatarPreview();
+                    yield break;
+                }
+
+                ReleaseRemoteProfileImagePreview();
+                remoteProfileImageTexture = texture;
+                remoteProfileImageTexture.name = "SettingsRemoteProfilePreview";
+                remoteProfileImageTexture.hideFlags = HideFlags.HideAndDontSave;
+                remoteProfileImageSprite = Sprite.Create(
+                    remoteProfileImageTexture,
+                    new Rect(0f, 0f, remoteProfileImageTexture.width, remoteProfileImageTexture.height),
+                    new Vector2(0.5f, 0.5f),
+                    100f);
+                remoteProfileImageSprite.name = "SettingsRemoteProfilePreviewSprite";
+                remoteProfileImageSprite.hideFlags = HideFlags.HideAndDontSave;
+                loadedRemoteProfileImageUrl = imageUrl;
+                ApplyProfileAvatarPreview();
+            }
+        }
+
+        private void CancelRemoteProfileImageLoad()
+        {
+            remoteProfileImageLoadVersion++;
+            if (remoteProfileImageLoadRoutine != null)
+            {
+                StopCoroutine(remoteProfileImageLoadRoutine);
+                remoteProfileImageLoadRoutine = null;
+            }
+        }
+
+        private void ReleaseRemoteProfileImagePreview()
+        {
+            if (remoteProfileImageSprite != null)
+            {
+                Destroy(remoteProfileImageSprite);
+                remoteProfileImageSprite = null;
+            }
+
+            if (remoteProfileImageTexture != null)
+            {
+                Destroy(remoteProfileImageTexture);
+                remoteProfileImageTexture = null;
+            }
+        }
+
+        private void ClearSelectedProfileImageUploadState()
+        {
+            selectedProfileImageBytes = null;
+            selectedProfileImageContentType = null;
+        }
+
+        private static string GetImageContentType(string extension)
+        {
+            if (string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase))
+            {
+                return "image/png";
+            }
+
+            return "image/jpeg";
         }
 
         // ---------------------------------------------------------------------
@@ -1566,6 +2000,9 @@ namespace App.Bootstrap
             {
                 return;
             }
+
+            ApplyProfileAvatarPreview();
+            LoadRemoteProfileImage(profile.ProfileImageUrl);
 
             if (profileFormNicknameInput != null)
             {
