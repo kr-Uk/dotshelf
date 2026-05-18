@@ -142,12 +142,14 @@ namespace App.Bootstrap
         private bool isLogoutInFlight;
         private bool isProfileLoadInFlight;
         private bool isProfileSaveInFlight;
+        private bool isSpaceVisibilityLoadInFlight;
         private bool isVisibilityUpdateInFlight;
         private bool isWithdrawalInFlight;
         private bool isNotificationUpdateInFlight;
         private bool isNotificationLoadInFlight;
         private UserProfileResponseDto cachedProfile;
         private bool suppressVisibilityRequest;
+        private int confirmedPrivacyIndex = -1;
         // Suppresses the per-toggle PATCH while LoadCurrentNotificationSettings
         // is applying the server response — otherwise SetIsOnWithoutNotify
         // would fire onValueChanged → OnNotificationToggleChanged → echo PATCH.
@@ -159,6 +161,14 @@ namespace App.Bootstrap
         private Button purchaseHistoryTabButton;
         private Image paymentMethodsTabIndicator;
         private Image purchaseHistoryTabIndicator;
+        private GameObject paymentMethodsListRoot;
+        private GameObject purchaseHistoryListRoot;
+        private TMP_Text paymentMethodsMessageLabel;
+        private TMP_Text purchaseHistoryMessageLabel;
+        private TMP_Text paymentWalletBalanceLabel;
+        private bool isWalletLoadInFlight;
+        private bool isPaymentMethodsLoadInFlight;
+        private bool isPurchaseHistoryLoadInFlight;
 
         private GameObject reportListTabContent;
         private GameObject sanctionListTabContent;
@@ -166,6 +176,13 @@ namespace App.Bootstrap
         private Button sanctionListTabButton;
         private Image reportListTabIndicator;
         private Image sanctionListTabIndicator;
+        private GameObject reportListRoot;
+        private GameObject blockedUsersListRoot;
+        private TMP_Text reportListMessageLabel;
+        private TMP_Text blockedUsersMessageLabel;
+        private bool isReportListLoadInFlight;
+        private bool isBlockListLoadInFlight;
+        private bool isUnblockInFlight;
 
         private TMP_Text termsContentLabel;
         private readonly List<Button> termsTabButtons = new List<Button>();
@@ -267,6 +284,7 @@ namespace App.Bootstrap
             // server-side nickname/introduction even if the user changed it
             // from a different device or session.
             LoadCurrentProfile();
+            LoadCurrentSpaceVisibility();
             LoadCurrentNotificationSettings();
         }
 
@@ -1000,7 +1018,8 @@ namespace App.Bootstrap
             }
 
             profilePrivacyHintLabel = CreateLayoutText(view.transform, "PrivacyHint", "선택한 공개 범위는 데모 화면에서만 적용됩니다.", 14f, FontStyles.Italic, MutedTextColor, TextAlignmentOptions.Left, 22f);
-            SelectPrivacyOption(selectedPrivacyIndex);
+            ApplyPrivacyOptionWithoutRequest(selectedPrivacyIndex);
+            RefreshPrivacyOptionInteractable();
 
             var logoutButton = CreateButton(view.transform, "LogoutButton", "로그아웃", PrimaryColor, Color.white, Vector2.zero, Vector2.zero, false, BorderColor);
             ConfigureLayoutHeight(logoutButton.gameObject, SecondaryControlHeight);
@@ -1063,6 +1082,24 @@ namespace App.Bootstrap
             SubmitVisibilityChange();
         }
 
+        private void ApplyPrivacyOptionWithoutRequest(int index)
+        {
+            if (index < 0)
+            {
+                return;
+            }
+
+            suppressVisibilityRequest = true;
+            try
+            {
+                SelectPrivacyOption(index);
+            }
+            finally
+            {
+                suppressVisibilityRequest = false;
+            }
+        }
+
         private void SubmitVisibilityChange()
         {
             // Skip BE while applying a server-fetched value (the initial load
@@ -1073,8 +1110,16 @@ namespace App.Bootstrap
                 return;
             }
 
+            if (confirmedPrivacyIndex < 0)
+            {
+                ShowNoticeToast("공개 범위 정보를 불러오는 중입니다.");
+                return;
+            }
+
             if (isVisibilityUpdateInFlight)
             {
+                ApplyPrivacyOptionWithoutRequest(confirmedPrivacyIndex);
+                ShowNoticeToast("이전 공개 범위 변경 처리가 끝난 후 다시 시도해주세요.");
                 return;
             }
 
@@ -1089,27 +1134,72 @@ namespace App.Bootstrap
             {
                 VisibilityScope = MapPrivacyIndexToScope(selectedPrivacyIndex)
             };
+            var requestedPrivacyIndex = selectedPrivacyIndex;
+            var rollbackPrivacyIndex = confirmedPrivacyIndex;
 
             var client = EnsureSettingsApiClient();
             if (client == null)
             {
+                ApplyPrivacyOptionWithoutRequest(rollbackPrivacyIndex);
                 ShowNoticeToast("공개 범위 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
                 return;
             }
 
             isVisibilityUpdateInFlight = true;
-            client.UpdateMySpaceVisibility(
-                request,
-                onSuccess: _ =>
+            RefreshPrivacyOptionInteractable();
+            var hasRetried = false;
+            void DoUpdateMySpaceVisibility(NotebookApiClient apiClient)
+            {
+                apiClient.UpdateMySpaceVisibility(
+                    request,
+                    onSuccess: response =>
+                    {
+                        isVisibilityUpdateInFlight = false;
+                        confirmedPrivacyIndex = response != null
+                            ? MapScopeToPrivacyIndex(response.VisibilityScope)
+                            : requestedPrivacyIndex;
+                        ApplyPrivacyOptionWithoutRequest(confirmedPrivacyIndex);
+                        RefreshPrivacyOptionInteractable();
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoUpdateMySpaceVisibility(apiClient),
+                                onAbort: () =>
+                                {
+                                    isVisibilityUpdateInFlight = false;
+                                    ApplyPrivacyOptionWithoutRequest(rollbackPrivacyIndex);
+                                    RefreshPrivacyOptionInteractable();
+                                    ShowNoticeToast("세션이 만료되었습니다. 다시 로그인해주세요.");
+                                });
+                            return;
+                        }
+
+                        isVisibilityUpdateInFlight = false;
+                        ApplyPrivacyOptionWithoutRequest(rollbackPrivacyIndex);
+                        RefreshPrivacyOptionInteractable();
+                        ShowNoticeToast("공개 범위 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                        Debug.LogWarning($"[Settings] UpdateMySpaceVisibility failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoUpdateMySpaceVisibility(client);
+        }
+
+        private void RefreshPrivacyOptionInteractable()
+        {
+            var canInteract = confirmedPrivacyIndex >= 0 &&
+                              !isSpaceVisibilityLoadInFlight &&
+                              !isVisibilityUpdateInFlight;
+            for (var i = 0; i < privacyOptionButtons.Count; i++)
+            {
+                if (privacyOptionButtons[i] != null)
                 {
-                    isVisibilityUpdateInFlight = false;
-                },
-                onError: error =>
-                {
-                    isVisibilityUpdateInFlight = false;
-                    ShowNoticeToast("공개 범위 변경에 실패했습니다. 잠시 후 다시 시도해주세요.");
-                    Debug.LogWarning($"[Settings] UpdateMySpaceVisibility failed: code={error?.Code} message={error?.Message}");
-                });
+                    privacyOptionButtons[i].interactable = canInteract;
+                }
+            }
         }
 
         private static string MapPrivacyIndexToScope(int index)
@@ -1393,45 +1483,63 @@ namespace App.Bootstrap
             isProfileSaveInFlight = true;
             SetMessage(profileEditFormMessageLabel, "Saving profile...", MutedTextColor);
 
-            client.UpdateMe(
-                request,
-                onSuccess: response =>
-                {
-                    cachedProfile = response;
-                    if (HasSelectedProfileImageForUpload())
+            var hasRetried = false;
+            void DoUpdateProfile(NotebookApiClient apiClient)
+            {
+                apiClient.UpdateMe(
+                    request,
+                    onSuccess: response =>
                     {
-                        UploadSelectedProfileImage(
-                            client,
-                            onSuccess: uploadedProfile =>
-                            {
-                                isProfileSaveInFlight = false;
-                                cachedProfile = uploadedProfile ?? cachedProfile;
-                                DiscardSelectedProfileImageEditSession();
-                                LoadRemoteProfileImage(cachedProfile?.ProfileImageUrl);
-                                SetMessage(profileEditFormMessageLabel, "Profile saved.", SuccessColor);
-                                ShowProfileEdit();
-                            },
-                            onError: error =>
-                            {
-                                isProfileSaveInFlight = false;
-                                SetMessage(profileEditFormMessageLabel, "Profile saved, but profile image upload failed. Please try again.", ErrorColor);
-                                Debug.LogWarning(
-                                    $"[Settings] Profile image upload failed: code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)}");
-                            });
-                        return;
-                    }
+                        cachedProfile = response;
+                        if (HasSelectedProfileImageForUpload())
+                        {
+                            UploadSelectedProfileImage(
+                                apiClient,
+                                onSuccess: uploadedProfile =>
+                                {
+                                    isProfileSaveInFlight = false;
+                                    cachedProfile = uploadedProfile ?? cachedProfile;
+                                    DiscardSelectedProfileImageEditSession();
+                                    LoadRemoteProfileImage(cachedProfile?.ProfileImageUrl);
+                                    SetMessage(profileEditFormMessageLabel, "Profile saved.", SuccessColor);
+                                    ShowProfileEdit();
+                                },
+                                onError: error =>
+                                {
+                                    isProfileSaveInFlight = false;
+                                    SetMessage(profileEditFormMessageLabel, "Profile saved, but profile image upload failed. Please try again.", ErrorColor);
+                                    Debug.LogWarning(
+                                        $"[Settings] Profile image upload failed: code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)}");
+                                });
+                            return;
+                        }
 
-                    isProfileSaveInFlight = false;
-                    SetMessage(profileEditFormMessageLabel, "Profile saved.", SuccessColor);
-                    ShowProfileEdit();
-                },
-                onError: error =>
-                {
-                    isProfileSaveInFlight = false;
-                    SetMessage(profileEditFormMessageLabel, "Failed to save profile. Please try again.", ErrorColor);
-                    Debug.LogWarning(
-                        $"[Settings] PATCH /v1/users/me failed STATUS={(error != null ? error.StatusCode.ToString() : "?")} code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)}");
-                });
+                        isProfileSaveInFlight = false;
+                        SetMessage(profileEditFormMessageLabel, "Profile saved.", SuccessColor);
+                        ShowProfileEdit();
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoUpdateProfile(apiClient),
+                                onAbort: () =>
+                                {
+                                    isProfileSaveInFlight = false;
+                                    SetMessage(profileEditFormMessageLabel, "Session expired. Please sign in again.", ErrorColor);
+                                });
+                            return;
+                        }
+
+                        isProfileSaveInFlight = false;
+                        SetMessage(profileEditFormMessageLabel, "Failed to save profile. Please try again.", ErrorColor);
+                        Debug.LogWarning(
+                            $"[Settings] PATCH /v1/users/me failed STATUS={(error != null ? error.StatusCode.ToString() : "?")} code={error?.Code} message={error?.Message} body={ApiManagerProvider.TrimForLog(error?.Body)}");
+                    });
+            }
+            DoUpdateProfile(client);
         }
 
         private void OnProfileImageChangeRequested()
@@ -2191,13 +2299,75 @@ namespace App.Bootstrap
             {
                 profileFormNicknameInput.text = profile.Nickname ?? string.Empty;
             }
+        }
 
-            // /v1/users/me does not carry the space visibility scope — that
-            // lives on /v1/spaces/me. Initial sync of the privacy radio with
-            // server state is left out of this PR; the user's selection still
-            // PATCHes via SubmitVisibilityChange. suppressVisibilityRequest /
-            // MapScopeToPrivacyIndex stay around as the obvious extension
-            // point for a follow-up that calls GetMySpace here.
+        private void LoadCurrentSpaceVisibility()
+        {
+            if (isSpaceVisibilityLoadInFlight)
+            {
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                confirmedPrivacyIndex = selectedPrivacyIndex;
+                RefreshPrivacyOptionInteractable();
+                return;
+            }
+#endif
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                return;
+            }
+
+            isSpaceVisibilityLoadInFlight = true;
+            RefreshPrivacyOptionInteractable();
+            var hasRetried = false;
+            void DoLoadCurrentSpaceVisibility(NotebookApiClient apiClient)
+            {
+                apiClient.GetMySpace(
+                    onSuccess: space =>
+                    {
+                        isSpaceVisibilityLoadInFlight = false;
+                        ApplySpaceVisibilityToUi(space);
+                        RefreshPrivacyOptionInteractable();
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoLoadCurrentSpaceVisibility(apiClient),
+                                onAbort: () =>
+                                {
+                                    isSpaceVisibilityLoadInFlight = false;
+                                    RefreshPrivacyOptionInteractable();
+                                });
+                            return;
+                        }
+
+                        isSpaceVisibilityLoadInFlight = false;
+                        RefreshPrivacyOptionInteractable();
+                        Debug.LogWarning(
+                            $"[Settings] GetMySpace for visibility failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoLoadCurrentSpaceVisibility(client);
+        }
+
+        private void ApplySpaceVisibilityToUi(SpaceResponseDto space)
+        {
+            if (space == null)
+            {
+                return;
+            }
+
+            confirmedPrivacyIndex = MapScopeToPrivacyIndex(space.VisibilityScope);
+            ApplyPrivacyOptionWithoutRequest(confirmedPrivacyIndex);
         }
 
         // Returns null if APIManager.Instance is unavailable — callers must
@@ -2481,19 +2651,33 @@ namespace App.Bootstrap
         {
             var root = CreateLayoutView("PaymentMethodsTab", parent, 14f);
 
-            CreatePaymentMethodCard(root.transform, "VISA **** 1234", true);
-            CreatePaymentMethodCard(root.transform, "MASTER **** 5678", false);
+            paymentMethodsMessageLabel = CreateLayoutText(
+                root.transform,
+                "PaymentMethodsMessage",
+                "결제수단을 불러오는 중입니다.",
+                16f,
+                FontStyles.Normal,
+                MutedTextColor,
+                TextAlignmentOptions.Left,
+                40f);
+
+            paymentMethodsListRoot = CreateLayoutView(
+                "PaymentMethodsList",
+                root.transform,
+                10f,
+                new RectOffset(0, 0, 0, 0));
 
             var addButton = CreateButton(root.transform, "AddPaymentMethod", "결제수단 추가", PrimaryColor, Color.white, Vector2.zero, Vector2.zero, false, BorderColor);
             ConfigureLayoutHeight(addButton.gameObject, PrimaryControlHeight);
-            addButton.onClick.AddListener(() => ShowNoticeToast("결제수단 추가는 데모로 처리되었습니다."));
+            addButton.onClick.AddListener(() => ShowNoticeToast("결제수단 등록은 아직 서버 API가 준비되지 않았습니다."));
 
             return root;
         }
 
-        private void CreatePaymentMethodCard(Transform parent, string cardLabel, bool isPrimary)
+        private void CreatePaymentMethodCard(Transform parent, string methodLabel, bool isPrimary)
         {
-            var card = CreateRectObject($"PaymentMethod_{cardLabel}", parent);
+            var safeName = string.IsNullOrWhiteSpace(methodLabel) ? "Unknown" : methodLabel.Trim();
+            var card = CreateRectObject($"PaymentMethod_{safeName}", parent);
             ConfigureLayoutHeight(card, 116f);
 
             var bg = card.AddComponent<Image>();
@@ -2508,7 +2692,7 @@ namespace App.Bootstrap
             var label = CreateText(
                 card.transform,
                 "Label",
-                cardLabel,
+                FormatPaymentMethodLabel(methodLabel),
                 20f,
                 FontStyles.Bold,
                 TextColor,
@@ -2527,7 +2711,7 @@ namespace App.Bootstrap
                 var primaryBadge = CreateText(
                     card.transform,
                     "PrimaryBadge",
-                    "기본 결제수단",
+                    "사용 가능",
                     14f,
                     FontStyles.Bold,
                     PrimaryColor,
@@ -2540,32 +2724,6 @@ namespace App.Bootstrap
                 primaryBadgeRect.anchorMin = new Vector2(0f, 0.5f);
                 primaryBadgeRect.anchorMax = new Vector2(0f, 0.5f);
                 primaryBadgeRect.anchoredPosition = new Vector2(28f, -18f);
-
-                var editButton = CreateButton(card.transform, "EditButton", "수정", SecondaryColor, TextColor, Vector2.zero, new Vector2(96f, 56f), true, BorderColor);
-                var editRect = (RectTransform)editButton.transform;
-                editRect.anchorMin = new Vector2(1f, 0.5f);
-                editRect.anchorMax = new Vector2(1f, 0.5f);
-                editRect.pivot = new Vector2(1f, 0.5f);
-                editRect.anchoredPosition = new Vector2(-20f, 0f);
-                editButton.onClick.AddListener(() => ShowNoticeToast($"{cardLabel} 수정은 데모로 처리되었습니다."));
-            }
-            else
-            {
-                var setPrimaryButton = CreateButton(card.transform, "SetPrimaryButton", "기본으로 설정", PrimaryColor, Color.white, Vector2.zero, new Vector2(140f, 56f), false, BorderColor);
-                var setPrimaryRect = (RectTransform)setPrimaryButton.transform;
-                setPrimaryRect.anchorMin = new Vector2(1f, 0.5f);
-                setPrimaryRect.anchorMax = new Vector2(1f, 0.5f);
-                setPrimaryRect.pivot = new Vector2(1f, 0.5f);
-                setPrimaryRect.anchoredPosition = new Vector2(-128f, 0f);
-                setPrimaryButton.onClick.AddListener(() => ShowNoticeToast($"{cardLabel} 기본 설정은 데모로 처리되었습니다."));
-
-                var deleteButton = CreateButton(card.transform, "DeleteButton", "삭제", SecondaryColor, ErrorColor, Vector2.zero, new Vector2(96f, 56f), true, BorderColor);
-                var deleteRect = (RectTransform)deleteButton.transform;
-                deleteRect.anchorMin = new Vector2(1f, 0.5f);
-                deleteRect.anchorMax = new Vector2(1f, 0.5f);
-                deleteRect.pivot = new Vector2(1f, 0.5f);
-                deleteRect.anchoredPosition = new Vector2(-20f, 0f);
-                deleteButton.onClick.AddListener(() => ShowNoticeToast($"{cardLabel} 삭제는 데모로 처리되었습니다."));
             }
         }
 
@@ -2573,9 +2731,31 @@ namespace App.Bootstrap
         {
             var root = CreateLayoutView("PurchaseHistoryTab", parent, 12f);
 
-            CreatePurchaseHistoryRow(root.transform, "04/22", "프리미엄 꾸미기 아이템", "+1,000P");
-            CreatePurchaseHistoryRow(root.transform, "04/23", "유료 폰트", "3,000원");
-            CreatePurchaseHistoryRow(root.transform, "04/24", "테마 패키지", "5,500원");
+            paymentWalletBalanceLabel = CreateLayoutText(
+                root.transform,
+                "WalletBalance",
+                "보유 페이지: 불러오는 중",
+                18f,
+                FontStyles.Bold,
+                TextColor,
+                TextAlignmentOptions.Left,
+                42f);
+
+            purchaseHistoryMessageLabel = CreateLayoutText(
+                root.transform,
+                "PurchaseHistoryMessage",
+                "구매내역을 불러오는 중입니다.",
+                16f,
+                FontStyles.Normal,
+                MutedTextColor,
+                TextAlignmentOptions.Left,
+                40f);
+
+            purchaseHistoryListRoot = CreateLayoutView(
+                "PurchaseHistoryList",
+                root.transform,
+                8f,
+                new RectOffset(0, 0, 0, 0));
 
             return root;
         }
@@ -2621,6 +2801,7 @@ namespace App.Bootstrap
             }
             UpdateTabIndicator(paymentMethodsTabIndicator, true);
             UpdateTabIndicator(purchaseHistoryTabIndicator, false);
+            LoadPaymentMethodsForSettings();
         }
 
         private void ShowPurchaseHistoryTab()
@@ -2635,6 +2816,301 @@ namespace App.Bootstrap
             }
             UpdateTabIndicator(paymentMethodsTabIndicator, false);
             UpdateTabIndicator(purchaseHistoryTabIndicator, true);
+            LoadWalletForSettings();
+            LoadPurchaseHistoryForSettings();
+        }
+
+        private void LoadPaymentMethodsForSettings()
+        {
+            if (isPaymentMethodsLoadInFlight)
+            {
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                RenderPaymentMethods(null, "DEV 모드에서는 결제수단 API를 호출하지 않습니다.");
+                return;
+            }
+#endif
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                RenderPaymentMethods(null, "결제 API 설정이 없습니다.");
+                return;
+            }
+
+            isPaymentMethodsLoadInFlight = true;
+            SetPaymentMethodsMessage("결제수단을 불러오는 중입니다.");
+            ClearChildren(paymentMethodsListRoot?.transform);
+
+            var hasRetried = false;
+            void DoLoadPaymentMethods(NotebookApiClient apiClient)
+            {
+                apiClient.GetPaymentMethods(
+                    onSuccess: response =>
+                    {
+                        isPaymentMethodsLoadInFlight = false;
+                        RenderPaymentMethods(response?.Methods);
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoLoadPaymentMethods(apiClient),
+                                onAbort: () =>
+                                {
+                                    isPaymentMethodsLoadInFlight = false;
+                                    RenderPaymentMethods(null, "세션이 만료되었습니다. 다시 로그인해주세요.");
+                                });
+                            return;
+                        }
+
+                        isPaymentMethodsLoadInFlight = false;
+                        RenderPaymentMethods(null, "결제수단을 불러오지 못했습니다.");
+                        Debug.LogWarning(
+                            $"[Settings] GetPaymentMethods failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoLoadPaymentMethods(client);
+        }
+
+        private void RenderPaymentMethods(IReadOnlyList<string> methods, string emptyMessage = null)
+        {
+            ClearChildren(paymentMethodsListRoot?.transform);
+
+            var renderedCount = 0;
+            if (methods != null)
+            {
+                for (var i = 0; i < methods.Count; i++)
+                {
+                    var method = methods[i];
+                    if (string.IsNullOrWhiteSpace(method))
+                    {
+                        continue;
+                    }
+
+                    CreatePaymentMethodCard(paymentMethodsListRoot.transform, method, renderedCount == 0);
+                    renderedCount++;
+                }
+            }
+
+            if (renderedCount == 0)
+            {
+                SetPaymentMethodsMessage(emptyMessage ?? "등록된 결제수단이 없습니다.");
+                return;
+            }
+
+            SetPaymentMethodsMessage(null);
+        }
+
+        private void LoadWalletForSettings()
+        {
+            if (paymentWalletBalanceLabel == null || isWalletLoadInFlight)
+            {
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                paymentWalletBalanceLabel.text = "보유 페이지: DEV";
+                return;
+            }
+#endif
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                paymentWalletBalanceLabel.text = "보유 페이지: 불러오기 실패";
+                return;
+            }
+
+            isWalletLoadInFlight = true;
+            paymentWalletBalanceLabel.text = "보유 페이지: 불러오는 중";
+
+            var hasRetried = false;
+            void DoLoadWallet(NotebookApiClient apiClient)
+            {
+                apiClient.GetWallet(
+                    onSuccess: response =>
+                    {
+                        isWalletLoadInFlight = false;
+                        var balance = Mathf.Max(0, response?.BalancePages ?? 0);
+                        paymentWalletBalanceLabel.text = $"보유 페이지: {balance:N0} P";
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoLoadWallet(apiClient),
+                                onAbort: () =>
+                                {
+                                    isWalletLoadInFlight = false;
+                                    paymentWalletBalanceLabel.text = "보유 페이지: 세션 만료";
+                                });
+                            return;
+                        }
+
+                        isWalletLoadInFlight = false;
+                        paymentWalletBalanceLabel.text = "보유 페이지: 불러오기 실패";
+                        Debug.LogWarning(
+                            $"[Settings] GetWallet failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoLoadWallet(client);
+        }
+
+        private void LoadPurchaseHistoryForSettings()
+        {
+            if (isPurchaseHistoryLoadInFlight)
+            {
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                RenderPurchaseHistory(null, "DEV 모드에서는 구매내역 API를 호출하지 않습니다.");
+                return;
+            }
+#endif
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                RenderPurchaseHistory(null, "결제 API 설정이 없습니다.");
+                return;
+            }
+
+            isPurchaseHistoryLoadInFlight = true;
+            SetPurchaseHistoryMessage("구매내역을 불러오는 중입니다.");
+            ClearChildren(purchaseHistoryListRoot?.transform);
+
+            var hasRetried = false;
+            void DoLoadPurchaseHistory(NotebookApiClient apiClient)
+            {
+                apiClient.GetPurchases(
+                    onSuccess: response =>
+                    {
+                        isPurchaseHistoryLoadInFlight = false;
+                        RenderPurchaseHistory(response?.Purchases);
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoLoadPurchaseHistory(apiClient),
+                                onAbort: () =>
+                                {
+                                    isPurchaseHistoryLoadInFlight = false;
+                                    RenderPurchaseHistory(null, "세션이 만료되었습니다. 다시 로그인해주세요.");
+                                });
+                            return;
+                        }
+
+                        isPurchaseHistoryLoadInFlight = false;
+                        RenderPurchaseHistory(null, "구매내역을 불러오지 못했습니다.");
+                        Debug.LogWarning(
+                            $"[Settings] GetPurchases failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoLoadPurchaseHistory(client);
+        }
+
+        private void RenderPurchaseHistory(IReadOnlyList<PurchaseHistoryResponseDto> purchases, string emptyMessage = null)
+        {
+            ClearChildren(purchaseHistoryListRoot?.transform);
+
+            var renderedCount = 0;
+            if (purchases != null)
+            {
+                for (var i = 0; i < purchases.Count; i++)
+                {
+                    var purchase = purchases[i];
+                    if (purchase == null)
+                    {
+                        continue;
+                    }
+
+                    CreatePurchaseHistoryRow(
+                        purchaseHistoryListRoot.transform,
+                        FormatPurchaseStatus(purchase.Status),
+                        FormatPurchaseItemName(purchase),
+                        $"{Mathf.Max(0, purchase.PricePages):N0} P");
+                    renderedCount++;
+                }
+            }
+
+            if (renderedCount == 0)
+            {
+                SetPurchaseHistoryMessage(emptyMessage ?? "구매내역이 없습니다.");
+                return;
+            }
+
+            SetPurchaseHistoryMessage(null);
+        }
+
+        private void SetPaymentMethodsMessage(string message)
+        {
+            if (paymentMethodsMessageLabel == null)
+            {
+                return;
+            }
+
+            paymentMethodsMessageLabel.text = message ?? string.Empty;
+            paymentMethodsMessageLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(message));
+        }
+
+        private void SetPurchaseHistoryMessage(string message)
+        {
+            if (purchaseHistoryMessageLabel == null)
+            {
+                return;
+            }
+
+            purchaseHistoryMessageLabel.text = message ?? string.Empty;
+            purchaseHistoryMessageLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(message));
+        }
+
+        private static string FormatPaymentMethodLabel(string method)
+        {
+            var normalized = string.IsNullOrWhiteSpace(method) ? string.Empty : method.Trim();
+            return normalized.ToUpperInvariant() switch
+            {
+                "INICIS" => "KG이니시스",
+                "CARD" => "카드",
+                "KAKAO_PAY" => "카카오페이",
+                "NAVER_PAY" => "네이버페이",
+                _ => string.IsNullOrWhiteSpace(normalized) ? "알 수 없는 결제수단" : normalized
+            };
+        }
+
+        private static string FormatPurchaseStatus(string status)
+        {
+            var normalized = string.IsNullOrWhiteSpace(status) ? string.Empty : status.Trim().ToUpperInvariant();
+            return normalized switch
+            {
+                "COMPLETED" => "구매 완료",
+                "PAID" => "결제 완료",
+                "CANCELED" => "취소됨",
+                "FAILED" => "실패",
+                "REFUNDED" => "환불됨",
+                _ => string.IsNullOrWhiteSpace(status) ? "상태 없음" : status
+            };
+        }
+
+        private static string FormatPurchaseItemName(PurchaseHistoryResponseDto purchase)
+        {
+            return purchase != null && purchase.AssetId > 0L ? "에셋 구매" : "구매 항목";
         }
 
         // ---------------------------------------------------------------------
@@ -2780,9 +3256,20 @@ namespace App.Bootstrap
         {
             var root = CreateLayoutView("ReportListTab", parent, 12f);
 
-            CreateReportRow(root.transform, "user_dawnlight", "도배성 글", "신고 접수", PrimaryColor);
-            CreateReportRow(root.transform, "user_silver", "부적절한 이미지", "처리 중", Hex("#D58A2A"));
-            CreateReportRow(root.transform, "user_kuma", "스팸 메시지", "처리 완료", SuccessColor);
+            reportListMessageLabel = CreateLayoutText(
+                root.transform,
+                "ReportListMessage",
+                "신고내역을 불러오는 중입니다.",
+                16f,
+                FontStyles.Normal,
+                MutedTextColor,
+                TextAlignmentOptions.Left,
+                40f);
+            reportListRoot = CreateLayoutView(
+                "ReportList",
+                root.transform,
+                8f,
+                new RectOffset(0, 0, 0, 0));
 
             return root;
         }
@@ -2824,14 +3311,27 @@ namespace App.Bootstrap
         {
             var root = CreateLayoutView("SanctionListTab", parent, 12f);
 
-            CreateBlockedUserRow(root.transform, "홍길동", "2026.04.27");
-            CreateBlockedUserRow(root.transform, "김철수", "2026.04.20");
+            blockedUsersMessageLabel = CreateLayoutText(
+                root.transform,
+                "BlockedUsersMessage",
+                "차단 목록을 불러오는 중입니다.",
+                16f,
+                FontStyles.Normal,
+                MutedTextColor,
+                TextAlignmentOptions.Left,
+                40f);
+            blockedUsersListRoot = CreateLayoutView(
+                "BlockedUsersList",
+                root.transform,
+                8f,
+                new RectOffset(0, 0, 0, 0));
 
             return root;
         }
 
-        private void CreateBlockedUserRow(Transform parent, string nickname, string blockedDate)
+        private void CreateBlockedUserRow(Transform parent, UserSummaryResponseDto user)
         {
+            var nickname = string.IsNullOrWhiteSpace(user?.Nickname) ? $"User #{user?.Id ?? 0L}" : user.Nickname.Trim();
             var row = CreateRectObject($"BlockedUserRow_{nickname}", parent);
             ConfigureLayoutHeight(row, 96f);
 
@@ -2850,7 +3350,7 @@ namespace App.Bootstrap
             nameRect.anchorMax = new Vector2(0f, 0.5f);
             nameRect.anchoredPosition = new Vector2(24f, 18f);
 
-            var dateText = CreateText(row.transform, "BlockedDate", blockedDate, 15f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.MidlineLeft, Vector2.zero, new Vector2(420f, 22f), 0f, new Vector2(0f, 0.5f));
+            var dateText = CreateText(row.transform, "BlockedMeta", "차단일 정보 없음", 15f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.MidlineLeft, Vector2.zero, new Vector2(420f, 22f), 0f, new Vector2(0f, 0.5f));
             var dateRect = dateText.rectTransform;
             dateRect.anchorMin = new Vector2(0f, 0.5f);
             dateRect.anchorMax = new Vector2(0f, 0.5f);
@@ -2862,7 +3362,8 @@ namespace App.Bootstrap
             releaseRect.anchorMax = new Vector2(1f, 0.5f);
             releaseRect.pivot = new Vector2(1f, 0.5f);
             releaseRect.anchoredPosition = new Vector2(-20f, 0f);
-            releaseButton.onClick.AddListener(() => Debug.Log("차단 해제 클릭"));
+            var targetUserId = user?.Id ?? 0L;
+            releaseButton.onClick.AddListener(() => UnblockUserFromSettings(targetUserId));
         }
 
         private void ShowReportListTab()
@@ -2877,6 +3378,7 @@ namespace App.Bootstrap
             }
             UpdateTabIndicator(reportListTabIndicator, true);
             UpdateTabIndicator(sanctionListTabIndicator, false);
+            LoadReportListForSettings();
         }
 
         private void ShowSanctionListTab()
@@ -2891,6 +3393,334 @@ namespace App.Bootstrap
             }
             UpdateTabIndicator(reportListTabIndicator, false);
             UpdateTabIndicator(sanctionListTabIndicator, true);
+            LoadBlockedUsersForSettings();
+        }
+
+        private void LoadReportListForSettings()
+        {
+            if (isReportListLoadInFlight)
+            {
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                RenderReportList(null, "DEV 모드에서는 신고내역 API를 호출하지 않습니다.");
+                return;
+            }
+#endif
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                RenderReportList(null, "신고 API 설정이 없습니다.");
+                return;
+            }
+
+            isReportListLoadInFlight = true;
+            SetReportListMessage("신고내역을 불러오는 중입니다.");
+            ClearChildren(reportListRoot?.transform);
+
+            var hasRetried = false;
+            void DoLoadReports(NotebookApiClient apiClient)
+            {
+                apiClient.GetMyReports(
+                    onSuccess: response =>
+                    {
+                        isReportListLoadInFlight = false;
+                        RenderReportList(response?.Reports);
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoLoadReports(apiClient),
+                                onAbort: () =>
+                                {
+                                    isReportListLoadInFlight = false;
+                                    RenderReportList(null, "세션이 만료되었습니다. 다시 로그인해주세요.");
+                                });
+                            return;
+                        }
+
+                        isReportListLoadInFlight = false;
+                        RenderReportList(null, "신고내역을 불러오지 못했습니다.");
+                        Debug.LogWarning(
+                            $"[Settings] GetMyReports failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoLoadReports(client);
+        }
+
+        private void RenderReportList(IReadOnlyList<ReportResponseDto> reports, string emptyMessage = null)
+        {
+            ClearChildren(reportListRoot?.transform);
+
+            var renderedCount = 0;
+            if (reports != null)
+            {
+                for (var i = 0; i < reports.Count; i++)
+                {
+                    var report = reports[i];
+                    if (report == null)
+                    {
+                        continue;
+                    }
+
+                    CreateReportRow(
+                        reportListRoot.transform,
+                        FormatReportTarget(report),
+                        FormatReportReason(report.ReasonType),
+                        FormatReportStatus(report.Status),
+                        ReportStatusColor(report.Status));
+                    renderedCount++;
+                }
+            }
+
+            if (renderedCount == 0)
+            {
+                SetReportListMessage(emptyMessage ?? "신고내역이 없습니다.");
+                return;
+            }
+
+            SetReportListMessage(null);
+        }
+
+        private void LoadBlockedUsersForSettings()
+        {
+            if (isBlockListLoadInFlight)
+            {
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                RenderBlockedUsers(null, "DEV 모드에서는 차단 목록 API를 호출하지 않습니다.");
+                return;
+            }
+#endif
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                RenderBlockedUsers(null, "사용자 API 설정이 없습니다.");
+                return;
+            }
+
+            isBlockListLoadInFlight = true;
+            SetBlockedUsersMessage("차단 목록을 불러오는 중입니다.");
+            ClearChildren(blockedUsersListRoot?.transform);
+
+            var hasRetried = false;
+            void DoLoadBlocks(NotebookApiClient apiClient)
+            {
+                apiClient.GetBlocks(
+                    onSuccess: response =>
+                    {
+                        isBlockListLoadInFlight = false;
+                        RenderBlockedUsers(response?.Users);
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoLoadBlocks(apiClient),
+                                onAbort: () =>
+                                {
+                                    isBlockListLoadInFlight = false;
+                                    RenderBlockedUsers(null, "세션이 만료되었습니다. 다시 로그인해주세요.");
+                                });
+                            return;
+                        }
+
+                        isBlockListLoadInFlight = false;
+                        RenderBlockedUsers(null, "차단 목록을 불러오지 못했습니다.");
+                        Debug.LogWarning(
+                            $"[Settings] GetBlocks failed: code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoLoadBlocks(client);
+        }
+
+        private void RenderBlockedUsers(IReadOnlyList<UserSummaryResponseDto> users, string emptyMessage = null)
+        {
+            ClearChildren(blockedUsersListRoot?.transform);
+
+            var renderedCount = 0;
+            if (users != null)
+            {
+                for (var i = 0; i < users.Count; i++)
+                {
+                    var user = users[i];
+                    if (user == null)
+                    {
+                        continue;
+                    }
+
+                    CreateBlockedUserRow(blockedUsersListRoot.transform, user);
+                    renderedCount++;
+                }
+            }
+
+            if (renderedCount == 0)
+            {
+                SetBlockedUsersMessage(emptyMessage ?? "차단한 사용자가 없습니다.");
+                return;
+            }
+
+            SetBlockedUsersMessage(null);
+        }
+
+        private void UnblockUserFromSettings(long targetUserId)
+        {
+            if (targetUserId <= 0L || isUnblockInFlight)
+            {
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (DevMainSceneMode.IsActive)
+            {
+                ShowNoticeToast("DEV 모드에서는 차단 해제 API를 호출하지 않습니다.");
+                return;
+            }
+#endif
+
+            var client = EnsureSettingsApiClient();
+            if (client == null)
+            {
+                ShowNoticeToast("차단 해제에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                return;
+            }
+
+            isUnblockInFlight = true;
+            var hasRetried = false;
+            void DoUnblock(NotebookApiClient apiClient)
+            {
+                apiClient.UnblockUser(
+                    targetUserId,
+                    onSuccess: _ =>
+                    {
+                        isUnblockInFlight = false;
+                        ShowNoticeToast("차단을 해제했습니다.");
+                        LoadBlockedUsersForSettings();
+                    },
+                    onError: error =>
+                    {
+                        if (!hasRetried && SessionRefresh.IsAuthFailure(error))
+                        {
+                            hasRetried = true;
+                            SessionRefresh.TryRefreshAndRetry(
+                                onRetry: () => DoUnblock(apiClient),
+                                onAbort: () =>
+                                {
+                                    isUnblockInFlight = false;
+                                    ShowNoticeToast("세션이 만료되었습니다. 다시 로그인해주세요.");
+                                });
+                            return;
+                        }
+
+                        isUnblockInFlight = false;
+                        ShowNoticeToast("차단 해제에 실패했습니다. 잠시 후 다시 시도해주세요.");
+                        Debug.LogWarning(
+                            $"[Settings] UnblockUser failed: targetUserId={targetUserId} code={error?.Code} message={error?.Message}");
+                    });
+            }
+            DoUnblock(client);
+        }
+
+        private void SetReportListMessage(string message)
+        {
+            if (reportListMessageLabel == null)
+            {
+                return;
+            }
+
+            reportListMessageLabel.text = message ?? string.Empty;
+            reportListMessageLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(message));
+        }
+
+        private void SetBlockedUsersMessage(string message)
+        {
+            if (blockedUsersMessageLabel == null)
+            {
+                return;
+            }
+
+            blockedUsersMessageLabel.text = message ?? string.Empty;
+            blockedUsersMessageLabel.gameObject.SetActive(!string.IsNullOrWhiteSpace(message));
+        }
+
+        private static string FormatReportTarget(ReportResponseDto report)
+        {
+            if (report == null)
+            {
+                return "신고 대상 없음";
+            }
+
+            var targetType = string.IsNullOrWhiteSpace(report.TargetType)
+                ? string.Empty
+                : report.TargetType.Trim().ToUpperInvariant();
+            var targetLabel = targetType switch
+            {
+                "GUESTBOOK_POST_IT" => "방명록 포스트잇",
+                "GUESTBOOK" => "방명록",
+                "GUESTBOOK_REPLY" => "방명록 답글",
+                "BOOK_REVIEW" => "독서 리뷰",
+                "READING_RECORD" => "독서 기록",
+                "USER_PROFILE" => "사용자 프로필",
+                "USER" => "사용자",
+                "SPACE" => "사용자 공간",
+                "BOOK" => "책",
+                _ => "신고 대상"
+            };
+
+            return report.TargetId > 0L ? $"{targetLabel} #{report.TargetId}" : targetLabel;
+        }
+
+        private static string FormatReportReason(string reasonType)
+        {
+            var normalized = string.IsNullOrWhiteSpace(reasonType) ? string.Empty : reasonType.Trim().ToUpperInvariant();
+            return normalized switch
+            {
+                "SPAM" => "스팸",
+                "HARASSMENT" => "괴롭힘",
+                "ABUSE" => "욕설/비방",
+                "INAPPROPRIATE" => "부적절한 콘텐츠",
+                "COPYRIGHT" => "저작권 침해",
+                _ => string.IsNullOrWhiteSpace(reasonType) ? "기타" : reasonType
+            };
+        }
+
+        private static string FormatReportStatus(string status)
+        {
+            var normalized = string.IsNullOrWhiteSpace(status) ? string.Empty : status.Trim().ToUpperInvariant();
+            return normalized switch
+            {
+                "PENDING" => "신고 접수",
+                "IN_REVIEW" => "처리 중",
+                "RESOLVED" => "처리 완료",
+                "REJECTED" => "반려",
+                _ => string.IsNullOrWhiteSpace(status) ? "상태 없음" : status
+            };
+        }
+
+        private static Color ReportStatusColor(string status)
+        {
+            var normalized = string.IsNullOrWhiteSpace(status) ? string.Empty : status.Trim().ToUpperInvariant();
+            return normalized switch
+            {
+                "RESOLVED" => SuccessColor,
+                "REJECTED" => MutedTextColor,
+                "IN_REVIEW" => Hex("#D58A2A"),
+                _ => PrimaryColor
+            };
         }
 
         // ---------------------------------------------------------------------
@@ -3283,6 +4113,25 @@ namespace App.Bootstrap
             layoutElement.preferredHeight = height;
             layoutElement.minHeight = height;
             layoutElement.flexibleWidth = 1f;
+        }
+
+        private static void ClearChildren(Transform parent)
+        {
+            if (parent == null)
+            {
+                return;
+            }
+
+            for (var i = parent.childCount - 1; i >= 0; i--)
+            {
+                var child = parent.GetChild(i);
+                if (child == null)
+                {
+                    continue;
+                }
+
+                UnityObjectSafeDestroy.Destroy(child.gameObject);
+            }
         }
 
         private void ResetButtonRectForLayout(Button button)

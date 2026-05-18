@@ -576,8 +576,12 @@ public class SpaceService {
     @Transactional
     public SpaceResponse applyTheme(Long userId, ThemeApplyRequest request) {
         Long currentUserId = userService.requireUserId(userId);
+        Long inventoryId = request.inventoryId();
+        if (inventoryId != null) {
+            verifyOwnedInventoryWithType(inventoryId, currentUserId, "THEME");
+        }
         Space space = findOrCreateMySpace(currentUserId);
-        space.applyTheme(request.inventoryId());
+        space.applyTheme(inventoryId);
         return SpaceResponse.from(space, isLiked(space.getId(), currentUserId));
     }
 
