@@ -45,8 +45,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 0
     column: 2
-    leftBound: -0.0024999678
-    rightBound: 0.27265203
+    leftBound: 0.007500032
+    rightBound: 0.28265202
     shelfTopY: 0.22500004
     sectionHeight: 0.305
     bookYOffset: 0.006
@@ -89,8 +89,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 1
     column: 2
-    leftBound: -0.0024999678
-    rightBound: 0.27265203
+    leftBound: 0.007500032
+    rightBound: 0.28265202
     shelfTopY: 0.555
     sectionHeight: 0.295
     bookYOffset: 0.006
@@ -133,8 +133,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 2
     column: 2
-    leftBound: -0.0024999678
-    rightBound: 0.27265203
+    leftBound: 0.007500032
+    rightBound: 0.28265202
     shelfTopY: 0.87999994
     sectionHeight: 0.31
     bookYOffset: 0.006
@@ -177,8 +177,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 3
     column: 2
-    leftBound: -0.0024999678
-    rightBound: 0.27265203
+    leftBound: 0.007500032
+    rightBound: 0.28265202
     shelfTopY: 1.1949999
     sectionHeight: 0.315
     bookYOffset: 0.006

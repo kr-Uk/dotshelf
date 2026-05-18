@@ -31,6 +31,10 @@ namespace App.Bootstrap
         private const float PrimaryControlHeight = 56f;
         private const float ProfilePreviewSize = 176f;
         private const float ThemeButtonWidth = 152f;
+        private const float Step2GridSpacing = 14f;
+        private const float Step2ThemeCardWidth = 286f;
+        private const float Step2ThemeCardHeight = 252f;
+        private const float Step2ThemePreviewHeight = 170f;
         private const int UiLayer = 5;
         private const int CanvasSortingOrder = 5100;
         private const float MainSceneLoadTimeoutSeconds = 8f;
@@ -137,7 +141,6 @@ namespace App.Bootstrap
         private Coroutine themePreviewFadeRoutine;
         private TMP_Text themePreviewTitleLabel;
         private TMP_Text themePreviewCaptionLabel;
-        private Button randomThemeButton;
         private Button step2PreviousButton;
         private Button step2NextButton;
         private TMP_Text step2NextButtonLabel;
@@ -154,12 +157,7 @@ namespace App.Bootstrap
         private readonly Dictionary<string, Image> themeButtonImages = new Dictionary<string, Image>(StringComparer.Ordinal);
         private readonly Dictionary<string, Outline> themeButtonOutlines = new Dictionary<string, Outline>(StringComparer.Ordinal);
         private readonly Dictionary<string, TMP_Text> themeButtonLabels = new Dictionary<string, TMP_Text>(StringComparer.Ordinal);
-
         private string selectedTheme = string.Empty;
-        // 랜덤 버튼 클릭 시 OnboardingRandomThemeBuilder 가 생성한 slot mix. 일반 카드 선택 (단일 테마)
-        // 과 분리해 보존 — selectedRandomSelection 가 non-null 이면 ApplySelectedThemeIfAvailable 가
-        // 랜덤 경로로 분기. 일반 카드 클릭 시점에 SelectTheme 가 이 필드를 null 로 clear.
-        private OnboardingRandomThemeSelection selectedRandomSelection;
         // Step2 진입 시 themeApplier.CurrentTheme 캡쳐 — "이전 단계" / 취소 시 rollback 용. preview API
         // (ApplyExternalThemePreview / ApplyExternalRandomThemePreview) 가 PlayerPrefs 저장 안 하므로
         // 사용자가 여러 카드를 둘러본 뒤 취소해도 in-session visual 만 복원하면 충분.
@@ -803,8 +801,24 @@ namespace App.Bootstrap
             // the main-scene chrome and focus-mode chrome resume their normal visibility.
             if (TryGetBookshelfExperienceManager(out var experienceManager) && experienceManager != null)
             {
+                RoomEditModeController roomEditModeController = null;
+                RoomThemeAsset currentTheme = null;
+                var isVintage = TryGetRoomEditModeController(out roomEditModeController) &&
+                                roomEditModeController.TryGetCurrentTheme(out currentTheme) &&
+                                IsVintageTheme(currentTheme);
+
+                if (isVintage)
+                {
+                    roomEditModeController.LogCurrentDeskNotebookHierarchyState("OnboardingComplete.beforeFocusMainView");
+                }
+
                 experienceManager.IsOnboardingStep3Active = false;
                 experienceManager.FocusMainView();
+
+                if (isVintage)
+                {
+                    roomEditModeController.LogCurrentDeskNotebookHierarchyState("OnboardingComplete.afterFocusMainView");
+                }
             }
 
             CompleteOnboarding();
@@ -893,9 +907,6 @@ namespace App.Bootstrap
             var panel = CreateRectObject("Step2_ThemePanel", parent);
             StretchToParent((RectTransform)panel.transform);
 
-            // 화면 전체 배경 — cardRoot 가 hide 된 상태라 명시 배경이 필요. BackgroundColor 와 동일 톤.
-            // Step2 가 MainScene preview 모드로 진입하면 이 background 도 alpha=0 으로 처리해
-            // MainScene 노출. step1/3 진입 시 복원.
             var bg = panel.AddComponent<Image>();
             bg.sprite = whiteSprite;
             bg.type = Image.Type.Simple;
@@ -903,14 +914,15 @@ namespace App.Bootstrap
             bg.raycastTarget = true;
             step2PanelBackgroundImage = bg;
 
-            // 호출 순서: 우측 preview 를 먼저 만들고 좌측 panel 을 나중에 만들어 sibling order 상
-            // 좌측이 위에 그려지게 한다 (좌측 카드 outline 이 우측 preview 가장자리에 가려지지 않음).
-            BuildStep2RightPreview(panel.transform);
             BuildStep2LeftPanel(panel.transform);
 
-            // Live preview renderer — RenderTexture 기반. Initialize 실패 시 themePreviewRenderer 는
-            // null 로 유지되고 UpdateThemePreview 가 sprite fallback 으로 자동 회피.
-            EnsureThemePreviewRenderer();
+            themePreviewImage = null;
+            themePreviewPlaceholderShelf = null;
+            themePreviewRawImageRoot = null;
+            themePreviewRawImage = null;
+            themePreviewRawImageGroup = null;
+            step2RightPreviewRoot = null;
+            themePreviewRenderer = null;
 
             UpdateThemeSelectionVisuals();
             UpdateThemePreview(string.Empty);
@@ -932,26 +944,32 @@ namespace App.Bootstrap
         // 높이를 초과하면 (1920×1080 / 2560×1440 / Free Aspect 등) 하단 nav 가 화면 밖으로 밀려 안 보임
         // → "이전/다음 단계" 버튼 클릭 불가. anchor 3 분할은 헤더/푸터가 패널 height 와 독립적이라 어느
         // 해상도에서도 footer visible. 가변 영역은 ThemeListScrollArea 한 곳뿐 → ScrollRect 가 흡수.
-        private const float Step2LeftHeaderHeight = 460f;
-        private const float Step2LeftFooterHeight = 140f;
+        private const float Step2LeftHeaderHeight = 228f;
+        private const float Step2LeftFooterHeight = 124f;
 
         private void BuildStep2LeftPanel(Transform parent)
         {
             var leftGo = CreateRectObject("Step2_LeftPanel", parent);
             var leftRt = (RectTransform)leftGo.transform;
-            leftRt.anchorMin = new Vector2(0f, 0f);
-            leftRt.anchorMax = new Vector2(0.28f, 1f);
+            leftRt.anchorMin = new Vector2(0.5f, 0.5f);
+            leftRt.anchorMax = new Vector2(0.5f, 0.5f);
             leftRt.pivot = new Vector2(0.5f, 0.5f);
-            leftRt.offsetMin = Vector2.zero;
-            leftRt.offsetMax = Vector2.zero;
+            leftRt.sizeDelta = new Vector2(960f, 1000f);
             leftRt.anchoredPosition = Vector2.zero;
 
-            // 좌측 패널 자체는 크림 화이트 — 우측 베이지 배경과 자연스럽게 분리.
             var leftBg = leftGo.AddComponent<Image>();
-            leftBg.sprite = whiteSprite;
-            leftBg.type = Image.Type.Simple;
+            leftBg.sprite = roundedRectSprite;
+            leftBg.type = Image.Type.Sliced;
             leftBg.color = CardColor;
             leftBg.raycastTarget = true;
+
+            var leftOutline = leftGo.AddComponent<Outline>();
+            leftOutline.effectColor = WithAlpha(BorderColor, 0.45f);
+            leftOutline.effectDistance = new Vector2(1f, -1f);
+
+            var leftShadow = leftGo.AddComponent<Shadow>();
+            leftShadow.effectColor = WithAlpha(TextColor, 0.12f);
+            leftShadow.effectDistance = new Vector2(0f, -12f);
 
             BuildStep2LeftHeader(leftGo.transform);
             BuildStep2LeftThemeList(leftGo.transform);
@@ -970,7 +988,7 @@ namespace App.Bootstrap
             headerRt.anchoredPosition = Vector2.zero;
             headerRt.sizeDelta = new Vector2(0f, Step2LeftHeaderHeight);
 
-            var headerColumn = CreateColumn(headerGo.transform, "LeftHeaderLayout", 12f, new RectOffset(36, 36, 56, 8), TextAnchor.UpperLeft);
+            var headerColumn = CreateColumn(headerGo.transform, "LeftHeaderLayout", 10f, new RectOffset(40, 40, 42, 12), TextAnchor.UpperLeft);
             StretchToParent(headerColumn);
             var headerVlg = headerColumn.GetComponent<VerticalLayoutGroup>();
             if (headerVlg != null)
@@ -982,15 +1000,8 @@ namespace App.Bootstrap
             }
 
             CreateSectionText(headerColumn, "StepCaption", "STEP 2", 14f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Left, 22f, 2f);
-            CreateSectionText(headerColumn, "Title", "테마를 선택해주세요", 28f, FontStyles.Bold, TextColor, TextAlignmentOptions.Left, 42f);
-            CreateSectionText(headerColumn, "Subtitle", "방과 책장의 분위기를 먼저 정해볼 수 있습니다.", 14f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Left, 40f);
-
-            CreateSpacer(headerColumn, 6f);
-
-            randomThemeButton = BuildLeftPanelPrimaryButton(headerColumn, "RandomThemeButton", "🎲   랜덤", SecondaryColor, TextColor, true);
-            randomThemeButton.onClick.AddListener(OnRandomThemeButtonClicked);
-
-            CreateSpacer(headerColumn, 14f);
+            CreateSectionText(headerColumn, "Title", "테마를 선택해주세요", 30f, FontStyles.Bold, TextColor, TextAlignmentOptions.Left, 42f);
+            CreateSectionText(headerColumn, "Subtitle", "카드를 눌러 방과 책장의 분위기를 정할 수 있습니다.", 14f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Left, 38f);
 
             var divider = CreateImage(headerColumn, "Divider", WithAlpha(BorderColor, 0.55f));
             divider.sprite = whiteSprite;
@@ -1001,11 +1012,8 @@ namespace App.Bootstrap
             dividerLayout.minHeight = 1f;
             dividerLayout.flexibleWidth = 1f;
 
-            CreateSpacer(headerColumn, 10f);
-
-            // 현재 선택 테마 이름 / 설명 — UpdateThemePreview 가 두 라벨의 text 를 갱신한다 (기존 필드 그대로 재할당).
-            themePreviewTitleLabel = CreateSectionText(headerColumn, "SelectedThemeTitle", "테마 미리보기", 20f, FontStyles.Bold, TextColor, TextAlignmentOptions.Left, 30f);
-            themePreviewCaptionLabel = CreateSectionText(headerColumn, "SelectedThemeCaption", "테마를 선택하면 이 영역이 변경됩니다.", 13f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Left, 56f);
+            themePreviewTitleLabel = CreateSectionText(headerColumn, "SelectedThemeTitle", "랜덤 또는 테마를 선택해주세요", 18f, FontStyles.Bold, TextColor, TextAlignmentOptions.Left, 28f);
+            themePreviewCaptionLabel = CreateSectionText(headerColumn, "SelectedThemeCaption", "선택된 테마는 다음 단계에서 그대로 적용됩니다.", 13f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Left, 48f);
         }
 
         // ThemeListScrollArea — Header / Footer 사이의 가변 영역. ScrollRect + RectMask2D Viewport +
@@ -1020,15 +1028,8 @@ namespace App.Bootstrap
             scrollRt.pivot = new Vector2(0.5f, 0.5f);
             scrollRt.offsetMin = new Vector2(0f, Step2LeftFooterHeight);
             scrollRt.offsetMax = new Vector2(0f, -Step2LeftHeaderHeight);
+            scrollRt.localScale = Vector3.one;
 
-            var scrollRect = scrollGo.AddComponent<ScrollRect>();
-            scrollRect.horizontal = false;
-            scrollRect.vertical = true;
-            scrollRect.movementType = ScrollRect.MovementType.Clamped;
-            scrollRect.scrollSensitivity = 24f;
-            scrollRect.inertia = false;
-
-            // Viewport — RectMask2D 로 content clip. raycast 받기 위해 거의 투명한 Image 1장.
             var viewportGo = CreateRectObject("Viewport", scrollGo.transform);
             var viewportRt = (RectTransform)viewportGo.transform;
             StretchToParent(viewportRt);
@@ -1037,9 +1038,7 @@ namespace App.Bootstrap
             viewportImage.color = new Color(1f, 1f, 1f, 0.0001f);
             viewportImage.raycastTarget = true;
             viewportGo.AddComponent<RectMask2D>();
-            scrollRect.viewport = viewportRt;
 
-            // Content — ContentSizeFitter.verticalFit=PreferredSize 로 카드 합계 height 자동 계산.
             var contentGo = CreateRectObject("Content", viewportGo.transform);
             var contentRt = (RectTransform)contentGo.transform;
             contentRt.anchorMin = new Vector2(0f, 1f);
@@ -1047,16 +1046,16 @@ namespace App.Bootstrap
             contentRt.pivot = new Vector2(0.5f, 1f);
             contentRt.anchoredPosition = Vector2.zero;
             contentRt.sizeDelta = Vector2.zero;
-            scrollRect.content = contentRt;
 
-            var contentVlg = contentGo.AddComponent<VerticalLayoutGroup>();
-            contentVlg.spacing = 10f;
-            contentVlg.padding = new RectOffset(36, 36, 6, 12);
-            contentVlg.childAlignment = TextAnchor.UpperLeft;
-            contentVlg.childControlWidth = true;
-            contentVlg.childControlHeight = true;
-            contentVlg.childForceExpandWidth = true;
-            contentVlg.childForceExpandHeight = false;
+            var grid = contentGo.AddComponent<GridLayoutGroup>();
+            grid.padding = new RectOffset(18, 18, 10, 10);
+            grid.spacing = new Vector2(Step2GridSpacing, Step2GridSpacing);
+            grid.childAlignment = TextAnchor.UpperCenter;
+            grid.cellSize = new Vector2(Step2ThemeCardWidth, Step2ThemeCardHeight);
+            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            grid.constraintCount = 3;
+            grid.startAxis = GridLayoutGroup.Axis.Horizontal;
+            grid.startCorner = GridLayoutGroup.Corner.UpperLeft;
 
             var contentFitter = contentGo.AddComponent<ContentSizeFitter>();
             contentFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
@@ -1069,7 +1068,10 @@ namespace App.Bootstrap
 
             foreach (var themeName in ThemeNames)
             {
-                var button = BuildThemeCard(contentGo.transform, themeName);
+                var resourceName = themePreviewProvider != null
+                    ? themePreviewProvider.GetResourceName(themeName)
+                    : null;
+                var button = BuildThemeCard(contentGo.transform, themeName, resourceName, GetThemePreviewColor(themeName));
                 themeButtons[themeName] = button;
             }
         }
@@ -1087,8 +1089,6 @@ namespace App.Bootstrap
             footerRt.anchoredPosition = Vector2.zero;
             footerRt.sizeDelta = new Vector2(0f, Step2LeftFooterHeight);
 
-            // Footer 자체 배경 — ScrollArea 의 카드가 footer 뒤로 스크롤될 때 카드 텍스트가 비치는 회귀 방지.
-            // Card 영역 위에 살짝 떠 있는 느낌 부여 (상단 그림자).
             var footerBg = footerGo.AddComponent<Image>();
             footerBg.sprite = whiteSprite;
             footerBg.type = Image.Type.Simple;
@@ -1112,7 +1112,6 @@ namespace App.Bootstrap
 
             step2MessageLabel = CreateSectionText(footerColumn, "Step2Message", string.Empty, 13f, FontStyles.Normal, ErrorColor, TextAlignmentOptions.Left, 22f);
 
-            // 하단 nav — 이전(베이지) / 다음(네이비). 같은 row 에 두고 flex spacer 로 양 끝.
             var navigationRow = CreateRow(footerColumn, "Step2NavigationRow", 10f, TextAnchor.MiddleCenter);
             var navHlg = navigationRow.GetComponent<HorizontalLayoutGroup>();
             if (navHlg != null)
@@ -1136,95 +1135,14 @@ namespace App.Bootstrap
         // 위치만 RawImage 로 swap 하면 되는 구조 — Provider 추상화는 이미 OnboardingThemePreviewProvider 가 보유.
         private void BuildStep2RightPreview(Transform parent)
         {
-            var rightGo = CreateRectObject("Step2_RightPreview", parent);
-            step2RightPreviewRoot = rightGo;
-            var rightRt = (RectTransform)rightGo.transform;
-            rightRt.anchorMin = new Vector2(0.28f, 0f);
-            rightRt.anchorMax = new Vector2(1f, 1f);
-            rightRt.pivot = new Vector2(0.5f, 0.5f);
-            // 좌측 패널과의 사이에 약간 inset — preview 가 패널에 딱 붙지 않게.
-            rightRt.offsetMin = new Vector2(36f, 48f);
-            rightRt.offsetMax = new Vector2(-48f, -48f);
-            rightRt.anchoredPosition = Vector2.zero;
-
-            themePreviewImage = rightGo.AddComponent<Image>();
-            themePreviewImage.sprite = roundedRectSprite;
-            themePreviewImage.type = Image.Type.Sliced;
-            themePreviewImage.color = PreviewAccentColor;
-            // sprite swap 시 type=Simple 로 바뀌면서 preserveAspect 가 적용 — 인테리어 이미지 찌그러짐 회피.
-            themePreviewImage.preserveAspect = true;
-            themePreviewImage.raycastTarget = false;
-
-            var previewOutline = rightGo.AddComponent<Outline>();
-            previewOutline.effectColor = WithAlpha(BorderColor, 0.55f);
-            previewOutline.effectDistance = new Vector2(1f, -1f);
-
-            // 카드 그림자 — 우측 preview 가 살짝 떠 있는 느낌. 너무 강하지 않게.
-            var previewShadow = rightGo.AddComponent<Shadow>();
-            previewShadow.effectColor = WithAlpha(TextColor, 0.10f);
-            previewShadow.effectDistance = new Vector2(0f, -10f);
-
-            // Live preview RawImage — RenderTexture 기반. EnsureThemePreviewRenderer 가 Initialize
-            // 성공하면 활성화 (UpdateThemePreview 가 selectedTheme 받았을 때). 실패 시 비활성 + 아래
-            // sprite/procedural placeholder 가 fallback. Image (sprite) 와 RawImage (RT) 는 다른
-            // GameObject — 같이 두면 RaycastTarget 충돌 가능성, 별도 자식이 안전.
-            var rawGo = CreateRectObject("Step2_RightPreview_Raw", rightGo.transform);
-            StretchToParent((RectTransform)rawGo.transform);
-            themePreviewRawImageRoot = rawGo;
-            themePreviewRawImage = rawGo.AddComponent<RawImage>();
-            themePreviewRawImage.raycastTarget = false;
-            themePreviewRawImage.color = Color.white;
-            themePreviewRawImageGroup = rawGo.AddComponent<CanvasGroup>();
-            themePreviewRawImageGroup.alpha = 1f;
-            // 초기엔 비활성 — EnsureThemePreviewRenderer 성공 + theme 선택될 때만 활성.
-            rawGo.SetActive(false);
-
-            // placeholder content — sprite 없을 때 procedural shelf + 책 표시.
-            var previewContent = CreateRectObject("PreviewContent", rightGo.transform);
-            StretchWithPadding((RectTransform)previewContent.transform, new Vector2(48f, 48f), new Vector2(-48f, -48f));
-
-            var previewColumn = CreateColumn(previewContent.transform, "Layout", 0f, new RectOffset(0, 0, 0, 0), TextAnchor.MiddleCenter);
-            StretchToParent(previewColumn);
-
-            var previewShelf = CreateImage(previewColumn, "PreviewShelf", WithAlpha(CardColor, 0.78f));
-            previewShelf.sprite = roundedRectSprite;
-            previewShelf.type = Image.Type.Sliced;
-            previewShelf.raycastTarget = false;
-            var previewShelfLayout = previewShelf.gameObject.AddComponent<LayoutElement>();
-            previewShelfLayout.preferredHeight = 280f;
-            previewShelfLayout.minHeight = 220f;
-            previewShelfLayout.flexibleWidth = 1f;
-            themePreviewPlaceholderShelf = previewShelf.gameObject;
-
-            CreatePreviewAccentBar(previewShelf.transform, "ShelfTop", new Vector2(0.5f, 0.32f), new Vector2(460f, 12f));
-            CreatePreviewAccentBar(previewShelf.transform, "ShelfBottom", new Vector2(0.5f, 0.68f), new Vector2(460f, 12f));
-            CreatePreviewBook(previewShelf.transform, "PreviewBookA", new Vector2(0.28f, 0.25f), Hex("#CFA47C"));
-            CreatePreviewBook(previewShelf.transform, "PreviewBookB", new Vector2(0.42f, 0.25f), Hex("#7C93B7"));
-            CreatePreviewBook(previewShelf.transform, "PreviewBookC", new Vector2(0.56f, 0.25f), Hex("#A87F7F"));
-            CreatePreviewBook(previewShelf.transform, "PreviewBookD", new Vector2(0.38f, 0.62f), Hex("#91A27A"));
-            CreatePreviewBook(previewShelf.transform, "PreviewBookE", new Vector2(0.52f, 0.62f), Hex("#D0B373"));
-
-            // Sibling order 명시 — themePreviewImage(자체) 위에 RawImage(자식), 그 위에 PreviewContent(자식).
-            // Unity UI 는 sibling index 가 큰 자식이 더 위에 그려짐. 자식들 추가 순서는:
-            //   1. rawGo(Step2_RightPreview_Raw)  ← sibling 0 (RawImage, 비활성 default)
-            //   2. previewContent(PreviewContent) ← sibling 1 (procedural placeholder)
-            // 의도된 순서대로 들어가지만 명시 보장 — 디자이너가 인스펙터에서 자식 순서 바꿔도 안전.
-            if (themePreviewRawImageRoot != null) themePreviewRawImageRoot.transform.SetSiblingIndex(0);
-            previewContent.transform.SetAsLastSibling();
-
-            Debug.Log(
-                $"[OnboardingPreviewUI] BuildStep2RightPreview created. " +
-                $"image={themePreviewImage != null} rawImage={themePreviewRawImage != null} " +
-                $"rawGroup={themePreviewRawImageGroup != null} placeholderShelf={themePreviewPlaceholderShelf != null} " +
-                $"rightSize={(themePreviewImage != null ? themePreviewImage.rectTransform.sizeDelta.ToString() : "n/a")}");
         }
 
         // 가로 카드 — 좌측에 thumbnail (preview sprite 의 작은 버전), 우측에 한글 테마 이름.
         // 클릭 시 기존 SelectTheme(themeName) 호출. 선택 강조는 UpdateThemeSelectionVisuals 가
         // themeButtonImages/Outlines/Labels dict 를 통해 일괄 갱신.
-        private Button BuildThemeCard(Transform parent, string themeName)
+        private Button BuildThemeCard(Transform parent, string label, string resourceName, Color fallbackColor)
         {
-            var cardGo = CreateRectObject($"{themeName}Card", parent);
+            var cardGo = CreateRectObject($"{label}Card", parent);
 
             var cardImage = cardGo.AddComponent<Image>();
             cardImage.sprite = roundedRectSprite;
@@ -1233,71 +1151,95 @@ namespace App.Bootstrap
             cardImage.raycastTarget = true;
 
             var cardOutline = cardGo.AddComponent<Outline>();
-            cardOutline.effectColor = WithAlpha(BorderColor, 0.85f);
+            cardOutline.effectColor = WithAlpha(BorderColor, 0.7f);
             cardOutline.effectDistance = new Vector2(1f, -1f);
-
-            var cardLayout = cardGo.AddComponent<LayoutElement>();
-            cardLayout.preferredHeight = 84f;
-            cardLayout.minHeight = 84f;
-            cardLayout.flexibleWidth = 1f;
 
             var button = cardGo.AddComponent<Button>();
             button.targetGraphic = cardImage;
-            // 선택 색상은 UpdateThemeSelectionVisuals 가 명시 set — Unity Selectable 의 자동 transition 끔.
-            button.transition = Selectable.Transition.None;
-            button.onClick.AddListener(() => SelectTheme(themeName));
+            button.transition = Selectable.Transition.ColorTint;
+            var colors = button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = WithAlpha(Color.white, 0.94f);
+            colors.pressedColor = WithAlpha(Color.white, 0.88f);
+            colors.selectedColor = WithAlpha(Color.white, 0.94f);
+            colors.disabledColor = WithAlpha(Color.white, 0.6f);
+            colors.fadeDuration = 0.15f;
+            button.colors = colors;
+            button.onClick.AddListener(() => SelectTheme(label));
 
-            // HorizontalLayoutGroup — thumbnail 좌측 고정, label 우측 flex.
-            var row = cardGo.AddComponent<HorizontalLayoutGroup>();
-            row.padding = new RectOffset(16, 22, 14, 14);
-            row.spacing = 16f;
-            row.childAlignment = TextAnchor.MiddleLeft;
-            row.childForceExpandWidth = false;
-            row.childControlWidth = true;
-            row.childForceExpandHeight = false;
-            row.childControlHeight = true;
+            var vertical = cardGo.AddComponent<VerticalLayoutGroup>();
+            vertical.padding = new RectOffset(10, 10, 10, 10);
+            vertical.spacing = 6f;
+            vertical.childAlignment = TextAnchor.UpperLeft;
+            vertical.childControlWidth = true;
+            vertical.childControlHeight = true;
+            vertical.childForceExpandWidth = true;
+            vertical.childForceExpandHeight = false;
 
-            // Thumbnail — Provider 의 preview sprite 가 있으면 그대로 사용 (작게 표시), 없으면 PreviewAccentColor.
-            var thumbGo = CreateRectObject("Thumbnail", cardGo.transform);
-            var thumbImage = thumbGo.AddComponent<Image>();
-            thumbImage.sprite = roundedRectSprite;
-            thumbImage.type = Image.Type.Sliced;
-            thumbImage.color = themePreviewProvider != null ? GetThemePreviewColor(themeName) : PreviewAccentColor;
-            thumbImage.preserveAspect = true;
-            thumbImage.raycastTarget = false;
-            if (themePreviewProvider != null && themePreviewProvider.TryGetPreviewSprite(themeName, out var thumbSprite))
+            var titleText = CreateSectionText(cardGo.transform, "Label", label, 15f, FontStyles.Bold, TextColor, TextAlignmentOptions.Left, 20f);
+
+            var previewFrameGo = CreateRectObject("PreviewFrame", cardGo.transform);
+            var previewFrameImage = previewFrameGo.AddComponent<Image>();
+            previewFrameImage.sprite = roundedRectSprite;
+            previewFrameImage.type = Image.Type.Sliced;
+            previewFrameImage.color = WithAlpha(Color.white, 0.9f);
+            previewFrameImage.raycastTarget = false;
+            var previewFrameLayout = previewFrameGo.AddComponent<LayoutElement>();
+            previewFrameLayout.preferredHeight = Step2ThemePreviewHeight;
+            previewFrameLayout.minHeight = Step2ThemePreviewHeight;
+            previewFrameLayout.flexibleWidth = 1f;
+
+            var previewViewport = CreateRectObject("PreviewViewport", previewFrameGo.transform);
+            var previewViewportRt = (RectTransform)previewViewport.transform;
+            StretchToParent(previewViewportRt);
+            previewViewportRt.offsetMin = Vector2.zero;
+            previewViewportRt.offsetMax = Vector2.zero;
+            previewViewportRt.anchorMin = Vector2.zero;
+            previewViewportRt.anchorMax = Vector2.one;
+            previewViewport.AddComponent<RectMask2D>();
+
+            var previewImage = previewViewport.AddComponent<Image>();
+            previewImage.sprite = roundedRectSprite;
+            previewImage.type = Image.Type.Sliced;
+            previewImage.color = fallbackColor;
+            previewImage.raycastTarget = false;
+            previewImage.preserveAspect = true;
+            var previewImageGo = previewImage.gameObject;
+            var previewImageRt = (RectTransform)previewImage.transform;
+            StretchToParent(previewImageRt);
+            previewImageRt.offsetMin = new Vector2(4f, 4f);
+            previewImageRt.offsetMax = new Vector2(-4f, -4f);
+            var previewImageLayout = previewImageGo.AddComponent<LayoutElement>();
+            previewImageLayout.preferredHeight = Step2ThemePreviewHeight;
+            previewImageLayout.minHeight = Step2ThemePreviewHeight;
+            previewImageLayout.flexibleWidth = 1f;
+
+            Sprite sprite = null;
+            if (themePreviewProvider != null)
             {
-                thumbImage.sprite = thumbSprite;
-                thumbImage.type = Image.Type.Simple;
-                thumbImage.color = Color.white;
+                if (!themePreviewProvider.TryGetPreviewSpriteByResourceName(resourceName, out sprite))
+                {
+                    var resourcePath = $"Onboarding/ThemePreviews/{resourceName}";
+                    Debug.LogWarning($"[Onboarding] preview sprite load failed at '{resourcePath}'.");
+                }
             }
-            var thumbLayout = thumbGo.AddComponent<LayoutElement>();
-            thumbLayout.preferredWidth = 56f;
-            thumbLayout.preferredHeight = 56f;
-            thumbLayout.minWidth = 56f;
-            thumbLayout.minHeight = 56f;
-            thumbLayout.flexibleWidth = 0f;
-            thumbLayout.flexibleHeight = 0f;
 
-            // Label
-            var labelGo = CreateRectObject("Label", cardGo.transform);
-            var labelText = labelGo.AddComponent<TextMeshProUGUI>();
-            labelText.text = themeName;
-            labelText.fontSize = 18f;
-            labelText.fontStyle = FontStyles.Bold;
-            labelText.color = TextColor;
-            labelText.alignment = TextAlignmentOptions.MidlineLeft;
-            if (fontAsset != null) labelText.font = fontAsset;
-            labelText.raycastTarget = false;
-            var labelLayout = labelGo.AddComponent<LayoutElement>();
-            labelLayout.flexibleWidth = 1f;
-            labelLayout.preferredHeight = 56f;
-            labelLayout.minHeight = 56f;
+            if (sprite != null)
+            {
+                previewImage.sprite = sprite;
+                previewImage.type = Image.Type.Simple;
+                previewImage.color = Color.white;
+            }
+            else
+            {
+                previewImage.sprite = roundedRectSprite;
+                previewImage.type = Image.Type.Sliced;
+                previewImage.color = fallbackColor;
+            }
 
-            // UpdateThemeSelectionVisuals 가 dict 기반으로 갱신 — 기존 키 그대로 등록.
-            themeButtonImages[themeName] = cardImage;
-            themeButtonOutlines[themeName] = cardOutline;
-            themeButtonLabels[themeName] = labelText;
+            themeButtonImages[label] = cardImage;
+            themeButtonOutlines[label] = cardOutline;
+            themeButtonLabels[label] = titleText;
 
             return button;
         }
@@ -1827,38 +1769,6 @@ namespace App.Bootstrap
                 $"[OnboardingDemo] Profile image upload failed: code={error?.Code} message={error?.Message}");
         }
 
-        private void OnRandomThemeButtonClicked()
-        {
-            if (isPreparingOnboardingBookshelf) return;
-
-            // ThemeSlot 별 mix 생성. Builder 가 5개 RoomThemeAsset 의 spec 풀에서 슬롯별 1개씩 random pick.
-            // null 반환 (전 후보 None / RandomEligible=false) 시 기존 5-pick 단일 테마로 fallback.
-            var selection = OnboardingRandomThemeBuilder.BuildRandomSelection();
-            if (selection == null || selection.SelectedSpecs.Count == 0)
-            {
-                Debug.LogWarning("[OnboardingDemo] random slot mix build 실패 — 5-pick 단일 테마 fallback.");
-                if (ThemeNames.Length == 0) return;
-                var themeName = ThemeNames[UnityEngine.Random.Range(0, ThemeNames.Length)];
-                SelectTheme(themeName);
-                LogDebug($"[OnboardingDemo] Random fallback (single theme): '{GetThemeDebugName(themeName)}'.");
-                return;
-            }
-
-            selectedRandomSelection = selection;
-            selectedTheme = string.Empty; // 일반 단일 테마 선택 해제 — UI 카드 highlight 도 자동 해제.
-
-            SetMessage(step2MessageLabel, string.Empty, ErrorColor);
-            UpdateThemeSelectionVisuals();
-            UpdateThemePreviewForRandom(selection);
-
-            // PreviewStage 가 ready 면 stage 에 random preview apply.
-            ApplyPreviewToStageIfReady("OnRandomThemeButtonClicked");
-            // legacy 호환 — MainScene active 시 random preview API 호출 (보통 onboarding 단계엔 no-op).
-            ApplyPreviewInMainSceneIfActive("OnRandomThemeButtonClicked");
-
-            LogDebug($"[OnboardingDemo] Random slot mix selected — {selection.BuildSummary()}");
-        }
-
         // 랜덤 조합 selection 을 우측 preview 에 반영. EnableMockRoomPreview=false (현재) 면
         // mock room 사용 안 하므로 baseTheme 의 sprite preview 로 fallback. baseTheme 의 sprite 가
         // OnboardingThemePreviewProvider 에 등록되어 있으면 그것 표시, 없으면 procedural placeholder.
@@ -1866,55 +1776,6 @@ namespace App.Bootstrap
         // (mock room 활성 시점엔 prefab pool spawn 으로 실제 GLB 표시 — 사용자 보고로 비활성. 디자이너가
         // 사용자 보게 될 결과의 캡쳐 PNG 를 추가하면 sprite preview 가 더 정확. main scene additive
         // load 기반 진짜 RT preview 는 follow-up PR.)
-        private void UpdateThemePreviewForRandom(OnboardingRandomThemeSelection selection)
-        {
-            if (themePreviewImage == null || selection == null) return;
-
-            bool liveOk = false;
-            if (themePreviewRenderer != null && themePreviewRenderer.IsReady && themePreviewRawImage != null && selection.BaseTheme != null)
-            {
-                try
-                {
-                    // 새 API — prefab spawn + material + light 모두 single source 처리.
-                    themePreviewRenderer.ApplyRandomSelection(selection);
-                    themePreviewRawImage.texture = themePreviewRenderer.RenderTexture;
-                    if (themePreviewRawImageRoot != null) themePreviewRawImageRoot.SetActive(true);
-                    // **회귀 fix**: themePreviewImage.gameObject == rightGo 라 SetActive(false) 호출 시 자식
-                    // RawImage 까지 hide. component enabled 만 toggle.
-                    if (themePreviewImage != null) themePreviewImage.enabled = false;
-                    // placeholder shelf 도 hide — RawImage 위에 덮이는 회귀 회피.
-                    if (themePreviewPlaceholderShelf != null) themePreviewPlaceholderShelf.SetActive(false);
-                    BeginPreviewFade();
-                    liveOk = true;
-                }
-                catch (System.Exception ex)
-                {
-                    Debug.LogWarning(
-                        $"[OnboardingPreview] random ApplyRandomSelection 실패 — placeholder fallback. " +
-                        $"{ex.GetType().Name}: {ex.Message}");
-                }
-            }
-
-            // mock room 사용 안 함 (EnableMockRoomPreview=false) → baseTheme 의 sprite preview 시도.
-            // OnboardingThemePreviewProvider 가 baseTheme.name 대신 themeId 매핑이라 base assetName 으로
-            // 직접 sprite 못 얻음 — baseTheme 의 displayName / 카테고리 이름에서 themeId 역추적은 복잡.
-            // 일단 procedural placeholder 로 통일. 디자이너가 "random combo" 캡쳐 sprite 도 추가 가능.
-            if (!liveOk)
-            {
-                if (themePreviewRawImageRoot != null) themePreviewRawImageRoot.SetActive(false);
-                if (themePreviewImage != null) themePreviewImage.enabled = true;
-                ApplyPlaceholderPreview(PreviewAccentColor);
-                Debug.Log("[OnboardingMainPreview] Apply random preview — sprite/procedural fallback (mock disabled).");
-            }
-
-            SetMessage(themePreviewTitleLabel, "🎲 랜덤 조합", TextColor);
-            SetMessage(themePreviewCaptionLabel,
-                string.IsNullOrEmpty(selection.Description)
-                    ? "여러 테마의 가구가 섞인 조합입니다."
-                    : selection.Description,
-                MutedTextColor);
-        }
-
         private void OnStep2NextButtonClicked()
         {
             if (isPreparingOnboardingBookshelf)
@@ -1925,8 +1786,7 @@ namespace App.Bootstrap
             // 단일 테마 또는 랜덤 조합 둘 중 하나는 있어야 다음 단계 진입 — Step2 default 가
             // selectedTheme="내추럴" 이라 일반 경로에선 항상 통과지만, 랜덤 클릭 후엔 selectedTheme=""
             // 이고 selectedRandomSelection 만 채워져 있으므로 둘 다 검사.
-            bool hasRandom = selectedRandomSelection != null && selectedRandomSelection.SelectedSpecs.Count > 0;
-            if (string.IsNullOrWhiteSpace(selectedTheme) && !hasRandom)
+            if (string.IsNullOrWhiteSpace(selectedTheme))
             {
                 SetMessage(step2MessageLabel, "테마를 선택해주세요.", ErrorColor);
                 return;
@@ -2047,7 +1907,7 @@ namespace App.Bootstrap
         {
             if (step2NextButtonLabel != null)
             {
-                step2NextButtonLabel.text = isPreparingOnboardingBookshelf ? "준비 중..." : "다음 단계";
+                step2NextButtonLabel.text = isPreparingOnboardingBookshelf ? "준비 중.." : "다음 단계";
             }
 
             if (step2NextButton != null)
@@ -2058,11 +1918,6 @@ namespace App.Bootstrap
             if (step2PreviousButton != null)
             {
                 step2PreviousButton.interactable = !isPreparingOnboardingBookshelf;
-            }
-
-            if (randomThemeButton != null)
-            {
-                randomThemeButton.interactable = !isPreparingOnboardingBookshelf;
             }
 
             foreach (var entry in themeButtons)
@@ -2082,17 +1937,10 @@ namespace App.Bootstrap
             }
 
             selectedTheme = themeName ?? string.Empty;
-            // 일반 카드 클릭 = 단일 테마 의도 → 이전 random selection 폐기. ApplySelectedThemeIfAvailable
-            // 이 selectedTheme 우선으로 단일 테마 적용 흐름 진입.
-            selectedRandomSelection = null;
             SetMessage(step2MessageLabel, string.Empty, ErrorColor);
             UpdateThemeSelectionVisuals();
             UpdateThemePreview(selectedTheme);
-
-            // PreviewStage 가 ready 면 stage 에 material swap (사용자 의도: prefab composition preview).
             ApplyPreviewToStageIfReady($"SelectTheme:{themeName}");
-            // (legacy 호환) MainScene 이 이미 active 면 거기에도 preview apply — 두 경로 공존 가능.
-            // 보통 onboarding 단계엔 MainScene 비활성이라 no-op.
             ApplyPreviewInMainSceneIfActive($"SelectTheme:{themeName}");
 
             if (!string.IsNullOrWhiteSpace(selectedTheme))
@@ -2121,75 +1969,34 @@ namespace App.Bootstrap
         //   4) ApplyExternalThemeSelection 가 false — internal precondition 실패.
         private void ApplySelectedThemeIfAvailable(string source)
         {
-            // 우선순위 1 — 랜덤 조합 선택이 있으면 random slot mix 적용. ApplyExternalRandomThemeSelection
-            // 가 baseTheme material/lighting + slot 별 spec spawn 을 single source 로 처리.
-            if (selectedRandomSelection != null && selectedRandomSelection.SelectedSpecs.Count > 0)
-            {
-                var controller = UnityEngine.Object.FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
-                if (controller == null)
-                {
-                    Debug.LogWarning(
-                        $"[Onboarding] RoomEditModeController 가 scene 에 없음 — random selection 적용 skip. " +
-                        $"source={source} selection=[{selectedRandomSelection.BuildSummary()}].");
-                    return;
-                }
-                bool randomOk = controller.ApplyExternalRandomThemeSelection(selectedRandomSelection, $"onboarding:{source}");
-                if (!randomOk)
-                {
-                    Debug.LogWarning(
-                        $"[Onboarding] ApplyExternalRandomThemeSelection 가 false — random 적용 실패. " +
-                        $"source={source} selection=[{selectedRandomSelection.BuildSummary()}].");
-                    return;
-                }
-                Debug.Log(
-                    $"[Onboarding] random selection apply OK — slots={selectedRandomSelection.SelectedSpecs.Count} " +
-                    $"summary=[{selectedRandomSelection.BuildSummary()}]. source={source}");
-                // confirm 후 snapshot reset — 이후 rollback 시도해도 더 이상 적용 안 함.
-                step2PreviewSnapshotCaptured = false;
-                step2PreviewSnapshotTheme = null;
-                Debug.Log("[OnboardingStep2MainPreview] Confirm selection on next (random).");
-                return;
-            }
-
-            // 우선순위 2 — 일반 단일 테마 흐름 (기존).
             if (string.IsNullOrWhiteSpace(selectedTheme))
             {
-                Debug.Log($"[Onboarding] ApplySelectedThemeIfAvailable — selectedTheme/selection 모두 비어있음. source={source}. theme 적용 skip.");
+                Debug.Log($"[Onboarding] ApplySelectedThemeIfAvailable skipped: selectedTheme empty. source={source}");
                 return;
             }
 
             var resolved = OnboardingThemeAssetResolver.Resolve(selectedTheme);
             if (resolved == null)
             {
-                // Resolver 가 이미 구체적인 LogWarning 출력 — 본 메서드는 추가 noise 없이 skip.
                 return;
             }
 
-            var ctrl = UnityEngine.Object.FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
-            if (ctrl == null)
+            var controller = UnityEngine.Object.FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
+            if (controller == null)
             {
-                Debug.LogWarning(
-                    $"[Onboarding] RoomEditModeController 가 scene 에 없음 — onboarding theme 적용 skip. " +
-                    $"source={source} themeId='{selectedTheme}' resolved='{resolved.name}'. MainRoomScene 컴포지션 확인 필요.");
+                Debug.LogWarning($"[Onboarding] RoomEditModeController missing. theme apply skipped. source={source} theme={selectedTheme}");
                 return;
             }
 
-            bool ok = ctrl.ApplyExternalThemeSelection(resolved, $"onboarding:{source}");
+            var ok = controller.ApplyExternalThemeSelection(resolved, $"onboarding:{source}");
             if (!ok)
             {
-                Debug.LogWarning(
-                    $"[Onboarding] ApplyExternalThemeSelection 가 false — theme 적용 실패. " +
-                    $"source={source} themeId='{selectedTheme}' resolved='{resolved.name}'.");
+                Debug.LogWarning($"[Onboarding] ApplyExternalThemeSelection returned false. source={source} theme={selectedTheme}");
                 return;
             }
 
-            Debug.Log(
-                $"[Onboarding] theme apply OK — themeId='{selectedTheme}' → asset='{resolved.name}' " +
-                $"(displayName='{resolved.DisplayName}'). source={source}");
-            // confirm 후 snapshot reset.
             step2PreviewSnapshotCaptured = false;
             step2PreviewSnapshotTheme = null;
-            Debug.Log("[OnboardingStep2MainPreview] Confirm selection on next (single theme).");
         }
 
         private void RefreshStep1ValidationUi()
@@ -2213,27 +2020,24 @@ namespace App.Bootstrap
 
         private void UpdateThemeSelectionVisuals()
         {
-            foreach (var entry in themeButtonImages)
+            foreach (var pair in themeButtonImages)
             {
-                var themeName = entry.Key;
-                var buttonImage = entry.Value;
-                if (buttonImage == null)
+                var themeName = pair.Key;
+                var image = pair.Value;
+                var outline = themeButtonOutlines.TryGetValue(themeName, out var foundOutline) ? foundOutline : null;
+                var label = themeButtonLabels.TryGetValue(themeName, out var foundLabel) ? foundLabel : null;
+                bool isSelected = string.Equals(selectedTheme, themeName, StringComparison.Ordinal);
+
+                if (image != null)
                 {
-                    continue;
+                    image.color = isSelected ? Color.white : SecondaryColor;
                 }
-
-                var isSelected = string.Equals(selectedTheme, themeName, StringComparison.Ordinal);
-                // 새 카드 스타일: 선택은 진한 outline + 옅은 primary tint 로 강조. cardImage 를 통째
-                // PrimaryColor 로 set 하면 좌측 thumbnail 이미지가 묻혀 시인성 ↓ — 8% tint + outline 조합.
-                buttonImage.color = isSelected ? WithAlpha(PrimaryColor, 0.08f) : SecondaryColor;
-
-                if (themeButtonOutlines.TryGetValue(themeName, out var outline) && outline != null)
+                if (outline != null)
                 {
-                    outline.effectColor = isSelected ? WithAlpha(PrimaryColor, 1f) : WithAlpha(BorderColor, 0.85f);
+                    outline.effectColor = isSelected ? PrimaryColor : WithAlpha(BorderColor, 0.7f);
                     outline.effectDistance = isSelected ? new Vector2(2f, -2f) : new Vector2(1f, -1f);
                 }
-
-                if (themeButtonLabels.TryGetValue(themeName, out var label) && label != null)
+                if (label != null)
                 {
                     label.color = isSelected ? PrimaryColor : TextColor;
                 }
@@ -2267,146 +2071,11 @@ namespace App.Bootstrap
 
         private void UpdateThemePreview(string themeName)
         {
-            if (themePreviewImage == null)
+            if (string.IsNullOrWhiteSpace(themeName))
             {
-                Debug.LogWarning("[OnboardingPreviewUI] UpdateThemePreview skip — themePreviewImage null (build 시점 race 또는 UI 아직 미초기화).");
+                SetMessage(themePreviewTitleLabel, "테마를 선택해주세요", TextColor);
+                SetMessage(themePreviewCaptionLabel, "선택된 테마는 다음 단계에서 그대로 적용됩니다.", MutedTextColor);
                 return;
-            }
-
-            // **회귀 fix**: PreviewStage 가 ready 면 RawImage 가 stage RT 를 표시 중 — sprite/placeholder
-            // 흐름이 RawImage 를 hide 시키면 사용자가 stage prefab 대신 sprite 만 봄. stage 활성 시
-            // 라벨만 갱신하고 sprite/placeholder 분기는 skip.
-            if (onboardingPreviewStage != null && onboardingPreviewStage.IsReady)
-            {
-                // 변수명 stageEmptyTheme — 아래 outer scope 의 isEmptyTheme 와 CS0136 (nested scope
-                // 동일 이름 충돌) 회피.
-                bool stageEmptyTheme = string.IsNullOrWhiteSpace(themeName);
-                string stageEffectiveThemeName = stageEmptyTheme ? OnboardingThemePreviewProvider.DefaultThemeId : themeName;
-                SetMessage(themePreviewTitleLabel, $"{stageEffectiveThemeName} 테마", TextColor);
-                SetMessage(themePreviewCaptionLabel, GetThemePreviewCaption(stageEffectiveThemeName), MutedTextColor);
-                Debug.Log($"[OnboardingPreviewUI] UpdateThemePreview theme='{stageEffectiveThemeName}' — PreviewStage active, sprite/placeholder skip (RawImage 가 stage RT 표시 중).");
-                return;
-            }
-
-            // 빈 themeName 시 procedural placeholder 가 visible 보장 + DefaultThemeId 로 live preview 시도.
-            // 사용자 요청: "selectedTheme 이 비어있으면 DefaultThemeId 를 사용해서 preview 를 표시."
-            // 우측이 베이지 배경만 보이는 회귀 회피 — 어떤 경우에도 placeholder 또는 live 가 보임.
-            bool isEmptyTheme = string.IsNullOrWhiteSpace(themeName);
-            if (isEmptyTheme)
-            {
-                Debug.Log("[OnboardingPreviewUI] UpdateThemePreview empty → fallback DefaultThemeId for live preview attempt; placeholder visible if all paths fail.");
-                themeName = OnboardingThemePreviewProvider.DefaultThemeId;
-            }
-
-            Debug.Log(
-                $"[OnboardingPreviewUI] UpdateThemePreview theme='{themeName}' " +
-                $"renderer={(themePreviewRenderer != null ? (themePreviewRenderer.IsReady ? "ready" : "notReady") : "null")} " +
-                $"rawImage.active={(themePreviewRawImageRoot != null ? themePreviewRawImageRoot.activeSelf.ToString() : "n/a")} " +
-                $"image.active={themePreviewImage.gameObject.activeSelf}");
-
-            // 우선순위 1 — Live preview (RenderTexture 기반 mini-room): themePreviewRenderer 가 ready
-            // 이고 OnboardingThemeAssetResolver 로 RoomThemeAsset 해석 성공일 때만. material 만 swap
-            // + Camera.Render 강제 호출이라 새 GameObject instantiate 없음 (성능 안전).
-            //
-            // EnableMockRoomPreview=false (현재 default) 면 themePreviewRenderer 가 null 유지 → 이
-            // 분기 자동 skip → sprite preview 가 primary. mock 시각 fidelity 낮음 결정 (사용자 보고).
-            bool liveOk = false;
-            if (themePreviewRenderer != null && themePreviewRenderer.IsReady && themePreviewRawImage != null)
-            {
-                var theme = OnboardingThemeAssetResolver.Resolve(themeName);
-                if (theme != null)
-                {
-                    try
-                    {
-                        themePreviewRenderer.ApplyTheme(theme);
-                        // RT validate — mesh 가 실제로 RT 에 그려졌는지 검증. background-only RT 면
-                        // RawImage 표시해봤자 단색이라 sprite/procedural fallback 으로 자동 전환.
-                        if (!themePreviewRenderer.LastRenderHasMeshContent)
-                        {
-                            Debug.LogWarning(
-                                $"[OnboardingPreviewUI] live preview skip — RT background-only (mesh not rendered). " +
-                                $"themeName='{themeName}'. sprite/procedural fallback 으로 전환.");
-                            // liveOk = false 유지 → 아래 sprite fallback 분기로.
-                        }
-                        else
-                        {
-                            themePreviewRawImage.texture = themePreviewRenderer.RenderTexture;
-                            if (themePreviewRawImage.color.a < 0.99f)
-                            {
-                                var c = themePreviewRawImage.color; c.a = 1f;
-                                themePreviewRawImage.color = c;
-                            }
-                            if (themePreviewRawImageGroup != null && themePreviewRawImageGroup.alpha < 0.05f)
-                            {
-                                // 직전 fade routine 이 stop 안 된 채 alpha=0 남아 있는 회귀 가드.
-                                themePreviewRawImageGroup.alpha = 1f;
-                            }
-                            if (themePreviewRawImageRoot != null) themePreviewRawImageRoot.SetActive(true);
-                            // **회귀 fix**: themePreviewImage.gameObject = rightGo (Step2_RightPreview 자체) 이므로
-                            // SetActive(false) 하면 rightGo 전체가 hide → RawImage 자식까지 같이 hide 되어
-                            // 사용자가 panel 의 BackgroundColor 만 보는 회귀 발생 (콘솔 진단: RT mesh=9/9 OK,
-                            // RawImage activeSelf=true 인데 activeInHierarchy=false 였음).
-                            // → RawImage 가 sibling order 상 themePreviewImage 위에 그려지므로 RawImage 가
-                            //   active 일 때 자동으로 themePreviewImage 를 덮음. themePreviewImage GameObject
-                            //   를 hide 할 필요 없음. Image 컴포넌트 자체 enabled 만 false (raycast / draw 비용 약간 절약).
-                            if (themePreviewImage != null) themePreviewImage.enabled = false;
-                            // placeholder shelf 도 hide — sibling order 상 RawImage 위에 그려져 cream tint
-                            // (CardColor 0.78 alpha) 가 RawImage 를 덮는 회귀 회피.
-                            if (themePreviewPlaceholderShelf != null) themePreviewPlaceholderShelf.SetActive(false);
-                            BeginPreviewFade();
-                            liveOk = true;
-
-                            string previewRtSize = themePreviewRenderer.RenderTexture != null
-                                ? themePreviewRenderer.RenderTexture.width + "x" + themePreviewRenderer.RenderTexture.height
-                                : "n/a";
-                            Debug.Log(
-                                $"[OnboardingPreviewUI] RawImage active=true, texture={(themePreviewRawImage.texture != null ? "ok" : "null")}, " +
-                                $"alpha={(themePreviewRawImageGroup != null ? themePreviewRawImageGroup.alpha : 1f):F2}, " +
-                                $"rtSize={previewRtSize} " +
-                                $"rawImage.activeInHierarchy={themePreviewRawImage.isActiveAndEnabled} " +
-                                $"image.enabled={themePreviewImage.enabled}");
-                        }
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Debug.LogWarning(
-                            $"[OnboardingPreview] live ApplyTheme 실패 — sprite fallback. themeName='{themeName}' " +
-                            $"{ex.GetType().Name}: {ex.Message}");
-                    }
-                }
-            }
-
-            // 우선순위 2 — Sprite fallback: live preview 가 실패했거나 init 안 된 상태. 기존 흐름 그대로.
-            if (!liveOk)
-            {
-                if (themePreviewRawImageRoot != null) themePreviewRawImageRoot.SetActive(false);
-                // themePreviewImage.gameObject == rightGo (Step2_RightPreview 자체) — gameObject.SetActive
-                // 는 자식 RawImage / PreviewContent 까지 함께 hide 시키므로 사용 금지. component enabled 만 toggle.
-                if (themePreviewImage != null) themePreviewImage.enabled = true;
-                if (themePreviewProvider != null && themePreviewProvider.TryGetPreviewSprite(themeName, out var sprite))
-                {
-                    themePreviewImage.sprite = sprite;
-                    themePreviewImage.type = Image.Type.Simple;
-                    // sprite (실제 메인화면 캡쳐 PNG) 가 portrait/landscape 어떤 비율이든 우측 영역에
-                    // letterbox 로 fit — 비율 왜곡 회피. type=Simple 일 때만 preserveAspect 가 동작.
-                    themePreviewImage.preserveAspect = true;
-                    themePreviewImage.color = Color.white;
-                    if (themePreviewPlaceholderShelf != null)
-                    {
-                        themePreviewPlaceholderShelf.SetActive(false);
-                    }
-                    Debug.Log($"[OnboardingMainPreview] Apply theme preview theme='{themeName}' mode=Sprite sprite='{sprite.name}'");
-                }
-                else
-                {
-                    // 우선순위 3 — Procedural placeholder (per-theme tint). sprite 도 없을 때.
-                    // 디자이너가 Resources/Onboarding/Themes/theme_natural.png 등 PNG 를 추가하면
-                    // 위 분기로 자동 진입 → 실제 메인화면 미리보기.
-                    ApplyPlaceholderPreview(GetThemePreviewColor(themeName));
-                    Debug.LogWarning(
-                        $"[OnboardingMainPreview] Apply theme preview theme='{themeName}' mode=ProceduralPlaceholder " +
-                        "— 디자이너가 Resources/Onboarding/Themes/<themeId>.png 미캡쳐. PNG 추가 시 자동 메인화면 sprite preview 로 전환.");
-                }
             }
 
             SetMessage(themePreviewTitleLabel, $"{themeName} 테마", TextColor);
@@ -2420,43 +2089,10 @@ namespace App.Bootstrap
         // 를 만들지 않고 RawImage 도 hide. UpdateThemePreview 가 sprite/procedural 분기로 자연 진입.
         private void EnsureThemePreviewRenderer()
         {
-            if (!EnableMockRoomPreview)
+            if (themePreviewRawImageRoot != null)
             {
-                // mock primitive 사용 안 함 — sprite preview 가 primary. RawImage 도 hide.
-                if (themePreviewRawImageRoot != null) themePreviewRawImageRoot.SetActive(false);
-                if (themePreviewImage != null) themePreviewImage.enabled = true;
-                Debug.Log("[OnboardingMainPreview] Initialize start — mode=SpriteOnly (mock room disabled).");
-                return;
+                themePreviewRawImageRoot.SetActive(false);
             }
-
-            if (themePreviewRenderer != null && themePreviewRenderer.IsReady)
-            {
-                Debug.Log("[OnboardingPreviewUI] Ensure renderer result: ready=true (already initialized)");
-                return;
-            }
-            if (themePreviewRawImage == null)
-            {
-                Debug.LogWarning("[OnboardingPreviewUI] Ensure renderer skip — themePreviewRawImage null. BuildStep2RightPreview 호출 전 시점.");
-                return;
-            }
-
-            themePreviewRenderer = new OnboardingThemePreviewRenderer();
-            bool ok = themePreviewRenderer.Initialize();
-            if (!ok)
-            {
-                // OnboardingThemePreviewRenderer.Initialize 내부에서 Dispose 까지 처리. 호출자는 null 로 둠.
-                themePreviewRenderer = null;
-                Debug.LogWarning("[OnboardingPreviewUI] Ensure renderer result: ready=false (Initialize failed) — sprite fallback only.");
-                return;
-            }
-            // RawImage texture 는 ApplyTheme 가 매 호출 reassign 하지만 첫 활성 frame 에도 valid 하게.
-            themePreviewRawImage.texture = themePreviewRenderer.RenderTexture;
-            string rtSizeStr = themePreviewRenderer.RenderTexture != null
-                ? themePreviewRenderer.RenderTexture.width + "x" + themePreviewRenderer.RenderTexture.height
-                : "n/a";
-            Debug.Log(
-                $"[OnboardingPreviewUI] Ensure renderer result: ready=true rt={(themePreviewRenderer.RenderTexture != null ? "ok" : "null")} " +
-                $"rtSize={rtSizeStr}");
         }
 
         // Step2 진입 시 stage 초기화 시도. LoginSceneController.OnboardingPreviewConfig 가 Inspector 에
@@ -2468,100 +2104,6 @@ namespace App.Bootstrap
         // fallback 으로 빠짐. 콘솔의 [OnboardingPreviewStage] prefix 로그가 정확한 원인 알려줌.
         private void EnsureOnboardingPreviewStage()
         {
-            Debug.Log("[OnboardingPreviewStage] EnsureOnboardingPreviewStage entry");
-            // Preview stage 생성 직전에 canvas overlay 상태 한 번 더 enforcement — preview stage 의
-            // 3D root 가 canvas 와 sibling 관계를 유지하도록 가드 (canvas 가 어쩌다 preview stage 아래에
-            // 들어가는 회귀 방지).
-            EnforceOnboardingCanvasOverlayState("EnsureOnboardingPreviewStage.entry");
-            if (onboardingPreviewStage != null && onboardingPreviewStage.IsReady)
-            {
-                // 이미 ready — RawImage 에 texture 재할당 (혹시 dispose/reinit 사이에 stale 됐을 때 가드).
-                if (themePreviewRawImage != null)
-                {
-                    themePreviewRawImage.texture = onboardingPreviewStage.RenderTexture;
-                    if (themePreviewRawImageRoot != null) themePreviewRawImageRoot.SetActive(true);
-                    if (themePreviewImage != null) themePreviewImage.enabled = false;
-                    if (themePreviewPlaceholderShelf != null) themePreviewPlaceholderShelf.SetActive(false);
-                }
-                return;
-            }
-
-            var loginCtrl = GetComponent<LoginSceneController>();
-            if (loginCtrl == null)
-            {
-                Debug.LogWarning(
-                    "[OnboardingPreviewStage] LoginSceneController not found on same GameObject — " +
-                    "OnboardingScreenController 가 LoginSceneController 와 같은 GameObject 에 있어야 함. " +
-                    "지금은 sprite fallback.");
-                return;
-            }
-            var config = loginCtrl.OnboardingPreviewConfig;
-            if (config == null)
-            {
-                Debug.LogWarning(
-                    "[OnboardingPreviewStage] config not wired — Editor 작업 필요:\n" +
-                    "  1. Unity Editor 에서 LoginScene 열기\n" +
-                    "  2. Hierarchy 에서 LoginSceneController 가 부착된 GameObject 선택\n" +
-                    "  3. Inspector 의 'Onboarding Preview Config' 슬롯에 Assets/App/Composition/Configs/MainSceneCompositionConfig.asset 드래그&드롭\n" +
-                    "  4. Scene 저장\n" +
-                    "지금은 sprite/procedural fallback 으로 표시됩니다 (이게 사용자가 보고 있는 화면).");
-                return;
-            }
-
-            // config 의 5 prefab null 검사 — Editor 의 SaveCompositionConfig 가 일부만 wire 한 경우 진단.
-            int wiredCount = 0;
-            var wiredSummary = new System.Text.StringBuilder("[OnboardingPreviewStage] config wired prefabs:");
-            wiredSummary.Append(" RoomBackground=").Append(config.RoomBackgroundPrefab != null ? "OK" : "null");
-            if (config.RoomBackgroundPrefab != null) wiredCount++;
-            wiredSummary.Append(" BookshelfRig=").Append(config.BookshelfRigPrefab != null ? "OK" : "null");
-            if (config.BookshelfRigPrefab != null) wiredCount++;
-            wiredSummary.Append(" NotebookStation=").Append(config.NotebookStationPrefab != null ? "OK" : "null");
-            if (config.NotebookStationPrefab != null) wiredCount++;
-            wiredSummary.Append(" CameraAnchors=").Append(config.CameraAnchorsPrefab != null ? "OK" : "null");
-            if (config.CameraAnchorsPrefab != null) wiredCount++;
-            wiredSummary.Append(" DashboardScreenPanel=").Append(config.DashboardScreenPanelPrefab != null ? "OK" : "null");
-            if (config.DashboardScreenPanelPrefab != null) wiredCount++;
-            Debug.Log(wiredSummary.ToString());
-            if (wiredCount == 0)
-            {
-                Debug.LogWarning(
-                    "[OnboardingPreviewStage] config 는 wire 됐지만 5 prefab 모두 null. " +
-                    "MainSceneCompositionConfig.asset 의 inspector 에서 각 prefab 슬롯에 자산 wire 필요. " +
-                    "Editor → MainScene 열기 → 메뉴 'Dotshelf > Extract MainScene Prefabs' (또는 비슷) 실행 필요할 수 있음. sprite fallback.");
-                return;
-            }
-
-            onboardingPreviewStage = new OnboardingPreviewStage();
-            bool ok = onboardingPreviewStage.Initialize(config);
-            if (!ok)
-            {
-                onboardingPreviewStage = null;
-                return;
-            }
-
-            // Inspector 의 수동 override (LoginSceneController.OverridePreviewCamera) 가 true 면 auto-fit
-            // 결과 무시하고 Inspector 값 그대로 적용.
-            if (loginCtrl.OverridePreviewCamera)
-            {
-                onboardingPreviewStage.OverrideCameraTransform(
-                    loginCtrl.PreviewCameraPosition,
-                    loginCtrl.PreviewCameraEulerAngles,
-                    loginCtrl.PreviewCameraFov);
-            }
-
-            // Stage RT 를 우측 RawImage 에 연결. sprite/placeholder 흐름 비활성.
-            if (themePreviewRawImage != null && themePreviewRawImageRoot != null)
-            {
-                themePreviewRawImage.texture = onboardingPreviewStage.RenderTexture;
-                themePreviewRawImage.color = Color.white;
-                if (themePreviewRawImageGroup != null) themePreviewRawImageGroup.alpha = 1f;
-                themePreviewRawImageRoot.SetActive(true);
-            }
-            if (themePreviewImage != null) themePreviewImage.enabled = false;
-            if (themePreviewPlaceholderShelf != null) themePreviewPlaceholderShelf.SetActive(false);
-
-            // 현재 selectedTheme / random 으로 즉시 적용.
-            ApplyPreviewToStageIfReady("EnsureOnboardingPreviewStage.end");
         }
 
         // SelectTheme / Random 시 호출 — preview stage 가 ready 면 그것에 ApplyTheme/ApplyRandomSelection.
@@ -2571,40 +2113,19 @@ namespace App.Bootstrap
         // 한 번 클릭하면 새 값이 즉시 카메라에 반영되는 live tweak workflow.
         private void ApplyPreviewToStageIfReady(string source)
         {
-            if (onboardingPreviewStage == null || !onboardingPreviewStage.IsReady) return;
-            if (selectedRandomSelection != null && selectedRandomSelection.SelectedSpecs.Count > 0)
-            {
-                onboardingPreviewStage.ApplyRandomSelection(selectedRandomSelection);
-            }
-            else if (!string.IsNullOrWhiteSpace(selectedTheme))
-            {
-                var theme = OnboardingThemeAssetResolver.Resolve(selectedTheme);
-                if (theme != null) onboardingPreviewStage.ApplyTheme(theme);
-            }
-
-            // Inspector override 재적용 (live tweak).
-            var loginCtrl = GetComponent<LoginSceneController>();
-            if (loginCtrl != null && loginCtrl.OverridePreviewCamera)
-            {
-                onboardingPreviewStage.OverrideCameraTransform(
-                    loginCtrl.PreviewCameraPosition,
-                    loginCtrl.PreviewCameraEulerAngles,
-                    loginCtrl.PreviewCameraFov);
-            }
         }
 
         // Step3 진입 / Step1 복귀 시 호출 — preview stage 자원 정리. RawImage 도 hide.
         private void DisposeOnboardingPreviewStage()
         {
-            if (onboardingPreviewStage == null) return;
-            onboardingPreviewStage.Dispose();
-            onboardingPreviewStage = null;
-            if (themePreviewRawImage != null) themePreviewRawImage.texture = null;
-            if (themePreviewRawImageRoot != null) themePreviewRawImageRoot.SetActive(false);
-            if (themePreviewImage != null) themePreviewImage.enabled = true;
-            // override cache 리셋 — 다음 Step2 진입 때 1회 강제 적용 보장.
-            lastPreviewOverrideEnabled = false;
-            hasAppliedPreviewOverrideOnce = false;
+            if (themePreviewRawImage != null)
+            {
+                themePreviewRawImage.texture = null;
+            }
+            if (themePreviewRawImageRoot != null)
+            {
+                themePreviewRawImageRoot.SetActive(false);
+            }
         }
 
         // Step2 overlay 모드 활성/비활성. 활성 시:
@@ -2902,18 +2423,7 @@ namespace App.Bootstrap
         // root 분리 등 큰 변경 — 별도 PR 로 분리.
         private void BeginStep2MainScenePreloadIfNeeded()
         {
-            if (step2MainSceneAlreadyLoaded) return;
-            if (SceneManager.GetActiveScene().name == SceneKeys.Main)
-            {
-                step2MainSceneAlreadyLoaded = true;
-                Debug.Log("[OnboardingStep2MainPreview] MainScene already active — Step2 preview uses live main scene.");
-                CaptureStep2PreviewSnapshotIfNeeded();
-                return;
-            }
-            // **사용자 명시 요구**: MainScene 통째 로드 금지. preview 는 sprite/placeholder fallback.
-            Debug.Log(
-                "[OnboardingStep2MainPreview] MainScene 통째 로드 skip (사용자 의도: prefab composition 만). " +
-                "preview = sprite/placeholder fallback. 실제 MainScene prefab composition 기반 RT preview 는 별도 PR.");
+            step2MainSceneAlreadyLoaded = false;
         }
 
         // MainScene load + ready 대기 + quarter view 적용 + snapshot 캡쳐 재시도. 책장 focus 는 skip —
@@ -2981,52 +2491,12 @@ namespace App.Bootstrap
         // PlayerPrefs 저장은 안 함 — "다음 단계" 클릭 시점에 ApplySelectedThemeIfAvailable 가 confirm.
         private void ApplyPreviewInMainSceneIfActive(string source)
         {
-            if (!step2MainSceneAlreadyLoaded) return;
-            var controller = UnityEngine.Object.FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
-            if (controller == null) return;
-
-            if (selectedRandomSelection != null && selectedRandomSelection.SelectedSpecs.Count > 0)
-            {
-                controller.ApplyExternalRandomThemePreview(selectedRandomSelection, $"onboarding-preview:{source}");
-                Debug.Log($"[OnboardingStep2MainPreview] Preview apply random slots={selectedRandomSelection.SelectedSpecs.Count} source={source}");
-                return;
-            }
-            if (!string.IsNullOrWhiteSpace(selectedTheme))
-            {
-                var theme = OnboardingThemeAssetResolver.Resolve(selectedTheme);
-                if (theme != null)
-                {
-                    controller.ApplyExternalThemePreview(theme, $"onboarding-preview:{source}");
-                    Debug.Log($"[OnboardingStep2MainPreview] Preview apply theme='{selectedTheme}' source={source}");
-                }
-            }
         }
 
         // Step2 → Step1 / 취소 시 호출. snapshot 의 테마로 themeApplier.Apply 직접 호출 (PlayerPrefs 무관).
         // snapshot 이 null (Step2 진입 전 default 상태) 이면 themeCatalog.DefaultTheme 으로 fallback.
         private void RollbackStep2PreviewSnapshot(string source)
         {
-            if (!step2PreviewSnapshotCaptured)
-            {
-                Debug.Log($"[OnboardingStep2MainPreview] Rollback skip — snapshot 미캡쳐. source={source}");
-                return;
-            }
-            var applier = UnityEngine.Object.FindFirstObjectByType<Dotshelf.Scripts.RoomTheme.RoomThemeApplier>(FindObjectsInactive.Include);
-            if (applier == null)
-            {
-                Debug.LogWarning($"[OnboardingStep2MainPreview] Rollback failed — themeApplier null. source={source}");
-                return;
-            }
-            if (step2PreviewSnapshotTheme != null)
-            {
-                applier.Apply(step2PreviewSnapshotTheme);
-                Debug.Log($"[OnboardingStep2MainPreview] Rollback preview on previous/cancel — theme='{step2PreviewSnapshotTheme.name}'. source={source}");
-            }
-            else
-            {
-                Debug.Log($"[OnboardingStep2MainPreview] Rollback preview — snapshot 이 null (default 상태). themeApplier 그대로 유지. source={source}");
-            }
-            // 한 번 rollback 후 snapshot reset — 다음 Step2 재진입 시 새 snapshot 캡쳐.
             step2PreviewSnapshotCaptured = false;
             step2PreviewSnapshotTheme = null;
         }
@@ -3365,6 +2835,26 @@ namespace App.Bootstrap
             return experienceManager != null;
         }
 
+        private bool TryGetRoomEditModeController(out RoomEditModeController controller)
+        {
+            controller = UnityEngine.Object.FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
+            return controller != null;
+        }
+
+        private static bool IsVintageTheme(RoomThemeAsset theme)
+        {
+            if (theme == null)
+            {
+                return false;
+            }
+
+            return theme.AssetId == 200031L ||
+                   (!string.IsNullOrWhiteSpace(theme.DisplayName) &&
+                    theme.DisplayName.IndexOf("vintage", StringComparison.OrdinalIgnoreCase) >= 0) ||
+                   (!string.IsNullOrWhiteSpace(theme.name) &&
+                    theme.name.IndexOf("vintage", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
         // Best-effort: if the bookshelf manager isn't reachable yet (e.g. main scene
         // hasn't loaded), the flag will be set on the next opportunity through
         // OnCompletionConfirmClicked / CompleteOnboarding, so silently no-op here.
@@ -3383,6 +2873,7 @@ namespace App.Bootstrap
             SetStep3StatusVisible(false);
             SetStep3LoadingCoverVisible(true);
             SetStep3LoadingCoverAlpha(1f);
+            Debug.Log("[OnboardingStep3] start");
             SetStep3OverlayStatus("메인 화면을 준비 중입니다.");
 
             if (SceneManager.GetActiveScene().name != SceneKeys.Main)
@@ -3414,42 +2905,61 @@ namespace App.Bootstrap
             BookshelfExperienceManager experienceManager = null;
             CameraController cameraController = null;
             BookshelfGenerator bookshelfGenerator = null;
-
-            // Step 3 special case: the player must see QuarterView (not the new MainView
-            // default) before the bookshelf-focus transition kicks in. Snap before the
-            // loading cover hides so there is no MainView flash.
-            if (TryGetBookshelfSceneDependencies(out var initialExperienceManager, out var initialCameraController, out _))
-            {
-                if (initialExperienceManager != null)
-                {
-                    // Manager is now reachable — propagate the Step 3 flag in case the
-                    // earlier ShowStep(3) call ran before the main scene finished loading.
-                    initialExperienceManager.IsOnboardingStep3Active = true;
-                }
-                if (initialCameraController != null)
-                {
-                    initialCameraController.ApplyQuarterView();
-                }
-            }
+            var selectedThemeApplied = false;
+            var mainViewSnapRequested = false;
+            var mainViewRevealRequested = false;
 
             var readyDeadline = Time.unscaledTime + MainViewReadyTimeoutSeconds;
             var visualReadySince = -1f;
             while (Time.unscaledTime < readyDeadline)
             {
-                if (TryGetBookshelfSceneDependencies(out experienceManager, out cameraController, out bookshelfGenerator) &&
-                    IsMainViewReadyForBookshelfFocus(experienceManager, cameraController, bookshelfGenerator))
+                if (TryGetBookshelfSceneDependencies(out experienceManager, out cameraController, out bookshelfGenerator))
                 {
-                    if (visualReadySince < 0f)
+                    if (!selectedThemeApplied)
                     {
-                        visualReadySince = Time.unscaledTime;
-                        SetStep3OverlayStatus("책장을 정리하는 중입니다.");
-                        SetStep3LoadingMessage("책장과 책을 화면에 안정적으로 배치하고 있어요.");
+                        Debug.Log($"[OnboardingStep3] selected theme={selectedTheme ?? "<null>"}");
+                        if (experienceManager != null)
+                        {
+                            experienceManager.IsOnboardingStep3Active = true;
+                        }
+
+                        ApplySelectedThemeIfAvailable("EnterMainAndBookshelfFocusFlow");
+                        Debug.Log("[OnboardingStep3] theme apply complete");
+                        selectedThemeApplied = true;
                     }
 
-                    if ((Time.unscaledTime - visualReadySince) >= BookshelfVisualSettleSeconds)
+                    if (!mainViewSnapRequested && experienceManager != null)
                     {
-                        isMainViewReady = true;
-                        break;
+                        Debug.Log("[OnboardingStep3] set main front view");
+                        experienceManager.SnapToMainView();
+                        mainViewSnapRequested = true;
+                    }
+
+                    if (IsMainViewReadyForBookshelfFocus(experienceManager, cameraController, bookshelfGenerator))
+                    {
+                        if (visualReadySince < 0f)
+                        {
+                            visualReadySince = Time.unscaledTime;
+                            SetStep3OverlayStatus("책장을 정리하는 중입니다.");
+                            SetStep3LoadingMessage("책장과 책을 화면에 안정적으로 배치하고 있어요.");
+                        }
+
+                        if ((Time.unscaledTime - visualReadySince) >= BookshelfVisualSettleSeconds)
+                        {
+                            isMainViewReady = true;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        visualReadySince = -1f;
+                        SetStep3LoadingMessage("책장 정보를 불러오고 있어요.");
+                    }
+
+                    if (selectedThemeApplied && mainViewSnapRequested && !mainViewRevealRequested)
+                    {
+                        SetStep3LoadingCoverVisible(false);
+                        mainViewRevealRequested = true;
                     }
                 }
                 else
@@ -3472,20 +2982,17 @@ namespace App.Bootstrap
                     yield break;
                 }
             }
-            else
+
+            if (!mainViewRevealRequested)
             {
                 SetStep3LoadingCoverVisible(false);
-                yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
+                mainViewRevealRequested = true;
             }
 
-            // Step2 에서 선택한 테마 (또는 랜덤 버튼이 선택한 테마) 를 MainScene 에 적용 + 영속화.
-            // MainView 의존성이 ready 된 직후 + 책장 포커스 진입 전 시점이 자연스러움 — 사용자가
-            // 책장 focus 로 카메라가 이동하기 시작할 때 이미 새 테마 visual 이 반영돼 있음.
-            // RoomEditModeController.ApplyExternalThemeSelection 가 themeApplier.Apply + Persist
-            // LastAppliedLocalPreviewTheme + ApplyThemeDefaultEntries 를 single source 로 처리.
-            ApplySelectedThemeIfAvailable("EnterMainAndBookshelfFocusFlow");
+            yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
 
             SetStep3OverlayStatus("책장 포커스 화면으로 이동 중입니다.");
+            Debug.Log("[OnboardingStep3] start bookshelf focus transition");
             var focusDeadline = Time.unscaledTime + BookshelfFocusTimeoutSeconds;
             var nextRetryAt = Time.unscaledTime;
             while (Time.unscaledTime < focusDeadline)
