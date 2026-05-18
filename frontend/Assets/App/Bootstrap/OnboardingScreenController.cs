@@ -73,6 +73,7 @@ namespace App.Bootstrap
         private TMP_FontAsset fallbackFontAsset;
         private Sprite whiteSprite;
         private Sprite roundedRectSprite;
+        private Sprite circleSprite;
 
         private GameObject backgroundRoot;
         private GameObject cardRoot;
@@ -81,7 +82,10 @@ namespace App.Bootstrap
         private GameObject step3Panel;
         private GameObject completionModalRoot;
 
+        private Image profilePreviewFrameImage;
         private Image profilePreviewImage;
+        private AspectRatioFitter profilePreviewAspectFitter;
+        private TMP_Text profilePreviewPlaceholderLabel;
         private TMP_InputField nicknameInput;
         private TMP_InputField introInput;
         private TMP_Text step1MessageLabel;
@@ -214,6 +218,7 @@ namespace App.Bootstrap
             isInitialized = true;
             whiteSprite = CreateWhiteSprite();
             roundedRectSprite = CreateRoundedRectSprite(64, 14);
+            circleSprite = CreateCircleSprite(64);
             // Provider must exist before BuildOnboardingCanvas → BuildStep2Panel
             // wires the preview area; UpdateThemePreview reads it.
             themePreviewProvider = new OnboardingThemePreviewProvider(roundedRectSprite);
@@ -840,23 +845,62 @@ namespace App.Bootstrap
 
             CreateSpacer(column, 12f);
 
-            var profileFrame = CreateImage(column, "ProfileFrame", InputColor);
-            profileFrame.sprite = roundedRectSprite;
-            profileFrame.type = Image.Type.Sliced;
-            profileFrame.raycastTarget = false;
-
-            var profileLayout = profileFrame.gameObject.AddComponent<LayoutElement>();
+            var profilePreviewRoot = CreateRectObject("ProfilePreviewRoot", column);
+            var profileLayout = profilePreviewRoot.AddComponent<LayoutElement>();
             profileLayout.preferredWidth = ProfilePreviewSize;
             profileLayout.preferredHeight = ProfilePreviewSize;
             profileLayout.minWidth = ProfilePreviewSize;
             profileLayout.minHeight = ProfilePreviewSize;
 
+            var profileFrame = CreateImage(profilePreviewRoot.transform, "CircleMaskContainer", InputColor);
+            profileFrame.sprite = circleSprite != null ? circleSprite : roundedRectSprite;
+            profileFrame.type = Image.Type.Simple;
+            profileFrame.raycastTarget = false;
+            profileFrame.color = InputColor;
+
+            StretchToParent(profileFrame.rectTransform);
+
             var profileOutline = profileFrame.gameObject.AddComponent<Outline>();
             profileOutline.effectColor = WithAlpha(BorderColor, 0.95f);
             profileOutline.effectDistance = new Vector2(1f, -1f);
 
-            profilePreviewImage = profileFrame;
-            profilePreviewImage.preserveAspect = true;
+            var profileMask = profileFrame.gameObject.AddComponent<Mask>();
+            profileMask.showMaskGraphic = true;
+
+            profilePreviewFrameImage = profileFrame;
+
+            var previewImage = CreateImage(profileFrame.transform, "ProfileImage", Color.white);
+            previewImage.sprite = null;
+            previewImage.type = Image.Type.Simple;
+            previewImage.raycastTarget = false;
+            previewImage.preserveAspect = true;
+            StretchToParent(previewImage.rectTransform);
+            previewImage.rectTransform.offsetMin = new Vector2(8f, 8f);
+            previewImage.rectTransform.offsetMax = new Vector2(-8f, -8f);
+
+            var previewAspect = previewImage.gameObject.AddComponent<AspectRatioFitter>();
+            previewAspect.aspectMode = AspectRatioFitter.AspectMode.EnvelopeParent;
+            previewAspect.aspectRatio = 1f;
+            profilePreviewAspectFitter = previewAspect;
+            profilePreviewImage = previewImage;
+
+            var placeholder = CreateSectionText(
+                profileFrame.transform,
+                "ProfilePlaceholder",
+                "사진 추가",
+                16f,
+                FontStyles.Bold,
+                WithAlpha(MutedTextColor, 0.68f),
+                TextAlignmentOptions.Center,
+                0f);
+            placeholder.raycastTarget = false;
+            var placeholderRect = placeholder.rectTransform;
+            placeholderRect.anchorMin = new Vector2(0.5f, 0.5f);
+            placeholderRect.anchorMax = new Vector2(0.5f, 0.5f);
+            placeholderRect.pivot = new Vector2(0.5f, 0.5f);
+            placeholderRect.sizeDelta = new Vector2(120f, 28f);
+            placeholderRect.anchoredPosition = Vector2.zero;
+            profilePreviewPlaceholderLabel = placeholder;
 
             var photoButtonRow = CreateRow(column, "PhotoButtonRow", 0f, TextAnchor.MiddleCenter);
             var photoButton = CreateFixedButton(photoButtonRow, "AddPhotoButton", "사진 추가", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));
@@ -3338,10 +3382,19 @@ namespace App.Bootstrap
                 profilePreviewImage.preserveAspect = true;
             }
 
-            var placeholder = profilePreviewImage != null ? profilePreviewImage.GetComponentInChildren<TMP_Text>(true) : null;
-            if (placeholder != null)
+            if (profilePreviewFrameImage != null)
             {
-                placeholder.gameObject.SetActive(false);
+                profilePreviewFrameImage.color = InputColor;
+            }
+
+            if (profilePreviewAspectFitter != null)
+            {
+                profilePreviewAspectFitter.aspectRatio = (float)texture.width / texture.height;
+            }
+
+            if (profilePreviewPlaceholderLabel != null)
+            {
+                profilePreviewPlaceholderLabel.gameObject.SetActive(false);
             }
 
             LogDebug($"[OnboardingDemo] Loaded profile preview from '{imagePath}'.");
@@ -3497,10 +3550,19 @@ namespace App.Bootstrap
                     profilePreviewImage.preserveAspect = true;
                 }
 
-                var placeholder = profilePreviewImage != null ? profilePreviewImage.GetComponentInChildren<TMP_Text>(true) : null;
-                if (placeholder != null)
+                if (profilePreviewFrameImage != null)
                 {
-                    placeholder.gameObject.SetActive(false);
+                    profilePreviewFrameImage.color = InputColor;
+                }
+
+                if (profilePreviewAspectFitter != null)
+                {
+                    profilePreviewAspectFitter.aspectRatio = (float)texture.width / texture.height;
+                }
+
+                if (profilePreviewPlaceholderLabel != null)
+                {
+                    profilePreviewPlaceholderLabel.gameObject.SetActive(false);
                 }
 
                 LogDebug($"[OnboardingDemo] Loaded profile preview from '{imagePath}'.");
@@ -3520,16 +3582,25 @@ namespace App.Bootstrap
 
             if (profilePreviewImage != null)
             {
-                profilePreviewImage.sprite = roundedRectSprite;
-                profilePreviewImage.type = Image.Type.Sliced;
-                profilePreviewImage.color = InputColor;
-                profilePreviewImage.preserveAspect = false;
+                profilePreviewImage.sprite = null;
+                profilePreviewImage.type = Image.Type.Simple;
+                profilePreviewImage.color = Color.clear;
+                profilePreviewImage.preserveAspect = true;
             }
 
-            var placeholder = profilePreviewImage != null ? profilePreviewImage.GetComponentInChildren<TMP_Text>(true) : null;
-            if (placeholder != null)
+            if (profilePreviewFrameImage != null)
             {
-                placeholder.gameObject.SetActive(true);
+                profilePreviewFrameImage.color = InputColor;
+            }
+
+            if (profilePreviewAspectFitter != null)
+            {
+                profilePreviewAspectFitter.aspectRatio = 1f;
+            }
+
+            if (profilePreviewPlaceholderLabel != null)
+            {
+                profilePreviewPlaceholderLabel.gameObject.SetActive(true);
             }
         }
 
@@ -4021,6 +4092,46 @@ namespace App.Bootstrap
                 border);
 
             sprite.name = "OnboardingUiRoundedSprite";
+            return sprite;
+        }
+
+        private Sprite CreateCircleSprite(int size)
+        {
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            texture.name = "OnboardingUiCircle";
+            texture.hideFlags = HideFlags.HideAndDontSave;
+            texture.wrapMode = TextureWrapMode.Clamp;
+            texture.filterMode = FilterMode.Bilinear;
+
+            var pixels = new Color32[size * size];
+            var solid = new Color32(255, 255, 255, 255);
+            var transparent = new Color32(255, 255, 255, 0);
+            var center = (size - 1) * 0.5f;
+            var radius = center;
+            var radiusSqr = radius * radius;
+
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    var dx = x - center;
+                    var dy = y - center;
+                    pixels[(y * size) + x] = ((dx * dx) + (dy * dy) <= radiusSqr) ? solid : transparent;
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+
+            var sprite = Sprite.Create(
+                texture,
+                new Rect(0f, 0f, size, size),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0u,
+                SpriteMeshType.FullRect);
+
+            sprite.name = "OnboardingUiCircleSprite";
             return sprite;
         }
 
