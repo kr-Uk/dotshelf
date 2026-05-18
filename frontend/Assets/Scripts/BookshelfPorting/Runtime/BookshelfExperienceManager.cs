@@ -7247,7 +7247,7 @@ namespace BookshelfPorting.Runtime
             var isPlacementEditing = isBookPlacementEditorOpen && placementEditBook != null;
             var showBookshelfOverlay = isBookshelfFocused && !isViewingBook && !isPlacementEditing;
             var canSwitchBookshelf = bookshelfGenerator != null &&
-                                     bookshelfGenerator.BookshelfCount > 1 &&
+                                     bookshelfGenerator.NavigableBookshelfCount > 1 &&
                                      !isBookshelfSwitching &&
                                      !IsBookshelfEditMode &&
                                      !isDraggingBook &&
@@ -7255,14 +7255,14 @@ namespace BookshelfPorting.Runtime
                                      !isBookAddPlacementSelectionActive;
             if (overlayPreviousFocusButton != null)
             {
-                overlayPreviousFocusButton.gameObject.SetActive(showBookshelfOverlay);
+                overlayPreviousFocusButton.gameObject.SetActive(showBookshelfOverlay && bookshelfGenerator != null && bookshelfGenerator.NavigableBookshelfCount > 1);
                 overlayPreviousFocusButton.interactable = canSwitchBookshelf;
                 StyleBookshelfNavigationButton(overlayPreviousFocusButton, canSwitchBookshelf);
             }
 
             if (overlayNextFocusButton != null)
             {
-                overlayNextFocusButton.gameObject.SetActive(showBookshelfOverlay);
+                overlayNextFocusButton.gameObject.SetActive(showBookshelfOverlay && bookshelfGenerator != null && bookshelfGenerator.NavigableBookshelfCount > 1);
                 overlayNextFocusButton.interactable = canSwitchBookshelf;
                 StyleBookshelfNavigationButton(overlayNextFocusButton, canSwitchBookshelf);
             }
@@ -7479,20 +7479,20 @@ namespace BookshelfPorting.Runtime
         {
             if (bookshelfIndexPanel != null)
             {
-                bookshelfIndexPanel.SetActive(shouldShow && bookshelfGenerator != null && bookshelfGenerator.BookshelfCount > 0);
+                bookshelfIndexPanel.SetActive(shouldShow && bookshelfGenerator != null && bookshelfGenerator.NavigableBookshelfCount > 0);
             }
 
-            if (!shouldShow || bookshelfGenerator == null || bookshelfGenerator.BookshelfCount <= 0)
+            if (!shouldShow || bookshelfGenerator == null || bookshelfGenerator.NavigableBookshelfCount <= 0)
             {
                 RefreshBookshelfIndexDots(0, 0);
                 return;
             }
 
-            var totalCount = Mathf.Max(1, bookshelfGenerator.BookshelfCount);
-            var displayIndex = Mathf.Clamp(bookshelfGenerator.DisplayBookshelfIndex, 0, totalCount - 1);
+            var totalCount = Mathf.Max(1, bookshelfGenerator.NavigableBookshelfCount);
+            var displayIndex = Mathf.Clamp(bookshelfGenerator.NavigableDisplayBookshelfIndex, 0, totalCount - 1);
             if (bookshelfIndexText != null)
             {
-                bookshelfIndexText.text = bookshelfGenerator.GetBookshelfName(displayIndex);
+                bookshelfIndexText.text = bookshelfGenerator.DisplayBookshelfName;
             }
 
             RefreshBookshelfIndexDots(displayIndex, totalCount);
