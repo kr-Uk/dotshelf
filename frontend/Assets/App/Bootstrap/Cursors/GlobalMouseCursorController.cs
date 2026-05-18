@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using BookshelfPorting.Runtime;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.UIElements;
 #if ENABLE_INPUT_SYSTEM
@@ -26,7 +28,12 @@ namespace App.Bootstrap.Cursors
     public sealed class GlobalMouseCursorController : MonoBehaviour
     {
         private const string ResourceRoot = "Cursors/";
+        private const float StationaryResolveIntervalSeconds = 0.1f;
+        private const float UiDocumentCacheRefreshIntervalSeconds = 0.5f;
+        private const int WorldRaycastBufferSize = 64;
         private static readonly object DefaultOverrideOwner = new object();
+        private static readonly UiDocumentComparer UiDocumentSortComparer = new UiDocumentComparer();
+        private static readonly RaycastHitDistanceComparer WorldHitSortComparer = new RaycastHitDistanceComparer();
 
         private static GlobalMouseCursorController instance;
         private static long nextOverrideOrder;
@@ -35,11 +42,23 @@ namespace App.Bootstrap.Cursors
         private readonly Dictionary<object, CursorOverride> overrides = new Dictionary<object, CursorOverride>();
         private readonly List<object> staleOverrideOwners = new List<object>();
         private readonly List<RaycastResult> raycastResults = new List<RaycastResult>();
+        private readonly List<UIDocument> uiDocuments = new List<UIDocument>();
+        private readonly RaycastHit[] worldRaycastHits = new RaycastHit[WorldRaycastBufferSize];
 
         private PointerEventData pointerEventData;
         private EventSystem pointerEventSystem;
         private bool hasAppliedCursor;
         private MouseCursorKind appliedCursor;
+        private bool hasResolvedCursor;
+        private MouseCursorKind resolvedCursor;
+        private Vector2 lastPointerPosition;
+        private bool lastPrimaryPressed;
+        private bool cursorResolutionDirty = true;
+        private bool uiDocumentCacheDirty = true;
+        private float nextStationaryResolveTime;
+        private float nextUiDocumentCacheRefreshTime;
+        private RoomEditModeController cachedEditModeController;
+        private Camera cachedMainCamera;
 
         private struct CursorDefinition
         {
@@ -67,6 +86,38 @@ namespace App.Bootstrap.Cursors
             public long Order { get; }
         }
 
+        private sealed class UiDocumentComparer : IComparer<UIDocument>
+        {
+            public int Compare(UIDocument left, UIDocument right)
+            {
+                if (ReferenceEquals(left, right))
+                {
+                    return 0;
+                }
+
+                if (left == null)
+                {
+                    return 1;
+                }
+
+                if (right == null)
+                {
+                    return -1;
+                }
+
+                var sortingOrder = right.sortingOrder.CompareTo(left.sortingOrder);
+                return sortingOrder != 0 ? sortingOrder : right.GetInstanceID().CompareTo(left.GetInstanceID());
+            }
+        }
+
+        private sealed class RaycastHitDistanceComparer : IComparer<RaycastHit>
+        {
+            public int Compare(RaycastHit left, RaycastHit right)
+            {
+                return left.distance.CompareTo(right.distance);
+            }
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void AutoBootstrap()
         {
@@ -77,6 +128,7 @@ namespace App.Bootstrap.Cursors
         {
             var controller = EnsureInstance();
             controller.overrides[owner ?? DefaultOverrideOwner] = new CursorOverride(cursor, priority, ++nextOverrideOrder);
+            controller.cursorResolutionDirty = true;
         }
 
         public static void ClearOverride(object owner)
@@ -87,7 +139,10 @@ namespace App.Bootstrap.Cursors
                 return;
             }
 
-            controller.overrides.Remove(owner ?? DefaultOverrideOwner);
+            if (controller.overrides.Remove(owner ?? DefaultOverrideOwner))
+            {
+                controller.cursorResolutionDirty = true;
+            }
         }
 
         private static GlobalMouseCursorController EnsureInstance()
@@ -127,6 +182,19 @@ namespace App.Bootstrap.Cursors
             ApplyCursor(MouseCursorKind.Default);
         }
 
+        private void OnEnable()
+        {
+            SceneManager.sceneLoaded += HandleSceneLoaded;
+            SceneManager.sceneUnloaded += HandleSceneUnloaded;
+            MarkSceneCursorCacheDirty();
+        }
+
+        private void OnDisable()
+        {
+            SceneManager.sceneLoaded -= HandleSceneLoaded;
+            SceneManager.sceneUnloaded -= HandleSceneUnloaded;
+        }
+
         private void OnDestroy()
         {
             if (instance == this)
@@ -140,7 +208,26 @@ namespace App.Bootstrap.Cursors
             if (hasFocus)
             {
                 hasAppliedCursor = false;
+                cursorResolutionDirty = true;
             }
+        }
+
+        private void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            MarkSceneCursorCacheDirty();
+        }
+
+        private void HandleSceneUnloaded(Scene scene)
+        {
+            MarkSceneCursorCacheDirty();
+        }
+
+        private void MarkSceneCursorCacheDirty()
+        {
+            cachedMainCamera = null;
+            cachedEditModeController = null;
+            uiDocumentCacheDirty = true;
+            cursorResolutionDirty = true;
         }
 
         private void Update()
@@ -151,7 +238,26 @@ namespace App.Bootstrap.Cursors
                 return;
             }
 
-            ApplyCursor(ResolveCursor(pointer));
+            var primaryPressed = IsPrimaryPointerPressed();
+            var now = Time.unscaledTime;
+            if (hasResolvedCursor &&
+                !cursorResolutionDirty &&
+                pointer == lastPointerPosition &&
+                primaryPressed == lastPrimaryPressed &&
+                now < nextStationaryResolveTime)
+            {
+                ApplyCursor(resolvedCursor);
+                return;
+            }
+
+            RefreshUiDocumentCacheIfNeeded(now);
+            resolvedCursor = ResolveCursor(pointer);
+            hasResolvedCursor = true;
+            cursorResolutionDirty = false;
+            lastPointerPosition = pointer;
+            lastPrimaryPressed = primaryPressed;
+            nextStationaryResolveTime = now + StationaryResolveIntervalSeconds;
+            ApplyCursor(resolvedCursor);
         }
 
         private void LoadCursors()
@@ -237,16 +343,17 @@ namespace App.Bootstrap.Cursors
         private bool TryResolveUiToolkitCursor(Vector2 pointer, out MouseCursorKind cursor)
         {
             cursor = MouseCursorKind.Default;
-            var documents = UnityEngine.Object.FindObjectsByType<UIDocument>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
 
-            for (var i = 0; i < documents.Length; i++)
+            for (var i = 0; i < uiDocuments.Count; i++)
             {
-                var root = documents[i].rootVisualElement;
-                if (root == null || root.panel == null)
+                var document = uiDocuments[i];
+                if (!IsUsableUiDocument(document))
                 {
+                    uiDocumentCacheDirty = true;
                     continue;
                 }
 
+                var root = document.rootVisualElement;
                 var panelPosition = RuntimePanelUtils.ScreenToPanel(root.panel, pointer);
                 var picked = root.panel.Pick(panelPosition);
                 if (picked == null)
@@ -258,9 +365,71 @@ namespace App.Bootstrap.Cursors
                 {
                     return true;
                 }
+
+                if (ShouldBlockLowerCursorDocument(root, picked))
+                {
+                    cursor = MouseCursorKind.Default;
+                    return true;
+                }
             }
 
             return false;
+        }
+
+        private void RefreshUiDocumentCacheIfNeeded(float now)
+        {
+            if (!uiDocumentCacheDirty && now < nextUiDocumentCacheRefreshTime)
+            {
+                return;
+            }
+
+            uiDocumentCacheDirty = false;
+            nextUiDocumentCacheRefreshTime = now + UiDocumentCacheRefreshIntervalSeconds;
+            uiDocuments.Clear();
+
+            var documents = UnityEngine.Object.FindObjectsByType<UIDocument>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            for (var i = 0; i < documents.Length; i++)
+            {
+                if (IsUsableUiDocument(documents[i]))
+                {
+                    uiDocuments.Add(documents[i]);
+                }
+            }
+
+            uiDocuments.Sort(UiDocumentSortComparer);
+            cursorResolutionDirty = true;
+        }
+
+        private static bool IsUsableUiDocument(UIDocument document)
+        {
+            if (document == null || !document.isActiveAndEnabled)
+            {
+                return false;
+            }
+
+            var root = document.rootVisualElement;
+            return root != null &&
+                   root.panel != null &&
+                   root.resolvedStyle.display != DisplayStyle.None &&
+                   root.resolvedStyle.visibility == Visibility.Visible &&
+                   root.resolvedStyle.opacity > 0.001f;
+        }
+
+        private static bool ShouldBlockLowerCursorDocument(VisualElement root, VisualElement picked)
+        {
+            if (picked == null || picked.resolvedStyle.display == DisplayStyle.None ||
+                picked.resolvedStyle.visibility != Visibility.Visible ||
+                picked.resolvedStyle.opacity <= 0.001f)
+            {
+                return false;
+            }
+
+            if (picked != root)
+            {
+                return true;
+            }
+
+            return root.resolvedStyle.backgroundColor.a > 0.001f;
         }
 
         private static bool TryResolveVisualElementCursor(VisualElement element, out MouseCursorKind cursor)
@@ -491,24 +660,29 @@ namespace App.Bootstrap.Cursors
         private bool TryResolveWorldCursor(Vector2 pointer, out MouseCursorKind cursor)
         {
             cursor = MouseCursorKind.Default;
-            var camera = Camera.main;
+            var camera = ResolveMainCamera();
             if (camera == null)
             {
                 return false;
             }
 
             var ray = camera.ScreenPointToRay(pointer);
-            var hits = Physics.RaycastAll(ray, 500f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
-            if (hits.Length == 0)
+            var hitCount = Physics.RaycastNonAlloc(
+                ray,
+                worldRaycastHits,
+                500f,
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Collide);
+            if (hitCount == 0)
             {
                 return false;
             }
 
-            Array.Sort(hits, (left, right) => left.distance.CompareTo(right.distance));
+            Array.Sort(worldRaycastHits, 0, hitCount, WorldHitSortComparer);
             var editModeActive = IsRoomEditModeActive();
-            for (var i = 0; i < hits.Length; i++)
+            for (var i = 0; i < hitCount; i++)
             {
-                var collider = hits[i].collider;
+                var collider = worldRaycastHits[i].collider;
                 if (collider == null || !collider.enabled)
                 {
                     continue;
@@ -520,7 +694,7 @@ namespace App.Bootstrap.Cursors
                     return true;
                 }
 
-                if (editModeActive && HasComponentInParentsNamed(hitObject.transform, "DecorationItemMarker"))
+                if (editModeActive && hitObject.GetComponentInParent<DecorationItemMarker>() != null)
                 {
                     cursor = IsPrimaryPointerPressed() ? MouseCursorKind.Grabbing : MouseCursorKind.Move;
                     return true;
@@ -533,6 +707,17 @@ namespace App.Bootstrap.Cursors
             }
 
             return false;
+        }
+
+        private Camera ResolveMainCamera()
+        {
+            if (cachedMainCamera != null && cachedMainCamera.isActiveAndEnabled)
+            {
+                return cachedMainCamera;
+            }
+
+            cachedMainCamera = Camera.main;
+            return cachedMainCamera;
         }
 
         private static bool TryResolveHint(GameObject source, out MouseCursorKind cursor)
@@ -548,66 +733,38 @@ namespace App.Bootstrap.Cursors
             return true;
         }
 
-        private static bool HasComponentInParentsNamed(Transform start, string typeName)
-        {
-            for (var current = start; current != null; current = current.parent)
-            {
-                var components = current.GetComponents<MonoBehaviour>();
-                for (var i = 0; i < components.Length; i++)
-                {
-                    var component = components[i];
-                    if (component != null && component.GetType().Name == typeName)
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
         private static bool TryResolveWorldMarker(Transform start, out MouseCursorKind cursor)
         {
             cursor = MouseCursorKind.Default;
 
             for (var current = start; current != null; current = current.parent)
             {
-                var components = current.GetComponents<MonoBehaviour>();
-                for (var i = 0; i < components.Length; i++)
+                if (current.GetComponent<BookshelfFocusHitArea>() != null)
                 {
-                    var component = components[i];
-                    if (component == null)
-                    {
-                        continue;
-                    }
+                    cursor = MouseCursorKind.Zoom;
+                    return true;
+                }
 
-                    var typeName = component.GetType().Name;
-                    if (typeName == "BookshelfFocusHitArea")
-                    {
-                        cursor = MouseCursorKind.Zoom;
-                        return true;
-                    }
-
-                    if (typeName == "BookInteractionHitArea" ||
-                        typeName == "NotebookHitArea" ||
-                        typeName == "GuestbookBoardHitArea" ||
-                        typeName == "BookView" ||
-                        typeName == "ShelfSectionView" ||
-                        typeName.EndsWith("HitArea", StringComparison.Ordinal))
-                    {
-                        cursor = MouseCursorKind.Pointer;
-                        return true;
-                    }
+                if (current.GetComponent<BookInteractionHitArea>() != null ||
+                    current.GetComponent<NotebookHitArea>() != null ||
+                    current.GetComponent<GuestbookBoardHitArea>() != null)
+                {
+                    cursor = MouseCursorKind.Pointer;
+                    return true;
                 }
             }
 
             return false;
         }
 
-        private static bool IsRoomEditModeActive()
+        private bool IsRoomEditModeActive()
         {
-            var controller = UnityEngine.Object.FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
-            return controller != null && controller.IsEditModeActive;
+            if (cachedEditModeController == null)
+            {
+                cachedEditModeController = UnityEngine.Object.FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
+            }
+
+            return cachedEditModeController != null && cachedEditModeController.IsEditModeActive;
         }
 
         private void ApplyCursor(MouseCursorKind cursor)
