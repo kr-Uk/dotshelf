@@ -12,6 +12,7 @@ namespace BookshelfPorting.Runtime
     public class BookInteractionController : MonoBehaviour
     {
         private const int DragVelocitySampleLimit = 5;
+        private const int PointerRaycastHitCapacity = 128;
         private const float DragPreviewPitchDegrees = 15f;
         private const float DefaultBookHoverHintDelaySeconds = 0.2f;
 
@@ -108,6 +109,7 @@ namespace BookshelfPorting.Runtime
         private bool pendingDropAfterBookshelfSwitch;
         private Vector2 pendingDropPointer;
         private PointerTarget currentPointerTarget;
+        private readonly RaycastHit[] pointerRaycastHits = new RaycastHit[PointerRaycastHitCapacity];
         private readonly List<BoxCollider> dropBoundaryColliders = new List<BoxCollider>();
         private readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
         private readonly Queue<Vector3> dragVelocitySamples = new Queue<Vector3>();
@@ -155,7 +157,10 @@ namespace BookshelfPorting.Runtime
             }
 
             var pointer = mouse.position.ReadValue();
-            currentPointerTarget = RaycastPointerTarget(pointer);
+            var canViewShelfBooks = CanViewShelfBooks();
+            currentPointerTarget = ShouldUpdatePointerTarget(canViewShelfBooks)
+                ? RaycastPointerTarget(pointer)
+                : PointerTarget.None;
 
             if (draggingBook != null && generator != null && generator.IsBookshelfSwitching)
             {
@@ -179,7 +184,7 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (!CanViewShelfBooks())
+            if (!canViewShelfBooks)
             {
                 hoveredBook = null;
                 hoveredSection = null;
@@ -694,10 +699,33 @@ namespace BookshelfPorting.Runtime
             }
 
             var ray = sceneCamera.ScreenPointToRay(pointer);
-            var hits = Physics.RaycastAll(ray, 100f);
-            System.Array.Sort(hits, (left, right) => left.distance.CompareTo(right.distance));
+            var hitCount = Physics.RaycastNonAlloc(ray, pointerRaycastHits, 100f);
+            if (hitCount >= pointerRaycastHits.Length)
+            {
+                var fallbackHits = Physics.RaycastAll(ray, 100f);
+                System.Array.Sort(fallbackHits, RaycastHitDistanceComparer.Instance);
+                return ResolvePointerTarget(fallbackHits, fallbackHits.Length);
+            }
 
-            for (var i = 0; i < hits.Length; i++)
+            System.Array.Sort(pointerRaycastHits, 0, hitCount, RaycastHitDistanceComparer.Instance);
+            return ResolvePointerTarget(pointerRaycastHits, hitCount);
+        }
+
+        private bool ShouldUpdatePointerTarget(bool canViewShelfBooks)
+        {
+            return canViewShelfBooks ||
+                   state.IsViewingBook ||
+                   draggingBook != null ||
+                   state.ActiveDraggedBook != null ||
+                   pressedBook != null ||
+                   pressedSection != null ||
+                   isManipulatingViewedBook ||
+                   isTrackingViewedBookPointer;
+        }
+
+        private PointerTarget ResolvePointerTarget(RaycastHit[] hits, int hitCount)
+        {
+            for (var i = 0; i < hitCount; i++)
             {
                 var hit = hits[i];
                 var hitArea = hit.collider.GetComponent<BookInteractionHitArea>();
@@ -713,7 +741,7 @@ namespace BookshelfPorting.Runtime
                 }
             }
 
-            for (var i = 0; i < hits.Length; i++)
+            for (var i = 0; i < hitCount; i++)
             {
                 var hitArea = hits[i].collider.GetComponent<BookInteractionHitArea>();
                 if (hitArea != null && hitArea.Owner != null)
@@ -722,7 +750,7 @@ namespace BookshelfPorting.Runtime
                 }
             }
 
-            for (var i = 0; i < hits.Length; i++)
+            for (var i = 0; i < hitCount; i++)
             {
                 var hit = hits[i];
                 if (TryResolveSectionFromHit(hit, out var section))
@@ -2247,6 +2275,16 @@ namespace BookshelfPorting.Runtime
             Book,
             ViewedBookInteractionArea,
             Section
+        }
+
+        private sealed class RaycastHitDistanceComparer : IComparer<RaycastHit>
+        {
+            public static readonly RaycastHitDistanceComparer Instance = new RaycastHitDistanceComparer();
+
+            public int Compare(RaycastHit left, RaycastHit right)
+            {
+                return left.distance.CompareTo(right.distance);
+            }
         }
     }
 }
