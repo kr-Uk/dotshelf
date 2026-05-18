@@ -35,6 +35,13 @@ namespace App.Bootstrap
         private const float Step2ThemeCardWidth = 286f;
         private const float Step2ThemeCardHeight = 252f;
         private const float Step2ThemePreviewHeight = 170f;
+        private const float Step1ColumnSpacing = 14f;
+        private const float Step1SectionSpacerHeight = 8f;
+        private const float Step1MessageHeight = 22f;
+        private const float IntroInputHeight = 84f;
+        private const float Step1IntroToNavigationSpacing = 28f;
+        private const int IntroCharacterLimit = 100;
+        private const int IntroCharacterWarningThreshold = 90;
         private const int UiLayer = 5;
         private const int CanvasSortingOrder = 5100;
         private const float MainSceneLoadTimeoutSeconds = 8f;
@@ -91,6 +98,7 @@ namespace App.Bootstrap
         private GameObject profilePreviewPlaceholderIconRoot;
         private TMP_InputField nicknameInput;
         private TMP_InputField introInput;
+        private TMP_Text introCharacterCountLabel;
         private TMP_Text step1MessageLabel;
         private Button step1NextButton;
 
@@ -563,6 +571,8 @@ namespace App.Bootstrap
                 introInput.text = string.Empty;
             }
 
+            UpdateIntroCharacterCount();
+
             SetMessage(step2MessageLabel, string.Empty, ErrorColor);
             SetStep1Feedback(string.Empty, MutedTextColor, false);
             ResetProfilePreview();
@@ -838,7 +848,7 @@ namespace App.Bootstrap
             var panel = CreateRectObject("Step1_ProfilePanel", parent);
             StretchToParent((RectTransform)panel.transform);
 
-            var column = CreateColumn(panel.transform, "Layout", 18f, new RectOffset(0, 0, 0, 0), TextAnchor.UpperCenter);
+            var column = CreateColumn(panel.transform, "Layout", Step1ColumnSpacing, new RectOffset(0, 0, 0, 0), TextAnchor.UpperCenter);
             StretchToParent(column);
 
             CreateSectionText(column, "StepCaption", "STEP 1", 14f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center, 28f, 2f);
@@ -847,7 +857,7 @@ namespace App.Bootstrap
 
             CreateSectionText(column, "ProfileImageLabel", "프로필 이미지", 15f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center, 24f);
 
-            CreateSpacer(column, 12f);
+            CreateSpacer(column, Step1SectionSpacerHeight);
 
             var profilePreviewRoot = CreateRectObject("ProfilePreviewRoot", column);
             var profileLayout = profilePreviewRoot.AddComponent<LayoutElement>();
@@ -903,7 +913,7 @@ namespace App.Bootstrap
             var photoButton = CreateFixedButton(photoButtonRow, "AddPhotoButton", "사진 추가", SecondaryColor, TextColor, true, BorderColor, new Vector2(220f, PrimaryControlHeight));
             photoButton.onClick.AddListener(OnAddPhotoButtonClicked);
 
-            CreateSpacer(column, 12f);
+            CreateSpacer(column, Step1SectionSpacerHeight);
 
             CreateSectionText(column, "NicknameLabel", "닉네임", 15f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Left, 24f);
 
@@ -914,12 +924,23 @@ namespace App.Bootstrap
             var duplicateButton = CreateFixedButton(nicknameRow, "DuplicateCheckButton", "중복확인", PrimaryColor, Color.white, false, BorderColor, new Vector2(180f, PrimaryControlHeight));
             duplicateButton.onClick.AddListener(OnDuplicateCheckButtonClicked);
 
-            step1MessageLabel = CreateSectionText(column, "Step1Message", string.Empty, 15f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Left, 28f);
+            step1MessageLabel = CreateSectionText(column, "Step1Message", string.Empty, 15f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Left, Step1MessageHeight);
 
             CreateSectionText(column, "IntroLabel", "한줄소개", 15f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Left, 24f);
-            introInput = CreateFlexibleInput(column, "IntroInputField", "한줄소개를 입력하세요", false);
+            introInput = CreateFlexibleInput(column, "IntroInputField", "한줄소개를 입력하세요", false, true, IntroInputHeight, true);
+            introInput.characterLimit = IntroCharacterLimit;
+            introInput.onValueChanged.AddListener(OnIntroChanged);
 
-            CreateFlexibleSpacer(column);
+            var introMetaRow = CreateRow(column, "IntroMetaRow", 0f, TextAnchor.MiddleRight);
+            if (introMetaRow.TryGetComponent<LayoutElement>(out var introMetaLayout))
+            {
+                introMetaLayout.preferredHeight = 20f;
+                introMetaLayout.minHeight = 20f;
+            }
+            introCharacterCountLabel = CreateSectionText(introMetaRow, "IntroCharacterCount", string.Empty, 13f, FontStyles.Normal, MutedTextColor, TextAlignmentOptions.Right, 20f);
+            UpdateIntroCharacterCount();
+
+            CreateSpacer(column, Step1IntroToNavigationSpacing);
 
             var navigationRow = CreateRow(column, "Step1NavigationRow", 14f, TextAnchor.MiddleRight);
             CreateFlexibleSpacer(navigationRow);
@@ -1636,6 +1657,11 @@ namespace App.Bootstrap
         {
             nicknameChecked = false;
             SetStep1Feedback("닉네임 중복확인을 해주세요.", MutedTextColor, false);
+        }
+
+        private void OnIntroChanged(string _)
+        {
+            UpdateIntroCharacterCount();
         }
 
         private void OnStep1NextButtonClicked()
@@ -3699,13 +3725,25 @@ namespace App.Bootstrap
 
         private TMP_InputField CreateFlexibleInput(Transform parent, string objectName, string placeholderText, bool isPassword)
         {
+            return CreateFlexibleInput(parent, objectName, placeholderText, isPassword, false, PrimaryControlHeight, false);
+        }
+
+        private TMP_InputField CreateFlexibleInput(
+            Transform parent,
+            string objectName,
+            string placeholderText,
+            bool isPassword,
+            bool isMultiline,
+            float preferredHeight,
+            bool useMaskedViewport)
+        {
             var fieldBackground = CreateImage(parent, objectName, InputColor);
             fieldBackground.sprite = roundedRectSprite;
             fieldBackground.type = Image.Type.Sliced;
 
             var fieldLayout = fieldBackground.gameObject.AddComponent<LayoutElement>();
-            fieldLayout.preferredHeight = PrimaryControlHeight;
-            fieldLayout.minHeight = PrimaryControlHeight;
+            fieldLayout.preferredHeight = preferredHeight;
+            fieldLayout.minHeight = preferredHeight;
             fieldLayout.flexibleWidth = 1f;
 
             var fieldOutline = fieldBackground.gameObject.AddComponent<Outline>();
@@ -3714,22 +3752,23 @@ namespace App.Bootstrap
 
             var input = fieldBackground.gameObject.AddComponent<TMP_InputField>();
             input.targetGraphic = fieldBackground;
-            input.textViewport = CreateViewport(fieldBackground.transform);
+            input.textViewport = CreateViewport(fieldBackground.transform, useMaskedViewport);
             input.contentType = isPassword ? TMP_InputField.ContentType.Password : TMP_InputField.ContentType.Standard;
-            input.lineType = TMP_InputField.LineType.SingleLine;
+            input.lineType = isMultiline ? TMP_InputField.LineType.MultiLineNewline : TMP_InputField.LineType.SingleLine;
             input.caretColor = TextColor;
             input.selectionColor = WithAlpha(PrimaryColor, 0.25f);
             input.customCaretColor = true;
 
-            var textComponent = CreateText(input.textViewport, "Text", string.Empty, 17f, FontStyles.Normal, TextColor, TextAlignmentOptions.MidlineLeft, Vector2.zero, Vector2.zero, 0f);
+            var textAlignment = isMultiline ? TextAlignmentOptions.TopLeft : TextAlignmentOptions.MidlineLeft;
+            var textComponent = CreateText(input.textViewport, "Text", string.Empty, 17f, FontStyles.Normal, TextColor, textAlignment, Vector2.zero, Vector2.zero, 0f);
             StretchWithPadding(textComponent.rectTransform, new Vector2(16f, 10f), new Vector2(-16f, -10f));
-            textComponent.textWrappingMode = TextWrappingModes.NoWrap;
-            textComponent.overflowMode = TextOverflowModes.Ellipsis;
+            textComponent.textWrappingMode = isMultiline ? TextWrappingModes.Normal : TextWrappingModes.NoWrap;
+            textComponent.overflowMode = isMultiline ? TextOverflowModes.Masking : TextOverflowModes.Ellipsis;
 
-            var placeholder = CreateText(input.textViewport, "Placeholder", placeholderText, 17f, FontStyles.Normal, WithAlpha(MutedTextColor, 0.7f), TextAlignmentOptions.MidlineLeft, Vector2.zero, Vector2.zero, 0f);
+            var placeholder = CreateText(input.textViewport, "Placeholder", placeholderText, 17f, FontStyles.Normal, WithAlpha(MutedTextColor, 0.7f), textAlignment, Vector2.zero, Vector2.zero, 0f);
             StretchWithPadding(placeholder.rectTransform, new Vector2(16f, 10f), new Vector2(-16f, -10f));
-            placeholder.textWrappingMode = TextWrappingModes.NoWrap;
-            placeholder.overflowMode = TextOverflowModes.Ellipsis;
+            placeholder.textWrappingMode = isMultiline ? TextWrappingModes.Normal : TextWrappingModes.NoWrap;
+            placeholder.overflowMode = isMultiline ? TextOverflowModes.Masking : TextOverflowModes.Ellipsis;
 
             input.textComponent = textComponent;
             input.placeholder = placeholder;
@@ -3811,12 +3850,28 @@ namespace App.Bootstrap
             return button;
         }
 
-        private RectTransform CreateViewport(Transform parent)
+        private RectTransform CreateViewport(Transform parent, bool useMask = false)
         {
             var viewportObject = CreateRectObject("TextArea", parent);
             var viewport = (RectTransform)viewportObject.transform;
             StretchToParent(viewport);
+            if (useMask)
+            {
+                viewportObject.AddComponent<RectMask2D>();
+            }
             return viewport;
+        }
+
+        private void UpdateIntroCharacterCount()
+        {
+            if (introCharacterCountLabel == null)
+            {
+                return;
+            }
+
+            var currentLength = introInput != null ? (introInput.text ?? string.Empty).Length : 0;
+            introCharacterCountLabel.text = $"{currentLength} / {IntroCharacterLimit}";
+            introCharacterCountLabel.color = currentLength >= IntroCharacterWarningThreshold ? PrimaryColor : MutedTextColor;
         }
 
         private TMP_Text CreateText(
