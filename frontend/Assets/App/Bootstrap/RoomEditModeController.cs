@@ -702,6 +702,11 @@ namespace App.Bootstrap
         private RemoteAssetCacheService remoteAssetCacheService;
         private bool isRemoteAssetInventoryLoading;
         private int remoteAssetInventoryRequestVersion;
+        private bool remoteAssetInventoryLoaded;
+        private bool pendingSpaceVisualsReapplyAfterInventory;
+        private int pendingSpaceVisualsReapplyCategoryVersion;
+        private readonly Dictionary<long, long> ownedAssetIdByInventoryId = new Dictionary<long, long>();
+        private readonly Dictionary<long, long> ownedInventoryIdByAssetId = new Dictionary<long, long>();
         private readonly Dictionary<long, DownloadManifestResponseDto> visibleRemoteAssetManifests = new Dictionary<long, DownloadManifestResponseDto>();
         private readonly Dictionary<long, InventoryEntry> visibleLocalAssetEntries = new Dictionary<long, InventoryEntry>();
         private readonly Dictionary<string, Sprite> inventoryPreviewSpriteCache = new Dictionary<string, Sprite>(StringComparer.Ordinal);
@@ -1160,6 +1165,10 @@ namespace App.Bootstrap
 
         private void MergeRemoteAssetInventory(InventoryResponseDto inventory)
         {
+            ownedAssetIdByInventoryId.Clear();
+            ownedInventoryIdByAssetId.Clear();
+            remoteAssetInventoryLoaded = true;
+
             for (var i = inventoryEntries.Count - 1; i >= 0; i--)
             {
                 if (inventoryEntries[i].IsRemoteAsset)
@@ -1190,6 +1199,8 @@ namespace App.Bootstrap
                     continue;
                 }
 
+                IndexOwnedInventoryItem(item);
+
                 var asset = item.Asset;
                 var displayName = FirstNonEmpty(asset?.Name, asset?.Code, $"Asset {item.AssetId}");
                 if (TryBindOwnedLocalAsset(item, asset, displayName))
@@ -1219,6 +1230,80 @@ namespace App.Bootstrap
             {
                 Debug.Log($"[RoomEdit][RemoteAsset] merged {added} owned remote asset(s) into decoration inventory.");
             }
+
+            if (pendingSpaceVisualsReapplyAfterInventory &&
+                pendingSpaceVisualsReapplyCategoryVersion == categoryRequestVersion &&
+                lastServerSpace != null)
+            {
+                pendingSpaceVisualsReapplyAfterInventory = false;
+                ApplySpaceVisualsToRoom(lastServerSpace);
+            }
+        }
+
+        private void IndexOwnedInventoryItem(InventoryItemResponseDto item)
+        {
+            if (item == null || item.InventoryId <= 0L || item.AssetId <= 0L)
+            {
+                return;
+            }
+
+            ownedAssetIdByInventoryId[item.InventoryId] = item.AssetId;
+            if (!ownedInventoryIdByAssetId.ContainsKey(item.AssetId))
+            {
+                ownedInventoryIdByAssetId[item.AssetId] = item.InventoryId;
+            }
+        }
+
+        private bool TryResolveOwnedInventoryIdForAsset(long assetId, out long inventoryId)
+        {
+            inventoryId = 0L;
+            if (assetId <= 0L)
+            {
+                return false;
+            }
+
+            if (ownedInventoryIdByAssetId.TryGetValue(assetId, out inventoryId) && inventoryId > 0L)
+            {
+                return true;
+            }
+
+            if (!remoteAssetInventoryLoaded && !isRemoteAssetInventoryLoading)
+            {
+                RefreshRemoteAssetInventory();
+            }
+
+            return false;
+        }
+
+        private bool TryResolveOwnedAssetIdForInventory(long inventoryId, out long assetId)
+        {
+            assetId = 0L;
+            if (inventoryId <= 0L)
+            {
+                return false;
+            }
+
+            if (ownedAssetIdByInventoryId.TryGetValue(inventoryId, out assetId) && assetId > 0L)
+            {
+                return true;
+            }
+
+            if (!remoteAssetInventoryLoaded)
+            {
+                RequestSpaceVisualsReapplyAfterInventory();
+                if (!isRemoteAssetInventoryLoading)
+                {
+                    RefreshRemoteAssetInventory();
+                }
+            }
+
+            return false;
+        }
+
+        private void RequestSpaceVisualsReapplyAfterInventory()
+        {
+            pendingSpaceVisualsReapplyAfterInventory = true;
+            pendingSpaceVisualsReapplyCategoryVersion = categoryRequestVersion;
         }
 
         private bool TryBindOwnedLocalAsset(InventoryItemResponseDto item, AssetResponseDto asset, string displayName)
@@ -2691,10 +2776,11 @@ namespace App.Bootstrap
             //    serverId가 null이면 카테고리 미적용(기본 외형) — catalog의 첫 entry가 \"current\"로 표시.
             if (lastServerSpace != null)
             {
-                var serverId = GetCategoryIdFromSpace(category, lastServerSpace);
-                if (serverId.HasValue && serverId.Value > 0)
+                var serverInventoryId = GetCategoryIdFromSpace(category, lastServerSpace);
+                if (serverInventoryId.HasValue && serverInventoryId.Value > 0)
                 {
-                    return serverId.Value == assetId;
+                    return TryResolveOwnedAssetIdForInventory(serverInventoryId.Value, out var serverAssetId)
+                           && serverAssetId == assetId;
                 }
                 // 서버상 미적용 → catalog default(첫 entry)가 \"current\"
                 var catalog = LoadCategoryCatalog(category);
@@ -3171,7 +3257,15 @@ namespace App.Bootstrap
                 return;
             }
 
-            long inventoryId = theme.AssetId;
+            if (!TryResolveOwnedInventoryIdForAsset(theme.AssetId, out var inventoryId))
+            {
+                Debug.LogWarning(
+                    $"[RoomEditModeController] theme '{theme.DisplayName}' assetId={theme.AssetId} 의 보유 inventoryId를 찾지 못해 " +
+                    "백엔드 theme apply skip. GET /v1/assets/me/inventory 응답 도착 후 다시 시도하세요.");
+                DiscardPlacementRollbackHold();
+                return;
+            }
+
             // 연타 시 stale callback 무시: 캡쳐된 version과 현재 version이 다르면 이번 요청은
             // 이미 다음 요청에 의해 덮였으므로 응답 무시. (rollback도, success log도 안 함)
             int requestVersion = ++themeRequestVersion;
@@ -3317,7 +3411,18 @@ namespace App.Bootstrap
             }
 
             int requestVersion = ++categoryRequestVersion;
-            long? invId = entry.AssetId > 0 ? (long?)entry.AssetId : null;
+            long? invId = null;
+            if (entry.AssetId > 0)
+            {
+                if (!TryResolveOwnedInventoryIdForAsset(entry.AssetId, out var resolvedInventoryId))
+                {
+                    Debug.LogWarning(
+                        $"[RoomEditModeController] {category}/{entry.DisplayName} assetId={entry.AssetId} 의 보유 inventoryId를 찾지 못해 " +
+                        "백엔드 PATCH skip. GET /v1/assets/me/inventory 응답 도착 후 다시 시도하세요.");
+                    return;
+                }
+                invId = resolvedInventoryId;
+            }
 
             Action<bool> onSuccess = themeReset =>
             {
@@ -5434,7 +5539,24 @@ namespace App.Bootstrap
             RoomThemeAsset resolvedTheme = null;
             if (themeApplier != null && themeCatalog != null)
             {
-                resolvedTheme = themeCatalog.Resolve(space.CurrentThemeInventoryId);
+                if (space.CurrentThemeInventoryId.HasValue && space.CurrentThemeInventoryId.Value > 0)
+                {
+                    if (TryResolveOwnedAssetIdForInventory(space.CurrentThemeInventoryId.Value, out var currentThemeAssetId))
+                    {
+                        resolvedTheme = themeCatalog.Resolve(currentThemeAssetId);
+                    }
+                    else
+                    {
+                        Debug.LogWarning(
+                            $"[RoomEditModeController] server theme inventoryId={space.CurrentThemeInventoryId.Value} 를 assetId로 매핑하지 못해 " +
+                            "theme visual apply를 보류합니다.");
+                    }
+                }
+                else
+                {
+                    resolvedTheme = themeCatalog.Resolve(null);
+                }
+
                 if (resolvedTheme != null && resolvedTheme != themeApplier.CurrentTheme)
                 {
                     themeApplier.Apply(resolvedTheme);
@@ -5480,10 +5602,18 @@ namespace App.Bootstrap
             CustomizationEntry entry = null;
             if (inventoryId.HasValue && inventoryId.Value > 0)
             {
+                if (!TryResolveOwnedAssetIdForInventory(inventoryId.Value, out var assetId))
+                {
+                    Debug.LogWarning(
+                        $"[RoomEditModeController][CategoryRestore] {category}: server inventoryId={inventoryId.Value} 를 assetId로 매핑하지 못해 " +
+                        "catalog fallback을 보류합니다.");
+                    return;
+                }
+
                 for (int i = 0; i < catalog.Entries.Count; i++)
                 {
                     var e = catalog.Entries[i];
-                    if (e != null && e.AssetId == inventoryId.Value)
+                    if (e != null && e.AssetId == assetId)
                     {
                         entry = e;
                         break;

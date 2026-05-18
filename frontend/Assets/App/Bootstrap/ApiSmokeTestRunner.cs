@@ -541,21 +541,22 @@ namespace App.Bootstrap
             string mode = testThemeMode.ToString();
 
             // (1) theme apply id 확보. Inspector testInventoryId 가 있으면 그 값을 path 의 inventoryId 로 사용.
-            // 없으면 GET /v1/assets/me/inventory 의 assetIds[0] 을 가져와 사용한다 — BE 정책상 assetId/inventoryId
-            // 를 동등 취급하므로 path variable 자리에 그대로 대입 가능.
+            // 없으면 GET /v1/assets/me/inventory 의 items[].inventoryId 를 가져와 사용한다.
+            // BE 는 /theme/{inventoryId}/apply 에서 UserAssetInventory.id 를 검증하므로 assetIds[] 값을
+            // path variable 로 보내면 안 된다.
             long idForThemeApply = testInventoryId;
             if (idForThemeApply <= 0)
             {
-                Debug.Log("[ApiSmokeTest][theme-apply] testInventoryId 미입력 → GET /v1/assets/me/inventory 호출하여 assetIds[0] 사용.");
+                Debug.Log("[ApiSmokeTest][theme-apply] testInventoryId 미입력 → GET /v1/assets/me/inventory 호출하여 items[].inventoryId 사용.");
                 long fetched = 0;
-                yield return FetchFirstThemeAssetId(id => fetched = id);
+                yield return FetchFirstThemeInventoryId(id => fetched = id);
                 if (fetched <= 0)
                 {
-                    Debug.LogWarning("[ApiSmokeTest][theme-apply] assetIds 배열이 비어 있음 — Theme Apply 본 호출 SKIP. bad-id sub-test 만 진행.");
+                    Debug.LogWarning("[ApiSmokeTest][theme-apply] inventory items 배열에 usable inventoryId가 없음 — Theme Apply 본 호출 SKIP. bad-id sub-test 만 진행.");
                 }
                 else
                 {
-                    Debug.Log($"[ApiSmokeTest][theme-apply] assetIds[0]={fetched} 값을 현재 BE 정책상 inventoryId로 간주하여 path variable에 사용 (mode={mode})");
+                    Debug.Log($"[ApiSmokeTest][theme-apply] inventoryId={fetched} 값을 path variable에 사용 (mode={mode})");
                     idForThemeApply = fetched;
                 }
             }
@@ -575,11 +576,9 @@ namespace App.Bootstrap
             }
 
             // (3) 잘못된 inventoryId sub-test — path variable 에 -1 을 박아 4xx 기대.
-            // 현재 dev-api 는 invalid id 에 500 을 돌려주는 BE 예외 처리 이슈가 있음. 본 러너는 로그만
-            // 남기고 fire & forget — fix 는 BE 측에서 별도 진행.
             string badPath = $"/v1/spaces/me/theme/-1/apply?mode={Uri.EscapeDataString(mode)}";
             yield return ProbePost<SpaceMutationResponseDto>(
-                $"THEME-APPLY[bad-id] POST {badPath} → 4xx 기대 (현재 BE 는 500 반환, 로그로만 확인)",
+                $"THEME-APPLY[bad-id] POST {badPath} → 4xx 기대",
                 badPath);
 
             PrintSummary();
@@ -664,10 +663,8 @@ namespace App.Bootstrap
             PrintSummary();
         }
 
-        // GET /v1/assets/me/inventory → assetIds[0] 추출. 응답이 비어 있거나 호출 실패 시 0 반환.
-        // 현재 BE 정책상 assetId 가 inventoryId 로 그대로 통용되므로, 호출자는 이 값을
-        // POST /v1/spaces/me/theme body 의 inventoryId 필드에 그대로 대입하면 된다.
-        private IEnumerator FetchFirstThemeAssetId(Action<long> sink)
+        // GET /v1/assets/me/inventory → THEME inventoryId 우선 추출. 응답이 비어 있거나 호출 실패 시 0 반환.
+        private IEnumerator FetchFirstThemeInventoryId(Action<long> sink)
         {
             APIManager api = APIManager.Instance;
             if (api == null)
@@ -683,14 +680,34 @@ namespace App.Bootstrap
                 env =>
                 {
                     done = true;
-                    if (env != null && env.Succeeded && env.Result != null && env.Result.AssetIds != null && env.Result.AssetIds.Count > 0)
+                    if (env != null && env.Succeeded && env.Result != null && env.Result.Items != null && env.Result.Items.Count > 0)
                     {
-                        picked = env.Result.AssetIds[0];
-                        Debug.Log($"[ApiSmokeTest][theme-apply] assetIds 배열에서 첫 번째 assetId를 theme apply id로 사용 → assetIds[0]={picked} (총 {env.Result.AssetIds.Count}개)");
+                        for (int i = 0; i < env.Result.Items.Count; i++)
+                        {
+                            var item = env.Result.Items[i];
+                            if (item == null || item.InventoryId <= 0L)
+                            {
+                                continue;
+                            }
+
+                            if (string.Equals(item.Asset?.AssetType, "THEME", StringComparison.OrdinalIgnoreCase))
+                            {
+                                picked = item.InventoryId;
+                                Debug.Log(
+                                    $"[ApiSmokeTest][theme-apply] THEME inventory item 사용 → inventoryId={item.InventoryId}, assetId={item.AssetId}");
+                                break;
+                            }
+                        }
+
+                        if (picked <= 0L)
+                        {
+                            Debug.LogWarning(
+                                "[ApiSmokeTest][theme-apply] THEME assetType inventory item이 없어 Theme Apply 본 호출을 SKIP합니다.");
+                        }
                     }
                     else
                     {
-                        Debug.LogWarning("[ApiSmokeTest][theme-apply] inventory envelope 성공이지만 assetIds 배열이 비어 있음.");
+                        Debug.LogWarning("[ApiSmokeTest][theme-apply] inventory envelope 성공이지만 items 배열이 비어 있음.");
                     }
                 },
                 err =>
