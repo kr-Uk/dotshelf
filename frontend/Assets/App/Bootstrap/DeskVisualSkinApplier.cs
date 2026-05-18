@@ -533,6 +533,39 @@ namespace App.Bootstrap
             DeepSeaScreenOverride.RegisterActive(roomRoot, entry, $"theme_apply:{source}");
         }
 
+        public static void ReapplyMonitorScreenState(Transform roomRoot, CustomizationEntry entry, string source)
+        {
+            if (roomRoot == null || entry == null) return;
+
+            if (entry.HideLaptopRenderers && entry.LockNotebookStationToMonitor)
+            {
+                Transform monitorTransform = null;
+                for (int i = 0; i < roomRoot.childCount; i++)
+                {
+                    var child = roomRoot.GetChild(i);
+                    if (child != null && child.gameObject.name == "MeshSwap_DeskMonitor")
+                    {
+                        monitorTransform = child;
+                        break;
+                    }
+                }
+
+                if (monitorTransform != null)
+                {
+                    AlignNotebookScreenToMonitor(roomRoot, entry, monitorTransform, source);
+                }
+                else
+                {
+                    Debug.LogWarning($"[MonitorScreen] Reapply skipped reason=monitor_not_found entryAssetId={entry.AssetId} source={source}");
+                }
+            }
+
+            if (entry.OverrideScreenSaverCanvasTransform || entry.StretchCanvasAdImageOnDesk)
+            {
+                DeepSeaScreenOverride.RegisterActive(roomRoot, entry, $"reapply:{source}");
+            }
+        }
+
         // Screen 자식 중 이름이 "Canvas" 로 끝나는 Canvas 의 localRotation 을 identity 로 reset.
         // ScreenSaverCanvas / DashboardCanvas / 기타 canvas 일관성 보장. Screen.rotation 으로 모든
         // 방향 control.

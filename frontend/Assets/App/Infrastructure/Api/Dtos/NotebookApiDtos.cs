@@ -1111,7 +1111,7 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("nickname")]
         public string Nickname { get; set; }
 
-        [JsonProperty("profileImageUrl")]
+        [JsonProperty("profileImageUrl", NullValueHandling = NullValueHandling.Ignore)]
         public string ProfileImageUrl { get; set; }
 
         [JsonProperty("introduction")]
@@ -1123,6 +1123,36 @@ namespace App.Infrastructure.Api.Dtos
     {
         [JsonProperty("available")]
         public bool Available { get; set; }
+    }
+
+    [Serializable]
+    public sealed class ProfileImageUploadUrlRequestDto
+    {
+        [JsonProperty("contentType")]
+        public string ContentType { get; set; }
+
+        [JsonProperty("byteLength")]
+        public long ByteLength { get; set; }
+    }
+
+    [Serializable]
+    public sealed class ProfileImageUploadUrlResponseDto
+    {
+        [JsonProperty("uploadUrl")]
+        public string UploadUrl { get; set; }
+
+        [JsonProperty("key")]
+        public string Key { get; set; }
+
+        [JsonProperty("expiresInSeconds")]
+        public int ExpiresInSeconds { get; set; }
+    }
+
+    [Serializable]
+    public sealed class ProfileImageConfirmRequestDto
+    {
+        [JsonProperty("key")]
+        public string Key { get; set; }
     }
 
     [Serializable]

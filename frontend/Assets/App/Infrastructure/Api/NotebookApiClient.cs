@@ -440,6 +440,16 @@ namespace App.Infrastructure.Api
             return Patch<UpdateProfileRequestDto, UserProfileResponseDto>("/v1/users/me", request, onSuccess, onError);
         }
 
+        public Coroutine CreateMyProfileImageUploadUrl(ProfileImageUploadUrlRequestDto request, Action<ProfileImageUploadUrlResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Post<ProfileImageUploadUrlRequestDto, ProfileImageUploadUrlResponseDto>("/v1/users/me/profile-image/upload-url", request, onSuccess, onError);
+        }
+
+        public Coroutine ConfirmMyProfileImage(ProfileImageConfirmRequestDto request, Action<UserProfileResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Patch<ProfileImageConfirmRequestDto, UserProfileResponseDto>("/v1/users/me/profile-image", request, onSuccess, onError);
+        }
+
         public Coroutine DeleteMe(Action<VoidResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Delete<VoidResponseDto>("/v1/users/me", onSuccess, onError);
