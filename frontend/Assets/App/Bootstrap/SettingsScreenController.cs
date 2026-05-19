@@ -14,6 +14,7 @@ using UnityEngine.Networking;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 #if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 #endif
 
@@ -37,6 +38,13 @@ namespace App.Bootstrap
         private const float SettingsButtonHeight = 60f;
         private const float SettingsButtonMargin = 32f;
         private const float SettingsButtonStackGap = 12f;
+        private const float QuickMenuToggleSize = 52f;
+        private const float QuickMenuWidth = 148f;
+        private const float QuickMenuItemHeight = 44f;
+        private const float QuickMenuItemSpacing = 8f;
+        private const float QuickMenuAnimationDuration = 0.2f;
+        private const string QuickMenuIconPath = "Assets/App/UI/Icons/MainMenu/icon_menu.png";
+        private const string QuickMenuIconFallbackPath = "Assets/App/UI/Icons/Common/icon_menu.png";
         private const string MainViewModeLabel = "정면뷰";
         private const string QuarterViewModeLabel = "쿼터뷰";
         private const float LeftPaneRatio = 0.3f;
@@ -81,10 +89,26 @@ namespace App.Bootstrap
         private TMP_FontAsset fallbackFontAsset;
         private Sprite whiteSprite;
         private Sprite roundedRectSprite;
+        private Sprite quickMenuRoundedSprite;
+        private Sprite quickMenuIconSprite;
 
         private GameObject settingsButtonRoot;
         private GameObject modeChangeButtonRoot;
         private TMP_Text modeChangeButtonLabel;
+        private GameObject quickMenuRoot;
+        private Button quickMenuToggleButton;
+        private GameObject quickMenuPanel;
+        private RectTransform quickMenuPanelRect;
+        private CanvasGroup quickMenuPanelGroup;
+        private bool isQuickMenuOpen;
+        private bool isQuickMenuAnimating;
+        private float quickMenuAnimationElapsed;
+        private float quickMenuAnimationFromAlpha;
+        private float quickMenuAnimationToAlpha;
+        private Vector2 quickMenuPanelClosedPosition;
+        private Vector2 quickMenuPanelOpenPosition;
+        private int quickMenuOpenedFrame = -1;
+        private ApplicationQuitter applicationQuitter;
         private BookshelfExperienceManager cachedExperienceManager;
         private RoomEditModeController cachedEditModeController;
         private BookshelfApiSyncController cachedBookshelfApiSyncController;
@@ -260,14 +284,17 @@ namespace App.Bootstrap
             isInitialized = true;
             whiteSprite = CreateWhiteSprite();
             roundedRectSprite = CreateRoundedRectSprite(64, 14);
+            quickMenuRoundedSprite = CreateRoundedRectSprite(64, 30);
+            quickMenuIconSprite = ResolveQuickMenuIconSprite();
             fontAsset = ResolveFontAsset();
             WarmupGlyphs(fontAsset);
 
             BuildCanvas();
-            // 쿼터뷰 폐지 + 정면뷰 reset 버튼 제거 — drag-orbit 으로 회전한 카메라는 F1 단축키
-            // (FocusQuarterView → FocusMainViewImmediate redirect) 로 reset. BuildModeChangeButton
-            // 메서드는 dead code 로 남겨두고 (modeChangeButtonRoot/Label null 체크가 safe) cleanup 은 별도.
-            BuildSettingsButton();
+            // dev 의 QuickMenu (햄버거 토글 + "시점 변경" / "꾸미기" / "설정" / "종료하기" 드롭다운)
+            // 가 기존 floating "정면뷰" + "설정" 두 버튼을 대체. 본 PR 의 BuildModeChangeButton
+            // 호출 제거 의도 (쿼터뷰 폐지 후 floating 정면뷰 버튼 제거) 는 QuickMenu 통합으로 자연
+            // 흡수됨. "시점 변경" 항목은 ToggleMainViewMode → 항상 MainView reset 으로 동작 (본 PR).
+            BuildQuickMenu();
             BuildSettingsPanel();
             ApplyFontToCanvas();
             EnsureEventSystem();
@@ -393,6 +420,8 @@ namespace App.Bootstrap
             }
 
             UpdateMainSceneChromeVisibility();
+            UpdateQuickMenuAnimation();
+            HandleQuickMenuOutsideClick();
         }
 
         // Floating settings + mode-change buttons only show on the unfocused main view
@@ -407,17 +436,33 @@ namespace App.Bootstrap
             var inMainScene = experienceManager != null &&
                               experienceManager.CurrentFocusArea == ExperienceFocusArea.QuarterView;
             var step3Active = experienceManager != null && experienceManager.IsOnboardingStep3Active;
-            var editModeActive = ResolveEditModeController() != null && ResolveEditModeController().IsEditModeActive;
+            var editModeController = ResolveEditModeController();
+            if (editModeController != null)
+            {
+                editModeController.SetMainDecorationButtonSuppressed(true);
+            }
+
+            var editModeActive = editModeController != null && editModeController.IsEditModeActive;
             var shouldShow = !panelOpen && inMainScene && !step3Active && !editModeActive && !IsViewingOtherUserSpace();
 
             if (settingsButtonRoot != null && settingsButtonRoot.activeSelf != shouldShow)
             {
-                settingsButtonRoot.SetActive(shouldShow);
+                settingsButtonRoot.SetActive(false);
             }
 
             if (modeChangeButtonRoot != null && modeChangeButtonRoot.activeSelf != shouldShow)
             {
-                modeChangeButtonRoot.SetActive(shouldShow);
+                modeChangeButtonRoot.SetActive(false);
+            }
+
+            if (quickMenuRoot != null && quickMenuRoot.activeSelf != shouldShow)
+            {
+                quickMenuRoot.SetActive(shouldShow);
+            }
+
+            if (!shouldShow && isQuickMenuOpen)
+            {
+                SetQuickMenuOpen(false, false);
             }
 
             RefreshModeChangeButtonLabel(experienceManager);
@@ -470,6 +515,8 @@ namespace App.Bootstrap
             }
 
             UpdateMainSceneChromeVisibility();
+            UpdateQuickMenuAnimation();
+            HandleQuickMenuOutsideClick();
         }
 
         private void HideAllNotices()
@@ -511,6 +558,201 @@ namespace App.Bootstrap
 
             var canvasRect = (RectTransform)canvasObject.transform;
             StretchToParent(canvasRect);
+        }
+
+        private void BuildQuickMenu()
+        {
+            if (settingsCanvas == null)
+            {
+                return;
+            }
+
+            quickMenuRoot = CreateRectObject("FloatingQuickMenu", settingsCanvas.transform);
+            var rootRect = (RectTransform)quickMenuRoot.transform;
+            rootRect.anchorMin = new Vector2(1f, 1f);
+            rootRect.anchorMax = new Vector2(1f, 1f);
+            rootRect.pivot = new Vector2(1f, 1f);
+            rootRect.sizeDelta = new Vector2(QuickMenuWidth, QuickMenuToggleSize + 12f + (QuickMenuItemHeight * 4f) + (QuickMenuItemSpacing * 3f) + 24f);
+            rootRect.anchoredPosition = new Vector2(-SettingsButtonMargin, -SettingsButtonMargin);
+
+            quickMenuToggleButton = CreateButton(
+                quickMenuRoot.transform,
+                "QuickMenuToggleButton",
+                string.Empty,
+                new Color(1f, 1f, 1f, 0.12f),
+                Color.white,
+                Vector2.zero,
+                new Vector2(QuickMenuToggleSize, QuickMenuToggleSize),
+                true,
+                new Color(1f, 1f, 1f, 0.18f));
+            var toggleRect = (RectTransform)quickMenuToggleButton.transform;
+            toggleRect.anchorMin = new Vector2(1f, 1f);
+            toggleRect.anchorMax = new Vector2(1f, 1f);
+            toggleRect.pivot = new Vector2(1f, 1f);
+            toggleRect.anchoredPosition = Vector2.zero;
+            quickMenuToggleButton.onClick.AddListener(() => SetQuickMenuOpen(!isQuickMenuOpen, true));
+            if (quickMenuToggleButton.targetGraphic is Image toggleImage)
+            {
+                toggleImage.sprite = quickMenuRoundedSprite;
+                toggleImage.type = Image.Type.Sliced;
+                toggleImage.pixelsPerUnitMultiplier = 1f;
+            }
+
+            var toggleIcon = CreateImage(quickMenuToggleButton.transform, "Icon", Color.white);
+            toggleIcon.sprite = quickMenuIconSprite;
+            toggleIcon.type = Image.Type.Simple;
+            toggleIcon.preserveAspect = true;
+            toggleIcon.raycastTarget = false;
+            var toggleIconRect = toggleIcon.rectTransform;
+            toggleIconRect.anchorMin = new Vector2(0.5f, 0.5f);
+            toggleIconRect.anchorMax = new Vector2(0.5f, 0.5f);
+            toggleIconRect.pivot = new Vector2(0.5f, 0.5f);
+            toggleIconRect.anchoredPosition = Vector2.zero;
+            toggleIconRect.sizeDelta = new Vector2(22f, 22f);
+
+            var toggleLabel = quickMenuToggleButton.GetComponentInChildren<TMP_Text>(true);
+            if (toggleLabel != null)
+            {
+                toggleLabel.gameObject.SetActive(false);
+            }
+            AddQuickMenuButtonEffect(
+                quickMenuToggleButton,
+                new Color(1f, 1f, 1f, 0.12f),
+                new Color(1f, 1f, 1f, 0.18f),
+                new Color(1f, 1f, 1f, 0.10f),
+                1.03f,
+                0.96f);
+
+            var toggleShadow = quickMenuToggleButton.gameObject.AddComponent<Shadow>();
+            toggleShadow.effectColor = new Color(0f, 0f, 0f, 0.14f);
+            toggleShadow.effectDistance = new Vector2(0f, -2f);
+
+            quickMenuPanel = CreateRectObject("QuickMenuPanel", quickMenuRoot.transform);
+            quickMenuPanelRect = (RectTransform)quickMenuPanel.transform;
+            quickMenuPanelRect.anchorMin = new Vector2(1f, 1f);
+            quickMenuPanelRect.anchorMax = new Vector2(1f, 1f);
+            quickMenuPanelRect.pivot = new Vector2(1f, 1f);
+            quickMenuPanelRect.sizeDelta = new Vector2(QuickMenuWidth, (QuickMenuItemHeight * 4f) + (QuickMenuItemSpacing * 3f) + 24f);
+            quickMenuPanelOpenPosition = new Vector2(0f, -(QuickMenuToggleSize + 12f));
+            quickMenuPanelClosedPosition = new Vector2(0f, -(QuickMenuToggleSize + 2f));
+            quickMenuPanelRect.anchoredPosition = quickMenuPanelClosedPosition;
+
+            var panelImage = quickMenuPanel.AddComponent<Image>();
+            panelImage.sprite = quickMenuRoundedSprite;
+            panelImage.type = Image.Type.Sliced;
+            panelImage.color = new Color(0.08f, 0.08f, 0.08f, 0.45f);
+            panelImage.raycastTarget = true;
+
+            var panelOutline = quickMenuPanel.AddComponent<Outline>();
+            panelOutline.effectColor = new Color(1f, 1f, 1f, 0.08f);
+            panelOutline.effectDistance = new Vector2(1f, -1f);
+
+            var panelShadow = quickMenuPanel.AddComponent<Shadow>();
+            panelShadow.effectColor = new Color(0f, 0f, 0f, 0.22f);
+            panelShadow.effectDistance = new Vector2(0f, -5f);
+
+            quickMenuPanelGroup = quickMenuPanel.AddComponent<CanvasGroup>();
+            quickMenuPanelGroup.alpha = 0f;
+            quickMenuPanelGroup.interactable = false;
+            quickMenuPanelGroup.blocksRaycasts = false;
+
+            var layout = quickMenuPanel.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(10, 10, 12, 12);
+            layout.spacing = QuickMenuItemSpacing;
+            layout.childAlignment = TextAnchor.UpperCenter;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+
+            CreateQuickMenuItem(quickMenuPanel.transform, "FrontViewItem", "시점 변경", false, OnQuickMenuModeClicked);
+            CreateQuickMenuItem(quickMenuPanel.transform, "DecorateItem", "꾸미기", true, OnQuickMenuDecorateClicked);
+            CreateQuickMenuItem(quickMenuPanel.transform, "SettingsItem", "설정", false, OnQuickMenuSettingsClicked);
+            var quitItem = CreateQuickMenuItem(quickMenuPanel.transform, "QuitItem", "종료하기", false, null);
+            applicationQuitter = quitItem.gameObject.AddComponent<ApplicationQuitter>();
+            quitItem.onClick.AddListener(() =>
+            {
+                applicationQuitter.Quit();
+                SetQuickMenuOpen(false, true);
+            });
+        }
+
+        private Button CreateQuickMenuItem(Transform parent, string objectName, string label, bool emphasized, UnityEngine.Events.UnityAction onClick)
+        {
+            var background = emphasized ? new Color(1f, 0.93f, 0.72f, 0.16f) : new Color(1f, 1f, 1f, 0.045f);
+            var button = CreateButton(
+                parent,
+                objectName,
+                label,
+                background,
+                emphasized ? new Color(1f, 0.92f, 0.72f, 0.96f) : new Color(1f, 1f, 1f, 0.82f),
+                Vector2.zero,
+                new Vector2(QuickMenuWidth - 20f, QuickMenuItemHeight),
+                true,
+                new Color(1f, 1f, 1f, emphasized ? 0.12f : 0.07f));
+            var rect = (RectTransform)button.transform;
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            if (button.targetGraphic is Image itemImage)
+            {
+                itemImage.sprite = quickMenuRoundedSprite;
+                itemImage.type = Image.Type.Sliced;
+                itemImage.pixelsPerUnitMultiplier = 1f;
+            }
+
+            var layoutElement = button.gameObject.AddComponent<LayoutElement>();
+            layoutElement.preferredHeight = QuickMenuItemHeight;
+            layoutElement.flexibleWidth = 1f;
+
+            AddQuickMenuButtonEffect(
+                button,
+                background,
+                emphasized ? new Color(1f, 0.93f, 0.72f, 0.24f) : new Color(1f, 1f, 1f, 0.08f),
+                emphasized ? new Color(1f, 0.93f, 0.72f, 0.12f) : new Color(1f, 1f, 1f, 0.04f),
+                1.015f,
+                0.985f);
+
+            var labelText = button.GetComponentInChildren<TMP_Text>(true);
+            if (labelText != null)
+            {
+                labelText.fontSize = 15f;
+                labelText.fontStyle = emphasized ? FontStyles.Bold : FontStyles.Normal;
+                labelText.alignment = TextAlignmentOptions.Center;
+            }
+
+            if (onClick != null)
+            {
+                button.onClick.AddListener(onClick);
+            }
+
+            return button;
+        }
+
+        private static void AddQuickMenuButtonEffect(
+            Button button,
+            Color normalColor,
+            Color hoverColor,
+            Color pressedColor,
+            float hoverScale,
+            float pressedScale)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            var image = button.targetGraphic as Image;
+            if (image == null)
+            {
+                return;
+            }
+
+            button.transition = Selectable.Transition.None;
+            image.color = normalColor;
+            var effect = button.gameObject.AddComponent<QuickMenuButtonEffect>();
+            effect.Configure(image, normalColor, hoverColor, pressedColor, hoverScale, pressedScale, 0.14f);
         }
 
         private void BuildSettingsButton()
@@ -623,6 +865,153 @@ namespace App.Bootstrap
             {
                 modeChangeButtonLabel.text = MainViewModeLabel;
             }
+        }
+
+        private void OnQuickMenuModeClicked()
+        {
+            OnModeChangeClicked();
+            SetQuickMenuOpen(false, true);
+        }
+
+        private void OnQuickMenuDecorateClicked()
+        {
+            ResolveEditModeController()?.OpenDecorationEditFromQuickMenu();
+            SetQuickMenuOpen(false, true);
+        }
+
+        private void OnQuickMenuSettingsClicked()
+        {
+            OpenSettings();
+            SetQuickMenuOpen(false, true);
+        }
+
+        private void SetQuickMenuOpen(bool open, bool animated)
+        {
+            if (quickMenuPanelGroup == null || quickMenuPanelRect == null)
+            {
+                return;
+            }
+
+            isQuickMenuOpen = open;
+            quickMenuPanelGroup.interactable = open;
+            quickMenuPanelGroup.blocksRaycasts = open;
+            if (open)
+            {
+                quickMenuOpenedFrame = Time.frameCount;
+                quickMenuRoot?.transform.SetAsLastSibling();
+            }
+
+            if (!animated)
+            {
+                isQuickMenuAnimating = false;
+                quickMenuPanelGroup.alpha = open ? 1f : 0f;
+                quickMenuPanelRect.anchoredPosition = open ? quickMenuPanelOpenPosition : quickMenuPanelClosedPosition;
+                return;
+            }
+
+            isQuickMenuAnimating = true;
+            quickMenuAnimationElapsed = 0f;
+            quickMenuAnimationFromAlpha = quickMenuPanelGroup.alpha;
+            quickMenuAnimationToAlpha = open ? 1f : 0f;
+        }
+
+        private void UpdateQuickMenuAnimation()
+        {
+            if (!isQuickMenuAnimating || quickMenuPanelGroup == null || quickMenuPanelRect == null)
+            {
+                return;
+            }
+
+            quickMenuAnimationElapsed += Time.unscaledDeltaTime;
+            var t = Mathf.Clamp01(quickMenuAnimationElapsed / QuickMenuAnimationDuration);
+            t = 1f - Mathf.Pow(1f - t, 3f);
+
+            quickMenuPanelGroup.alpha = Mathf.Lerp(quickMenuAnimationFromAlpha, quickMenuAnimationToAlpha, t);
+            quickMenuPanelRect.anchoredPosition = Vector2.Lerp(
+                isQuickMenuOpen ? quickMenuPanelClosedPosition : quickMenuPanelOpenPosition,
+                isQuickMenuOpen ? quickMenuPanelOpenPosition : quickMenuPanelClosedPosition,
+                t);
+
+            if (quickMenuAnimationElapsed >= QuickMenuAnimationDuration)
+            {
+                isQuickMenuAnimating = false;
+                quickMenuPanelGroup.alpha = isQuickMenuOpen ? 1f : 0f;
+                quickMenuPanelRect.anchoredPosition = isQuickMenuOpen ? quickMenuPanelOpenPosition : quickMenuPanelClosedPosition;
+            }
+        }
+
+        private void HandleQuickMenuOutsideClick()
+        {
+            if (!isQuickMenuOpen || EventSystem.current == null || !IsPrimaryPointerDownThisFrame())
+            {
+                return;
+            }
+
+            if (Time.frameCount == quickMenuOpenedFrame)
+            {
+                return;
+            }
+
+            var pointerEvent = new PointerEventData(EventSystem.current)
+            {
+                position = ReadPointerPosition(),
+            };
+            var hits = new List<RaycastResult>();
+            EventSystem.current.RaycastAll(pointerEvent, hits);
+
+            for (var i = 0; i < hits.Count; i++)
+            {
+                var hit = hits[i].gameObject;
+                if (hit == null)
+                {
+                    continue;
+                }
+
+                if (IsDescendantOf(hit.transform, quickMenuRoot != null ? quickMenuRoot.transform : null))
+                {
+                    return;
+                }
+            }
+
+            SetQuickMenuOpen(false, true);
+        }
+
+        private static bool IsPrimaryPointerDownThisFrame()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
+#else
+            return Input.GetMouseButtonDown(0);
+#endif
+        }
+
+        private static Vector2 ReadPointerPosition()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Mouse.current != null ? Mouse.current.position.ReadValue() : Vector2.zero;
+#else
+            return Input.mousePosition;
+#endif
+        }
+
+        private static bool IsDescendantOf(Transform candidate, Transform parent)
+        {
+            if (candidate == null || parent == null)
+            {
+                return false;
+            }
+
+            var current = candidate;
+            while (current != null)
+            {
+                if (current == parent)
+                {
+                    return true;
+                }
+                current = current.parent;
+            }
+
+            return false;
         }
 
         private void BuildSettingsPanel()
@@ -4554,6 +4943,74 @@ namespace App.Bootstrap
                 "현재 기능이 제한될 수 있습니다 완료하기" +
                 "닉네임을 입력해주세요 비밀번호가 일치하지 않습니다";
             targetFontAsset.TryAddCharacters(commonText, out _);
+        }
+
+        private Sprite ResolveQuickMenuIconSprite()
+        {
+#if UNITY_EDITOR
+            var sprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(QuickMenuIconPath);
+            if (sprite != null)
+            {
+                return sprite;
+            }
+
+            sprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(QuickMenuIconFallbackPath);
+            if (sprite != null)
+            {
+                return sprite;
+            }
+#endif
+            return CreateProceduralMenuIconSprite();
+        }
+
+        private Sprite CreateProceduralMenuIconSprite()
+        {
+            const int size = 32;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            texture.name = "SettingsQuickMenuIcon";
+            texture.hideFlags = HideFlags.HideAndDontSave;
+            texture.wrapMode = TextureWrapMode.Clamp;
+            texture.filterMode = FilterMode.Bilinear;
+
+            var pixels = new Color32[size * size];
+            var clear = new Color32(255, 255, 255, 0);
+            var solid = new Color32(255, 255, 255, 230);
+            for (var i = 0; i < pixels.Length; i++)
+            {
+                pixels[i] = clear;
+            }
+
+            DrawMenuLine(pixels, size, 7, 9, 25, solid);
+            DrawMenuLine(pixels, size, 7, 15, 25, solid);
+            DrawMenuLine(pixels, size, 7, 21, 25, solid);
+
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+            var sprite = Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
+            sprite.name = "SettingsQuickMenuIconSprite";
+            return sprite;
+        }
+
+        private static void DrawMenuLine(Color32[] pixels, int size, int xMin, int y, int xMax, Color32 color)
+        {
+            for (var dy = -1; dy <= 1; dy++)
+            {
+                var py = y + dy;
+                if (py < 0 || py >= size)
+                {
+                    continue;
+                }
+
+                for (var x = xMin; x <= xMax; x++)
+                {
+                    if (x < 0 || x >= size)
+                    {
+                        continue;
+                    }
+
+                    pixels[(py * size) + x] = color;
+                }
+            }
         }
 
         private Sprite CreateWhiteSprite()

@@ -405,9 +405,11 @@ namespace BookshelfPorting.Runtime
             StartSingleSegmentTransition(position, rotation, fieldOfView, moveDuration);
         }
 
-        // QuarterView entry points (overviewAnchor pose, unchanged from existing scene
-        // setup). Onboarding Step 3 needs an explicit snap to QuarterView before the
-        // bookshelf-focus transition, so a public Apply method is exposed here.
+        // QuarterView 폐지 (MR 216) 후 잔존 — ApplyQuarterView 는 Onboarding Step2 preview 가
+        // overviewAnchor pose 를 base 로 추가 offset 을 얹어 사용 중이라 의도적으로 유지. 다른
+        // 호출자는 모두 MainView 로 redirect 됐다. orbit pivot (mainViewOrbitPivotDistance=1.8)
+        // 과 overviewAnchor pose (~3.3m camera-to-target) 가 mismatch 여서 orbit drag 가 어색
+        // 했던 문제는 ApplyQuarterView 직후 onboarding 이 추가 offset 으로 덮어쓰므로 비활성.
         public void ApplyQuarterView()
         {
             if (!EnsureCameraResolved() || overviewAnchor == null)
@@ -424,12 +426,13 @@ namespace BookshelfPorting.Runtime
             ResetMainViewRotationOffset();
         }
 
+        // QuarterView 폐지 — 외부 호환을 위해 메서드 자체는 유지하되 MoveToMainView 로 redirect.
+        // rlawnsrb298 P2 review 권고 반영: MoveToQuarterView 의 overviewAnchor pose 가 호출되면
+        // orbit pivot (1.8m) 과 mismatch (~3.3m camera-to-target) 가 발생할 수 있어, 신호용 method
+        // 보존 + 실제 pose 는 MainView 로 통일.
         public void MoveToQuarterView()
         {
-            // Existing behavior of MoveToMode(Overview) — preserved exactly so callers
-            // like FocusQuarterView, CloseNotebookFocus, and the F1 shortcut keep landing
-            // on overviewAnchor.
-            MoveToMode(CameraMode.Overview);
+            MoveToMainView();
         }
 
         // Backward-compatible alias retained so existing callers of the previous

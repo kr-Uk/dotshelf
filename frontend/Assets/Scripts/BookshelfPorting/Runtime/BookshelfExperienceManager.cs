@@ -1328,6 +1328,35 @@ namespace BookshelfPorting.Runtime
                     return;
                 }
 
+                // release 시점 hit re-verify (rlawnsrb298 P2 review) — press 와 release 사이에
+                // 포인터가 UI 위로 올라가거나 다른 target 으로 이동했으면 focus 발화 차단.
+                // 작은 이동 (travel ≤ 임계) 이라도 정확히 같은 target 위에서 release 해야 click 인정.
+                if (IsPointerOverUi())
+                {
+                    return;
+                }
+
+                bool stillOverTarget;
+                switch (target)
+                {
+                    case ExperienceFocusArea.Notebook:
+                        stillOverTarget = !IsViewingOtherUserSpace() && TryHitNotebook(pointer);
+                        break;
+                    case ExperienceFocusArea.Guestbook:
+                        stillOverTarget = TryHitGuestbookBoard();
+                        break;
+                    case ExperienceFocusArea.Bookshelf:
+                        stillOverTarget = CurrentFocusArea != ExperienceFocusArea.Bookshelf && TryHitBookshelf(pointer);
+                        break;
+                    default:
+                        stillOverTarget = false;
+                        break;
+                }
+                if (!stillOverTarget)
+                {
+                    return;
+                }
+
                 switch (target)
                 {
                     case ExperienceFocusArea.Notebook:
