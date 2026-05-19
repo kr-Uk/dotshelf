@@ -4316,6 +4316,182 @@ namespace App.Bootstrap
         // 좌표 기반 매칭은 의도적으로 사용 안 함 — 사용자가 슬롯 자산을 옮겨도 슬롯/자산 신원으로 식별.
         // Shelf and dashboard theme assets are attached to functional scene roots, not placedItemsRoot.
         // RESET must clear them separately so a previous theme skin cannot survive the full reset.
+        private void ApplyThemeCategoryDefaultsForMissingServerCategories(RoomThemeAsset theme, SpaceResponseDto space)
+        {
+            if (theme == null || space == null)
+            {
+                return;
+            }
+
+            var changed = false;
+            var defaults = theme.DefaultEntries;
+            if (defaults != null)
+            {
+                for (int i = 0; i < defaults.Count; i++)
+                {
+                    var def = defaults[i];
+                    if (def == null || !IsServerCategoryInventoryMissing(def.Category, space))
+                    {
+                        continue;
+                    }
+
+                    changed |= TryApplyLocalThemeCategoryDefault(theme, def, "ApplySpaceVisualsToRoom.missingServerCategory");
+                }
+            }
+
+            if (TryGetCachedThemeContents(theme, out var contents))
+            {
+                changed |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.Wallpaper, contents.Wallpaper);
+                changed |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.Floor, contents.Floor);
+                changed |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.Desk, contents.Desk);
+                changed |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.DashboardSkin, contents.Dashboard);
+                changed |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.BookshelfSkin, contents.BookshelfSkinDefault);
+                changed |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.InteriorLight, contents.InteriorLight);
+                changed |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.ExteriorLight, contents.ExteriorLight);
+            }
+
+            if (changed)
+            {
+                PersistLastAppliedEntries();
+            }
+        }
+
+        private bool TryApplyLocalThemeCategoryDefault(RoomThemeAsset theme, CategoryDefault def, string source)
+        {
+            if (theme == null || def == null)
+            {
+                return false;
+            }
+
+            var catalog = LoadCategoryCatalog(def.Category);
+            if (catalog == null || catalog.Entries == null)
+            {
+                Debug.LogWarning($"[RoomEditModeController] catalog not found for theme default: {def.Category}.");
+                return false;
+            }
+
+            var entry = catalog.FindByAssetId(def.AssetId);
+            if (entry == null)
+            {
+                Debug.LogWarning($"[RoomEditModeController] {theme.DisplayName} default entry {def.Category}:{def.AssetId} has no local catalog mapping.");
+                return false;
+            }
+
+            TryRepairFantasyDeskPrefabReference(catalog, entry, source);
+            if (IsFantasyTheme(theme) && def.Category == CustomizationCategory.Desk)
+            {
+                Debug.Log($"[FantasyDesk] {source} theme={theme.DisplayName} category={def.Category} assetId={def.AssetId}");
+            }
+
+            ApplyEntryVisual(def.Category, entry);
+            if (entry.AssetId > 0L)
+            {
+                lastAppliedEntries[def.Category] = entry.AssetId;
+            }
+            else
+            {
+                lastAppliedEntries.Remove(def.Category);
+            }
+
+            return true;
+        }
+
+        private bool TryApplyServerCategoryDefaultIfMissing(SpaceResponseDto space, CustomizationCategory category, long? serverAssetId)
+        {
+            return IsServerCategoryInventoryMissing(category, space) &&
+                   TryApplyServerCategoryDefault(category, serverAssetId);
+        }
+
+        private static bool IsServerCategoryInventoryMissing(CustomizationCategory category, SpaceResponseDto space)
+        {
+            if (space == null)
+            {
+                return true;
+            }
+
+            var inventoryId = GetCategoryIdFromSpace(category, space);
+            return !inventoryId.HasValue || inventoryId.Value <= 0L;
+        }
+
+        private bool ShouldPreserveMissingServerCategoryVisual(CustomizationCategory category)
+        {
+            if (!lastAppliedEntries.ContainsKey(category))
+            {
+                return false;
+            }
+
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+
+            return themeApplier != null &&
+                   ThemeHasCategoryDefault(themeApplier.CurrentTheme, category);
+        }
+
+        private bool ThemeHasCategoryDefault(RoomThemeAsset theme, CustomizationCategory category)
+        {
+            if (theme == null)
+            {
+                return false;
+            }
+
+            var defaults = theme.DefaultEntries;
+            if (defaults != null)
+            {
+                for (int i = 0; i < defaults.Count; i++)
+                {
+                    var def = defaults[i];
+                    if (def != null && def.Category == category && def.AssetId > 0L)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return TryGetCachedThemeContents(theme, out var contents) &&
+                   TryGetThemeContentsCategoryDefault(contents, category, out _);
+        }
+
+        private bool TryGetCachedThemeContents(RoomThemeAsset theme, out ThemeContents contents)
+        {
+            contents = null;
+            return theme != null &&
+                   TryResolveOwnedServerThemeAssetId(theme, out var serverThemeAssetId) &&
+                   themeContentsCache.TryGetValue(serverThemeAssetId, out contents) &&
+                   contents != null;
+        }
+
+        private static bool TryGetThemeContentsCategoryDefault(ThemeContents contents, CustomizationCategory category, out long serverAssetId)
+        {
+            serverAssetId = 0L;
+            if (contents == null)
+            {
+                return false;
+            }
+
+            long? value;
+            switch (category)
+            {
+                case CustomizationCategory.Wallpaper:     value = contents.Wallpaper; break;
+                case CustomizationCategory.Floor:         value = contents.Floor; break;
+                case CustomizationCategory.Desk:          value = contents.Desk; break;
+                case CustomizationCategory.DashboardSkin: value = contents.Dashboard; break;
+                case CustomizationCategory.BookshelfSkin: value = contents.BookshelfSkinDefault; break;
+                case CustomizationCategory.InteriorLight: value = contents.InteriorLight; break;
+                case CustomizationCategory.ExteriorLight: value = contents.ExteriorLight; break;
+                default: value = null; break;
+            }
+
+            if (!value.HasValue || value.Value <= 0L)
+            {
+                return false;
+            }
+
+            serverAssetId = value.Value;
+            return true;
+        }
+
         private void ApplyServerCategoryDefaults(ThemeContents contents, bool persistEntries)
         {
             if (contents == null)
@@ -6833,6 +7009,10 @@ namespace App.Bootstrap
             {
                 ApplyThemeDefaultEntries(resolvedTheme);
             }
+            else if (resolvedTheme != null)
+            {
+                ApplyThemeCategoryDefaultsForMissingServerCategories(resolvedTheme, space);
+            }
 
             ApplyCategoryById(CustomizationCategory.Wallpaper, space.CurrentWallpaperInventoryId);
             ApplyCategoryById(CustomizationCategory.Floor, space.CurrentFloorInventoryId);
@@ -6899,6 +7079,12 @@ namespace App.Bootstrap
             //     만 바뀌므로 Entries[0] fallback 유지 — 디자이너 의도된 default 외형.
             if (entry == null && IsMeshSwapCategory(category))
             {
+                if (ShouldPreserveMissingServerCategoryVisual(category))
+                {
+                    Debug.Log($"[RoomEditModeController][CategoryRestore] {category}: server inventoryId 없음 + current theme default 존재 → native restore skip, 현재 visual 유지.");
+                    return;
+                }
+
                 if (lastAppliedEntries.ContainsKey(category)
                     && themeApplier != null
                     && themeApplier.RoomRoot != null)
