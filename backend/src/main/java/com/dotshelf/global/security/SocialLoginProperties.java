@@ -14,7 +14,7 @@ public record SocialLoginProperties(
     public SocialLoginProperties {
         google = google == null ? new Google(null, null, null, null, null, null, null, null) : google;
         kakao = kakao == null ? new Kakao(null, null, null, null, null) : kakao;
-        apple = apple == null ? new Apple(null, null, null) : apple;
+        apple = apple == null ? new Apple(null, null, null, null, null, null, null, null, null) : apple;
     }
 
     public record Google(
@@ -95,17 +95,46 @@ public record SocialLoginProperties(
     public record Apple(
             List<String> clientIds,
             List<String> issuers,
-            String jwksUri
+            String jwksUri,
+            // Desktop/Web Sign in with Apple uses a Services ID as client_id.
+            // Native iOS identity_token validation still uses clientIds above.
+            String desktopClientId,
+            String teamId,
+            String keyId,
+            String privateKey,
+            String tokenUri,
+            String desktopRedirectUri
     ) {
 
         public Apple {
+            if (desktopClientId != null && desktopClientId.isBlank()) {
+                desktopClientId = null;
+            }
+            if (teamId != null && teamId.isBlank()) {
+                teamId = null;
+            }
+            if (keyId != null && keyId.isBlank()) {
+                keyId = null;
+            }
+            if (privateKey != null && privateKey.isBlank()) {
+                privateKey = null;
+            }
+            if (desktopRedirectUri != null && desktopRedirectUri.isBlank()) {
+                desktopRedirectUri = null;
+            }
             clientIds = normalize(clientIds);
+            if (desktopClientId != null && !clientIds.contains(desktopClientId)) {
+                clientIds = append(clientIds, desktopClientId);
+            }
             issuers = normalize(issuers);
             if (issuers.isEmpty()) {
                 issuers = List.of("https://appleid.apple.com");
             }
             if (jwksUri == null || jwksUri.isBlank()) {
                 jwksUri = "https://appleid.apple.com/auth/keys";
+            }
+            if (tokenUri == null || tokenUri.isBlank()) {
+                tokenUri = "https://appleid.apple.com/auth/token";
             }
         }
     }

@@ -12,6 +12,7 @@
 // Only the static flow runner is gated to desktop targets where HttpListener
 // is available and does not get stripped by IL2CPP.
 using System;
+using App.Domain;
 using UnityEngine;
 
 namespace App.Auth
@@ -40,6 +41,13 @@ namespace App.Auth
         public string scope = string.Empty;
 
         public string responseType = "code";
+
+        // Optional HTTPS redirect URI used at the provider authorize step.
+        // Apple Desktop/Web cannot redirect directly to Unity's local
+        // HttpListener, so it uses BE's /v1/auth/apple/desktop-callback and
+        // BE relays the result back to the loopback URI encoded in state.
+        // Google/Kakao leave this blank and use the loopback URI directly.
+        public string authorizationRedirectUri;
 
         // OIDC providers (Google, Apple) require a nonce so the resulting
         // id_token can be verified server-side. Plain OAuth (Kakao) ignores it.
@@ -102,19 +110,16 @@ namespace App.Auth
                         extraQuery = null
                     };
                 case SocialProvider.Apple:
-                    // Apple normally requires response_mode=form_post which is
-                    // incompatible with the loopback HttpListener (POST body, not
-                    // a query string). The flow will start so the developer can
-                    // see the failure, but full Apple sign-in on desktop needs a
-                    // different transport (e.g. a hosted redirect page on BE).
                     return new OAuthBrowserProviderConfig
                     {
                         provider = SocialProvider.Apple,
                         authorizeEndpoint = "https://appleid.apple.com/auth/authorize",
+                        clientId = string.Empty,
                         scope = "name email",
                         responseType = "code",
                         useNonce = true,
-                        extraQuery = null
+                        authorizationRedirectUri = DefaultAppleDesktopRedirectUri(),
+                        extraQuery = "response_mode=form_post"
                     };
                 default:
                     return new OAuthBrowserProviderConfig { provider = provider };
@@ -152,10 +157,18 @@ namespace App.Auth
                     ? userConfig.responseType
                     : defaults.responseType,
                 useNonce = userConfig.useNonce,
+                authorizationRedirectUri = !string.IsNullOrWhiteSpace(userConfig.authorizationRedirectUri)
+                    ? userConfig.authorizationRedirectUri
+                    : defaults.authorizationRedirectUri,
                 extraQuery = !string.IsNullOrWhiteSpace(userConfig.extraQuery)
                     ? userConfig.extraQuery
                     : defaults.extraQuery
             };
+        }
+
+        private static string DefaultAppleDesktopRedirectUri()
+        {
+            return ApiEndpointDefaults.DefaultBaseUrl.TrimEnd('/') + "/v1/auth/apple/desktop-callback";
         }
     }
 
@@ -285,16 +298,24 @@ namespace App.Auth
 
             try
             {
+                var authorizationRedirectUri = ResolveAuthorizationRedirectUri(providerConfig, redirectUri);
                 var state = GenerateRandomBase64Url(32);
+                if (RequiresServerRelay(authorizationRedirectUri, redirectUri))
+                {
+                    state = AppendLoopbackRedirectUriToState(state, redirectUri);
+                }
                 var nonce = providerConfig.useNonce ? GenerateRandomBase64Url(32) : null;
                 // PKCE (RFC 7636): authorize 시점에 random code_verifier 생성, SHA256 hash → code_challenge.
                 // 같은 code_verifier를 BE에 전달하면 BE가 token 교환 호출에 그대로 forward해서 OAuth 제공자가
                 // 검증함. client_secret 없이도 code interception 공격 방어 가능 (native app OAuth 표준).
-                var codeVerifier = GenerateRandomBase64Url(64);  // RFC 7636: 43~128 chars
-                var codeChallenge = ComputeCodeChallengeS256(codeVerifier);
-                var authorizeUrl = BuildAuthorizeUrl(providerConfig, redirectUri, state, nonce, codeChallenge);
+                // Apple Sign in REST flow does not use PKCE here; BE protects
+                // the code exchange with an Apple client_secret JWT and nonce.
+                var usePkce = providerConfig.provider != SocialProvider.Apple;
+                var codeVerifier = usePkce ? GenerateRandomBase64Url(64) : null;  // RFC 7636: 43~128 chars
+                var codeChallenge = usePkce ? ComputeCodeChallengeS256(codeVerifier) : null;
+                var authorizeUrl = BuildAuthorizeUrl(providerConfig, authorizationRedirectUri, state, nonce, codeChallenge);
 
-                Debug.Log($"[OAuth] Opening browser for {providerConfig.provider} (redirect={redirectUri})");
+                Debug.Log($"[OAuth] Opening browser for {providerConfig.provider} (redirect={authorizationRedirectUri}, loopback={redirectUri})");
                 // Fully-qualified — `App.Application` (UseCase layer) shadows
                 // UnityEngine.Application here because both namespaces are in
                 // scope, so `Application.OpenURL(...)` resolves to the wrong type.
@@ -370,13 +391,30 @@ namespace App.Auth
                         "State 검증에 실패했습니다. 다시 시도해주세요.");
                 }
 
-                return OAuthBrowserResult.Success(code, redirectUri, state, nonce, codeVerifier);
+                return OAuthBrowserResult.Success(code, authorizationRedirectUri, state, nonce, codeVerifier);
             }
             finally
             {
                 try { listener.Stop(); } catch { /* listener may already be closed */ }
                 try { ((IDisposable)listener).Dispose(); } catch { }
             }
+        }
+
+        private static string ResolveAuthorizationRedirectUri(OAuthBrowserProviderConfig providerConfig, string loopbackRedirectUri)
+        {
+            return string.IsNullOrWhiteSpace(providerConfig.authorizationRedirectUri)
+                ? loopbackRedirectUri
+                : providerConfig.authorizationRedirectUri.Trim();
+        }
+
+        private static bool RequiresServerRelay(string authorizationRedirectUri, string loopbackRedirectUri)
+        {
+            return !string.Equals(authorizationRedirectUri, loopbackRedirectUri, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string AppendLoopbackRedirectUriToState(string state, string loopbackRedirectUri)
+        {
+            return state + "." + ToBase64Url(Encoding.UTF8.GetBytes(loopbackRedirectUri));
         }
 
         // RFC 7636 §4.2: code_challenge = BASE64URL(SHA256(code_verifier)). S256 method.
@@ -557,6 +595,11 @@ namespace App.Auth
                 rng.GetBytes(bytes);
             }
 
+            return ToBase64Url(bytes);
+        }
+
+        private static string ToBase64Url(byte[] bytes)
+        {
             // RFC 7636 / RFC 4648 base64url, no padding.
             return Convert.ToBase64String(bytes)
                 .Replace('+', '-')

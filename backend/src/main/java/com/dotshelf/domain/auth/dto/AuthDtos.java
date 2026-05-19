@@ -16,9 +16,9 @@ public final class AuthDtos {
             @Schema(description = "소셜 로그인 제공자", example = "GOOGLE")
             @NotNull(message = "provider는 필수입니다.")
             SocialProvider provider,
-            @Schema(description = "토큰 종류. 생략 시 provider 기본값 사용. KAKAO Desktop은 AUTHORIZATION_CODE 사용", example = "ACCESS_TOKEN")
+            @Schema(description = "토큰 종류. 생략 시 provider 기본값 사용. KAKAO/APPLE Desktop은 AUTHORIZATION_CODE 사용", example = "ACCESS_TOKEN")
             SocialTokenType tokenType,
-            @Schema(description = "제공자 토큰. GOOGLE=id_token 또는 server auth code, KAKAO=access_token 또는 authorization code, APPLE=identity_token")
+            @Schema(description = "제공자 토큰. GOOGLE=id_token 또는 server auth code, KAKAO=access_token 또는 authorization code, APPLE=identity_token 또는 authorization code")
             @NotBlank(message = "token은 필수입니다.")
             String token,
             @Schema(description = "authorization code 교환 시 provider에 전달할 redirect URI", example = "http://127.0.0.1:12345/dotshelf/oauth/callback/")

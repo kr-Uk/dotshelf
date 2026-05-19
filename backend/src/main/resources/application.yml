@@ -82,9 +82,15 @@ social:
     token-uri: https://kauth.kakao.com/oauth/token
   apple:
     client-ids: ${APPLE_CLIENT_IDS:${APPLE_CLIENT_ID:}}
+    desktop-client-id: ${APPLE_DESKTOP_CLIENT_ID:}
+    team-id: ${APPLE_TEAM_ID:}
+    key-id: ${APPLE_KEY_ID:}
+    private-key: ${APPLE_PRIVATE_KEY:}
+    desktop-redirect-uri: ${APPLE_DESKTOP_REDIRECT_URI:}
     issuers:
       - https://appleid.apple.com
     jwks-uri: https://appleid.apple.com/auth/keys
+    token-uri: https://appleid.apple.com/auth/token
 
 payment:
   inicis:

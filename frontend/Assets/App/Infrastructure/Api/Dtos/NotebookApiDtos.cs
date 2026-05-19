@@ -95,16 +95,11 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("tokenType")]
         public string TokenType { get; set; }
 
-        // The current BE record SocialLoginRequest only declares
-        // (provider, tokenType, token, nonce) and validates `token` with
-        // @NotBlank. Until BE adds first-class `code` support, populate
-        // `token` with the same authorization-code value so the request
-        // passes validation and BE's code-exchange path
-        // (GoogleTokenVerifier#exchangeCodeForIdToken,
-        // KakaoTokenVerifier#exchangeCodeForAccessToken) consumes it.
-        // BE deserialization is lenient (FAIL_ON_UNKNOWN_PROPERTIES=false)
-        // so the additional `code`/`redirectUri`/`state` fields are ignored
-        // for now and stay forward-compatible if BE later adopts them.
+        // BE's SocialLoginRequest validates `token` with @NotBlank and uses
+        // the same value as the authorization code when tokenType is
+        // AUTHORIZATION_CODE. `code` is kept for forward compatibility and
+        // client-side clarity; the current BE consumes `token`, `redirectUri`,
+        // `nonce`, and `codeVerifier`.
         [JsonProperty("token")]
         public string Token { get; set; }
 
