@@ -5,7 +5,6 @@ using System.IO;
 using App.Application.Dashboard;
 using App.Application.Decoration;
 using App.Auth;
-using App.Config;
 using App.Domain.Decoration;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dashboard;
@@ -13,7 +12,6 @@ using App.Infrastructure.Api.Dtos;
 using App.Infrastructure.Assets;
 using App.Infrastructure.Catalogs;
 using App.Infrastructure.Decoration;
-using App.Infrastructure.Mock.Dashboard;
 using BookshelfPorting.Runtime;
 using Dotshelf.Scripts.Dashboard;
 using Dotshelf.Scripts.RoomTheme;
@@ -271,6 +269,8 @@ namespace App.Bootstrap
             public long RemoteInventoryId;
             public string PreviewImageUrl;
             public string ThemeTag;
+            public string ServerAssetType;
+            public string ServerCategoryCode;
         }
 
         [Serializable]
@@ -357,6 +357,7 @@ namespace App.Bootstrap
             localEntry.IsRemoteAsset = false;
             localEntry.PreviewImageUrl = FirstNonEmpty(manifest.PreviewImageUrl, localEntry.PreviewImageUrl);
             localEntry.ThemeTag = FirstNonEmpty(NormalizeThemeTag(manifest.Theme), localEntry.ThemeTag);
+            localEntry.ServerAssetType = manifest.AssetType;
             entry = localEntry;
             return true;
         }
@@ -1174,12 +1175,6 @@ namespace App.Bootstrap
                 return;
             }
 
-            if (IsMockApiMode())
-            {
-                remoteAssetInventoryLoaded = true;
-                return;
-            }
-
             var apiManager = APIManager.Instance;
             if (apiManager == null || !apiManager.HasAccessToken)
             {
@@ -1242,6 +1237,8 @@ namespace App.Bootstrap
                 localEntry.RemoteInventoryId = 0L;
                 localEntry.PreviewImageUrl = string.Empty;
                 localEntry.ThemeTag = string.Empty;
+                localEntry.ServerAssetType = string.Empty;
+                localEntry.ServerCategoryCode = string.Empty;
                 inventoryEntries[i] = localEntry;
             }
 
@@ -1263,6 +1260,11 @@ namespace App.Bootstrap
                 IndexOwnedInventoryItem(item);
 
                 var asset = item.Asset;
+                if (DoesServerAssetTypeMatch(asset, "THEME"))
+                {
+                    continue;
+                }
+
                 var displayName = FirstNonEmpty(asset?.Name, asset?.Code, $"Asset {item.AssetId}");
                 if (TryBindOwnedLocalAsset(item, asset, displayName))
                 {
@@ -1283,7 +1285,9 @@ namespace App.Bootstrap
                     RemoteAssetId = item.AssetId,
                     RemoteInventoryId = item.InventoryId,
                     PreviewImageUrl = asset?.PreviewImageUrl,
-                    ThemeTag = ResolveRemoteThemeTag(asset)
+                    ThemeTag = ResolveRemoteThemeTag(asset),
+                    ServerAssetType = asset?.AssetType,
+                    ServerCategoryCode = asset?.CategoryCode
                 });
                 added++;
             }
@@ -1405,6 +1409,8 @@ namespace App.Bootstrap
                 entry.RemoteInventoryId = item.InventoryId;
                 entry.PreviewImageUrl = asset.PreviewImageUrl;
                 entry.ThemeTag = FirstNonEmpty(ResolveRemoteThemeTag(asset), entry.ThemeTag);
+                entry.ServerAssetType = asset.AssetType;
+                entry.ServerCategoryCode = asset.CategoryCode;
                 inventoryEntries[i] = entry;
                 return true;
             }
@@ -1638,6 +1644,11 @@ namespace App.Bootstrap
             return false;
         }
 
+        private bool TryFindCatalogEntryForServerAssetId(CustomizationCategory category, long serverAssetId, out CustomizationEntry entry)
+        {
+            return TryFindCatalogEntryForServerAssetId(category, serverAssetId, LoadCategoryCatalog(category), out entry);
+        }
+
         private static bool DoesServerAssetMatchEntry(CustomizationCategory category, AssetResponseDto serverAsset, CustomizationEntry entry)
         {
             if (serverAsset == null || entry == null)
@@ -1725,6 +1736,19 @@ namespace App.Bootstrap
 
         private static CustomizationCategory ResolveRemotePlacementCategory(AssetResponseDto asset)
         {
+            switch (NormalizeIdentifier(asset?.AssetType))
+            {
+                case "WALLPAPER": return CustomizationCategory.Wallpaper;
+                case "FLOOR": return CustomizationCategory.Floor;
+                case "BOOKSHELFSKIN": return CustomizationCategory.BookshelfSkin;
+                case "DASHBOARDSKIN": return CustomizationCategory.DashboardSkin;
+                case "DESKSET":
+                case "DESK": return CustomizationCategory.Desk;
+                case "INTERIORLIGHT": return CustomizationCategory.InteriorLight;
+                case "EXTERIORLIGHT": return CustomizationCategory.ExteriorLight;
+                case "NOTEBOOK": return CustomizationCategory.Notebook;
+            }
+
             var placement = FirstNonEmpty(asset?.Placement, asset?.AssetType, asset?.CategoryCode, string.Empty).ToUpperInvariant();
             if (placement.Contains("WALL") || placement.Contains("POSTER") || placement.Contains("WINDOW"))
             {
@@ -1831,6 +1855,30 @@ namespace App.Bootstrap
                     // 나머지 (Wallpaper loader fallback → FloorDeco 포함, FloorDeco 자체)는 바닥 데코로 surface.
                     return entry.PlacementCategory != CustomizationCategory.WallDeco
                         && entry.PlacementCategory != CustomizationCategory.BookshelfDeco;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool TryResolveRemoteCustomizationCategory(InventoryEntry entry, out CustomizationCategory category)
+        {
+            category = entry.PlacementCategory;
+            if (!entry.IsRemoteAsset)
+            {
+                return false;
+            }
+
+            switch (entry.PlacementCategory)
+            {
+                case CustomizationCategory.Wallpaper:
+                case CustomizationCategory.Floor:
+                case CustomizationCategory.BookshelfSkin:
+                case CustomizationCategory.DashboardSkin:
+                case CustomizationCategory.Desk:
+                case CustomizationCategory.InteriorLight:
+                case CustomizationCategory.ExteriorLight:
+                case CustomizationCategory.Notebook:
+                    return true;
                 default:
                     return false;
             }
@@ -2657,6 +2705,7 @@ namespace App.Bootstrap
                 {
                     var entry = catalog.Entries[i];
                     if (entry == null) continue;
+                    if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag)) continue;
                     BuildCustomizationSlot(parent, slotIndex, category, entry);
                     slotIndex++;
                 }
@@ -2665,6 +2714,11 @@ namespace App.Bootstrap
             for (var i = 0; i < inventoryEntries.Count; i++)
             {
                 var entry = inventoryEntries[i];
+                if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag))
+                {
+                    continue;
+                }
+
                 if (!MatchesCategory(entry, selectedToolbarKey))
                 {
                     continue;
@@ -2718,11 +2772,6 @@ namespace App.Bootstrap
 
         private bool ShouldApplyThemeFilterToCustomizationCategory(CustomizationCategory category)
         {
-            if (selectedToolbarKey == "FURNITURE" || selectedToolbarKey == "ALL")
-            {
-                return false;
-            }
-
             return true;
         }
 
@@ -2732,7 +2781,7 @@ namespace App.Bootstrap
             for (var i = 0; i < inventoryEntries.Count; i++)
             {
                 var entry = inventoryEntries[i];
-                if (selectedToolbarKey != "FURNITURE" && !RoomEditThemeFilter.MatchesActive(entry.ThemeTag))
+                if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag))
                 {
                     continue;
                 }
@@ -2752,6 +2801,23 @@ namespace App.Bootstrap
             if (!entry.IsRemoteAsset)
             {
                 return false;
+            }
+
+            if (TryResolveRemoteCustomizationCategory(entry, out var fixedCategory))
+            {
+                switch (subKey)
+                {
+                    case "BOOKSHELF_SKIN":
+                        return fixedCategory == CustomizationCategory.BookshelfSkin;
+                    case "DASHBOARD_SKIN":
+                        return fixedCategory == CustomizationCategory.DashboardSkin;
+                    case "DESK":
+                        return fixedCategory == CustomizationCategory.Desk;
+                    case "NOTEBOOK":
+                        return fixedCategory == CustomizationCategory.Notebook;
+                    default:
+                        return false;
+                }
             }
 
             if (entry.PlacementCategory == CustomizationCategory.WallDeco ||
@@ -3783,12 +3849,9 @@ namespace App.Bootstrap
             var hasServerThemeInventory = false;
             var resolvedServerThemeAssetId = 0L;
             var resolvedThemeInventoryId = 0L;
-            if (!IsMockApiMode())
-            {
-                hasServerThemeInventory = TryResolveOwnedInventoryIdForTheme(theme, out resolvedThemeInventoryId, out resolvedServerThemeAssetId);
-            }
+            hasServerThemeInventory = TryResolveOwnedInventoryIdForTheme(theme, out resolvedThemeInventoryId, out resolvedServerThemeAssetId);
 
-            if (IsLocalPreviewTheme(theme) && !IsMockApiMode() && !hasServerThemeInventory)
+            if (IsLocalPreviewTheme(theme) && !hasServerThemeInventory)
             {
                 Debug.Log($"[RoomEditModeController] Skip PATCH for local preview theme: {theme.DisplayName} (assetId={theme.AssetId}, mode={mode})");
                 DiscardPlacementRollbackHold();
@@ -3811,11 +3874,7 @@ namespace App.Bootstrap
             }
 
             long inventoryId;
-            if (IsMockApiMode())
-            {
-                inventoryId = theme.AssetId;
-            }
-            else if (hasServerThemeInventory)
+            if (hasServerThemeInventory)
             {
                 inventoryId = resolvedThemeInventoryId;
             }
@@ -3902,15 +3961,6 @@ namespace App.Bootstrap
         private void EnsureThemeUseCase()
         {
             if (themeUseCase != null) return;
-            if (IsMockApiMode())
-            {
-                EnsureSpaceSettingsRepository();
-                if (spaceSettingsRepo != null)
-                {
-                    themeUseCase = new ApplyThemeWithModeUseCase(spaceSettingsRepo);
-                }
-                return;
-            }
             var apiManager = APIManager.Instance;
             if (apiManager == null)
             {
@@ -3938,11 +3988,6 @@ namespace App.Bootstrap
         private void EnsureThemeContentsUseCase()
         {
             if (themeContentsUseCase != null) return;
-            if (IsMockApiMode())
-            {
-                return;
-            }
-
             var apiManager = APIManager.Instance;
             if (apiManager == null || !apiManager.HasAccessToken)
             {
@@ -3998,6 +4043,7 @@ namespace App.Bootstrap
             // local preview 전용 entry — 사용자 inventory 에 없는 placeholder. PATCH 시 401(인증)/403(S006) 으로 거부되므로
             // 백엔드 호출 자체를 skip 하고 RoomLighting 하위에 Preview Light 만 갱신.
             // 명시적 IsLocalPreview 플래그 + assetId 범위 fallback 으로 robust 판정 (catalog 재생성 안 해도 동작).
+            long? serverInventoryIdForPreview = null;
             if (IsLocalPreviewEntry(entry))
             {
                 if (category == CustomizationCategory.InteriorLight || category == CustomizationCategory.ExteriorLight)
@@ -4006,7 +4052,14 @@ namespace App.Bootstrap
                     Debug.Log($"[RoomEditModeController] Local preview lighting applied: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
                 }
 
-                Debug.Log($"[RoomEditModeController] MockApi routes local preview item through ISpaceSettingsRepository: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
+                if (!TryResolveOwnedInventoryIdForEntry(category, entry, out var resolvedPreviewInventoryId))
+                {
+                    Debug.Log($"[RoomEditModeController] Skip PATCH for local preview item without server inventory: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
+                    return;
+                }
+
+                serverInventoryIdForPreview = resolvedPreviewInventoryId;
+                Debug.Log($"[RoomEditModeController] Local catalog item is server-backed; PATCH will use inventoryId={resolvedPreviewInventoryId}: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
             }
 
             // 백엔드 PATCH wiring
@@ -4021,9 +4074,9 @@ namespace App.Bootstrap
             long? invId = null;
             if (entry.AssetId > 0)
             {
-                if (IsMockApiMode())
+                if (serverInventoryIdForPreview.HasValue)
                 {
-                    invId = entry.AssetId;
+                    invId = serverInventoryIdForPreview.Value;
                 }
                 else if (!TryResolveOwnedInventoryIdForEntry(category, entry, out var resolvedInventoryId))
                 {
@@ -4097,6 +4150,25 @@ namespace App.Bootstrap
                     Debug.LogWarning($"[RoomEditModeController] {category}는 카테고리별 PATCH 미지원 (책장/벽/바닥 데코는 별도 endpoint).");
                     break;
             }
+        }
+
+        private void ApplyRemoteCategoryInventoryEntry(CustomizationCategory category, InventoryEntry entry)
+        {
+            if (!entry.IsRemoteAsset || entry.RemoteAssetId <= 0L)
+            {
+                Debug.LogWarning($"[RoomEditModeController] Remote category apply skipped: invalid remote asset for {category}/{entry.DisplayName}.");
+                return;
+            }
+
+            if (!TryFindCatalogEntryForServerAssetId(category, entry.RemoteAssetId, out var localEntry) || localEntry == null)
+            {
+                Debug.LogWarning(
+                    $"[RoomEditModeController] Remote category asset has no local visual mapping: {category}/{entry.DisplayName} " +
+                    $"(assetId={entry.RemoteAssetId}, assetType={entry.ServerAssetType}).");
+                return;
+            }
+
+            ProceedCustomizationEntry(category, localEntry);
         }
 
         private void ApplyThemeResetVisualFallback()
@@ -4490,7 +4562,7 @@ namespace App.Bootstrap
 
         private void RequestThemeContentsReapplyIfAvailable(RoomThemeAsset theme, bool persistEntries, bool resetExistingPlacements)
         {
-            if (theme == null || IsMockApiMode())
+            if (theme == null)
             {
                 return;
             }
@@ -4516,6 +4588,11 @@ namespace App.Bootstrap
                 serverThemeAssetId,
                 contents =>
                 {
+                    if (this == null)
+                    {
+                        return;
+                    }
+
                     themeContentsInFlight.Remove(serverThemeAssetId);
                     if (contents == null)
                     {
@@ -4535,6 +4612,11 @@ namespace App.Bootstrap
                 },
                 error =>
                 {
+                    if (this == null)
+                    {
+                        return;
+                    }
+
                     themeContentsInFlight.Remove(serverThemeAssetId);
                     Debug.LogWarning($"[RoomEdit][ThemeContents] load failed themeAssetId={serverThemeAssetId}: {error?.Code}/{error?.Message}");
                 });
@@ -6562,11 +6644,6 @@ namespace App.Bootstrap
         private void EnsureSpaceSettingsRepository()
         {
             if (spaceSettingsRepo != null) return;
-            if (IsMockApiMode())
-            {
-                spaceSettingsRepo = new MockSpaceSettingsRepository();
-                return;
-            }
             var apiManager = APIManager.Instance;
             if (apiManager == null) return;
             try
@@ -6589,42 +6666,8 @@ namespace App.Bootstrap
         // 그 경우 늦게 도착한 GET 응답이 사용자의 새 선택을 stale 상태로 덮으면 안 됨. 호출 시점의
         // categoryRequestVersion을 캡처하고, 응답 시 카운터가 증가했으면 (PATCH가 그 사이 발생)
         // GET 결과 무시 + lastServerSpace는 다음 PATCH의 OptimisticallyUpdateServerSpace에 의존.
-        private static AppApiConfig ResolveAppApiConfig()
-        {
-            var appRoot = FindFirstObjectByType<AppRoot>(FindObjectsInactive.Include);
-            if (appRoot != null && appRoot.ApiConfig != null)
-            {
-                return appRoot.ApiConfig;
-            }
-
-            var configLoader = FindFirstObjectByType<ConfigLoader>(FindObjectsInactive.Include);
-            if (configLoader != null && configLoader.ApiConfig != null)
-            {
-                return configLoader.ApiConfig;
-            }
-
-#if UNITY_EDITOR
-            return AssetDatabase.LoadAssetAtPath<AppApiConfig>("Assets/App/Config/AppApiConfig.asset");
-#else
-            return Resources.Load<AppApiConfig>("AppApiConfig");
-#endif
-        }
-
-        private static bool IsMockApiMode()
-        {
-            var config = ResolveAppApiConfig();
-            return config != null && config.UsesMockApi;
-        }
-
         private void ReloadRoomState(Action onComplete = null)
         {
-            if (IsMockApiMode())
-            {
-                Debug.Log("[RoomEditModeController] MockApi mode - GET /spaces/me reload skipped.");
-                onComplete?.Invoke();
-                return;
-            }
-
             var apiManager = APIManager.Instance;
             if (apiManager == null)
             {
@@ -6751,11 +6794,7 @@ namespace App.Bootstrap
             {
                 if (space.CurrentThemeInventoryId.HasValue && space.CurrentThemeInventoryId.Value > 0)
                 {
-                    if (IsMockApiMode())
-                    {
-                        resolvedTheme = themeCatalog.Resolve(space.CurrentThemeInventoryId.Value);
-                    }
-                    else if (TryResolveOwnedAssetIdForInventory(space.CurrentThemeInventoryId.Value, out var currentThemeAssetId))
+                    if (TryResolveOwnedAssetIdForInventory(space.CurrentThemeInventoryId.Value, out var currentThemeAssetId))
                     {
                         resolvedTheme = ResolveThemeForServerAssetId(currentThemeAssetId);
                     }
@@ -6959,7 +6998,14 @@ namespace App.Bootstrap
             var button = slot.gameObject.AddComponent<Button>();
             button.targetGraphic = slot;
             var capturedEntry = entry;
-            button.onClick.AddListener(() => PlaceInventoryEntry(capturedEntry));
+            if (TryResolveRemoteCustomizationCategory(capturedEntry, out var remoteCategory))
+            {
+                button.onClick.AddListener(() => ApplyRemoteCategoryInventoryEntry(remoteCategory, capturedEntry));
+            }
+            else
+            {
+                button.onClick.AddListener(() => PlaceInventoryEntry(capturedEntry));
+            }
 
             // 동일 inventoryKey 가 이미 배치되어 있으면 슬롯 자체를 비활성 + "배치됨" 오버레이로 가린다.
             // 삭제하면 RebuildInventorySlots 가 다시 돌면서 자동 복구된다.
@@ -11012,6 +11058,12 @@ namespace App.Bootstrap
             // 미지정 default) 는 기존 floor placement 유지.
             if (entry.IsRemoteAsset)
             {
+                if (TryResolveRemoteCustomizationCategory(entry, out var remoteCategory))
+                {
+                    ApplyRemoteCategoryInventoryEntry(remoteCategory, entry);
+                    return;
+                }
+
                 StartCoroutine(PlaceRemoteInventoryEntry(entry, inventoryKey, null));
                 return;
             }

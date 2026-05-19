@@ -16,7 +16,7 @@ namespace App.Config
     {
         [Header("Environment")]
         [FormerlySerializedAs("useMockApi")]
-        [Tooltip("API mode. MockApi is honored only in Editor/Development builds; production builds force RealApi.")]
+        [Tooltip("API mode. MockApi never swaps repositories; use it only with a mock server base URL.")]
         [SerializeField] private AppApiMode apiMode = AppApiMode.RealApi;
         [SerializeField] private string devBaseUrl = ApiEndpointDefaults.DevBaseUrl;
         [SerializeField] private string prodBaseUrl = ApiEndpointDefaults.ProdBaseUrl;

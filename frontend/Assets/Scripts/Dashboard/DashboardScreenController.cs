@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using App.Application.Dashboard;
 using App.Domain.Dashboard;
 using App.Infrastructure.Catalogs;
-using App.Infrastructure.Mock.Dashboard;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UIElements;
@@ -38,9 +37,8 @@ namespace Dotshelf.Scripts.Dashboard
         // Default 0 (미정). 옛 default 1L 은 dev DB 에 spaceId=1 이 없어 GET /v1/spaces/1/dashboard 호출 시 404/500 유발.
         // 이제 외부에서 visitedSpaceId 를 명시 set 하지 않으면 LoadInitialData/카드 클릭 콜백이 dashboard 호출 자체를 skip.
         [SerializeField] private long visitedSpaceId;
-        // prefab 의 직렬화 default 는 true 지만 SceneInstaller.Configure(... isMockMode) 가 실제 주입된 repo 에 맞춰
-        // runtime 에 덮어쓴다. OnVisitUser/LoadInitialData 의 real-API mode 가드는 이 필드 (post-Configure) 에 의존.
-        [SerializeField] private bool useMockRepositories = true;
+        // SceneInstaller.Configure(... isMockMode) keeps this in sync with the injected repositories.
+        [SerializeField] private bool useMockRepositories;
 
         // dashboard fetch 발사 출처 — 같은 호출이 어디서 나왔는지 다음 사고 시 로그에서 즉시 식별하기 위함.
         // /v1/spaces/1/dashboard 가 다시 찍히면 source 가 어떤 값인지로 ingress 경로를 좁힐 수 있다.
@@ -489,8 +487,8 @@ namespace Dotshelf.Scripts.Dashboard
 
             if (!configured || !HasConfiguredUseCases())
             {
-                BuildMockUseCases();
-                configured = true;
+                Debug.LogError("[Dashboard] repositories are not configured. DashboardSceneInstaller must inject API repositories before OnEnable.");
+                return;
             }
 
             root = document.rootVisualElement;
@@ -531,18 +529,6 @@ namespace Dotshelf.Scripts.Dashboard
             }
 
             ClearCoverTextureCache();
-        }
-
-        private void BuildMockUseCases()
-        {
-            useMockRepositories = true;
-            // SceneInstaller가 없는 경우의 fallback. Mock으로 단독 동작.
-            BuildUseCasesFromRepos(
-                new MockDashboardRepository(),
-                new MockGuestbookRepository(),
-                new MockSpaceSettingsRepository(),
-                new MockFollowRepository(),
-                new MockLibraryViewRepository());
         }
 
         private bool HasConfiguredUseCases()
