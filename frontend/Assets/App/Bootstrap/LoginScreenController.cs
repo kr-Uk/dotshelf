@@ -94,6 +94,10 @@ namespace App.Bootstrap
         // path (currently a stub).
         [SerializeField] private bool enableDesktopBrowserOAuth = true;
         [SerializeField] private OAuthBrowserProviderConfig[] desktopBrowserOAuthProviders;
+        [Header("Social Login Icons")]
+        [SerializeField] private Sprite googleLoginIcon;
+        [SerializeField] private Sprite kakaoLoginIcon;
+        [SerializeField] private Sprite appleLoginIcon;
 
         private CancellationTokenSource browserOAuthCts;
 
@@ -106,7 +110,7 @@ namespace App.Bootstrap
 
             isInitialized = true;
             whiteSprite = CreateWhiteSprite();
-            roundedRectSprite = CreateRoundedRectSprite(64, 14);
+            roundedRectSprite = CreateRoundedRectSprite(64, 30);
             fontAsset = ResolveFontAsset();
             WarmupLoginGlyphs(fontAsset);
 
@@ -843,9 +847,36 @@ namespace App.Bootstrap
                 40f);
             title.margin = new Vector4(0f, 0f, 0f, 8f);
 
-            appleLoginButton = CreateStackButton(pane.transform, "AppleButton", "Apple 로그인", AppleColor, Color.white, false, BorderColor, SocialButtonHeight);
-            kakaoLoginButton = CreateStackButton(pane.transform, "KakaoButton", "Kakao 로그인", KakaoColor, TextColor, false, BorderColor, SocialButtonHeight);
-            googleLoginButton = CreateStackButton(pane.transform, "GoogleButton", "Google 로그인", GoogleColor, TextColor, true, BorderColor, SocialButtonHeight);
+            googleLoginButton = CreateSocialLoginButton(
+                pane.transform,
+                "GoogleLoginButton",
+                "Google 로그인",
+                googleLoginIcon,
+                GoogleColor,
+                TextColor,
+                true,
+                BorderColor,
+                SocialButtonHeight);
+            kakaoLoginButton = CreateSocialLoginButton(
+                pane.transform,
+                "KakaoLoginButton",
+                "Kakao 로그인",
+                kakaoLoginIcon,
+                KakaoColor,
+                TextColor,
+                false,
+                BorderColor,
+                SocialButtonHeight);
+            appleLoginButton = CreateSocialLoginButton(
+                pane.transform,
+                "AppleLoginButton",
+                "Apple 로그인",
+                appleLoginIcon,
+                AppleColor,
+                Color.white,
+                false,
+                BorderColor,
+                SocialButtonHeight);
 #if UNITY_EDITOR
             // Visually distinct (red outline + red label on the card background)
             // so a dev never confuses these with a real login button. Stripped
@@ -977,8 +1008,11 @@ namespace App.Bootstrap
             colors.fadeDuration = 0.08f;
             button.colors = colors;
 
-            var label = CreateText(buttonImage.transform, "Label", labelText, 16f, FontStyles.Bold, labelColor, TextAlignmentOptions.Center, Vector2.zero, Vector2.zero);
-            StretchToParent(label.rectTransform);
+            if (!string.IsNullOrEmpty(labelText))
+            {
+                var label = CreateText(buttonImage.transform, "Label", labelText, 16f, FontStyles.Bold, labelColor, TextAlignmentOptions.Center, Vector2.zero, Vector2.zero);
+                StretchToParent(label.rectTransform);
+            }
 
             return button;
         }
@@ -1411,6 +1445,87 @@ namespace App.Bootstrap
             layoutElement.minHeight = preferredHeight;
             layoutElement.preferredHeight = preferredHeight;
             layoutElement.flexibleWidth = 1f;
+
+            return button;
+        }
+
+        private Button CreateSocialLoginButton(
+            Transform parent,
+            string objectName,
+            string labelText,
+            Sprite iconSprite,
+            Color backgroundColor,
+            Color labelColor,
+            bool outlined,
+            Color outlineColor,
+            float preferredHeight)
+        {
+            var button = CreateStackButton(parent, objectName, string.Empty, backgroundColor, labelColor, outlined, outlineColor, preferredHeight);
+
+            var contentGroup = CreateRectObject("ContentGroup", button.transform);
+            var contentGroupRect = (RectTransform)contentGroup.transform;
+            contentGroupRect.anchorMin = new Vector2(0.5f, 0.5f);
+            contentGroupRect.anchorMax = new Vector2(0.5f, 0.5f);
+            contentGroupRect.pivot = new Vector2(0.5f, 0.5f);
+            contentGroupRect.anchoredPosition = Vector2.zero;
+            contentGroupRect.sizeDelta = new Vector2(0f, 0f);
+
+            var groupLayout = contentGroup.AddComponent<HorizontalLayoutGroup>();
+            groupLayout.childAlignment = TextAnchor.MiddleCenter;
+            groupLayout.spacing = 9f;
+            groupLayout.childControlWidth = false;
+            groupLayout.childControlHeight = false;
+            groupLayout.childForceExpandWidth = false;
+            groupLayout.childForceExpandHeight = false;
+            groupLayout.padding = new RectOffset(0, 0, 0, 0);
+
+            var groupFitter = contentGroup.AddComponent<ContentSizeFitter>();
+            groupFitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            groupFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var icon = CreateImage(contentGroup.transform, "IconImage", Color.white);
+            icon.sprite = iconSprite;
+            icon.type = Image.Type.Simple;
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            var iconRect = icon.rectTransform;
+            iconRect.anchorMin = new Vector2(0.5f, 0.5f);
+            iconRect.anchorMax = new Vector2(0.5f, 0.5f);
+            iconRect.pivot = new Vector2(0.5f, 0.5f);
+            iconRect.anchoredPosition = Vector2.zero;
+            iconRect.sizeDelta = new Vector2(20f, 20f);
+            var iconLayout = icon.gameObject.AddComponent<LayoutElement>();
+            iconLayout.minWidth = 20f;
+            iconLayout.preferredWidth = 20f;
+            iconLayout.minHeight = 20f;
+            iconLayout.preferredHeight = 20f;
+
+            var label = CreateText(
+                contentGroup.transform,
+                "LabelText",
+                labelText,
+                16f,
+                FontStyles.Bold,
+                labelColor,
+                TextAlignmentOptions.MidlineLeft,
+                Vector2.zero,
+                Vector2.zero);
+            var labelRect = label.rectTransform;
+            labelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            labelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            labelRect.pivot = new Vector2(0.5f, 0.5f);
+            labelRect.anchoredPosition = Vector2.zero;
+            label.enableWordWrapping = false;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+            label.alignment = TextAlignmentOptions.MidlineLeft;
+            label.raycastTarget = false;
+            label.ForceMeshUpdate();
+            var preferredLabelWidth = Mathf.Clamp(label.GetPreferredValues(labelText, 220f, 24f).x, 80f, 160f);
+            labelRect.sizeDelta = new Vector2(preferredLabelWidth, 24f);
+            var labelLayout = label.gameObject.AddComponent<LayoutElement>();
+            labelLayout.minWidth = preferredLabelWidth;
+            labelLayout.preferredWidth = preferredLabelWidth;
+            labelLayout.preferredHeight = 24f;
 
             return button;
         }

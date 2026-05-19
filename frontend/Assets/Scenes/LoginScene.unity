@@ -478,6 +478,9 @@ MonoBehaviour:
     responseType: 
     useNonce: 0
     extraQuery: 
+  googleLoginIcon: {fileID: 21300000, guid: 86ea8a442f59dc748ab1eb7eda7a31f7, type: 3}
+  kakaoLoginIcon: {fileID: 21300000, guid: 7b23f8d70c3c0ca49aa107a1cce66e09, type: 3}
+  appleLoginIcon: {fileID: 21300000, guid: 153b3805b7a576f4182f872c811a4912, type: 3}
 --- !u!1 &122077081
 GameObject:
   m_ObjectHideFlags: 0
