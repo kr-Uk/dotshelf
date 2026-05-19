@@ -10,7 +10,6 @@ namespace BookshelfPorting.Runtime
 {
     public sealed class NotebookUiSceneLoader : MonoBehaviour
     {
-
         [SerializeField] private string sceneName = SceneKeys.NotebookUi;
         [SerializeField] private bool unloadOnFocusExit = false;
         [SerializeField] private bool logPerformance = true;
@@ -99,7 +98,7 @@ namespace BookshelfPorting.Runtime
                 if (logPerformance && !loggedRetentionPolicy)
                 {
                     loggedRetentionPolicy = true;
-                    App.Core.AppLog.Notebook($"Notebook UI scene retained after focus exit: {sceneName}. policy=keep-loaded");
+                    UnityEngine.Debug.Log($"Notebook UI scene retained after focus exit: {sceneName}. policy=keep-loaded");
                 }
 
                 return;
@@ -149,7 +148,7 @@ namespace BookshelfPorting.Runtime
             }
 
             stopwatch.Stop();
-            App.Core.AppLog.Notebook($"Notebook UI canvas enable toggle cost: {stopwatch.Elapsed.TotalMilliseconds:F2} ms ({canvases.Length} canvas).");
+            UnityEngine.Debug.Log($"Notebook UI canvas enable toggle cost: {stopwatch.Elapsed.TotalMilliseconds:F2} ms ({canvases.Length} canvas).");
         }
 
         private IEnumerator LoadSceneRoutine()
@@ -176,7 +175,7 @@ namespace BookshelfPorting.Runtime
             Controller = FindLoadedController();
             if (logPerformance)
             {
-                App.Core.AppLog.Notebook($"Notebook UI scene lazy-loaded: {sceneName} in {stopwatch.Elapsed.TotalMilliseconds:F2} ms.");
+                UnityEngine.Debug.Log($"Notebook UI scene lazy-loaded: {sceneName} in {stopwatch.Elapsed.TotalMilliseconds:F2} ms.");
             }
 
             if (Controller == null)
@@ -214,7 +213,7 @@ namespace BookshelfPorting.Runtime
             isLoading = false;
             if (logPerformance)
             {
-                App.Core.AppLog.Notebook($"Notebook UI scene unloaded: {sceneName} in {stopwatch.Elapsed.TotalMilliseconds:F2} ms.");
+                UnityEngine.Debug.Log($"Notebook UI scene unloaded: {sceneName} in {stopwatch.Elapsed.TotalMilliseconds:F2} ms.");
             }
         }
 

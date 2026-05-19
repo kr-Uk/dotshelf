@@ -74,7 +74,7 @@ namespace App.Auth
         {
             // Editor/Build 의 baseUrl 일관성 확인용 — code/state 등 민감 정보 노출 안 함
             // (SendJson 내부 Redact 가 이미 다룸).
-            App.Core.AppLog.Auth($"[Auth] POST /v1/auth/social-login baseUrl={baseUrl}");
+            Debug.Log($"[Auth] POST /v1/auth/social-login baseUrl={baseUrl}");
             return StartCoroutine(SendJson("/v1/auth/social-login", request, onSuccess, onError));
         }
 
@@ -119,7 +119,7 @@ namespace App.Auth
                 request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(requestBodyJson));
             }
 
-            App.Core.AppLog.Auth($"[Auth] -> POST {url} body={Redact(requestBodyJson) ?? "(empty)"}");
+            Debug.Log($"[Auth] -> POST {url} body={Redact(requestBodyJson) ?? "(empty)"}");
 
             using (request)
             {
@@ -127,7 +127,7 @@ namespace App.Auth
 
                 var responseText = request.downloadHandler != null ? request.downloadHandler.text : null;
 
-                App.Core.AppLog.Auth($"[Auth] <- {request.responseCode} {url} body={Redact(responseText)}");
+                Debug.Log($"[Auth] <- {request.responseCode} {url} body={Redact(responseText)}");
 
                 if (request.result != UnityWebRequest.Result.Success)
                 {

@@ -18,7 +18,6 @@ namespace BookshelfPorting.Runtime
     [ExecuteAlways]
     public sealed class BookshelfSceneInstaller : MonoBehaviour
     {
-
         [SerializeField] private bool bootstrapOnAwake = true;
         [SerializeField] private bool installInEditMode = true;
         [SerializeField] private bool saveGeneratedContentInEditMode = true;
@@ -149,7 +148,7 @@ namespace BookshelfPorting.Runtime
             var apiHealthCheckPath = apiConfig != null ? apiConfig.HealthCheckPath : "/health";
             if (Application.isPlaying)
             {
-                App.Core.AppLog.SceneInstall($"Dotshelf API mode: {apiMode}, baseUrl={apiBaseUrl}, usesHttpApi={usesHttpApi}");
+                Debug.Log($"Dotshelf API mode: {apiMode}, baseUrl={apiBaseUrl}, usesHttpApi={usesHttpApi}");
             }
 
             var state = GetOrAddComponent<BookshelfState>(systems);
@@ -680,13 +679,13 @@ namespace BookshelfPorting.Runtime
         private static void SyncCurrentUserProfileOnSceneEntry(APIManager apiManager)
         {
             string url = ApiEndpointDefaults.DefaultBaseUrl.TrimEnd('/') + "/v1/users/me";
-            App.Core.AppLog.SceneInstall($"[MainScene] GET /v1/users/me 요청 → {url}");
+            Debug.Log($"[MainScene] GET /v1/users/me 요청 → {url}");
 
             NotebookApiClient client = new NotebookApiClient(apiManager);
             client.GetMe(
                 onSuccess: profile =>
                 {
-                    App.Core.AppLog.SceneInstall(
+                    Debug.Log(
                         $"[MainScene] GET /v1/users/me 응답 → STATUS=2xx (onSuccess) " +
                         $"BODY={{id={profile?.Id},nickname='{profile?.Nickname}'," +
                         $"onboarded={profile?.Onboarded},hasIntro={!string.IsNullOrEmpty(profile?.Introduction)}}}");

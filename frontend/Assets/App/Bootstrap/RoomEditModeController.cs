@@ -5,7 +5,6 @@ using System.IO;
 using App.Application.Dashboard;
 using App.Application.Decoration;
 using App.Auth;
-using App.Config;
 using App.Domain.Decoration;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dashboard;
@@ -13,7 +12,6 @@ using App.Infrastructure.Api.Dtos;
 using App.Infrastructure.Assets;
 using App.Infrastructure.Catalogs;
 using App.Infrastructure.Decoration;
-using App.Infrastructure.Mock.Dashboard;
 using BookshelfPorting.Runtime;
 using Dotshelf.Scripts.Dashboard;
 using Dotshelf.Scripts.RoomTheme;
@@ -217,10 +215,11 @@ namespace App.Bootstrap
         private static readonly (string Key, string Label)[] ToolbarItems =
         {
             ("ALL", "전체"),
-            ("FURNITURE", "필수"),
+            ("FURNITURE", "가구"),
             ("WALLPAPER", "벽지"),
             ("LIGHT_INNER", "내부조명"),
             ("LIGHT_OUTER", "외부조명"),
+            ("OBJECT_SKIN", "필수 오브젝트 스킨"),
             ("THEME_FULL", "전체 테마"),
             ("SHOP", "샵"),
         };
@@ -232,18 +231,6 @@ namespace App.Bootstrap
             ("DESK", "책상"),
             ("BOOKSHELF_SKIN", "책장"),
             ("DASHBOARD_SKIN", "대시보드"),
-            ("NOTEBOOK", "노트북"),
-        };
-
-        private static readonly (BookshelfThemeStyle Style, string Label)[] BookshelfStyleItems =
-        {
-            (BookshelfThemeStyle.Default, "기본 책장"),
-            (BookshelfThemeStyle.Warm, "파스텔 캐빈"),
-            (BookshelfThemeStyle.DeepSea, "깊은 바다"),
-            (BookshelfThemeStyle.Vintage, "빈티지"),
-            (BookshelfThemeStyle.Fantasy, "판타지"),
-            (BookshelfThemeStyle.Space, "우주"),
-            (BookshelfThemeStyle.Spooky, "스푸키"),
         };
 
         private struct InventoryEntry
@@ -296,17 +283,10 @@ namespace App.Bootstrap
             }
 
             IsReadOnlySpacePreview = isReadOnly;
-            if (isReadOnly)
-            {
-                InitializeIfNeeded();
-                EnsurePlacedItemsRoot();
-                ClearAllPlacedDecos();
-            }
             if (!isReadOnly)
             {
                 visibleRemoteAssetManifests.Clear();
                 visibleLocalAssetEntries.Clear();
-                visibleAssetIdByInventoryId.Clear();
             }
             if (isReadOnly && IsDecorationPopupOpen)
             {
@@ -321,7 +301,6 @@ namespace App.Bootstrap
             InitializeIfNeeded();
             visibleRemoteAssetManifests.Clear();
             visibleLocalAssetEntries.Clear();
-            visibleAssetIdByInventoryId.Clear();
             if (manifests == null)
             {
                 return;
@@ -333,10 +312,6 @@ namespace App.Bootstrap
                 if (manifest != null && manifest.AssetId > 0L)
                 {
                     visibleRemoteAssetManifests[manifest.AssetId] = manifest;
-                    if (manifest.InventoryId.HasValue && manifest.InventoryId.Value > 0L)
-                    {
-                        visibleAssetIdByInventoryId[manifest.InventoryId.Value] = manifest.AssetId;
-                    }
                     if (TryBuildLocalEntryFromManifest(manifest, out var localEntry))
                     {
                         visibleLocalAssetEntries[manifest.AssetId] = localEntry;
@@ -435,7 +410,6 @@ namespace App.Bootstrap
         private int themeRequestVersion;
 
         private GameObject placedItemsRoot;
-        private Coroutine releaseUnusedAssetsRoutine;
 
         // Wall placement obstruction registry — RightWall/LeftWall/BackWall surface 의
         // 책장/대시보드 점유 영역 추적. EnsureWallObstructionRegistry 가 lazy 빌드.
@@ -735,13 +709,7 @@ namespace App.Bootstrap
         private readonly Dictionary<long, long> ownedInventoryIdByAssetId = new Dictionary<long, long>();
         private readonly Dictionary<long, DownloadManifestResponseDto> visibleRemoteAssetManifests = new Dictionary<long, DownloadManifestResponseDto>();
         private readonly Dictionary<long, InventoryEntry> visibleLocalAssetEntries = new Dictionary<long, InventoryEntry>();
-        private readonly Dictionary<long, long> visibleAssetIdByInventoryId = new Dictionary<long, long>();
-        private const int MaxInventoryPreviewSpriteCacheCount = 128;
-        private static readonly bool EnableEditPlacementTrace = false;
-        private static readonly bool EnableEditCameraTrace = false;
         private readonly Dictionary<string, Sprite> inventoryPreviewSpriteCache = new Dictionary<string, Sprite>(StringComparer.Ordinal);
-        private readonly LinkedList<string> inventoryPreviewSpriteCacheOrder = new LinkedList<string>();
-        private readonly Dictionary<string, LinkedListNode<string>> inventoryPreviewSpriteCacheNodes = new Dictionary<string, LinkedListNode<string>>(StringComparer.Ordinal);
 
         private BookshelfExperienceManager cachedExperienceManager;
         private BookshelfApiSyncController cachedBookshelfApiSyncController;
@@ -802,21 +770,17 @@ namespace App.Bootstrap
                 {
                     if (root != null) root.SetActive(true);
                     isShown = true;
-                    if (EnableEditPlacementTrace)
-                    {
-                        App.Core.AppLog.RoomEdit($"[EditFootprint] show object='{objectName ?? "<null>"}' valid={(isValid ? "True" : "False")}");
-                    }
+                    Debug.Log($"[EditFootprint] show object='{objectName ?? "<null>"}' valid={(isValid ? "True" : "False")}");
                 }
-                else if (EnableEditPlacementTrace &&
-                         (lastIsValid != isValid || lastObjectName != objectName || lastReason != reason))
+                else if (lastIsValid != isValid || lastObjectName != objectName || lastReason != reason)
                 {
                     if (isValid)
                     {
-                        App.Core.AppLog.RoomEdit($"[EditFootprint] update object='{objectName ?? "<null>"}' valid=True");
+                        Debug.Log($"[EditFootprint] update object='{objectName ?? "<null>"}' valid=True");
                     }
                     else
                     {
-                        App.Core.AppLog.RoomEdit($"[EditFootprint] update object='{objectName ?? "<null>"}' valid=False reason='{reason ?? "Unknown"}'");
+                        Debug.Log($"[EditFootprint] update object='{objectName ?? "<null>"}' valid=False reason='{reason ?? "Unknown"}'");
                     }
                 }
 
@@ -833,10 +797,7 @@ namespace App.Bootstrap
                 lastIsValid = null;
                 lastReason = null;
                 lastObjectName = null;
-                if (EnableEditPlacementTrace)
-                {
-                    App.Core.AppLog.RoomEdit("[EditFootprint] hide");
-                }
+                Debug.Log("[EditFootprint] hide");
             }
 
             public void Dispose()
@@ -1080,7 +1041,7 @@ namespace App.Bootstrap
                 var stale = staleFootprints[i];
                 if (stale != null && stale.name == "EditPlacementFootprint")
                 {
-                    App.Core.AppLog.RoomEdit($"[EditFootprint] cleanup stale root scene='{stale.scene.name}' hideFlags={stale.hideFlags}");
+                    Debug.Log($"[EditFootprint] cleanup stale root scene='{stale.scene.name}' hideFlags={stale.hideFlags}");
                     UnityEngine.Object.Destroy(stale);
                 }
             }
@@ -1129,7 +1090,7 @@ namespace App.Bootstrap
                     });
                     // 회귀 진단 — catalog → InventoryEntry 매핑 결과를 1회 로그. AllowRotation 이
                     // FloorDeco 에 false 로 새거나 Kind 가 None 으로 회귀했는지 즉시 식별 가능.
-                    App.Core.AppLog.RoomEdit(
+                    Debug.Log(
                         $"[EditCatalog] entry='{entry.DisplayName}' prefab='{entry.Prefab.name}' " +
                         $"kind={entry.Kind} placement={placement} allowRotation={entry.AllowRotation} " +
                         $"scaleOverride={entry.ScaleMultiplierOverride:0.##} sourcePath='{entry.SourceAssetPath}'");
@@ -1142,7 +1103,7 @@ namespace App.Bootstrap
                 AddEditorTimeFallbackEntries();
                 if (inventoryEntries.Count > 0)
                 {
-                    App.Core.AppLog.RoomEdit($"[RoomEditModeController] Catalog missing/empty — discovered {inventoryEntries.Count} model(s) under Assets/Arts/Models via AssetDatabase fallback. Run Tools > Dotshelf > Refresh Decoration Catalog to bake into a build-friendly Resources asset.");
+                    Debug.Log($"[RoomEditModeController] Catalog missing/empty — discovered {inventoryEntries.Count} model(s) under Assets/Arts/Models via AssetDatabase fallback. Run Tools > Dotshelf > Refresh Decoration Catalog to bake into a build-friendly Resources asset.");
                 }
             }
 #endif
@@ -1157,12 +1118,6 @@ namespace App.Bootstrap
         {
             if (isRemoteAssetInventoryLoading)
             {
-                return;
-            }
-
-            if (IsMockApiMode())
-            {
-                remoteAssetInventoryLoaded = true;
                 return;
             }
 
@@ -1273,7 +1228,7 @@ namespace App.Bootstrap
 
             if (added > 0)
             {
-                App.Core.AppLog.RoomEdit($"[RoomEdit][RemoteAsset] merged {added} owned remote asset(s) into decoration inventory.");
+                Debug.Log($"[RoomEdit][RemoteAsset] merged {added} owned remote asset(s) into decoration inventory.");
             }
 
             if (pendingSpaceVisualsReapplyAfterInventory &&
@@ -1326,11 +1281,6 @@ namespace App.Bootstrap
             if (inventoryId <= 0L)
             {
                 return false;
-            }
-
-            if (IsReadOnlySpacePreview)
-            {
-                return visibleAssetIdByInventoryId.TryGetValue(inventoryId, out assetId) && assetId > 0L;
             }
 
             if (ownedAssetIdByInventoryId.TryGetValue(inventoryId, out assetId) && assetId > 0L)
@@ -1423,7 +1373,7 @@ namespace App.Bootstrap
             if (value.Contains("LAMP") || value.Contains("LIGHT")) return DecorationObjectKind.Lamp;
             if (value.Contains("PLANT") || value.Contains("FLOWER")) return DecorationObjectKind.Plant;
             if (value.Contains("PILLOW") || value.Contains("CUSHION")) return DecorationObjectKind.Pillow;
-            if (value.Contains("MONITOR") || value.Contains("DASHBOARD") || value.Contains("NOTEBOOK") || value.Contains("LAPTOP")) return DecorationObjectKind.Monitor;
+            if (value.Contains("MONITOR") || value.Contains("DASHBOARD")) return DecorationObjectKind.Monitor;
             return DecorationObjectKind.Decoration;
         }
 
@@ -2047,7 +1997,12 @@ namespace App.Bootstrap
             furnitureSubToolbarRoot.SetActive(false);
         }
 
-        private static bool IsFurnitureSubDisabled(string key) => false;
+        // 책장 스킨은 BE PATCH 경로 미지원 (ISpaceSettingsRepository.ChangeBookshelfSkin 없음 +
+        // SpaceResponseDto.CurrentBookshelfSkinInventoryId 없음 + GetCategoryIdFromSpace/
+        // OptimisticallyUpdateServerSpace 미지원). 클릭 가능하면 visual만 바뀌고 PATCH는 안 나가
+        // 다음 reload 에서 선택이 사라짐 — '저장 안 되는 UI'가 됨.
+        // 후속 PR에서 BE 경로 + DTO 필드 + repository 연결까지 묶어서 활성화 예정.
+        private static bool IsFurnitureSubDisabled(string key) => key == "BOOKSHELF_SKIN";
 
         private void BuildFurnitureSubButton(Transform parent, string key, string label)
         {
@@ -2263,26 +2218,12 @@ namespace App.Bootstrap
             }
 
             // v1.0 customization — 1:1 카테고리 매핑이 명확한 toolbar 키는 CustomizationCatalog로 처리.
-            // FURNITURE는 sub-tab(책상/책장/대시보드/노트북)으로 분기.
+            // FURNITURE는 sub-tab(책상/책장스킨/대시보드스킨)으로 분기. OBJECT_SKIN은 후속 PR에서 sub-탭화.
             if (selectedToolbarKey == "FURNITURE")
             {
-                if (selectedFurnitureSubKey == "BOOKSHELF_SKIN")
-                {
-                    BuildBookshelfStyleSlots(inventoryContentRoot.transform);
-                    BuildRequiredThemeSpecSlots(inventoryContentRoot.transform, selectedFurnitureSubKey);
-                    return;
-                }
-
-                if (selectedFurnitureSubKey == "NOTEBOOK")
-                {
-                    BuildRemoteFurnitureSlots(inventoryContentRoot.transform, selectedFurnitureSubKey);
-                    return;
-                }
-
                 if (TryResolveFurnitureSubCategory(selectedFurnitureSubKey, out var furnitureCategory))
                 {
                     BuildCustomizationSlots(inventoryContentRoot.transform, furnitureCategory);
-                    BuildRequiredThemeSpecSlots(inventoryContentRoot.transform, selectedFurnitureSubKey);
                     BuildRemoteFurnitureSlots(inventoryContentRoot.transform, selectedFurnitureSubKey);
                     return;
                 }
@@ -2308,7 +2249,7 @@ namespace App.Bootstrap
         }
 
         // toolbar 키 → CustomizationCategory 매핑. 1:1 명확 매핑만 true 반환,
-        // 묶음 탭(FURNITURE/ALL)은 false.
+        // 묶음 탭(FURNITURE/OBJECT_SKIN/ALL)은 false.
         private static bool TryResolveCustomizationCategory(string toolbarKey, out CustomizationCategory category)
         {
             switch (toolbarKey)
@@ -2342,7 +2283,7 @@ namespace App.Bootstrap
                 BuildCustomizationSlot(parent, i, category, entry);
                 rendered++;
             }
-            App.Core.AppLog.RoomEdit($"[RoomEditModeController] Theme={RoomEditThemeFilter.DescribeActive()}, Category={category}, ResultCount={rendered}");
+            Debug.Log($"[RoomEditModeController] Theme={RoomEditThemeFilter.DescribeActive()}, Category={category}, ResultCount={rendered}");
         }
 
         private void BuildRemoteFurnitureSlots(Transform parent, string subKey)
@@ -2356,14 +2297,9 @@ namespace App.Bootstrap
                     continue;
                 }
 
-                BuildRequiredFurnitureInventorySlot(parent, slotIndex, subKey, entry);
+                BuildInventorySlot(parent, slotIndex, entry);
                 slotIndex++;
             }
-        }
-
-        private void BuildRequiredFurnitureInventorySlot(Transform parent, int slotIndex, string subKey, InventoryEntry entry)
-        {
-            BuildInventorySlot(parent, slotIndex, entry, capturedEntry => ApplyRequiredFurnitureEntry(subKey, capturedEntry));
         }
 
         private static bool MatchesRemoteFurnitureSubCategory(InventoryEntry entry, string subKey)
@@ -2384,238 +2320,13 @@ namespace App.Bootstrap
                 case "BOOKSHELF_SKIN":
                     return entry.Kind == DecorationObjectKind.Bookshelf;
                 case "DASHBOARD_SKIN":
-                    return entry.Kind == DecorationObjectKind.Monitor && !IsRemoteNotebookEntry(entry);
-                case "NOTEBOOK":
-                    return IsRemoteNotebookEntry(entry);
+                    return entry.Kind == DecorationObjectKind.Monitor;
                 case "DESK":
                     return entry.Kind != DecorationObjectKind.Bookshelf &&
-                           entry.Kind != DecorationObjectKind.Monitor &&
-                           !IsRemoteNotebookEntry(entry);
+                           entry.Kind != DecorationObjectKind.Monitor;
                 default:
                     return false;
             }
-        }
-
-        private static bool IsRemoteNotebookEntry(InventoryEntry entry)
-        {
-            var value = string.Concat(
-                entry.DisplayName, " ",
-                entry.SourceAssetPath, " ",
-                entry.PreviewImageUrl).ToUpperInvariant();
-            return value.Contains("NOTEBOOK") || value.Contains("LAPTOP") || value.Contains("노트북");
-        }
-
-        private void BuildRequiredThemeSpecSlots(Transform parent, string subKey)
-        {
-            if (!TryMapFurnitureSubKeyToThemeSlot(subKey, out var targetSlot))
-            {
-                return;
-            }
-
-            if (themeCatalog == null)
-            {
-                themeCatalog = Resources.Load<RoomThemeCatalogAsset>("RoomThemeCatalog");
-            }
-
-            var themes = themeCatalog?.Entries;
-            if (themes == null || themes.Count == 0)
-            {
-                return;
-            }
-
-            var rendered = 0;
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            for (var i = 0; i < themes.Count; i++)
-            {
-                var theme = themes[i];
-                if (theme == null || !TryFindRequiredThemeSpec(theme, targetSlot, out var spec, out var isWallSpec))
-                {
-                    continue;
-                }
-
-                var key = BuildRequiredThemeSpecKey(targetSlot, spec);
-                if (!seen.Add(key))
-                {
-                    continue;
-                }
-
-                BuildRequiredThemeSpecSlot(parent, rendered, subKey, theme, spec, isWallSpec);
-                rendered++;
-            }
-        }
-
-        private static bool TryMapFurnitureSubKeyToThemeSlot(string subKey, out ThemeSlot slot)
-        {
-            switch (subKey)
-            {
-                case "BOOKSHELF_SKIN":
-                    slot = ThemeSlot.Shelf;
-                    return true;
-                case "DASHBOARD_SKIN":
-                    slot = ThemeSlot.Dashboard;
-                    return true;
-                default:
-                    slot = ThemeSlot.None;
-                    return false;
-            }
-        }
-
-        private static string ResolveRequiredSubKey(CustomizationCategory category)
-        {
-            switch (category)
-            {
-                case CustomizationCategory.Desk:
-                    return "DESK";
-                case CustomizationCategory.BookshelfSkin:
-                    return "BOOKSHELF_SKIN";
-                case CustomizationCategory.DashboardSkin:
-                    return "DASHBOARD_SKIN";
-                default:
-                    return null;
-            }
-        }
-
-        private static string BuildRequiredThemeSpecKey(ThemeSlot slot, RoomThemeDecoSpec spec)
-        {
-            var assetKey = spec != null ? spec.AssetKey : string.Empty;
-            return $"{slot}:{assetKey}:{(spec != null ? spec.AssetId : 0L)}";
-        }
-
-        private static bool TryFindRequiredThemeSpec(RoomThemeAsset theme, ThemeSlot slot, out RoomThemeDecoSpec spec, out bool isWallSpec)
-        {
-            isWallSpec = false;
-            spec = null;
-            if (theme == null)
-            {
-                return false;
-            }
-
-            if (TryFindSpecBySlot(theme.FloorDecoSpecs, slot, out spec))
-            {
-                return true;
-            }
-
-            if (TryFindSpecBySlot(theme.BookshelfDecoSpecs, slot, out spec))
-            {
-                return true;
-            }
-
-            if (TryFindSpecBySlot(theme.WallDecoSpecs, slot, out spec))
-            {
-                isWallSpec = true;
-                return true;
-            }
-
-            return false;
-        }
-
-        private void BuildRequiredThemeSpecSlot(
-            Transform parent,
-            int slotIndex,
-            string subKey,
-            RoomThemeAsset theme,
-            RoomThemeDecoSpec spec,
-            bool isWallSpec)
-        {
-            var slot = CreateImage(parent, $"RequiredThemeSlot_{subKey}_{slotIndex}", CardColor);
-            slot.sprite = roundedRectSprite;
-            slot.type = Image.Type.Sliced;
-            var rect = slot.rectTransform;
-            rect.sizeDelta = new Vector2(108f, 128f);
-
-            var layout = slot.gameObject.AddComponent<LayoutElement>();
-            layout.minWidth = 108f;
-            layout.preferredWidth = 108f;
-            layout.minHeight = 128f;
-            layout.preferredHeight = 128f;
-
-            var outline = slot.gameObject.AddComponent<Outline>();
-            outline.effectColor = WithAlpha(BorderColor, 0.9f);
-            outline.effectDistance = new Vector2(1f, -1f);
-
-            var thumb = CreateImage(slot.transform, "Thumb", Hex("#E8DFCC"));
-            thumb.sprite = roundedRectSprite;
-            thumb.type = Image.Type.Sliced;
-            var thumbRect = thumb.rectTransform;
-            thumbRect.anchorMin = new Vector2(0.5f, 1f);
-            thumbRect.anchorMax = new Vector2(0.5f, 1f);
-            thumbRect.pivot = new Vector2(0.5f, 1f);
-            thumbRect.sizeDelta = new Vector2(80f, 80f);
-            thumbRect.anchoredPosition = new Vector2(0f, -8f);
-
-            if (theme != null && theme.PreviewSprite != null)
-            {
-                thumb.sprite = theme.PreviewSprite;
-                thumb.type = Image.Type.Simple;
-                thumb.preserveAspect = true;
-                thumb.color = Color.white;
-            }
-            else
-            {
-                var glyph = CreateText(thumb.transform, "Glyph",
-                    ResolveSlotInitial(theme != null ? theme.DisplayName : subKey),
-                    28f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center);
-                StretchToParent(glyph.rectTransform);
-            }
-
-            var label = FirstNonEmpty(
-                theme != null ? theme.DisplayName : null,
-                spec != null ? spec.AssetKey : null,
-                subKey);
-            var labelText = CreateText(slot.transform, "Label", label, 12f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
-            labelText.overflowMode = TextOverflowModes.Ellipsis;
-            var labelRect = labelText.rectTransform;
-            labelRect.anchorMin = new Vector2(0f, 0f);
-            labelRect.anchorMax = new Vector2(1f, 0f);
-            labelRect.pivot = new Vector2(0.5f, 0f);
-            labelRect.sizeDelta = new Vector2(-8f, 24f);
-            labelRect.anchoredPosition = new Vector2(0f, 6f);
-
-            var button = slot.gameObject.AddComponent<Button>();
-            button.targetGraphic = slot;
-            var capturedSubKey = subKey;
-            var capturedTheme = theme;
-            var capturedSpec = spec;
-            var capturedIsWallSpec = isWallSpec;
-            button.onClick.AddListener(() => ApplyRequiredThemeSpecSelection(capturedSubKey, capturedTheme, capturedSpec, capturedIsWallSpec));
-        }
-
-        private void ApplyRequiredThemeSpecSelection(string subKey, RoomThemeAsset theme, RoomThemeDecoSpec spec, bool isWallSpec)
-        {
-            if (!IsEditModeActive || spec == null)
-            {
-                return;
-            }
-
-            RemoveRequiredSubCategoryPlacements(subKey, null);
-
-            if (spec.ThemeSlot == ThemeSlot.Shelf)
-            {
-                BookshelfVisualSkinApplier.TryAttach(spec, theme != null ? theme.AssetId : 0L, themeAssetLoader, "RequiredThemeSpec");
-            }
-            else if (spec.ThemeSlot == ThemeSlot.Dashboard)
-            {
-                if (themeApplier == null)
-                {
-                    themeApplier = FindFirstObjectByType<RoomThemeApplier>();
-                }
-                if (themeApplier != null && themeApplier.RoomRoot != null)
-                {
-                    RestoreCategoryNativeMesh(CustomizationCategory.DashboardSkin, themeApplier.RoomRoot);
-                }
-                DashboardVisualSkinApplier.TryAttach(spec, theme != null ? theme.AssetId : 0L, themeAssetLoader, "RequiredThemeSpec");
-            }
-            else if (isWallSpec)
-            {
-                SpawnThemeWallDecoFromSpec(spec, theme != null ? theme.AssetId : 0L);
-            }
-            else
-            {
-                SpawnThemeFloorDecoFromSpec(spec, theme != null ? theme.AssetId : 0L);
-            }
-
-            SetDirty("RequiredThemeSpec");
-            RebuildInventorySlots();
         }
 
         private CustomizationCatalogAsset LoadCategoryCatalog(CustomizationCategory category)
@@ -2644,7 +2355,7 @@ namespace App.Bootstrap
                     }
                     if (entries.Count > max) assetIds.Append(",...");
                 }
-                App.Core.AppLog.RoomEdit($"[CatalogLoad] category={category} Resources.Load(\"{path}\") → instanceId={loaded.GetInstanceID()} name={loaded.name} entries.Count={(entries?.Count ?? 0)} assetIds=[{assetIds}]");
+                Debug.Log($"[CatalogLoad] category={category} Resources.Load(\"{path}\") → instanceId={loaded.GetInstanceID()} name={loaded.name} entries.Count={(entries?.Count ?? 0)} assetIds=[{assetIds}]");
             }
             else
             {
@@ -2848,7 +2559,7 @@ namespace App.Bootstrap
                 AssetDatabase.SaveAssetIfDirty(catalog);
             }
 
-            App.Core.AppLog.RoomEdit($"[FantasyDesk] DeskCatalog prefab repaired source={source} assetId={entry.AssetId} prefab={fallback.name}");
+            Debug.Log($"[FantasyDesk] DeskCatalog prefab repaired source={source} assetId={entry.AssetId} prefab={fallback.name}");
             return true;
         }
 #else
@@ -2906,7 +2617,7 @@ namespace App.Bootstrap
             var roomRoot = themeApplier != null ? themeApplier.RoomRoot : null;
             if (roomRoot == null)
             {
-                App.Core.AppLog.RoomEdit($"[FantasyDesk] {source} roomRoot=null");
+                Debug.Log($"[FantasyDesk] {source} roomRoot=null");
                 return;
             }
 
@@ -2925,7 +2636,7 @@ namespace App.Bootstrap
                 }
             }
 
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[FantasyDesk] {source} currentTheme={(themeApplier.CurrentTheme != null ? themeApplier.CurrentTheme.name : "null")} " +
                 $"skin={(skin != null ? skin.name : "null")} skinWorldPos={(skin != null ? skin.position.ToString() : "null")} " +
                 $"skinWorldRot={(skin != null ? skin.eulerAngles.ToString() : "null")} skinWorldScale={(skin != null ? skin.lossyScale.ToString() : "null")} " +
@@ -2950,14 +2661,14 @@ namespace App.Bootstrap
             var roomRoot = themeApplier != null ? themeApplier.RoomRoot : null;
             if (roomRoot == null)
             {
-                App.Core.AppLog.RoomEdit($"[VintageDesk] {source} roomRoot=null theme={(theme != null ? theme.DisplayName : "null")}");
+                Debug.Log($"[VintageDesk] {source} roomRoot=null theme={(theme != null ? theme.DisplayName : "null")}");
                 return;
             }
 
             var notebookStation = FindNotebookStation(roomRoot);
             var desk = FindChildByName(roomRoot, "Desk");
             var notebook = FindChildByName(roomRoot, "Notebook");
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[VintageDesk] {source} theme={(theme != null ? theme.DisplayName : "null")} assetId={(theme != null ? theme.AssetId.ToString() : "null")} " +
                 $"notebookStation={(notebookStation != null ? notebookStation.name : "null")} " +
                 $"notebookStationLocalPos={(notebookStation != null ? notebookStation.localPosition.ToString() : "null")} " +
@@ -3035,7 +2746,7 @@ namespace App.Bootstrap
                 }
                 if (restored > 0)
                 {
-                    App.Core.AppLog.RoomEdit($"[RoomEditModeController][CategoryRestore] PlayerPrefs 에서 lastAppliedEntries {restored}개 복원 (앱 재시작 후 visual 유지용).");
+                    Debug.Log($"[RoomEditModeController][CategoryRestore] PlayerPrefs 에서 lastAppliedEntries {restored}개 복원 (앱 재시작 후 visual 유지용).");
                 }
             }
             catch (System.Exception ex)
@@ -3250,7 +2961,7 @@ namespace App.Bootstrap
             // 진단 로그 — "전체 테마" 클릭이 편집 모드/현재 카메라 프리셋과 어떻게 상호작용했는지
             // 이번 wall fade 회귀 버그의 핵심 단서. 적용 흐름은 ShowThemeApplyModeModal → ApplyThemeSelected
             // 거기서 RefreshWallVisibilityAfterMaterialMutation 가 호출됨.
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[RoomEdit][Theme][click] '{theme.DisplayName}' editMode={IsEditModeActive} " +
                 $"preset={(IsEditModeActive ? currentCameraPreset.ToString() : "n/a")} " +
                 $"wallVisibilityCollected={wallVisibilityCollected}");
@@ -3280,7 +2991,7 @@ namespace App.Bootstrap
                 return false;
             }
             InitializeIfNeeded();
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[RoomEditModeController] ApplyExternalThemeSelection enter theme='{theme.DisplayName}' " +
                 $"(assetName={theme.name}, isLocalPreview={theme.IsLocalPreview}) source={source}");
             // 일반 단일 테마 모드 — 이전에 RANDOM 적용 상태였으면 mode/selection 키 정리.
@@ -3302,7 +3013,7 @@ namespace App.Bootstrap
                 return false;
             }
             InitializeIfNeeded();
-            App.Core.AppLog.RoomEdit($"[RoomEditModeController] ApplyExternalThemePreview enter theme='{theme.DisplayName}' source={source} (no persist).");
+            Debug.Log($"[RoomEditModeController] ApplyExternalThemePreview enter theme='{theme.DisplayName}' source={source} (no persist).");
             ApplyThemeSelected(theme, ThemeApplyMode.Reset, persist: false);
             return true;
         }
@@ -3358,7 +3069,7 @@ namespace App.Bootstrap
                 return false;
             }
 
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[RoomEditModeController] ApplyExternalRandomThemeSelection enter " +
                 $"baseTheme='{baseTheme.name}' slots={selection.SelectedSpecs.Count} source={source} " +
                 $"summary=[{selection.BuildSummary()}]");
@@ -3434,7 +3145,7 @@ namespace App.Bootstrap
                     "isLocalPreview=false — PATCH 흐름은 random selection 에서 지원하지 않음. visual 만 적용.");
             }
 
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[RoomEditModeController] Apply random selection OK. slots={selection.SelectedSpecs.Count} " +
                 $"spawned={spawned} baseTheme={baseTheme.name}");
             return true;
@@ -3520,7 +3231,7 @@ namespace App.Bootstrap
 
             // D9(i) 낙관적 적용: 즉시 visual swap → 백엔드 PATCH → 실패 시 rollback.
             previousAppliedTheme = themeApplier.CurrentTheme;
-            App.Core.AppLog.RoomEdit($"[RoomEdit][Theme] ApplyThemeSelected '{theme.DisplayName}' editMode={IsEditModeActive} preset={(IsEditModeActive ? currentCameraPreset.ToString() : "n/a")}");
+            Debug.Log($"[RoomEdit][Theme] ApplyThemeSelected '{theme.DisplayName}' editMode={IsEditModeActive} preset={(IsEditModeActive ? currentCameraPreset.ToString() : "n/a")}");
 
             // [MR 135 review beshu Finding 3 / skh1205 #2] PATCH 실패 시 사용자 placement 가
             // 이미 destroy 된 상태로 남는 데이터 손실 회피 — 기존 placement 를 destroy 하지 않고
@@ -3566,7 +3277,7 @@ namespace App.Bootstrap
             // RoomThemeApplier 는 라이팅만 영향. POST /spaces/me/theme/{id}/apply 는 skip (401/403 회피).
             if (IsLocalPreviewTheme(theme))
             {
-                App.Core.AppLog.RoomEdit($"[RoomEditModeController] Skip PATCH for local preview theme: {theme.DisplayName} (assetId={theme.AssetId}, mode={mode})");
+                Debug.Log($"[RoomEditModeController] Skip PATCH for local preview theme: {theme.DisplayName} (assetId={theme.AssetId}, mode={mode})");
                 DiscardPlacementRollbackHold();
                 return;
             }
@@ -3586,12 +3297,7 @@ namespace App.Bootstrap
                 return;
             }
 
-            long inventoryId;
-            if (IsMockApiMode())
-            {
-                inventoryId = theme.AssetId;
-            }
-            else if (!TryResolveOwnedInventoryIdForAsset(theme.AssetId, out inventoryId))
+            if (!TryResolveOwnedInventoryIdForAsset(theme.AssetId, out var inventoryId))
             {
                 Debug.LogWarning(
                     $"[RoomEditModeController] theme '{theme.DisplayName}' assetId={theme.AssetId} 의 보유 inventoryId를 찾지 못해 " +
@@ -3612,7 +3318,7 @@ namespace App.Bootstrap
                     {
                         return;
                     }
-                    App.Core.AppLog.RoomEdit($"[RoomEditModeController] POST /spaces/me/theme/{inventoryId}/apply OK → mode={mode}, themeReset={themeReset}.");
+                    Debug.Log($"[RoomEditModeController] POST /spaces/me/theme/{inventoryId}/apply OK → mode={mode}, themeReset={themeReset}.");
                     if (themeReset || mode == ThemeApplyMode.Reset)
                     {
                         ApplyThemeResetVisualFallback();
@@ -3673,15 +3379,6 @@ namespace App.Bootstrap
         private void EnsureThemeUseCase()
         {
             if (themeUseCase != null) return;
-            if (IsMockApiMode())
-            {
-                EnsureSpaceSettingsRepository();
-                if (spaceSettingsRepo != null)
-                {
-                    themeUseCase = new ApplyThemeWithModeUseCase(spaceSettingsRepo);
-                }
-                return;
-            }
             var apiManager = APIManager.Instance;
             if (apiManager == null)
             {
@@ -3727,12 +3424,6 @@ namespace App.Bootstrap
 
         private void ProceedCustomizationEntry(CustomizationCategory category, CustomizationEntry entry)
         {
-            var requiredSubKey = ResolveRequiredSubKey(category);
-            if (!string.IsNullOrEmpty(requiredSubKey))
-            {
-                RemoveRequiredSubCategoryPlacements(requiredSubKey, null);
-            }
-
             // visual swap — 카테고리별로 적용 + 강조 상태 갱신
             ApplyEntryVisual(category, entry);
             if (entry.AssetId > 0) lastAppliedEntries[category] = entry.AssetId;
@@ -3747,9 +3438,9 @@ namespace App.Bootstrap
                 if (category == CustomizationCategory.InteriorLight || category == CustomizationCategory.ExteriorLight)
                 {
                     ApplyLocalLightingPreview(category, entry);
-                    App.Core.AppLog.RoomEdit($"[RoomEditModeController] Local preview lighting applied: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
+                    Debug.Log($"[RoomEditModeController] Local preview lighting applied: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
                 }
-                App.Core.AppLog.RoomEdit($"[RoomEditModeController] Skip PATCH for local preview item: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
+                Debug.Log($"[RoomEditModeController] Skip PATCH for local preview item: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
                 return;
             }
 
@@ -3765,27 +3456,20 @@ namespace App.Bootstrap
             long? invId = null;
             if (entry.AssetId > 0)
             {
-                if (IsMockApiMode())
-                {
-                    invId = entry.AssetId;
-                }
-                else if (!TryResolveOwnedInventoryIdForAsset(entry.AssetId, out var resolvedInventoryId))
+                if (!TryResolveOwnedInventoryIdForAsset(entry.AssetId, out var resolvedInventoryId))
                 {
                     Debug.LogWarning(
                         $"[RoomEditModeController] {category}/{entry.DisplayName} assetId={entry.AssetId} 의 보유 inventoryId를 찾지 못해 " +
                         "백엔드 PATCH skip. GET /v1/assets/me/inventory 응답 도착 후 다시 시도하세요.");
                     return;
                 }
-                else
-                {
-                    invId = resolvedInventoryId;
-                }
+                invId = resolvedInventoryId;
             }
 
             Action<bool> onSuccess = themeReset =>
             {
                 if (requestVersion != categoryRequestVersion) return;
-                App.Core.AppLog.RoomEdit($"[RoomEditModeController] PATCH /spaces/me/{category.ToString().ToLower()} OK → invId={invId}, themeReset={themeReset}.");
+                Debug.Log($"[RoomEditModeController] PATCH /spaces/me/{category.ToString().ToLower()} OK → invId={invId}, themeReset={themeReset}.");
                 if (themeReset)
                 {
                     // 커스터마이징 불가 테마 자동 해제 — 두 단계 처리:
@@ -3797,7 +3481,7 @@ namespace App.Bootstrap
                     // race window: ReloadRoomState 응답 도착 전까지 lastServerSpace는 reset 전
                     // 옛 값. 즉시 null invalidate해서 응답 올 때까지 IsCategoryEntryCurrent가
                     // lastAppliedEntries fallback (방금 Clear됨)으로 동작 — stale highlight 회피.
-                    App.Core.AppLog.RoomEdit("[RoomEditModeController] 커스터마이징 불가 테마 자동 해제 → 클라이언트 fallback + 서버 reload.");
+                    Debug.Log("[RoomEditModeController] 커스터마이징 불가 테마 자동 해제 → 클라이언트 fallback + 서버 reload.");
                     ApplyThemeResetVisualFallback();
                     lastServerSpace = null;
                     ReloadRoomState();
@@ -3871,7 +3555,7 @@ namespace App.Bootstrap
 
         {
             if (theme == null) return;
-            App.Core.AppLog.RoomEdit($"[RoomEditModeController] ApplyThemeDefaultEntries 진입 — theme={theme.DisplayName}, defaults={(theme.DefaultEntries?.Count ?? 0)}, floorDecos={(theme.FloorDecoSpecs?.Count ?? 0)}, wallDecos={(theme.WallDecoSpecs?.Count ?? 0)}");
+            Debug.Log($"[RoomEditModeController] ApplyThemeDefaultEntries 진입 — theme={theme.DisplayName}, defaults={(theme.DefaultEntries?.Count ?? 0)}, floorDecos={(theme.FloorDecoSpecs?.Count ?? 0)}, wallDecos={(theme.WallDecoSpecs?.Count ?? 0)}");
 
             // 정책: 테마 적용 = 그 테마 자산만 보이는 상태. 이전 테마가 spawn 한 모든
             // ThemeDeco_* (ThemeSlotMarker 부착) 를 destroy. 사용자 직접 placement
@@ -3922,7 +3606,7 @@ namespace App.Bootstrap
                     TryRepairFantasyDeskPrefabReference(catalog, entry, "ApplyThemeDefaultEntries");
                     if (IsFantasyTheme(theme) && def.Category == CustomizationCategory.Desk)
                     {
-                        App.Core.AppLog.RoomEdit($"[FantasyDesk] ApplyThemeDefaultEntries theme={theme.DisplayName} category={def.Category} assetId={def.AssetId}");
+                        Debug.Log($"[FantasyDesk] ApplyThemeDefaultEntries theme={theme.DisplayName} category={def.Category} assetId={def.AssetId}");
                     }
                     ApplyEntryVisual(def.Category, entry);
                     if (entry.AssetId > 0) lastAppliedEntries[def.Category] = entry.AssetId;
@@ -3996,7 +3680,7 @@ namespace App.Bootstrap
         {
             EnsureDecorationUseCases();
             var items = CollectDecorationLayoutItems(scopeToPlacedItemsRoot: true);
-            App.Core.AppLog.RoomEdit($"[RoomEdit][Theme] Persist reset layout ({reason}) - {items.Count} item(s).");
+            Debug.Log($"[RoomEdit][Theme] Persist reset layout ({reason}) - {items.Count} item(s).");
 
             if (saveDecorationsUseCase == null)
             {
@@ -4056,7 +3740,7 @@ namespace App.Bootstrap
                     preserved++;
                 }
             }
-            App.Core.AppLog.RoomEdit($"[RoomEditModeController][ThemePolicy] '{theme.DisplayName}' incomingSlots=[{string.Join(",", incomingSlots)}] incomingAssetKeys.count={incomingAssetKeys.Count} → removed={removed}, preserved={preserved}.");
+            Debug.Log($"[RoomEditModeController][ThemePolicy] '{theme.DisplayName}' incomingSlots=[{string.Join(",", incomingSlots)}] incomingAssetKeys.count={incomingAssetKeys.Count} → removed={removed}, preserved={preserved}.");
 
             // ThemeSlot.Shelf 는 placedItemsRoot 가 아닌 BookshelfRoot 자식 (visual skin) 으로
             // 산다 — 위 loop 에서 정리되지 않는다. incoming 에 Shelf 슬롯이 있으면 TryAttach 가
@@ -4405,7 +4089,7 @@ namespace App.Bootstrap
             }
             if (removed > 0)
             {
-                App.Core.AppLog.RoomEdit(
+                Debug.Log(
                     $"[RoomEditModeController][ThemePolicy] RemoveDecosWithMismatchedThemePrefix " +
                     $"theme={theme?.name} currentPrefix='{currentPrefix}' inspected={inspected} removed={removed}.");
             }
@@ -4428,7 +4112,7 @@ namespace App.Bootstrap
             }
             if (removed > 0)
             {
-                App.Core.AppLog.RoomEdit($"[RoomEditModeController] ClearAllThemeSpawnedDecos — destroyed {removed} theme-spawned decos.");
+                Debug.Log($"[RoomEditModeController] ClearAllThemeSpawnedDecos — destroyed {removed} theme-spawned decos.");
             }
         }
 
@@ -4457,7 +4141,7 @@ namespace App.Bootstrap
                 else DestroyImmediate(child);
                 removed++;
             }
-            App.Core.AppLog.RoomEdit($"[RoomEditModeController][ThemePolicy] RemoveSpawnedThemeDecos themeId={themeId} → removed={removed}");
+            Debug.Log($"[RoomEditModeController][ThemePolicy] RemoveSpawnedThemeDecos themeId={themeId} → removed={removed}");
         }
 
         // 테마 변경 시 placedItemsRoot 자식 모두 destroy — 이전 테마 spawn + 사용자 직접
@@ -4468,7 +4152,6 @@ namespace App.Bootstrap
         {
             if (placedItemsRoot == null) return;
             placedByInventoryKey.Clear();
-            var destroyedCount = 0;
             for (int i = placedItemsRoot.transform.childCount - 1; i >= 0; i--)
             {
                 var child = placedItemsRoot.transform.GetChild(i).gameObject;
@@ -4476,36 +4159,7 @@ namespace App.Bootstrap
                 if (draggingObject == child) draggingObject = null;
                 if (UnityEngine.Application.isPlaying) Destroy(child);
                 else DestroyImmediate(child);
-                destroyedCount++;
             }
-
-            if (destroyedCount > 0)
-            {
-                RequestUnusedAssetRelease();
-            }
-        }
-
-        private void RequestUnusedAssetRelease()
-        {
-            if (!UnityEngine.Application.isPlaying || !isActiveAndEnabled)
-            {
-                return;
-            }
-
-            if (releaseUnusedAssetsRoutine != null)
-            {
-                StopCoroutine(releaseUnusedAssetsRoutine);
-            }
-
-            releaseUnusedAssetsRoutine = StartCoroutine(ReleaseUnusedAssetsAfterFrame());
-        }
-
-        private IEnumerator ReleaseUnusedAssetsAfterFrame()
-        {
-            yield return null;
-            yield return new WaitForSecondsRealtime(0.35f);
-            yield return Resources.UnloadUnusedAssets();
-            releaseUnusedAssetsRoutine = null;
         }
 
         // [MR 135 review beshu Finding 3 / skh1205 #2] PATCH 실패 시 placement 복구용 hold root.
@@ -4571,7 +4225,7 @@ namespace App.Bootstrap
                 child.SetParent(placementRollbackHoldRoot.transform, true); // worldPositionStays=true
                 detached++;
             }
-            App.Core.AppLog.RoomEdit($"[RoomEditModeController][ThemePolicy] DetachPlacementForRollback '{incomingTheme?.DisplayName}' — detached(replace target)={detached}, preserved(user)={preserved}");
+            Debug.Log($"[RoomEditModeController][ThemePolicy] DetachPlacementForRollback '{incomingTheme?.DisplayName}' — detached(replace target)={detached}, preserved(user)={preserved}");
         }
 
         // PATCH 성공 또는 visual 유지 (network failure) 경로 — hold root + 자식 모두 destroy.
@@ -4623,7 +4277,7 @@ namespace App.Bootstrap
             }
 
             var prefabName = spec.Prefab != null ? spec.Prefab.name : "null";
-            App.Core.AppLog.RoomEdit($"[SpawnThemeFloorDecoFromSpec] enter themeId={themeId} assetKey={spec.AssetKey} themeSlot={spec.ThemeSlot} prefab={prefabName} localPosition={spec.LocalPosition} localScale={spec.LocalScale} anchorTag={spec.AnchorTag}");
+            Debug.Log($"[SpawnThemeFloorDecoFromSpec] enter themeId={themeId} assetKey={spec.AssetKey} themeSlot={spec.ThemeSlot} prefab={prefabName} localPosition={spec.LocalPosition} localScale={spec.LocalScale} anchorTag={spec.AnchorTag}");
 
             // misclassification heuristic — spec.ThemeSlot 가 None 인데 assetKey 에 shelf/dashboard
             // 가 들어가면 디자이너가 ThemeSlot 빠뜨린 회귀일 가능성 큼. 일반 placedItemsRoot 로
@@ -4657,9 +4311,9 @@ namespace App.Bootstrap
             // 게 정책상 맞음 (떠있는 일반 deco 로 나타나면 안 됨).
             if (spec.ThemeSlot == ThemeSlot.Shelf)
             {
-                App.Core.AppLog.RoomEdit($"[SpawnThemeFloorDecoFromSpec] branch=Shelf → BookshelfVisualSkinApplier.TryAttach assetKey={spec.AssetKey}");
+                Debug.Log($"[SpawnThemeFloorDecoFromSpec] branch=Shelf → BookshelfVisualSkinApplier.TryAttach assetKey={spec.AssetKey}");
                 bool attached = BookshelfVisualSkinApplier.TryAttach(spec, themeId, themeAssetLoader, "SpawnThemeFloorDecoFromSpec");
-                App.Core.AppLog.RoomEdit($"[SpawnThemeFloorDecoFromSpec] branch=Shelf TryAttach result={attached} — 정책상 placedItemsRoot 경로 진입 안 함.");
+                Debug.Log($"[SpawnThemeFloorDecoFromSpec] branch=Shelf TryAttach result={attached} — 정책상 placedItemsRoot 경로 진입 안 함.");
                 return;
             }
 
@@ -4670,13 +4324,13 @@ namespace App.Bootstrap
             // UIDocument/Collider/raycast 모두 보존 (skin 의 collider 는 disable).
             if (spec.ThemeSlot == ThemeSlot.Dashboard)
             {
-                App.Core.AppLog.RoomEdit($"[SpawnThemeFloorDecoFromSpec] branch=Dashboard → DashboardVisualSkinApplier.TryAttach assetKey={spec.AssetKey}");
+                Debug.Log($"[SpawnThemeFloorDecoFromSpec] branch=Dashboard → DashboardVisualSkinApplier.TryAttach assetKey={spec.AssetKey}");
                 bool attached = DashboardVisualSkinApplier.TryAttach(spec, themeId, themeAssetLoader, "SpawnThemeFloorDecoFromSpec");
-                App.Core.AppLog.RoomEdit($"[SpawnThemeFloorDecoFromSpec] branch=Dashboard TryAttach result={attached} — placedItemsRoot 경로 진입 안 함.");
+                Debug.Log($"[SpawnThemeFloorDecoFromSpec] branch=Dashboard TryAttach result={attached} — placedItemsRoot 경로 진입 안 함.");
                 return;
             }
 
-            App.Core.AppLog.RoomEdit($"[SpawnThemeFloorDecoFromSpec] branch=GeneralFloorPlacement (themeSlot={spec.ThemeSlot}) → placedItemsRoot 자식으로 spawn.");
+            Debug.Log($"[SpawnThemeFloorDecoFromSpec] branch=GeneralFloorPlacement (themeSlot={spec.ThemeSlot}) → placedItemsRoot 자식으로 spawn.");
 
             var prefab = themeAssetLoader.Resolve(spec);
             if (prefab == null)
@@ -5014,10 +4668,10 @@ namespace App.Bootstrap
         // 매칭 패턴은 RoomGameObjectPatterns로 통합(RoomThemeApplier와 동일).
         private void ApplyEntryVisual(CustomizationCategory category, CustomizationEntry entry)
         {
-            App.Core.AppLog.RoomEdit($"[ApplyEntryVisual] enter category={category} entry.AssetId={(entry != null ? entry.AssetId : -1)} entry.Prefab={(entry != null && entry.Prefab != null ? entry.Prefab.name : "null")} isMeshSwap={IsMeshSwapCategory(category)}");
+            Debug.Log($"[ApplyEntryVisual] enter category={category} entry.AssetId={(entry != null ? entry.AssetId : -1)} entry.Prefab={(entry != null && entry.Prefab != null ? entry.Prefab.name : "null")} isMeshSwap={IsMeshSwapCategory(category)}");
             if (category == CustomizationCategory.Desk && IsFantasyDeskEntry(entry))
             {
-                App.Core.AppLog.RoomEdit($"[FantasyDesk] ApplyEntryVisual category={category} assetId={entry.AssetId} prefab={(entry.Prefab != null ? entry.Prefab.name : "null")}");
+                Debug.Log($"[FantasyDesk] ApplyEntryVisual category={category} assetId={entry.AssetId} prefab={(entry.Prefab != null ? entry.Prefab.name : "null")}");
             }
             WarnMissingDeskPrefab(category, entry, "ApplyEntryVisual");
 
@@ -5028,7 +4682,7 @@ namespace App.Bootstrap
             // Reimport 필요. 같으면 → DeskVisualSkinApplier / NotebookPlacement 다른 곳에서 덮어쓰기.
             if (category == CustomizationCategory.Desk && entry != null)
             {
-                App.Core.AppLog.RoomEdit($"[DeskEntryDump] assetId={entry.AssetId} themeTag={entry.ThemeTag} prefab={(entry.Prefab != null ? entry.Prefab.name : "null")} " +
+                Debug.Log($"[DeskEntryDump] assetId={entry.AssetId} themeTag={entry.ThemeTag} prefab={(entry.Prefab != null ? entry.Prefab.name : "null")} " +
                           $"placementAnchor={entry.PlacementAnchor} placementRotation={entry.PlacementRotation} placementScale={entry.PlacementScale} " +
                           $"overrideNotebookStation={entry.OverrideNotebookStation} lockNotebookStationToMonitor={entry.LockNotebookStationToMonitor} " +
                           $"notebookStationPosition={entry.NotebookStationPosition} notebookStationRotation={entry.NotebookStationRotation} notebookStationScale={entry.NotebookStationScale} " +
@@ -5155,7 +4809,7 @@ namespace App.Bootstrap
             {
                 if (IsFantasyDeskEntry(entry))
                 {
-                    App.Core.AppLog.RoomEdit($"[FantasyDesk] ApplyCategoryMeshSwap category={category} prefab={(entry.Prefab != null ? entry.Prefab.name : "null")} assetId={entry.AssetId}");
+                    Debug.Log($"[FantasyDesk] ApplyCategoryMeshSwap category={category} prefab={(entry.Prefab != null ? entry.Prefab.name : "null")} assetId={entry.AssetId}");
                     if (entry.Prefab == null)
                     {
                         Debug.LogWarning($"[FantasyDesk] ApplyCategoryMeshSwap aborted category={category} assetId={entry.AssetId} reason=prefab_null");
@@ -5175,7 +4829,7 @@ namespace App.Bootstrap
 
                 if (entry.MonitorPrefab != null)
                 {
-                    App.Core.AppLog.RoomEdit($"[MonitorScreen] Apply monitor skin theme={entry.ThemeTag} prefab={entry.MonitorPrefab.name}");
+                    Debug.Log($"[MonitorScreen] Apply monitor skin theme={entry.ThemeTag} prefab={entry.MonitorPrefab.name}");
                 }
 
                 DeskVisualSkinApplier.TryAttach(entry, roomRoot, "ApplyCategoryMeshSwap");
@@ -5301,7 +4955,7 @@ namespace App.Bootstrap
                 var monitor = ApplyMonitorMeshSwap(roomRoot, entry);
                 ApplyNotebookStationPlacement(roomRoot, entry, monitor);
 
-                App.Core.AppLog.RoomEdit($"[DeskMeshSwap] themeId={entry.AssetId} assetKey={(entry.Prefab != null ? entry.Prefab.name : "null")} meshSwapObject={go.name} nativeRendererHidden={nativeRendererHidden} notebookPreserved=true(preservedRenderers={notebookRenderersPreserved}) placementAnchor={entry.PlacementAnchor} placementScale={entry.PlacementScale}");
+                Debug.Log($"[DeskMeshSwap] themeId={entry.AssetId} assetKey={(entry.Prefab != null ? entry.Prefab.name : "null")} meshSwapObject={go.name} nativeRendererHidden={nativeRendererHidden} notebookPreserved=true(preservedRenderers={notebookRenderersPreserved}) placementAnchor={entry.PlacementAnchor} placementScale={entry.PlacementScale}");
             }
             else if (category == CustomizationCategory.DashboardSkin)
             {
@@ -5433,7 +5087,7 @@ namespace App.Bootstrap
             var meshSwapGo = FindChildByName(roomRoot, $"MeshSwap_{CustomizationCategory.Desk}");
             var deskBounds = meshSwapGo != null ? ComputeRendererBounds(meshSwapGo.gameObject) : null;
             var notebookBounds = ComputeRendererBounds(notebookStation.gameObject);
-            App.Core.AppLog.RoomEdit($"[NotebookPlacement] notebookStationPosition={notebookStation.localPosition} notebookStationRotation={notebookStation.localEulerAngles} notebookStationScale={notebookStation.localScale} finalNotebookWorldPosition={notebookStation.position} deskBounds={(deskBounds.HasValue ? deskBounds.Value.ToString() : "null")} notebookBounds={(notebookBounds.HasValue ? notebookBounds.Value.ToString() : "null")}");
+            Debug.Log($"[NotebookPlacement] notebookStationPosition={notebookStation.localPosition} notebookStationRotation={notebookStation.localEulerAngles} notebookStationScale={notebookStation.localScale} finalNotebookWorldPosition={notebookStation.position} deskBounds={(deskBounds.HasValue ? deskBounds.Value.ToString() : "null")} notebookBounds={(notebookBounds.HasValue ? notebookBounds.Value.ToString() : "null")}");
         }
 
         private static bool ShouldLockNotebookStationToMonitor(CustomizationEntry entry)
@@ -5518,11 +5172,11 @@ namespace App.Bootstrap
             if (themeApplier == null || themeApplier.RoomRoot == null) return;
             if (IsVintageTheme(themeApplier.CurrentTheme))
             {
-                App.Core.AppLog.RoomEdit($"[VintageDesk] ReapplyActiveDeskOverlayAfterFocusTransition skipped source={source} theme={(themeApplier.CurrentTheme != null ? themeApplier.CurrentTheme.DisplayName : "null")}");
+                Debug.Log($"[VintageDesk] ReapplyActiveDeskOverlayAfterFocusTransition skipped source={source} theme={(themeApplier.CurrentTheme != null ? themeApplier.CurrentTheme.DisplayName : "null")}");
                 return;
             }
             ReapplyActiveDeskOverlay(themeApplier.RoomRoot);
-            App.Core.AppLog.RoomEdit($"[MonitorScreen] Reapply screensaver canvas transform after focus return source={source}");
+            Debug.Log($"[MonitorScreen] Reapply screensaver canvas transform after focus return source={source}");
         }
 
         private static Transform FindChildByName(Transform root, string name)
@@ -5736,7 +5390,7 @@ namespace App.Bootstrap
 
             if (category == CustomizationCategory.Desk)
             {
-                App.Core.AppLog.RoomEdit($"[DeskMeshSwapRestore] themeId=- meshSwapRestored={wasDeskMeshSwapPresent} notebookTransformRestored={notebookTransformRestored}");
+                Debug.Log($"[DeskMeshSwapRestore] themeId=- meshSwapRestored={wasDeskMeshSwapPresent} notebookTransformRestored={notebookTransformRestored}");
             }
         }
 
@@ -5872,11 +5526,6 @@ namespace App.Bootstrap
         private void EnsureSpaceSettingsRepository()
         {
             if (spaceSettingsRepo != null) return;
-            if (IsMockApiMode())
-            {
-                spaceSettingsRepo = new MockSpaceSettingsRepository();
-                return;
-            }
             var apiManager = APIManager.Instance;
             if (apiManager == null) return;
             try
@@ -5891,33 +5540,6 @@ namespace App.Bootstrap
             }
         }
 
-        private static AppApiConfig ResolveAppApiConfig()
-        {
-            var appRoot = FindFirstObjectByType<AppRoot>();
-            if (appRoot != null && appRoot.ApiConfig != null)
-            {
-                return appRoot.ApiConfig;
-            }
-
-            var configLoader = FindFirstObjectByType<ConfigLoader>();
-            if (configLoader != null && configLoader.ApiConfig != null)
-            {
-                return configLoader.ApiConfig;
-            }
-
-#if UNITY_EDITOR
-            return AssetDatabase.LoadAssetAtPath<AppApiConfig>("Assets/App/Config/AppApiConfig.asset");
-#else
-            return null;
-#endif
-        }
-
-        private static bool IsMockApiMode()
-        {
-            var config = ResolveAppApiConfig();
-            return config != null && config.UsesMockApi;
-        }
-
         // Server Space 상태로 룸 visual 재동기화. themeReset 응답 후 / 테마 적용 응답 후 호출.
         // GET /v1/spaces/me → 6 카테고리 ID 읽기 → catalog에서 entry 찾아 visual 재적용 + lastAppliedEntries 갱신.
         // 책장 skin / Layout placement 재 spawn은 follow-up (RoomThemeApplier 설치 spec list 합류 시점).
@@ -5928,13 +5550,6 @@ namespace App.Bootstrap
         // GET 결과 무시 + lastServerSpace는 다음 PATCH의 OptimisticallyUpdateServerSpace에 의존.
         private void ReloadRoomState(Action onComplete = null)
         {
-            if (IsMockApiMode())
-            {
-                App.Core.AppLog.RoomEdit("[RoomEditModeController] MockApi mode — GET /spaces/me reload skip.");
-                onComplete?.Invoke();
-                return;
-            }
-
             var apiManager = APIManager.Instance;
             if (apiManager == null)
             {
@@ -5962,7 +5577,7 @@ namespace App.Bootstrap
                 {
                     if (categoryRequestVersion != capturedCategoryVersion)
                     {
-                        App.Core.AppLog.RoomEdit("[RoomEditModeController] stale GET /spaces/me 응답 — 이후 PATCH 발생으로 무시.");
+                        Debug.Log("[RoomEditModeController] stale GET /spaces/me 응답 — 이후 PATCH 발생으로 무시.");
                         onComplete?.Invoke();
                         return;
                     }
@@ -6005,10 +5620,9 @@ namespace App.Bootstrap
             //   (b) 풀 로그인 직후 (client.CurrentTheme = null) PlayerPrefs 에 마지막 local-preview
             //       이름이 저장돼 있으면 그 테마를 복원 적용 → wall/floor 자동 복원
             // 사용자가 명시적으로 다른 테마를 클릭하면 그 경로에서 정상 갱신 (PersistLastAppliedLocalPreviewTheme 갱신).
-            if (!IsReadOnlySpacePreview &&
-                TryResolveProtectedFantasyLocalPreviewTheme(out var protectedFantasyTheme, out var protectedFantasySource))
+            if (TryResolveProtectedFantasyLocalPreviewTheme(out var protectedFantasyTheme, out var protectedFantasySource))
             {
-                App.Core.AppLog.RoomEdit(
+                Debug.Log(
                     $"[FantasyDesk] ApplySpaceVisualsToRoom protecting local-preview fantasy source={protectedFantasySource} " +
                     $"serverThemeId={space.CurrentThemeInventoryId?.ToString() ?? "null"} serverDeskId={space.CurrentDeskInventoryId?.ToString() ?? "null"}");
                 if (themeApplier != null && themeApplier.CurrentTheme != protectedFantasyTheme)
@@ -6024,7 +5638,7 @@ namespace App.Bootstrap
 
             bool serverHasNoTheme = !space.CurrentThemeInventoryId.HasValue || space.CurrentThemeInventoryId.Value <= 0;
             bool clientHasLocalPreviewTheme = themeApplier != null && IsLocalPreviewTheme(themeApplier.CurrentTheme);
-            if (!IsReadOnlySpacePreview && serverHasNoTheme && clientHasLocalPreviewTheme)
+            if (serverHasNoTheme && clientHasLocalPreviewTheme)
             {
                 themeApplier.Apply(themeApplier.CurrentTheme);
                 RefreshWallVisibilityAfterMaterialMutation("ApplySpaceVisualsToRoom.reapplyCurrentLocalPreview");
@@ -6032,7 +5646,7 @@ namespace App.Bootstrap
                 RebuildInventorySlots();
                 return;
             }
-            if (!IsReadOnlySpacePreview && serverHasNoTheme && themeApplier != null)
+            if (serverHasNoTheme && themeApplier != null)
             {
                 // (b) 풀 로그인 직후 client.CurrentTheme 은 보통 null/Default. PlayerPrefs 에 마지막
                 //     local-preview 이름이 있으면 그 테마로 복원해 wall/floor 가 다음 세션에도 유지.
@@ -6086,7 +5700,7 @@ namespace App.Bootstrap
             // server-saved 카테고리 (있다면) 가 default 위에 덮어쓰도록.
             if (themeChanged && resolvedTheme != null)
             {
-                ApplyThemeDefaultEntries(resolvedTheme, persistEntries: !IsReadOnlySpacePreview);
+                ApplyThemeDefaultEntries(resolvedTheme);
             }
 
             ApplyCategoryById(CustomizationCategory.Wallpaper, space.CurrentWallpaperInventoryId);
@@ -6098,7 +5712,7 @@ namespace App.Bootstrap
             RebuildInventorySlots();
             if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
             {
-                App.Core.AppLog.RoomEdit(
+                Debug.Log(
                     $"[FantasyDesk] ApplySpaceVisualsToRoom.afterServerCategories theme={themeApplier.CurrentTheme.DisplayName} " +
                     $"serverDeskId={space.CurrentDeskInventoryId?.ToString() ?? "null"}");
                 LogFantasyDeskHierarchyState("ApplySpaceVisualsToRoom.afterServerCategories");
@@ -6113,7 +5727,7 @@ namespace App.Bootstrap
                 themeApplier != null &&
                 IsFantasyTheme(themeApplier.CurrentTheme))
             {
-                App.Core.AppLog.RoomEdit($"[FantasyDesk] ApplyCategoryById category=Desk inventoryId={inventoryId?.ToString() ?? "null"}");
+                Debug.Log($"[FantasyDesk] ApplyCategoryById category=Desk inventoryId={inventoryId?.ToString() ?? "null"}");
             }
 
             CustomizationEntry entry = null;
@@ -6170,7 +5784,7 @@ namespace App.Bootstrap
             // 가드가 있음 — 본 분기는 그 패턴을 wallpaper / floor / lights 에 확장.
             if (entry == null && lastAppliedEntries.ContainsKey(category))
             {
-                App.Core.AppLog.RoomEdit($"[RoomEditModeController][CategoryRestore] {category}: server inventoryId 없음 + 로컬 적용 흔적 (assetId={lastAppliedEntries[category]}) → Entries[0] fallback skip, 현재 visual 유지.");
+                Debug.Log($"[RoomEditModeController][CategoryRestore] {category}: server inventoryId 없음 + 로컬 적용 흔적 (assetId={lastAppliedEntries[category]}) → Entries[0] fallback skip, 현재 visual 유지.");
                 return;
             }
             if (entry == null && catalog.Entries.Count > 0)
@@ -6197,195 +5811,12 @@ namespace App.Bootstrap
             }
 
             ApplyEntryVisual(category, entry);
-            if (!IsReadOnlySpacePreview)
-            {
-                if (entry.AssetId > 0) lastAppliedEntries[category] = entry.AssetId;
-                else lastAppliedEntries.Remove(category);
-                PersistLastAppliedEntries();
-            }
+            if (entry.AssetId > 0) lastAppliedEntries[category] = entry.AssetId;
+            else lastAppliedEntries.Remove(category);
+            PersistLastAppliedEntries();
         }
 
-        private void BuildBookshelfStyleSlots(Transform parent)
-        {
-            for (var i = 0; i < BookshelfStyleItems.Length; i++)
-            {
-                BuildBookshelfStyleSlot(parent, i, BookshelfStyleItems[i].Style, BookshelfStyleItems[i].Label);
-            }
-        }
-
-        private void BuildBookshelfStyleSlot(Transform parent, int slotIndex, BookshelfThemeStyle style, string label)
-        {
-            var isActive = ResolveActiveBookshelfStyle() == style;
-            var canUse = CanUseBookshelfStyle(style);
-
-            var slot = CreateImage(parent, $"BookshelfStyleSlot_{slotIndex}", isActive ? WithAlpha(PrimaryColor, 0.14f) : CardColor);
-            slot.sprite = roundedRectSprite;
-            slot.type = Image.Type.Sliced;
-            var rect = slot.rectTransform;
-            rect.sizeDelta = new Vector2(118f, 128f);
-
-            var layout = slot.gameObject.AddComponent<LayoutElement>();
-            layout.minWidth = 118f;
-            layout.preferredWidth = 118f;
-            layout.minHeight = 128f;
-            layout.preferredHeight = 128f;
-
-            var outline = slot.gameObject.AddComponent<Outline>();
-            outline.effectColor = isActive ? WithAlpha(PrimaryColor, 0.95f) : WithAlpha(BorderColor, 0.9f);
-            outline.effectDistance = new Vector2(1f, -1f);
-
-            var thumb = CreateImage(slot.transform, "Thumb", ResolveBookshelfStylePreviewColor(style));
-            thumb.sprite = roundedRectSprite;
-            thumb.type = Image.Type.Sliced;
-            var thumbRect = thumb.rectTransform;
-            thumbRect.anchorMin = new Vector2(0.5f, 1f);
-            thumbRect.anchorMax = new Vector2(0.5f, 1f);
-            thumbRect.pivot = new Vector2(0.5f, 1f);
-            thumbRect.sizeDelta = new Vector2(84f, 64f);
-            thumbRect.anchoredPosition = new Vector2(0f, -10f);
-
-            var glyph = CreateText(thumb.transform, "Glyph", "책", 26f, FontStyles.Bold, Color.white, TextAlignmentOptions.Center);
-            StretchToParent(glyph.rectTransform);
-
-            var labelText = CreateText(slot.transform, "Label", label, 12f, FontStyles.Bold, TextColor, TextAlignmentOptions.Center);
-            labelText.overflowMode = TextOverflowModes.Ellipsis;
-            var labelRect = labelText.rectTransform;
-            labelRect.anchorMin = new Vector2(0f, 0f);
-            labelRect.anchorMax = new Vector2(1f, 0f);
-            labelRect.pivot = new Vector2(0.5f, 0f);
-            labelRect.sizeDelta = new Vector2(-8f, 32f);
-            labelRect.anchoredPosition = new Vector2(0f, 22f);
-
-            var stateText = CreateText(slot.transform, "State", isActive ? "적용됨" : (canUse ? "보유" : "저장 불가"), 10f, FontStyles.Bold,
-                isActive ? PrimaryColor : MutedTextColor, TextAlignmentOptions.Center);
-            var stateRect = stateText.rectTransform;
-            stateRect.anchorMin = new Vector2(0f, 0f);
-            stateRect.anchorMax = new Vector2(1f, 0f);
-            stateRect.pivot = new Vector2(0.5f, 0f);
-            stateRect.sizeDelta = new Vector2(-8f, 16f);
-            stateRect.anchoredPosition = new Vector2(0f, 6f);
-
-            var button = slot.gameObject.AddComponent<Button>();
-            button.targetGraphic = slot;
-            button.interactable = canUse && !IsReadOnlySpacePreview;
-            button.onClick.AddListener(() => ApplyBookshelfStyleSelection(style));
-
-            if (!button.interactable && !isActive)
-            {
-                slot.color = WithAlpha(CardColor, 0.55f);
-                thumb.color = WithAlpha(thumb.color, 0.5f);
-                glyph.color = WithAlpha(Color.white, 0.55f);
-                labelText.color = WithAlpha(TextColor, 0.55f);
-                stateText.color = WithAlpha(MutedTextColor, 0.65f);
-            }
-        }
-
-        private BookshelfThemeStyle ResolveActiveBookshelfStyle()
-        {
-            var generator = FindFirstObjectByType<BookshelfGenerator>(FindObjectsInactive.Include);
-            return generator != null
-                ? generator.GetBookshelfDesignStyle(generator.ActiveBookshelfIndex)
-                : BookshelfThemeStyle.Default;
-        }
-
-        private static bool CanUseBookshelfStyle(BookshelfThemeStyle style)
-        {
-            return IsMockApiMode() || style == BookshelfThemeStyle.Default || BookshelfSkinResolver.HasResolvableInventoryId(style);
-        }
-
-        private void ApplyBookshelfStyleSelection(BookshelfThemeStyle style)
-        {
-            if (IsReadOnlySpacePreview)
-            {
-                return;
-            }
-
-            var generator = FindFirstObjectByType<BookshelfGenerator>(FindObjectsInactive.Include);
-            if (generator == null)
-            {
-                Debug.LogWarning("[RoomEditModeController] BookshelfGenerator not found; bookshelf style apply skipped.");
-                return;
-            }
-
-            var activeIndex = generator.ActiveBookshelfIndex;
-            var previousStyle = generator.GetBookshelfDesignStyle(activeIndex);
-            if (!generator.SetActiveBookshelfDesignStyle(style))
-            {
-                return;
-            }
-
-            RebuildInventorySlots();
-
-            if (IsMockApiMode())
-            {
-                RemoveRequiredSubCategoryPlacements("BOOKSHELF_SKIN", null);
-                SetDirty("BookshelfStyleMock");
-                RebuildInventorySlots();
-                return;
-            }
-
-            var apiSync = FindFirstObjectByType<BookshelfApiSyncController>(FindObjectsInactive.Include);
-            if (apiSync == null || !apiSync.IsServerSyncEnabled)
-            {
-                if (previousStyle != style)
-                {
-                    generator.SetActiveBookshelfDesignStyle(previousStyle);
-                }
-                Debug.LogWarning("[RoomEditModeController] Bookshelf style apply reverted because server sync is not ready.");
-                RebuildInventorySlots();
-                return;
-            }
-
-            RemoveRequiredSubCategoryPlacements("BOOKSHELF_SKIN", null);
-
-            if (!apiSync.UpdateBookshelf(
-                    activeIndex,
-                    onSucceeded: () =>
-                    {
-                        App.Core.AppLog.RoomEdit($"[RoomEditModeController] Bookshelf style persisted: index={activeIndex}, style={style}.");
-                        RebuildInventorySlots();
-                    },
-                    onFailed: message =>
-                    {
-                        if (generator.GetBookshelfDesignStyle(activeIndex) == style && previousStyle != style)
-                        {
-                            generator.SetActiveBookshelfDesignStyle(previousStyle);
-                        }
-                        Debug.LogWarning($"[RoomEditModeController] Bookshelf style persist failed: {message}");
-                        RebuildInventorySlots();
-                    }))
-            {
-                if (previousStyle != style)
-                {
-                    generator.SetActiveBookshelfDesignStyle(previousStyle);
-                }
-                Debug.LogWarning("[RoomEditModeController] Bookshelf style apply reverted because bookshelf server id is not ready.");
-                RebuildInventorySlots();
-            }
-        }
-
-        private static Color ResolveBookshelfStylePreviewColor(BookshelfThemeStyle style)
-        {
-            switch (style)
-            {
-                case BookshelfThemeStyle.Warm:
-                    return Hex("#A38069");
-                case BookshelfThemeStyle.DeepSea:
-                    return Hex("#3C5067");
-                case BookshelfThemeStyle.Vintage:
-                    return Hex("#8A6B54");
-                case BookshelfThemeStyle.Fantasy:
-                    return Hex("#7D6BC3");
-                case BookshelfThemeStyle.Space:
-                    return Hex("#2B5C8A");
-                case BookshelfThemeStyle.Spooky:
-                    return Hex("#4D2E46");
-                default:
-                    return Hex("#D6C4AD");
-            }
-        }
-
-        private void BuildInventorySlot(Transform parent, int slotIndex, InventoryEntry entry, Action<InventoryEntry> onSelected = null)
+        private void BuildInventorySlot(Transform parent, int slotIndex, InventoryEntry entry)
         {
             var slot = CreateImage(parent, $"InventorySlot_{slotIndex}", CardColor);
             slot.sprite = roundedRectSprite;
@@ -6437,7 +5868,7 @@ namespace App.Bootstrap
             var button = slot.gameObject.AddComponent<Button>();
             button.targetGraphic = slot;
             var capturedEntry = entry;
-            button.onClick.AddListener(() => (onSelected ?? PlaceInventoryEntry).Invoke(capturedEntry));
+            button.onClick.AddListener(() => PlaceInventoryEntry(capturedEntry));
 
             // 동일 inventoryKey 가 이미 배치되어 있으면 슬롯 자체를 비활성 + "배치됨" 오버레이로 가린다.
             // 삭제하면 RebuildInventorySlots 가 다시 돌면서 자동 복구된다.
@@ -6488,7 +5919,6 @@ namespace App.Bootstrap
             var normalizedUrl = url.Trim();
             if (inventoryPreviewSpriteCache.TryGetValue(normalizedUrl, out var cached) && cached != null)
             {
-                TouchInventoryPreviewSpriteCacheKey(normalizedUrl);
                 ApplyInventoryPreview(thumb, glyph, cached);
                 return;
             }
@@ -6498,9 +5928,8 @@ namespace App.Bootstrap
 
         private IEnumerator LoadInventoryPreviewCoroutine(string url, Image thumb, TMP_Text glyph)
         {
-            using (var request = UnityEngine.Networking.UnityWebRequestTexture.GetTexture(url, true))
+            using (var request = UnityEngine.Networking.UnityWebRequestTexture.GetTexture(url))
             {
-                request.timeout = 8;
                 yield return request.SendWebRequest();
                 if (request.result != UnityEngine.Networking.UnityWebRequest.Result.Success)
                 {
@@ -6520,107 +5949,11 @@ namespace App.Bootstrap
                     new Rect(0f, 0f, texture.width, texture.height),
                     new Vector2(0.5f, 0.5f),
                     100f);
-                sprite = CacheInventoryPreviewSprite(url, sprite);
+                inventoryPreviewSpriteCache[url] = sprite;
                 if (thumb != null)
                 {
                     ApplyInventoryPreview(thumb, glyph, sprite);
                 }
-            }
-        }
-
-        private Sprite CacheInventoryPreviewSprite(string url, Sprite sprite)
-        {
-            if (string.IsNullOrWhiteSpace(url) || sprite == null)
-            {
-                return sprite;
-            }
-
-            if (inventoryPreviewSpriteCache.TryGetValue(url, out var previous) && previous != null)
-            {
-                if (previous != sprite)
-                {
-                    DestroyInventoryPreviewSprite(sprite);
-                }
-
-                TouchInventoryPreviewSpriteCacheKey(url);
-                return previous;
-            }
-
-            inventoryPreviewSpriteCache[url] = sprite;
-            TouchInventoryPreviewSpriteCacheKey(url);
-            TrimInventoryPreviewSpriteCache();
-            return sprite;
-        }
-
-        private void TouchInventoryPreviewSpriteCacheKey(string url)
-        {
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                return;
-            }
-
-            if (inventoryPreviewSpriteCacheNodes.TryGetValue(url, out var node))
-            {
-                inventoryPreviewSpriteCacheOrder.Remove(node);
-                inventoryPreviewSpriteCacheOrder.AddLast(node);
-                return;
-            }
-
-            inventoryPreviewSpriteCacheNodes[url] = inventoryPreviewSpriteCacheOrder.AddLast(url);
-        }
-
-        private void TrimInventoryPreviewSpriteCache()
-        {
-            while (inventoryPreviewSpriteCache.Count > MaxInventoryPreviewSpriteCacheCount && inventoryPreviewSpriteCacheOrder.First != null)
-            {
-                RemoveInventoryPreviewSpriteCacheEntry(inventoryPreviewSpriteCacheOrder.First.Value);
-            }
-        }
-
-        private void RemoveInventoryPreviewSpriteCacheEntry(string url)
-        {
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                return;
-            }
-
-            if (inventoryPreviewSpriteCache.TryGetValue(url, out var sprite))
-            {
-                DestroyInventoryPreviewSprite(sprite);
-                inventoryPreviewSpriteCache.Remove(url);
-            }
-
-            if (inventoryPreviewSpriteCacheNodes.TryGetValue(url, out var node))
-            {
-                inventoryPreviewSpriteCacheOrder.Remove(node);
-                inventoryPreviewSpriteCacheNodes.Remove(url);
-            }
-        }
-
-        private void ClearInventoryPreviewSpriteCache()
-        {
-            foreach (var sprite in inventoryPreviewSpriteCache.Values)
-            {
-                DestroyInventoryPreviewSprite(sprite);
-            }
-
-            inventoryPreviewSpriteCache.Clear();
-            inventoryPreviewSpriteCacheOrder.Clear();
-            inventoryPreviewSpriteCacheNodes.Clear();
-        }
-
-        private static void DestroyInventoryPreviewSprite(Sprite sprite)
-        {
-            if (sprite == null)
-            {
-                return;
-            }
-
-            var texture = sprite.texture;
-            Destroy(sprite);
-            if (texture != null)
-            {
-                Destroy(texture);
             }
         }
 
@@ -6756,7 +6089,7 @@ namespace App.Bootstrap
                 placedByInventoryKey[m.InventoryKey] = m.gameObject;
                 restored++;
             }
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[RoomEdit][Inventory] 진입 시 scene 스캔 — 등록 {restored}, 키 없음 skip {skippedNoKey}, 중복 skip {dupes} / total marker {markers.Length}");
         }
 
@@ -7197,7 +6530,7 @@ namespace App.Bootstrap
                 for (int j = 0; j < orig.Length; j++) preview[j] = instance;
                 r.sharedMaterials = preview;
             }
-            App.Core.AppLog.RoomEdit($"[RoomEdit][Preview] BeginPending '{target.name}' — renderers={renderers.Length}");
+            Debug.Log($"[RoomEdit][Preview] BeginPending '{target.name}' — renderers={renderers.Length}");
         }
 
         // 배치 확정 버튼 핸들러 — 현재 위치가 valid 한지 확인하고 preview 상태 해제.
@@ -7238,7 +6571,7 @@ namespace App.Bootstrap
             pendingPlacements.Remove(target);
 
             if (wasSelected) SelectObject(target);
-            App.Core.AppLog.RoomEdit($"[RoomEdit][Preview] Confirmed '{target.name}' — pending 해제 + 원본 머터리얼 복원.");
+            Debug.Log($"[RoomEdit][Preview] Confirmed '{target.name}' — pending 해제 + 원본 머터리얼 복원.");
         }
 
         // Renderer.sharedMaterials 에 백업 배열을 그대로 다시 set. 우리가 만든 instance 머터리얼은
@@ -7369,13 +6702,10 @@ namespace App.Bootstrap
             // 진단 — preview 와 validation 이 같은 footprint 를 보고 있는지 frame-by-frame 검증.
             // size 가 다르면 즉시 식별 가능. 회귀 발견 후 #if UNITY_EDITOR 가드 안에 두므로 release 빌드
             // 에는 영향 없음.
-            if (EnableEditPlacementTrace)
-            {
-                App.Core.AppLog.RoomEdit(
-                    $"[EditFootprint] obj='{selectedObject.name}' previewCenterXZ=({bounds.Value.center.x:0.##},{bounds.Value.center.z:0.##}) " +
-                    $"previewSizeXZ=({bounds.Value.size.x:0.##},{bounds.Value.size.z:0.##}) probe=({probe.x:0.##},{probe.z:0.##}) " +
-                    $"valid={isValid} reason='{reason ?? "None"}'");
-            }
+            Debug.Log(
+                $"[EditFootprint] obj='{selectedObject.name}' previewCenterXZ=({bounds.Value.center.x:0.##},{bounds.Value.center.z:0.##}) " +
+                $"previewSizeXZ=({bounds.Value.size.x:0.##},{bounds.Value.size.z:0.##}) probe=({probe.x:0.##},{probe.z:0.##}) " +
+                $"valid={isValid} reason='{reason ?? "None"}'");
 #endif
 
             placementFootprint.Show(gameObject.scene, bounds.Value, isValid, reason, selectedObject.name);
@@ -7485,14 +6815,13 @@ namespace App.Bootstrap
             orbitDistance = Mathf.Clamp(orbitDistance, zMin, zMax);
             ApplyWallVisibilityForCurrentView("OrbitInput");
 
-            if (EnableEditCameraTrace && Mathf.Abs(yawInput) > 0.001f)
+            if (Mathf.Abs(yawInput) > 0.001f)
             {
-                App.Core.AppLog.RoomEdit($"[RoomEdit][Camera] orbit 회전 yaw={orbitYaw:0.#}° pitch={orbitPitch:0.#}° preset={currentCameraPreset}");
+                Debug.Log($"[RoomEdit][Camera] orbit 회전 yaw={orbitYaw:0.#}° pitch={orbitPitch:0.#}° preset={currentCameraPreset}");
             }
-            if (EnableEditCameraTrace &&
-                (Mathf.Abs(zoomInput) > 0.001f || (mouse != null && Mathf.Abs(mouse.scroll.ReadValue().y) > 0.01f)))
+            if (Mathf.Abs(zoomInput) > 0.001f || (mouse != null && Mathf.Abs(mouse.scroll.ReadValue().y) > 0.01f))
             {
-                App.Core.AppLog.RoomEdit($"[RoomEdit][Camera] orbit 줌 distance={orbitDistance:0.##}m");
+                Debug.Log($"[RoomEdit][Camera] orbit 줌 distance={orbitDistance:0.##}m");
             }
         }
 
@@ -7677,7 +7006,7 @@ namespace App.Bootstrap
                 selectionRotateLeftButton.interactable = allowRotation;
                 if (selectedObject != null)
                 {
-                    App.Core.AppLog.RoomEdit(
+                    Debug.Log(
                         $"[EditRotate] gate update obj={selectedObject.name} allowRotation={allowRotation} " +
                         $"hasWallMarker={selectedObject.GetComponent<WallDecoMarker>() != null}");
                 }
@@ -8167,7 +7496,7 @@ namespace App.Bootstrap
             // 진단 — playable bounds 가 좌하단(X<0, Z<0) 영역을 포함하는지 확인. 만약 playableMinX
             // 또는 playableMinZ 가 0 이상이면 좌하단 영역 자체가 ClampToFloorBounds 에서 push-back
             // → drag/rotate 가 그 영역으로 들어가지 못하는 회귀 가능.
-            App.Core.AppLog.RoomEdit($"[EditPlayable] refresh playableX=[{playableMinX:0.##},{playableMaxX:0.##}] " +
+            Debug.Log($"[EditPlayable] refresh playableX=[{playableMinX:0.##},{playableMaxX:0.##}] " +
                       $"playableZ=[{playableMinZ:0.##},{playableMaxZ:0.##}] " +
                       $"floorFound={floorFound} backWallFrontZ={backWallFrontZ:0.##}");
 #endif
@@ -8209,11 +7538,11 @@ namespace App.Bootstrap
             // 미저장 변경사항이 있으면 모달로 사용자 확인. 없으면 기존처럼 즉시 종료.
             if (isDirty)
             {
-                App.Core.AppLog.RoomEdit("[RoomEdit][Save] 돌아가기 클릭 — dirty=true → 미저장 모달 표시");
+                Debug.Log("[RoomEdit][Save] 돌아가기 클릭 — dirty=true → 미저장 모달 표시");
                 ShowUnsavedChangesModal();
                 return;
             }
-            App.Core.AppLog.RoomEdit("[RoomEdit][Save] 돌아가기 클릭 — dirty=false → 즉시 편집 종료");
+            Debug.Log("[RoomEdit][Save] 돌아가기 클릭 — dirty=false → 즉시 편집 종료");
             ExitEditModeInternal();
         }
 
@@ -8248,13 +7577,13 @@ namespace App.Bootstrap
 
         private void OnSaveAndExitClicked()
         {
-            App.Core.AppLog.RoomEdit("[RoomEdit][Save] 미저장 모달: '저장하고 나가기' 선택");
+            Debug.Log("[RoomEdit][Save] 미저장 모달: '저장하고 나가기' 선택");
             HideUnsavedChangesModal();
             // 저장 성공 시 종료, 실패 시 편집 모드 유지 + dirty 유지 + 모달 다시 표시.
             PerformSave(
                 onSuccess: () =>
                 {
-                    App.Core.AppLog.RoomEdit("[RoomEdit][Save] 저장 성공 후 편집 종료");
+                    Debug.Log("[RoomEdit][Save] 저장 성공 후 편집 종료");
                     ExitEditModeInternal();
                 },
                 onError: msg =>
@@ -8267,7 +7596,7 @@ namespace App.Bootstrap
 
         private void OnDiscardAndExitClicked()
         {
-            App.Core.AppLog.RoomEdit("[RoomEdit][Save] 미저장 모달: '저장하지 않고 나가기' 선택 — 변경사항 폐기 + 씬 롤백");
+            Debug.Log("[RoomEdit][Save] 미저장 모달: '저장하지 않고 나가기' 선택 — 변경사항 폐기 + 씬 롤백");
             HideUnsavedChangesModal();
             // 핵심: 저장만 skip 하면 메인뷰에 편집 중 변경사항이 그대로 남는 회귀 — 진입 시점 스냅샷으로
             // 씬 자체를 되돌려야 함. (배치한 객체 destroy / 이동한 객체 transform 복원 / 삭제한 객체 재생성)
@@ -8278,7 +7607,7 @@ namespace App.Bootstrap
 
         private void OnCancelExitClicked()
         {
-            App.Core.AppLog.RoomEdit("[RoomEdit][Save] 미저장 모달: '취소' 선택 — 편집 모드 유지");
+            Debug.Log("[RoomEdit][Save] 미저장 모달: '취소' 선택 — 편집 모드 유지");
             HideUnsavedChangesModal();
         }
 
@@ -8372,7 +7701,7 @@ namespace App.Bootstrap
                     }
                     Destroy(go);
                 }
-                App.Core.AppLog.RoomEdit($"[RoomEdit][Preview] ExitEditMode 에서 미확정 preview {toDestroy.Count}개 destroy.");
+                Debug.Log($"[RoomEdit][Preview] ExitEditMode 에서 미확정 preview {toDestroy.Count}개 destroy.");
             }
             ClearAllPendingState();
 
@@ -8424,7 +7753,7 @@ namespace App.Bootstrap
             // 로 두는 이유는 사용자가 즉시 큐브/A·D 입력 시 lerp loop 가 작동하도록.
             ApplyDefaultViewState();
             cameraPresetTargetActive = true;
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 "[RoomEdit][Camera] 편집 모드 진입 — 기본 편집뷰 = MainView (SnapToMainView 진입 pose) " +
                 $"position={savedCameraPosition} rotation={savedCameraRotation.eulerAngles} fov={camera.fieldOfView:0.#}");
         }
@@ -8500,8 +7829,6 @@ namespace App.Bootstrap
                 placementFootprint.Dispose();
                 placementFootprint = null;
             }
-
-            ClearInventoryPreviewSpriteCache();
         }
 
         // MR #120 simonjiho 리뷰 #6 반영 — 비정상 종료(scene unload, GameObject SetActive(false),
@@ -8606,7 +7933,7 @@ namespace App.Bootstrap
                 float verticalNeed  = (dims.y * WallFocusFramingPadding) / (2f * tanHalf);
                 float horizontalNeed = (dims.x * WallFocusFramingPadding) / (2f * tanHalf * Mathf.Max(aspect, 0.001f));
                 bool wallFitsInView = orbitDistance >= verticalNeed && orbitDistance >= horizontalNeed;
-                App.Core.AppLog.RoomEdit(
+                Debug.Log(
                     $"[RoomEdit][Camera] 큐브 면 클릭 → {face} ({CameraPresetLabels[face]}) " +
                     $"target-wall={targetWallName} wall-bounds={dims.x:0.##}m×{dims.y:0.##}m " +
                     $"computed-distance={orbitDistance:0.##}m (vertical-fit={verticalNeed:0.##}m, horizontal-fit={horizontalNeed:0.##}m, padding={WallFocusFramingPadding:0.00}) " +
@@ -8617,7 +7944,7 @@ namespace App.Bootstrap
             }
             else
             {
-                App.Core.AppLog.RoomEdit(
+                Debug.Log(
                     $"[RoomEdit][Camera] 큐브 면 클릭 → {face} ({CameraPresetLabels[face]}) " +
                     $"orbitCenter={orbitCenter} camera-pos={camPos} fov={fov:0.#} " +
                     $"yaw={orbitYaw:0.#}° pitch={orbitPitch:0.#}° distance={orbitDistance:0.##}m " +
@@ -8656,7 +7983,7 @@ namespace App.Bootstrap
             if (savedCameraPoseValid)
             {
                 float fov = editModeCamera != null ? editModeCamera.fieldOfView : -1f;
-                App.Core.AppLog.RoomEdit(
+                Debug.Log(
                     "[RoomEdit][Camera] 기본 시점 복귀 — preset=MainView (SnapToMainView 진입 pose) " +
                     $"이전 view={previousPreset} (TopDown 여부={wasTopDown}) → wall fade reset 후 잔여 faded={fadedAfterReset}/{wallRendererCaches.Count} " +
                     $"position={savedCameraPosition} rotation={savedCameraRotation.eulerAngles} fov={fov:0.#} " +
@@ -8677,7 +8004,7 @@ namespace App.Bootstrap
         private void OnSaveButtonClicked()
         {
             if (!IsEditModeActive) return;
-            App.Core.AppLog.RoomEdit("[RoomEdit][Save] 저장 버튼 클릭");
+            Debug.Log("[RoomEdit][Save] 저장 버튼 클릭");
             PerformSave(
                 onSuccess: () => ShowSaveStatusToast("저장되었습니다", isError: false, durationSec: 2.0f),
                 onError: msg => ShowSaveStatusToast($"저장 실패: {msg}", isError: true, durationSec: 4f));
@@ -8695,11 +8022,11 @@ namespace App.Bootstrap
             }
 
             var items = CollectDecorationLayoutItems();
-            App.Core.AppLog.RoomEdit($"[RoomEdit][Save] 저장 대상 데코레이션 {items.Count}개");
+            Debug.Log($"[RoomEdit][Save] 저장 대상 데코레이션 {items.Count}개");
             for (int i = 0; i < items.Count; i++)
             {
                 var it = items[i];
-                App.Core.AppLog.RoomEdit(
+                Debug.Log(
                     $"  [{i}] assetId={it.AssetId} pos=({it.PositionX:0.##},{it.PositionY:0.##},{it.PositionZ:0.##}) " +
                     $"rotY={it.RotationY:0.#}° scale=({it.ScaleX:0.##},{it.ScaleY:0.##},{it.ScaleZ:0.##})");
             }
@@ -8707,7 +8034,7 @@ namespace App.Bootstrap
             saveDecorationsUseCase.Execute(items,
                 onSuccess: () =>
                 {
-                    App.Core.AppLog.RoomEdit($"[RoomEdit][Save] 저장 성공 — {items.Count}개 영속화 완료");
+                    Debug.Log($"[RoomEdit][Save] 저장 성공 — {items.Count}개 영속화 완료");
                     TrySaveLayoutSnapshotToServer(items);
                     ClearDirty("save success");
                     TryUploadRoomThumbnail();
@@ -8730,7 +8057,7 @@ namespace App.Bootstrap
             var apiManager = APIManager.Instance;
             if (apiManager == null || !apiManager.HasAccessToken)
             {
-                App.Core.AppLog.RoomEdit("[RoomEdit][ServerLayout] skipped: API token is missing.");
+                Debug.Log("[RoomEdit][ServerLayout] skipped: API token is missing.");
                 return;
             }
 
@@ -8760,7 +8087,7 @@ namespace App.Bootstrap
                         lastServerSpace.LayoutVersion = response.LayoutVersion;
                     }
 
-                    App.Core.AppLog.RoomEdit($"[RoomEdit][ServerLayout] saved layout snapshot v{response?.LayoutVersion ?? 0L}.");
+                    Debug.Log($"[RoomEdit][ServerLayout] saved layout snapshot v{response?.LayoutVersion ?? 0L}.");
                 },
                 error =>
                 {
@@ -8867,7 +8194,7 @@ namespace App.Bootstrap
                 {
                     loadDecorationsUseCase = new LoadDecorationsUseCase(decorationRepository);
                 }
-                App.Core.AppLog.RoomEdit($"[RoomEdit][Save] decoration use cases ready (repo={decorationRepository.GetType().Name})");
+                Debug.Log($"[RoomEdit][Save] decoration use cases ready (repo={decorationRepository.GetType().Name})");
             }
             catch (Exception ex)
             {
@@ -8880,14 +8207,14 @@ namespace App.Bootstrap
         {
             if (isDirty) return;
             isDirty = true;
-            App.Core.AppLog.RoomEdit($"[RoomEdit][Save] dirty=true (reason={reason})");
+            Debug.Log($"[RoomEdit][Save] dirty=true (reason={reason})");
         }
 
         private void ClearDirty(string reason)
         {
             if (!isDirty) return;
             isDirty = false;
-            App.Core.AppLog.RoomEdit($"[RoomEdit][Save] dirty=false (reason={reason})");
+            Debug.Log($"[RoomEdit][Save] dirty=false (reason={reason})");
         }
 
         // 편집 진입 시점의 marker 상태를 스냅샷. "저장하지 않고 나가기" 롤백의 기준점.
@@ -8923,7 +8250,7 @@ namespace App.Bootstrap
                 }
                 editEntrySnapshot.Add(snap);
             }
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[RoomEdit][Snapshot] entry 시점 marker {editEntrySnapshot.Count}개 캡처 " +
                 $"(인벤토리 매칭 실패 {unmatched}개 — 편집 중 삭제 시 복원 불가).");
         }
@@ -9079,7 +8406,7 @@ namespace App.Bootstrap
         //   5) placedByInventoryKey 재구성 + 인벤토리 슬롯 갱신.
         private void RollbackToEditEntrySnapshot()
         {
-            App.Core.AppLog.RoomEdit($"[RoomEdit][Rollback] 시작 — 스냅샷 {editEntrySnapshot.Count}개 기준으로 씬 복원");
+            Debug.Log($"[RoomEdit][Rollback] 시작 — 스냅샷 {editEntrySnapshot.Count}개 기준으로 씬 복원");
 
             // 1) drag/select 정리.
             if (draggingObject != null) FinishDrag();
@@ -9142,7 +8469,7 @@ namespace App.Bootstrap
             // pendingPlacements set 도 비우고 dangling Renderer key 가 backup dict 에 남지 않게.
             ClearAllPendingState();
 
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[RoomEdit][Rollback] 완료 — 새로 추가분 destroy={newlyDestroyed}, " +
                 $"transform 복원={transformRestored}, 재생성={recreated}, 복원 불가={lost}");
         }
@@ -9248,7 +8575,7 @@ namespace App.Bootstrap
                 var savedSelection = TryFindLastAppliedRandomThemeSelection();
                 if (savedSelection != null && savedSelection.SelectedSpecs.Count > 0 && savedSelection.BaseTheme != null)
                 {
-                    App.Core.AppLog.RoomEdit($"[RoomEditModeController] SceneInstall.restoreLocalPreview mode=RANDOM — applying random selection ({savedSelection.SelectedSpecs.Count} slots).");
+                    Debug.Log($"[RoomEditModeController] SceneInstall.restoreLocalPreview mode=RANDOM — applying random selection ({savedSelection.SelectedSpecs.Count} slots).");
                     ApplyExternalRandomThemeSelection(savedSelection, "SceneInstall.restoreRandom");
                     return;
                 }
@@ -9280,7 +8607,7 @@ namespace App.Bootstrap
         {
             if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
             {
-                App.Core.AppLog.RoomEdit("[FantasyDesk] TryRestoreSavedDecorations begin — decoration layout restore path does not target Desk/Notebook directly unless they were serialized as placements.");
+                Debug.Log("[FantasyDesk] TryRestoreSavedDecorations begin — decoration layout restore path does not target Desk/Notebook directly unless they were serialized as placements.");
             }
             EnsureDecorationUseCases();
             if (loadDecorationsUseCase == null)
@@ -9293,7 +8620,7 @@ namespace App.Bootstrap
                 {
                     if (items == null || items.Count == 0)
                     {
-                        App.Core.AppLog.RoomEdit("[RoomEdit][Load] 저장된 데코레이션 없음 (빈 리스트)");
+                        Debug.Log("[RoomEdit][Load] 저장된 데코레이션 없음 (빈 리스트)");
                         onCompleted?.Invoke(true);
                         return;
                     }
@@ -9357,7 +8684,7 @@ namespace App.Bootstrap
                         // 슬롯 disabled/배치됨 표시를 새로 생성된 인스턴스에 맞춰 갱신.
                         RebuildInventorySlots();
                     }
-                    App.Core.AppLog.RoomEdit(
+                    Debug.Log(
                         $"[RoomEdit][Load] 복원 완료 — 기존 marker 매칭 갱신 {matched}개, prefab 재생성 {recreated}개, 복원 불가 {lost}개");
                     onCompleted?.Invoke(true);
                 },
@@ -9385,7 +8712,7 @@ namespace App.Bootstrap
 
             RebuildPlacedByInventoryKeyFromScene();
             var restored = RestoreDecorationLayoutItems(items);
-            App.Core.AppLog.RoomEdit($"[RoomEdit][ServerLayout] restored {restored} decoration item(s) from server layout.");
+            Debug.Log($"[RoomEdit][ServerLayout] restored {restored} decoration item(s) from server layout.");
         }
 
         private int RestoreDecorationLayoutItems(IReadOnlyList<DecorationLayoutItem> items)
@@ -9738,7 +9065,7 @@ namespace App.Bootstrap
             if (target == lastAppliedFadePreset) return;
             ApplyWallVisibilityForPreset(target);
             lastAppliedFadePreset = target;
-            App.Core.AppLog.RoomEdit($"[RoomEdit][WallFade] view 갱신 (context={contextTag}) → {target}");
+            Debug.Log($"[RoomEdit][WallFade] view 갱신 (context={contextTag}) → {target}");
         }
 
         // ---------- Edit-mode wall occlusion fade ----------
@@ -9793,7 +9120,7 @@ namespace App.Bootstrap
             }
             wallVisibilityCollected = true;
 
-            App.Core.AppLog.RoomEdit($"[RoomEdit][WallFade] 수집 완료 — wall={wallCount} ceiling={ceilingCount} total={wallRendererCaches.Count} (roomRoot={(roomRoot != null ? roomRoot.name : "<scene-scan>")})");
+            Debug.Log($"[RoomEdit][WallFade] 수집 완료 — wall={wallCount} ceiling={ceilingCount} total={wallRendererCaches.Count} (roomRoot={(roomRoot != null ? roomRoot.name : "<scene-scan>")})");
         }
 
         private static bool TryClassifyWallName(string name, out WallGroup group)
@@ -9890,7 +9217,7 @@ namespace App.Bootstrap
                 _ => "?",
             };
             string fadedNamesJoined = fadedNames.Count == 0 ? "(없음)" : string.Join(",", fadedNames);
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[RoomEdit][WallFade] preset={preset} target-group={targetGroupLabel} " +
                 $"faded={faded} names=[{fadedNamesJoined}] kept-opaque={restored} " +
                 $"alpha={Mathf.Clamp01(wallFadeAlpha):0.00}");
@@ -9991,7 +9318,7 @@ namespace App.Bootstrap
                 // 이미 생성 완료라 race 가능성은 낮지만 방어적.
                 if (placedItemFadeCaches.Count == 0 && canvasFadeCaches.Count == 0)
                 {
-                    App.Core.AppLog.RoomEdit("[GuestbookFocus][PlacedFade] skip-marking-active — no targets faded (placedItemsRoot/NotebookStation 모두 비어 있음).");
+                    Debug.Log("[GuestbookFocus][PlacedFade] skip-marking-active — no targets faded (placedItemsRoot/NotebookStation 모두 비어 있음).");
                     return;
                 }
             }
@@ -10166,7 +9493,7 @@ namespace App.Bootstrap
             CollectAndDisableCanvasesUnder(notebookStation, dashboardPanelTransform);
             CollectAndDisableCanvasesUnder(monitorSwap, dashboardPanelTransform);
 
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[GuestbookFocus][PlacedFade] applied — faded={faded} hidden-fallback={hidden} " +
                 $"skipped(pending={skipped},alreadyDisabled={skippedDisabled}) " +
                 $"sources(placedItems={placedItemCount},notebookStation={notebookStationCount},monitorSwap={monitorSwapCount}) " +
@@ -10235,7 +9562,7 @@ namespace App.Bootstrap
             }
             canvasFadeCaches.Clear();
 
-            App.Core.AppLog.RoomEdit($"[GuestbookFocus][PlacedFade] restored — restored={restored}/{placedItemFadeCaches.Count} destroyed-instances={destroyed} canvases-restored={canvasRestored}");
+            Debug.Log($"[GuestbookFocus][PlacedFade] restored — restored={restored}/{placedItemFadeCaches.Count} destroyed-instances={destroyed} canvases-restored={canvasRestored}");
             placedItemFadeCaches.Clear();
         }
 
@@ -10290,7 +9617,7 @@ namespace App.Bootstrap
                     destroyed++;
                 }
             }
-            App.Core.AppLog.RoomEdit($"[RoomEdit][WallFade] 복구 완료 (context={contextTag}) — restored={restored}/{wallRendererCaches.Count} destroyed-instances={destroyed}");
+            Debug.Log($"[RoomEdit][WallFade] 복구 완료 (context={contextTag}) — restored={restored}/{wallRendererCaches.Count} destroyed-instances={destroyed}");
             wallRendererCaches.Clear();
             wallVisibilityCollected = false;
         }
@@ -10384,7 +9711,7 @@ namespace App.Bootstrap
                         // 원본 enabled 가 종료 시 복구의 기준.
                         externalSwapDetected++;
                     }
-                    App.Core.AppLog.RoomEdit(
+                    Debug.Log(
                         $"[RoomEdit][WallFade] cache 재스냅샷 (context={contextTag}) — " +
                         $"외부 swap 감지 {externalSwapDetected}, fade 유지 {fadeKept} / total {wallRendererCaches.Count}");
                 }
@@ -10394,7 +9721,7 @@ namespace App.Bootstrap
             var fadeTarget = isInDefaultView ? CameraPreset.Default : currentCameraPreset;
             ApplyWallVisibilityForPreset(fadeTarget);
             lastAppliedFadePreset = fadeTarget;
-            App.Core.AppLog.RoomEdit($"[RoomEdit][WallFade] preset 재적용 (context={contextTag}) — preset={fadeTarget}");
+            Debug.Log($"[RoomEdit][WallFade] preset 재적용 (context={contextTag}) — preset={fadeTarget}");
         }
 
         // Toolbar ------------------------------------------------------------------
@@ -10566,204 +9893,6 @@ namespace App.Bootstrap
 
         // Inventory placement ------------------------------------------------------
 
-        private void ApplyRequiredFurnitureEntry(string subKey, InventoryEntry entry)
-        {
-            if (!IsEditModeActive)
-            {
-                return;
-            }
-
-            var inventoryKey = BuildInventoryKey(entry);
-            if (IsInventoryKeyPlaced(inventoryKey))
-            {
-                App.Core.AppLog.RoomEdit($"[RoomEdit][Required] 이미 배치된 필수 에셋 — subKey={subKey} key={inventoryKey}");
-                return;
-            }
-
-            if (TryFindThemeSpecForInventoryEntry(entry, subKey, out var theme, out var spec, out var isWallSpec))
-            {
-                ApplyRequiredThemeSpecSelection(subKey, theme, spec, isWallSpec);
-                return;
-            }
-
-            RemoveRequiredSubCategoryPlacements(subKey, inventoryKey);
-            PlaceInventoryEntry(entry);
-        }
-
-        private bool TryFindThemeSpecForInventoryEntry(
-            InventoryEntry entry,
-            string subKey,
-            out RoomThemeAsset theme,
-            out RoomThemeDecoSpec spec,
-            out bool isWallSpec)
-        {
-            theme = null;
-            spec = null;
-            isWallSpec = false;
-
-            if (!TryMapFurnitureSubKeyToThemeSlot(subKey, out var targetSlot))
-            {
-                return false;
-            }
-
-            var entryKey = NormalizeUnityResourceKey(entry.SourceAssetPath);
-            if (string.IsNullOrEmpty(entryKey))
-            {
-                return false;
-            }
-
-            if (themeCatalog == null)
-            {
-                themeCatalog = Resources.Load<RoomThemeCatalogAsset>("RoomThemeCatalog");
-            }
-
-            var themes = themeCatalog?.Entries;
-            if (themes == null)
-            {
-                return false;
-            }
-
-            for (var i = 0; i < themes.Count; i++)
-            {
-                var candidateTheme = themes[i];
-                if (candidateTheme == null ||
-                    !TryFindRequiredThemeSpec(candidateTheme, targetSlot, out var candidateSpec, out var candidateIsWallSpec))
-                {
-                    continue;
-                }
-
-                if (!string.Equals(NormalizeUnityResourceKey(candidateSpec.AssetKey), entryKey, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                theme = candidateTheme;
-                spec = candidateSpec;
-                isWallSpec = candidateIsWallSpec;
-                return true;
-            }
-
-            return false;
-        }
-
-        private void RemoveRequiredSubCategoryPlacements(string subKey, string keepInventoryKey)
-        {
-            if (string.IsNullOrEmpty(subKey))
-            {
-                return;
-            }
-
-            if (subKey == "DASHBOARD_SKIN")
-            {
-                DashboardVisualSkinApplier.ClearSkin("required singleton");
-                if (themeApplier == null)
-                {
-                    themeApplier = FindFirstObjectByType<RoomThemeApplier>();
-                }
-                if (themeApplier != null && themeApplier.RoomRoot != null)
-                {
-                    RestoreCategoryNativeMesh(CustomizationCategory.DashboardSkin, themeApplier.RoomRoot);
-                }
-            }
-            else if (subKey == "BOOKSHELF_SKIN")
-            {
-                BookshelfVisualSkinApplier.ClearSkin("required singleton");
-            }
-
-            var targetSlot = ThemeSlot.None;
-            TryMapFurnitureSubKeyToThemeSlot(subKey, out targetSlot);
-
-            if (placedItemsRoot == null)
-            {
-                return;
-            }
-
-            var destroyedCount = 0;
-            for (var i = placedItemsRoot.transform.childCount - 1; i >= 0; i--)
-            {
-                var child = placedItemsRoot.transform.GetChild(i).gameObject;
-                if (child == null)
-                {
-                    continue;
-                }
-
-                var marker = child.GetComponent<DecorationItemMarker>();
-                var slotMarker = child.GetComponent<ThemeSlotMarker>();
-                var inventoryKey = marker != null ? marker.InventoryKey : null;
-                if (!string.IsNullOrEmpty(keepInventoryKey) &&
-                    string.Equals(inventoryKey, keepInventoryKey, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                var remove = false;
-                if (targetSlot != ThemeSlot.None && slotMarker != null && slotMarker.ThemeSlot == targetSlot)
-                {
-                    remove = true;
-                }
-                else if (!string.IsNullOrEmpty(inventoryKey) &&
-                         TryFindInventoryEntryByKey(inventoryKey, out var existingEntry) &&
-                         MatchesRequiredFurnitureSubCategory(existingEntry, subKey))
-                {
-                    remove = true;
-                }
-
-                if (!remove)
-                {
-                    continue;
-                }
-
-                if (selectedObject == child) selectedObject = null;
-                if (draggingObject == child) draggingObject = null;
-                if (!string.IsNullOrEmpty(inventoryKey) &&
-                    placedByInventoryKey.TryGetValue(inventoryKey, out var tracked) &&
-                    tracked == child)
-                {
-                    placedByInventoryKey.Remove(inventoryKey);
-                }
-                if (UnityEngine.Application.isPlaying) Destroy(child);
-                else DestroyImmediate(child);
-                destroyedCount++;
-            }
-
-            if (destroyedCount > 0)
-            {
-                RequestUnusedAssetRelease();
-            }
-        }
-
-        private static bool MatchesRequiredFurnitureSubCategory(InventoryEntry entry, string subKey)
-        {
-            var value = string.Concat(
-                entry.DisplayName, " ",
-                entry.SourceAssetPath, " ",
-                entry.PreviewImageUrl).ToUpperInvariant();
-
-            switch (subKey)
-            {
-                case "BOOKSHELF_SKIN":
-                    return entry.Kind == DecorationObjectKind.Bookshelf ||
-                           value.Contains("BOOKSHELF") ||
-                           value.Contains("SHELF") ||
-                           value.Contains("책장");
-                case "DASHBOARD_SKIN":
-                    return (entry.Kind == DecorationObjectKind.Monitor ||
-                            value.Contains("DASHBOARD") ||
-                            value.Contains("MONITOR") ||
-                            value.Contains("대시보드")) &&
-                           !IsRemoteNotebookEntry(entry);
-                case "NOTEBOOK":
-                    return IsRemoteNotebookEntry(entry);
-                case "DESK":
-                    return entry.Kind == DecorationObjectKind.Desk ||
-                           value.Contains("DESK") ||
-                           value.Contains("TABLE") ||
-                           value.Contains("책상");
-                default:
-                    return false;
-            }
-        }
-
         private void PlaceInventoryEntry(InventoryEntry entry)
         {
             if (!IsEditModeActive)
@@ -10777,7 +9906,7 @@ namespace App.Bootstrap
             var inventoryKey = BuildInventoryKey(entry);
             if (IsInventoryEntryPlaced(entry))
             {
-                App.Core.AppLog.RoomEdit($"[RoomEdit][Inventory] 배치 차단 — '{entry.DisplayName}' (key={inventoryKey}) 는 이미 씬에 1개 배치되어 있습니다.");
+                Debug.Log($"[RoomEdit][Inventory] 배치 차단 — '{entry.DisplayName}' (key={inventoryKey}) 는 이미 씬에 1개 배치되어 있습니다.");
                 return;
             }
 
@@ -10874,7 +10003,7 @@ namespace App.Bootstrap
             {
                 var spawnBounds = ComputeFloorFootprintBounds(go) ?? rendererBounds.Value;
                 // 회귀 진단 — Kind 정규화 후 size 와 footprint 가 어떻게 나왔는지 spawn 시점에 한 번 출력.
-                App.Core.AppLog.RoomEdit(
+                Debug.Log(
                     $"[EditPlacement] spawn obj='{entry.DisplayName}' kind={entry.Kind} " +
                     $"placement={entry.PlacementCategory} scale={go.transform.localScale} " +
                     $"boundsSize={spawnBounds.size} footprintXZ=({spawnBounds.size.x:0.##},{spawnBounds.size.z:0.##})");
@@ -10910,7 +10039,7 @@ namespace App.Bootstrap
             if (!string.IsNullOrEmpty(inventoryKey))
             {
                 placedByInventoryKey[inventoryKey] = go;
-                App.Core.AppLog.RoomEdit($"[RoomEdit][Inventory] 배치 — '{entry.DisplayName}' key={inventoryKey} pos={go.transform.position}");
+                Debug.Log($"[RoomEdit][Inventory] 배치 — '{entry.DisplayName}' key={inventoryKey} pos={go.transform.position}");
             }
 
             // 인벤토리 슬롯이 비활성화된 상태로 즉시 보이도록 슬롯 다시 빌드.
@@ -11272,12 +10401,9 @@ namespace App.Bootstrap
 #if UNITY_EDITOR
             // 진단 — preview 와 동일 size 인지 확인. ComputeFloorFootprintBounds 결과 size 그대로
             // OverlapBox 에 전달되는지 frame-by-frame 검증.
-            if (EnableEditPlacementTrace)
-            {
-                App.Core.AppLog.RoomEdit(
-                    $"[EditValidation] obj='{(self != null ? self.name : "<null>")}' validationCenterXZ=({sampleCenter.x:0.##},{sampleCenter.z:0.##}) " +
-                    $"validationSizeXZ=({halfExtents.x * 2f:0.##},{halfExtents.z * 2f:0.##}) hits={hits.Length}");
-            }
+            Debug.Log(
+                $"[EditValidation] obj='{(self != null ? self.name : "<null>")}' validationCenterXZ=({sampleCenter.x:0.##},{sampleCenter.z:0.##}) " +
+                $"validationSizeXZ=({halfExtents.x * 2f:0.##},{halfExtents.z * 2f:0.##}) hits={hits.Length}");
 #endif
             for (var i = 0; i < hits.Length; i++)
             {
@@ -11308,13 +10434,10 @@ namespace App.Bootstrap
 
                 // 진단 — 실제 차단을 만든 hit collider 를 출력. 사용자가 "충분해 보이는데" 라고 한
                 // 케이스에서 어떤 obstacle 이 잡히는지 즉시 식별.
-                if (EnableEditPlacementTrace)
-                {
-                    App.Core.AppLog.RoomEdit(
-                        $"[EditMove] hit blocker='{hit.gameObject.name}' collider='{hit.GetType().Name}' " +
-                        $"hitPos={hit.bounds.center} hitSize={hit.bounds.size} " +
-                        $"selfName='{(self != null ? self.name : "<null>")}' isSelf=False");
-                }
+                Debug.Log(
+                    $"[EditMove] hit blocker='{hit.gameObject.name}' collider='{hit.GetType().Name}' " +
+                    $"hitPos={hit.bounds.center} hitSize={hit.bounds.size} " +
+                    $"selfName='{(self != null ? self.name : "<null>")}' isSelf=False");
                 return true;
             }
 
@@ -12048,14 +11171,14 @@ namespace App.Bootstrap
             var screenW = Screen.width;
             var screenH = Screen.height;
             var quadrant = (pointer.x < screenW * 0.5f ? "L" : "R") + (pointer.y < screenH * 0.5f ? "B" : "T");
-            App.Core.AppLog.RoomEdit($"[EditPress] enter pointer={pointer} screen=({screenW}x{screenH}) quadrant={quadrant} " +
+            Debug.Log($"[EditPress] enter pointer={pointer} screen=({screenW}x{screenH}) quadrant={quadrant} " +
                       $"overUi={overUi} editMode={IsEditModeActive} initialized={isInitialized} modalOpen={isUnsavedChangesModalOpen}");
 #else
-            App.Core.AppLog.RoomEdit($"[EditPress] enter pointer={pointer} overUi={overUi} editMode={IsEditModeActive} initialized={isInitialized} modalOpen={isUnsavedChangesModalOpen}");
+            Debug.Log($"[EditPress] enter pointer={pointer} overUi={overUi} editMode={IsEditModeActive} initialized={isInitialized} modalOpen={isUnsavedChangesModalOpen}");
 #endif
             if (overUi)
             {
-                App.Core.AppLog.RoomEdit("[EditPress] blocked by IsPointerOverUi");
+                Debug.Log("[EditPress] blocked by IsPointerOverUi");
                 return;
             }
 
@@ -12063,7 +11186,7 @@ namespace App.Bootstrap
             if (pointer.x < pixelRect.xMin || pointer.x > pixelRect.xMax ||
                 pointer.y < pixelRect.yMin || pointer.y > pixelRect.yMax)
             {
-                App.Core.AppLog.RoomEdit($"[EditPress] blocked by pixelRect pointer={pointer} rect={pixelRect}");
+                Debug.Log($"[EditPress] blocked by pixelRect pointer={pointer} rect={pixelRect}");
                 DeselectCurrentObject();
                 return;
             }
@@ -12072,7 +11195,7 @@ namespace App.Bootstrap
 #if UNITY_EDITOR
             // 진단 — ray 자체 (origin/direction) + 카메라 위치. 좌하단 회귀에서 ray 가 의도한 floor
             // 방향으로 가는지 확인 — 카메라 view rotation 회귀 시 ray 가 엉뚱한 방향일 가능성 식별.
-            App.Core.AppLog.RoomEdit($"[EditPress] ray origin={ray.origin} direction={ray.direction} cameraPos={camera.transform.position}");
+            Debug.Log($"[EditPress] ray origin={ray.origin} direction={ray.direction} cameraPos={camera.transform.position}");
 #endif
             // 회귀 fix — 단일 Physics.Raycast 는 ray 의 *첫* collider 만 반환. 좌하단/책상 앞 영역
             // 처럼 DecorationItemMarker 없는 fixture(책상·노트북·기타 helper) 가 placed decoration
@@ -12096,13 +11219,13 @@ namespace App.Bootstrap
                     var col = hit.collider;
                     var layerName = LayerMask.LayerToName(col.gameObject.layer);
                     var path = BuildHierarchyPath(col.transform);
-                    App.Core.AppLog.RoomEdit($"[EditPress] hit[{i}] name='{col.name}' path='{path}' " +
+                    Debug.Log($"[EditPress] hit[{i}] name='{col.name}' path='{path}' " +
                               $"layer={col.gameObject.layer}({layerName}) colliderType={col.GetType().Name} " +
                               $"distance={hit.distance:0.##} hitPoint={hit.point} colliderBounds={col.bounds} " +
                               $"marker={(marker != null ? marker.name : "<null>")} " +
                               $"isTrigger={col.isTrigger} enabled={col.enabled}");
 #else
-                    App.Core.AppLog.RoomEdit($"[EditPress] hit[{i}]='{hit.collider.name}' hitObject='{hit.collider.gameObject.name}' " +
+                    Debug.Log($"[EditPress] hit[{i}]='{hit.collider.name}' hitObject='{hit.collider.gameObject.name}' " +
                               $"distance={hit.distance:0.##} marker={(marker != null ? marker.name : "<null>")}");
 #endif
                     if (marker != null)
@@ -12116,18 +11239,18 @@ namespace App.Bootstrap
                             SelectObject(marker.gameObject);
                         }
                         BeginDrag(marker.gameObject, ray);
-                        App.Core.AppLog.RoomEdit($"[EditPress] BeginDrag fired on '{marker.gameObject.name}' via hit[{i}]");
+                        Debug.Log($"[EditPress] BeginDrag fired on '{marker.gameObject.name}' via hit[{i}]");
                         return;
                     }
                 }
-                App.Core.AppLog.RoomEdit($"[EditPress] {hits.Length} hit(s) but none has DecorationItemMarker → DeselectCurrentObject");
+                Debug.Log($"[EditPress] {hits.Length} hit(s) but none has DecorationItemMarker → DeselectCurrentObject");
             }
             else
             {
-                App.Core.AppLog.RoomEdit("[EditPress] Physics.RaycastAll missed");
+                Debug.Log("[EditPress] Physics.RaycastAll missed");
             }
 
-            App.Core.AppLog.RoomEdit("[EditPress] no draggable target → DeselectCurrentObject");
+            Debug.Log("[EditPress] no draggable target → DeselectCurrentObject");
             DeselectCurrentObject();
         }
 
@@ -12160,7 +11283,7 @@ namespace App.Bootstrap
 #if UNITY_EDITOR
             // 진단 — BeginDrag 진입 + floor raycast 결과. 좌하단에서 floor raycast 가 실패하면
             // grabOffset 이 0 으로 fallback → drag 시 객체가 pointer 로 점프하는 회귀 식별.
-            App.Core.AppLog.RoomEdit($"[EditDrag] BeginDrag target='{target.name}' startPos={dragStartPosition} " +
+            Debug.Log($"[EditDrag] BeginDrag target='{target.name}' startPos={dragStartPosition} " +
                       $"floorHit={floorHit} grabPoint={(floorHit ? grabPoint.ToString() : "<miss>")} " +
                       $"grabOffset={dragGrabOffset}");
 #endif
@@ -12266,10 +11389,7 @@ namespace App.Bootstrap
             // 진단 — drag tick 의 핵심 수치 (state-transition 시점만, dedup 은 LogEditDragTransition 가 담당).
             if (bounds.HasValue)
             {
-                if (EnableEditPlacementTrace)
-                {
-                    LogEditMoveTickIfChanged(draggingObject, candidate, bounds.Value, isValid, invalidReason);
-                }
+                LogEditMoveTickIfChanged(draggingObject, candidate, bounds.Value, isValid, invalidReason);
             }
         }
 
@@ -12294,7 +11414,7 @@ namespace App.Bootstrap
             _editMoveLogLastCellX = cellX;
             _editMoveLogLastCellZ = cellZ;
             _editMoveLogInitialized = true;
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[EditMove] obj='{obj.name}' position={position} valid={isValid} reason='{r}' " +
                 $"boundsSize={bounds.size} footprintXZ=({bounds.size.x:0.##},{bounds.size.z:0.##})");
         }
@@ -12345,10 +11465,7 @@ namespace App.Bootstrap
                 return;
             }
             var reasonText = reason ?? "None";
-            if (EnableEditPlacementTrace)
-            {
-                App.Core.AppLog.RoomEdit($"[EditDrag] moveAllowed={moveAllowed} inRoom={inRoom} placementValid={placementValid} reason='{reasonText}'");
-            }
+            Debug.Log($"[EditDrag] moveAllowed={moveAllowed} inRoom={inRoom} placementValid={placementValid} reason='{reasonText}'");
             dragLastMoveAllowed = moveAllowed;
             dragLastInRoom = inRoom;
             dragLastEditDragLogInitialized = true;
@@ -12365,16 +11482,13 @@ namespace App.Bootstrap
                 return;
             }
             var name = go != null ? go.name : "<null>";
-            if (EnableEditPlacementTrace)
+            if (isValid)
             {
-                if (isValid)
-                {
-                    App.Core.AppLog.RoomEdit($"[EditPlacement] placement valid=True object='{name}'");
-                }
-                else
-                {
-                    App.Core.AppLog.RoomEdit($"[EditPlacement] placement valid=False object='{name}' reason='{reason ?? "Unknown"}'");
-                }
+                Debug.Log($"[EditPlacement] placement valid=True object='{name}'");
+            }
+            else
+            {
+                Debug.Log($"[EditPlacement] placement valid=False object='{name}' reason='{reason ?? "Unknown"}'");
             }
             dragLastPlacementValid = isValid;
             dragLastInvalidReason = reason;
@@ -12508,7 +11622,7 @@ namespace App.Bootstrap
             // 2) 기존(non-pending) 오브젝트 + invalid drop → 시작 pose 로 rollback.
             if (!dropValid && !isPending)
             {
-                App.Core.AppLog.RoomEdit($"[EditDrag] drop invalid on existing object='{dragged.name}' → rollback to start pose");
+                Debug.Log($"[EditDrag] drop invalid on existing object='{dragged.name}' → rollback to start pose");
                 dragged.transform.position = dragStartPosition;
                 dragged.transform.rotation = dragStartRotation;
             }
@@ -12608,7 +11722,7 @@ namespace App.Bootstrap
                 if (futureCenter.x > maxCenterX) overflow += " maxX";
                 if (futureCenter.z < minCenterZ) overflow += " minZ";
                 if (futureCenter.z > maxCenterZ) overflow += " maxZ";
-                App.Core.AppLog.RoomEdit($"[EditClamp] push-back overflow={overflow.Trim()} " +
+                Debug.Log($"[EditClamp] push-back overflow={overflow.Trim()} " +
                           $"inputCenter=({futureCenter.x:0.###},{futureCenter.z:0.###}) " +
                           $"clampedCenter=({clampedCenterX:0.###},{clampedCenterZ:0.###}) " +
                           $"extents=({extents.x:0.###},{extents.z:0.###}) " +
@@ -13036,7 +12150,7 @@ namespace App.Bootstrap
         // 좌회전(반시계방향) 45° — 버튼 핸들러용.
         private void RotateSelectedCounterClockwise()
         {
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[EditRotate] button clicked direction=left selectedObject='{(selectedObject != null ? selectedObject.name : "<null>")}' " +
                 $"buttonInteractable={(selectionRotateLeftButton != null ? selectionRotateLeftButton.interactable.ToString() : "<null>")}");
             RotateSelectedBy(-SelectionRotateStepDegrees);
@@ -13046,7 +12160,7 @@ namespace App.Bootstrap
         // 위에서 내려본 시점에서 시계방향 회전이다 (left-handed Y-up).
         private void RotateSelectedClockwise()
         {
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[EditRotate] button clicked direction=right selectedObject='{(selectedObject != null ? selectedObject.name : "<null>")}' " +
                 $"buttonInteractable={(selectionRotateRightButton != null ? selectionRotateRightButton.interactable.ToString() : "<null>")}");
             RotateSelectedBy(SelectionRotateStepDegrees);
@@ -13061,14 +12175,14 @@ namespace App.Bootstrap
         {
             if (selectedObject == null)
             {
-                App.Core.AppLog.RoomEdit($"[EditRotate] aborted reason=selectedObject-null delta={signedDegrees:+#0;-#0;0}°");
+                Debug.Log($"[EditRotate] aborted reason=selectedObject-null delta={signedDegrees:+#0;-#0;0}°");
                 return;
             }
             // 모달 표시 중에는 회전 버튼 자체가 selection 패널과 함께 숨겨져 있어 클릭이 닿지 않지만,
             // 같은 프레임에 stale invocation 이 들어올 가능성에 대비해 방어.
             if (isUnsavedChangesModalOpen)
             {
-                App.Core.AppLog.RoomEdit($"[EditRotate] aborted reason=unsaved-modal-open obj={selectedObject.name}");
+                Debug.Log($"[EditRotate] aborted reason=unsaved-modal-open obj={selectedObject.name}");
                 return;
             }
 
@@ -13079,7 +12193,7 @@ namespace App.Bootstrap
             bool allowRotation = !(wallMarker != null && !wallMarker.AllowRotation);
             if (!allowRotation)
             {
-                App.Core.AppLog.RoomEdit($"[EditRotate] aborted reason=allowRotation-false obj={selectedObject.name} hasWallMarker={wallMarker != null}");
+                Debug.Log($"[EditRotate] aborted reason=allowRotation-false obj={selectedObject.name} hasWallMarker={wallMarker != null}");
                 return;
             }
             // Don't rotate mid-drag — would invalidate the bounds-based placement
@@ -13110,7 +12224,7 @@ namespace App.Bootstrap
                 : prevPosition;
 
 #if UNITY_EDITOR
-            App.Core.AppLog.RoomEdit($"[BeforeRotate] obj='{selectedObject.name}' worldPos={prevPosition} " +
+            Debug.Log($"[BeforeRotate] obj='{selectedObject.name}' worldPos={prevPosition} " +
                       $"localPos={selectedObject.transform.localPosition} rotation={prevRotation.eulerAngles} " +
                       $"footprintCenter={(preFootprint.HasValue ? preFootprint.Value.center.ToString() : "<null>")} " +
                       $"footprintSize={(preFootprint.HasValue ? preFootprint.Value.size.ToString() : "<null>")}");
@@ -13143,7 +12257,7 @@ namespace App.Bootstrap
             string revertReason = null;
             var postRotateFootprint = ComputeFloorFootprintBounds(selectedObject);
 #if UNITY_EDITOR
-            App.Core.AppLog.RoomEdit($"[AfterRotate] obj='{selectedObject.name}' worldPos={selectedObject.transform.position} " +
+            Debug.Log($"[AfterRotate] obj='{selectedObject.name}' worldPos={selectedObject.transform.position} " +
                       $"localPos={selectedObject.transform.localPosition} rotation={selectedObject.transform.rotation.eulerAngles} " +
                       $"footprintCenter={(postRotateFootprint.HasValue ? postRotateFootprint.Value.center.ToString() : "<null>")} " +
                       $"footprintSize={(postRotateFootprint.HasValue ? postRotateFootprint.Value.size.ToString() : "<null>")} " +
@@ -13185,7 +12299,7 @@ namespace App.Bootstrap
                     else if (fpCenter.z > playableMaxZ + PlayableBoundsTolerance)
                     { overflowAxis = "maxZ"; overflowAmount = fpCenter.z - (playableMaxZ + PlayableBoundsTolerance); }
                 }
-                App.Core.AppLog.RoomEdit($"[EditRotateRoomCheck] obj='{selectedObject.name}' source=Rotate " +
+                Debug.Log($"[EditRotateRoomCheck] obj='{selectedObject.name}' source=Rotate " +
                           $"beforePos={prevPosition} afterPos={pos} " +
                           $"beforeRot={prevYaw:0.#}° afterRot={newYaw:0.#}° " +
                           $"footprintMin={bounds.min} footprintMax={bounds.max} " +
@@ -13212,23 +12326,23 @@ namespace App.Bootstrap
                 // 이동했을 수 있으므로 명시적으로 prevPosition 복귀).
                 selectedObject.transform.SetPositionAndRotation(prevPosition, prevRotation);
                 Physics.SyncTransforms();
-                App.Core.AppLog.RoomEdit(
+                Debug.Log(
                     $"[RoomEdit][Rotate] dir={direction} delta={signedDegrees:+#0;-#0;0}° from={prevYaw:0.#}° to={newYaw:0.#}° " +
                     $"result=reverted reason={revertReason} obj={selectedObject.name}");
-                App.Core.AppLog.RoomEdit(
+                Debug.Log(
                     $"[EditRotate] obj={selectedObject.name} allowRotation={allowRotation} " +
                     $"before={prevYaw:0.#}° after={newYaw:0.#}° validation=fail reason={revertReason}");
                 // MR #133 — 회전 시도가 invalid 로 reverted 됐음을 placement 로그 채널에도 동일 형식으로 기록.
                 // 회전 자체는 즉시 revert 되어 시각 상태가 valid 로 유지되므로 별도 tint 변경은 없다.
                 var placementReason = revertReason == "out-of-room" ? "OutOfRoom" : "OverlapWithObstacle";
-                App.Core.AppLog.RoomEdit($"[EditPlacement] placement valid=False object='{selectedObject.name}' reason='{placementReason}' source='Rotate'");
+                Debug.Log($"[EditPlacement] placement valid=False object='{selectedObject.name}' reason='{placementReason}' source='Rotate'");
                 return;
             }
 
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[RoomEdit][Rotate] dir={direction} delta={signedDegrees:+#0;-#0;0}° from={prevYaw:0.#}° to={newYaw:0.#}° " +
                 $"result=ok obj={selectedObject.name}");
-            App.Core.AppLog.RoomEdit(
+            Debug.Log(
                 $"[EditRotate] obj={selectedObject.name} allowRotation={allowRotation} " +
                 $"before={prevYaw:0.#}° after={newYaw:0.#}° validation=ok");
             SetDirty($"RotateSelected/{direction}");
@@ -13255,7 +12369,7 @@ namespace App.Bootstrap
             if (!string.IsNullOrEmpty(deletedKey) && placedByInventoryKey.TryGetValue(deletedKey, out var tracked) && tracked == toDestroy)
             {
                 placedByInventoryKey.Remove(deletedKey);
-                App.Core.AppLog.RoomEdit($"[RoomEdit][Inventory] 삭제 — key={deletedKey} 인벤토리 재활성화.");
+                Debug.Log($"[RoomEdit][Inventory] 삭제 — key={deletedKey} 인벤토리 재활성화.");
             }
 
             // MR #122 — pending 상태였으면 set/backup 도 정리. destroy 후엔 Renderer 도 사라지므로
@@ -13361,7 +12475,7 @@ namespace App.Bootstrap
             var hits = new List<RaycastResult>();
             eventSystem.RaycastAll(pointerEvent, hits);
 
-            App.Core.AppLog.RoomEdit($"[EditUiHit] RaycastAll → {hits.Count} hits at pointer={pointerPosition}");
+            Debug.Log($"[EditUiHit] RaycastAll → {hits.Count} hits at pointer={pointerPosition}");
 
             for (var i = 0; i < hits.Count; i++)
             {
@@ -13379,7 +12493,7 @@ namespace App.Bootstrap
 
                 if (hitGo == null)
                 {
-                    App.Core.AppLog.RoomEdit($"[EditUiHit] [{i}] gameObject=null module={moduleName} → skip (no GO)");
+                    Debug.Log($"[EditUiHit] [{i}] gameObject=null module={moduleName} → skip (no GO)");
                     continue;
                 }
 
@@ -13389,20 +12503,20 @@ namespace App.Bootstrap
                 // 아래 fall-through 경로에서 BLOCKED.
                 if (moduleFullName == "UnityEngine.UIElements.WorldDocumentRaycaster")
                 {
-                    App.Core.AppLog.RoomEdit($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} → SKIP (UI Toolkit WorldSpace)");
+                    Debug.Log($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} → SKIP (UI Toolkit WorldSpace)");
                     continue;
                 }
 
                 if (canvas != null && canvas.renderMode == RenderMode.WorldSpace)
                 {
                     // uGUI WorldSpace 캔버스 = 월드 오브젝트의 일부. 클릭 = 월드 클릭이지 UI 차단 아님.
-                    App.Core.AppLog.RoomEdit($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} canvas='{canvasName}' renderMode={renderMode} sortingLayer='{sortingLayer}' sortingOrder={sortingOrder} raycastTarget={raycastTarget} → SKIP (WorldSpace)");
+                    Debug.Log($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} canvas='{canvasName}' renderMode={renderMode} sortingLayer='{sortingLayer}' sortingOrder={sortingOrder} raycastTarget={raycastTarget} → SKIP (WorldSpace)");
                     continue;
                 }
 
                 // ScreenSpaceOverlay / ScreenSpaceCamera 캔버스 또는 ScreenSpace UIDocument
                 // (UIElements.PanelRaycaster) 는 진짜 HUD 로 간주해 차단.
-                App.Core.AppLog.RoomEdit($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} canvas='{canvasName}' renderMode={renderMode} sortingLayer='{sortingLayer}' sortingOrder={sortingOrder} raycastTarget={raycastTarget} → BLOCKED");
+                Debug.Log($"[EditUiHit] [{i}] hit='{hitGoName}' module={moduleName} canvas='{canvasName}' renderMode={renderMode} sortingLayer='{sortingLayer}' sortingOrder={sortingOrder} raycastTarget={raycastTarget} → BLOCKED");
                 return true;
             }
 
@@ -13718,8 +12832,8 @@ namespace App.Bootstrap
 
             const string roomEditCharacters =
                 "꾸미기 편집 샵 돌아가기 " +
-                "전체 필수 책상 책장 대시보드 노트북 벽지 내부조명 외부조명 전체 테마 " +
-                "기본 책장 파스텔 캐빈 깊은 바다 빈티지 판타지 우주 스푸키 보유 적용됨 저장 불가 인벤토리 " +
+                "전체 가구 벽지 내부조명 외부조명 필수 오브젝트 스킨 전체 테마 " +
+                "보유 인벤토리 " +
                 "회전 삭제 " +
                 "준비 중입니다 확인";
             targetFontAsset.TryAddCharacters(roomEditCharacters, out _);

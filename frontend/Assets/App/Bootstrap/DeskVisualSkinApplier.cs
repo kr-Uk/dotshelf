@@ -89,11 +89,11 @@ namespace App.Bootstrap
             bool isFantasyDesk = entry.AssetId == FantasyDeskAssetId;
             if (isFantasyDesk)
             {
-                VisualSkinLog.Verbose(
+                Debug.Log(
                     $"[FantasyDesk] TryAttach table BEFORE pos={(deskTransform != null ? deskTransform.position.ToString() : "null")} " +
                     $"rot={(deskTransform != null ? deskTransform.eulerAngles.ToString() : "null")} scale={(deskTransform != null ? deskTransform.lossyScale.ToString() : "null")} " +
                     $"existingSkin={(deskTransform != null ? deskTransform.Find(DeskVisualSkin.SkinChildName) != null : false)} source={source}");
-                VisualSkinLog.Verbose(
+                Debug.Log(
                     $"[FantasyDesk] Notebook override BEFORE pos={notebookTransform.localPosition} rot={notebookTransform.localEulerAngles} scale={notebookTransform.localScale} source={source}");
             }
 
@@ -316,10 +316,10 @@ namespace App.Bootstrap
             var finalWorldScale = go.transform.lossyScale;
             if (isFantasyDesk)
             {
-                VisualSkinLog.Verbose(
+                Debug.Log(
                     $"[FantasyDesk] TryAttach table AFTER pos={go.transform.position} rot={go.transform.eulerAngles} scale={go.transform.lossyScale} " +
                     $"localPos={go.transform.localPosition} localRot={go.transform.localEulerAngles} localScale={go.transform.localScale} source={source}");
-                VisualSkinLog.Verbose(
+                Debug.Log(
                     $"[FantasyDesk] Notebook override AFTER pos={notebookTransform.localPosition} rot={notebookTransform.localEulerAngles} scale={notebookTransform.localScale} source={source}");
                 AttachFantasyProbe(
                     go,

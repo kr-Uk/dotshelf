@@ -12,7 +12,6 @@ namespace App.Infrastructure.Api
     /// </summary>
     public static class ApiManagerProvider
     {
-
         /// <summary>
         /// 3 단계 fallback 으로 APIManager 를 확보한다.
         ///   1) 이미 살아있는 <see cref="APIManager.Instance"/>.
@@ -30,7 +29,7 @@ namespace App.Infrastructure.Api
             APIManager existing = UnityEngine.Object.FindFirstObjectByType<APIManager>();
             if (existing != null)
             {
-                App.Core.AppLog.Api("[ApiManagerProvider] 씬에 APIManager 발견 — Awake 가 곧 Instance 세팅.");
+                Debug.Log("[ApiManagerProvider] 씬에 APIManager 발견 — Awake 가 곧 Instance 세팅.");
                 return existing;
             }
 

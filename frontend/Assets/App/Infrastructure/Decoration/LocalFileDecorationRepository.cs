@@ -26,7 +26,6 @@ namespace App.Infrastructure.Decoration
     //   - 사용자 단말 로컬 파일은 마이그레이션 도구로 1회 서버 동기화 후 폐기.
     public sealed class LocalFileDecorationRepository : IDecorationRepository
     {
-
         // JsonUtility 가 collection 을 root 로 직렬화 못 하므로 wrapper 사용.
         [Serializable]
         private sealed class SerializableLayout
@@ -59,7 +58,7 @@ namespace App.Infrastructure.Decoration
                     Directory.CreateDirectory(dir);
                 }
                 File.WriteAllText(filePath, json);
-                App.Core.AppLog.Decoration($"[LocalFileDecorationRepo] saved {payload.items.Count} items → {filePath}");
+                Debug.Log($"[LocalFileDecorationRepo] saved {payload.items.Count} items → {filePath}");
                 onSuccess?.Invoke();
             }
             catch (Exception ex)
@@ -75,14 +74,14 @@ namespace App.Infrastructure.Decoration
             {
                 if (!File.Exists(filePath))
                 {
-                    App.Core.AppLog.Decoration($"[LocalFileDecorationRepo] no saved file at {filePath} — empty list.");
+                    Debug.Log($"[LocalFileDecorationRepo] no saved file at {filePath} — empty list.");
                     onSuccess?.Invoke(new List<DecorationLayoutItem>());
                     return;
                 }
                 var json = File.ReadAllText(filePath);
                 var payload = JsonUtility.FromJson<SerializableLayout>(json);
                 var items = payload?.items ?? new List<DecorationLayoutItem>();
-                App.Core.AppLog.Decoration($"[LocalFileDecorationRepo] loaded {items.Count} items ← {filePath}");
+                Debug.Log($"[LocalFileDecorationRepo] loaded {items.Count} items ← {filePath}");
                 onSuccess?.Invoke(items);
             }
             catch (Exception ex)

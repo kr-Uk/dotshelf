@@ -15,7 +15,6 @@ namespace App.Infrastructure.Api
     /// </summary>
     public sealed class ApiBookCatalogRepository : IBookCatalogRepository
     {
-
         private const int Rows = 4;
         private const int Columns = 4;
         private const int BooksPerSection = 3;
@@ -39,7 +38,7 @@ namespace App.Infrastructure.Api
                 var items = response?.EffectiveItems;
                 if (items != null && items.Count > 0)
                 {
-                    App.Core.AppLog.BookshelfSync($"Book catalog API loaded {items.Count} item(s): {baseUrl}");
+                    Debug.Log($"Book catalog API loaded {items.Count} item(s): {baseUrl}");
                     return MapToCatalog(items);
                 }
 

@@ -261,7 +261,7 @@ namespace App.Infrastructure.Api
                                 Debug.LogWarning(
                                     $"[Bookshelf] shelf.SpaceId == shelf.Id ({bookshelf.Id}) — BE 가 같은 값 반환 중. items 500 가능성.");
                             }
-                            LogVerbose($"[Bookshelf] GET /v1/bookshelves/{bookshelf.Id}/items (spaceId={bookshelf.SpaceId})");
+                            Debug.Log($"[Bookshelf] GET /v1/bookshelves/{bookshelf.Id}/items (spaceId={bookshelf.SpaceId})");
 
                             client.GetBookshelfItems(
                                 bookshelf.Id,
@@ -696,7 +696,7 @@ namespace App.Infrastructure.Api
         {
             if (client != null && client.VerboseLogEnabled)
             {
-                UnityEngine.Debug.Log(message);
+                Debug.Log(message);
             }
         }
 

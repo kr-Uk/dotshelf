@@ -52,6 +52,8 @@ namespace App.Bootstrap
         private const float MainScenePreviewDelaySeconds = 0.25f;
         private const float MainScenePreviewCoverAlpha = 0.62f;
         private const string OnboardingBookshelfVisibility = "PUBLIC";
+        private static readonly bool EnableDebugLogs = false;
+
         // Theme list / default / sprite mapping all live in
         // OnboardingThemePreviewProvider so adding a theme is a one-file edit.
         private static readonly string[] ThemeNames = OnboardingThemePreviewProvider.OrderedThemeIds;
@@ -303,7 +305,7 @@ namespace App.Bootstrap
                 lastPreviewOverrideFov = currentFov;
                 lastPreviewOverrideEnabled = true;
                 hasAppliedPreviewOverrideOnce = true;
-                App.Core.AppLog.Onboarding(
+                Debug.Log(
                     $"[OnboardingPreviewStage] Override toggle ON — Inspector synced to current auto-fit " +
                     $"position={currentPos} euler={currentEuler} fov={currentFov}");
                 return; // 이 frame 은 재렌더 skip (화면 그대로)
@@ -456,7 +458,7 @@ namespace App.Bootstrap
                 if (isStep2CameraLockActive)
                 {
                     isStep2CameraLockActive = false;
-                    App.Core.AppLog.Onboarding("[OnboardingStep2Camera] Camera lock released (Step1/3 transition).");
+                    Debug.Log("[OnboardingStep2Camera] Camera lock released (Step1/3 transition).");
                 }
                 if (cameraTransitionRoutine != null)
                 {
@@ -505,7 +507,7 @@ namespace App.Bootstrap
 
         public void CompleteOnboarding()
         {
-            App.Core.AppLog.Onboarding("Onboarding completed");
+            LogDebug("Onboarding completed");
 
             SetExperienceManagerStep3Active(false);
             CancelStep3Transition();
@@ -524,6 +526,16 @@ namespace App.Bootstrap
             }
 
             Destroy(gameObject);
+        }
+
+        private static void LogDebug(string message)
+        {
+            if (!EnableDebugLogs)
+            {
+                return;
+            }
+
+            Debug.Log(message);
         }
 
         private void SetCanvasVisible(bool isVisible)
@@ -700,11 +712,11 @@ namespace App.Bootstrap
             rt.localRotation = Quaternion.identity;
             rt.localPosition = Vector3.zero;
 
-            App.Core.AppLog.Onboarding($"[OnboardingUI] Canvas renderMode={onboardingCanvas.renderMode} (source={source})");
-            App.Core.AppLog.Onboarding(
+            Debug.Log($"[OnboardingUI] Canvas renderMode={onboardingCanvas.renderMode} (source={source})");
+            Debug.Log(
                 $"[OnboardingUI] Canvas parent={(canvasGo.transform.parent != null ? canvasGo.transform.parent.name : "null")} " +
                 $"scene={canvasGo.scene.name} sortingOrder={onboardingCanvas.sortingOrder}");
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingUI] Canvas position={rt.localPosition} rotation={rt.localRotation.eulerAngles} " +
                 $"scale={rt.localScale}");
         }
@@ -1546,7 +1558,7 @@ namespace App.Bootstrap
             string fullUrl =
                 App.Domain.ApiEndpointDefaults.DefaultBaseUrl.TrimEnd('/') +
                 "/v1/users/nickname/check?nickname=" + Uri.EscapeDataString(requestedNickname);
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingDemo] nickname/check 요청 → GET {fullUrl} (nickname='{requestedNickname}')");
 
             client.CheckNickname(
@@ -1567,7 +1579,7 @@ namespace App.Bootstrap
                 return;
             }
 
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingDemo] nickname/check 응답 → STATUS=2xx (onSuccess) " +
                 $"BODY={{available={(response != null ? response.Available.ToString() : "null")}}} " +
                 $"nickname='{requestedNickname}'");
@@ -2000,7 +2012,7 @@ namespace App.Bootstrap
 
             if (!string.IsNullOrWhiteSpace(selectedTheme))
             {
-                App.Core.AppLog.Onboarding($"Selected theme: {GetThemeDebugName(selectedTheme)}");
+                LogDebug($"Selected theme: {GetThemeDebugName(selectedTheme)}");
             }
         }
 
@@ -2026,7 +2038,7 @@ namespace App.Bootstrap
         {
             if (string.IsNullOrWhiteSpace(selectedTheme))
             {
-                App.Core.AppLog.Onboarding($"[Onboarding] ApplySelectedThemeIfAvailable skipped: selectedTheme empty. source={source}");
+                Debug.Log($"[Onboarding] ApplySelectedThemeIfAvailable skipped: selectedTheme empty. source={source}");
                 return;
             }
 
@@ -2220,7 +2232,7 @@ namespace App.Bootstrap
             {
                 step2RightPreviewRoot.SetActive(!active);
             }
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingOverlay] Step2 overlay mode={(active ? "ON" : "OFF")} " +
                 $"backgroundRoot.active={(backgroundRoot != null ? backgroundRoot.activeSelf : false)} " +
                 $"step2Bg.alpha={(step2PanelBackgroundImage != null ? step2PanelBackgroundImage.color.a : 1f):F2} " +
@@ -2228,9 +2240,9 @@ namespace App.Bootstrap
                 $"rightPreview.active={(step2RightPreviewRoot != null ? step2RightPreviewRoot.activeSelf : false)}");
             if (active)
             {
-                App.Core.AppLog.Onboarding("[OnboardingOverlay] Left panel active=true");
-                App.Core.AppLog.Onboarding("[OnboardingOverlay] Right preview disabled");
-                App.Core.AppLog.Onboarding("[OnboardingOverlay] Root background alpha=0 (visual) + raycastTarget=true (MainScene click 차단)");
+                Debug.Log("[OnboardingOverlay] Left panel active=true");
+                Debug.Log("[OnboardingOverlay] Right preview disabled");
+                Debug.Log("[OnboardingOverlay] Root background alpha=0 (visual) + raycastTarget=true (MainScene click 차단)");
             }
         }
 
@@ -2305,10 +2317,10 @@ namespace App.Bootstrap
                 cam.fieldOfView = targetFov;
             }
 
-            App.Core.AppLog.Onboarding("[OnboardingStep2Camera] Apply onboarding quarter view");
-            App.Core.AppLog.Onboarding($"[OnboardingStep2Camera] applied pos={targetPos} fov={targetFov:F1}");
-            App.Core.AppLog.Onboarding($"[OnboardingStep2Camera] rotation={targetRot.eulerAngles}");
-            App.Core.AppLog.Onboarding("[OnboardingStep2Camera] overlaySafeArea=28% lockActive=true");
+            Debug.Log("[OnboardingStep2Camera] Apply onboarding quarter view");
+            Debug.Log($"[OnboardingStep2Camera] applied pos={targetPos} fov={targetFov:F1}");
+            Debug.Log($"[OnboardingStep2Camera] rotation={targetRot.eulerAngles}");
+            Debug.Log("[OnboardingStep2Camera] overlaySafeArea=28% lockActive=true");
 
             // 진단 coroutine — 1 frame / 10 frame 후 camera transform 출력. 우리 target 과 다르면
             // 어떤 component 가 덮어쓴 것 — 사용자가 콘솔 보고 원인 식별 가능.
@@ -2322,11 +2334,11 @@ namespace App.Bootstrap
         {
             if (cam == null) yield break;
             yield return null;
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingStep2Camera] after 1 frame pos={cam.transform.position} fov={cam.fieldOfView:F1} " +
                 $"posDrift={(cam.transform.position - expectedPos).magnitude:F3} fovDrift={Mathf.Abs(cam.fieldOfView - expectedFov):F2}");
             for (int i = 0; i < 9; i++) yield return null;
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingStep2Camera] after 10 frames pos={cam.transform.position} fov={cam.fieldOfView:F1} " +
                 $"posDrift={(cam.transform.position - expectedPos).magnitude:F3} fovDrift={Mathf.Abs(cam.fieldOfView - expectedFov):F2}");
         }
@@ -2388,7 +2400,7 @@ namespace App.Bootstrap
                 }
             }
 
-            App.Core.AppLog.Onboarding($"[OnboardingStep2Camera] hideMainSceneUI={hide} affectedCanvases={affected} physRaycaster={physRaycasterAffected}");
+            Debug.Log($"[OnboardingStep2Camera] hideMainSceneUI={hide} affectedCanvases={affected} physRaycaster={physRaycasterAffected}");
         }
 
         // SceneFlowManager.GoToMain() 이 onboarding scene 을 unload → OnboardingScreenController +
@@ -2403,7 +2415,7 @@ namespace App.Bootstrap
             if (transform.parent != null)
             {
                 transform.SetParent(null, true);
-                App.Core.AppLog.Onboarding("[OnboardingOverlay] Detached from parent for DontDestroyOnLoad.");
+                Debug.Log("[OnboardingOverlay] Detached from parent for DontDestroyOnLoad.");
             }
             DontDestroyOnLoad(gameObject);
 
@@ -2420,7 +2432,7 @@ namespace App.Bootstrap
                 // sortingOrder 명시 — main scene UI 위에 그려지도록 충분히 높은 값.
                 onboardingCanvas.overrideSorting = true;
                 onboardingCanvas.sortingOrder = CanvasSortingOrder;
-                App.Core.AppLog.Onboarding($"[OnboardingOverlay] Canvas sortingOrder={onboardingCanvas.sortingOrder} renderMode={onboardingCanvas.renderMode}");
+                Debug.Log($"[OnboardingOverlay] Canvas sortingOrder={onboardingCanvas.sortingOrder} renderMode={onboardingCanvas.renderMode}");
 
                 // DontDestroyOnLoad scene 이동 + SetParent(null) 직후 renderMode/RectTransform 한 번 더 enforcement.
                 EnforceOnboardingCanvasOverlayState("PersistOnboardingAcrossSceneLoad");
@@ -2435,11 +2447,11 @@ namespace App.Bootstrap
             if (eventSystem != null && eventSystem.transform.parent == null)
             {
                 DontDestroyOnLoad(eventSystem.gameObject);
-                App.Core.AppLog.Onboarding("[OnboardingOverlay] EventSystem persisted across scene load.");
+                Debug.Log("[OnboardingOverlay] EventSystem persisted across scene load.");
             }
 
             persistedAcrossSceneLoad = true;
-            App.Core.AppLog.Onboarding("[OnboardingOverlay] Persist canvas across MainScene load.");
+            Debug.Log("[OnboardingOverlay] Persist canvas across MainScene load.");
         }
 
         // Step2 진입 시 themeApplier.CurrentTheme 을 1회 캡쳐 — rollback 용. MainScene 이 아직
@@ -2451,12 +2463,12 @@ namespace App.Bootstrap
             var applier = UnityEngine.Object.FindFirstObjectByType<Dotshelf.Scripts.RoomTheme.RoomThemeApplier>(FindObjectsInactive.Include);
             if (applier == null)
             {
-                App.Core.AppLog.Onboarding("[OnboardingStep2MainPreview] Snapshot deferred — themeApplier not yet in scene (MainScene 미로드).");
+                Debug.Log("[OnboardingStep2MainPreview] Snapshot deferred — themeApplier not yet in scene (MainScene 미로드).");
                 return;
             }
             step2PreviewSnapshotTheme = applier.CurrentTheme;
             step2PreviewSnapshotCaptured = true;
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingStep2MainPreview] Snapshot captured — theme='{(step2PreviewSnapshotTheme != null ? step2PreviewSnapshotTheme.name : "null")}'.");
         }
 
@@ -2487,7 +2499,7 @@ namespace App.Bootstrap
         {
             if (SceneManager.GetActiveScene().name != SceneKeys.Main)
             {
-                App.Core.AppLog.Onboarding("[OnboardingStep2MainPreview] SceneFlowManager.GoToMain dispatch.");
+                Debug.Log("[OnboardingStep2MainPreview] SceneFlowManager.GoToMain dispatch.");
                 SceneFlowManager.GoToMain();
                 var loadDeadline = Time.unscaledTime + MainSceneLoadTimeoutSeconds;
                 while (SceneManager.GetActiveScene().name != SceneKeys.Main && Time.unscaledTime < loadDeadline)
@@ -2527,13 +2539,13 @@ namespace App.Bootstrap
 
             step2MainSceneAlreadyLoaded = true;
             CaptureStep2PreviewSnapshotIfNeeded();
-            App.Core.AppLog.Onboarding("[OnboardingStep2MainPreview] MainScene ready (Step2 preview).");
+            Debug.Log("[OnboardingStep2MainPreview] MainScene ready (Step2 preview).");
 
             // scene 로드 후 onboarding canvas 가 살아남았는지 + overlay 모드가 그대로 유지되는지 재확인.
             // PersistOnboardingAcrossSceneLoad 가 DontDestroyOnLoad 적용해 destroy 0 보장이지만,
             // background hide 등 visual 상태는 한 번 더 reapply (safe guard).
             ApplyStep2OverlayMode(true);
-            App.Core.AppLog.Onboarding("[OnboardingOverlay] Step2 overlay restored after scene load.");
+            Debug.Log("[OnboardingOverlay] Step2 overlay restored after scene load.");
 
             // preview 가 이미 의도된 테마로 가도록 — 현재 selectedTheme / selectedRandomSelection 기준 즉시 적용.
             ApplyPreviewInMainSceneIfActive("Step2MainScenePreloadRoutine.end");
@@ -2928,7 +2940,7 @@ namespace App.Bootstrap
             SetStep3StatusVisible(false);
             SetStep3LoadingCoverVisible(true);
             SetStep3LoadingCoverAlpha(1f);
-            App.Core.AppLog.Onboarding("[OnboardingStep3] start");
+            Debug.Log("[OnboardingStep3] start");
             SetStep3OverlayStatus("메인 화면을 준비 중입니다.");
 
             if (SceneManager.GetActiveScene().name != SceneKeys.Main)
@@ -2972,20 +2984,20 @@ namespace App.Bootstrap
                 {
                     if (!selectedThemeApplied)
                     {
-                        App.Core.AppLog.Onboarding($"[OnboardingStep3] selected theme={selectedTheme ?? "<null>"}");
+                        Debug.Log($"[OnboardingStep3] selected theme={selectedTheme ?? "<null>"}");
                         if (experienceManager != null)
                         {
                             experienceManager.IsOnboardingStep3Active = true;
                         }
 
                         ApplySelectedThemeIfAvailable("EnterMainAndBookshelfFocusFlow");
-                        App.Core.AppLog.Onboarding("[OnboardingStep3] theme apply complete");
+                        Debug.Log("[OnboardingStep3] theme apply complete");
                         selectedThemeApplied = true;
                     }
 
                     if (!mainViewSnapRequested && experienceManager != null)
                     {
-                        App.Core.AppLog.Onboarding("[OnboardingStep3] set main front view");
+                        Debug.Log("[OnboardingStep3] set main front view");
                         experienceManager.SnapToMainView();
                         mainViewSnapRequested = true;
                     }
@@ -3047,7 +3059,7 @@ namespace App.Bootstrap
             yield return new WaitForSecondsRealtime(MainScenePreviewDelaySeconds);
 
             SetStep3OverlayStatus("책장 포커스 화면으로 이동 중입니다.");
-            App.Core.AppLog.Onboarding("[OnboardingStep3] start bookshelf focus transition");
+            Debug.Log("[OnboardingStep3] start bookshelf focus transition");
             var focusDeadline = Time.unscaledTime + BookshelfFocusTimeoutSeconds;
             var nextRetryAt = Time.unscaledTime;
             while (Time.unscaledTime < focusDeadline)
@@ -3347,7 +3359,7 @@ namespace App.Bootstrap
 
             if (string.IsNullOrWhiteSpace(selectedPath))
             {
-                App.Core.AppLog.Onboarding("[OnboardingDemo] Profile image selection canceled.");
+                LogDebug("[OnboardingDemo] Profile image selection canceled.");
                 return false;
             }
 
@@ -3405,7 +3417,7 @@ namespace App.Bootstrap
 
             SetProfilePreviewPlaceholderVisible(false);
 
-            App.Core.AppLog.Onboarding($"[OnboardingDemo] Loaded profile preview from '{imagePath}'.");
+            LogDebug($"[OnboardingDemo] Loaded profile preview from '{imagePath}'.");
             return true;
         }
 
@@ -3431,7 +3443,7 @@ namespace App.Bootstrap
 
             if (string.IsNullOrWhiteSpace(selectedPath))
             {
-                App.Core.AppLog.Onboarding("[OnboardingDemo] Profile image selection canceled.");
+                LogDebug("[OnboardingDemo] Profile image selection canceled.");
                 return false;
             }
 
@@ -3496,7 +3508,7 @@ namespace App.Bootstrap
                         return true;
                     }
 
-                    App.Core.AppLog.Onboarding("[OnboardingDemo] Profile image selection canceled.");
+                    LogDebug("[OnboardingDemo] Profile image selection canceled.");
                     return false;
                 }
                 catch
@@ -3512,7 +3524,7 @@ namespace App.Bootstrap
         {
             if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
             {
-                App.Core.AppLog.Onboarding("[OnboardingDemo] Profile image selection canceled.");
+                LogDebug("[OnboardingDemo] Profile image selection canceled.");
                 return false;
             }
 
@@ -3570,7 +3582,7 @@ namespace App.Bootstrap
 
                 SetProfilePreviewPlaceholderVisible(false);
 
-                App.Core.AppLog.Onboarding($"[OnboardingDemo] Loaded profile preview from '{imagePath}'.");
+                LogDebug($"[OnboardingDemo] Loaded profile preview from '{imagePath}'.");
                 return true;
             }
             catch (Exception exception)

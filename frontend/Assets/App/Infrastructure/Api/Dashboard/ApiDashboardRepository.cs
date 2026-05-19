@@ -7,7 +7,6 @@ namespace App.Infrastructure.Api.Dashboard
 {
     public sealed class ApiDashboardRepository : IDashboardRepository
     {
-
         private readonly NotebookApiClient client;
 
         public ApiDashboardRepository(NotebookApiClient client)
@@ -38,7 +37,7 @@ namespace App.Infrastructure.Api.Dashboard
                         return;
                     }
 
-                    App.Core.AppLog.Dashboard($"[Dashboard][ApiRepo] LoadMyDashboard resolved /v1/spaces/me → id={spaceDto.Id}. fetching dashboard.");
+                    Debug.Log($"[Dashboard][ApiRepo] LoadMyDashboard resolved /v1/spaces/me → id={spaceDto.Id}. fetching dashboard.");
                     FetchDashboard(spaceDto.Id, onSuccess, onError);
                 },
                 onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
@@ -46,7 +45,7 @@ namespace App.Infrastructure.Api.Dashboard
 
         private void FetchDashboard(long spaceId, Action<DashboardSnapshot> onSuccess, Action<DashboardApiError> onError)
         {
-            App.Core.AppLog.Dashboard($"[Dashboard][ApiRepo] GET /v1/spaces/{spaceId}/dashboard?period=weekly");
+            Debug.Log($"[Dashboard][ApiRepo] GET /v1/spaces/{spaceId}/dashboard?period=weekly");
             client.GetSpaceDashboard(
                 spaceId,
                 period: "weekly",

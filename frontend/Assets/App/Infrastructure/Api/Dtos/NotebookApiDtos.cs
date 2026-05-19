@@ -477,9 +477,6 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("assetId")]
         public long AssetId { get; set; }
 
-        [JsonProperty("inventoryId")]
-        public long? InventoryId { get; set; }
-
         [JsonProperty("code")]
         public string Code { get; set; }
 

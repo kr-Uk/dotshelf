@@ -20,7 +20,6 @@ namespace App.Bootstrap
     [DisallowMultipleComponent]
     public sealed class LoginScreenController : MonoBehaviour
     {
-
         private const string CanvasName = "LoginCanvas";
         private const string PreferredKoreanFontAssetName = "NotoSansKR-Regular";
         private const string FallbackKoreanFontAssetName = "NOTOSANSKR SDF";
@@ -204,7 +203,7 @@ namespace App.Bootstrap
             // because DevMainSceneMode is a static, not EditorPrefs.
             DevMainSceneMode.Activate();
 
-            App.Core.AppLog.Auth("[DEV MODE] entering MainScene by dev button");
+            Debug.Log("[DEV MODE] entering MainScene by dev button");
             MainSceneTransitionCover.Show("개발용 모드로 메인 화면 진입");
             SetCanvasVisible(false);
             SceneFlowManager.GoToMain();
@@ -237,7 +236,7 @@ namespace App.Bootstrap
                 return;
             }
 
-            App.Core.AppLog.Auth("[DEV MODE] entering onboarding step 1 (test)");
+            Debug.Log("[DEV MODE] entering onboarding step 1 (test)");
             SetCanvasVisible(false);
             onboardingController.InitializeIfNeeded();
             // Use the regular onboarding flow so Step1 is visible — the whole
@@ -315,7 +314,7 @@ namespace App.Bootstrap
             }
 
             // 진단 로그 — code/state 자체는 노출 안 함, presence 만.
-            App.Core.AppLog.Auth(
+            Debug.Log(
                 $"[Auth] SubmitSocialLoginCode provider={provider} codePresent={!string.IsNullOrWhiteSpace(code)} " +
                 $"redirectUri='{redirectUri}' codeVerifierPresent={!string.IsNullOrWhiteSpace(codeVerifier)}");
 
@@ -359,7 +358,7 @@ namespace App.Bootstrap
                 return;
             }
 
-            App.Core.AppLog.Auth($"[Auth] social-login success userId={result.UserId} newUser={result.NewUser} onboarded={result.Onboarded}");
+            Debug.Log($"[Auth] social-login success userId={result.UserId} newUser={result.NewUser} onboarded={result.Onboarded}");
 
             AuthSession.SaveTokens(
                 result.UserId,
@@ -442,7 +441,7 @@ namespace App.Bootstrap
             string effective = !string.IsNullOrWhiteSpace(overrideBaseUrl)
                 ? overrideBaseUrl
                 : App.Domain.ApiEndpointDefaults.DefaultBaseUrl;
-            App.Core.AppLog.Auth($"[Auth] AuthApiClient baseUrl='{effective}' source={source}");
+            Debug.Log($"[Auth] AuthApiClient baseUrl='{effective}' source={source}");
 
             var client = AuthApiClient.EnsureInstance(overrideBaseUrl, overrideTimeoutSeconds);
             authService = new BackendAuthService(client);
@@ -541,7 +540,7 @@ namespace App.Bootstrap
         {
             // Editor/Build 차이 진단용 — 런타임 AddComponent 시 Inspector 값 누락 가능성 가시화.
             bool inspectorOverridePresent = ResolveBrowserOAuthConfig(provider) != null;
-            App.Core.AppLog.Auth(
+            Debug.Log(
                 $"[OAuth] Starting desktop browser OAuth. provider={provider} " +
                 $"enableDesktopBrowserOAuth={enableDesktopBrowserOAuth} " +
                 $"inspectorOverride={(inspectorOverridePresent ? "present" : "missing — fallback to built-in defaults")}");
