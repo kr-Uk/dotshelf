@@ -340,6 +340,11 @@ namespace App.Features.Notebook.Presentation
         private VisualElement bookDetailModalPanel;
         private ScrollView bookDetailScrollView;
         private ScrollView bookDetailSummaryScrollView;
+        private VisualElement bookDetailSummaryScrollbarTrack;
+        private VisualElement bookDetailSummaryScrollbarHandle;
+        private bool isDraggingBookDetailSummaryScrollbar;
+        private float bookDetailSummaryScrollbarDragStartY;
+        private float bookDetailSummaryScrollbarDragStartOffsetY;
         private VisualElement otherSpacesContent;
         private VisualElement otherSpacesList;
         private VisualElement socialListPanel;
@@ -983,6 +988,9 @@ namespace App.Features.Notebook.Presentation
             bookDetailModalPanel = null;
             bookDetailScrollView = null;
             bookDetailSummaryScrollView = null;
+            bookDetailSummaryScrollbarTrack = null;
+            bookDetailSummaryScrollbarHandle = null;
+            isDraggingBookDetailSummaryScrollbar = false;
             otherSpacesContent = null;
             otherSpacesList = null;
             socialListPanel = null;
@@ -1948,17 +1956,47 @@ namespace App.Features.Notebook.Presentation
             synopsisScroll.style.borderLeftWidth = 3;
             synopsisScroll.style.borderLeftColor = Accent;
             synopsisScroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
-            synopsisScroll.verticalScrollerVisibility = ScrollerVisibility.Auto;
-            synopsisScroll.RegisterCallback<WheelEvent>(evt => evt.StopPropagation());
+            synopsisScroll.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+            synopsisScroll.verticalScroller.valueChanged += _ => UpdateBookDetailSummaryScrollbar();
+            synopsisScroll.RegisterCallback<WheelEvent>(evt =>
+            {
+                evt.StopPropagation();
+                UpdateBookDetailSummaryScrollbar();
+                synopsisScroll.schedule.Execute(UpdateBookDetailSummaryScrollbar).StartingIn(1);
+            });
+            synopsisScroll.RegisterCallback<GeometryChangedEvent>(_ => UpdateBookDetailSummaryScrollbar());
             synopsisScroll.contentContainer.name = "Content";
             synopsisScroll.contentContainer.style.flexDirection = FlexDirection.Column;
             synopsisScroll.contentContainer.style.paddingLeft = 14;
-            synopsisScroll.contentContainer.style.paddingRight = 12;
+            synopsisScroll.contentContainer.style.paddingRight = 24;
             synopsisScroll.contentContainer.style.paddingTop = 10;
             synopsisScroll.contentContainer.style.paddingBottom = 10;
             Round(synopsisScroll, 12);
             StyleBookDetailSummaryScroller(synopsisScroll);
+            synopsisScroll.RegisterCallback<AttachToPanelEvent>(_ => StyleBookDetailSummaryScroller(synopsisScroll));
             info.Add(synopsisScroll);
+
+            bookDetailSummaryScrollbarTrack = new VisualElement { name = "SynopsisScrollbarTrack" };
+            bookDetailSummaryScrollbarTrack.style.position = Position.Absolute;
+            bookDetailSummaryScrollbarTrack.style.top = 10;
+            bookDetailSummaryScrollbarTrack.style.right = 7;
+            bookDetailSummaryScrollbarTrack.style.bottom = 10;
+            bookDetailSummaryScrollbarTrack.style.width = 7;
+            bookDetailSummaryScrollbarTrack.style.backgroundColor = Color.clear;
+            bookDetailSummaryScrollbarTrack.pickingMode = PickingMode.Position;
+            synopsisScroll.hierarchy.Add(bookDetailSummaryScrollbarTrack);
+
+            bookDetailSummaryScrollbarHandle = new VisualElement { name = "SynopsisScrollbarHandle" };
+            bookDetailSummaryScrollbarHandle.style.position = Position.Absolute;
+            bookDetailSummaryScrollbarHandle.style.left = 0;
+            bookDetailSummaryScrollbarHandle.style.top = 0;
+            bookDetailSummaryScrollbarHandle.style.width = 7;
+            bookDetailSummaryScrollbarHandle.style.height = 32;
+            bookDetailSummaryScrollbarHandle.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.46f);
+            bookDetailSummaryScrollbarHandle.pickingMode = PickingMode.Position;
+            Round(bookDetailSummaryScrollbarHandle, 4);
+            bookDetailSummaryScrollbarTrack.Add(bookDetailSummaryScrollbarHandle);
+            RegisterBookDetailSummaryScrollbarDragHandlers();
 
             bookDetailSummary = Text(string.Empty, 13, Ink, FontStyle.Italic);
             bookDetailSummary.name = "SynopsisText";
@@ -4110,8 +4148,10 @@ namespace App.Features.Notebook.Presentation
                 if (bookDetailSummaryScrollView != null)
                 {
                     bookDetailSummaryScrollView.scrollOffset = Vector2.zero;
+                    UpdateBookDetailSummaryScrollbar();
                 }
             }).StartingIn(1);
+            bookDetailSummaryScrollView.schedule.Execute(UpdateBookDetailSummaryScrollbar).StartingIn(32);
         }
 
         private static void StyleBookDetailSummaryScroller(ScrollView scrollView)
@@ -4122,16 +4162,216 @@ namespace App.Features.Notebook.Presentation
                 return;
             }
 
-            scroller.style.width = 4;
-            scroller.style.minWidth = 4;
-            scroller.style.marginLeft = 4;
-            scroller.style.marginRight = 2;
+            scroller.style.width = 7;
+            scroller.style.minWidth = 7;
+            scroller.style.marginLeft = 6;
+            scroller.style.marginRight = 6;
             scroller.style.backgroundColor = Color.clear;
-            scroller.slider.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.12f);
-            scroller.slider.style.borderTopLeftRadius = 2;
-            scroller.slider.style.borderTopRightRadius = 2;
-            scroller.slider.style.borderBottomLeftRadius = 2;
-            scroller.slider.style.borderBottomRightRadius = 2;
+
+            scroller.lowButton.style.display = DisplayStyle.None;
+            scroller.highButton.style.display = DisplayStyle.None;
+            scroller.style.display = DisplayStyle.None;
+
+            var slider = scroller.slider;
+            slider.style.width = 7;
+            slider.style.minWidth = 7;
+            slider.style.backgroundColor = Color.clear;
+            slider.style.borderTopWidth = 0;
+            slider.style.borderRightWidth = 0;
+            slider.style.borderBottomWidth = 0;
+            slider.style.borderLeftWidth = 0;
+            StyleBookDetailSummaryScrollerParts(slider, false);
+            slider.RegisterCallback<PointerEnterEvent>(_ => StyleBookDetailSummaryScrollerParts(slider, true));
+            slider.RegisterCallback<PointerLeaveEvent>(_ => StyleBookDetailSummaryScrollerParts(slider, false));
+            slider.RegisterCallback<PointerDownEvent>(_ => StyleBookDetailSummaryScrollerParts(slider, true));
+            slider.RegisterCallback<PointerUpEvent>(_ => StyleBookDetailSummaryScrollerParts(slider, false));
+        }
+
+        private void UpdateBookDetailSummaryScrollbar()
+        {
+            if (bookDetailSummaryScrollView == null ||
+                bookDetailSummaryScrollbarTrack == null ||
+                bookDetailSummaryScrollbarHandle == null ||
+                bookDetailSummary == null)
+            {
+                return;
+            }
+
+            var trackHeight = ResolveElementHeight(bookDetailSummaryScrollbarTrack);
+            var viewportHeight = ResolveSummaryViewportHeight();
+            var contentHeight = ResolveSummaryContentHeight();
+            if (trackHeight <= 0f || viewportHeight <= 0f || contentHeight <= viewportHeight + 1f)
+            {
+                bookDetailSummaryScrollbarTrack.style.display = DisplayStyle.None;
+                return;
+            }
+
+            bookDetailSummaryScrollbarTrack.style.display = DisplayStyle.Flex;
+            var maxScrollY = Mathf.Max(1f, contentHeight - viewportHeight);
+            var visibleRatio = Mathf.Clamp01(viewportHeight / contentHeight);
+            var handleHeight = Mathf.Clamp(trackHeight * visibleRatio, 28f, trackHeight);
+            var maxHandleY = Mathf.Max(0f, trackHeight - handleHeight);
+            var scrollRatio = Mathf.Clamp01(bookDetailSummaryScrollView.scrollOffset.y / maxScrollY);
+            var handleY = maxHandleY * scrollRatio;
+
+            bookDetailSummaryScrollbarHandle.style.height = handleHeight;
+            bookDetailSummaryScrollbarHandle.style.top = handleY;
+        }
+
+        private float ResolveSummaryViewportHeight()
+        {
+            if (bookDetailSummaryScrollView == null)
+            {
+                return 0f;
+            }
+
+            var scrollHeight = ResolveElementHeight(bookDetailSummaryScrollView);
+            var paddingTop = bookDetailSummaryScrollView.contentContainer.resolvedStyle.paddingTop;
+            var paddingBottom = bookDetailSummaryScrollView.contentContainer.resolvedStyle.paddingBottom;
+            return Mathf.Max(0f, scrollHeight - paddingTop - paddingBottom);
+        }
+
+        private float ResolveSummaryContentHeight()
+        {
+            if (bookDetailSummaryScrollView == null || bookDetailSummary == null)
+            {
+                return 0f;
+            }
+
+            var paddingTop = bookDetailSummaryScrollView.contentContainer.resolvedStyle.paddingTop;
+            var paddingBottom = bookDetailSummaryScrollView.contentContainer.resolvedStyle.paddingBottom;
+            var labelHeight = ResolveElementHeight(bookDetailSummary);
+            var containerHeight = ResolveElementHeight(bookDetailSummaryScrollView.contentContainer);
+            return Mathf.Max(containerHeight, labelHeight + paddingTop + paddingBottom);
+        }
+
+        private static float ResolveElementHeight(VisualElement element)
+        {
+            if (element == null)
+            {
+                return 0f;
+            }
+
+            var resolved = element.resolvedStyle.height;
+            if (!float.IsNaN(resolved) && resolved > 0f)
+            {
+                return resolved;
+            }
+
+            var layout = element.layout.height;
+            return !float.IsNaN(layout) && layout > 0f ? layout : 0f;
+        }
+
+        private void RegisterBookDetailSummaryScrollbarDragHandlers()
+        {
+            if (bookDetailSummaryScrollbarHandle == null)
+            {
+                return;
+            }
+
+            bookDetailSummaryScrollbarHandle.RegisterCallback<PointerEnterEvent>(_ =>
+            {
+                bookDetailSummaryScrollbarHandle.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.62f);
+            });
+            bookDetailSummaryScrollbarHandle.RegisterCallback<PointerLeaveEvent>(_ =>
+            {
+                if (!isDraggingBookDetailSummaryScrollbar)
+                {
+                    bookDetailSummaryScrollbarHandle.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.46f);
+                }
+            });
+            bookDetailSummaryScrollbarHandle.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                if (bookDetailSummaryScrollView == null)
+                {
+                    return;
+                }
+
+                isDraggingBookDetailSummaryScrollbar = true;
+                bookDetailSummaryScrollbarDragStartY = evt.position.y;
+                bookDetailSummaryScrollbarDragStartOffsetY = bookDetailSummaryScrollView.scrollOffset.y;
+                bookDetailSummaryScrollbarHandle.CapturePointer(evt.pointerId);
+                bookDetailSummaryScrollbarHandle.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.62f);
+                evt.StopPropagation();
+            });
+            bookDetailSummaryScrollbarHandle.RegisterCallback<PointerMoveEvent>(evt =>
+            {
+                if (!isDraggingBookDetailSummaryScrollbar || bookDetailSummaryScrollView == null)
+                {
+                    return;
+                }
+
+                var viewportHeight = ResolveSummaryViewportHeight();
+                var contentHeight = ResolveSummaryContentHeight();
+                var trackHeight = ResolveElementHeight(bookDetailSummaryScrollbarTrack);
+                var handleHeight = ResolveElementHeight(bookDetailSummaryScrollbarHandle);
+                var maxScrollY = Mathf.Max(0f, contentHeight - viewportHeight);
+                var maxHandleY = Mathf.Max(1f, trackHeight - handleHeight);
+                var scrollDelta = (evt.position.y - bookDetailSummaryScrollbarDragStartY) / maxHandleY * maxScrollY;
+                var nextY = Mathf.Clamp(bookDetailSummaryScrollbarDragStartOffsetY + scrollDelta, 0f, maxScrollY);
+                bookDetailSummaryScrollView.scrollOffset = new Vector2(bookDetailSummaryScrollView.scrollOffset.x, nextY);
+                UpdateBookDetailSummaryScrollbar();
+                evt.StopPropagation();
+            });
+            bookDetailSummaryScrollbarHandle.RegisterCallback<PointerUpEvent>(evt =>
+            {
+                isDraggingBookDetailSummaryScrollbar = false;
+                bookDetailSummaryScrollbarHandle.ReleasePointer(evt.pointerId);
+                bookDetailSummaryScrollbarHandle.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.46f);
+                evt.StopPropagation();
+            });
+        }
+
+        private static void StyleBookDetailSummaryScrollerParts(VisualElement root, bool active)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var handleColor = active
+                ? Rgba(0x58, 0xB9, 0xFF, 0.62f)
+                : Rgba(0x58, 0xB9, 0xFF, 0.46f);
+
+            root.Query<VisualElement>().ForEach(element =>
+            {
+                if (IsSliderDragger(element))
+                {
+                    element.style.width = 7;
+                    element.style.minWidth = 7;
+                    element.style.backgroundColor = handleColor;
+                    element.style.borderTopLeftRadius = 4;
+                    element.style.borderTopRightRadius = 4;
+                    element.style.borderBottomLeftRadius = 4;
+                    element.style.borderBottomRightRadius = 4;
+                    return;
+                }
+
+                if (IsSliderTrack(element))
+                {
+                    element.style.backgroundColor = Color.clear;
+                    element.style.borderTopWidth = 0;
+                    element.style.borderRightWidth = 0;
+                    element.style.borderBottomWidth = 0;
+                    element.style.borderLeftWidth = 0;
+                }
+            });
+        }
+
+        private static bool IsSliderDragger(VisualElement element)
+        {
+            return element != null &&
+                   (element.ClassListContains("unity-slider__dragger") ||
+                    element.ClassListContains("unity-base-slider__dragger") ||
+                    (!string.IsNullOrEmpty(element.name) && element.name.IndexOf("dragger", StringComparison.OrdinalIgnoreCase) >= 0));
+        }
+
+        private static bool IsSliderTrack(VisualElement element)
+        {
+            return element != null &&
+                   (element.ClassListContains("unity-slider__tracker") ||
+                    element.ClassListContains("unity-base-slider__tracker") ||
+                    (!string.IsNullOrEmpty(element.name) && element.name.IndexOf("tracker", StringComparison.OrdinalIgnoreCase) >= 0));
         }
 
         private void RefreshFavoriteBookButton(BookViewModel book)
