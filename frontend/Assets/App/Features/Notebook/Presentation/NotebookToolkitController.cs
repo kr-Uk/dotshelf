@@ -15,6 +15,256 @@ namespace App.Features.Notebook.Presentation
     [RequireComponent(typeof(UIDocument))]
     public sealed class NotebookToolkitController : MonoBehaviour
     {
+        private sealed class UiToolkitScrollIndicator
+        {
+            public readonly struct Options
+            {
+                public Options(
+                    string trackName,
+                    string handleName,
+                    float width,
+                    float top,
+                    float right,
+                    float bottom,
+                    float minHandleHeight,
+                    Color normalColor,
+                    Color activeColor)
+                {
+                    TrackName = trackName;
+                    HandleName = handleName;
+                    Width = width;
+                    Top = top;
+                    Right = right;
+                    Bottom = bottom;
+                    MinHandleHeight = minHandleHeight;
+                    NormalColor = normalColor;
+                    ActiveColor = activeColor;
+                }
+
+                public string TrackName { get; }
+                public string HandleName { get; }
+                public float Width { get; }
+                public float Top { get; }
+                public float Right { get; }
+                public float Bottom { get; }
+                public float MinHandleHeight { get; }
+                public Color NormalColor { get; }
+                public Color ActiveColor { get; }
+            }
+
+            private readonly ScrollView scrollView;
+            private readonly VisualElement measuredContent;
+            private readonly Options options;
+            private readonly VisualElement track;
+            private readonly VisualElement handle;
+
+            private bool isDragging;
+            private float dragStartY;
+            private float dragStartOffsetY;
+
+            public UiToolkitScrollIndicator(ScrollView scrollView, VisualElement measuredContent, Options options)
+            {
+                this.scrollView = scrollView;
+                this.measuredContent = measuredContent;
+                this.options = options;
+
+                HideNativeScroller(scrollView);
+
+                track = new VisualElement { name = options.TrackName };
+                track.style.position = Position.Absolute;
+                track.style.top = options.Top;
+                track.style.right = options.Right;
+                track.style.bottom = options.Bottom;
+                track.style.width = options.Width;
+                track.style.backgroundColor = Color.clear;
+                track.pickingMode = PickingMode.Position;
+                scrollView.hierarchy.Add(track);
+
+                handle = new VisualElement { name = options.HandleName };
+                handle.style.position = Position.Absolute;
+                handle.style.left = 0;
+                handle.style.top = 0;
+                handle.style.width = options.Width;
+                handle.style.height = options.MinHandleHeight;
+                handle.style.backgroundColor = options.NormalColor;
+                handle.pickingMode = PickingMode.Position;
+                SetRadius(handle, options.Width * 0.5f);
+                track.Add(handle);
+
+                RegisterCallbacks();
+                Update();
+            }
+
+            public void ResetToTop()
+            {
+                if (scrollView == null)
+                {
+                    return;
+                }
+
+                scrollView.scrollOffset = Vector2.zero;
+                Update();
+                scrollView.schedule.Execute(() =>
+                {
+                    if (scrollView == null)
+                    {
+                        return;
+                    }
+
+                    scrollView.scrollOffset = Vector2.zero;
+                    Update();
+                }).StartingIn(1);
+                scrollView.schedule.Execute(Update).StartingIn(32);
+            }
+
+            public void Update()
+            {
+                if (scrollView == null || track == null || handle == null || measuredContent == null)
+                {
+                    return;
+                }
+
+                var trackHeight = ResolveHeight(track);
+                var viewportHeight = ResolveViewportHeight();
+                var contentHeight = ResolveContentHeight();
+                if (trackHeight <= 0f || viewportHeight <= 0f || contentHeight <= viewportHeight + 1f)
+                {
+                    track.style.display = DisplayStyle.None;
+                    return;
+                }
+
+                track.style.display = DisplayStyle.Flex;
+
+                var maxScrollY = Mathf.Max(1f, contentHeight - viewportHeight);
+                var visibleRatio = Mathf.Clamp01(viewportHeight / contentHeight);
+                var handleHeight = Mathf.Clamp(trackHeight * visibleRatio, options.MinHandleHeight, trackHeight);
+                var maxHandleY = Mathf.Max(0f, trackHeight - handleHeight);
+                var scrollRatio = Mathf.Clamp01(scrollView.scrollOffset.y / maxScrollY);
+
+                handle.style.height = handleHeight;
+                handle.style.top = maxHandleY * scrollRatio;
+            }
+
+            private void RegisterCallbacks()
+            {
+                scrollView.RegisterCallback<WheelEvent>(evt =>
+                {
+                    evt.StopPropagation();
+                    Update();
+                    scrollView.schedule.Execute(Update).StartingIn(1);
+                });
+                scrollView.RegisterCallback<GeometryChangedEvent>(_ => Update());
+                scrollView.RegisterCallback<AttachToPanelEvent>(_ =>
+                {
+                    HideNativeScroller(scrollView);
+                    Update();
+                });
+                scrollView.verticalScroller.valueChanged += _ => Update();
+
+                handle.RegisterCallback<PointerEnterEvent>(_ => handle.style.backgroundColor = options.ActiveColor);
+                handle.RegisterCallback<PointerLeaveEvent>(_ =>
+                {
+                    if (!isDragging)
+                    {
+                        handle.style.backgroundColor = options.NormalColor;
+                    }
+                });
+                handle.RegisterCallback<PointerDownEvent>(evt =>
+                {
+                    isDragging = true;
+                    dragStartY = evt.position.y;
+                    dragStartOffsetY = scrollView.scrollOffset.y;
+                    handle.CapturePointer(evt.pointerId);
+                    handle.style.backgroundColor = options.ActiveColor;
+                    evt.StopPropagation();
+                });
+                handle.RegisterCallback<PointerMoveEvent>(evt =>
+                {
+                    if (!isDragging)
+                    {
+                        return;
+                    }
+
+                    var viewportHeight = ResolveViewportHeight();
+                    var contentHeight = ResolveContentHeight();
+                    var trackHeight = ResolveHeight(track);
+                    var handleHeight = ResolveHeight(handle);
+                    var maxScrollY = Mathf.Max(0f, contentHeight - viewportHeight);
+                    var maxHandleY = Mathf.Max(1f, trackHeight - handleHeight);
+                    var scrollDelta = (evt.position.y - dragStartY) / maxHandleY * maxScrollY;
+                    var nextY = Mathf.Clamp(dragStartOffsetY + scrollDelta, 0f, maxScrollY);
+                    scrollView.scrollOffset = new Vector2(scrollView.scrollOffset.x, nextY);
+                    Update();
+                    evt.StopPropagation();
+                });
+                handle.RegisterCallback<PointerUpEvent>(evt =>
+                {
+                    isDragging = false;
+                    handle.ReleasePointer(evt.pointerId);
+                    handle.style.backgroundColor = options.NormalColor;
+                    evt.StopPropagation();
+                });
+            }
+
+            private float ResolveViewportHeight()
+            {
+                var scrollHeight = ResolveHeight(scrollView);
+                var paddingTop = scrollView.contentContainer.resolvedStyle.paddingTop;
+                var paddingBottom = scrollView.contentContainer.resolvedStyle.paddingBottom;
+                return Mathf.Max(0f, scrollHeight - paddingTop - paddingBottom);
+            }
+
+            private float ResolveContentHeight()
+            {
+                var paddingTop = scrollView.contentContainer.resolvedStyle.paddingTop;
+                var paddingBottom = scrollView.contentContainer.resolvedStyle.paddingBottom;
+                var measuredHeight = ResolveHeight(measuredContent);
+                var containerHeight = ResolveHeight(scrollView.contentContainer);
+                return Mathf.Max(containerHeight, measuredHeight + paddingTop + paddingBottom);
+            }
+
+            private static float ResolveHeight(VisualElement element)
+            {
+                if (element == null)
+                {
+                    return 0f;
+                }
+
+                var resolved = element.resolvedStyle.height;
+                if (!float.IsNaN(resolved) && resolved > 0f)
+                {
+                    return resolved;
+                }
+
+                var layout = element.layout.height;
+                return !float.IsNaN(layout) && layout > 0f ? layout : 0f;
+            }
+
+            private static void HideNativeScroller(ScrollView scrollView)
+            {
+                var scroller = scrollView?.verticalScroller;
+                if (scroller == null)
+                {
+                    return;
+                }
+
+                scrollView.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+                scroller.lowButton.style.display = DisplayStyle.None;
+                scroller.highButton.style.display = DisplayStyle.None;
+                scroller.style.display = DisplayStyle.None;
+                scroller.style.width = 0;
+                scroller.style.minWidth = 0;
+            }
+
+            private static void SetRadius(VisualElement element, float radius)
+            {
+                element.style.borderTopLeftRadius = radius;
+                element.style.borderTopRightRadius = radius;
+                element.style.borderBottomLeftRadius = radius;
+                element.style.borderBottomRightRadius = radius;
+            }
+        }
+
         private sealed class BookViewModel
         {
             public BookViewModel(
@@ -258,6 +508,7 @@ namespace App.Features.Notebook.Presentation
         private const int MarketBookPageSize = 48;
         private const NotebookShelfDisplayStyle DefaultDisplayStyle = NotebookShelfDisplayStyle.Spine;
         private const string PanelSettingsResource = "NotebookPanelSettings";
+        private const string CommonSearchIconPath = "Assets/App/UI/Icons/Common/icon_search.png";
 
         private static readonly Color PageBack = Hex(0xF0EEE9);
         private static readonly Color Surface = Hex(0xF7FFF7);
@@ -278,6 +529,7 @@ namespace App.Features.Notebook.Presentation
         private static readonly Color Coral = Hex(0xFF8A65);
         private static readonly Color Violet = Hex(0x6E5BFF);
         private static readonly Color Gold = Hex(0xF4C95D);
+        private static Sprite commonSearchIconSprite;
         private static Texture2D searchIconTexture;
         private static readonly string[] SuggestedSearches = { "소설", "에세이", "심리", "베스트셀러", "SF", "자기계발", "인문" };
 
@@ -339,6 +591,8 @@ namespace App.Features.Notebook.Presentation
         private VisualElement bookDetailContent;
         private VisualElement bookDetailModalPanel;
         private ScrollView bookDetailScrollView;
+        private ScrollView bookDetailSummaryScrollView;
+        private UiToolkitScrollIndicator bookDetailSummaryScrollIndicator;
         private VisualElement otherSpacesContent;
         private VisualElement otherSpacesList;
         private VisualElement socialListPanel;
@@ -981,6 +1235,8 @@ namespace App.Features.Notebook.Presentation
             bookDetailContent = null;
             bookDetailModalPanel = null;
             bookDetailScrollView = null;
+            bookDetailSummaryScrollView = null;
+            bookDetailSummaryScrollIndicator = null;
             otherSpacesContent = null;
             otherSpacesList = null;
             socialListPanel = null;
@@ -1523,7 +1779,7 @@ namespace App.Features.Notebook.Presentation
             searchIcon.style.marginLeft = 2;
             searchIcon.style.marginRight = 8;
             searchIcon.style.flexShrink = 0;
-            searchIcon.style.backgroundImage = new StyleBackground(GetSearchIconTexture());
+            searchIcon.style.backgroundImage = ResolveSearchIconBackground();
             searchIcon.pickingMode = PickingMode.Ignore;
             search.Add(searchIcon);
 
@@ -1805,6 +2061,28 @@ namespace App.Features.Notebook.Presentation
             Border(panel, Rgba(0x0E, 0x1D, 0x2A, 0.14f));
             bookDetailContent.Add(panel);
 
+            var headerArea = Row("book-detail-header-area");
+            headerArea.style.height = 52;
+            headerArea.style.flexShrink = 0;
+            headerArea.style.alignItems = Align.Center;
+            headerArea.style.justifyContent = Justify.FlexEnd;
+            headerArea.style.marginBottom = 10;
+            headerArea.pickingMode = PickingMode.Position;
+            panel.Add(headerArea);
+
+            var topLayerClose = CloseIconButton("닫기");
+            topLayerClose.style.width = 46;
+            topLayerClose.style.height = 46;
+            topLayerClose.style.marginRight = 0;
+            topLayerClose.style.marginTop = 0;
+            topLayerClose.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.74f);
+            topLayerClose.style.borderTopWidth = 0;
+            topLayerClose.style.borderRightWidth = 0;
+            topLayerClose.style.borderBottomWidth = 0;
+            topLayerClose.style.borderLeftWidth = 0;
+            topLayerClose.clicked += CloseBookDetail;
+            headerArea.Add(topLayerClose);
+
             var detailScroll = new ScrollView(ScrollViewMode.Vertical) { name = "book-detail-scroll" };
             bookDetailScrollView = detailScroll;
             detailScroll.style.flexGrow = 1f;
@@ -1912,23 +2190,50 @@ namespace App.Features.Notebook.Presentation
             bookDetailPublisher.style.unityTextAlign = TextAnchor.MiddleLeft;
             info.Add(bookDetailPublisher);
 
+            var synopsisScroll = new ScrollView(ScrollViewMode.Vertical) { name = "SynopsisScrollView" };
+            bookDetailSummaryScrollView = synopsisScroll;
+            synopsisScroll.style.marginTop = 14;
+            synopsisScroll.style.height = 96;
+            synopsisScroll.style.minHeight = 96;
+            synopsisScroll.style.maxHeight = 96;
+            synopsisScroll.style.flexShrink = 0f;
+            synopsisScroll.style.overflow = Overflow.Hidden;
+            synopsisScroll.style.backgroundColor = Rgba(0xF7, 0xFF, 0xF7, 0.86f);
+            synopsisScroll.style.borderLeftWidth = 3;
+            synopsisScroll.style.borderLeftColor = Accent;
+            synopsisScroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            synopsisScroll.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+            synopsisScroll.contentContainer.name = "Content";
+            synopsisScroll.contentContainer.style.flexDirection = FlexDirection.Column;
+            synopsisScroll.contentContainer.style.paddingLeft = 14;
+            synopsisScroll.contentContainer.style.paddingRight = 24;
+            synopsisScroll.contentContainer.style.paddingTop = 10;
+            synopsisScroll.contentContainer.style.paddingBottom = 10;
+            Round(synopsisScroll, 12);
+            info.Add(synopsisScroll);
+
             bookDetailSummary = Text(string.Empty, 13, Ink, FontStyle.Italic);
-            bookDetailSummary.style.marginTop = 14;
-            bookDetailSummary.style.paddingLeft = 14;
-            bookDetailSummary.style.paddingRight = 12;
-            bookDetailSummary.style.paddingTop = 10;
-            bookDetailSummary.style.paddingBottom = 10;
+            bookDetailSummary.name = "SynopsisText";
             bookDetailSummary.style.whiteSpace = WhiteSpace.Normal;
-            bookDetailSummary.style.minHeight = 48;
+            bookDetailSummary.style.minHeight = 0;
             bookDetailSummary.style.height = StyleKeyword.Auto;
             bookDetailSummary.style.flexShrink = 0f;
-            bookDetailSummary.style.overflow = Overflow.Hidden;
+            bookDetailSummary.style.overflow = Overflow.Visible;
             bookDetailSummary.style.unityTextAlign = TextAnchor.UpperLeft;
-            bookDetailSummary.style.backgroundColor = Rgba(0xF7, 0xFF, 0xF7, 0.86f);
-            bookDetailSummary.style.borderLeftWidth = 3;
-            bookDetailSummary.style.borderLeftColor = Accent;
-            Round(bookDetailSummary, 12);
-            info.Add(bookDetailSummary);
+            synopsisScroll.Add(bookDetailSummary);
+            bookDetailSummaryScrollIndicator = new UiToolkitScrollIndicator(
+                synopsisScroll,
+                bookDetailSummary,
+                new UiToolkitScrollIndicator.Options(
+                    "SynopsisScrollbarTrack",
+                    "SynopsisScrollbarHandle",
+                    7f,
+                    10f,
+                    7f,
+                    10f,
+                    28f,
+                    Rgba(0x58, 0xB9, 0xFF, 0.46f),
+                    Rgba(0x58, 0xB9, 0xFF, 0.62f)));
 
             var purchasePanel = Row("book-detail-purchase");
             purchasePanel.style.height = 64;
@@ -2160,20 +2465,6 @@ namespace App.Features.Notebook.Presentation
                 SubmitBookReview();
             };
             form.Add(submit);
-
-            var topLayerClose = CloseIconButton("닫기");
-            topLayerClose.style.position = Position.Absolute;
-            topLayerClose.style.right = 12;
-            topLayerClose.style.top = 12;
-            topLayerClose.style.width = 44;
-            topLayerClose.style.height = 44;
-            topLayerClose.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.74f);
-            topLayerClose.style.borderTopWidth = 0;
-            topLayerClose.style.borderRightWidth = 0;
-            topLayerClose.style.borderBottomWidth = 0;
-            topLayerClose.style.borderLeftWidth = 0;
-            topLayerClose.clicked += CloseBookDetail;
-            panel.Add(topLayerClose);
         }
 
         private VisualElement CreateInputFrame(float height)
@@ -4051,7 +4342,7 @@ namespace App.Features.Notebook.Presentation
             if (bookDetailSummary != null)
             {
                 bookDetailSummary.text = $"\"{book.Summary}\"";
-                ScheduleBookDetailSummaryAutoHeight();
+                ResetBookDetailSummaryScroll();
             }
 
             if (bookDetailPrice != null)
@@ -4071,65 +4362,9 @@ namespace App.Features.Notebook.Presentation
             RefreshRatingStars();
         }
 
-        private void ScheduleBookDetailSummaryAutoHeight()
+        private void ResetBookDetailSummaryScroll()
         {
-            if (bookDetailSummary == null)
-            {
-                return;
-            }
-
-            bookDetailSummary.style.height = StyleKeyword.Auto;
-            bookDetailSummary.style.minHeight = 48;
-            bookDetailSummary.schedule.Execute(UpdateBookDetailSummaryAutoHeight).StartingIn(1);
-        }
-
-        private void UpdateBookDetailSummaryAutoHeight()
-        {
-            if (bookDetailSummary == null)
-            {
-                return;
-            }
-
-            var width = bookDetailSummary.resolvedStyle.width;
-            if (float.IsNaN(width) || width <= 0f)
-            {
-                return;
-            }
-
-            var verticalPadding = bookDetailSummary.resolvedStyle.paddingTop + bookDetailSummary.resolvedStyle.paddingBottom;
-            var text = bookDetailSummary.text ?? string.Empty;
-            var usableWidth = Mathf.Max(24f, width - bookDetailSummary.resolvedStyle.paddingLeft - bookDetailSummary.resolvedStyle.paddingRight);
-            var fontSize = Mathf.Max(8f, bookDetailSummary.resolvedStyle.fontSize);
-            var lineCapacity = Mathf.Max(1f, usableWidth / (fontSize * 0.92f));
-            var visualLength = 0f;
-            var lineCount = 1;
-            for (var i = 0; i < text.Length; i++)
-            {
-                if (text[i] == '\n')
-                {
-                    lineCount++;
-                    visualLength = 0;
-                    continue;
-                }
-
-                var weight = text[i] == ' '
-                    ? 0.32f
-                    : text[i] <= 0x007F
-                        ? 0.58f
-                        : 1f;
-                if (visualLength > 0f && visualLength + weight > lineCapacity)
-                {
-                    lineCount++;
-                    visualLength = 0f;
-                }
-
-                visualLength += weight;
-            }
-
-            var lineHeight = Mathf.Max(18f, fontSize * 1.42f);
-            var targetHeight = Mathf.Ceil(Mathf.Max(48f, lineCount * lineHeight + verticalPadding + 4f));
-            bookDetailSummary.style.minHeight = targetHeight;
-            bookDetailSummary.style.height = targetHeight;
+            bookDetailSummaryScrollIndicator?.ResetToTop();
         }
 
         private void RefreshFavoriteBookButton(BookViewModel book)
@@ -7560,7 +7795,23 @@ namespace App.Features.Notebook.Presentation
             AddRoomRect(parent, "room-pin-card-b", left + 10, top + 33, width - 20, 14, Rgba(0xFF, 0xFF, 0xFF, 0.30f), 5);
         }
 
-        private static Texture2D GetSearchIconTexture()
+        private static StyleBackground ResolveSearchIconBackground()
+        {
+#if UNITY_EDITOR
+            if (commonSearchIconSprite == null)
+            {
+                commonSearchIconSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(CommonSearchIconPath);
+            }
+
+            if (commonSearchIconSprite != null)
+            {
+                return new StyleBackground(commonSearchIconSprite);
+            }
+#endif
+            return new StyleBackground(GetFallbackSearchIconTexture());
+        }
+
+        private static Texture2D GetFallbackSearchIconTexture()
         {
             if (searchIconTexture != null)
             {
