@@ -732,6 +732,8 @@ namespace App.Bootstrap
         private readonly Dictionary<long, DownloadManifestResponseDto> visibleRemoteAssetManifests = new Dictionary<long, DownloadManifestResponseDto>();
         private readonly Dictionary<long, InventoryEntry> visibleLocalAssetEntries = new Dictionary<long, InventoryEntry>();
         private readonly Dictionary<string, Sprite> inventoryPreviewSpriteCache = new Dictionary<string, Sprite>(StringComparer.Ordinal);
+        private readonly HashSet<string> inventoryPreviewLoadsInFlight = new HashSet<string>(StringComparer.Ordinal);
+        private const int MaxInventoryPreviewLoadsInFlight = 4;
 
         private BookshelfExperienceManager cachedExperienceManager;
         private BookshelfApiSyncController cachedBookshelfApiSyncController;
@@ -3747,7 +3749,9 @@ namespace App.Bootstrap
         // 동안 PlayerPrefs 저장은 하지 않고 visual 만 적용하는 모드. 호출자가 명시.
         private void SyncInventoryThemeFilterForTheme(RoomThemeAsset theme)
         {
-            RoomEditThemeFilter.ActiveTheme = ResolveThemeFilterTag(theme);
+            // Applying a full room theme must not narrow the decorate inventory.
+            // Theme filtering is only for the explicit editor/runtime filter control.
+            RoomEditThemeFilter.ClearSilently();
         }
 
         private static string ResolveThemeFilterTag(RoomThemeAsset theme)
@@ -7060,37 +7064,52 @@ namespace App.Bootstrap
                 return;
             }
 
+            if (selectedToolbarKey == "ALL" ||
+                inventoryPreviewLoadsInFlight.Contains(normalizedUrl) ||
+                inventoryPreviewLoadsInFlight.Count >= MaxInventoryPreviewLoadsInFlight)
+            {
+                return;
+            }
+
+            inventoryPreviewLoadsInFlight.Add(normalizedUrl);
             StartCoroutine(LoadInventoryPreviewCoroutine(normalizedUrl, thumb, glyph));
         }
 
         private IEnumerator LoadInventoryPreviewCoroutine(string url, Image thumb, TMP_Text glyph)
         {
-            using (var request = UnityEngine.Networking.UnityWebRequestTexture.GetTexture(url))
+            try
             {
-                yield return request.SendWebRequest();
-                if (request.result != UnityEngine.Networking.UnityWebRequest.Result.Success)
+                using (var request = UnityEngine.Networking.UnityWebRequestTexture.GetTexture(url))
                 {
-                    Debug.LogWarning($"[RoomEdit][RemoteAsset] preview image load failed: {request.responseCode} {request.error} ({url})");
-                    yield break;
-                }
+                    yield return request.SendWebRequest();
+                    if (request.result != UnityEngine.Networking.UnityWebRequest.Result.Success)
+                    {
+                        Debug.LogWarning($"[RoomEdit][RemoteAsset] preview image load failed: {request.responseCode} {request.error} ({url})");
+                        yield break;
+                    }
 
-                var texture = UnityEngine.Networking.DownloadHandlerTexture.GetContent(request);
-                if (texture == null)
-                {
-                    Debug.LogWarning($"[RoomEdit][RemoteAsset] preview image response had no texture: {url}");
-                    yield break;
-                }
+                    var texture = UnityEngine.Networking.DownloadHandlerTexture.GetContent(request);
+                    if (texture == null)
+                    {
+                        Debug.LogWarning($"[RoomEdit][RemoteAsset] preview image response had no texture: {url}");
+                        yield break;
+                    }
 
-                var sprite = Sprite.Create(
-                    texture,
-                    new Rect(0f, 0f, texture.width, texture.height),
-                    new Vector2(0.5f, 0.5f),
-                    100f);
-                inventoryPreviewSpriteCache[url] = sprite;
-                if (thumb != null)
-                {
-                    ApplyInventoryPreview(thumb, glyph, sprite);
+                    var sprite = Sprite.Create(
+                        texture,
+                        new Rect(0f, 0f, texture.width, texture.height),
+                        new Vector2(0.5f, 0.5f),
+                        100f);
+                    inventoryPreviewSpriteCache[url] = sprite;
+                    if (thumb != null)
+                    {
+                        ApplyInventoryPreview(thumb, glyph, sprite);
+                    }
                 }
+            }
+            finally
+            {
+                inventoryPreviewLoadsInFlight.Remove(url);
             }
         }
 

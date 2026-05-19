@@ -35,6 +35,11 @@ namespace App.Bootstrap
 
         public static bool IsActive => !string.IsNullOrEmpty(activeTheme);
 
+        public static void ClearSilently()
+        {
+            activeTheme = AllThemesValue;
+        }
+
         public static bool MatchesActive(string entryThemeTag)
         {
             if (!IsActive) return true;
