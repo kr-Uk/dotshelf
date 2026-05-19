@@ -41,6 +41,11 @@ services:
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID}
       APPLE_CLIENT_IDS: ${APPLE_CLIENT_IDS}
+      APPLE_DESKTOP_CLIENT_ID: ${APPLE_DESKTOP_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
+      APPLE_DESKTOP_REDIRECT_URI: ${APPLE_DESKTOP_REDIRECT_URI:-}
       # S3 업로드 — bucket 은 부팅 검증(@NotBlank) + compose substitution 양쪽에서 강제.
       # ${...:?} 문법은 .env 에 변수 누락 시 docker-compose 가 컨테이너 시작 자체를 거부해
       # "ApplicationContext failed" 보다 한 단계 빨리 진단된다 (운영자 휴먼 에러 차단).
@@ -98,6 +103,11 @@ services:
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID}
       APPLE_CLIENT_IDS: ${APPLE_CLIENT_IDS}
+      APPLE_DESKTOP_CLIENT_ID: ${APPLE_DESKTOP_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
+      APPLE_DESKTOP_REDIRECT_URI: ${APPLE_DESKTOP_REDIRECT_URI:-}
       # S3 업로드 — bucket 은 부팅 검증(@NotBlank) + compose substitution 양쪽에서 강제.
       # ${...:?} 문법은 .env 에 변수 누락 시 docker-compose 가 컨테이너 시작 자체를 거부해
       # "ApplicationContext failed" 보다 한 단계 빨리 진단된다 (운영자 휴먼 에러 차단).

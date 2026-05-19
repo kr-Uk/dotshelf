@@ -1,6 +1,13 @@
 package com.dotshelf.domain.auth.controller;
 
+import java.net.URI;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -11,6 +18,7 @@ import com.dotshelf.domain.auth.dto.AuthDtos.GuestSessionResponse;
 import com.dotshelf.domain.auth.dto.AuthDtos.LogoutRequest;
 import com.dotshelf.domain.auth.dto.AuthDtos.SocialLoginRequest;
 import com.dotshelf.domain.auth.dto.AuthDtos.TokenRefreshRequest;
+import com.dotshelf.domain.auth.service.AppleDesktopOAuthRelayService;
 import com.dotshelf.domain.auth.service.AuthService;
 import com.dotshelf.global.common.ApiResponse;
 import com.dotshelf.global.common.CurrentUser;
@@ -29,12 +37,44 @@ import lombok.RequiredArgsConstructor;
 public class AuthController {
 
     private final AuthService authService;
+    private final AppleDesktopOAuthRelayService appleDesktopOAuthRelayService;
 
     @Operation(summary = "소셜 로그인", description = "소셜 provider 토큰 검증 후 자체 JWT 발급 (신규 가입 포함)")
     @SecurityRequirements({})
     @PostMapping("/social-login")
     public ApiResponse<AuthTokenResponse> socialLogin(@RequestBody @Valid SocialLoginRequest request) {
         return ApiResponse.success(authService.socialLogin(request));
+    }
+
+    @Operation(summary = "Apple 데스크톱 로그인 콜백", description = "Apple form_post 콜백을 Unity loopback 콜백으로 중계한다.")
+    @SecurityRequirements({})
+    @PostMapping(value = "/apple/desktop-callback", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    public ResponseEntity<Void> appleDesktopCallback(
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String state,
+            @RequestParam(required = false) String error,
+            @RequestParam(name = "error_description", required = false) String errorDescription
+    ) {
+        return redirectToUnityAppleCallback(code, state, error, errorDescription);
+    }
+
+    @Operation(summary = "Apple 데스크톱 로그인 콜백", description = "개발/호환용 query callback을 Unity loopback 콜백으로 중계한다.")
+    @SecurityRequirements({})
+    @GetMapping("/apple/desktop-callback")
+    public ResponseEntity<Void> appleDesktopCallbackByQuery(
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String state,
+            @RequestParam(required = false) String error,
+            @RequestParam(name = "error_description", required = false) String errorDescription
+    ) {
+        return redirectToUnityAppleCallback(code, state, error, errorDescription);
+    }
+
+    private ResponseEntity<Void> redirectToUnityAppleCallback(String code, String state, String error, String errorDescription) {
+        URI redirectUri = appleDesktopOAuthRelayService.buildUnityRedirectUri(code, state, error, errorDescription);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(redirectUri)
+                .build();
     }
 
     @Operation(summary = "토큰 리프레시", description = "refresh 토큰으로 access 토큰 재발급 (rotation + reuse detection)")

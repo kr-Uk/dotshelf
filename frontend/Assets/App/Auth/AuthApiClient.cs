@@ -61,12 +61,10 @@ namespace App.Auth
         // (code/redirectUri/state vs token) so the client keeps separate
         // DTOs and helper methods, but they share a single backend route.
         //
-        // BE expectation: SocialLoginRequest record needs to be extended to
-        // accept the optional `code`, `redirectUri`, and `state` fields and
-        // route to a server-side code-exchange handler when tokenType is
-        // AUTHORIZATION_CODE. Until BE catches up the call returns the
-        // generic 500 envelope (Spring NoHandlerFoundException → 500 wrap)
-        // and surfaces via AuthErrorMessages.
+        // BE receives the authorization code in `token` and exchanges it
+        // server-side when tokenType is AUTHORIZATION_CODE. redirectUri must
+        // match the URI used at the provider authorize step; for Apple Desktop
+        // this is the hosted BE relay callback, not Unity's loopback URL.
         public Coroutine PostSocialLoginCode(
             SocialLoginByCodeRequestDto request,
             Action<AuthTokenResponseDto> onSuccess,

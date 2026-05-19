@@ -255,6 +255,11 @@ Apple Developer 값은 Unity `ProjectSettings`와 Xcode 프로젝트의 실제 B
 ```text
 APPLE_CLIENT_ID={apple-bundle-id-or-services-id}
 APPLE_CLIENT_IDS={apple-bundle-id},{apple-services-id}
+APPLE_DESKTOP_CLIENT_ID={apple-services-id}
+APPLE_TEAM_ID={apple-team-id}
+APPLE_KEY_ID={apple-signin-key-id}
+APPLE_PRIVATE_KEY={apple-p8-private-key}
+APPLE_DESKTOP_REDIRECT_URI=https://dev-api.dotshelf.digital/v1/auth/apple/desktop-callback
 ```
 
 ### Apple BE Request
@@ -274,6 +279,32 @@ Apple 로그인 시작 전에 매번 충분히 긴 랜덤 `nonce`를 만든다. 
 `tokenType`을 생략해도 BE는 Apple 토큰을 `ID_TOKEN`으로 처리한다. 단, `provider=APPLE`에서는 `nonce`가 필수이며, BE는 `identityToken`의 `nonce` claim과 요청 `nonce`가 다르면 토큰을 거절한다.
 
 Apple은 이메일과 이름을 최초 동의 시점에만 내려줄 수 있다. 이후 로그인에서는 `email`이 없을 수 있으므로, 클라이언트는 로그인 성공 후 사용자 프로필 보완 화면을 열 수 있어야 한다.
+
+### Apple Desktop BE Request
+
+Desktop Unity는 Apple이 localhost loopback URL을 직접 redirect target으로 쓰기 어려우므로, Apple authorize 요청에는 BE의 HTTPS 콜백을 사용한다.
+
+```text
+https://dev-api.dotshelf.digital/v1/auth/apple/desktop-callback
+```
+
+이 URL은 Apple Developer의 Services ID Return URL에 등록되어 있어야 한다. Unity는 state 안에 실제 loopback callback URL을 base64url로 넣고, BE 콜백은 Apple form_post 응답을 다시 Unity loopback으로 302 redirect한다.
+
+Unity `LoginScreenController`의 `Desktop Browser OAuth Providers`에 Apple 항목을 추가할 때 `clientId`는 Apple Services ID를 넣는다. `authorizationRedirectUri`를 비워두면 기본값으로 `https://dev-api.dotshelf.digital/v1/auth/apple/desktop-callback`을 사용한다.
+
+Unity가 최종적으로 BE `/v1/auth/social-login`에 보내는 요청:
+
+```json
+{
+  "provider": "APPLE",
+  "tokenType": "AUTHORIZATION_CODE",
+  "token": "Apple authorization code",
+  "redirectUri": "https://dev-api.dotshelf.digital/v1/auth/apple/desktop-callback",
+  "nonce": "Apple authorize 요청에 넣은 nonce"
+}
+```
+
+BE는 `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`로 Apple `client_secret` JWT를 생성해 Apple token endpoint에서 `id_token`으로 교환한 뒤, 기존 Apple JWKS/nonce 검증을 그대로 수행한다.
 
 ## Platform Summary
 
@@ -298,6 +329,11 @@ Apple은 이메일과 이름을 최초 동의 시점에만 내려줄 수 있다.
 | `KAKAO_CLIENT_SECRET` | Kakao 보안 강화 (선택, 콘솔에서 발급한 경우만). PKCE와 동시 사용 가능 (defense in depth) | Kakao Developers |
 | `KAKAO_REDIRECT_URI` | Desktop code 교환 호출 시 default redirect URI fallback (FE가 매번 보내므로 사실상 미사용) | 위 등록 URI 중 하나 |
 | `APPLE_CLIENT_IDS` | Apple identityToken `aud` 검증 (Bundle ID + Services ID 콤마구분) | Apple Developer |
+| `APPLE_DESKTOP_CLIENT_ID` | Desktop/Web Apple authorize 시 사용하는 Services ID. BE가 `client_secret` JWT의 `sub`로 사용 | Apple Developer |
+| `APPLE_TEAM_ID` | Apple `client_secret` JWT의 issuer | Apple Developer |
+| `APPLE_KEY_ID` | Sign in with Apple key id. JWT header `kid` | Apple Developer |
+| `APPLE_PRIVATE_KEY` | Sign in with Apple `.p8` private key. 서버 환경변수로만 보관 | Apple Developer |
+| `APPLE_DESKTOP_REDIRECT_URI` | Apple Services ID Return URL. 기본값/운영값 모두 HTTPS BE 콜백 URL 사용 | Apple Developer / BE 배포 URL |
 
 PKCE 흐름 (Desktop):
 - `client_secret` 의존 제거 — Desktop client는 본질적으로 public이므로 PKCE가 정공법 (RFC 8252)

@@ -1,4 +1,5 @@
 using System;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using App.Auth;
@@ -10,6 +11,9 @@ using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.TextCore.LowLevel;
 using UnityEngine.UI;
+#if UNITY_IOS && !UNITY_EDITOR
+using System.Runtime.InteropServices;
+#endif
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem.UI;
 #endif
@@ -106,6 +110,12 @@ namespace App.Bootstrap
         [SerializeField] private Sprite appleLoginIcon;
 
         private CancellationTokenSource browserOAuthCts;
+#if UNITY_IOS && !UNITY_EDITOR
+        private string pendingAppleNonce;
+
+        [DllImport("__Internal")]
+        private static extern void DotshelfAppleSignIn_Start(string nonce, string callbackObjectName);
+#endif
 
         public void InitializeIfNeeded()
         {
@@ -258,11 +268,9 @@ namespace App.Bootstrap
 
         // External entry point for the mobile SDK token flow — once a
         // platform SDK obtains a provider token, call this to ship it to
-        // BE /v1/auth/social-login. Unity does not have native Google/
-        // Kakao/Apple SDKs wired up in this repo yet, so on mobile the
-        // buttons surface a guide message; this method exists so a future
-        // SDK integration can complete the flow without further controller
-        // changes. Desktop runs the browser-OAuth code flow instead.
+        // BE /v1/auth/social-login. Apple iOS now uses this path with an
+        // identityToken + nonce pair; Google/Kakao mobile SDKs can plug into
+        // the same method later. Desktop runs the browser-OAuth code flow.
         public async void SubmitSocialLogin(
             SocialProvider provider,
             string providerToken,
@@ -347,11 +355,9 @@ namespace App.Bootstrap
 
         private void BeginNativeSocialLogin(SocialProvider provider, string displayName)
         {
-            // Platform-side native login (Google/Kakao/Apple SDK) is not wired
-            // into this Unity project yet. Once the SDK is integrated, that
-            // code should call SubmitSocialLogin(...) with the provider token.
-            // For now we surface a clear message instead of pretending to log
-            // the user in.
+            // Platform-side native login for this provider is not wired into
+            // this Unity project yet. Once the SDK is integrated, that code
+            // should call SubmitSocialLogin(...) with the provider token.
             SetMessage(
                 loginMessageLabel,
                 $"{displayName} 로그인 SDK 연동이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.");
@@ -424,6 +430,20 @@ namespace App.Bootstrap
                 SocialProvider.Apple => "Apple",
                 _ => provider.ToString()
             };
+        }
+
+        private static string GenerateRandomNonce()
+        {
+            var bytes = new byte[32];
+            using (var generator = RandomNumberGenerator.Create())
+            {
+                generator.GetBytes(bytes);
+            }
+
+            return Convert.ToBase64String(bytes)
+                .TrimEnd('=')
+                .Replace('+', '-')
+                .Replace('/', '_');
         }
 
         private void EnsureAuthService()
@@ -516,35 +536,89 @@ namespace App.Bootstrap
                 return;
             }
 
-#if UNITY_STANDALONE || UNITY_EDITOR
-            // Apple sign-in on desktop relies on response_mode=form_post,
-            // which is incompatible with the loopback HttpListener used by
-            // WindowsOAuthBrowserFlow. Starting the flow would just dead-end
-            // at a 5-minute timeout — surface a clear message instead so a
-            // QA tester / user is not left staring at a doomed browser tab.
+#if UNITY_IOS && !UNITY_EDITOR
             if (provider == SocialProvider.Apple)
             {
-                SetMessage(
-                    loginMessageLabel,
-                    "Apple 로그인은 현재 모바일에서만 지원됩니다. 데스크톱에서는 Google 또는 Kakao 로그인을 이용해주세요.");
+                StartNativeAppleLogin();
                 return;
             }
+#endif
 
+#if UNITY_STANDALONE || UNITY_EDITOR
             // Desktop / editor — always run the browser OAuth flow. Even if
             // the inspector array is empty we still call the flow so the user
             // sees a specific "OAuth 클라이언트 ID가 설정되어 있지 않습니다"
             // message rather than the generic SDK-missing one.
             StartDesktopBrowserOAuth(provider);
 #else
-            // Mobile — native social SDKs are not wired up yet, so neither
-            // the social login flow nor the desktop browser-OAuth fallback
-            // can run. Until the SDK integration lands (별도 PR) the only
-            // working entry point is a desktop / editor build.
-            SetMessage(
-                loginMessageLabel,
-                $"{ProviderDisplayName(provider)} 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요.");
+            BeginNativeSocialLogin(provider, ProviderDisplayName(provider));
 #endif
         }
+
+#if UNITY_IOS && !UNITY_EDITOR
+        private void StartNativeAppleLogin()
+        {
+            if (isLoginInFlight)
+            {
+                return;
+            }
+
+            pendingAppleNonce = GenerateRandomNonce();
+            isLoginInFlight = true;
+            SetInteractable(false);
+            SetMessage(loginMessageLabel, "Apple 로그인 창을 여는 중입니다...");
+
+            try
+            {
+                DotshelfAppleSignIn_Start(pendingAppleNonce, gameObject.name);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Auth] Apple native login failed to start: {ex.Message}");
+                pendingAppleNonce = null;
+                isLoginInFlight = false;
+                SetInteractable(true);
+                SetMessage(loginMessageLabel, "Apple 로그인을 시작할 수 없습니다. 잠시 후 다시 시도해주세요.");
+            }
+        }
+
+        public void OnAppleSignInSucceeded(string identityToken)
+        {
+            var nonce = pendingAppleNonce;
+            pendingAppleNonce = null;
+            isLoginInFlight = false;
+            SetInteractable(true);
+
+            if (string.IsNullOrWhiteSpace(identityToken) || string.IsNullOrWhiteSpace(nonce))
+            {
+                SetMessage(loginMessageLabel, "Apple 로그인 응답이 올바르지 않습니다. 다시 시도해주세요.");
+                return;
+            }
+
+            SubmitSocialLogin(SocialProvider.Apple, identityToken, SocialTokenType.IdToken, nonce);
+        }
+
+        public void OnAppleSignInFailed(string errorCode)
+        {
+            pendingAppleNonce = null;
+            isLoginInFlight = false;
+            SetInteractable(true);
+            SetMessage(loginMessageLabel, ResolveAppleSignInErrorMessage(errorCode));
+        }
+
+        private static string ResolveAppleSignInErrorMessage(string errorCode)
+        {
+            return errorCode switch
+            {
+                "CANCELLED" => "Apple 로그인이 취소되었습니다.",
+                "MISSING_NONCE" => "Apple 로그인 보안값을 만들지 못했습니다. 다시 시도해주세요.",
+                "UNSUPPORTED_IOS_VERSION" => "Apple 로그인은 iOS 13 이상에서 사용할 수 있습니다.",
+                "MISSING_IDENTITY_TOKEN" => "Apple 로그인 토큰을 받지 못했습니다. 다시 시도해주세요.",
+                "INVALID_IDENTITY_TOKEN" => "Apple 로그인 토큰이 올바르지 않습니다. 다시 시도해주세요.",
+                _ => "Apple 로그인에 실패했습니다. 다시 시도해주세요."
+            };
+        }
+#endif
 
 #if UNITY_STANDALONE || UNITY_EDITOR
         private void StartDesktopBrowserOAuth(SocialProvider provider)
@@ -916,13 +990,6 @@ namespace App.Bootstrap
                 SocialButtonHeight);
 #endif
 
-            if (false)
-            {
-                SetButtonLabel(appleLoginButton, "Apple 로그인 (준비 중)");
-                SetButtonLabel(kakaoLoginButton, "Kakao 로그인 (준비 중)");
-                SetButtonLabel(googleLoginButton, "Google 로그인 (준비 중)");
-            }
-
             loginMessageLabel = CreateLayoutText(
                 pane.transform,
                 "LoginMessage",
@@ -1219,7 +1286,18 @@ namespace App.Bootstrap
                 "Apple 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
                 "Kakao 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
                 "Google 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
-                "Apple 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요." +
+                "Apple 로그인 창을 여는 중입니다..." +
+                "Apple 로그인 응답이 올바르지 않습니다. 다시 시도해주세요." +
+                "Apple 로그인을 시작할 수 없습니다. 잠시 후 다시 시도해주세요." +
+                "Apple 로그인이 취소되었습니다." +
+                "Apple 로그인 보안값을 만들지 못했습니다. 다시 시도해주세요." +
+                "Apple 로그인은 iOS 13 이상에서 사용할 수 있습니다." +
+                "Apple 로그인 토큰을 받지 못했습니다. 다시 시도해주세요." +
+                "Apple 로그인 토큰이 올바르지 않습니다. 다시 시도해주세요." +
+                "Apple 로그인에 실패했습니다. 다시 시도해주세요." +
+                "Apple 로그인 SDK 연동이 준비되지 않았습니다. 잠시 후 다시 시도해주세요." +
+                "Kakao 로그인 SDK 연동이 준비되지 않았습니다. 잠시 후 다시 시도해주세요." +
+                "Google 로그인 SDK 연동이 준비되지 않았습니다. 잠시 후 다시 시도해주세요." +
                 "Kakao 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요." +
                 "Google 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요." +
                 "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요." +

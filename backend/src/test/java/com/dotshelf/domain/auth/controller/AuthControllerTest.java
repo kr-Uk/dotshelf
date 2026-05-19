@@ -3,9 +3,14 @@ package com.dotshelf.domain.auth.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,6 +28,7 @@ import com.dotshelf.domain.auth.dto.AuthDtos.GuestMigrationRequest;
 import com.dotshelf.domain.auth.dto.AuthDtos.GuestSessionResponse;
 import com.dotshelf.domain.auth.dto.AuthDtos.SocialLoginRequest;
 import com.dotshelf.domain.auth.dto.AuthDtos.TokenRefreshRequest;
+import com.dotshelf.domain.auth.service.AppleDesktopOAuthRelayService;
 import com.dotshelf.domain.auth.service.AuthService;
 import com.dotshelf.global.common.CurrentUserArgumentResolver;
 import com.dotshelf.global.common.IdResponse;
@@ -40,7 +46,7 @@ class AuthControllerTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new AuthController(authService))
+                .standaloneSetup(new AuthController(authService, new AppleDesktopOAuthRelayService()))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setCustomArgumentResolvers(new CurrentUserArgumentResolver(true, "X-Test-Admin-User-Id"))
                 .build();
@@ -64,6 +70,52 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.result.newUser").value(true));
 
         then(authService).should().socialLogin(any(SocialLoginRequest.class));
+    }
+
+    @Test
+    @DisplayName("Apple 데스크톱 form_post 콜백은 Unity loopback 콜백으로 code와 state를 중계한다")
+    void appleDesktopCallback_formPost_redirectsToUnityLoopback() throws Exception {
+        String state = desktopAppleState("csrf-token", "http://127.0.0.1:18080/dotshelf/oauth/callback/");
+
+        mockMvc.perform(post("/v1/auth/apple/desktop-callback")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("code", "apple-code")
+                        .param("state", state))
+                .andExpect(status().isFound())
+                .andExpect(header().string(
+                        "Location",
+                        "http://127.0.0.1:18080/dotshelf/oauth/callback/?code=apple-code&state=" + state
+                ));
+    }
+
+    @Test
+    @DisplayName("Apple 데스크톱 query 콜백은 OAuth error도 Unity loopback으로 중계한다")
+    void appleDesktopCallback_queryError_redirectsToUnityLoopback() throws Exception {
+        String state = desktopAppleState("csrf-token", "http://127.0.0.1:18081/dotshelf/oauth/callback/");
+
+        mockMvc.perform(get("/v1/auth/apple/desktop-callback")
+                        .param("error", "access_denied")
+                        .param("error_description", "User cancelled")
+                        .param("state", state))
+                .andExpect(status().isFound())
+                .andExpect(header().string(
+                        "Location",
+                        "http://127.0.0.1:18081/dotshelf/oauth/callback/?error=access_denied&error_description=User%20cancelled&state=" + state
+                ));
+    }
+
+    @Test
+    @DisplayName("Apple 데스크톱 콜백 state의 redirectUri가 loopback 허용 범위를 벗어나면 validation 에러를 반환한다")
+    void appleDesktopCallback_invalidLoopbackRedirectUri_returnsValidationError() throws Exception {
+        String state = desktopAppleState("csrf-token", "https://evil.example/callback");
+
+        mockMvc.perform(post("/v1/auth/apple/desktop-callback")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("code", "apple-code")
+                        .param("state", state))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("redirectUri")));
     }
 
     @Test
@@ -167,5 +219,12 @@ class AuthControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("payload")));
+    }
+
+    private String desktopAppleState(String csrfToken, String loopbackRedirectUri) {
+        String encodedLoopbackRedirectUri = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(loopbackRedirectUri.getBytes(StandardCharsets.UTF_8));
+        return csrfToken + "." + encodedLoopbackRedirectUri;
     }
 }

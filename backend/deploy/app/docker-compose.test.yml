@@ -72,6 +72,11 @@ services:
       KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI:-http://localhost:18080/oauth/kakao/callback}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-dummy}
       APPLE_CLIENT_IDS: ${APPLE_CLIENT_IDS:-dummy}
+      APPLE_DESKTOP_CLIENT_ID: ${APPLE_DESKTOP_CLIENT_ID:-dummy.service}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-TEAMID1234}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-KEYID1234}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
+      APPLE_DESKTOP_REDIRECT_URI: ${APPLE_DESKTOP_REDIRECT_URI:-https://dev-api.dotshelf.digital/v1/auth/apple/desktop-callback}
       # S3 업로드 — dev/test 는 prod 와 달리 bucket 미설정 시 placeholder 로 fallback.
       # placeholder-not-real 은 부팅(@NotBlank) 만 통과시키는 값이고 실제 PUT/GET 시
       # NoSuchBucket 가 떨어진다. 진짜 검증은 .env.test 에 S3_BUCKET 을 채우거나
