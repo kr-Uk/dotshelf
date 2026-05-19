@@ -305,7 +305,7 @@ MonoBehaviour:
     screenSaverCanvasAnchorMax: {x: 0.5, y: 0.5}
     screenSaverCanvasPivot: {x: 0.5, y: 0.5}
     notebookFocusCameraMode: 0
-    notebookLocalPositionOverride: {x: -0.038, y: 0.514, z: -0.408}
+    notebookLocalPositionOverride: {x: -0.038, y: 0.478, z: -0.408}
     notebookLocalRotationOverride: {x: 0, y: 90, z: 0}
     notebookLocalScaleOverride: {x: 1, y: 1, z: 1}
   - assetId: 200031
