@@ -275,6 +275,30 @@ namespace App.Bootstrap
         public bool IsDecorationPopupOpen { get; private set; }
         public bool IsReadOnlySpacePreview { get; private set; }
 
+        public void SetMainDecorationButtonSuppressed(bool suppressed)
+        {
+            if (suppressMainDecorationButton == suppressed)
+            {
+                return;
+            }
+
+            suppressMainDecorationButton = suppressed;
+            UpdateButtonVisibility();
+        }
+
+        public void OpenDecorationEditFromQuickMenu()
+        {
+            InitializeIfNeeded();
+
+            if (IsReadOnlySpacePreview || IsEditModeActive)
+            {
+                return;
+            }
+
+            CloseDecorationPopupInternal();
+            EnterEditMode();
+        }
+
         public void SetReadOnlySpacePreview(bool isReadOnly)
         {
             if (IsReadOnlySpacePreview == isReadOnly)
@@ -355,6 +379,7 @@ namespace App.Bootstrap
         private Canvas canvas;
         private GameObject decorationButtonRoot;
         private GameObject decorationPopupRoot;
+        private bool suppressMainDecorationButton;
         private GameObject editOverlayRoot;
         // CanvasGroup 게이트 — IsEditModeActive=false 일 때 blocksRaycasts/interactable=false 로 강제.
         // SetActive race window 와 무관하게 메인씬에서 편집 UI 가 raycast 를 절대 못 막게 보장.
@@ -6887,7 +6912,7 @@ namespace App.Bootstrap
             var inMainScene = experienceManager != null &&
                               experienceManager.CurrentFocusArea == ExperienceFocusArea.QuarterView;
             var step3Active = experienceManager != null && experienceManager.IsOnboardingStep3Active;
-            var canShowDecorationButton = inMainScene && !step3Active && !IsEditModeActive && !IsReadOnlySpacePreview;
+            var canShowDecorationButton = inMainScene && !step3Active && !IsEditModeActive && !IsReadOnlySpacePreview && !suppressMainDecorationButton;
 
             if (decorationButtonRoot != null && decorationButtonRoot.activeSelf != canShowDecorationButton)
             {
