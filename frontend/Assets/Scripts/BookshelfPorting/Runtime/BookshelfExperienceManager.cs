@@ -199,8 +199,7 @@ namespace BookshelfPorting.Runtime
         {
             Home,
             Search,
-            Add,
-            Edit
+            Add
         }
 
         private enum FirstBookshelfTutorialMode
@@ -571,7 +570,6 @@ namespace BookshelfPorting.Runtime
         private int notebookFocusRequestVersion;
         private Button overlayPreviousFocusButton;
         private Button overlayNextFocusButton;
-        private Button bookshelfEditModeButton;
         private GameObject bookshelfIndexPanel;
         private Text bookshelfIndexText;
         private RectTransform bookshelfIndexDotsRoot;
@@ -940,10 +938,10 @@ namespace BookshelfPorting.Runtime
         private Button bookshelfNavHomeButton;
         private Button bookshelfNavSearchButton;
         private Button bookshelfNavAddButton;
-        private Button bookshelfNavEditButton;
         private int lastResponsiveLayoutWidth = -1;
         private int lastResponsiveLayoutHeight = -1;
         private readonly BookshelfOverlayStateController overlayStateController = new BookshelfOverlayStateController();
+        private BookshelfPorting.Runtime.UI.BookshelfManageOverlayController bookshelfManageUiToolkitOverlay;
 
         // 클릭-다운 시점에 Focus* 를 바로 호출하지 않고 release 까지 보류해 drag-to-rotate
         // 와 click-to-focus 를 구분. 누적 이동량이 임계를 넘으면 drag 로 간주, pending 해제.
@@ -1133,7 +1131,585 @@ namespace BookshelfPorting.Runtime
             EnsureEventSystem();
             EnsureHud();
             EnsureExternalDashboardPanelWired();
+            EnsureBookshelfManageUiToolkitOverlay();
         }
+
+        // UI Toolkit overlay 컨트롤러를 별도 GameObject 로 띄우고 모든 액션 콜백을 manager 의 기존 메서드에 결선.
+        // 기존 uGUI panel(BookshelfManagePanel)의 click 핸들러와 1:1 매핑. drag/drop 은 다음 phase.
+        private void EnsureBookshelfManageUiToolkitOverlay()
+        {
+            if (bookshelfManageUiToolkitOverlay != null)
+            {
+                return;
+            }
+
+            var overlayGo = new GameObject("BookshelfManageUiToolkitOverlay");
+            overlayGo.transform.SetParent(transform, false);
+            var overlay = overlayGo.AddComponent<BookshelfPorting.Runtime.UI.BookshelfManageOverlayController>();
+            overlay.Closed += HandleBookshelfManageOverlayClosed;
+
+            overlay.RowSelected = HandleBookshelfManageRowSelected;
+            overlay.SortRequested = HandleBookshelfManageSortRequested;
+            overlay.SetVisibilityRequested = SetManagedBookshelfVisibility;
+            // 이름 변경은 overlay 안 인라인 편집 (TextField). 기존 uGUI 모달 진입 안 함.
+            overlay.NameChangeRequested = SaveBookshelfNameFromOverlay;
+            // 추가도 기존 uGUI panel(isBookshelfManagePanelOpen) 안 띄우는 wrapper 사용.
+            overlay.AddRequested = AddBookshelfFromOverlay;
+            // 삭제는 overlay 안 sub-modal 사용. Delete 버튼 클릭 → sub-modal 열기.
+            // sub-modal 의 "삭제" → ConfirmDeleteFromOverlay, "취소" → CancelDeleteFromOverlay.
+            overlay.DeleteRequested = RequestDeleteFromOverlay;
+            overlay.DeleteConfirmed = ConfirmDeleteFromOverlay;
+            overlay.DeleteCancelled = CancelDeleteFromOverlay;
+            overlay.ReorderRequested = ReorderBookshelvesFromOverlay;
+
+            bookshelfManageUiToolkitOverlay = overlay;
+        }
+
+        // 책장 추가 진행 — 응답 콜백이 직접 result modal 호출 (NotifyAddBookshelfResult).
+        // Watchdog 코루틴은 timeout 감시 + mock 안전망(count polling) 두 가지만.
+        // race 가드: overlayAddInProgress (콜백/timeout 중 먼저 처리한 쪽이 false 로 set → 다른 쪽 early return).
+        private const float AddBookshelfTimeoutSeconds = 8f;
+        private bool overlayAddInProgress;
+        private float overlayAddTimeoutAt = -1f;
+        private int overlayAddBeforeBookshelfCount = -1;
+
+        private bool IsOverlayAddInProgress => overlayAddInProgress;
+
+        // 책장 추가 — overlay 전용 wrapper. AddBookshelfFromManagePanel 의 로직을 그대로 사용하되
+        // isBookshelfManagePanelOpen = true 설정을 제거해서 기존 uGUI 책장관리 panel 이 뜨지 않게 한다.
+        // ShowBookshelfTransientStatus 토스트도 빼고, snapshot.Status 로 overlay 안에서 알린다.
+        private void AddBookshelfFromOverlay()
+        {
+            if (isBookshelfCreateRequestInFlight ||
+                !CanMutateBookshelfCollection() ||
+                bookshelfGenerator == null)
+            {
+                return;
+            }
+
+            // 추가 진행 시작 — SyncBookshelfCreateOrRefresh 의 onSuccess/onError 가 NotifyAddBookshelfResult 를
+            // 호출해 result modal 을 직접 띄운다. coroutine 은 timeout 감시 + mock 안전망 역할.
+            overlayAddInProgress = true;
+            overlayAddTimeoutAt = Time.realtimeSinceStartup + AddBookshelfTimeoutSeconds;
+            overlayAddBeforeBookshelfCount = bookshelfGenerator.BookshelfCount;
+            StartCoroutine(WatchAddBookshelfTimeout());
+
+            var isFirstBookshelf = bookshelfGenerator.BookshelfCount <= 0;
+            if (isFirstBookshelf)
+            {
+                QueueFirstBookshelfFeatureGuide();
+                isFirstBookshelfCreateInProgress = true;
+            }
+
+            if (usesHttpApiMode)
+            {
+                if (!EnsureBookshelfApiMutationReady("책장 추가"))
+                {
+                    if (isFirstBookshelf)
+                    {
+                        isFirstBookshelfCreateInProgress = false;
+                    }
+                    AbortAddBookshelfWatchdog("API 동기화가 준비되지 않아 책장을 추가할 수 없습니다.");
+                    RefreshHud();
+                    return;
+                }
+
+                SyncBookshelfCreateOrRefresh(BuildDefaultNewBookshelfName(), "책장 추가");
+                RefreshHud();
+                return;
+            }
+
+            if (bookshelfGenerator.AddBookshelf())
+            {
+                if (isFirstBookshelf)
+                {
+                    isFirstBookshelfCreateInProgress = false;
+                }
+
+                MarkBookshelfEditDirty();
+                SyncBookshelfCreateOrRefresh(bookshelfGenerator.DisplayBookshelfName, "책장 추가");
+                RefreshHud();
+            }
+            else
+            {
+                if (isFirstBookshelf)
+                {
+                    isFirstBookshelfCreateInProgress = false;
+                }
+                AbortAddBookshelfWatchdog("내부 책장 생성이 거부되었습니다.");
+            }
+        }
+
+        // 가드 통과 못 하고 즉시 실패한 케이스 — watchdog coroutine 이 폴링해도 잡지 못하므로 직접 result modal 호출.
+        private void AbortAddBookshelfWatchdog(string reason)
+        {
+            if (!overlayAddInProgress)
+            {
+                return;
+            }
+            overlayAddInProgress = false;
+            ShowAddBookshelfResult("책장 추가 실패", reason, false);
+        }
+
+        // ===== 책장 삭제 — overlay sub-modal 경유 wrapper 3종 =====
+        // 기존 uGUI 모달(bookshelfDeleteConfirmPanel) 진입 없이 overlay 안 sub-modal 로 처리.
+
+        // "이 책장 삭제" 클릭 → sub-modal 열기 (실제 삭제 X).
+        private void RequestDeleteFromOverlay()
+        {
+            if (!CanMutateBookshelfCollection() ||
+                bookshelfGenerator == null ||
+                bookshelfGenerator.BookshelfCount <= 1)
+            {
+                return;
+            }
+
+            var displayIndex = bookshelfGenerator.DisplayBookshelfIndex;
+            pendingDeleteBookshelfIndex = displayIndex;
+
+            var name = bookshelfGenerator.GetBookshelfName(displayIndex);
+            var bookCount = Mathf.Max(0, bookshelfGenerator.ActiveBookshelfBookCount);
+            bookshelfManageUiToolkitOverlay?.ShowDeleteConfirm(name, bookCount);
+        }
+
+        // sub-modal 의 "삭제" 버튼 → 실제 삭제 수행. ConfirmDeleteBookshelf 와 같은 흐름이지만
+        // isBookshelfDeleteConfirmPanelOpen 가드는 우회 (그 flag 는 기존 uGUI 모달 전용).
+        private void ConfirmDeleteFromOverlay()
+        {
+            if (!CanMutateBookshelfCollection() ||
+                bookshelfGenerator == null ||
+                bookshelfGenerator.BookshelfCount <= 1)
+            {
+                pendingDeleteBookshelfIndex = -1;
+                bookshelfManageUiToolkitOverlay?.HideDeleteConfirm();
+                return;
+            }
+
+            var displayIndex = Mathf.Clamp(bookshelfGenerator.DisplayBookshelfIndex, 0, Mathf.Max(1, bookshelfGenerator.BookshelfCount) - 1);
+            if (pendingDeleteBookshelfIndex != displayIndex)
+            {
+                pendingDeleteBookshelfIndex = -1;
+                bookshelfManageUiToolkitOverlay?.HideDeleteConfirm();
+                return;
+            }
+
+            var deletedBookshelfServerId = bookshelfGenerator.GetBookshelfServerId(displayIndex);
+            pendingDeleteBookshelfIndex = -1;
+            bookshelfManageUiToolkitOverlay?.HideDeleteConfirm();
+
+            if (!EnsureBookshelfApiMutationReady(displayIndex, "책장 삭제"))
+            {
+                RefreshHud();
+                return;
+            }
+
+            if (bookshelfGenerator.DeleteActiveBookshelf())
+            {
+                MarkBookshelfEditDirty();
+                var didStartDeleteSync = bookshelfApiSyncController != null &&
+                                         bookshelfApiSyncController.DeleteBookshelf(
+                                             deletedBookshelfServerId,
+                                             () => ShowDeleteResultFromOverlay("책장 삭제 완료", "책장을 삭제했습니다.", true),
+                                             error =>
+                                             {
+                                                 // 실패 시 overlay 안 결과 sub-modal 로도 알리고, 기존 retry handler 도 같이 동작.
+                                                 var normalized = NormalizeMutationErrorMessage(error);
+                                                 ShowDeleteResultFromOverlay("책장 삭제 실패", normalized, false);
+                                                 RefreshServerStateAfterMutationFailure("책장 삭제", error);
+                                             });
+                if (!didStartDeleteSync)
+                {
+                    if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+                    {
+                        ShowDeleteResultFromOverlay("책장 삭제 실패", "책장 서버 식별자를 찾을 수 없습니다.", false);
+                        RefreshServerStateAfterMutationFailure("책장 삭제", "책장 서버 식별자를 찾을 수 없습니다.");
+                    }
+                    else
+                    {
+                        ShowDeleteResultFromOverlay("책장 삭제 완료", "책장을 삭제했습니다.", true);
+                    }
+                }
+            }
+
+            RefreshHud();
+        }
+
+        // overlay 가 visible 일 때만 sub-modal 표시. modal 이 닫힌 후 비동기 응답이 도착하면 기존 uGUI dialog fallback.
+        private void ShowDeleteResultFromOverlay(string title, string message, bool isSuccess)
+        {
+            if (IsBookshelfManageOverlayVisible)
+            {
+                bookshelfManageUiToolkitOverlay.ShowDeleteResult(title, message, isSuccess);
+            }
+            else
+            {
+                ShowDeleteResultDialog(title, message, isSuccess);
+            }
+        }
+
+        // sub-modal 의 "취소" / backdrop → 그냥 닫고 pending 정리.
+        private void CancelDeleteFromOverlay()
+        {
+            pendingDeleteBookshelfIndex = -1;
+            bookshelfManageUiToolkitOverlay?.HideDeleteConfirm();
+        }
+
+        // 책장 추가 timeout watchdog — 8s 안에 NotifyAddBookshelfResult 가 호출되어 overlayAddInProgress 를
+        // false 로 만들지 않으면 timeout 실패 modal 을 띄운다.
+        // mock 안전망: usesHttpApiMode=false 환경에서 SyncBookshelfCreateOrRefresh 콜백이 안 오는 경로 대비
+        //              count 증가를 polling — 8초까지 계속 보지 않고 그 동안만.
+        private System.Collections.IEnumerator WatchAddBookshelfTimeout()
+        {
+            while (Time.realtimeSinceStartup < overlayAddTimeoutAt)
+            {
+                // 콜백이 이미 처리해서 overlayAddInProgress=false 가 됐으면 우리 할 일 없음.
+                if (!overlayAddInProgress)
+                {
+                    yield break;
+                }
+
+                // Mock 안전망: 콜백이 안 와도 client 측 count 가 늘었으면 성공으로 처리.
+                if (!usesHttpApiMode &&
+                    bookshelfGenerator != null &&
+                    bookshelfGenerator.BookshelfCount > overlayAddBeforeBookshelfCount)
+                {
+                    overlayAddInProgress = false;
+                    ShowAddBookshelfResult("책장 추가 완료", "새 책장이 추가되었습니다.", true);
+                    RefreshHud();
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            // [Timeout] race 가드 — 마지막 frame 에 콜백이 도달했을 수 있으므로 다시 확인.
+            if (!overlayAddInProgress)
+            {
+                yield break;
+            }
+
+            overlayAddInProgress = false;
+            ShowAddBookshelfResult(
+                "책장 추가 실패",
+                "서버 응답이 늦어 책장을 추가하지 못했습니다.\n네트워크 상태를 확인하고 잠시 후 다시 시도해 주세요.",
+                false);
+            RefreshHud();
+        }
+
+        // overlay 가 visible 이면 result sub-modal 로, 아니면 기존 uGUI dialog fallback.
+        // 책장 삭제 result modal 과 동일 sub-modal 재사용 (제목/메시지/eyebrow 만 다름).
+        private void ShowAddBookshelfResult(string title, string message, bool isSuccess)
+        {
+            if (IsBookshelfManageOverlayVisible)
+            {
+                bookshelfManageUiToolkitOverlay.ShowDeleteResult(title, message, isSuccess);
+            }
+            else
+            {
+                ShowDeleteResultDialog(title, message, isSuccess);
+            }
+        }
+
+        // 책장 이름 변경 — overlay 안 인라인 TextField 의 텍스트를 받아 처리.
+        // 기존 OpenBookshelfNameEditPanel 모달(별도 uGUI 캔버스) 진입 안 함.
+        private void SaveBookshelfNameFromOverlay(string newName)
+        {
+            if (!CanMutateBookshelfCollection() || bookshelfGenerator == null)
+            {
+                return;
+            }
+
+            var displayIndex = bookshelfGenerator.DisplayBookshelfIndex;
+            if (displayIndex < 0 || displayIndex >= bookshelfGenerator.BookshelfCount)
+            {
+                return;
+            }
+
+            var trimmed = string.IsNullOrWhiteSpace(newName) ? string.Empty : newName.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                return;
+            }
+
+            var current = bookshelfGenerator.GetBookshelfName(displayIndex);
+            if (current == trimmed)
+            {
+                RefreshHud();
+                return;
+            }
+
+            if (!EnsureBookshelfApiMutationReady(displayIndex, "책장 이름 변경"))
+            {
+                RefreshHud();
+                return;
+            }
+
+            bookshelfGenerator.SetBookshelfName(displayIndex, trimmed);
+            MarkBookshelfEditDirty();
+            SyncBookshelfUpdateOrRefresh(displayIndex, "책장 이름 변경");
+            RefreshHud();
+        }
+
+        // overlay 의 grip drag 완료 콜백. 기존 EndBookshelfManageRowDrag 의 핵심 로직을 추출.
+        // bookshelfGenerator.MoveBookshelfOrder + Sync + dirty 마킹 + Refresh.
+        private void ReorderBookshelvesFromOverlay(int sourceIndex, int targetIndex)
+        {
+            if (bookshelfGenerator == null)
+            {
+                return;
+            }
+
+            if (sourceIndex < 0 || targetIndex < 0 || sourceIndex == targetIndex)
+            {
+                return;
+            }
+
+            if (sourceIndex >= bookshelfGenerator.BookshelfCount || targetIndex >= bookshelfGenerator.BookshelfCount)
+            {
+                return;
+            }
+
+            if (!EnsureBookshelfReorderApiReady("책장 순서 변경"))
+            {
+                RefreshHud();
+                return;
+            }
+
+            if (!bookshelfGenerator.MoveBookshelfOrder(sourceIndex, targetIndex))
+            {
+                return;
+            }
+
+            MarkBookshelfEditDirty();
+            SyncBookshelfReorderOrRefresh("책장 순서 변경");
+            RefreshHud();
+        }
+
+        // overlay 의 visibility chip 직접 set. cycle 이 아니라 chip 인덱스 (0=Public, 1=Followers, 2=Private) 로 호출.
+        // 기존 CycleManagedBookshelfVisibility 와 동일 흐름 (EnsureMutationReady → SetVisibility → MarkDirty → Sync).
+        private void SetManagedBookshelfVisibility(int scopeIndex)
+        {
+            if (!CanMutateBookshelfCollection() || bookshelfGenerator == null)
+            {
+                return;
+            }
+
+            App.Domain.VisibilityScope scope;
+            switch (scopeIndex)
+            {
+                case 0: scope = App.Domain.VisibilityScope.Public; break;
+                case 1: scope = App.Domain.VisibilityScope.Followers; break;
+                case 2: scope = App.Domain.VisibilityScope.Private; break;
+                default: return;
+            }
+
+            var displayIndex = bookshelfGenerator.DisplayBookshelfIndex;
+            if (displayIndex < 0)
+            {
+                return;
+            }
+
+            if (bookshelfGenerator.GetBookshelfVisibility(displayIndex) == scope)
+            {
+                return;
+            }
+
+            if (!EnsureBookshelfApiMutationReady(displayIndex, "책장 공개 범위 변경"))
+            {
+                RefreshHud();
+                return;
+            }
+
+            bookshelfGenerator.SetBookshelfVisibility(displayIndex, scope);
+            MarkBookshelfEditDirty();
+            SyncBookshelfUpdateOrRefresh(displayIndex, "책장 공개 범위 변경");
+            RefreshHud();
+        }
+
+        // overlay 의 [저장] 버튼 또는 backdrop 클릭 → edit mode 종료 + dirty 클리어.
+        private void HandleBookshelfManageOverlayClosed()
+        {
+            MarkBookshelfEditSaved();
+            if (IsBookshelfEditMode)
+            {
+                SetBookshelfEditMode(false);
+            }
+        }
+
+        private void HandleBookshelfManageRowSelected(int rowIndex)
+        {
+            SelectManagedBookshelf(rowIndex);
+            // 책장 전환 후 overlay 데이터 (active row marker 등) 재갱신.
+            RefreshBookshelfManageUiToolkitOverlay();
+        }
+
+        private void HandleBookshelfManageSortRequested(BookshelfPorting.Runtime.UI.BookshelfManageSortMode mode)
+        {
+            ShelfBookSortMode managerMode;
+            switch (mode)
+            {
+                case BookshelfPorting.Runtime.UI.BookshelfManageSortMode.Title:
+                    managerMode = ShelfBookSortMode.Title; break;
+                case BookshelfPorting.Runtime.UI.BookshelfManageSortMode.Author:
+                    managerMode = ShelfBookSortMode.Author; break;
+                case BookshelfPorting.Runtime.UI.BookshelfManageSortMode.ReadingStatus:
+                    managerMode = ShelfBookSortMode.ReadingStatus; break;
+                case BookshelfPorting.Runtime.UI.BookshelfManageSortMode.Liked:
+                    managerMode = ShelfBookSortMode.Liked; break;
+                default: return;
+            }
+            SortActiveBookshelfBooks(managerMode);
+        }
+
+        // BookshelfGenerator 의 책장 목록 + active 책장 상세를 controller 의 snapshot 으로 빌드.
+        private BookshelfPorting.Runtime.UI.BookshelfManageSnapshot BuildBookshelfManageSnapshot()
+        {
+            var rows = new System.Collections.Generic.List<BookshelfPorting.Runtime.UI.BookshelfManageRowItem>();
+            var activeIndex = -1;
+            var activeNumber = string.Empty;
+            var activeName = string.Empty;
+            var activeStats = string.Empty;
+            var activeVisibilityScope = -1;
+            var canMutateCollection = false;
+            var canSortBooks = false;
+            var canDelete = false;
+
+            if (bookshelfGenerator != null && bookshelfGenerator.BookshelfCount > 0)
+            {
+                activeIndex = Mathf.Clamp(bookshelfGenerator.DisplayBookshelfIndex, 0, bookshelfGenerator.BookshelfCount - 1);
+
+                // 실제 3D 씬에 표시되는 (활성 테마와 호환되는) 책장만 list 화.
+                // 전체 BookshelfCount 를 돌면 유령 책장도 표시되는 회귀 회피.
+                var navigableIndices = bookshelfGenerator.NavigableBookshelfIndices;
+                var activeNavigableOrder = -1;
+                for (var orderIndex = 0; orderIndex < navigableIndices.Count; orderIndex++)
+                {
+                    var realIndex = navigableIndices[orderIndex];
+                    var name = bookshelfGenerator.GetBookshelfName(realIndex);
+                    var visibility = GetVisibilityLabel(bookshelfGenerator.GetBookshelfVisibility(realIndex));
+                    var isActive = realIndex == activeIndex;
+                    rows.Add(new BookshelfPorting.Runtime.UI.BookshelfManageRowItem(realIndex, name, visibility, isActive));
+                    if (isActive)
+                    {
+                        activeNavigableOrder = orderIndex;
+                    }
+                }
+
+                // Hero 의 큰 번호는 navigable list 안에서 활성 책장의 1-based 순서.
+                // 활성 책장이 navigable 에 없는 (테마 전환 직후) 경우는 fallback "—".
+                activeNumber = activeNavigableOrder >= 0
+                    ? (activeNavigableOrder + 1).ToString("00")
+                    : "—";
+                activeName = bookshelfGenerator.GetBookshelfName(activeIndex);
+                activeStats = BuildBookshelfManageHeroStats(activeIndex);
+                activeVisibilityScope = MapVisibilityScopeToIndex(bookshelfGenerator.GetBookshelfVisibility(activeIndex));
+                canMutateCollection = CanMutateBookshelfCollection();
+                canSortBooks = canMutateCollection && bookshelfGenerator.ActiveBookshelfBookCount > 1;
+                // 삭제는 navigable 책장이 2개 이상일 때만. (마지막 navigable 삭제 시 화면 빈 책장 회피.)
+                canDelete = canMutateCollection && rows.Count > 1;
+            }
+
+            // 추가 진행 메시지는 add button 안에 표시 (Controller 가 IsAddInProgress 기반으로 처리).
+            // Status label 은 오류 등 다른 메시지 용도로 비워둠.
+            var inProgress = IsOverlayAddInProgress;
+
+            return new BookshelfPorting.Runtime.UI.BookshelfManageSnapshot(
+                rows,
+                activeNumber,
+                activeName,
+                activeStats,
+                activeVisibilityScope,
+                string.Empty,
+                false,
+                canSortBooks,
+                canMutateCollection,    // can set visibility
+                canMutateCollection,    // can rename
+                canMutateCollection && !inProgress,
+                canDelete,
+                inProgress);
+        }
+
+        // hero card 의 stats line. 활성 책장의 책 수 + reading/read/liked 집계.
+        // BuildBookshelfManageSummary 와 같은 데이터지만 더 간결한 포맷.
+        private string BuildBookshelfManageHeroStats(int activeIndex)
+        {
+            if (bookshelfGenerator == null)
+            {
+                return string.Empty;
+            }
+
+            var total = 0;
+            var reading = 0;
+            var read = 0;
+            var liked = 0;
+            if (state != null)
+            {
+                for (var i = 0; i < state.Sections.Count; i++)
+                {
+                    var section = state.Sections[i];
+                    if (section == null)
+                    {
+                        continue;
+                    }
+
+                    for (var j = 0; j < section.books.Count; j++)
+                    {
+                        var book = section.books[j];
+                        if (book == null)
+                        {
+                            continue;
+                        }
+
+                        total++;
+                        var meta = dataStore != null ? dataStore.GetOrCreateBookMeta(book) : null;
+                        var status = meta != null ? meta.readingStatus : book.readingStatus;
+                        if (status == App.Domain.ReadingStatus.Reading)
+                        {
+                            reading++;
+                        }
+                        else if (status == App.Domain.ReadingStatus.Read)
+                        {
+                            read++;
+                        }
+
+                        if (meta != null ? meta.isLiked : book.isLiked)
+                        {
+                            liked++;
+                        }
+                    }
+                }
+            }
+
+            return $"{total}권 · 읽는 중 {reading} · 완독 {read} · 좋아요 {liked}";
+        }
+
+        private static int MapVisibilityScopeToIndex(App.Domain.VisibilityScope scope)
+        {
+            switch (scope)
+            {
+                case App.Domain.VisibilityScope.Public: return 0;
+                case App.Domain.VisibilityScope.Followers: return 1;
+                case App.Domain.VisibilityScope.Private: return 2;
+                default: return -1;
+            }
+        }
+
+        // overlay 가 열린 상태에서 데이터 변경 후 호출. UpdateSnapshot 으로 transient state (인라인 편집, 삭제 confirm)
+        // 는 건드리지 않고 데이터만 갱신 — RefreshHud 가 매 호출되어도 사용자 입력 보호.
+        private void RefreshBookshelfManageUiToolkitOverlay()
+        {
+            if (bookshelfManageUiToolkitOverlay == null || !bookshelfManageUiToolkitOverlay.IsVisible)
+            {
+                return;
+            }
+
+            bookshelfManageUiToolkitOverlay.UpdateSnapshot(BuildBookshelfManageSnapshot());
+        }
+
+        // UI Toolkit overlay 가시성 단일 진입점. HasBlockingBookshelfOverlay / IsPointerOverUi / 향후 다른 가드도
+        // 이 helper 만 보면 됨 (기존 isBookshelfManagePanelOpen flag 와 별개 — overlay 는 그 flag 를 안 set).
+        private bool IsBookshelfManageOverlayVisible =>
+            bookshelfManageUiToolkitOverlay != null && bookshelfManageUiToolkitOverlay.IsVisible;
 
         private void Start()
         {
@@ -1547,7 +2123,6 @@ namespace BookshelfPorting.Runtime
             HideOnboardingChromeIfActive(bookshelfIndexPanel);
             HideOnboardingChromeIfActive(hamburgerButton != null ? hamburgerButton.gameObject : null);
             HideOnboardingChromeIfActive(hamburgerMenuPanel);
-            HideOnboardingChromeIfActive(bookshelfEditModeButton != null ? bookshelfEditModeButton.gameObject : null);
             HideOnboardingChromeIfActive(openBookAddButton != null ? openBookAddButton.gameObject : null);
             HideOnboardingChromeIfActive(openBookSearchButton != null ? openBookSearchButton.gameObject : null);
             HideOnboardingChromeIfActive(openBookshelfManageButton != null ? openBookshelfManageButton.gameObject : null);
@@ -3066,12 +3641,14 @@ namespace BookshelfPorting.Runtime
                         isBookshelfCreateRequestInFlight = false;
                         ClearPendingMutationRetry(retryKey);
                         ShowBookshelfTransientStatus("책장 저장 완료", "새 책장이 서버에 저장되었습니다.", false);
+                        NotifyAddBookshelfResult(null);
                         RefreshHud();
                     },
                     error =>
                     {
                         isFirstBookshelfCreateInProgress = false;
                         isBookshelfCreateRequestInFlight = false;
+                        NotifyAddBookshelfResult(error);
                         RefreshServerStateAfterMutationFailure(
                             operationName,
                             error,
@@ -3081,11 +3658,100 @@ namespace BookshelfPorting.Runtime
             {
                 isFirstBookshelfCreateInProgress = false;
                 isBookshelfCreateRequestInFlight = false;
+                NotifyAddBookshelfResult("책장 추가 요청을 시작할 수 없습니다.");
                 RefreshServerStateAfterMutationFailure(
                     operationName,
                     "책장 추가 요청을 시작할 수 없습니다.",
                     () => SyncBookshelfCreateOrRefresh(name, operationName),
                     retryKey);
+            }
+        }
+
+        // SyncBookshelfCreateOrRefresh 의 onSuccess/onError 콜백에서 직접 호출 — result modal 을 바로 띄운다.
+        // failureMessage == null → 성공 / !null → 실패 (정규화 후 표시).
+        // race 가드: overlayAddInProgress 가 이미 false 면 (timeout 등 이미 처리됨) 중복 표시 안 함.
+        //
+        // 성공 케이스 race: server ack 가 RefreshFromServer(BookshelfCount 증가) 보다 빨리 도착하는 케이스가 많음.
+        // 그 경우 result modal 의 "확인" 을 disabled 로 시작하고, count 증가 감지 후 활성화.
+        private void NotifyAddBookshelfResult(string failureMessage)
+        {
+            if (!overlayAddInProgress)
+            {
+                return;
+            }
+
+            overlayAddInProgress = false;
+
+            if (failureMessage != null)
+            {
+                var errorMessage = NormalizeMutationErrorMessage(failureMessage);
+                ShowAddBookshelfResult("책장 추가 실패", errorMessage, false);
+                return;
+            }
+
+            // 성공 — list 가 이미 갱신됐는지 확인.
+            if (bookshelfGenerator != null &&
+                bookshelfGenerator.BookshelfCount > overlayAddBeforeBookshelfCount)
+            {
+                // 이미 갱신됨 — 즉시 정상 success modal.
+                ShowAddBookshelfResult("책장 추가 완료", "새 책장이 추가되었습니다.", true);
+                return;
+            }
+
+            // 응답은 받았는데 list 아직 갱신 안 됨 — pending modal + count 증가 감지 watcher.
+            ShowAddBookshelfResultPending("책장 추가 완료");
+            StartCoroutine(WaitForBookshelfCountIncreaseAfterAdd());
+        }
+
+        // Pending modal 표시 — overlay visible 일 때만. 아니면 즉시 일반 modal fallback.
+        private void ShowAddBookshelfResultPending(string title)
+        {
+            if (IsBookshelfManageOverlayVisible)
+            {
+                bookshelfManageUiToolkitOverlay.ShowResultModalPending(title);
+            }
+            else
+            {
+                ShowDeleteResultDialog(title, "새 책장이 추가되었습니다.", true);
+            }
+        }
+
+        // List 갱신(BookshelfCount 증가) 대기 coroutine.
+        //   증가 감지: result modal 을 "ready" 로 전환 (메시지 swap + OK 활성).
+        //   timeout 도달: 그래도 OK 활성 + 안내 (사용자가 modal 에 갇히지 않게).
+        private const float AddBookshelfListUpdateTimeoutSeconds = 5f;
+
+        private System.Collections.IEnumerator WaitForBookshelfCountIncreaseAfterAdd()
+        {
+            var beforeCount = overlayAddBeforeBookshelfCount;
+            var timeoutAt = Time.realtimeSinceStartup + AddBookshelfListUpdateTimeoutSeconds;
+
+            while (Time.realtimeSinceStartup < timeoutAt)
+            {
+                // 사용자가 result modal 자체를 닫아버렸으면 (backdrop click 등) coroutine 종료.
+                if (bookshelfManageUiToolkitOverlay == null ||
+                    !bookshelfManageUiToolkitOverlay.IsDeleteResultVisible)
+                {
+                    yield break;
+                }
+
+                if (bookshelfGenerator != null &&
+                    bookshelfGenerator.BookshelfCount > beforeCount)
+                {
+                    bookshelfManageUiToolkitOverlay.MarkResultModalReady("새 책장이 추가되었습니다.");
+                    RefreshHud();
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            // Timeout — 응답은 받았으니 success 자체는 맞지만 list 가 늦음. 사용자 갇히지 않게 OK 활성.
+            if (bookshelfManageUiToolkitOverlay != null && bookshelfManageUiToolkitOverlay.IsDeleteResultVisible)
+            {
+                bookshelfManageUiToolkitOverlay.MarkResultModalReady(
+                    "새 책장이 추가되었습니다.\n(목록 갱신이 지연되고 있어요. 잠시 후 다시 확인해 주세요.)");
+                RefreshHud();
             }
         }
 
@@ -4086,9 +4752,6 @@ namespace BookshelfPorting.Runtime
             PrepareBookshelfNavigationButton(overlayPreviousFocusButton);
             PrepareBookshelfNavigationButton(overlayNextFocusButton);
 
-            bookshelfEditModeButton = CreateButton(canvasObject.transform, "BookshelfEditModeButton", "저장", new Vector2(-70f, -34f), ToggleBookshelfEditMode, new Vector2(86f, 44f), new Vector2(1f, 1f));
-            bookshelfEditModeButton.GetComponentInChildren<Text>().fontSize = 15;
-
             bookshelfIndexPanel = CreatePanel(canvasObject.transform, "BookshelfIndexPanel", new Vector2(0f, -18f), new Vector2(252f, 72f), new Vector2(0.5f, 1f));
             StyleBookshelfIndexPanel(bookshelfIndexPanel.GetComponent<Image>());
             bookshelfIndexText = CreateLabel(bookshelfIndexPanel.transform, "BookshelfIndexText", new Vector2(0f, -14f), new Vector2(212f, 28f), TextAnchor.MiddleCenter);
@@ -4113,7 +4776,6 @@ namespace BookshelfPorting.Runtime
             bookshelfNavHomeButton = CreateBottomNavButton(bookshelfBottomNavPanel.transform, "BookshelfNavHomeButton", "⌂\n책장", 0, FocusBookshelfHomeFromBottom);
             bookshelfNavSearchButton = CreateBottomNavButton(bookshelfBottomNavPanel.transform, "BookshelfNavSearchButton", "검색", 1, ToggleBookSearchPanel);
             bookshelfNavAddButton = CreateBottomNavButton(bookshelfBottomNavPanel.transform, "BookshelfNavAddButton", "+\n추가", 2, OpenBookAddFromBottom);
-            bookshelfNavEditButton = CreateBottomNavButton(bookshelfBottomNavPanel.transform, "BookshelfNavEditButton", "✎\n편집", 3, ToggleBookshelfEditMode);
 
             addBookshelfButton = CreateButton(canvasObject.transform, "AddBookshelfButton", "책장 추가", new Vector2(-128f, -68f), AddBookshelf, new Vector2(92f, 34f), new Vector2(0.5f, 1f));
             addBookshelfButton.GetComponentInChildren<Text>().fontSize = 14;
@@ -4213,7 +4875,7 @@ namespace BookshelfPorting.Runtime
             defaultBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "DefaultBookshelfDesignButton", "기본", new Vector2(24f, -116f), () => SetBookshelfDesignStyle(BookshelfThemeStyle.Default), new Vector2(128f, 38f), new Vector2(0f, 1f));
             warmBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "WarmBookshelfDesignButton", "파스텔 캐빈", new Vector2(176f, -116f), () => SetBookshelfDesignStyle(BookshelfThemeStyle.Warm), new Vector2(128f, 38f), new Vector2(0f, 1f));
             darkBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "DarkBookshelfDesignButton", "언더워터 쉘", new Vector2(328f, -116f), () => SetBookshelfDesignStyle(BookshelfThemeStyle.Dark), new Vector2(128f, 38f), new Vector2(0f, 1f));
-            closeBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "CloseBookshelfDesignButton", "닫기", new Vector2(24f, -166f), CloseBookshelfDesignPanel, new Vector2(432f, 34f), new Vector2(0f, 1f));
+            closeBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "CloseBookshelfDesignButton", "저장", new Vector2(24f, -166f), CommitBookshelfDesignPanel, new Vector2(432f, 34f), new Vector2(0f, 1f));
 
             bookAddPanel = CreatePanel(canvasObject.transform, "BookAddPanel", new Vector2(0f, -128f), new Vector2(560f, 498f), new Vector2(0.5f, 1f));
             StyleBookshelfIndexPanel(bookAddPanel.GetComponent<Image>());
@@ -4500,7 +5162,7 @@ namespace BookshelfPorting.Runtime
             shelfManageRenameButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageRenameButton", "이름 변경", new Vector2(180f, -370f), OpenManagedBookshelfNameEditPanel, new Vector2(108f, 34f), new Vector2(0f, 1f));
             shelfManageAddButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageAddButton", "추가", new Vector2(300f, -370f), AddBookshelfFromManagePanel, new Vector2(84f, 34f), new Vector2(0f, 1f));
             shelfManageDeleteButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageDeleteButton", "삭제", new Vector2(396f, -370f), DeleteActiveBookshelf, new Vector2(84f, 34f), new Vector2(0f, 1f));
-            shelfManageCloseButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageCloseButton", "닫기", new Vector2(288f, -370f), CloseBookshelfManagePanel, new Vector2(96f, 34f), new Vector2(0f, 1f));
+            shelfManageCloseButton = CreateButton(bookshelfManagePanel.transform, "ShelfManageCloseButton", "저장", new Vector2(288f, -370f), CommitBookshelfManagePanel, new Vector2(96f, 34f), new Vector2(0f, 1f));
             bookshelfManageStatusText = CreateLabel(bookshelfManagePanel.transform, "BookshelfManageStatusText", new Vector2(24f, -414f), new Vector2(512f, 28f), TextAnchor.UpperLeft);
             bookshelfManageStatusText.fontSize = 12;
             bookshelfManageStatusText.color = new Color32(124, 111, 101, 255);
@@ -5408,16 +6070,6 @@ namespace BookshelfPorting.Runtime
             RefreshHud();
         }
 
-        private void ToggleBookshelfEditMode()
-        {
-            if (IsBookshelfEditMode)
-            {
-                MarkBookshelfEditSaved();
-            }
-
-            SetBookshelfEditMode(!IsBookshelfEditMode);
-        }
-
         private void ConfirmBookshelfUnsavedNavigation()
         {
             var nextAction = pendingBookshelfNavigationAfterSave;
@@ -5815,6 +6467,9 @@ namespace BookshelfPorting.Runtime
 
         private void RefreshHud()
         {
+            // overlay 가 열린 상태에서만 데이터 재빌드 (가드 안에서 IsVisible 체크).
+            RefreshBookshelfManageUiToolkitOverlay();
+
             var isBookshelfFocused = CurrentFocusArea == ExperienceFocusArea.Bookshelf;
             var isViewingBook = state != null && state.IsViewingBook;
 
@@ -6012,14 +6667,12 @@ namespace BookshelfPorting.Runtime
         {
             var buttonHeight = Mathf.Clamp(canvasSize.y * 0.05f, 48f, 62f);
             var gap = Mathf.Clamp(canvasSize.x * 0.008f, 12f, 18f);
-            var saveWidth = Mathf.Clamp(canvasSize.x * 0.064f, 112f, 136f);
             var designWidth = Mathf.Clamp(canvasSize.x * 0.084f, 144f, 178f);
             var manageWidth = Mathf.Clamp(canvasSize.x * 0.078f, 136f, 166f);
             var rightOffset = safeMargins.z + edge;
 
-            SetTopRightButtonRect(bookshelfEditModeButton, rightOffset, topOffset, saveWidth, buttonHeight);
-            SetTopRightButtonRect(openBookshelfDesignButton, rightOffset + saveWidth + gap, topOffset, designWidth, buttonHeight);
-            SetTopRightButtonRect(openBookshelfManageButton, rightOffset + saveWidth + gap + designWidth + gap, topOffset, manageWidth, buttonHeight);
+            SetTopRightButtonRect(openBookshelfDesignButton, rightOffset, topOffset, designWidth, buttonHeight);
+            SetTopRightButtonRect(openBookshelfManageButton, rightOffset + designWidth + gap, topOffset, manageWidth, buttonHeight);
         }
 
         private static void SetTopRightButtonRect(Button button, float rightOffset, float topOffset, float width, float height)
@@ -6089,14 +6742,13 @@ namespace BookshelfPorting.Runtime
         {
             var padding = Mathf.Clamp(panelWidth * 0.06f, 42f, 62f);
             var gap = Mathf.Clamp(panelWidth * 0.032f, 22f, 34f);
-            var buttonWidth = (panelWidth - padding * 2f - gap * 3f) / 4f;
+            var buttonWidth = (panelWidth - padding * 2f - gap * 2f) / 3f;
             var buttonHeight = panelHeight - Mathf.Clamp(panelHeight * 0.31f, 40f, 50f);
             var startX = -panelWidth * 0.5f + padding + buttonWidth * 0.5f;
 
             LayoutBottomNavButton(bookshelfNavHomeButton, startX, buttonWidth, buttonHeight, panelHeight);
             LayoutBottomNavButton(bookshelfNavSearchButton, startX + (buttonWidth + gap), buttonWidth, buttonHeight, panelHeight);
             LayoutBottomNavButton(bookshelfNavAddButton, startX + (buttonWidth + gap) * 2f, buttonWidth, buttonHeight, panelHeight);
-            LayoutBottomNavButton(bookshelfNavEditButton, startX + (buttonWidth + gap) * 3f, buttonWidth, buttonHeight, panelHeight);
         }
 
         private static void LayoutBottomNavButton(Button button, float x, float width, float height, float panelHeight)
@@ -7355,22 +8007,6 @@ namespace BookshelfPorting.Runtime
                 StyleBookshelfNavigationButton(overlayNextFocusButton, canSwitchBookshelf);
             }
 
-            if (bookshelfEditModeButton != null)
-            {
-                var canToggleEdit = isBookshelfFocused && !isViewingBook && !isBookshelfSwitching && !isDraggingBook && !isPlacementEditing;
-                bookshelfEditModeButton.gameObject.SetActive(showBookshelfOverlay && IsBookshelfEditMode);
-                bookshelfEditModeButton.interactable = canToggleEdit;
-                SetButtonLabel(bookshelfEditModeButton, "저장");
-                StyleHudButton(
-                    bookshelfEditModeButton,
-                    new Color32(255, 248, 236, 235),
-                    new Color32(255, 255, 255, 245),
-                    new Color32(224, 219, 214, 140),
-                    14,
-                    new Color32(63, 47, 38, 255),
-                    true);
-            }
-
             if (openBookSearchButton != null)
             {
                 openBookSearchButton.gameObject.SetActive(false);
@@ -7400,13 +8036,11 @@ namespace BookshelfPorting.Runtime
             var canSearch = canInteract && !isBookPlacementEditorOpen;
             var canMutate = canInteract && !isBookPlacementEditorOpen && CanMutateOwnedBookshelf();
             var canAdd = canMutate && CanUseBookshelfServerPlacement(bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1);
-            var canEdit = canMutate;
 
             var activeTab = ResolveBookshelfBottomNavTab();
             StyleBookshelfBottomNavButton(bookshelfNavHomeButton, activeTab == BookshelfBottomNavTab.Home, canInteract, "⌂\n책장");
             StyleBookshelfBottomNavButton(bookshelfNavSearchButton, activeTab == BookshelfBottomNavTab.Search, canSearch, "검색");
             StyleBookshelfBottomNavButton(bookshelfNavAddButton, activeTab == BookshelfBottomNavTab.Add, canAdd, "+\n추가");
-            StyleBookshelfBottomNavButton(bookshelfNavEditButton, activeTab == BookshelfBottomNavTab.Edit, canEdit, "✎\n편집");
         }
 
         private BookshelfBottomNavTab ResolveBookshelfBottomNavTab()
@@ -7421,7 +8055,7 @@ namespace BookshelfPorting.Runtime
                 return BookshelfBottomNavTab.Search;
             }
 
-            return IsBookshelfEditMode ? BookshelfBottomNavTab.Edit : BookshelfBottomNavTab.Home;
+            return BookshelfBottomNavTab.Home;
         }
 
         private static void StyleBookshelfBottomNavButton(Button button, bool isActive, bool isInteractable, string label)
@@ -7796,7 +8430,7 @@ namespace BookshelfPorting.Runtime
                     {
                         0 => "1/3  하단의 추가 버튼으로 책을 검색하고 원하는 칸에 꽂을 수 있습니다.",
                         1 => "2/3  책을 클릭하면 읽음 상태, 리뷰, 좋아요, 독후감을 관리할 수 있습니다.",
-                        _ => "3/3  편집에서 책장 이름, 공개 범위, 디자인을 관리할 수 있습니다."
+                        _ => "3/3  상단의 책장관리·디자인변경 버튼으로 책장 이름, 공개 범위, 디자인을 관리할 수 있습니다."
                     };
                 }
 
@@ -8014,6 +8648,11 @@ namespace BookshelfPorting.Runtime
                                           !isBookshelfSwitching &&
                                           bookshelfGenerator != null;
             var shouldShowEditControls = IsBookshelfEditMode && canShowBookshelfOverlay && CanMutateOwnedBookshelf();
+            // [책장관리] / [디자인변경] entry 버튼은 책장 포커싱 + 자기 책장 + 책장 1개 이상일 때 항시 노출.
+            // edit mode 진입은 panel 열 때 자동으로 일어나므로 IsBookshelfEditMode 가드는 두지 않는다.
+            var shouldShowEditEntryButtons = canShowBookshelfOverlay &&
+                                             CanMutateOwnedBookshelf() &&
+                                             bookshelfGenerator.BookshelfCount > 0;
 
             var displayIndex = canShowBookshelfOverlay
                 ? Mathf.Clamp(bookshelfGenerator.DisplayBookshelfIndex, 0, Mathf.Max(1, bookshelfGenerator.BookshelfCount) - 1)
@@ -8028,8 +8667,8 @@ namespace BookshelfPorting.Runtime
 
             openBookAddButton.gameObject.SetActive(false);
 
-            openBookshelfManageButton.gameObject.SetActive(shouldShowEditControls);
-            openBookshelfManageButton.interactable = shouldShowEditControls;
+            openBookshelfManageButton.gameObject.SetActive(shouldShowEditEntryButtons);
+            openBookshelfManageButton.interactable = shouldShowEditEntryButtons;
             StyleHudButton(
                 openBookshelfManageButton,
                 new Color32(255, 248, 236, 235),
@@ -8047,8 +8686,8 @@ namespace BookshelfPorting.Runtime
                 ? "책장 삭제"
                 : "삭제 불가");
 
-            openBookshelfDesignButton.gameObject.SetActive(shouldShowEditControls);
-            openBookshelfDesignButton.interactable = shouldShowEditControls;
+            openBookshelfDesignButton.gameObject.SetActive(shouldShowEditEntryButtons);
+            openBookshelfDesignButton.interactable = shouldShowEditEntryButtons;
             StyleHudButton(
                 openBookshelfDesignButton,
                 new Color32(255, 248, 236, 235),
@@ -8225,11 +8864,6 @@ namespace BookshelfPorting.Runtime
                 focusBackButton.gameObject.SetActive(false);
             }
 
-            if (bookshelfEditModeButton != null)
-            {
-                bookshelfEditModeButton.gameObject.SetActive(false);
-            }
-
             if (openBookshelfManageButton != null)
             {
                 openBookshelfManageButton.gameObject.SetActive(false);
@@ -8314,6 +8948,22 @@ namespace BookshelfPorting.Runtime
 
         private void OpenBookshelfDesignPanel()
         {
+            // 책장 포커싱 화면에서 [디자인변경] 버튼이 항시 노출되므로, panel 진입 시 자동으로
+            // edit mode 를 켜서 CanMutateBookshelfCollection() 의 IsBookshelfEditMode 가드를 통과시킨다.
+            if (!CanMutateOwnedBookshelf())
+            {
+                return;
+            }
+
+            if (!IsBookshelfEditMode)
+            {
+                SetBookshelfEditMode(true);
+                if (!IsBookshelfEditMode)
+                {
+                    return;
+                }
+            }
+
             if (!CanMutateBookshelfCollection())
             {
                 return;
@@ -8327,6 +8977,18 @@ namespace BookshelfPorting.Runtime
 
             SetBookshelfOverlayMode(BookshelfOverlayMode.Design);
             RefreshHud();
+        }
+
+        // 디자인변경 panel 의 "저장" 버튼 핸들러. dirty 클리어 + edit mode 종료 후 panel 닫기.
+        // 실제 디자인 적용은 SetBookshelfDesignStyle 시점에 이미 서버로 PATCH 됐기 때문에 추가 PATCH 없음.
+        private void CommitBookshelfDesignPanel()
+        {
+            MarkBookshelfEditSaved();
+            CloseBookshelfDesignPanel();
+            if (IsBookshelfEditMode)
+            {
+                SetBookshelfEditMode(false);
+            }
         }
 
         private void CloseBookshelfDesignPanel()
@@ -9592,18 +10254,25 @@ namespace BookshelfPorting.Runtime
 
         private bool HasBlockingBookshelfOverlay()
         {
+            // UI Toolkit 책장관리 overlay 는 SetBookshelfOverlayMode(Manage) 를 호출하지 않지만
+            // CaptureBookshelfOverlayState 가 IsBookshelfManageOverlayVisible 도 isBookshelfManagePanelOpenEffective
+            // 로 OR 해서 snapshot 에 반영하므로 overlayStateController 호출만으로 충분히 잡힌다.
             return overlayStateController.HasBlockingBookshelfOverlay(CaptureBookshelfOverlayState());
         }
 
         private BookshelfOverlayStateSnapshot CaptureBookshelfOverlayState()
         {
+            // UI Toolkit overlay 가 visible 일 때도 isBookshelfManagePanelOpen 으로 간주 — CanOpenBookAddPanel,
+            // HasOpenBookshelfModal 등 기존 가드가 새 overlay 도 정확히 인식하도록 단일 진실 보장.
+            var isManagePanelOpenEffective = isBookshelfManagePanelOpen || IsBookshelfManageOverlayVisible;
+
             return new BookshelfOverlayStateSnapshot(
                 isBookshelfNameEditPanelOpen,
                 isBookshelfDeleteConfirmPanelOpen,
                 isBookshelfDesignPanelOpen,
                 isBookAddPanelOpen,
                 isBookAddConfirmPanelOpen,
-                isBookshelfManagePanelOpen,
+                isManagePanelOpenEffective,
                 isBookshelfUnsavedConfirmPanelOpen,
                 isDeleteResultDialogOpen,
                 isBookSearchPanelOpen,
@@ -9864,14 +10533,42 @@ namespace BookshelfPorting.Runtime
 
         private void OpenBookshelfManagePanel()
         {
+            // [책장관리] 버튼도 항시 노출되므로, panel 진입 시 자동 edit mode 진입.
+            if (!CanMutateOwnedBookshelf())
+            {
+                return;
+            }
+
+            if (!IsBookshelfEditMode)
+            {
+                SetBookshelfEditMode(true);
+                if (!IsBookshelfEditMode)
+                {
+                    return;
+                }
+            }
+
             if (!CanMutateBookshelfCollection())
             {
                 return;
             }
 
             CloseOverlayPanels(bookshelfManagePanel);
-            SetBookshelfOverlayMode(BookshelfOverlayMode.Manage);
+            // 기존 uGUI 책장관리 panel 호출은 제거 — UI Toolkit overlay 가 대체.
+            // SetBookshelfOverlayMode(BookshelfOverlayMode.Manage) 는 의도적으로 호출 안 함.
+            bookshelfManageUiToolkitOverlay?.Show(BuildBookshelfManageSnapshot());
             RefreshHud();
+        }
+
+        // 책장관리 panel 의 "저장" 버튼 핸들러. 디자인변경과 동일 패턴.
+        private void CommitBookshelfManagePanel()
+        {
+            MarkBookshelfEditSaved();
+            CloseBookshelfManagePanel();
+            if (IsBookshelfEditMode)
+            {
+                SetBookshelfEditMode(false);
+            }
         }
 
         private void CloseBookshelfManagePanel()
@@ -9888,6 +10585,8 @@ namespace BookshelfPorting.Runtime
                 bookshelfNameModalBackdrop.SetActive(false);
             }
 
+            // 시범 overlay 도 함께 닫아 silent close 경로 (focus 이동/visited space 정리 등) 와 일관 유지.
+            bookshelfManageUiToolkitOverlay?.Hide();
             RefreshHud();
         }
 
@@ -17022,8 +17721,18 @@ namespace BookshelfPorting.Runtime
 
         }
 
-        private static bool IsPointerOverUi()
+        // static 이었으나 UI Toolkit 책장관리 overlay(instance 필드) 인지를 위해 instance 로 변경.
+        // 호출자는 모두 같은 클래스 안이라 외부 영향 없음.
+        private bool IsPointerOverUi()
         {
+            // UI Toolkit overlay backdrop 이 전체 화면을 덮고 있으면 카메라/책 drag 모두 차단.
+            // PanelSettings 를 코드로 생성한 케이스라 EventSystem.IsPointerOverGameObject 자동 인지가
+            // 보장되지 않아 명시적 가드 추가.
+            if (IsBookshelfManageOverlayVisible)
+            {
+                return true;
+            }
+
             if (Mouse.current == null)
             {
                 return false;

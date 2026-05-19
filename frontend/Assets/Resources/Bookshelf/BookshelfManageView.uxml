@@ -1,0 +1,109 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <ui:Style src="BookshelfManageView.uss" />
+    <ui:VisualElement name="root" class="shelf-manage-root hidden" picking-mode="Position">
+        <ui:VisualElement name="backdrop" class="shelf-manage-backdrop" picking-mode="Position" />
+        <ui:VisualElement name="frame" class="shelf-manage-frame" picking-mode="Position">
+
+            <ui:VisualElement class="shelf-manage-header">
+                <ui:VisualElement class="shelf-manage-header-text">
+                    <ui:Label class="shelf-manage-eyebrow" text="SHELF · CATALOG" />
+                    <ui:Label class="shelf-manage-title" text="책장 관리" />
+                </ui:VisualElement>
+                <ui:Button name="close-button" class="shelf-manage-close-button" text="저장" />
+            </ui:VisualElement>
+
+            <ui:VisualElement class="shelf-manage-rule" />
+
+            <ui:VisualElement class="shelf-manage-body">
+
+                <ui:Label class="shelf-manage-section-eyebrow" text="CURRENT  ·  현재 책장" />
+                <ui:VisualElement name="hero" class="shelf-manage-hero">
+                    <ui:VisualElement class="shelf-manage-hero-left">
+                        <ui:Label name="active-number" class="shelf-manage-hero-number" text="—" />
+                        <ui:Label class="shelf-manage-hero-number-label" text="No." />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="shelf-manage-hero-content">
+
+                        <!-- 일반 View mode -->
+                        <ui:VisualElement name="hero-view" class="shelf-manage-hero-view">
+                            <ui:VisualElement class="shelf-manage-hero-name-row">
+                                <ui:Label name="active-name" class="shelf-manage-hero-name" text="—" />
+                                <ui:Button name="rename-button" class="shelf-manage-hero-rename" text="이름 변경" />
+                            </ui:VisualElement>
+                            <ui:Label name="active-stats" class="shelf-manage-hero-stats" text="" />
+
+                            <ui:VisualElement class="shelf-manage-subgroup">
+                                <ui:Label class="shelf-manage-sub-label" text="공개 범위" />
+                                <ui:VisualElement class="shelf-manage-chip-row">
+                                    <ui:Button name="vis-public" class="shelf-manage-chip" text="공개" />
+                                    <ui:Button name="vis-followers" class="shelf-manage-chip" text="친구" />
+                                    <ui:Button name="vis-private" class="shelf-manage-chip" text="비공개" />
+                                </ui:VisualElement>
+                            </ui:VisualElement>
+
+                            <ui:VisualElement class="shelf-manage-subgroup">
+                                <ui:Label class="shelf-manage-sub-label" text="책 정렬" />
+                                <ui:VisualElement class="shelf-manage-chip-row">
+                                    <ui:Button name="sort-title" class="shelf-manage-chip" text="제목" />
+                                    <ui:Button name="sort-author" class="shelf-manage-chip" text="저자" />
+                                    <ui:Button name="sort-status" class="shelf-manage-chip" text="상태" />
+                                    <ui:Button name="sort-liked" class="shelf-manage-chip" text="좋아요" />
+                                </ui:VisualElement>
+                            </ui:VisualElement>
+
+                            <ui:VisualElement class="shelf-manage-hero-footer">
+                                <ui:Button name="delete-button" class="shelf-manage-delete-link" text="이 책장 삭제" />
+                            </ui:VisualElement>
+                        </ui:VisualElement>
+
+                        <!-- 인라인 이름 편집 mode -->
+                        <ui:VisualElement name="hero-edit" class="shelf-manage-hero-edit hidden">
+                            <ui:Label class="shelf-manage-edit-eyebrow" text="EDIT  ·  책장 이름 변경" />
+                            <ui:TextField name="name-input" class="shelf-manage-name-input" max-length="40" />
+                            <ui:Label name="name-input-hint" class="shelf-manage-edit-hint" text="Enter 키로 저장, Esc 키로 취소" />
+                            <ui:VisualElement class="shelf-manage-edit-actions">
+                                <ui:Button name="name-cancel" class="shelf-manage-edit-cancel" text="취소" />
+                                <ui:Button name="name-save" class="shelf-manage-edit-save" text="저장" />
+                            </ui:VisualElement>
+                        </ui:VisualElement>
+
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <ui:Label class="shelf-manage-section-eyebrow shelf-manage-section-eyebrow-spaced" text="ALL  ·  전체 책장" />
+                <ui:ScrollView name="rows" class="shelf-manage-rows" mode="Vertical" horizontal-scroller-visibility="Hidden" />
+                <ui:Button name="add-button" class="shelf-manage-add-card" text="＋    새 책장 추가" />
+
+                <ui:Label name="status" class="shelf-manage-status hidden" text="" />
+            </ui:VisualElement>
+
+            <!-- 삭제 확인 sub-modal — modal 안 modal 패턴. frame 위에 absolute backdrop + 작은 카드. -->
+            <ui:VisualElement name="delete-confirm-modal" class="shelf-manage-sub-modal hidden" picking-mode="Position">
+                <ui:VisualElement name="delete-confirm-backdrop" class="shelf-manage-sub-modal-backdrop" picking-mode="Position" />
+                <ui:VisualElement class="shelf-manage-sub-modal-card">
+                    <ui:Label class="shelf-manage-sub-modal-eyebrow" text="DANGER  ·  돌이킬 수 없음" />
+                    <ui:Label class="shelf-manage-sub-modal-title" text="책장 삭제" />
+                    <ui:Label name="delete-confirm-message" class="shelf-manage-sub-modal-message" text="" />
+                    <ui:VisualElement class="shelf-manage-sub-modal-actions">
+                        <ui:Button name="delete-cancel-button" class="shelf-manage-sub-modal-cancel" text="취소" />
+                        <ui:Button name="delete-confirm-button" class="shelf-manage-sub-modal-confirm" text="삭제" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+            <!-- 삭제 결과 sub-modal — 성공/실패 분기 (is-failure 클래스 토글). -->
+            <ui:VisualElement name="delete-result-modal" class="shelf-manage-sub-modal hidden" picking-mode="Position">
+                <ui:VisualElement name="delete-result-backdrop" class="shelf-manage-sub-modal-backdrop" picking-mode="Position" />
+                <ui:VisualElement name="delete-result-card" class="shelf-manage-sub-modal-card shelf-manage-result-card">
+                    <ui:Label name="delete-result-eyebrow" class="shelf-manage-sub-modal-eyebrow" text="DONE  ·  완료" />
+                    <ui:Label name="delete-result-title" class="shelf-manage-sub-modal-title" text="" />
+                    <ui:Label name="delete-result-message" class="shelf-manage-sub-modal-message" text="" />
+                    <ui:VisualElement class="shelf-manage-sub-modal-actions">
+                        <ui:Button name="delete-result-ok-button" class="shelf-manage-sub-modal-confirm" text="확인" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
