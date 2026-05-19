@@ -43,11 +43,12 @@ namespace App.Bootstrap
         public static bool IsActive => !string.IsNullOrEmpty(activeTheme);
 
         // entry 가 현재 테마 필터를 통과하는지 판정. 빈 ThemeTag (legacy / 무테마 공통 자산) 는 항상 통과.
+        // Active theme filters are strict: untagged entries are hidden while a full theme is selected.
         public static bool MatchesActive(string entryThemeTag)
         {
             if (!IsActive) return true;
-            if (string.IsNullOrEmpty(entryThemeTag)) return true;
-            return string.Equals(entryThemeTag, activeTheme, StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(entryThemeTag)) return false;
+            return string.Equals(entryThemeTag.Trim(), activeTheme, StringComparison.OrdinalIgnoreCase);
         }
 
         public static string DescribeActive()

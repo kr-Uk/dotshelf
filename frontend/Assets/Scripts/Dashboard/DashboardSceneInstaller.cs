@@ -61,6 +61,10 @@ namespace Dotshelf.Scripts.Dashboard
 
             var resolvedApiConfig = ResolveApiConfig();
             var effectiveMode = mode;
+            if (resolvedApiConfig != null && resolvedApiConfig.UsesMockApi)
+            {
+                effectiveMode = RepositoryMode.Mock;
+            }
 
             if (logChosenMode)
             {

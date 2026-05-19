@@ -64,7 +64,14 @@ namespace App.Infrastructure.Mock.Dashboard
                 visitCount: isMine ? 254 : 1023,
                 likeCount: likeCount,
                 liked: liked,
-                layoutVersion: 3);
+                layoutVersion: 3,
+                currentThemeInventoryId: MockSpaceCustomizationState.CurrentThemeInventoryId,
+                currentWallpaperInventoryId: MockSpaceCustomizationState.CurrentWallpaperInventoryId,
+                currentFloorInventoryId: MockSpaceCustomizationState.CurrentFloorInventoryId,
+                currentDeskInventoryId: MockSpaceCustomizationState.CurrentDeskInventoryId,
+                currentDashboardInventoryId: MockSpaceCustomizationState.CurrentDashboardInventoryId,
+                currentInteriorLightInventoryId: MockSpaceCustomizationState.CurrentInteriorLightInventoryId,
+                currentExteriorLightInventoryId: MockSpaceCustomizationState.CurrentExteriorLightInventoryId);
 
             return new DashboardSnapshot(
                 space: space,

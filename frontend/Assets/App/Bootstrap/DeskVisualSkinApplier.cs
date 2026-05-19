@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using App.Infrastructure.Catalogs;
 using UnityEngine;
 
@@ -656,7 +657,40 @@ namespace App.Bootstrap
         private static void ClearSkinUnder(Transform deskTransform, Transform notebookTransform)
         {
             if (deskTransform == null) return;
-            var existing = deskTransform.Find(DeskVisualSkin.SkinChildName);
+            var targets = new List<Transform>();
+            var skins = deskTransform.GetComponentsInChildren<DeskVisualSkin>(true);
+            if (skins != null)
+            {
+                for (int i = 0; i < skins.Length; i++)
+                {
+                    if (skins[i] == null || skins[i].transform == null) continue;
+                    if (!targets.Contains(skins[i].transform))
+                    {
+                        targets.Add(skins[i].transform);
+                    }
+                }
+            }
+
+            var children = deskTransform.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < children.Length; i++)
+            {
+                var child = children[i];
+                if (child == null || child == deskTransform) continue;
+                if (child.gameObject.name != DeskVisualSkin.SkinChildName) continue;
+                if (!targets.Contains(child))
+                {
+                    targets.Add(child);
+                }
+            }
+
+            for (int i = targets.Count - 1; i >= 0; i--)
+            {
+                RestoreAndDestroySkin(targets[i], deskTransform, notebookTransform);
+            }
+        }
+
+        private static void RestoreAndDestroySkin(Transform existing, Transform deskTransform, Transform notebookTransform)
+        {
             if (existing == null) return;
 
             RestoreBackedUpDefaultTableNatural(existing, deskTransform);
@@ -711,6 +745,10 @@ namespace App.Bootstrap
                     DeepSeaScreenOverride.Deactivate("clear_skin");
                 }
             }
+
+            // Destroy is deferred in Play Mode. Deactivate immediately so switching
+            // Spooky -> Space in the same frame cannot render both desk skins.
+            existing.gameObject.SetActive(false);
             UnityObjectSafeDestroy.Destroy(existing.gameObject);
         }
 

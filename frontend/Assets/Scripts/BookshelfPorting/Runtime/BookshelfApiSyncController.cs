@@ -2574,6 +2574,15 @@ namespace BookshelfPorting.Runtime
 
         private static BookshelfThemeStyle ResolveStyleFromEntry(object entry, int index)
         {
+            switch (ResolveEntryAssetId(entry))
+            {
+                case 200020L: return BookshelfThemeStyle.Vintage;
+                case 300020L: return BookshelfThemeStyle.DeepSea;
+                case 400020L: return BookshelfThemeStyle.Fantasy;
+                case 500020L: return BookshelfThemeStyle.Space;
+                case 600020L: return BookshelfThemeStyle.Spooky;
+            }
+
             if (TryResolveStyleByKeyword(ResolveEntryDisplayName(entry), out var style))
             {
                 return style;
@@ -2608,6 +2617,42 @@ namespace BookshelfPorting.Runtime
             if (!string.IsNullOrWhiteSpace(key))
             {
                 key = key.Trim().ToLowerInvariant();
+                if (key.Contains("deepsea") || key.Contains("deep sea"))
+                {
+                    style = BookshelfThemeStyle.DeepSea;
+                    return true;
+                }
+
+                if (key.Contains("vintage"))
+                {
+                    style = BookshelfThemeStyle.Vintage;
+                    return true;
+                }
+
+                if (key.Contains("spooky"))
+                {
+                    style = BookshelfThemeStyle.Spooky;
+                    return true;
+                }
+
+                if (key.Contains("fantasy"))
+                {
+                    style = BookshelfThemeStyle.Fantasy;
+                    return true;
+                }
+
+                if (key.Contains("space"))
+                {
+                    style = BookshelfThemeStyle.Space;
+                    return true;
+                }
+
+                if (key.Contains("goodvibes") || key.Contains("good vibes"))
+                {
+                    style = BookshelfThemeStyle.GoodVibes;
+                    return true;
+                }
+
                 if (key.Contains("dark") || key.Contains("black") || key.Contains("night") ||
                     key.Contains("underwater") || key.Contains("shell") || key.Contains("ocean") || key.Contains("sea"))
                 {
