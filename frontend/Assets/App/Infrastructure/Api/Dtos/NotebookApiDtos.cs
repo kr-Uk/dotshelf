@@ -735,6 +735,28 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("bookshelfSkinDefault")]
         public long? BookshelfSkinDefault { get; set; }
+
+        [JsonProperty("children")]
+        public List<ThemeContentItemResponseDto> Children { get; set; }
+    }
+
+    [Serializable]
+    public sealed class ThemeContentItemResponseDto
+    {
+        [JsonProperty("assetId")]
+        public long AssetId { get; set; }
+
+        [JsonProperty("assetType")]
+        public string AssetType { get; set; }
+
+        [JsonProperty("role")]
+        public string Role { get; set; }
+
+        [JsonProperty("required")]
+        public bool Required { get; set; }
+
+        [JsonProperty("defaultTransform")]
+        public string DefaultTransform { get; set; }
     }
 
     [Serializable]
