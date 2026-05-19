@@ -339,6 +339,7 @@ namespace App.Features.Notebook.Presentation
         private VisualElement bookDetailContent;
         private VisualElement bookDetailModalPanel;
         private ScrollView bookDetailScrollView;
+        private ScrollView bookDetailSummaryScrollView;
         private VisualElement otherSpacesContent;
         private VisualElement otherSpacesList;
         private VisualElement socialListPanel;
@@ -981,6 +982,7 @@ namespace App.Features.Notebook.Presentation
             bookDetailContent = null;
             bookDetailModalPanel = null;
             bookDetailScrollView = null;
+            bookDetailSummaryScrollView = null;
             otherSpacesContent = null;
             otherSpacesList = null;
             socialListPanel = null;
@@ -1805,6 +1807,28 @@ namespace App.Features.Notebook.Presentation
             Border(panel, Rgba(0x0E, 0x1D, 0x2A, 0.14f));
             bookDetailContent.Add(panel);
 
+            var headerArea = Row("book-detail-header-area");
+            headerArea.style.height = 52;
+            headerArea.style.flexShrink = 0;
+            headerArea.style.alignItems = Align.Center;
+            headerArea.style.justifyContent = Justify.FlexEnd;
+            headerArea.style.marginBottom = 10;
+            headerArea.pickingMode = PickingMode.Position;
+            panel.Add(headerArea);
+
+            var topLayerClose = CloseIconButton("닫기");
+            topLayerClose.style.width = 46;
+            topLayerClose.style.height = 46;
+            topLayerClose.style.marginRight = 0;
+            topLayerClose.style.marginTop = 0;
+            topLayerClose.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.74f);
+            topLayerClose.style.borderTopWidth = 0;
+            topLayerClose.style.borderRightWidth = 0;
+            topLayerClose.style.borderBottomWidth = 0;
+            topLayerClose.style.borderLeftWidth = 0;
+            topLayerClose.clicked += CloseBookDetail;
+            headerArea.Add(topLayerClose);
+
             var detailScroll = new ScrollView(ScrollViewMode.Vertical) { name = "book-detail-scroll" };
             bookDetailScrollView = detailScroll;
             detailScroll.style.flexGrow = 1f;
@@ -1912,23 +1936,39 @@ namespace App.Features.Notebook.Presentation
             bookDetailPublisher.style.unityTextAlign = TextAnchor.MiddleLeft;
             info.Add(bookDetailPublisher);
 
+            var synopsisScroll = new ScrollView(ScrollViewMode.Vertical) { name = "SynopsisScrollView" };
+            bookDetailSummaryScrollView = synopsisScroll;
+            synopsisScroll.style.marginTop = 14;
+            synopsisScroll.style.height = 96;
+            synopsisScroll.style.minHeight = 96;
+            synopsisScroll.style.maxHeight = 96;
+            synopsisScroll.style.flexShrink = 0f;
+            synopsisScroll.style.overflow = Overflow.Hidden;
+            synopsisScroll.style.backgroundColor = Rgba(0xF7, 0xFF, 0xF7, 0.86f);
+            synopsisScroll.style.borderLeftWidth = 3;
+            synopsisScroll.style.borderLeftColor = Accent;
+            synopsisScroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            synopsisScroll.verticalScrollerVisibility = ScrollerVisibility.Auto;
+            synopsisScroll.RegisterCallback<WheelEvent>(evt => evt.StopPropagation());
+            synopsisScroll.contentContainer.name = "Content";
+            synopsisScroll.contentContainer.style.flexDirection = FlexDirection.Column;
+            synopsisScroll.contentContainer.style.paddingLeft = 14;
+            synopsisScroll.contentContainer.style.paddingRight = 12;
+            synopsisScroll.contentContainer.style.paddingTop = 10;
+            synopsisScroll.contentContainer.style.paddingBottom = 10;
+            Round(synopsisScroll, 12);
+            StyleBookDetailSummaryScroller(synopsisScroll);
+            info.Add(synopsisScroll);
+
             bookDetailSummary = Text(string.Empty, 13, Ink, FontStyle.Italic);
-            bookDetailSummary.style.marginTop = 14;
-            bookDetailSummary.style.paddingLeft = 14;
-            bookDetailSummary.style.paddingRight = 12;
-            bookDetailSummary.style.paddingTop = 10;
-            bookDetailSummary.style.paddingBottom = 10;
+            bookDetailSummary.name = "SynopsisText";
             bookDetailSummary.style.whiteSpace = WhiteSpace.Normal;
-            bookDetailSummary.style.minHeight = 48;
+            bookDetailSummary.style.minHeight = 0;
             bookDetailSummary.style.height = StyleKeyword.Auto;
             bookDetailSummary.style.flexShrink = 0f;
-            bookDetailSummary.style.overflow = Overflow.Hidden;
+            bookDetailSummary.style.overflow = Overflow.Visible;
             bookDetailSummary.style.unityTextAlign = TextAnchor.UpperLeft;
-            bookDetailSummary.style.backgroundColor = Rgba(0xF7, 0xFF, 0xF7, 0.86f);
-            bookDetailSummary.style.borderLeftWidth = 3;
-            bookDetailSummary.style.borderLeftColor = Accent;
-            Round(bookDetailSummary, 12);
-            info.Add(bookDetailSummary);
+            synopsisScroll.Add(bookDetailSummary);
 
             var purchasePanel = Row("book-detail-purchase");
             purchasePanel.style.height = 64;
@@ -2160,20 +2200,6 @@ namespace App.Features.Notebook.Presentation
                 SubmitBookReview();
             };
             form.Add(submit);
-
-            var topLayerClose = CloseIconButton("닫기");
-            topLayerClose.style.position = Position.Absolute;
-            topLayerClose.style.right = 12;
-            topLayerClose.style.top = 12;
-            topLayerClose.style.width = 44;
-            topLayerClose.style.height = 44;
-            topLayerClose.style.backgroundColor = Rgba(0xFF, 0xFF, 0xFF, 0.74f);
-            topLayerClose.style.borderTopWidth = 0;
-            topLayerClose.style.borderRightWidth = 0;
-            topLayerClose.style.borderBottomWidth = 0;
-            topLayerClose.style.borderLeftWidth = 0;
-            topLayerClose.clicked += CloseBookDetail;
-            panel.Add(topLayerClose);
         }
 
         private VisualElement CreateInputFrame(float height)
@@ -4051,7 +4077,7 @@ namespace App.Features.Notebook.Presentation
             if (bookDetailSummary != null)
             {
                 bookDetailSummary.text = $"\"{book.Summary}\"";
-                ScheduleBookDetailSummaryAutoHeight();
+                ResetBookDetailSummaryScroll();
             }
 
             if (bookDetailPrice != null)
@@ -4071,65 +4097,41 @@ namespace App.Features.Notebook.Presentation
             RefreshRatingStars();
         }
 
-        private void ScheduleBookDetailSummaryAutoHeight()
+        private void ResetBookDetailSummaryScroll()
         {
-            if (bookDetailSummary == null)
+            if (bookDetailSummaryScrollView == null)
             {
                 return;
             }
 
-            bookDetailSummary.style.height = StyleKeyword.Auto;
-            bookDetailSummary.style.minHeight = 48;
-            bookDetailSummary.schedule.Execute(UpdateBookDetailSummaryAutoHeight).StartingIn(1);
+            bookDetailSummaryScrollView.scrollOffset = Vector2.zero;
+            bookDetailSummaryScrollView.schedule.Execute(() =>
+            {
+                if (bookDetailSummaryScrollView != null)
+                {
+                    bookDetailSummaryScrollView.scrollOffset = Vector2.zero;
+                }
+            }).StartingIn(1);
         }
 
-        private void UpdateBookDetailSummaryAutoHeight()
+        private static void StyleBookDetailSummaryScroller(ScrollView scrollView)
         {
-            if (bookDetailSummary == null)
+            var scroller = scrollView?.verticalScroller;
+            if (scroller == null)
             {
                 return;
             }
 
-            var width = bookDetailSummary.resolvedStyle.width;
-            if (float.IsNaN(width) || width <= 0f)
-            {
-                return;
-            }
-
-            var verticalPadding = bookDetailSummary.resolvedStyle.paddingTop + bookDetailSummary.resolvedStyle.paddingBottom;
-            var text = bookDetailSummary.text ?? string.Empty;
-            var usableWidth = Mathf.Max(24f, width - bookDetailSummary.resolvedStyle.paddingLeft - bookDetailSummary.resolvedStyle.paddingRight);
-            var fontSize = Mathf.Max(8f, bookDetailSummary.resolvedStyle.fontSize);
-            var lineCapacity = Mathf.Max(1f, usableWidth / (fontSize * 0.92f));
-            var visualLength = 0f;
-            var lineCount = 1;
-            for (var i = 0; i < text.Length; i++)
-            {
-                if (text[i] == '\n')
-                {
-                    lineCount++;
-                    visualLength = 0;
-                    continue;
-                }
-
-                var weight = text[i] == ' '
-                    ? 0.32f
-                    : text[i] <= 0x007F
-                        ? 0.58f
-                        : 1f;
-                if (visualLength > 0f && visualLength + weight > lineCapacity)
-                {
-                    lineCount++;
-                    visualLength = 0f;
-                }
-
-                visualLength += weight;
-            }
-
-            var lineHeight = Mathf.Max(18f, fontSize * 1.42f);
-            var targetHeight = Mathf.Ceil(Mathf.Max(48f, lineCount * lineHeight + verticalPadding + 4f));
-            bookDetailSummary.style.minHeight = targetHeight;
-            bookDetailSummary.style.height = targetHeight;
+            scroller.style.width = 4;
+            scroller.style.minWidth = 4;
+            scroller.style.marginLeft = 4;
+            scroller.style.marginRight = 2;
+            scroller.style.backgroundColor = Color.clear;
+            scroller.slider.style.backgroundColor = Rgba(0x0E, 0x1D, 0x2A, 0.12f);
+            scroller.slider.style.borderTopLeftRadius = 2;
+            scroller.slider.style.borderTopRightRadius = 2;
+            scroller.slider.style.borderBottomLeftRadius = 2;
+            scroller.slider.style.borderBottomRightRadius = 2;
         }
 
         private void RefreshFavoriteBookButton(BookViewModel book)
