@@ -258,6 +258,7 @@ namespace App.Features.Notebook.Presentation
         private const int MarketBookPageSize = 48;
         private const NotebookShelfDisplayStyle DefaultDisplayStyle = NotebookShelfDisplayStyle.Spine;
         private const string PanelSettingsResource = "NotebookPanelSettings";
+        private const string CommonSearchIconPath = "Assets/App/UI/Icons/Common/icon_search.png";
 
         private static readonly Color PageBack = Hex(0xF0EEE9);
         private static readonly Color Surface = Hex(0xF7FFF7);
@@ -278,6 +279,7 @@ namespace App.Features.Notebook.Presentation
         private static readonly Color Coral = Hex(0xFF8A65);
         private static readonly Color Violet = Hex(0x6E5BFF);
         private static readonly Color Gold = Hex(0xF4C95D);
+        private static Sprite commonSearchIconSprite;
         private static Texture2D searchIconTexture;
         private static readonly string[] SuggestedSearches = { "소설", "에세이", "심리", "베스트셀러", "SF", "자기계발", "인문" };
 
@@ -1533,7 +1535,7 @@ namespace App.Features.Notebook.Presentation
             searchIcon.style.marginLeft = 2;
             searchIcon.style.marginRight = 8;
             searchIcon.style.flexShrink = 0;
-            searchIcon.style.backgroundImage = new StyleBackground(GetSearchIconTexture());
+            searchIcon.style.backgroundImage = ResolveSearchIconBackground();
             searchIcon.pickingMode = PickingMode.Ignore;
             search.Add(searchIcon);
 
@@ -7802,7 +7804,23 @@ namespace App.Features.Notebook.Presentation
             AddRoomRect(parent, "room-pin-card-b", left + 10, top + 33, width - 20, 14, Rgba(0xFF, 0xFF, 0xFF, 0.30f), 5);
         }
 
-        private static Texture2D GetSearchIconTexture()
+        private static StyleBackground ResolveSearchIconBackground()
+        {
+#if UNITY_EDITOR
+            if (commonSearchIconSprite == null)
+            {
+                commonSearchIconSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(CommonSearchIconPath);
+            }
+
+            if (commonSearchIconSprite != null)
+            {
+                return new StyleBackground(commonSearchIconSprite);
+            }
+#endif
+            return new StyleBackground(GetFallbackSearchIconTexture());
+        }
+
+        private static Texture2D GetFallbackSearchIconTexture()
         {
             if (searchIconTexture != null)
             {
