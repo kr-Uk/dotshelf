@@ -1,0 +1,144 @@
+/* ============================================================================
+   DotshelfDesignTokens.uss — dotshelf 공용 디자인 시스템 (USS variables).
+
+   사용: 모든 overlay/screen 의 UIDocument 가 panel root 에 이 StyleSheet 을
+         먼저 add 한 다음 자기 view USS 를 add. var(--ds-*) 로 토큰 참조.
+
+   원칙 — "Card Catalog" 종이/잉크/도장 톤:
+     · paper: 책방 카탈로그 카드 종이
+     · ink: 짙은 갈색-검정 잉크
+     · stamp: 빨간 도장 (강조/active/danger)
+
+   확장 시: 새 toon variant 도 동일 prefix (--ds-*) 로 추가하고, dark/season
+            variant 가 필요해지면 별도 TSS theme 으로 분기.
+   ============================================================================ */
+
+:root {
+
+    /* ===== Color · 종이/잉크 ===== */
+    --ds-color-paper: rgb(247, 240, 222);
+    --ds-color-paper-warm: rgb(252, 247, 233);
+    --ds-color-paper-soft: rgba(252, 247, 233, 0.65);
+    --ds-color-paper-mute: rgba(252, 247, 233, 0.80);
+
+    /* ===== Color · 잉크 (텍스트) ===== */
+    --ds-color-ink: rgb(28, 22, 18);
+    --ds-color-ink-strong: rgb(40, 28, 20);
+    --ds-color-ink-soft: rgb(95, 80, 65);
+    --ds-color-ink-mute: rgb(140, 122, 108);
+    --ds-color-ink-faint: rgb(165, 148, 120);
+    --ds-color-ink-on-stamp: rgb(247, 240, 222);
+    --ds-color-on-stamp: rgb(255, 255, 255);
+
+    /* ===== Color · Rule / Hairline (구분선) ===== */
+    --ds-color-rule: rgba(28, 22, 18, 0.20);
+    --ds-color-rule-soft: rgba(28, 22, 18, 0.10);
+    --ds-color-rule-mute: rgba(28, 22, 18, 0.08);
+    --ds-color-rule-faint: rgba(28, 22, 18, 0.06);
+
+    /* ===== Color · Stamp (강조/active/danger) ===== */
+    --ds-color-stamp: rgb(178, 50, 38);
+    --ds-color-stamp-deep: rgb(140, 30, 22);
+    --ds-color-stamp-soft: rgba(178, 50, 38, 0.10);
+    --ds-color-stamp-soft-2: rgba(178, 50, 38, 0.18);
+    --ds-color-stamp-tint: rgba(178, 50, 38, 0.08);
+
+    /* ===== Color · Hover/State overlay ===== */
+    --ds-color-hover-ink: rgba(28, 22, 18, 0.06);
+    --ds-color-hover-ink-strong: rgba(28, 22, 18, 0.10);
+    --ds-color-warm-glow: rgba(255, 200, 120, 0.18);
+
+    /* ===== Color · 화면 전체 scrim (modal 뒤 어두운 layer) ===== */
+    --ds-color-overlay-scrim: rgba(28, 22, 18, 0.72);
+    --ds-color-overlay-scrim-soft: rgba(20, 14, 8, 0.55);
+
+    /* ===== Spacing (4 grid 기반) ===== */
+    --ds-space-1: 4px;
+    --ds-space-2: 8px;
+    --ds-space-3: 12px;
+    --ds-space-4: 16px;
+    --ds-space-5: 20px;
+    --ds-space-6: 24px;
+    --ds-space-7: 28px;
+    --ds-space-8: 32px;
+    --ds-space-9: 40px;
+    --ds-space-10: 48px;
+
+    /* ===== Radius ===== */
+    --ds-radius-xs: 2px;
+    --ds-radius-sm: 4px;
+    --ds-radius-md: 6px;
+    --ds-radius-lg: 12px;
+    --ds-radius-xl: 18px;
+    --ds-radius-2xl: 22px;
+    --ds-radius-pill: 999px;
+
+    /* ===== Type scale (한국어 가독성 기준 +1~2 보강) ===== */
+    --ds-font-caption: 11px;
+    --ds-font-eyebrow: 12px;
+    --ds-font-meta: 12px;
+    --ds-font-body: 13px;
+    --ds-font-body-strong: 14px;
+    --ds-font-list: 15px;
+    --ds-font-button: 15px;
+    --ds-font-headline: 20px;
+    --ds-font-hero: 24px;
+    --ds-font-display: 32px;
+    --ds-font-numeric-hero: 60px;
+
+    /* ===== Letter spacing — Card Catalog tone 의 정체성 ===== */
+    --ds-track-tight: -1px;
+    --ds-track-normal: 0;
+    --ds-track-loose: 1px;
+    --ds-track-meta: 2px;
+    --ds-track-button: 3px;
+    --ds-track-eyebrow: 4px;
+    --ds-track-display: 5px;
+
+    /* ===== Motion (transition timing) ===== */
+    --ds-motion-fast: 0.12s;
+    --ds-motion-base: 0.14s;
+    --ds-motion-medium: 0.18s;
+    --ds-motion-slow: 0.22s;
+    --ds-motion-bounce: 0.42s;
+
+    /* ===== Border ===== */
+    --ds-border-hairline: 1px;
+    --ds-border-stamp: 4px;
+    --ds-border-thick: 2px;
+    --ds-border-extra: 3px;
+
+    /* ===== Opacity tokens (disabled state 등) ===== */
+    --ds-opacity-disabled: 0.35;
+    --ds-opacity-dim: 0.40;
+    --ds-opacity-muted: 0.65;
+
+    /* ===== Stage 표준 width (작은 modal vs 큰 modal) ===== */
+    --ds-modal-width-sm: 480px;
+    --ds-modal-width-md: 580px;
+    --ds-modal-width-lg: 680px;
+    --ds-modal-width-xl: 800px;
+
+    /* ===== Sorting (PanelSettings) — 코드에서 참조 시 ===== */
+    /* (USS 가 PanelSettings 의 sortingOrder 를 set 하지는 못함. 코드에서 동일 값 사용을 권장:
+        overlay (책장관리/디자인변경 등) = 5900,
+        toast = 6200,
+        critical-modal (확인 모달) = 6400) */
+
+    /* ===== Font family ===== */
+    /* 실제 폰트 asset 은 controller 에서 root.style.unityFont 로 일괄 설정 (USS 변수가
+       Font asset reference 를 지원하지 않음). RuntimeUiFont.Resolve() → Pretendard-Regular →
+       OS fallback (Pretendard / Noto Sans KR / Apple SD Gothic Neo / Malgun Gothic).
+       모든 자식 element 는 inheritance 로 같은 폰트 적용.
+
+       Weight 의도 (현재 Regular 단일이라 USS 의 -unity-font-style: bold 으로 faux-bold.
+       추가 weight 폰트 import 후 별도 .text-* 유틸 클래스로 매핑 예정):
+           --ds-weight-light:     300
+           --ds-weight-regular:   400  ← 현재 적용
+           --ds-weight-medium:    500
+           --ds-weight-semibold:  600  ← 강조 (현재 faux-bold)
+           --ds-weight-bold:      700  ← 강조
+           --ds-weight-extrabold: 800
+           --ds-weight-black:     900  ← 대형 numeric/display (현재 faux-bold)
+    */
+}

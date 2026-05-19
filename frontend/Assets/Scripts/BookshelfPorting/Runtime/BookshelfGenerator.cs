@@ -200,6 +200,16 @@ namespace BookshelfPorting.Runtime
         public bool IsBookshelfSwitching => bookshelfSwitchCoroutine != null;
         public int BookshelfCount => bookshelfCount;
         public int NavigableBookshelfCount => GetNavigableBookshelfCount();
+        // 활성 테마와 호환되는 책장(=실제 3D 씬에 표시되는 책장) 인덱스 목록. 책장관리 modal 이 유령 책장을
+        // 표시하지 않도록 외부 노출. internal navigableBookshelfIndices 는 List<int> 지만 IReadOnlyList 로 캡슐화.
+        public IReadOnlyList<int> NavigableBookshelfIndices
+        {
+            get
+            {
+                BuildNavigableBookshelfIndices();
+                return navigableBookshelfIndices;
+            }
+        }
         public bool UseServerBookshelfSnapshots => useServerBookshelfSnapshots;
         public bool HasReceivedServerSnapshot => hasReceivedServerSnapshot;
         public int ActiveBookshelfIndex => activeBookshelfIndex;
