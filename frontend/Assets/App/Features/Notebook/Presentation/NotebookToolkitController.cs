@@ -15,6 +15,256 @@ namespace App.Features.Notebook.Presentation
     [RequireComponent(typeof(UIDocument))]
     public sealed class NotebookToolkitController : MonoBehaviour
     {
+        private sealed class UiToolkitScrollIndicator
+        {
+            public readonly struct Options
+            {
+                public Options(
+                    string trackName,
+                    string handleName,
+                    float width,
+                    float top,
+                    float right,
+                    float bottom,
+                    float minHandleHeight,
+                    Color normalColor,
+                    Color activeColor)
+                {
+                    TrackName = trackName;
+                    HandleName = handleName;
+                    Width = width;
+                    Top = top;
+                    Right = right;
+                    Bottom = bottom;
+                    MinHandleHeight = minHandleHeight;
+                    NormalColor = normalColor;
+                    ActiveColor = activeColor;
+                }
+
+                public string TrackName { get; }
+                public string HandleName { get; }
+                public float Width { get; }
+                public float Top { get; }
+                public float Right { get; }
+                public float Bottom { get; }
+                public float MinHandleHeight { get; }
+                public Color NormalColor { get; }
+                public Color ActiveColor { get; }
+            }
+
+            private readonly ScrollView scrollView;
+            private readonly VisualElement measuredContent;
+            private readonly Options options;
+            private readonly VisualElement track;
+            private readonly VisualElement handle;
+
+            private bool isDragging;
+            private float dragStartY;
+            private float dragStartOffsetY;
+
+            public UiToolkitScrollIndicator(ScrollView scrollView, VisualElement measuredContent, Options options)
+            {
+                this.scrollView = scrollView;
+                this.measuredContent = measuredContent;
+                this.options = options;
+
+                HideNativeScroller(scrollView);
+
+                track = new VisualElement { name = options.TrackName };
+                track.style.position = Position.Absolute;
+                track.style.top = options.Top;
+                track.style.right = options.Right;
+                track.style.bottom = options.Bottom;
+                track.style.width = options.Width;
+                track.style.backgroundColor = Color.clear;
+                track.pickingMode = PickingMode.Position;
+                scrollView.hierarchy.Add(track);
+
+                handle = new VisualElement { name = options.HandleName };
+                handle.style.position = Position.Absolute;
+                handle.style.left = 0;
+                handle.style.top = 0;
+                handle.style.width = options.Width;
+                handle.style.height = options.MinHandleHeight;
+                handle.style.backgroundColor = options.NormalColor;
+                handle.pickingMode = PickingMode.Position;
+                SetRadius(handle, options.Width * 0.5f);
+                track.Add(handle);
+
+                RegisterCallbacks();
+                Update();
+            }
+
+            public void ResetToTop()
+            {
+                if (scrollView == null)
+                {
+                    return;
+                }
+
+                scrollView.scrollOffset = Vector2.zero;
+                Update();
+                scrollView.schedule.Execute(() =>
+                {
+                    if (scrollView == null)
+                    {
+                        return;
+                    }
+
+                    scrollView.scrollOffset = Vector2.zero;
+                    Update();
+                }).StartingIn(1);
+                scrollView.schedule.Execute(Update).StartingIn(32);
+            }
+
+            public void Update()
+            {
+                if (scrollView == null || track == null || handle == null || measuredContent == null)
+                {
+                    return;
+                }
+
+                var trackHeight = ResolveHeight(track);
+                var viewportHeight = ResolveViewportHeight();
+                var contentHeight = ResolveContentHeight();
+                if (trackHeight <= 0f || viewportHeight <= 0f || contentHeight <= viewportHeight + 1f)
+                {
+                    track.style.display = DisplayStyle.None;
+                    return;
+                }
+
+                track.style.display = DisplayStyle.Flex;
+
+                var maxScrollY = Mathf.Max(1f, contentHeight - viewportHeight);
+                var visibleRatio = Mathf.Clamp01(viewportHeight / contentHeight);
+                var handleHeight = Mathf.Clamp(trackHeight * visibleRatio, options.MinHandleHeight, trackHeight);
+                var maxHandleY = Mathf.Max(0f, trackHeight - handleHeight);
+                var scrollRatio = Mathf.Clamp01(scrollView.scrollOffset.y / maxScrollY);
+
+                handle.style.height = handleHeight;
+                handle.style.top = maxHandleY * scrollRatio;
+            }
+
+            private void RegisterCallbacks()
+            {
+                scrollView.RegisterCallback<WheelEvent>(evt =>
+                {
+                    evt.StopPropagation();
+                    Update();
+                    scrollView.schedule.Execute(Update).StartingIn(1);
+                });
+                scrollView.RegisterCallback<GeometryChangedEvent>(_ => Update());
+                scrollView.RegisterCallback<AttachToPanelEvent>(_ =>
+                {
+                    HideNativeScroller(scrollView);
+                    Update();
+                });
+                scrollView.verticalScroller.valueChanged += _ => Update();
+
+                handle.RegisterCallback<PointerEnterEvent>(_ => handle.style.backgroundColor = options.ActiveColor);
+                handle.RegisterCallback<PointerLeaveEvent>(_ =>
+                {
+                    if (!isDragging)
+                    {
+                        handle.style.backgroundColor = options.NormalColor;
+                    }
+                });
+                handle.RegisterCallback<PointerDownEvent>(evt =>
+                {
+                    isDragging = true;
+                    dragStartY = evt.position.y;
+                    dragStartOffsetY = scrollView.scrollOffset.y;
+                    handle.CapturePointer(evt.pointerId);
+                    handle.style.backgroundColor = options.ActiveColor;
+                    evt.StopPropagation();
+                });
+                handle.RegisterCallback<PointerMoveEvent>(evt =>
+                {
+                    if (!isDragging)
+                    {
+                        return;
+                    }
+
+                    var viewportHeight = ResolveViewportHeight();
+                    var contentHeight = ResolveContentHeight();
+                    var trackHeight = ResolveHeight(track);
+                    var handleHeight = ResolveHeight(handle);
+                    var maxScrollY = Mathf.Max(0f, contentHeight - viewportHeight);
+                    var maxHandleY = Mathf.Max(1f, trackHeight - handleHeight);
+                    var scrollDelta = (evt.position.y - dragStartY) / maxHandleY * maxScrollY;
+                    var nextY = Mathf.Clamp(dragStartOffsetY + scrollDelta, 0f, maxScrollY);
+                    scrollView.scrollOffset = new Vector2(scrollView.scrollOffset.x, nextY);
+                    Update();
+                    evt.StopPropagation();
+                });
+                handle.RegisterCallback<PointerUpEvent>(evt =>
+                {
+                    isDragging = false;
+                    handle.ReleasePointer(evt.pointerId);
+                    handle.style.backgroundColor = options.NormalColor;
+                    evt.StopPropagation();
+                });
+            }
+
+            private float ResolveViewportHeight()
+            {
+                var scrollHeight = ResolveHeight(scrollView);
+                var paddingTop = scrollView.contentContainer.resolvedStyle.paddingTop;
+                var paddingBottom = scrollView.contentContainer.resolvedStyle.paddingBottom;
+                return Mathf.Max(0f, scrollHeight - paddingTop - paddingBottom);
+            }
+
+            private float ResolveContentHeight()
+            {
+                var paddingTop = scrollView.contentContainer.resolvedStyle.paddingTop;
+                var paddingBottom = scrollView.contentContainer.resolvedStyle.paddingBottom;
+                var measuredHeight = ResolveHeight(measuredContent);
+                var containerHeight = ResolveHeight(scrollView.contentContainer);
+                return Mathf.Max(containerHeight, measuredHeight + paddingTop + paddingBottom);
+            }
+
+            private static float ResolveHeight(VisualElement element)
+            {
+                if (element == null)
+                {
+                    return 0f;
+                }
+
+                var resolved = element.resolvedStyle.height;
+                if (!float.IsNaN(resolved) && resolved > 0f)
+                {
+                    return resolved;
+                }
+
+                var layout = element.layout.height;
+                return !float.IsNaN(layout) && layout > 0f ? layout : 0f;
+            }
+
+            private static void HideNativeScroller(ScrollView scrollView)
+            {
+                var scroller = scrollView?.verticalScroller;
+                if (scroller == null)
+                {
+                    return;
+                }
+
+                scrollView.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+                scroller.lowButton.style.display = DisplayStyle.None;
+                scroller.highButton.style.display = DisplayStyle.None;
+                scroller.style.display = DisplayStyle.None;
+                scroller.style.width = 0;
+                scroller.style.minWidth = 0;
+            }
+
+            private static void SetRadius(VisualElement element, float radius)
+            {
+                element.style.borderTopLeftRadius = radius;
+                element.style.borderTopRightRadius = radius;
+                element.style.borderBottomLeftRadius = radius;
+                element.style.borderBottomRightRadius = radius;
+            }
+        }
+
         private sealed class BookViewModel
         {
             public BookViewModel(
@@ -342,11 +592,7 @@ namespace App.Features.Notebook.Presentation
         private VisualElement bookDetailModalPanel;
         private ScrollView bookDetailScrollView;
         private ScrollView bookDetailSummaryScrollView;
-        private VisualElement bookDetailSummaryScrollbarTrack;
-        private VisualElement bookDetailSummaryScrollbarHandle;
-        private bool isDraggingBookDetailSummaryScrollbar;
-        private float bookDetailSummaryScrollbarDragStartY;
-        private float bookDetailSummaryScrollbarDragStartOffsetY;
+        private UiToolkitScrollIndicator bookDetailSummaryScrollIndicator;
         private VisualElement otherSpacesContent;
         private VisualElement otherSpacesList;
         private VisualElement socialListPanel;
@@ -990,9 +1236,7 @@ namespace App.Features.Notebook.Presentation
             bookDetailModalPanel = null;
             bookDetailScrollView = null;
             bookDetailSummaryScrollView = null;
-            bookDetailSummaryScrollbarTrack = null;
-            bookDetailSummaryScrollbarHandle = null;
-            isDraggingBookDetailSummaryScrollbar = false;
+            bookDetailSummaryScrollIndicator = null;
             otherSpacesContent = null;
             otherSpacesList = null;
             socialListPanel = null;
@@ -1959,14 +2203,6 @@ namespace App.Features.Notebook.Presentation
             synopsisScroll.style.borderLeftColor = Accent;
             synopsisScroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
             synopsisScroll.verticalScrollerVisibility = ScrollerVisibility.Hidden;
-            synopsisScroll.verticalScroller.valueChanged += _ => UpdateBookDetailSummaryScrollbar();
-            synopsisScroll.RegisterCallback<WheelEvent>(evt =>
-            {
-                evt.StopPropagation();
-                UpdateBookDetailSummaryScrollbar();
-                synopsisScroll.schedule.Execute(UpdateBookDetailSummaryScrollbar).StartingIn(1);
-            });
-            synopsisScroll.RegisterCallback<GeometryChangedEvent>(_ => UpdateBookDetailSummaryScrollbar());
             synopsisScroll.contentContainer.name = "Content";
             synopsisScroll.contentContainer.style.flexDirection = FlexDirection.Column;
             synopsisScroll.contentContainer.style.paddingLeft = 14;
@@ -1974,31 +2210,7 @@ namespace App.Features.Notebook.Presentation
             synopsisScroll.contentContainer.style.paddingTop = 10;
             synopsisScroll.contentContainer.style.paddingBottom = 10;
             Round(synopsisScroll, 12);
-            StyleBookDetailSummaryScroller(synopsisScroll);
-            synopsisScroll.RegisterCallback<AttachToPanelEvent>(_ => StyleBookDetailSummaryScroller(synopsisScroll));
             info.Add(synopsisScroll);
-
-            bookDetailSummaryScrollbarTrack = new VisualElement { name = "SynopsisScrollbarTrack" };
-            bookDetailSummaryScrollbarTrack.style.position = Position.Absolute;
-            bookDetailSummaryScrollbarTrack.style.top = 10;
-            bookDetailSummaryScrollbarTrack.style.right = 7;
-            bookDetailSummaryScrollbarTrack.style.bottom = 10;
-            bookDetailSummaryScrollbarTrack.style.width = 7;
-            bookDetailSummaryScrollbarTrack.style.backgroundColor = Color.clear;
-            bookDetailSummaryScrollbarTrack.pickingMode = PickingMode.Position;
-            synopsisScroll.hierarchy.Add(bookDetailSummaryScrollbarTrack);
-
-            bookDetailSummaryScrollbarHandle = new VisualElement { name = "SynopsisScrollbarHandle" };
-            bookDetailSummaryScrollbarHandle.style.position = Position.Absolute;
-            bookDetailSummaryScrollbarHandle.style.left = 0;
-            bookDetailSummaryScrollbarHandle.style.top = 0;
-            bookDetailSummaryScrollbarHandle.style.width = 7;
-            bookDetailSummaryScrollbarHandle.style.height = 32;
-            bookDetailSummaryScrollbarHandle.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.46f);
-            bookDetailSummaryScrollbarHandle.pickingMode = PickingMode.Position;
-            Round(bookDetailSummaryScrollbarHandle, 4);
-            bookDetailSummaryScrollbarTrack.Add(bookDetailSummaryScrollbarHandle);
-            RegisterBookDetailSummaryScrollbarDragHandlers();
 
             bookDetailSummary = Text(string.Empty, 13, Ink, FontStyle.Italic);
             bookDetailSummary.name = "SynopsisText";
@@ -2009,6 +2221,19 @@ namespace App.Features.Notebook.Presentation
             bookDetailSummary.style.overflow = Overflow.Visible;
             bookDetailSummary.style.unityTextAlign = TextAnchor.UpperLeft;
             synopsisScroll.Add(bookDetailSummary);
+            bookDetailSummaryScrollIndicator = new UiToolkitScrollIndicator(
+                synopsisScroll,
+                bookDetailSummary,
+                new UiToolkitScrollIndicator.Options(
+                    "SynopsisScrollbarTrack",
+                    "SynopsisScrollbarHandle",
+                    7f,
+                    10f,
+                    7f,
+                    10f,
+                    28f,
+                    Rgba(0x58, 0xB9, 0xFF, 0.46f),
+                    Rgba(0x58, 0xB9, 0xFF, 0.62f)));
 
             var purchasePanel = Row("book-detail-purchase");
             purchasePanel.style.height = 64;
@@ -4139,241 +4364,7 @@ namespace App.Features.Notebook.Presentation
 
         private void ResetBookDetailSummaryScroll()
         {
-            if (bookDetailSummaryScrollView == null)
-            {
-                return;
-            }
-
-            bookDetailSummaryScrollView.scrollOffset = Vector2.zero;
-            bookDetailSummaryScrollView.schedule.Execute(() =>
-            {
-                if (bookDetailSummaryScrollView != null)
-                {
-                    bookDetailSummaryScrollView.scrollOffset = Vector2.zero;
-                    UpdateBookDetailSummaryScrollbar();
-                }
-            }).StartingIn(1);
-            bookDetailSummaryScrollView.schedule.Execute(UpdateBookDetailSummaryScrollbar).StartingIn(32);
-        }
-
-        private static void StyleBookDetailSummaryScroller(ScrollView scrollView)
-        {
-            var scroller = scrollView?.verticalScroller;
-            if (scroller == null)
-            {
-                return;
-            }
-
-            scroller.style.width = 7;
-            scroller.style.minWidth = 7;
-            scroller.style.marginLeft = 6;
-            scroller.style.marginRight = 6;
-            scroller.style.backgroundColor = Color.clear;
-
-            scroller.lowButton.style.display = DisplayStyle.None;
-            scroller.highButton.style.display = DisplayStyle.None;
-            scroller.style.display = DisplayStyle.None;
-
-            var slider = scroller.slider;
-            slider.style.width = 7;
-            slider.style.minWidth = 7;
-            slider.style.backgroundColor = Color.clear;
-            slider.style.borderTopWidth = 0;
-            slider.style.borderRightWidth = 0;
-            slider.style.borderBottomWidth = 0;
-            slider.style.borderLeftWidth = 0;
-            StyleBookDetailSummaryScrollerParts(slider, false);
-            slider.RegisterCallback<PointerEnterEvent>(_ => StyleBookDetailSummaryScrollerParts(slider, true));
-            slider.RegisterCallback<PointerLeaveEvent>(_ => StyleBookDetailSummaryScrollerParts(slider, false));
-            slider.RegisterCallback<PointerDownEvent>(_ => StyleBookDetailSummaryScrollerParts(slider, true));
-            slider.RegisterCallback<PointerUpEvent>(_ => StyleBookDetailSummaryScrollerParts(slider, false));
-        }
-
-        private void UpdateBookDetailSummaryScrollbar()
-        {
-            if (bookDetailSummaryScrollView == null ||
-                bookDetailSummaryScrollbarTrack == null ||
-                bookDetailSummaryScrollbarHandle == null ||
-                bookDetailSummary == null)
-            {
-                return;
-            }
-
-            var trackHeight = ResolveElementHeight(bookDetailSummaryScrollbarTrack);
-            var viewportHeight = ResolveSummaryViewportHeight();
-            var contentHeight = ResolveSummaryContentHeight();
-            if (trackHeight <= 0f || viewportHeight <= 0f || contentHeight <= viewportHeight + 1f)
-            {
-                bookDetailSummaryScrollbarTrack.style.display = DisplayStyle.None;
-                return;
-            }
-
-            bookDetailSummaryScrollbarTrack.style.display = DisplayStyle.Flex;
-            var maxScrollY = Mathf.Max(1f, contentHeight - viewportHeight);
-            var visibleRatio = Mathf.Clamp01(viewportHeight / contentHeight);
-            var handleHeight = Mathf.Clamp(trackHeight * visibleRatio, 28f, trackHeight);
-            var maxHandleY = Mathf.Max(0f, trackHeight - handleHeight);
-            var scrollRatio = Mathf.Clamp01(bookDetailSummaryScrollView.scrollOffset.y / maxScrollY);
-            var handleY = maxHandleY * scrollRatio;
-
-            bookDetailSummaryScrollbarHandle.style.height = handleHeight;
-            bookDetailSummaryScrollbarHandle.style.top = handleY;
-        }
-
-        private float ResolveSummaryViewportHeight()
-        {
-            if (bookDetailSummaryScrollView == null)
-            {
-                return 0f;
-            }
-
-            var scrollHeight = ResolveElementHeight(bookDetailSummaryScrollView);
-            var paddingTop = bookDetailSummaryScrollView.contentContainer.resolvedStyle.paddingTop;
-            var paddingBottom = bookDetailSummaryScrollView.contentContainer.resolvedStyle.paddingBottom;
-            return Mathf.Max(0f, scrollHeight - paddingTop - paddingBottom);
-        }
-
-        private float ResolveSummaryContentHeight()
-        {
-            if (bookDetailSummaryScrollView == null || bookDetailSummary == null)
-            {
-                return 0f;
-            }
-
-            var paddingTop = bookDetailSummaryScrollView.contentContainer.resolvedStyle.paddingTop;
-            var paddingBottom = bookDetailSummaryScrollView.contentContainer.resolvedStyle.paddingBottom;
-            var labelHeight = ResolveElementHeight(bookDetailSummary);
-            var containerHeight = ResolveElementHeight(bookDetailSummaryScrollView.contentContainer);
-            return Mathf.Max(containerHeight, labelHeight + paddingTop + paddingBottom);
-        }
-
-        private static float ResolveElementHeight(VisualElement element)
-        {
-            if (element == null)
-            {
-                return 0f;
-            }
-
-            var resolved = element.resolvedStyle.height;
-            if (!float.IsNaN(resolved) && resolved > 0f)
-            {
-                return resolved;
-            }
-
-            var layout = element.layout.height;
-            return !float.IsNaN(layout) && layout > 0f ? layout : 0f;
-        }
-
-        private void RegisterBookDetailSummaryScrollbarDragHandlers()
-        {
-            if (bookDetailSummaryScrollbarHandle == null)
-            {
-                return;
-            }
-
-            bookDetailSummaryScrollbarHandle.RegisterCallback<PointerEnterEvent>(_ =>
-            {
-                bookDetailSummaryScrollbarHandle.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.62f);
-            });
-            bookDetailSummaryScrollbarHandle.RegisterCallback<PointerLeaveEvent>(_ =>
-            {
-                if (!isDraggingBookDetailSummaryScrollbar)
-                {
-                    bookDetailSummaryScrollbarHandle.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.46f);
-                }
-            });
-            bookDetailSummaryScrollbarHandle.RegisterCallback<PointerDownEvent>(evt =>
-            {
-                if (bookDetailSummaryScrollView == null)
-                {
-                    return;
-                }
-
-                isDraggingBookDetailSummaryScrollbar = true;
-                bookDetailSummaryScrollbarDragStartY = evt.position.y;
-                bookDetailSummaryScrollbarDragStartOffsetY = bookDetailSummaryScrollView.scrollOffset.y;
-                bookDetailSummaryScrollbarHandle.CapturePointer(evt.pointerId);
-                bookDetailSummaryScrollbarHandle.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.62f);
-                evt.StopPropagation();
-            });
-            bookDetailSummaryScrollbarHandle.RegisterCallback<PointerMoveEvent>(evt =>
-            {
-                if (!isDraggingBookDetailSummaryScrollbar || bookDetailSummaryScrollView == null)
-                {
-                    return;
-                }
-
-                var viewportHeight = ResolveSummaryViewportHeight();
-                var contentHeight = ResolveSummaryContentHeight();
-                var trackHeight = ResolveElementHeight(bookDetailSummaryScrollbarTrack);
-                var handleHeight = ResolveElementHeight(bookDetailSummaryScrollbarHandle);
-                var maxScrollY = Mathf.Max(0f, contentHeight - viewportHeight);
-                var maxHandleY = Mathf.Max(1f, trackHeight - handleHeight);
-                var scrollDelta = (evt.position.y - bookDetailSummaryScrollbarDragStartY) / maxHandleY * maxScrollY;
-                var nextY = Mathf.Clamp(bookDetailSummaryScrollbarDragStartOffsetY + scrollDelta, 0f, maxScrollY);
-                bookDetailSummaryScrollView.scrollOffset = new Vector2(bookDetailSummaryScrollView.scrollOffset.x, nextY);
-                UpdateBookDetailSummaryScrollbar();
-                evt.StopPropagation();
-            });
-            bookDetailSummaryScrollbarHandle.RegisterCallback<PointerUpEvent>(evt =>
-            {
-                isDraggingBookDetailSummaryScrollbar = false;
-                bookDetailSummaryScrollbarHandle.ReleasePointer(evt.pointerId);
-                bookDetailSummaryScrollbarHandle.style.backgroundColor = Rgba(0x58, 0xB9, 0xFF, 0.46f);
-                evt.StopPropagation();
-            });
-        }
-
-        private static void StyleBookDetailSummaryScrollerParts(VisualElement root, bool active)
-        {
-            if (root == null)
-            {
-                return;
-            }
-
-            var handleColor = active
-                ? Rgba(0x58, 0xB9, 0xFF, 0.62f)
-                : Rgba(0x58, 0xB9, 0xFF, 0.46f);
-
-            root.Query<VisualElement>().ForEach(element =>
-            {
-                if (IsSliderDragger(element))
-                {
-                    element.style.width = 7;
-                    element.style.minWidth = 7;
-                    element.style.backgroundColor = handleColor;
-                    element.style.borderTopLeftRadius = 4;
-                    element.style.borderTopRightRadius = 4;
-                    element.style.borderBottomLeftRadius = 4;
-                    element.style.borderBottomRightRadius = 4;
-                    return;
-                }
-
-                if (IsSliderTrack(element))
-                {
-                    element.style.backgroundColor = Color.clear;
-                    element.style.borderTopWidth = 0;
-                    element.style.borderRightWidth = 0;
-                    element.style.borderBottomWidth = 0;
-                    element.style.borderLeftWidth = 0;
-                }
-            });
-        }
-
-        private static bool IsSliderDragger(VisualElement element)
-        {
-            return element != null &&
-                   (element.ClassListContains("unity-slider__dragger") ||
-                    element.ClassListContains("unity-base-slider__dragger") ||
-                    (!string.IsNullOrEmpty(element.name) && element.name.IndexOf("dragger", StringComparison.OrdinalIgnoreCase) >= 0));
-        }
-
-        private static bool IsSliderTrack(VisualElement element)
-        {
-            return element != null &&
-                   (element.ClassListContains("unity-slider__tracker") ||
-                    element.ClassListContains("unity-base-slider__tracker") ||
-                    (!string.IsNullOrEmpty(element.name) && element.name.IndexOf("tracker", StringComparison.OrdinalIgnoreCase) >= 0));
+            bookDetailSummaryScrollIndicator?.ResetToTop();
         }
 
         private void RefreshFavoriteBookButton(BookViewModel book)
