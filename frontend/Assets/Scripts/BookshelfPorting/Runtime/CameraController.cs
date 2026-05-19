@@ -449,31 +449,16 @@ namespace BookshelfPorting.Runtime
 
         private bool TryComputeMainViewPose(out Vector3 position, out Quaternion rotation, out float fieldOfView)
         {
-            position = default;
-            rotation = default;
+            // 사용자가 캡처한 정면뷰 기본 pose 하드코딩 (책장 우측 약간에서 좌측을 바라보는 각도).
+            // 이전의 anchor 상대 계산 (lookTarget + pullback + sideAngle + verticalOffset) 은
+            // 두 단계 toggle (MainView ↔ QuarterView) 구조에서 좌우 대칭 정면을 가정했으나,
+            // QuarterView 폐지 후엔 단일 기본 pose 만 있으면 충분.
+            position = new Vector3(0.5770924f, 1.116157f, -2.342854f);
+            rotation = Quaternion.Euler(6.834f, -18.838f, 0f);
             fieldOfView = mainViewFieldOfView;
 
-            var anchor = frontalAnchor != null ? frontalAnchor : overviewAnchor;
-            if (anchor == null)
-            {
-                return false;
-            }
-
-            // Anchor a virtual look target in front of the bookshelf focus along its
-            // forward axis. Orbiting the camera around this target keeps the bookshelf
-            // roughly centered while the side angle reveals the laptop and surrounding
-            // room.
-            var lookTarget = anchor.position + anchor.forward * mainViewLookTargetDistance;
-            var up = anchor.up;
-
-            var totalDistance = mainViewLookTargetDistance + mainViewPullBack;
-            var pulledOffset = -anchor.forward * totalDistance;
-            var sideRotation = Quaternion.AngleAxis(mainViewSideAngleDegrees, up);
-            var rotatedOffset = sideRotation * pulledOffset;
-
-            position = lookTarget + rotatedOffset + up * mainViewVerticalOffset;
-            rotation = Quaternion.LookRotation((lookTarget - position).normalized, up);
-            return true;
+            // Camera 가 아직 attach 되지 않은 ultra-early 호출 (씬 셋업 전) 만 거른다.
+            return targetCamera != null;
         }
 
         // 무인자 오버로드 — 기존 호출자 호환. mode 미지정 시 ScreenAnchorBaked (vintage / 기본
@@ -726,6 +711,60 @@ namespace BookshelfPorting.Runtime
             frontalZoomTargetDistance = nextDistance;
             frontalZoomElapsed = 0f;
             isFrontalZooming = true;
+        }
+
+        // 책 viewing 진입 시 카메라가 너무 zoomed in 이면 책이 책장 뒷면을 뚫고 들어가는 회귀
+        // 방지. 부드러운 zoom-out animation 으로 책 꺼내는 motion 과 자연스럽게 어울리게.
+        // 책 viewPosition 은 TryGetFrontalCameraTargetPose 로 미래 카메라 pose 기준으로 계산해
+        // animation 종료 시점에 책-카메라 상대 위치가 일관되도록 한다.
+        public void EnsureFrontalZoomAtLeast(float minDistance)
+        {
+            if (CurrentMode != CameraMode.Frontal || frontalAnchor == null)
+            {
+                return;
+            }
+
+            var clampedMin = ClampFrontalZoomDistance(minDistance);
+            if (frontalZoomTargetDistance < clampedMin)
+            {
+                SetFrontalZoomTarget(clampedMin);
+            }
+        }
+
+        // 현재 zoom target 에 도달했을 때의 카메라 pose 예측. zoom animation 진행 중에도
+        // 책 viewPosition 을 final pose 기준으로 계산하기 위해 사용. pan offset 도 target zoom
+        // 의 zoom-scaled clamp 가 적용된 상태로 평가.
+        public bool TryGetFrontalCameraTargetPose(out Vector3 cameraPosition, out float zoomInAmount)
+        {
+            cameraPosition = default;
+            zoomInAmount = 0f;
+            if (CurrentMode != CameraMode.Frontal || frontalAnchor == null)
+            {
+                return false;
+            }
+
+            var anchorPosition = frontalAnchor.position;
+            var focusZ = anchorPosition.z + ClampFrontalZoomDistance(frontalDefaultZoomDistance);
+            var clampedZoom = ClampFrontalZoomDistance(frontalZoomTargetDistance);
+
+            zoomInAmount = Mathf.InverseLerp(
+                Mathf.Max(frontalMinZoomDistance, frontalMaxZoomDistance),
+                Mathf.Min(frontalMinZoomDistance, frontalMaxZoomDistance),
+                clampedZoom);
+
+            var anchorY = anchorPosition.y;
+            var clampedPanX = Mathf.Clamp(frontalPanOffset.x,
+                frontalMinPanX * zoomInAmount,
+                frontalMaxPanX * zoomInAmount);
+            var clampedPanY = Mathf.Clamp(frontalPanOffset.y,
+                (frontalMinCameraY - anchorY) * zoomInAmount,
+                (frontalMaxCameraY - anchorY) * zoomInAmount);
+
+            cameraPosition = new Vector3(
+                anchorPosition.x + clampedPanX,
+                anchorPosition.y + clampedPanY,
+                focusZ - clampedZoom);
+            return true;
         }
 
         private float ClampFrontalZoomDistance(float distance)

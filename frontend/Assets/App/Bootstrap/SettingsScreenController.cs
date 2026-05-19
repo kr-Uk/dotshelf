@@ -264,7 +264,9 @@ namespace App.Bootstrap
             WarmupGlyphs(fontAsset);
 
             BuildCanvas();
-            BuildModeChangeButton();
+            // 쿼터뷰 폐지 + 정면뷰 reset 버튼 제거 — drag-orbit 으로 회전한 카메라는 F1 단축키
+            // (FocusQuarterView → FocusMainViewImmediate redirect) 로 reset. BuildModeChangeButton
+            // 메서드는 dead code 로 남겨두고 (modeChangeButtonRoot/Label null 체크가 safe) cleanup 은 별도.
             BuildSettingsButton();
             BuildSettingsPanel();
             ApplyFontToCanvas();
@@ -615,12 +617,11 @@ namespace App.Bootstrap
                 return;
             }
 
-            manager ??= ResolveExperienceManager();
-            var isQuarterView = manager != null && manager.CurrentMainViewMode == MainCameraViewMode.QuarterView;
-            var nextLabel = isQuarterView ? QuarterViewModeLabel : MainViewModeLabel;
-            if (!string.Equals(modeChangeButtonLabel.text, nextLabel, StringComparison.Ordinal))
+            // 쿼터뷰 폐지 — 라벨은 항상 "정면뷰" 고정. 버튼은 drag-orbit 으로 회전된 카메라를
+            // 기본 pose 로 reset 하는 용도.
+            if (!string.Equals(modeChangeButtonLabel.text, MainViewModeLabel, StringComparison.Ordinal))
             {
-                modeChangeButtonLabel.text = nextLabel;
+                modeChangeButtonLabel.text = MainViewModeLabel;
             }
         }
 

@@ -1645,15 +1645,9 @@ namespace BookshelfPorting.Runtime
 
         private void FocusQuarterViewImmediate()
         {
-            if (!CanStartCameraFocus())
-            {
-                return;
-            }
-
-            CancelPendingNotebookFocusRequest();
-            PrepareQuarterViewReturn();
-            currentMainViewMode = MainCameraViewMode.QuarterView;
-            cameraController.MoveToMode(CameraMode.Overview);
+            // 쿼터뷰 폐지 — 모든 "메인 씬 복귀" 진입점은 정면뷰(MainView) 로 redirect.
+            // 메서드/호출자명은 외부 호환을 위해 유지.
+            FocusMainViewImmediate();
         }
 
         public void FocusMainView()
@@ -1699,9 +1693,9 @@ namespace BookshelfPorting.Runtime
             SyncFromCameraMode(CameraMode.Overview);
         }
 
-        // Toggles only the main-scene camera pose (MainView ↔ QuarterView). When the
-        // camera is in a focus mode (Frontal/Whiteboard/Notebook) this is a no-op, so
-        // pressing the button mid-focus never disrupts those flows.
+        // 쿼터뷰 폐지 — 기본 정면뷰 pose 가 유일한 main-scene pose. 버튼 클릭 시 drag-orbit
+        // 으로 회전된 카메라를 기본 pose 로 reset 하는 용도로만 동작 (MoveToMainView 가 orbit
+        // offset 도 reset 함).
         public void ToggleMainViewMode()
         {
             if (cameraController == null || cameraController.IsTransitioning)
@@ -1714,16 +1708,8 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (currentMainViewMode == MainCameraViewMode.MainView)
-            {
-                currentMainViewMode = MainCameraViewMode.QuarterView;
-                cameraController.MoveToQuarterView();
-            }
-            else
-            {
-                currentMainViewMode = MainCameraViewMode.MainView;
-                cameraController.MoveToMainView();
-            }
+            currentMainViewMode = MainCameraViewMode.MainView;
+            cameraController.MoveToMainView();
         }
 
         public void FocusBookshelf()
@@ -4062,7 +4048,7 @@ namespace BookshelfPorting.Runtime
 
             hamburgerMenuPanel = CreatePanel(canvasObject.transform, "HamburgerMenuPanel", new Vector2(-20f, -74f), new Vector2(190f, 204f), new Vector2(1f, 1f));
             StyleHudPanel(hamburgerMenuPanel.GetComponent<Image>(), new Color(0.08f, 0.09f, 0.11f, 0.84f));
-            CreateButton(hamburgerMenuPanel.transform, "QuarterViewButton", "Quarter View", new Vector2(-10f, -10f), () => RunMenuAction(FocusQuarterView));
+            CreateButton(hamburgerMenuPanel.transform, "MainViewButton", "Main View", new Vector2(-10f, -10f), () => RunMenuAction(FocusMainView));
             CreateButton(hamburgerMenuPanel.transform, "BookshelfButton", "Bookshelf", new Vector2(-10f, -58f), () => RunMenuAction(FocusBookshelf));
             CreateButton(hamburgerMenuPanel.transform, "NotebookButton", "Notebook", new Vector2(-10f, -106f), () => RunMenuAction(FocusNotebook));
             CreateButton(hamburgerMenuPanel.transform, "GuestbookButton", "Guestbook", new Vector2(-10f, -154f), () => RunMenuAction(FocusGuestbook));

@@ -59,6 +59,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float viewedBookScaleMultiplier = 4.8f;
         [SerializeField] private float viewedBookCameraDistance = 1.55f;
         [SerializeField] private float viewedBookZoomForwardOffset = 0.35f;
+        [SerializeField] private float bookViewSafeZoomDistance = 2.5f;
         [SerializeField] private Vector3 viewedBookInteractionPadding = new Vector3(0.28f, 0.22f, 0.18f);
         [SerializeField] private float edgeSwitchThresholdX = 0.95f;
         [SerializeField] private float edgeSwitchDwellSeconds = 1f;
@@ -129,6 +130,13 @@ namespace BookshelfPorting.Runtime
             materialFactory = factory;
             sceneCamera = targetCamera;
             experienceManager = manager;
+        }
+
+        // SerializeField default 가 씬 저장 인스턴스에 의해 override 되지 않도록 installer
+        // 에서 명시적으로 호출. ConfigureFrontalPanSensitivity 등과 동일 패턴.
+        public void ConfigureBookViewSafeZoomDistance(float distance)
+        {
+            bookViewSafeZoomDistance = Mathf.Max(0.1f, distance);
         }
 
         private void Awake()
@@ -1188,6 +1196,11 @@ namespace BookshelfPorting.Runtime
             }
 
             ResetBookHoverHint();
+            // 카메라가 너무 zoomed in 상태면 책 view target 이 책장 뒷면을 뚫고 들어가는 회귀를
+            // 막기 위해 safe distance 로 부드럽게 zoom-out animation. ResolveBookViewPosition 은
+            // future camera pose (= post-zoom target pose) 기준으로 viewPosition 을 계산해
+            // 카메라/책 animation 이 같은 final state 로 수렴.
+            cameraController.EnsureFrontalZoomAtLeast(bookViewSafeZoomDistance);
             state.IsViewingBook = true;
             state.ActiveViewedBook = book;
             experienceManager?.HandleBookViewed(book);
@@ -1222,13 +1235,26 @@ namespace BookshelfPorting.Runtime
                 return fallbackPosition;
             }
 
-            var zoomInAmount = cameraController.CurrentMode == CameraMode.Frontal
-                ? cameraController.FrontalZoomInAmount
-                : 0f;
+            // 카메라가 zoom animation 중일 수 있으므로 target zoom 시점의 pose 로 viewPosition
+            // 계산. 카메라 forward 는 zoom 으로 변하지 않으므로 sceneCamera.transform.forward 그대로 사용.
+            Vector3 baseCameraPosition;
+            float zoomInAmount;
+            if (cameraController.CurrentMode == CameraMode.Frontal &&
+                cameraController.TryGetFrontalCameraTargetPose(out var futurePos, out var futureZoomIn))
+            {
+                baseCameraPosition = futurePos;
+                zoomInAmount = futureZoomIn;
+            }
+            else
+            {
+                baseCameraPosition = sceneCamera.transform.position;
+                zoomInAmount = 0f;
+            }
+
             var cameraDistance = Mathf.Max(
                 0.7f,
                 viewedBookCameraDistance - Mathf.Max(0f, viewedBookZoomForwardOffset) * zoomInAmount);
-            var targetPosition = sceneCamera.transform.position + sceneCamera.transform.forward * cameraDistance;
+            var targetPosition = baseCameraPosition + sceneCamera.transform.forward * cameraDistance;
             if (!IsFixedShelfDecoration(book) || !TryGetRendererBoundsInBookLocalSpace(book, out var bounds))
             {
                 return targetPosition;

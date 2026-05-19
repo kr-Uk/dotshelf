@@ -281,6 +281,7 @@ namespace BookshelfPorting.Runtime
             generator.Configure(state, materialFactory, loadBooksUseCase);
             generator.ConfigureServerBookshelfSnapshots(useServerBookshelf);
             interactionController.Configure(state, generator, cameraController, materialFactory, mainCamera, experienceManager);
+            interactionController.ConfigureBookViewSafeZoomDistance(2.5f);
             runtimeDataStore.Configure(state, materialFactory);
             experienceManager.Configure(state, cameraController, interactionController, runtimeDataStore, generator);
             experienceManager.ConfigureApiMode(usesHttpApi);
