@@ -27,6 +27,10 @@ namespace App.Bootstrap
         private const float CardHeight = 640f;
         private const float SocialButtonHeight = 52f;
         private const float SocialPaneWidth = 360f;
+        private const float QuitButtonWidth = 104f;
+        private const float QuitButtonHeight = 34f;
+        private const float QuitButtonRightPadding = 4f;
+        private const float QuitButtonBottomPadding = 8f;
         private const int UiLayer = 5;
         private const int CanvasSortingOrder = 5000;
 
@@ -57,6 +61,8 @@ namespace App.Bootstrap
         private Button appleLoginButton;
         private Button kakaoLoginButton;
         private Button googleLoginButton;
+        private Button quitButton;
+        private ApplicationQuitter applicationQuitter;
 #if UNITY_EDITOR
         // Editor-only shortcuts. Field/build/wire/handler are all gated so
         // player builds ship without any dev affordance.
@@ -468,6 +474,7 @@ namespace App.Bootstrap
             if (appleLoginButton != null) appleLoginButton.interactable = interactable;
             if (kakaoLoginButton != null) kakaoLoginButton.interactable = interactable;
             if (googleLoginButton != null) googleLoginButton.interactable = interactable;
+            if (quitButton != null) quitButton.interactable = interactable;
 #if UNITY_EDITOR
             if (devShortcutButton != null) devShortcutButton.interactable = interactable;
             if (devOnboardingTestButton != null) devOnboardingTestButton.interactable = interactable;
@@ -705,6 +712,10 @@ namespace App.Bootstrap
             AddButtonListener(appleLoginButton, OnAppleLoginButtonClicked);
             AddButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             AddButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
+            if (applicationQuitter != null)
+            {
+                AddButtonListener(quitButton, applicationQuitter.Quit);
+            }
 #if UNITY_EDITOR
             AddButtonListener(devShortcutButton, OnDevShortcutButtonClicked);
             AddButtonListener(devOnboardingTestButton, OnDevOnboardingTestButtonClicked);
@@ -723,6 +734,10 @@ namespace App.Bootstrap
             RemoveButtonListener(appleLoginButton, OnAppleLoginButtonClicked);
             RemoveButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             RemoveButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
+            if (applicationQuitter != null)
+            {
+                RemoveButtonListener(quitButton, applicationQuitter.Quit);
+            }
 #if UNITY_EDITOR
             RemoveButtonListener(devShortcutButton, OnDevShortcutButtonClicked);
             RemoveButtonListener(devOnboardingTestButton, OnDevOnboardingTestButtonClicked);
@@ -917,6 +932,8 @@ namespace App.Bootstrap
                 ErrorColor,
                 TextAlignmentOptions.Center,
                 24f);
+
+            quitButton = CreateQuitButton(layoutRoot.transform);
         }
 
         private void DisableLegacyLoginUi()
@@ -1445,6 +1462,44 @@ namespace App.Bootstrap
             layoutElement.minHeight = preferredHeight;
             layoutElement.preferredHeight = preferredHeight;
             layoutElement.flexibleWidth = 1f;
+
+            return button;
+        }
+
+        private Button CreateQuitButton(Transform parent)
+        {
+            var button = CreateButton(
+                parent,
+                "QuitButton",
+                "종료하기",
+                WithAlpha(CardColor, 0.02f),
+                MutedTextColor,
+                Vector2.zero,
+                new Vector2(QuitButtonWidth, QuitButtonHeight),
+                true,
+                WithAlpha(BorderColor, 0.85f));
+
+            applicationQuitter = button.gameObject.AddComponent<ApplicationQuitter>();
+
+            var rectTransform = (RectTransform)button.transform;
+            rectTransform.anchorMin = new Vector2(1f, 0f);
+            rectTransform.anchorMax = new Vector2(1f, 0f);
+            rectTransform.pivot = new Vector2(1f, 0f);
+            rectTransform.anchoredPosition = new Vector2(-QuitButtonRightPadding, QuitButtonBottomPadding);
+
+            var colors = button.colors;
+            colors.normalColor = WithAlpha(CardColor, 0.02f);
+            colors.highlightedColor = WithAlpha(AccentTint, 0.12f);
+            colors.pressedColor = WithAlpha(AccentTint, 0.2f);
+            colors.selectedColor = WithAlpha(AccentTint, 0.12f);
+            colors.disabledColor = WithAlpha(CardColor, 0.02f);
+            button.colors = colors;
+
+            if (button.TryGetComponent<Outline>(out var outline))
+            {
+                outline.effectColor = WithAlpha(BorderColor, 0.9f);
+                outline.effectDistance = new Vector2(1f, -1f);
+            }
 
             return button;
         }
