@@ -1337,7 +1337,7 @@ namespace BookshelfPorting.Runtime
         // overlay 가 visible 일 때만 sub-modal 표시. modal 이 닫힌 후 비동기 응답이 도착하면 기존 uGUI dialog fallback.
         private void ShowDeleteResultFromOverlay(string title, string message, bool isSuccess)
         {
-            if (bookshelfManageUiToolkitOverlay != null && bookshelfManageUiToolkitOverlay.IsVisible)
+            if (IsBookshelfManageOverlayVisible)
             {
                 bookshelfManageUiToolkitOverlay.ShowDeleteResult(title, message, isSuccess);
             }
@@ -1400,7 +1400,7 @@ namespace BookshelfPorting.Runtime
         // 책장 삭제 result modal 과 동일 sub-modal 재사용 (제목/메시지/eyebrow 만 다름).
         private void ShowAddBookshelfResult(string title, string message, bool isSuccess)
         {
-            if (bookshelfManageUiToolkitOverlay != null && bookshelfManageUiToolkitOverlay.IsVisible)
+            if (IsBookshelfManageOverlayVisible)
             {
                 bookshelfManageUiToolkitOverlay.ShowDeleteResult(title, message, isSuccess);
             }
@@ -1694,8 +1694,8 @@ namespace BookshelfPorting.Runtime
             }
         }
 
-        // overlay 가 열린 상태에서 데이터 변경 (책장 추가/삭제/이름변경/공개범위 변경/순서변경 등) 후 호출.
-        // visible 아니면 no-op.
+        // overlay 가 열린 상태에서 데이터 변경 후 호출. UpdateSnapshot 으로 transient state (인라인 편집, 삭제 confirm)
+        // 는 건드리지 않고 데이터만 갱신 — RefreshHud 가 매 호출되어도 사용자 입력 보호.
         private void RefreshBookshelfManageUiToolkitOverlay()
         {
             if (bookshelfManageUiToolkitOverlay == null || !bookshelfManageUiToolkitOverlay.IsVisible)
@@ -1703,8 +1703,13 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            bookshelfManageUiToolkitOverlay.Show(BuildBookshelfManageSnapshot());
+            bookshelfManageUiToolkitOverlay.UpdateSnapshot(BuildBookshelfManageSnapshot());
         }
+
+        // UI Toolkit overlay 가시성 단일 진입점. HasBlockingBookshelfOverlay / IsPointerOverUi / 향후 다른 가드도
+        // 이 helper 만 보면 됨 (기존 isBookshelfManagePanelOpen flag 와 별개 — overlay 는 그 flag 를 안 set).
+        private bool IsBookshelfManageOverlayVisible =>
+            bookshelfManageUiToolkitOverlay != null && bookshelfManageUiToolkitOverlay.IsVisible;
 
         private void Start()
         {
@@ -3701,7 +3706,7 @@ namespace BookshelfPorting.Runtime
         // Pending modal 표시 — overlay visible 일 때만. 아니면 즉시 일반 modal fallback.
         private void ShowAddBookshelfResultPending(string title)
         {
-            if (bookshelfManageUiToolkitOverlay != null && bookshelfManageUiToolkitOverlay.IsVisible)
+            if (IsBookshelfManageOverlayVisible)
             {
                 bookshelfManageUiToolkitOverlay.ShowResultModalPending(title);
             }
@@ -10249,27 +10254,25 @@ namespace BookshelfPorting.Runtime
 
         private bool HasBlockingBookshelfOverlay()
         {
-            // UI Toolkit 책장관리 overlay 는 SetBookshelfOverlayMode(Manage) 를 호출하지 않으므로
-            // overlayStateController 의 snapshot 으로는 잡히지 않는다. visible 여부를 직접 OR 한다.
-            // 이걸 통해 BookInteractionController.IsBookshelfWorldInputBlocked() / CanHandleFrontalZoomInput() 등
-            // 카메라 / 책 drag 가드가 자동으로 막힌다.
-            if (bookshelfManageUiToolkitOverlay != null && bookshelfManageUiToolkitOverlay.IsVisible)
-            {
-                return true;
-            }
-
+            // UI Toolkit 책장관리 overlay 는 SetBookshelfOverlayMode(Manage) 를 호출하지 않지만
+            // CaptureBookshelfOverlayState 가 IsBookshelfManageOverlayVisible 도 isBookshelfManagePanelOpenEffective
+            // 로 OR 해서 snapshot 에 반영하므로 overlayStateController 호출만으로 충분히 잡힌다.
             return overlayStateController.HasBlockingBookshelfOverlay(CaptureBookshelfOverlayState());
         }
 
         private BookshelfOverlayStateSnapshot CaptureBookshelfOverlayState()
         {
+            // UI Toolkit overlay 가 visible 일 때도 isBookshelfManagePanelOpen 으로 간주 — CanOpenBookAddPanel,
+            // HasOpenBookshelfModal 등 기존 가드가 새 overlay 도 정확히 인식하도록 단일 진실 보장.
+            var isManagePanelOpenEffective = isBookshelfManagePanelOpen || IsBookshelfManageOverlayVisible;
+
             return new BookshelfOverlayStateSnapshot(
                 isBookshelfNameEditPanelOpen,
                 isBookshelfDeleteConfirmPanelOpen,
                 isBookshelfDesignPanelOpen,
                 isBookAddPanelOpen,
                 isBookAddConfirmPanelOpen,
-                isBookshelfManagePanelOpen,
+                isManagePanelOpenEffective,
                 isBookshelfUnsavedConfirmPanelOpen,
                 isDeleteResultDialogOpen,
                 isBookSearchPanelOpen,
@@ -17725,7 +17728,7 @@ namespace BookshelfPorting.Runtime
             // UI Toolkit overlay backdrop 이 전체 화면을 덮고 있으면 카메라/책 drag 모두 차단.
             // PanelSettings 를 코드로 생성한 케이스라 EventSystem.IsPointerOverGameObject 자동 인지가
             // 보장되지 않아 명시적 가드 추가.
-            if (bookshelfManageUiToolkitOverlay != null && bookshelfManageUiToolkitOverlay.IsVisible)
+            if (IsBookshelfManageOverlayVisible)
             {
                 return true;
             }

@@ -9,14 +9,14 @@ namespace BookshelfPorting.Runtime.UI
     // 구성: Header(저장) + Hero card(현재 책장 상세 + visibility chip + sort chip + 삭제) + List(다른 책장) + Add card.
     //
     // 흐름:
-    //   1) Awake 시 UXML/USS 로드, UIDocument attach
-    //   2) Manager 가 콜백 props 설정 후 Show(snapshot) 호출
-    //   3) Hero 의 chip click → 콜백 (visibility set / sort)
-    //   4) 행 click → RowSelected (활성 책장 전환)
-    //   5) Manager 가 데이터 변경 후 다시 Show(snapshot) 호출로 갱신
-    //   6) Close → Closed event → manager 가 edit mode 종료
+    //   1) Awake 시 Pretendard + design tokens USS + view USS 로드, PanelSettings 동적 생성 후 UIDocument attach
+    //   2) Manager 가 콜백 props 설정 후 Show(snapshot) 호출 (modal 첫 진입)
+    //   3) Hero 의 chip click → 콜백 (visibility 직접 set / sort) / 행 click → RowSelected (활성 책장 전환)
+    //   4) grip long-press(220ms) → drag arm(.arming) → ghost(-2deg) + drop-above/-below indicator → drop bounce
+    //   5) Manager 가 데이터 변경 후 UpdateSnapshot(snapshot) 호출 — transient state(편집/삭제 confirm) 안 건드림
+    //   6) Close (저장 또는 backdrop) → Closed event → manager 가 edit mode 종료
     //
-    // drag/drop 순서 변경은 다음 phase 에서 결선 예정.
+    // Sub-modals: 인라인 이름 편집 (TextField + Enter/Esc) / 삭제 확인 / 결과 (pending → ready 패턴 포함).
 
     public readonly struct BookshelfManageRowItem
     {
@@ -373,8 +373,19 @@ namespace BookshelfPorting.Runtime.UI
             {
                 backdrop.UnregisterCallback<ClickEvent>(OnBackdropClicked);
             }
+
+            // 코드로 ScriptableObject.CreateInstance<PanelSettings>() 로 만든 인스턴스 — 명시적으로 Destroy 하지 않으면
+            // scene reload / play mode toggle 누적 leak. (themeStyleSheet 는 다른 Document 에서 빌려온 reference 라 건드리지 않음.)
+            if (document != null && document.panelSettings != null)
+            {
+                var settings = document.panelSettings;
+                document.panelSettings = null;
+                Destroy(settings);
+            }
         }
 
+        // Modal 처음 진입 시 호출. Transient state (인라인 편집 / 삭제 confirm) 를 reset 한 후 데이터 그림.
+        // Visible 상태에서 데이터만 갱신할 때는 UpdateSnapshot 사용 — 사용자 진행 중 입력 보호.
         public void Show(BookshelfManageSnapshot snapshot)
         {
             if (root == null)
@@ -382,13 +393,30 @@ namespace BookshelfPorting.Runtime.UI
                 return;
             }
 
-            // snapshot 갱신은 외부 상태 변화 신호 — 편집 / 삭제 confirm 중이었다면 종료.
-            // (사용자가 다른 행 click / chip 토글 / 책장 추가-삭제 등으로 데이터가 바뀐 경우)
-            // 단, delete-result 는 사용자가 "확인" 누를 때까지 유지 (자동 dismiss 안 함) — 비동기 응답 후 표시되므로
-            // RefreshHud → Show 흐름 중에 사라지면 사용자가 결과를 못 봄.
+            // Modal 첫 진입 — 이전 세션 transient state 정리.
+            // (delete-result 는 비동기 응답으로 뜨므로 자동 dismiss 안 함.)
             ExitNameEditMode();
             HideDeleteConfirm();
 
+            ApplySnapshotData(snapshot);
+            root.RemoveFromClassList(HiddenClass);
+        }
+
+        // Visible 상태에서 데이터만 갱신. Transient state (편집 / 삭제 confirm / 결과 sub-modal) 건드리지 않음.
+        // RefreshHud → RefreshBookshelfManageUiToolkitOverlay 흐름에서 매 frame 호출되어도 사용자 입력 보호.
+        public void UpdateSnapshot(BookshelfManageSnapshot snapshot)
+        {
+            if (root == null || root.ClassListContains(HiddenClass))
+            {
+                return;
+            }
+
+            ApplySnapshotData(snapshot);
+        }
+
+        // Show / UpdateSnapshot 공용 — 순수 데이터 그리기.
+        private void ApplySnapshotData(BookshelfManageSnapshot snapshot)
+        {
             UpdateHero(snapshot);
             UpdateVisibilityChips(snapshot.ActiveVisibilityScope, snapshot.CanSetVisibility);
             UpdateSortChips(snapshot.CanSortBooks);
@@ -397,8 +425,6 @@ namespace BookshelfPorting.Runtime.UI
             ApplyEnabled(deleteButton, snapshot.CanDelete);
             UpdateAddButton(snapshot.IsAddInProgress, snapshot.CanAdd);
             ApplyStatus(snapshot.Status, snapshot.StatusIsError);
-
-            root.RemoveFromClassList(HiddenClass);
         }
 
         public void Hide()
