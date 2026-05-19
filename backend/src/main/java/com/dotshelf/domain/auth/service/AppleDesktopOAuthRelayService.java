@@ -1,12 +1,12 @@
 package com.dotshelf.domain.auth.service;
 
 import java.net.URI;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
@@ -80,18 +80,15 @@ public class AppleDesktopOAuthRelayService {
     }
 
     private URI appendQuery(URI baseUri, String... pairs) {
-        StringBuilder builder = new StringBuilder(baseUri.toString());
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUri(baseUri);
         for (int i = 0; i < pairs.length; i += 2) {
             String value = pairs[i + 1];
             if (!hasText(value)) {
                 continue;
             }
-            builder.append(builder.indexOf("?") < 0 ? '?' : '&');
-            builder.append(urlEncode(pairs[i]));
-            builder.append('=');
-            builder.append(urlEncode(value));
+            builder.queryParam(pairs[i], value);
         }
-        return URI.create(builder.toString());
+        return builder.build().encode().toUri();
     }
 
     private String normalize(String value) {
@@ -102,7 +99,4 @@ public class AppleDesktopOAuthRelayService {
         return value != null && !value.isBlank();
     }
 
-    private String urlEncode(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
-    }
 }

@@ -25,6 +25,9 @@ namespace App.Bootstrap
     public sealed class LoginScreenController : MonoBehaviour
     {
         private const string CanvasName = "LoginCanvas";
+#if UNITY_IOS && !UNITY_EDITOR
+        private const string AppleSignInCallbackObjectName = "DotShelfAppleSignInCallback";
+#endif
         private const string PreferredKoreanFontAssetName = "NotoSansKR-Regular";
         private const string FallbackKoreanFontAssetName = "NOTOSANSKR SDF";
         private const float CardWidth = 720f;
@@ -570,7 +573,8 @@ namespace App.Bootstrap
 
             try
             {
-                DotshelfAppleSignIn_Start(pendingAppleNonce, gameObject.name);
+                EnsureAppleSignInCallbackObjectName();
+                DotshelfAppleSignIn_Start(pendingAppleNonce, AppleSignInCallbackObjectName);
             }
             catch (Exception ex)
             {
@@ -579,6 +583,15 @@ namespace App.Bootstrap
                 isLoginInFlight = false;
                 SetInteractable(true);
                 SetMessage(loginMessageLabel, "Apple 로그인을 시작할 수 없습니다. 잠시 후 다시 시도해주세요.");
+            }
+        }
+
+        private void EnsureAppleSignInCallbackObjectName()
+        {
+            if (!string.Equals(gameObject.name, AppleSignInCallbackObjectName, StringComparison.Ordinal))
+            {
+                Debug.Log($"[Auth] Rename Apple sign-in callback object '{gameObject.name}' to '{AppleSignInCallbackObjectName}'.");
+                gameObject.name = AppleSignInCallbackObjectName;
             }
         }
 
@@ -613,6 +626,7 @@ namespace App.Bootstrap
                 "CANCELLED" => "Apple 로그인이 취소되었습니다.",
                 "MISSING_NONCE" => "Apple 로그인 보안값을 만들지 못했습니다. 다시 시도해주세요.",
                 "UNSUPPORTED_IOS_VERSION" => "Apple 로그인은 iOS 13 이상에서 사용할 수 있습니다.",
+                "ALREADY_IN_PROGRESS" => "Apple 로그인이 이미 진행 중입니다.",
                 "MISSING_IDENTITY_TOKEN" => "Apple 로그인 토큰을 받지 못했습니다. 다시 시도해주세요.",
                 "INVALID_IDENTITY_TOKEN" => "Apple 로그인 토큰이 올바르지 않습니다. 다시 시도해주세요.",
                 _ => "Apple 로그인에 실패했습니다. 다시 시도해주세요."

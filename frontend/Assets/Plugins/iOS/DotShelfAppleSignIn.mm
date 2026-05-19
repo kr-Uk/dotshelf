@@ -115,6 +115,12 @@ extern "C" void DotshelfAppleSignIn_Start(const char *nonce, const char *callbac
         return;
     }
 
+    if (s_currentAppleSignInDelegate != nil)
+    {
+        DotShelfSendUnityMessage(callbackObject, "OnAppleSignInFailed", @"ALREADY_IN_PROGRESS");
+        return;
+    }
+
     if (@available(iOS 13.0, *))
     {
         ASAuthorizationAppleIDProvider *provider = [[ASAuthorizationAppleIDProvider alloc] init];

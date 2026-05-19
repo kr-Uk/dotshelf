@@ -305,6 +305,18 @@ Unity가 최종적으로 BE `/v1/auth/social-login`에 보내는 요청:
 ```
 
 BE는 `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`로 Apple `client_secret` JWT를 생성해 Apple token endpoint에서 `id_token`으로 교환한 뒤, 기존 Apple JWKS/nonce 검증을 그대로 수행한다.
+Apple Desktop flow는 PKCE를 사용하지 않는다. Apple Services ID Return URL allowlist, 서버에서만 생성하는 `client_secret` JWT, 그리고 `id_token` nonce 검증을 조합해 authorization code 교환을 보호한다.
+CSRF/state 검증은 Unity loopback listener에서 수행한다. BE relay는 state에 포함된 loopback URI를 decode하되, redirect 대상은 `http://127.0.0.1:18080~18084/dotshelf/oauth/callback/`으로만 제한한다.
+
+`APPLE_PRIVATE_KEY`는 Sign in with Apple `.p8` private key이므로 Git, Slack, MR 본문, Unity 앱에 넣지 않는다. 운영 환경에서는 승인된 secret store 또는 서버 전용 secret 주입 경로에서만 로드하고, key id와 함께 rotation 일정을 관리한다.
+
+Desktop Apple 수동 검증:
+- Apple Developer Services ID Return URL에 `https://dev-api.dotshelf.digital/v1/auth/apple/desktop-callback` 등록
+- Windows 또는 macOS desktop build/editor에서 Apple 로그인 버튼 클릭
+- Apple 로그인 후 BE callback이 Unity loopback으로 돌아오는지 확인
+- `/v1/auth/social-login` 요청의 `tokenType=AUTHORIZATION_CODE`, `redirectUri`, `nonce` 전달 확인
+- 로그인 취소 시 사용자 메시지와 버튼 재활성화 확인
+- 임의 state redirect URI가 BE에서 400으로 거부되는지 확인
 
 ## Platform Summary
 
@@ -313,7 +325,7 @@ BE는 `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`로 Apple `client_secr
 | Android mobile | Google Android Client ID 사용 | Kakao SDK `accessToken` 전달 | Services ID 기반 `identityToken` 전달 |
 | Android tablet | Android mobile과 동일 | Android mobile과 동일 | Android mobile과 동일 |
 | iOS | Google iOS Client ID 사용 | Kakao SDK `accessToken` 전달 | Apple 로그인 `identityToken` 전달 |
-| Desktop | Google Desktop Client ID 또는 server auth code 흐름 | Kakao REST OAuth `authorization code` 전달 | Services ID 기반 `identityToken` 전달 |
+| Desktop | Google Desktop Client ID 또는 server auth code 흐름 | Kakao REST OAuth `authorization code` 전달 | Services ID 기반 `authorization code` 전달 |
 
 ## BE Environment Variables 요구사항
 
@@ -332,7 +344,7 @@ BE는 `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`로 Apple `client_secr
 | `APPLE_DESKTOP_CLIENT_ID` | Desktop/Web Apple authorize 시 사용하는 Services ID. BE가 `client_secret` JWT의 `sub`로 사용 | Apple Developer |
 | `APPLE_TEAM_ID` | Apple `client_secret` JWT의 issuer | Apple Developer |
 | `APPLE_KEY_ID` | Sign in with Apple key id. JWT header `kid` | Apple Developer |
-| `APPLE_PRIVATE_KEY` | Sign in with Apple `.p8` private key. 서버 환경변수로만 보관 | Apple Developer |
+| `APPLE_PRIVATE_KEY` | Sign in with Apple `.p8` private key. 서버 전용 secret store/주입 경로로만 보관 | Apple Developer |
 | `APPLE_DESKTOP_REDIRECT_URI` | Apple Services ID Return URL. 기본값/운영값 모두 HTTPS BE 콜백 URL 사용 | Apple Developer / BE 배포 URL |
 
 PKCE 흐름 (Desktop):

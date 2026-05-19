@@ -34,6 +34,7 @@ import lombok.extern.slf4j.Slf4j;
 public class AppleTokenVerifier extends JwtSocialTokenVerifierSupport {
 
     private static final String APPLE_CLIENT_SECRET_AUDIENCE = "https://appleid.apple.com";
+    private static final String APPLE_LOGIN_CONFIG_ERROR_MESSAGE = "APPLE 로그인 설정 오류입니다.";
     private static final long CLIENT_SECRET_TTL_SECONDS = 300L;
     private static final ParameterizedTypeReference<Map<String, Object>> RESPONSE_TYPE = new ParameterizedTypeReference<>() {
     };
@@ -127,7 +128,8 @@ public class AppleTokenVerifier extends JwtSocialTokenVerifierSupport {
                     .signWith(parsePrivateKey(), Jwts.SIG.ES256)
                     .compact();
         } catch (JwtException | IllegalArgumentException e) {
-            throw new CustomException(ErrorCode.INVALID_TOKEN, "APPLE client_secret 생성에 실패했습니다.");
+            log.warn("Apple client_secret creation failed", e);
+            throw new CustomException(ErrorCode.INVALID_TOKEN, APPLE_LOGIN_CONFIG_ERROR_MESSAGE);
         }
     }
 
@@ -142,7 +144,8 @@ public class AppleTokenVerifier extends JwtSocialTokenVerifierSupport {
             byte[] keyBytes = Base64.getDecoder().decode(privateKey);
             return KeyFactory.getInstance("EC").generatePrivate(new PKCS8EncodedKeySpec(keyBytes));
         } catch (Exception e) {
-            throw new CustomException(ErrorCode.INVALID_TOKEN, "APPLE_PRIVATE_KEY 설정이 올바르지 않습니다.");
+            log.warn("Apple private key parsing failed", e);
+            throw new CustomException(ErrorCode.INVALID_TOKEN, APPLE_LOGIN_CONFIG_ERROR_MESSAGE);
         }
     }
 
@@ -163,7 +166,8 @@ public class AppleTokenVerifier extends JwtSocialTokenVerifierSupport {
 
     private String requiredConfig(String value, String name) {
         if (value == null || value.isBlank()) {
-            throw new CustomException(ErrorCode.INVALID_TOKEN, name + " 설정이 필요합니다.");
+            log.warn("Apple login configuration is missing: {}", name);
+            throw new CustomException(ErrorCode.INVALID_TOKEN, APPLE_LOGIN_CONFIG_ERROR_MESSAGE);
         }
         return value.trim();
     }

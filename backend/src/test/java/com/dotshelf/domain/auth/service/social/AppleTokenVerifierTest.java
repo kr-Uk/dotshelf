@@ -237,6 +237,26 @@ class AppleTokenVerifierTest {
                 .containsEntry("code", "apple-auth-code");
     }
 
+    @Test
+    @DisplayName("APPLE private key 설정이 잘못되면 내부 환경변수명을 노출하지 않는 토큰 예외를 던진다")
+    void verify_withInvalidPrivateKey_throwsGenericConfigError() {
+        AppleTokenVerifier verifier = new AppleTokenVerifier(
+                RestClient.builder(),
+                desktopProperties(TEST_REDIRECT_URI, "not-a-pem")
+        );
+
+        assertThatThrownBy(() -> verifier.verify("apple-auth-code", SocialTokenType.AUTHORIZATION_CODE, TEST_REDIRECT_URI, TEST_NONCE, null))
+                .isInstanceOf(CustomException.class)
+                .satisfies(error -> {
+                    CustomException customException = (CustomException) error;
+                    assertThat(customException.getErrorCode()).isEqualTo(ErrorCode.INVALID_TOKEN);
+                    assertThat(customException.getMessage())
+                            .isEqualTo("APPLE 로그인 설정 오류입니다.")
+                            .doesNotContain("APPLE_PRIVATE_KEY");
+                });
+        assertThat(tokenRequestBody.get()).isNull();
+    }
+
     private SocialLoginProperties properties(String... clientIds) {
         return new SocialLoginProperties(
                 null,
@@ -250,6 +270,10 @@ class AppleTokenVerifierTest {
     }
 
     private SocialLoginProperties desktopProperties(String desktopRedirectUri) {
+        return desktopProperties(desktopRedirectUri, applePrivateKeyPem);
+    }
+
+    private SocialLoginProperties desktopProperties(String desktopRedirectUri, String privateKey) {
         return new SocialLoginProperties(
                 null,
                 null,
@@ -260,7 +284,7 @@ class AppleTokenVerifierTest {
                         TEST_DESKTOP_CLIENT_ID,
                         "TEAMID1234",
                         "KEYID1234",
-                        applePrivateKeyPem,
+                        privateKey,
                         tokenUri,
                         desktopRedirectUri
                 )
