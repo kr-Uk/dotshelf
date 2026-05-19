@@ -103,6 +103,7 @@ namespace BookshelfPorting.Runtime
         private bool viewedBookPressStartedOnBook;
         private bool isTrackingViewedBookPointer;
         private bool isPanningFrontalCamera;
+        private bool isRotatingMainViewCamera;
         private float viewedBookPointerTravel;
         private int edgeSwitchDirection;
         private float edgeSwitchElapsed;
@@ -316,6 +317,7 @@ namespace BookshelfPorting.Runtime
                 isManipulatingViewedBook = false;
                 isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
+                isRotatingMainViewCamera = false;
                 return;
             }
 
@@ -324,6 +326,14 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isPanningFrontalCamera = false;
+                isRotatingMainViewCamera = false;
+
+                // Overview (MainView/QuarterView) 모드의 orbit 드래그 진입 — 후속 drag delta
+                // 계산을 위해 lastPointer 만 캡처. 실제 회전은 OnPointerDrag 에서 적용.
+                if (CanRotateMainViewCamera(pointer))
+                {
+                    lastPointer = pointer;
+                }
                 return;
             }
 
@@ -336,6 +346,7 @@ namespace BookshelfPorting.Runtime
                 isManipulatingViewedBook = false;
                 isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
+                isRotatingMainViewCamera = false;
                 return;
             }
 
@@ -346,6 +357,7 @@ namespace BookshelfPorting.Runtime
                 isManipulatingViewedBook = false;
                 isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
+                isRotatingMainViewCamera = false;
                 return;
             }
 
@@ -365,6 +377,7 @@ namespace BookshelfPorting.Runtime
             pressedBook = currentPointerTarget.Book;
             pressedSection = currentPointerTarget.Section;
             isPanningFrontalCamera = false;
+            isRotatingMainViewCamera = false;
         }
 
         private void OnPointerDrag(Vector2 pointer)
@@ -402,6 +415,12 @@ namespace BookshelfPorting.Runtime
                     cameraController.PanFrontalCamera(delta);
                     HideHoverIndicators();
                 }
+                else if (CanRotateMainViewCamera(pointer))
+                {
+                    isRotatingMainViewCamera = true;
+                    cameraController.RotateMainViewCamera(delta);
+                    HideHoverIndicators();
+                }
 
                 return;
             }
@@ -437,6 +456,7 @@ namespace BookshelfPorting.Runtime
                 isManipulatingViewedBook = false;
                 isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
+                isRotatingMainViewCamera = false;
                 return;
             }
 
@@ -494,6 +514,10 @@ namespace BookshelfPorting.Runtime
             {
                 isPanningFrontalCamera = false;
             }
+            else if (isRotatingMainViewCamera)
+            {
+                isRotatingMainViewCamera = false;
+            }
             else if (pressedBook != null &&
                      !state.IsViewingBook &&
                      (hoveredBook == pressedBook || currentPointerTarget.Book == pressedBook))
@@ -541,6 +565,20 @@ namespace BookshelfPorting.Runtime
                    !state.IsViewingBook &&
                    state.ActiveDraggedBook == null &&
                    !IsBookshelfWorldInputBlocked() &&
+                   !IsBookAddPlacementSelectionActive() &&
+                   !IsPointerOverUi(pointer);
+        }
+
+        // Overview (MainView/QuarterView) 모드의 orbit 드래그 게이트. 책장 포커싱이 아닐 때만
+        // 활성화되며, UI 위/전환 중/책 드래그 중 등은 차단. Bookshelf 포커스 영역에서는
+        // CanPanFrontalCamera 가 우선 적용된다.
+        private bool CanRotateMainViewCamera(Vector2 pointer)
+        {
+            return cameraController != null &&
+                   cameraController.CurrentMode == CameraMode.Overview &&
+                   !cameraController.IsTransitioning &&
+                   (generator == null || !generator.IsBookshelfSwitching) &&
+                   (state == null || (!state.IsViewingBook && state.ActiveDraggedBook == null)) &&
                    !IsBookAddPlacementSelectionActive() &&
                    !IsPointerOverUi(pointer);
         }

@@ -2183,7 +2183,7 @@ namespace Dotshelf.Scripts.Dashboard
                 onError: OnError);
         }
 
-        private static VisualElement BuildBookGridCell(OwnedBookItem item)
+        private VisualElement BuildBookGridCell(OwnedBookItem item)
         {
             VisualElement cell = new VisualElement();
             cell.AddToClassList("book-grid-cell");
@@ -2191,6 +2191,19 @@ namespace Dotshelf.Scripts.Dashboard
             VisualElement cover = new VisualElement();
             cover.AddToClassList("book-grid-cover");
             cell.Add(cover);
+
+            if (!string.IsNullOrWhiteSpace(item.CoverImageUrl))
+            {
+                var url = item.CoverImageUrl;
+                if (TryGetCachedCoverTexture(url, out var cached))
+                {
+                    ApplyCoverTexture(cover, cached);
+                }
+                else
+                {
+                    StartCoroutine(DownloadCover(url, cover));
+                }
+            }
 
             Label title = new Label(item.Title ?? string.Empty);
             title.AddToClassList("book-grid-title");

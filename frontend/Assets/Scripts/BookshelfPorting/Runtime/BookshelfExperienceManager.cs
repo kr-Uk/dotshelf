@@ -945,6 +945,14 @@ namespace BookshelfPorting.Runtime
         private int lastResponsiveLayoutHeight = -1;
         private readonly BookshelfOverlayStateController overlayStateController = new BookshelfOverlayStateController();
 
+        // 클릭-다운 시점에 Focus* 를 바로 호출하지 않고 release 까지 보류해 drag-to-rotate
+        // 와 click-to-focus 를 구분. 누적 이동량이 임계를 넘으면 drag 로 간주, pending 해제.
+        private bool focusPendingRelease;
+        private ExperienceFocusArea focusPendingTarget;
+        private Vector2 focusPressPointer;
+        private float focusPressTravel;
+        private const float FocusClickThresholdPixels = 5f;
+
         public ExperienceFocusArea CurrentFocusArea { get; private set; } = ExperienceFocusArea.QuarterView;
         public bool IsBookshelfFocused => CurrentFocusArea == ExperienceFocusArea.Bookshelf;
         public bool IsBookshelfEditMode { get; private set; }
@@ -1153,6 +1161,12 @@ namespace BookshelfPorting.Runtime
             ExpireBookshelfTransientStatusIfNeeded();
             SyncExternalDashboardPanelPresentation();
 
+            // press 시점에 캡처된 pending focus 를 release 시점에 실제로 발화. 누적 drag travel
+            // 이 임계 이하일 때만 발화하며, 그 외엔 단순한 drag 로 간주해 pending 해제.
+            // AreSceneInteractionsSuppressed 등 suppression 이 frame 중에 켜져도 pending 해제는
+            // 정상 수행되도록 early return 보다 먼저 처리.
+            HandleFocusPendingRelease();
+
             if (AreSceneInteractionsSuppressed)
             {
                 // Edit mode owns input on the main scene — bail before any focus
@@ -1253,20 +1267,79 @@ namespace BookshelfPorting.Runtime
 
             if (!isViewingOtherSpace && TryHitNotebook())
             {
-                FocusNotebook();
+                BeginPendingFocus(ExperienceFocusArea.Notebook, pointer);
                 return;
             }
 
             if (TryHitGuestbookBoard())
             {
-                FocusGuestbook();
+                BeginPendingFocus(ExperienceFocusArea.Guestbook, pointer);
                 return;
             }
 
             if (CurrentFocusArea != ExperienceFocusArea.Bookshelf && TryHitBookshelf())
             {
-                FocusBookshelf();
+                BeginPendingFocus(ExperienceFocusArea.Bookshelf, pointer);
                 return;
+            }
+        }
+
+        // 클릭-다운 시점에 hit candidate 를 기록. 실제 Focus* 호출은 HandleFocusPendingRelease
+        // 에서 release 시 누적 이동량이 임계 이하일 때만 수행.
+        private void BeginPendingFocus(ExperienceFocusArea target, Vector2 pointer)
+        {
+            focusPendingRelease = true;
+            focusPendingTarget = target;
+            focusPressPointer = pointer;
+            focusPressTravel = 0f;
+        }
+
+        private void HandleFocusPendingRelease()
+        {
+            if (!focusPendingRelease || Mouse.current == null)
+            {
+                return;
+            }
+
+            var pointer = Mouse.current.position.ReadValue();
+
+            if (Mouse.current.leftButton.isPressed)
+            {
+                focusPressTravel += (pointer - focusPressPointer).magnitude;
+                focusPressPointer = pointer;
+                if (focusPressTravel > FocusClickThresholdPixels)
+                {
+                    // drag 로 간주 — focus 발화 취소. release 시까지 pending 은 유지하지 않음.
+                    focusPendingRelease = false;
+                    focusPressTravel = 0f;
+                }
+                return;
+            }
+
+            if (Mouse.current.leftButton.wasReleasedThisFrame)
+            {
+                var target = focusPendingTarget;
+                var travel = focusPressTravel;
+                focusPendingRelease = false;
+                focusPressTravel = 0f;
+
+                if (travel > FocusClickThresholdPixels || AreSceneInteractionsSuppressed)
+                {
+                    return;
+                }
+
+                switch (target)
+                {
+                    case ExperienceFocusArea.Notebook:
+                        FocusNotebook();
+                        break;
+                    case ExperienceFocusArea.Guestbook:
+                        FocusGuestbook();
+                        break;
+                    case ExperienceFocusArea.Bookshelf:
+                        FocusBookshelf();
+                        break;
+                }
             }
         }
 

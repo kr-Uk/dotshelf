@@ -273,7 +273,10 @@ namespace BookshelfPorting.Runtime
 
             cameraController.Configure(mainCamera, overviewAnchor, frontalAnchor, whiteboardAnchor, notebookAnchor, bookViewAnchor);
             cameraController.ConfigureViewSettings(55f, 45f, 31f, 24f, 0.7f);
-            cameraController.ConfigureFrontalZoomSettings(3.25f, 0.8f, 4.5f, 0.45f, 0.15f);
+            cameraController.ConfigureFrontalZoomSettings(3.25f, 0.8f, 3.25f, 0.45f, 0.15f);
+            cameraController.ConfigureFrontalPanSensitivity(0.001f);
+            cameraController.ConfigureFrontalPanZoomInSensitivityScale(0.3f);
+            cameraController.ConfigureMainViewRotateSettings(0.03f, 50f, 25f, 1.8f);
             cameraController.ConfigureFrontalZoomInputPredicate(experienceManager.CanHandleFrontalZoomInput);
             generator.Configure(state, materialFactory, loadBooksUseCase);
             generator.ConfigureServerBookshelfSnapshots(useServerBookshelf);
