@@ -57,6 +57,7 @@ namespace App.Bootstrap
         private Button appleLoginButton;
         private Button kakaoLoginButton;
         private Button googleLoginButton;
+        private Button quitButton;
 #if UNITY_EDITOR
         // Editor-only shortcuts. Field/build/wire/handler are all gated so
         // player builds ship without any dev affordance.
@@ -171,6 +172,15 @@ namespace App.Bootstrap
         public void OnGoogleLoginButtonClicked()
         {
             StartSocialLogin(SocialProvider.Google);
+        }
+
+        public void OnQuitButtonClicked()
+        {
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            UnityEngine.Application.Quit();
+#endif
         }
 
 #if UNITY_EDITOR
@@ -468,6 +478,7 @@ namespace App.Bootstrap
             if (appleLoginButton != null) appleLoginButton.interactable = interactable;
             if (kakaoLoginButton != null) kakaoLoginButton.interactable = interactable;
             if (googleLoginButton != null) googleLoginButton.interactable = interactable;
+            if (quitButton != null) quitButton.interactable = interactable;
 #if UNITY_EDITOR
             if (devShortcutButton != null) devShortcutButton.interactable = interactable;
             if (devOnboardingTestButton != null) devOnboardingTestButton.interactable = interactable;
@@ -705,6 +716,7 @@ namespace App.Bootstrap
             AddButtonListener(appleLoginButton, OnAppleLoginButtonClicked);
             AddButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             AddButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
+            AddButtonListener(quitButton, OnQuitButtonClicked);
 #if UNITY_EDITOR
             AddButtonListener(devShortcutButton, OnDevShortcutButtonClicked);
             AddButtonListener(devOnboardingTestButton, OnDevOnboardingTestButtonClicked);
@@ -723,6 +735,7 @@ namespace App.Bootstrap
             RemoveButtonListener(appleLoginButton, OnAppleLoginButtonClicked);
             RemoveButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             RemoveButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
+            RemoveButtonListener(quitButton, OnQuitButtonClicked);
 #if UNITY_EDITOR
             RemoveButtonListener(devShortcutButton, OnDevShortcutButtonClicked);
             RemoveButtonListener(devOnboardingTestButton, OnDevOnboardingTestButtonClicked);
@@ -917,6 +930,37 @@ namespace App.Bootstrap
                 ErrorColor,
                 TextAlignmentOptions.Center,
                 24f);
+
+            quitButton = CreateButton(
+                layoutRoot.transform,
+                "QuitButton",
+                "종료하기",
+                WithAlpha(CardColor, 0.02f),
+                MutedTextColor,
+                Vector2.zero,
+                new Vector2(104f, 34f),
+                true,
+                WithAlpha(BorderColor, 0.85f));
+
+            var quitRect = (RectTransform)quitButton.transform;
+            quitRect.anchorMin = new Vector2(1f, 0f);
+            quitRect.anchorMax = new Vector2(1f, 0f);
+            quitRect.pivot = new Vector2(1f, 0f);
+            quitRect.anchoredPosition = new Vector2(-4f, 8f);
+
+            var quitColors = quitButton.colors;
+            quitColors.normalColor = WithAlpha(CardColor, 0.02f);
+            quitColors.highlightedColor = WithAlpha(AccentTint, 0.12f);
+            quitColors.pressedColor = WithAlpha(AccentTint, 0.2f);
+            quitColors.selectedColor = WithAlpha(AccentTint, 0.12f);
+            quitColors.disabledColor = WithAlpha(CardColor, 0.02f);
+            quitButton.colors = quitColors;
+
+            if (quitButton.TryGetComponent<Outline>(out var quitOutline))
+            {
+                quitOutline.effectColor = WithAlpha(BorderColor, 0.9f);
+                quitOutline.effectDistance = new Vector2(1f, -1f);
+            }
         }
 
         private void DisableLegacyLoginUi()
