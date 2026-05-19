@@ -945,6 +945,14 @@ namespace BookshelfPorting.Runtime
         private int lastResponsiveLayoutHeight = -1;
         private readonly BookshelfOverlayStateController overlayStateController = new BookshelfOverlayStateController();
 
+        // 클릭-다운 시점에 Focus* 를 바로 호출하지 않고 release 까지 보류해 drag-to-rotate
+        // 와 click-to-focus 를 구분. 누적 이동량이 임계를 넘으면 drag 로 간주, pending 해제.
+        private bool focusPendingRelease;
+        private ExperienceFocusArea focusPendingTarget;
+        private Vector2 focusPressPointer;
+        private float focusPressTravel;
+        private const float FocusClickThresholdPixels = 5f;
+
         public ExperienceFocusArea CurrentFocusArea { get; private set; } = ExperienceFocusArea.QuarterView;
         public bool IsBookshelfFocused => CurrentFocusArea == ExperienceFocusArea.Bookshelf;
         public bool IsBookshelfEditMode { get; private set; }
@@ -1153,6 +1161,12 @@ namespace BookshelfPorting.Runtime
             ExpireBookshelfTransientStatusIfNeeded();
             SyncExternalDashboardPanelPresentation();
 
+            // press 시점에 캡처된 pending focus 를 release 시점에 실제로 발화. 누적 drag travel
+            // 이 임계 이하일 때만 발화하며, 그 외엔 단순한 drag 로 간주해 pending 해제.
+            // AreSceneInteractionsSuppressed 등 suppression 이 frame 중에 켜져도 pending 해제는
+            // 정상 수행되도록 early return 보다 먼저 처리.
+            HandleFocusPendingRelease();
+
             if (AreSceneInteractionsSuppressed)
             {
                 // Edit mode owns input on the main scene — bail before any focus
@@ -1253,20 +1267,108 @@ namespace BookshelfPorting.Runtime
 
             if (!isViewingOtherSpace && TryHitNotebook())
             {
-                FocusNotebook();
+                BeginPendingFocus(ExperienceFocusArea.Notebook, pointer);
                 return;
             }
 
             if (TryHitGuestbookBoard())
             {
-                FocusGuestbook();
+                BeginPendingFocus(ExperienceFocusArea.Guestbook, pointer);
                 return;
             }
 
             if (CurrentFocusArea != ExperienceFocusArea.Bookshelf && TryHitBookshelf())
             {
-                FocusBookshelf();
+                BeginPendingFocus(ExperienceFocusArea.Bookshelf, pointer);
                 return;
+            }
+        }
+
+        // 클릭-다운 시점에 hit candidate 를 기록. 실제 Focus* 호출은 HandleFocusPendingRelease
+        // 에서 release 시 누적 이동량이 임계 이하일 때만 수행.
+        private void BeginPendingFocus(ExperienceFocusArea target, Vector2 pointer)
+        {
+            focusPendingRelease = true;
+            focusPendingTarget = target;
+            focusPressPointer = pointer;
+            focusPressTravel = 0f;
+        }
+
+        private void HandleFocusPendingRelease()
+        {
+            if (!focusPendingRelease || Mouse.current == null)
+            {
+                return;
+            }
+
+            var pointer = Mouse.current.position.ReadValue();
+
+            if (Mouse.current.leftButton.isPressed)
+            {
+                focusPressTravel += (pointer - focusPressPointer).magnitude;
+                focusPressPointer = pointer;
+                if (focusPressTravel > FocusClickThresholdPixels)
+                {
+                    // drag 로 간주 — focus 발화 취소. release 시까지 pending 은 유지하지 않음.
+                    focusPendingRelease = false;
+                    focusPressTravel = 0f;
+                }
+                return;
+            }
+
+            if (Mouse.current.leftButton.wasReleasedThisFrame)
+            {
+                var target = focusPendingTarget;
+                var travel = focusPressTravel;
+                focusPendingRelease = false;
+                focusPressTravel = 0f;
+
+                if (travel > FocusClickThresholdPixels || AreSceneInteractionsSuppressed)
+                {
+                    return;
+                }
+
+                // release 시점 hit re-verify (rlawnsrb298 P2 review) — press 와 release 사이에
+                // 포인터가 UI 위로 올라가거나 다른 target 으로 이동했으면 focus 발화 차단.
+                // 작은 이동 (travel ≤ 임계) 이라도 정확히 같은 target 위에서 release 해야 click 인정.
+                if (IsPointerOverUi())
+                {
+                    return;
+                }
+
+                bool stillOverTarget;
+                switch (target)
+                {
+                    case ExperienceFocusArea.Notebook:
+                        stillOverTarget = !IsViewingOtherUserSpace() && TryHitNotebook(pointer);
+                        break;
+                    case ExperienceFocusArea.Guestbook:
+                        stillOverTarget = TryHitGuestbookBoard();
+                        break;
+                    case ExperienceFocusArea.Bookshelf:
+                        stillOverTarget = CurrentFocusArea != ExperienceFocusArea.Bookshelf && TryHitBookshelf(pointer);
+                        break;
+                    default:
+                        stillOverTarget = false;
+                        break;
+                }
+                if (!stillOverTarget)
+                {
+                    return;
+                }
+
+                switch (target)
+                {
+                    case ExperienceFocusArea.Notebook:
+                        FocusNotebook();
+                        break;
+                    case ExperienceFocusArea.Guestbook:
+                        FocusGuestbook();
+                        break;
+                    case ExperienceFocusArea.Bookshelf:
+                        FocusBookshelf();
+                        break;
+                }
             }
         }
 
@@ -1572,15 +1674,9 @@ namespace BookshelfPorting.Runtime
 
         private void FocusQuarterViewImmediate()
         {
-            if (!CanStartCameraFocus())
-            {
-                return;
-            }
-
-            CancelPendingNotebookFocusRequest();
-            PrepareQuarterViewReturn();
-            currentMainViewMode = MainCameraViewMode.QuarterView;
-            cameraController.MoveToMode(CameraMode.Overview);
+            // 쿼터뷰 폐지 — 모든 "메인 씬 복귀" 진입점은 정면뷰(MainView) 로 redirect.
+            // 메서드/호출자명은 외부 호환을 위해 유지.
+            FocusMainViewImmediate();
         }
 
         public void FocusMainView()
@@ -1626,9 +1722,9 @@ namespace BookshelfPorting.Runtime
             SyncFromCameraMode(CameraMode.Overview);
         }
 
-        // Toggles only the main-scene camera pose (MainView ↔ QuarterView). When the
-        // camera is in a focus mode (Frontal/Whiteboard/Notebook) this is a no-op, so
-        // pressing the button mid-focus never disrupts those flows.
+        // 쿼터뷰 폐지 — 기본 정면뷰 pose 가 유일한 main-scene pose. 버튼 클릭 시 drag-orbit
+        // 으로 회전된 카메라를 기본 pose 로 reset 하는 용도로만 동작 (MoveToMainView 가 orbit
+        // offset 도 reset 함).
         public void ToggleMainViewMode()
         {
             if (cameraController == null || cameraController.IsTransitioning)
@@ -1641,16 +1737,8 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (currentMainViewMode == MainCameraViewMode.MainView)
-            {
-                currentMainViewMode = MainCameraViewMode.QuarterView;
-                cameraController.MoveToQuarterView();
-            }
-            else
-            {
-                currentMainViewMode = MainCameraViewMode.MainView;
-                cameraController.MoveToMainView();
-            }
+            currentMainViewMode = MainCameraViewMode.MainView;
+            cameraController.MoveToMainView();
         }
 
         public void FocusBookshelf()
@@ -3989,7 +4077,7 @@ namespace BookshelfPorting.Runtime
 
             hamburgerMenuPanel = CreatePanel(canvasObject.transform, "HamburgerMenuPanel", new Vector2(-20f, -74f), new Vector2(190f, 204f), new Vector2(1f, 1f));
             StyleHudPanel(hamburgerMenuPanel.GetComponent<Image>(), new Color(0.08f, 0.09f, 0.11f, 0.84f));
-            CreateButton(hamburgerMenuPanel.transform, "QuarterViewButton", "Quarter View", new Vector2(-10f, -10f), () => RunMenuAction(FocusQuarterView));
+            CreateButton(hamburgerMenuPanel.transform, "MainViewButton", "Main View", new Vector2(-10f, -10f), () => RunMenuAction(FocusMainView));
             CreateButton(hamburgerMenuPanel.transform, "BookshelfButton", "Bookshelf", new Vector2(-10f, -58f), () => RunMenuAction(FocusBookshelf));
             CreateButton(hamburgerMenuPanel.transform, "NotebookButton", "Notebook", new Vector2(-10f, -106f), () => RunMenuAction(FocusNotebook));
             CreateButton(hamburgerMenuPanel.transform, "GuestbookButton", "Guestbook", new Vector2(-10f, -154f), () => RunMenuAction(FocusGuestbook));

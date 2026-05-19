@@ -59,6 +59,7 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float viewedBookScaleMultiplier = 4.8f;
         [SerializeField] private float viewedBookCameraDistance = 1.55f;
         [SerializeField] private float viewedBookZoomForwardOffset = 0.35f;
+        [SerializeField] private float bookViewSafeZoomDistance = 2.5f;
         [SerializeField] private Vector3 viewedBookInteractionPadding = new Vector3(0.28f, 0.22f, 0.18f);
         [SerializeField] private float edgeSwitchThresholdX = 0.95f;
         [SerializeField] private float edgeSwitchDwellSeconds = 1f;
@@ -103,6 +104,11 @@ namespace BookshelfPorting.Runtime
         private bool viewedBookPressStartedOnBook;
         private bool isTrackingViewedBookPointer;
         private bool isPanningFrontalCamera;
+        private bool isRotatingMainViewCamera;
+        // press 시점에 UI/차단 영역에 있었으면 release 까지 모든 world drag (orbit/pan/book drag)
+        // 를 차단. 사용자가 UI 위에서 press → UI 밖으로 drag → orbit 시작되던 회귀
+        // (MR 216 review: skh1205 #1 / rlawnsrb298 P1 / beshu #1) 방지.
+        private bool pointerDownBlockedFromWorldDrag;
         private float viewedBookPointerTravel;
         private int edgeSwitchDirection;
         private float edgeSwitchElapsed;
@@ -128,6 +134,13 @@ namespace BookshelfPorting.Runtime
             materialFactory = factory;
             sceneCamera = targetCamera;
             experienceManager = manager;
+        }
+
+        // SerializeField default 가 씬 저장 인스턴스에 의해 override 되지 않도록 installer
+        // 에서 명시적으로 호출. ConfigureFrontalPanSensitivity 등과 동일 패턴.
+        public void ConfigureBookViewSafeZoomDistance(float distance)
+        {
+            bookViewSafeZoomDistance = Mathf.Max(0.1f, distance);
         }
 
         private void Awake()
@@ -309,6 +322,13 @@ namespace BookshelfPorting.Runtime
 
         private void OnPointerDown(Vector2 pointer)
         {
+            // press 시점에 UI/차단 영역에 있었으면 release 까지 world drag 차단. 사용자가 UI 위
+            // 에서 press → UI 밖으로 drag 해서 orbit 시작되던 회귀 방지 (skh1205 #1 / rlawnsrb298 P1).
+            pointerDownBlockedFromWorldDrag =
+                IsPointerOverUi(pointer) ||
+                IsBookshelfWorldInputBlocked() ||
+                IsSceneInteractionsSuppressed();
+
             if (state == null)
             {
                 pressedBook = null;
@@ -316,6 +336,7 @@ namespace BookshelfPorting.Runtime
                 isManipulatingViewedBook = false;
                 isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
+                isRotatingMainViewCamera = false;
                 return;
             }
 
@@ -324,6 +345,15 @@ namespace BookshelfPorting.Runtime
                 pressedBook = null;
                 pressedSection = null;
                 isPanningFrontalCamera = false;
+                isRotatingMainViewCamera = false;
+
+                // Overview (MainView/QuarterView) 모드의 orbit 드래그 진입 — 후속 drag delta
+                // 계산을 위해 lastPointer 만 캡처. 실제 회전은 OnPointerDrag 에서 적용.
+                // press 가 UI/차단 영역에서 시작됐으면 캡처도 안 함 (drag 시작 가능성 차단).
+                if (!pointerDownBlockedFromWorldDrag && CanRotateMainViewCamera(pointer))
+                {
+                    lastPointer = pointer;
+                }
                 return;
             }
 
@@ -336,6 +366,7 @@ namespace BookshelfPorting.Runtime
                 isManipulatingViewedBook = false;
                 isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
+                isRotatingMainViewCamera = false;
                 return;
             }
 
@@ -346,6 +377,7 @@ namespace BookshelfPorting.Runtime
                 isManipulatingViewedBook = false;
                 isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
+                isRotatingMainViewCamera = false;
                 return;
             }
 
@@ -365,12 +397,20 @@ namespace BookshelfPorting.Runtime
             pressedBook = currentPointerTarget.Book;
             pressedSection = currentPointerTarget.Section;
             isPanningFrontalCamera = false;
+            isRotatingMainViewCamera = false;
         }
 
         private void OnPointerDrag(Vector2 pointer)
         {
             var delta = pointer - lastPointer;
             lastPointer = pointer;
+
+            // press 가 UI/차단 영역에서 시작됐으면 release 까지 world drag (orbit/pan/book drag)
+            // 일체 차단 — drag 도중 UI 밖으로 나가도 ownership 은 press 시점에 결정됨.
+            if (pointerDownBlockedFromWorldDrag)
+            {
+                return;
+            }
 
             if (state.IsViewingBook && state.ActiveViewedBook != null)
             {
@@ -402,6 +442,12 @@ namespace BookshelfPorting.Runtime
                     cameraController.PanFrontalCamera(delta);
                     HideHoverIndicators();
                 }
+                else if (CanRotateMainViewCamera(pointer))
+                {
+                    isRotatingMainViewCamera = true;
+                    cameraController.RotateMainViewCamera(delta);
+                    HideHoverIndicators();
+                }
 
                 return;
             }
@@ -430,6 +476,10 @@ namespace BookshelfPorting.Runtime
 
         private void OnPointerUp(Vector2 pointer)
         {
+            // release 시점에 press-origin block flag reset — 다음 press 가 새로 평가되도록.
+            var wasBlocked = pointerDownBlockedFromWorldDrag;
+            pointerDownBlockedFromWorldDrag = false;
+
             if (state == null)
             {
                 pressedBook = null;
@@ -437,6 +487,23 @@ namespace BookshelfPorting.Runtime
                 isManipulatingViewedBook = false;
                 isTrackingViewedBookPointer = false;
                 isPanningFrontalCamera = false;
+                isRotatingMainViewCamera = false;
+                return;
+            }
+
+            // press 가 UI/차단 영역에서 시작됐으면 release 시점 click-on-release 도 차단.
+            // UI 위에서 press → UI 밖으로 drag → UI 위로 다시 돌아와 release 케이스에서
+            // 카메라 focus 가 발화되는 회귀 방지.
+            if (wasBlocked)
+            {
+                pressedBook = null;
+                pressedSection = null;
+                isManipulatingViewedBook = false;
+                isTrackingViewedBookPointer = false;
+                isPanningFrontalCamera = false;
+                isRotatingMainViewCamera = false;
+                shelfBookPointerTravel = 0f;
+                viewedBookPointerTravel = 0f;
                 return;
             }
 
@@ -494,6 +561,10 @@ namespace BookshelfPorting.Runtime
             {
                 isPanningFrontalCamera = false;
             }
+            else if (isRotatingMainViewCamera)
+            {
+                isRotatingMainViewCamera = false;
+            }
             else if (pressedBook != null &&
                      !state.IsViewingBook &&
                      (hoveredBook == pressedBook || currentPointerTarget.Book == pressedBook))
@@ -543,6 +614,30 @@ namespace BookshelfPorting.Runtime
                    !IsBookshelfWorldInputBlocked() &&
                    !IsBookAddPlacementSelectionActive() &&
                    !IsPointerOverUi(pointer);
+        }
+
+        // Overview (MainView/QuarterView) 모드의 orbit 드래그 게이트. 책장 포커싱이 아닐 때만
+        // 활성화되며, UI 위/전환 중/책 드래그 중/룸 편집 모드 등은 차단. Bookshelf 포커스 영역
+        // 에서는 CanPanFrontalCamera 가 우선 적용된다.
+        // - IsBookshelfWorldInputBlocked: bookshelf focus 중 overlay 차단 (CanPanFrontalCamera 와 일관)
+        // - AreSceneInteractionsSuppressed: 룸 편집 모드 등 main scene 입력 short-circuit 정책
+        //   (beshu #1: 편집 오버레이가 입력 소유하는 동안 orbit 우회 방지)
+        private bool CanRotateMainViewCamera(Vector2 pointer)
+        {
+            return cameraController != null &&
+                   cameraController.CurrentMode == CameraMode.Overview &&
+                   !cameraController.IsTransitioning &&
+                   (generator == null || !generator.IsBookshelfSwitching) &&
+                   (state == null || (!state.IsViewingBook && state.ActiveDraggedBook == null)) &&
+                   !IsBookshelfWorldInputBlocked() &&
+                   !IsSceneInteractionsSuppressed() &&
+                   !IsBookAddPlacementSelectionActive() &&
+                   !IsPointerOverUi(pointer);
+        }
+
+        private bool IsSceneInteractionsSuppressed()
+        {
+            return experienceManager != null && experienceManager.AreSceneInteractionsSuppressed;
         }
 
         private bool CanInteractWithShelfBooks()
@@ -1150,6 +1245,11 @@ namespace BookshelfPorting.Runtime
             }
 
             ResetBookHoverHint();
+            // 카메라가 너무 zoomed in 상태면 책 view target 이 책장 뒷면을 뚫고 들어가는 회귀를
+            // 막기 위해 safe distance 로 부드럽게 zoom-out animation. ResolveBookViewPosition 은
+            // future camera pose (= post-zoom target pose) 기준으로 viewPosition 을 계산해
+            // 카메라/책 animation 이 같은 final state 로 수렴.
+            cameraController.EnsureFrontalZoomAtLeast(bookViewSafeZoomDistance);
             state.IsViewingBook = true;
             state.ActiveViewedBook = book;
             experienceManager?.HandleBookViewed(book);
@@ -1184,13 +1284,26 @@ namespace BookshelfPorting.Runtime
                 return fallbackPosition;
             }
 
-            var zoomInAmount = cameraController.CurrentMode == CameraMode.Frontal
-                ? cameraController.FrontalZoomInAmount
-                : 0f;
+            // 카메라가 zoom animation 중일 수 있으므로 target zoom 시점의 pose 로 viewPosition
+            // 계산. 카메라 forward 는 zoom 으로 변하지 않으므로 sceneCamera.transform.forward 그대로 사용.
+            Vector3 baseCameraPosition;
+            float zoomInAmount;
+            if (cameraController.CurrentMode == CameraMode.Frontal &&
+                cameraController.TryGetFrontalCameraTargetPose(out var futurePos, out var futureZoomIn))
+            {
+                baseCameraPosition = futurePos;
+                zoomInAmount = futureZoomIn;
+            }
+            else
+            {
+                baseCameraPosition = sceneCamera.transform.position;
+                zoomInAmount = 0f;
+            }
+
             var cameraDistance = Mathf.Max(
                 0.7f,
                 viewedBookCameraDistance - Mathf.Max(0f, viewedBookZoomForwardOffset) * zoomInAmount);
-            var targetPosition = sceneCamera.transform.position + sceneCamera.transform.forward * cameraDistance;
+            var targetPosition = baseCameraPosition + sceneCamera.transform.forward * cameraDistance;
             if (!IsFixedShelfDecoration(book) || !TryGetRendererBoundsInBookLocalSpace(book, out var bounds))
             {
                 return targetPosition;

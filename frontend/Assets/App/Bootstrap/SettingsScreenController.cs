@@ -290,6 +290,9 @@ namespace App.Bootstrap
             WarmupGlyphs(fontAsset);
 
             BuildCanvas();
+            // dev 의 QuickMenu (햄버거 토글 + "꾸미기" / "설정" / "종료하기" 드롭다운). 본 PR 에서
+            // "시점 변경" 항목은 제거 — 쿼터뷰 폐지 후 단일 MainView pose 만 남아 토글 의미 부재 +
+            // drag-orbit reset 은 F1 단축키로 충분.
             BuildQuickMenu();
             BuildSettingsPanel();
             ApplyFontToCanvas();
@@ -568,7 +571,7 @@ namespace App.Bootstrap
             rootRect.anchorMin = new Vector2(1f, 1f);
             rootRect.anchorMax = new Vector2(1f, 1f);
             rootRect.pivot = new Vector2(1f, 1f);
-            rootRect.sizeDelta = new Vector2(QuickMenuWidth, QuickMenuToggleSize + 12f + (QuickMenuItemHeight * 4f) + (QuickMenuItemSpacing * 3f) + 24f);
+            rootRect.sizeDelta = new Vector2(QuickMenuWidth, QuickMenuToggleSize + 12f + (QuickMenuItemHeight * 3f) + (QuickMenuItemSpacing * 2f) + 24f);
             rootRect.anchoredPosition = new Vector2(-SettingsButtonMargin, -SettingsButtonMargin);
 
             quickMenuToggleButton = CreateButton(
@@ -628,7 +631,7 @@ namespace App.Bootstrap
             quickMenuPanelRect.anchorMin = new Vector2(1f, 1f);
             quickMenuPanelRect.anchorMax = new Vector2(1f, 1f);
             quickMenuPanelRect.pivot = new Vector2(1f, 1f);
-            quickMenuPanelRect.sizeDelta = new Vector2(QuickMenuWidth, (QuickMenuItemHeight * 4f) + (QuickMenuItemSpacing * 3f) + 24f);
+            quickMenuPanelRect.sizeDelta = new Vector2(QuickMenuWidth, (QuickMenuItemHeight * 3f) + (QuickMenuItemSpacing * 2f) + 24f);
             quickMenuPanelOpenPosition = new Vector2(0f, -(QuickMenuToggleSize + 12f));
             quickMenuPanelClosedPosition = new Vector2(0f, -(QuickMenuToggleSize + 2f));
             quickMenuPanelRect.anchoredPosition = quickMenuPanelClosedPosition;
@@ -661,7 +664,7 @@ namespace App.Bootstrap
             layout.childForceExpandWidth = true;
             layout.childForceExpandHeight = false;
 
-            CreateQuickMenuItem(quickMenuPanel.transform, "FrontViewItem", "시점 변경", false, OnQuickMenuModeClicked);
+            // "시점 변경" 항목 제거 — 쿼터뷰 폐지 후 토글 의미 부재, drag-orbit reset 은 F1 단축키로 처리.
             CreateQuickMenuItem(quickMenuPanel.transform, "DecorateItem", "꾸미기", true, OnQuickMenuDecorateClicked);
             CreateQuickMenuItem(quickMenuPanel.transform, "SettingsItem", "설정", false, OnQuickMenuSettingsClicked);
             var quitItem = CreateQuickMenuItem(quickMenuPanel.transform, "QuitItem", "종료하기", false, null);
@@ -855,19 +858,12 @@ namespace App.Bootstrap
                 return;
             }
 
-            manager ??= ResolveExperienceManager();
-            var isQuarterView = manager != null && manager.CurrentMainViewMode == MainCameraViewMode.QuarterView;
-            var nextLabel = isQuarterView ? QuarterViewModeLabel : MainViewModeLabel;
-            if (!string.Equals(modeChangeButtonLabel.text, nextLabel, StringComparison.Ordinal))
+            // 쿼터뷰 폐지 — 라벨은 항상 "정면뷰" 고정. 버튼은 drag-orbit 으로 회전된 카메라를
+            // 기본 pose 로 reset 하는 용도.
+            if (!string.Equals(modeChangeButtonLabel.text, MainViewModeLabel, StringComparison.Ordinal))
             {
-                modeChangeButtonLabel.text = nextLabel;
+                modeChangeButtonLabel.text = MainViewModeLabel;
             }
-        }
-
-        private void OnQuickMenuModeClicked()
-        {
-            OnModeChangeClicked();
-            SetQuickMenuOpen(false, true);
         }
 
         private void OnQuickMenuDecorateClicked()

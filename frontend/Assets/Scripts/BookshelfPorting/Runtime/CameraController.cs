@@ -67,10 +67,20 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float frontalZoomSmoothDuration = 0.15f;
         [SerializeField] private float wheelScrollReference = 120f;
         [SerializeField] private float frontalPanSensitivity = 0.002f;
+        [SerializeField] private float frontalPanZoomInSensitivityScale = 0.3f;
         [SerializeField] private float frontalMinPanX = -0.9f;
         [SerializeField] private float frontalMaxPanX = 0.9f;
         [SerializeField] private float frontalMinCameraY = 0.3f;
         [SerializeField] private float frontalMaxCameraY = 1.8f;
+
+        // MainView/QuarterView (Overview) 마우스 드래그 orbit 회전. 카메라가 lookTarget 주위를
+        // 도는 형태로 yaw/pitch 누적. 회전 한계로 방 뒷면이 보이지 않게 clamp. 모드 진입 시
+        // (MoveToMainView/MoveToQuarterView/Apply*) offset 0 으로 reset 되며, 전환 종료 후
+        // LateUpdate 에서 base pose 가 캡처돼 base pose 주변으로 orbit 한다.
+        [SerializeField] private float mainViewRotateSensitivity = 0.03f;
+        [SerializeField] private float mainViewMaxYawDegrees = 70f;
+        [SerializeField] private float mainViewMaxPitchDegrees = 25f;
+        [SerializeField] private float mainViewOrbitPivotDistance = 1.8f;
 
         // MainView: the default main-scene pose. Derived at runtime from frontalAnchor
         // by pulling straight back along its forward axis (same look direction as the
@@ -91,6 +101,12 @@ namespace BookshelfPorting.Runtime
         private float frontalZoomTargetDistance;
         private float frontalZoomElapsed;
         private Vector2 frontalPanOffset;
+        private float mainViewYawOffset;
+        private float mainViewPitchOffset;
+        private Vector3 mainViewBasePosition;
+        private Vector3 mainViewBasePivot;
+        private float mainViewBaseFieldOfView;
+        private bool mainViewBaseCaptured;
         private Func<bool> frontalZoomInputPredicate;
         public event Action<CameraMode> ModeChanged;
         public event Action<CameraMode> TransitionCompleted;
@@ -179,6 +195,31 @@ namespace BookshelfPorting.Runtime
             frontalZoomInputPredicate = predicate;
         }
 
+        // SerializeField default 값을 씬에 저장된 인스턴스가 override 하지 못하도록 installer
+        // 에서 명시적으로 호출. ConfigureFrontalZoomSettings 와 동일 패턴.
+        public void ConfigureMainViewRotateSettings(
+            float sensitivity,
+            float maxYawDegrees,
+            float maxPitchDegrees,
+            float pivotDistance)
+        {
+            mainViewRotateSensitivity = Mathf.Max(0.0001f, sensitivity);
+            mainViewMaxYawDegrees = Mathf.Max(0f, maxYawDegrees);
+            mainViewMaxPitchDegrees = Mathf.Max(0f, maxPitchDegrees);
+            mainViewOrbitPivotDistance = Mathf.Max(0.1f, pivotDistance);
+            ResetMainViewRotationOffset();
+        }
+
+        public void ConfigureFrontalPanSensitivity(float sensitivity)
+        {
+            frontalPanSensitivity = Mathf.Max(0.0001f, sensitivity);
+        }
+
+        public void ConfigureFrontalPanZoomInSensitivityScale(float scale)
+        {
+            frontalPanZoomInSensitivityScale = Mathf.Clamp(scale, 0.01f, 1f);
+        }
+
         private void Awake()
         {
             if (targetCamera == null)
@@ -216,6 +257,11 @@ namespace BookshelfPorting.Runtime
             {
                 StepFrontalZoom(Time.deltaTime);
             }
+
+            if (!isTransitioning && CurrentMode == CameraMode.Overview)
+            {
+                ApplyMainViewRotation();
+            }
         }
 
         public void MoveToMode(CameraMode mode)
@@ -237,6 +283,11 @@ namespace BookshelfPorting.Runtime
             {
                 ResetFrontalZoomState();
                 ResetFrontalPanState();
+            }
+
+            if (mode == CameraMode.Overview)
+            {
+                ResetMainViewRotationOffset();
             }
 
             CurrentMode = mode;
@@ -309,6 +360,7 @@ namespace BookshelfPorting.Runtime
 
             CurrentMode = CameraMode.Overview;
             isTransitioning = false;
+            ResetMainViewRotationOffset();
         }
 
         public bool TryGetMainViewPose(out Camera camera, out Vector3 position, out Quaternion rotation, out float fieldOfView)
@@ -349,12 +401,15 @@ namespace BookshelfPorting.Runtime
             // from the overviewAnchor (which is the QuarterView). The ModeChanged event
             // is intentionally NOT raised so subscribers don't reset main-view-mode state.
             CurrentMode = CameraMode.Overview;
+            ResetMainViewRotationOffset();
             StartSingleSegmentTransition(position, rotation, fieldOfView, moveDuration);
         }
 
-        // QuarterView entry points (overviewAnchor pose, unchanged from existing scene
-        // setup). Onboarding Step 3 needs an explicit snap to QuarterView before the
-        // bookshelf-focus transition, so a public Apply method is exposed here.
+        // QuarterView 폐지 (MR 216) 후 잔존 — ApplyQuarterView 는 Onboarding Step2 preview 가
+        // overviewAnchor pose 를 base 로 추가 offset 을 얹어 사용 중이라 의도적으로 유지. 다른
+        // 호출자는 모두 MainView 로 redirect 됐다. orbit pivot (mainViewOrbitPivotDistance=1.8)
+        // 과 overviewAnchor pose (~3.3m camera-to-target) 가 mismatch 여서 orbit drag 가 어색
+        // 했던 문제는 ApplyQuarterView 직후 onboarding 이 추가 offset 으로 덮어쓰므로 비활성.
         public void ApplyQuarterView()
         {
             if (!EnsureCameraResolved() || overviewAnchor == null)
@@ -368,14 +423,16 @@ namespace BookshelfPorting.Runtime
 
             CurrentMode = CameraMode.Overview;
             isTransitioning = false;
+            ResetMainViewRotationOffset();
         }
 
+        // QuarterView 폐지 — 외부 호환을 위해 메서드 자체는 유지하되 MoveToMainView 로 redirect.
+        // rlawnsrb298 P2 review 권고 반영: MoveToQuarterView 의 overviewAnchor pose 가 호출되면
+        // orbit pivot (1.8m) 과 mismatch (~3.3m camera-to-target) 가 발생할 수 있어, 신호용 method
+        // 보존 + 실제 pose 는 MainView 로 통일.
         public void MoveToQuarterView()
         {
-            // Existing behavior of MoveToMode(Overview) — preserved exactly so callers
-            // like FocusQuarterView, CloseNotebookFocus, and the F1 shortcut keep landing
-            // on overviewAnchor.
-            MoveToMode(CameraMode.Overview);
+            MoveToMainView();
         }
 
         // Backward-compatible alias retained so existing callers of the previous
@@ -395,31 +452,16 @@ namespace BookshelfPorting.Runtime
 
         private bool TryComputeMainViewPose(out Vector3 position, out Quaternion rotation, out float fieldOfView)
         {
-            position = default;
-            rotation = default;
+            // 사용자가 캡처한 정면뷰 기본 pose 하드코딩 (책장 우측 약간에서 좌측을 바라보는 각도).
+            // 이전의 anchor 상대 계산 (lookTarget + pullback + sideAngle + verticalOffset) 은
+            // 두 단계 toggle (MainView ↔ QuarterView) 구조에서 좌우 대칭 정면을 가정했으나,
+            // QuarterView 폐지 후엔 단일 기본 pose 만 있으면 충분.
+            position = new Vector3(0.5770924f, 1.116157f, -2.342854f);
+            rotation = Quaternion.Euler(6.834f, -18.838f, 0f);
             fieldOfView = mainViewFieldOfView;
 
-            var anchor = frontalAnchor != null ? frontalAnchor : overviewAnchor;
-            if (anchor == null)
-            {
-                return false;
-            }
-
-            // Anchor a virtual look target in front of the bookshelf focus along its
-            // forward axis. Orbiting the camera around this target keeps the bookshelf
-            // roughly centered while the side angle reveals the laptop and surrounding
-            // room.
-            var lookTarget = anchor.position + anchor.forward * mainViewLookTargetDistance;
-            var up = anchor.up;
-
-            var totalDistance = mainViewLookTargetDistance + mainViewPullBack;
-            var pulledOffset = -anchor.forward * totalDistance;
-            var sideRotation = Quaternion.AngleAxis(mainViewSideAngleDegrees, up);
-            var rotatedOffset = sideRotation * pulledOffset;
-
-            position = lookTarget + rotatedOffset + up * mainViewVerticalOffset;
-            rotation = Quaternion.LookRotation((lookTarget - position).normalized, up);
-            return true;
+            // Camera 가 아직 attach 되지 않은 ultra-early 호출 (씬 셋업 전) 만 거른다.
+            return targetCamera != null;
         }
 
         // 무인자 오버로드 — 기존 호출자 호환. mode 미지정 시 ScreenAnchorBaked (vintage / 기본
@@ -539,9 +581,9 @@ namespace BookshelfPorting.Runtime
 
         private bool CanHandleFrontalZoomInput()
         {
-            if (frontalZoomInputPredicate != null && !frontalZoomInputPredicate())
+            if (frontalZoomInputPredicate != null)
             {
-                return false;
+                return frontalZoomInputPredicate();
             }
 
             return EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject();
@@ -568,16 +610,96 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            frontalPanOffset.x = Mathf.Clamp(
-                frontalPanOffset.x - screenDelta.x * frontalPanSensitivity,
-                frontalMinPanX,
-                frontalMaxPanX);
+            // 줌아웃일수록 pan 범위 축소, 줌인일수록 확장 (최대 줌아웃에서 범위 0 → 카메라 고정).
+            // FrontalZoomInAmount: 0 = max 줌아웃, 1 = max 줌인.
+            var zoomScale = FrontalZoomInAmount;
+            var anchorY = frontalAnchor.position.y;
 
-            var nextCameraY = Mathf.Clamp(
-                frontalAnchor.position.y + frontalPanOffset.y - screenDelta.y * frontalPanSensitivity,
-                frontalMinCameraY,
-                frontalMaxCameraY);
-            frontalPanOffset.y = nextCameraY - frontalAnchor.position.y;
+            var clampMinX = frontalMinPanX * zoomScale;
+            var clampMaxX = frontalMaxPanX * zoomScale;
+            var clampMinY = (frontalMinCameraY - anchorY) * zoomScale;
+            var clampMaxY = (frontalMaxCameraY - anchorY) * zoomScale;
+
+            // 줌인할수록 sensitivity 도 함께 낮춰 fine control 강화. 줌아웃에서 1.0x, 최대
+            // 줌인에서 frontalPanZoomInSensitivityScale(기본 0.3x). 줌아웃에선 range 자체가
+            // 0 에 가까워서 sensitivity 가 큰 의미는 없지만, 중간 줌 영역에서 자연스러운 감속.
+            var sensitivityScale = Mathf.Lerp(1f, frontalPanZoomInSensitivityScale, zoomScale);
+            var effectiveSensitivity = frontalPanSensitivity * sensitivityScale;
+
+            frontalPanOffset.x = Mathf.Clamp(
+                frontalPanOffset.x - screenDelta.x * effectiveSensitivity,
+                clampMinX,
+                clampMaxX);
+
+            frontalPanOffset.y = Mathf.Clamp(
+                frontalPanOffset.y - screenDelta.y * effectiveSensitivity,
+                clampMinY,
+                clampMaxY);
+        }
+
+        // Overview (MainView/QuarterView) 마우스 드래그 orbit 회전. screenDelta 의 X 는 yaw, Y 는
+        // pitch 에 누적되며 ±mainViewMaxYaw/Pitch 범위로 clamp 된다. 부호 convention:
+        //   - drag right (delta.x > 0) → camera 가 오른쪽으로 orbit (yaw +)
+        //   - drag up    (delta.y > 0) → camera 가 위쪽으로 orbit (pitch -, 카메라가 위로 들어올림)
+        // base pose 는 ApplyMainViewRotation 진입 시점에 1회 캡처되며, 모드 전환 시
+        // ResetMainViewRotationOffset 으로 무효화돼 다음 frame 에 fresh capture 된다.
+        public void RotateMainViewCamera(Vector2 screenDelta)
+        {
+            if (CurrentMode != CameraMode.Overview || isTransitioning)
+            {
+                return;
+            }
+
+            mainViewYawOffset = Mathf.Clamp(
+                mainViewYawOffset + screenDelta.x * mainViewRotateSensitivity,
+                -mainViewMaxYawDegrees,
+                mainViewMaxYawDegrees);
+
+            mainViewPitchOffset = Mathf.Clamp(
+                mainViewPitchOffset - screenDelta.y * mainViewRotateSensitivity,
+                -mainViewMaxPitchDegrees,
+                mainViewMaxPitchDegrees);
+        }
+
+        private void ResetMainViewRotationOffset()
+        {
+            mainViewYawOffset = 0f;
+            mainViewPitchOffset = 0f;
+            mainViewBaseCaptured = false;
+        }
+
+        private void ApplyMainViewRotation()
+        {
+            if (targetCamera == null)
+            {
+                return;
+            }
+
+            if (!mainViewBaseCaptured)
+            {
+                mainViewBasePosition = targetCamera.transform.position;
+                var forward = targetCamera.transform.forward;
+                mainViewBasePivot = mainViewBasePosition + forward * mainViewOrbitPivotDistance;
+                mainViewBaseFieldOfView = targetCamera.fieldOfView;
+                mainViewBaseCaptured = true;
+            }
+
+            var offsetFromPivot = mainViewBasePosition - mainViewBasePivot;
+            var yawRot = Quaternion.AngleAxis(mainViewYawOffset, Vector3.up);
+            var yawedRight = yawRot * Vector3.right;
+            var pitchRot = Quaternion.AngleAxis(mainViewPitchOffset, yawedRight);
+
+            var rotatedOffset = pitchRot * yawRot * offsetFromPivot;
+            var finalPosition = mainViewBasePivot + rotatedOffset;
+            var lookDir = mainViewBasePivot - finalPosition;
+            if (lookDir.sqrMagnitude < 0.0001f)
+            {
+                return;
+            }
+
+            targetCamera.transform.position = finalPosition;
+            targetCamera.transform.rotation = Quaternion.LookRotation(lookDir.normalized, Vector3.up);
+            targetCamera.fieldOfView = mainViewBaseFieldOfView;
         }
 
         private void SetFrontalZoomTarget(float distance)
@@ -592,6 +714,60 @@ namespace BookshelfPorting.Runtime
             frontalZoomTargetDistance = nextDistance;
             frontalZoomElapsed = 0f;
             isFrontalZooming = true;
+        }
+
+        // 책 viewing 진입 시 카메라가 너무 zoomed in 이면 책이 책장 뒷면을 뚫고 들어가는 회귀
+        // 방지. 부드러운 zoom-out animation 으로 책 꺼내는 motion 과 자연스럽게 어울리게.
+        // 책 viewPosition 은 TryGetFrontalCameraTargetPose 로 미래 카메라 pose 기준으로 계산해
+        // animation 종료 시점에 책-카메라 상대 위치가 일관되도록 한다.
+        public void EnsureFrontalZoomAtLeast(float minDistance)
+        {
+            if (CurrentMode != CameraMode.Frontal || frontalAnchor == null)
+            {
+                return;
+            }
+
+            var clampedMin = ClampFrontalZoomDistance(minDistance);
+            if (frontalZoomTargetDistance < clampedMin)
+            {
+                SetFrontalZoomTarget(clampedMin);
+            }
+        }
+
+        // 현재 zoom target 에 도달했을 때의 카메라 pose 예측. zoom animation 진행 중에도
+        // 책 viewPosition 을 final pose 기준으로 계산하기 위해 사용. pan offset 도 target zoom
+        // 의 zoom-scaled clamp 가 적용된 상태로 평가.
+        public bool TryGetFrontalCameraTargetPose(out Vector3 cameraPosition, out float zoomInAmount)
+        {
+            cameraPosition = default;
+            zoomInAmount = 0f;
+            if (CurrentMode != CameraMode.Frontal || frontalAnchor == null)
+            {
+                return false;
+            }
+
+            var anchorPosition = frontalAnchor.position;
+            var focusZ = anchorPosition.z + ClampFrontalZoomDistance(frontalDefaultZoomDistance);
+            var clampedZoom = ClampFrontalZoomDistance(frontalZoomTargetDistance);
+
+            zoomInAmount = Mathf.InverseLerp(
+                Mathf.Max(frontalMinZoomDistance, frontalMaxZoomDistance),
+                Mathf.Min(frontalMinZoomDistance, frontalMaxZoomDistance),
+                clampedZoom);
+
+            var anchorY = anchorPosition.y;
+            var clampedPanX = Mathf.Clamp(frontalPanOffset.x,
+                frontalMinPanX * zoomInAmount,
+                frontalMaxPanX * zoomInAmount);
+            var clampedPanY = Mathf.Clamp(frontalPanOffset.y,
+                (frontalMinCameraY - anchorY) * zoomInAmount,
+                (frontalMaxCameraY - anchorY) * zoomInAmount);
+
+            cameraPosition = new Vector3(
+                anchorPosition.x + clampedPanX,
+                anchorPosition.y + clampedPanY,
+                focusZ - clampedZoom);
+            return true;
         }
 
         private float ClampFrontalZoomDistance(float distance)
@@ -629,6 +805,19 @@ namespace BookshelfPorting.Runtime
         {
             var anchorPosition = frontalAnchor.position;
             var focusZ = anchorPosition.z + ClampFrontalZoomDistance(frontalDefaultZoomDistance);
+
+            // zoom 단계 변경(특히 줌아웃) 시 기존 pan offset 이 새 허용 범위를 벗어날 수 있어
+            // 매 프레임 재-clamp. 줌아웃하면 자동으로 카메라가 중앙으로 끌려옴.
+            var zoomScale = FrontalZoomInAmount;
+            frontalPanOffset.x = Mathf.Clamp(
+                frontalPanOffset.x,
+                frontalMinPanX * zoomScale,
+                frontalMaxPanX * zoomScale);
+            frontalPanOffset.y = Mathf.Clamp(
+                frontalPanOffset.y,
+                (frontalMinCameraY - anchorPosition.y) * zoomScale,
+                (frontalMaxCameraY - anchorPosition.y) * zoomScale);
+
             targetCamera.transform.position = new Vector3(
                 anchorPosition.x + frontalPanOffset.x,
                 anchorPosition.y + frontalPanOffset.y,
