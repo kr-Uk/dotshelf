@@ -11,6 +11,7 @@ namespace BookshelfPorting.Runtime
 {
     public class BookshelfGenerator : MonoBehaviour
     {
+
         private enum BookLabelKind
         {
             Cover,
@@ -492,7 +493,7 @@ namespace BookshelfPorting.Runtime
             {
                 if (Application.isPlaying)
                 {
-                    Debug.Log("Bookshelf catalog metadata is not applied to scene books in API mode; waiting for server bookshelf snapshots.");
+                    App.Core.AppLog.Bookshelf("Bookshelf catalog metadata is not applied to scene books in API mode; waiting for server bookshelf snapshots.");
                 }
 
                 return;
@@ -962,6 +963,7 @@ namespace BookshelfPorting.Runtime
             LogBookshelfCandidateFilter(activeTheme, activeThemeStyle, totalCandidateCount, navigableBookshelfIndices.Count, excludedEntries, fallbackUsed);
         }
 
+        [System.Diagnostics.Conditional("DOTSHELF_LOG_BOOKSHELF")]
         private void LogBookshelfCandidateFilter(
             RoomThemeAsset activeTheme,
             BookshelfThemeStyle activeThemeStyle,
@@ -980,12 +982,13 @@ namespace BookshelfPorting.Runtime
             }
 
             lastNavigationCandidateLogSignature = signature;
-            Debug.Log(
+            App.Core.AppLog.Bookshelf(
                 $"[BookshelfNav] candidate_build activeThemeId={activeTheme?.AssetId ?? 0L} activeThemeName={activeTheme?.DisplayName ?? "none"} " +
                 $"activeThemeStyle={activeThemeStyle} totalCandidates={totalCandidateCount} filteredCandidates={filteredCandidateCount} " +
                 $"excluded={excludedSummary} candidateFallback={fallbackUsed}");
         }
 
+        [System.Diagnostics.Conditional("DOTSHELF_LOG_BOOKSHELF")]
         private void LogBookshelfNavigationState(string reason, int selectedIndex, bool fallbackUsed)
         {
             var activeTheme = ResolveActiveNavigationTheme();
@@ -996,7 +999,7 @@ namespace BookshelfPorting.Runtime
                 ? selectedLayout.BookshelfPrefab.name
                 : "none";
             var selectedSpecName = selectedLayout != null ? selectedLayout.name : "none";
-            Debug.Log(
+            App.Core.AppLog.Bookshelf(
                 $"[BookshelfNav] reason={reason} activeThemeId={activeTheme?.AssetId ?? 0L} activeThemeName={activeTheme?.DisplayName ?? "none"} " +
                 $"activeThemeStyle={activeThemeStyle} totalCandidates={bookshelfCount} candidateCount={navigableBookshelfIndices.Count} " +
                 $"selectedIndex={selectedIndex} selectedStyle={selectedStyle} selectedLayout={selectedSpecName} selectedPrefab={selectedPrefabName} fallback={fallbackUsed}");
@@ -1057,7 +1060,7 @@ namespace BookshelfPorting.Runtime
                 $"reason={(themeLayout == null ? "layout_missing" : "layout_invalid")}";
             if (style == BookshelfThemeStyle.Default)
             {
-                Debug.Log(fallbackMessage);
+                App.Core.AppLog.Bookshelf(fallbackMessage);
             }
             else
             {
@@ -1533,7 +1536,7 @@ namespace BookshelfPorting.Runtime
 
             if (Application.isPlaying)
             {
-                Debug.Log($"Bookshelf catalog loaded: {bookCatalogItems.Count} item(s).");
+                App.Core.AppLog.Bookshelf($"Bookshelf catalog loaded: {bookCatalogItems.Count} item(s).");
             }
         }
 
@@ -3207,7 +3210,7 @@ namespace BookshelfPorting.Runtime
             if (navigableBookshelfIndices.Count <= 1)
             {
                 LogBookshelfNavigationState("switch_single_candidate", GetWrappedBookshelfIndex(activeBookshelfIndex), true);
-                Debug.Log("[BookshelfNav] switch skipped reason=single_candidate");
+                App.Core.AppLog.Bookshelf("[BookshelfNav] switch skipped reason=single_candidate");
                 return false;
             }
 

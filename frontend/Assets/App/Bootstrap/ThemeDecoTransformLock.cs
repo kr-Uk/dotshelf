@@ -39,6 +39,7 @@ namespace App.Bootstrap
     [DisallowMultipleComponent]
     public sealed class ThemeDecoTransformLock : MonoBehaviour
     {
+
         [SerializeField] private string assetKey = string.Empty;
         [SerializeField] private Vector3 lockedLocalPosition = Vector3.zero;
         [SerializeField] private Vector3 lockedLocalEulerAngles = Vector3.zero;
@@ -77,7 +78,7 @@ namespace App.Bootstrap
 
             if (!hasLoggedOverwrite)
             {
-                Debug.Log($"[ThemeDecoTransformLock] Restoring local transform for '{assetKey}' on '{name}'.");
+                App.Core.AppLog.RoomEdit($"[ThemeDecoTransformLock] Restoring local transform for '{assetKey}' on '{name}'.");
                 hasLoggedOverwrite = true;
             }
 

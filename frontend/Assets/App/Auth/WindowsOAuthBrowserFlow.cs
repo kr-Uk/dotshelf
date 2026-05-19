@@ -241,7 +241,7 @@ namespace App.Auth
             var providerName = providerConfig != null ? providerConfig.provider.ToString() : "(null)";
             bool clientIdPresent = providerConfig != null && !string.IsNullOrWhiteSpace(providerConfig.clientId);
             bool authorizeEndpointPresent = providerConfig != null && !string.IsNullOrWhiteSpace(providerConfig.authorizeEndpoint);
-            Debug.Log(
+            App.Core.AppLog.Auth(
                 $"[OAuth] ExecuteAsync provider={providerName} " +
                 $"clientIdPresent={clientIdPresent} authorizeEndpointPresent={authorizeEndpointPresent}");
 
@@ -263,7 +263,7 @@ namespace App.Auth
             try
             {
                 (listener, redirectUri) = StartListenerOnPreferredPort();
-                Debug.Log($"[OAuth] Listener started. prefix={redirectUri}");
+                App.Core.AppLog.Auth($"[OAuth] Listener started. prefix={redirectUri}");
             }
             catch (HttpListenerException ex) when (ex.ErrorCode == ErrorAccessDenied)
             {
@@ -294,7 +294,7 @@ namespace App.Auth
                 var codeChallenge = ComputeCodeChallengeS256(codeVerifier);
                 var authorizeUrl = BuildAuthorizeUrl(providerConfig, redirectUri, state, nonce, codeChallenge);
 
-                Debug.Log($"[OAuth] Opening browser for {providerConfig.provider} (redirect={redirectUri})");
+                App.Core.AppLog.Auth($"[OAuth] Opening browser for {providerConfig.provider} (redirect={redirectUri})");
                 // Fully-qualified — `App.Application` (UseCase layer) shadows
                 // UnityEngine.Application here because both namespaces are in
                 // scope, so `Application.OpenURL(...)` resolves to the wrong type.
@@ -302,7 +302,7 @@ namespace App.Auth
                 try
                 {
                     UnityEngine.Application.OpenURL(authorizeUrl);
-                    Debug.Log("[OAuth] Browser opened.");
+                    App.Core.AppLog.Auth("[OAuth] Browser opened.");
                 }
                 catch (Exception openEx)
                 {
@@ -341,7 +341,7 @@ namespace App.Auth
                 bool codePresent = query.TryGetValue("code", out var code) && !string.IsNullOrWhiteSpace(code);
                 bool receivedStatePresent = query.TryGetValue("state", out var receivedState) && !string.IsNullOrWhiteSpace(receivedState);
                 bool stateValid = receivedStatePresent && FixedTimeEquals(receivedState, state);
-                Debug.Log(
+                App.Core.AppLog.Auth(
                     $"[OAuth] Callback received. codePresent={codePresent} stateValid={stateValid} errorPresent={hadError}");
 
                 WriteHtmlResponse(context.Response, hadError);

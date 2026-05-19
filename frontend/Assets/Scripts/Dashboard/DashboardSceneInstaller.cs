@@ -16,6 +16,7 @@ namespace Dotshelf.Scripts.Dashboard
     [DefaultExecutionOrder(-100)]
     public sealed class DashboardSceneInstaller : MonoBehaviour
     {
+
         public enum RepositoryMode
         {
             Mock,
@@ -61,10 +62,14 @@ namespace Dotshelf.Scripts.Dashboard
 
             var resolvedApiConfig = ResolveApiConfig();
             var effectiveMode = mode;
+            if (resolvedApiConfig != null && resolvedApiConfig.UsesMockApi)
+            {
+                effectiveMode = RepositoryMode.Mock;
+            }
 
             if (logChosenMode)
             {
-                Debug.Log($"[DashboardSceneInstaller] Mode = {effectiveMode} (configured={mode}, apiMode={resolvedApiConfig?.ApiMode.ToString() ?? "unset"})");
+                App.Core.AppLog.Dashboard($"[DashboardSceneInstaller] Mode = {effectiveMode} (configured={mode}, apiMode={resolvedApiConfig?.ApiMode.ToString() ?? "unset"})");
             }
 
             IDashboardRepository dashboardRepo;

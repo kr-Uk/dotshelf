@@ -18,6 +18,7 @@ namespace App.Bootstrap
     /// </summary>
     public static class RoomEditThemeFilter
     {
+
         public const string AllThemesValue = "";
 
         private static string activeTheme = AllThemesValue;
@@ -33,7 +34,7 @@ namespace App.Bootstrap
                     return;
                 }
                 activeTheme = normalized;
-                Debug.Log($"[ThemePreview] Selected theme filter: {DescribeActive()}");
+                App.Core.AppLog.RoomEdit($"[ThemePreview] Selected theme filter: {DescribeActive()}");
                 Changed?.Invoke();
             }
         }

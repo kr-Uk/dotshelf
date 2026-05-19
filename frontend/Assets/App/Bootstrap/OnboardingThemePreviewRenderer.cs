@@ -126,11 +126,11 @@ namespace App.Bootstrap
                 if (previewCamera != null)
                 {
                     previewCamera.Render();
-                    Debug.Log("[OnboardingPreview] Camera.Render called (Initialize).");
+                    App.Core.AppLog.Onboarding("[OnboardingPreview] Camera.Render called (Initialize).");
                 }
 
                 IsReady = true;
-                Debug.Log(
+                App.Core.AppLog.Onboarding(
                     $"[OnboardingPreview] RenderTexture ready=true size={renderTexture.width}x{renderTexture.height} " +
                     $"created={renderTexture.IsCreated()} cameraEnabled={(previewCamera != null ? previewCamera.enabled : false)} " +
                     $"camera.target={(previewCamera != null && previewCamera.targetTexture != null ? "RT" : "null")}");
@@ -211,7 +211,7 @@ namespace App.Bootstrap
             if (previewCamera != null)
             {
                 previewCamera.Render();
-                Debug.Log($"[OnboardingPreview] Camera.Render called (ApplyTheme theme='{theme.name}').");
+                App.Core.AppLog.Onboarding($"[OnboardingPreview] Camera.Render called (ApplyTheme theme='{theme.name}').");
                 ValidateRtHasMeshContent($"ApplyTheme:{theme.name}");
             }
         }
@@ -315,11 +315,11 @@ namespace App.Bootstrap
             if (previewCamera != null)
             {
                 previewCamera.Render();
-                Debug.Log("[OnboardingPreview] Camera.Render called (ApplyRandomSelection).");
+                App.Core.AppLog.Onboarding("[OnboardingPreview] Camera.Render called (ApplyRandomSelection).");
                 ValidateRtHasMeshContent("ApplyRandomSelection");
             }
 
-            Debug.Log(
+            App.Core.AppLog.Onboarding(
                 $"[OnboardingPreview] ApplyRandomSelection — slots={selection.SelectedSpecs.Count} " +
                 $"spawned={spawned} reused={reused} skipped={skipped}");
         }
@@ -404,7 +404,7 @@ namespace App.Bootstrap
             bool usedFallback = entry.Spec.PreviewPrefab == null;
             if (usedFallback)
             {
-                Debug.Log(
+                App.Core.AppLog.Onboarding(
                     $"[OnboardingPreview] slot {slot} — PreviewPrefab missing. Fallback to original prefab '{prefab.name}'. " +
                     "RoomThemeDecoSpec.previewPrefab 에 lightweight 버전 wiring 권장.");
             }
@@ -416,7 +416,7 @@ namespace App.Bootstrap
                 {
                     existing.Instance.SetActive(true);
                     NormalizeInstanceTransform(existing.Instance, prefabSlotRoot.transform, in anchor, entry.Spec);
-                    Debug.Log($"[OnboardingPreview] Reuse preview instance slot={slot} assetKey={entry.AssetKey}");
+                    App.Core.AppLog.Onboarding($"[OnboardingPreview] Reuse preview instance slot={slot} assetKey={entry.AssetKey}");
                     wasReused = true;
                     return true;
                 }
@@ -448,7 +448,7 @@ namespace App.Bootstrap
                 Instance = instance,
                 AssetKey = entry.AssetKey,
             };
-            Debug.Log($"[OnboardingPreview] Spawn preview prefab slot={slot} prefab={prefab.name} assetKey={entry.AssetKey} fallback={usedFallback}");
+            App.Core.AppLog.Onboarding($"[OnboardingPreview] Spawn preview prefab slot={slot} prefab={prefab.name} assetKey={entry.AssetKey} fallback={usedFallback}");
             return true;
         }
 
@@ -813,7 +813,7 @@ namespace App.Bootstrap
                 LastRenderHasMeshContent = changedPixels > 0;
                 if (LastRenderHasMeshContent)
                 {
-                    Debug.Log($"[OnboardingPreviewDebug] RT sample changedPixels={changedPixels}/9 (mesh content visible). source={source}");
+                    App.Core.AppLog.Onboarding($"[OnboardingPreviewDebug] RT sample changedPixels={changedPixels}/9 (mesh content visible). source={source}");
                 }
                 else
                 {
@@ -832,6 +832,7 @@ namespace App.Bootstrap
         // PreviewCamera 의 frustum 안에 mock room mesh 들이 들어오는지 + layer / 색상 점검.
         // 사용자가 "베이지 한 덩어리" 회귀 보고 시 어디서 막혔는지 진단 위해 Initialize 끝에서 1회 호출.
         // 비용은 enabled=true camera 의 매 frame culling 과 별개 — Initialize 한 번만이라 무시 가능.
+        [System.Diagnostics.Conditional("DOTSHELF_LOG_ONBOARDING")]
         private void LogFrustumDiagnostics()
         {
             if (previewCamera == null || roomRoot == null) return;
@@ -839,7 +840,7 @@ namespace App.Bootstrap
             {
                 var planes = GeometryUtility.CalculateFrustumPlanes(previewCamera);
                 var renderers = roomRoot.GetComponentsInChildren<Renderer>(true);
-                Debug.Log(
+                App.Core.AppLog.Onboarding(
                     $"[OnboardingPreviewDebug] root.pos={roomRoot.transform.position} " +
                     $"cam.pos={previewCamera.transform.position} cam.forward={previewCamera.transform.forward} " +
                     $"cam.near={previewCamera.nearClipPlane} cam.far={previewCamera.farClipPlane} " +
@@ -854,7 +855,7 @@ namespace App.Bootstrap
                     bool inFrustum = GeometryUtility.TestPlanesAABB(planes, r.bounds);
                     bool layerMatch = (previewCamera.cullingMask & (1 << r.gameObject.layer)) != 0;
                     string matName = r.sharedMaterial != null ? r.sharedMaterial.name : "null";
-                    Debug.Log(
+                    App.Core.AppLog.Onboarding(
                         $"[OnboardingPreviewDebug] {r.name} visibleInFrustum={inFrustum} layerMatch={layerMatch} " +
                         $"layer={r.gameObject.layer} enabled={r.enabled} active={r.gameObject.activeInHierarchy} " +
                         $"bounds.center={r.bounds.center} bounds.size={r.bounds.size} mat={matName}");

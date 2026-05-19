@@ -6,6 +6,7 @@ namespace App.Bootstrap
 {
     internal static class OnboardingRandomThemeBuilder
     {
+
         private static IReadOnlyList<string> CandidateThemeIds => OnboardingThemePreviewProvider.OrderedThemeIds;
 
         public static OnboardingRandomThemeSelection BuildRandomSelection(int? overrideSeed = null)
@@ -63,7 +64,7 @@ namespace App.Bootstrap
             {
                 if (kv.Value > 0)
                 {
-                    Debug.Log(
+                    App.Core.AppLog.Onboarding(
                         $"[OnboardingRandomTheme] {kv.Key} has {kv.Value} spec(s) with randomEligible=false.");
                 }
             }
@@ -110,7 +111,7 @@ namespace App.Bootstrap
             selection.BaseTheme = baseTheme;
             selection.Description = $"여러 테마의 가구가 섞인 조합 ({selection.SelectedSpecs.Count}개 슬롯)";
 
-            Debug.Log(
+            App.Core.AppLog.Onboarding(
                 $"[OnboardingRandomTheme] Build OK ??{selection.BuildSummary()} " +
                 $"themesContributed={themeContributedSlotsCount}/{resolvedThemes.Count}");
             return selection;

@@ -247,6 +247,7 @@ public final class AssetDtos {
 
     public record DownloadManifestResponse(
             Long assetId,
+            Long inventoryId,
             String code,
             String name,
             String assetType,
@@ -265,12 +266,13 @@ public final class AssetDtos {
                 String collectionCode,
                 int version,
                 List<DownloadFileResponse> files) {
-            this(assetId, null, null, assetType, collectionCode, null, null, null, null, version, files);
+            this(assetId, null, null, null, assetType, collectionCode, null, null, null, null, version, files);
         }
 
         public static DownloadManifestResponse of(Asset root, List<DownloadFileResponse> files) {
             return new DownloadManifestResponse(
                     root.getId(),
+                    null,
                     root.getCode(),
                     root.getName(),
                     root.getAssetType(),
@@ -280,6 +282,23 @@ public final class AssetDtos {
                     root.getUnityResourceKey(),
                     root.getPreviewImageUrl(),
                     root.getVersion(),
+                    files
+            );
+        }
+
+        public DownloadManifestResponse withInventoryId(Long inventoryId) {
+            return new DownloadManifestResponse(
+                    assetId,
+                    inventoryId,
+                    code,
+                    name,
+                    assetType,
+                    collectionCode,
+                    theme,
+                    placement,
+                    unityResourceKey,
+                    previewImageUrl,
+                    version,
                     files
             );
         }

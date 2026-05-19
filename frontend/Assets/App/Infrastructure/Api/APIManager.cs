@@ -809,7 +809,7 @@ namespace App.Infrastructure.Api
 
             if (result.IsHealthy)
             {
-                Debug.Log($"Dotshelf API health OK: {result.Url} ({result.StatusCode})");
+                App.Core.AppLog.Api($"Dotshelf API health OK: {result.Url} ({result.StatusCode})");
                 return;
             }
 

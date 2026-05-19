@@ -6,6 +6,7 @@ namespace BookshelfPorting.Runtime
     [DisallowMultipleComponent]
     public sealed class BookshelfThemeLayoutTransformLock : MonoBehaviour
     {
+
         [SerializeField] private string layoutName = string.Empty;
         [SerializeField] private Vector3 lockedLocalPosition = Vector3.zero;
         [SerializeField] private Vector3 lockedLocalEulerAngles = Vector3.zero;
@@ -49,7 +50,7 @@ namespace BookshelfPorting.Runtime
 
             if (!hasLoggedOverwrite)
             {
-                Debug.Log($"[BookshelfThemeLayoutTransformLock] Restoring local transform for '{layoutName}' on '{name}'.");
+                App.Core.AppLog.RoomTheme($"[BookshelfThemeLayoutTransformLock] Restoring local transform for '{layoutName}' on '{name}'.");
                 hasLoggedOverwrite = true;
             }
 
