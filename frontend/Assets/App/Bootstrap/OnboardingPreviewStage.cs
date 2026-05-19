@@ -123,8 +123,8 @@ namespace App.Bootstrap
             }
             try
             {
-                App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Initialize prefab preview stage");
-                App.Core.AppLog.Onboarding("[OnboardingPreviewStage] MainScene direct preview disabled (사용자 의도)");
+                Debug.Log("[OnboardingPreviewStage] Initialize prefab preview stage");
+                Debug.Log("[OnboardingPreviewStage] MainScene direct preview disabled (사용자 의도)");
 
                 // RT 크기 동적 산출 — Screen.width/Screen.height 기반 aspect 로 GameView 와 같은
                 // 비율 보장 (방이 정사각형으로 squash 되는 회귀 fix). height 는 720 고정.
@@ -134,7 +134,7 @@ namespace App.Bootstrap
                 float screenAspect = Mathf.Clamp(
                     (float)screenW / screenH, RtMinAspect, RtMaxAspect);
                 actualRtWidth = Mathf.Max(1, Mathf.RoundToInt(actualRtHeight * screenAspect));
-                App.Core.AppLog.Onboarding(
+                Debug.Log(
                     $"[OnboardingPreviewStage] RT size derived from Screen — " +
                     $"screen={screenW}x{screenH} (aspect={(float)screenW / screenH:F3}, clamped={screenAspect:F3}) " +
                     $"→ rt={actualRtWidth}x{actualRtHeight}");
@@ -162,7 +162,7 @@ namespace App.Bootstrap
                 stageRoot.transform.localScale = Vector3.one;
                 stageRoot.transform.localRotation = Quaternion.identity;
                 stageRoot.layer = PreviewLayer;
-                App.Core.AppLog.Onboarding(
+                Debug.Log(
                     $"[OnboardingPreviewStage] Root parent={(stageRoot.transform.parent != null ? stageRoot.transform.parent.name : "null")} " +
                     $"position={stageRoot.transform.position} layer={LayerMask.LayerToName(stageRoot.layer)}({stageRoot.layer})");
 
@@ -186,7 +186,7 @@ namespace App.Bootstrap
                     bookshelfRigInstance = Object.Instantiate(config.BookshelfRigPrefab, previewRoomRoot.transform);
                     bookshelfRigInstance.name = "Preview_BookshelfRig";
                     SetLayerRecursive(bookshelfRigInstance, PreviewLayer);
-                    App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Spawn bookshelf prefab={config.BookshelfRigPrefab.name}");
+                    Debug.Log($"[OnboardingPreviewStage] Spawn bookshelf prefab={config.BookshelfRigPrefab.name}");
 
                     // **BookshelfGenerator wire** — RuntimeSystems 제외 정책으로 default null wire.
                     // stageRoot 에 MaterialFactory + BookshelfState 동적 add → BookshelfGenerator.Configure
@@ -195,13 +195,13 @@ namespace App.Bootstrap
                     {
                         previewMaterialFactory = stageRoot.AddComponent<MaterialFactory>();
                         previewBookshelfState = stageRoot.AddComponent<BookshelfState>();
-                        App.Core.AppLog.Onboarding("[OnboardingPreviewStage] MaterialFactory + BookshelfState added to stageRoot");
+                        Debug.Log("[OnboardingPreviewStage] MaterialFactory + BookshelfState added to stageRoot");
                     }
                     var generator = bookshelfRigInstance.GetComponentInChildren<BookshelfGenerator>(true);
                     if (generator != null)
                     {
                         generator.Configure(previewBookshelfState, previewMaterialFactory);
-                        App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] BookshelfGenerator configured with MaterialFactory (MainScene 방식 동일)");
+                        Debug.Log($"[OnboardingPreviewStage] BookshelfGenerator configured with MaterialFactory (MainScene 방식 동일)");
                     }
                     else
                     {
@@ -213,7 +213,7 @@ namespace App.Bootstrap
                     notebookStationInstance = Object.Instantiate(config.NotebookStationPrefab, previewRoomRoot.transform);
                     notebookStationInstance.name = "Preview_NotebookStation";
                     SetLayerRecursive(notebookStationInstance, PreviewLayer);
-                    App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Spawn desk/laptop prefab={config.NotebookStationPrefab.name}");
+                    Debug.Log($"[OnboardingPreviewStage] Spawn desk/laptop prefab={config.NotebookStationPrefab.name}");
                     // child Renderer 중 disabled 가 있으면 enable — prefab 작성 시 일부 mesh 가 의도와 다르게
                     // disabled 인 회귀 케이스 (preview 에서 책상/노트북 안 보이는 원인) 보강.
                     EnsureAllRenderersEnabled(notebookStationInstance, "NotebookStation");
@@ -229,7 +229,7 @@ namespace App.Bootstrap
                     dashboardScreenPanelInstance = Object.Instantiate(config.DashboardScreenPanelPrefab, previewRoomRoot.transform);
                     dashboardScreenPanelInstance.name = "Preview_DashboardScreenPanel";
                     SetLayerRecursive(dashboardScreenPanelInstance, PreviewLayer);
-                    App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Spawn dashboard prefab={config.DashboardScreenPanelPrefab.name}");
+                    Debug.Log($"[OnboardingPreviewStage] Spawn dashboard prefab={config.DashboardScreenPanelPrefab.name}");
                 }
 
                 // Preview-only optimize — prefab 안의 collider / rigidbody / audio / particle / animator disable.
@@ -247,15 +247,15 @@ namespace App.Bootstrap
                 //   - 5m × 5m × 2.8m room 의 procedural wall/ceiling 만 보충 (back wall 부재 회귀 fix)
                 //   - SpawnThemeDecos 의 spec.LocalPosition 은 RoomThemeAsset 원본 데이터 (허용)
                 //   - RuntimeSystems / Auth / API / Repository 호출 안 함
-                App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Visual-only preview, RuntimeSystems skipped");
-                App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Preserve GLB original scale");
-                App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Preserve original material");
-                App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Room size applied width={RoomWidth} depth={RoomDepth} height={RoomHeight}");
+                Debug.Log("[OnboardingPreviewStage] Visual-only preview, RuntimeSystems skipped");
+                Debug.Log("[OnboardingPreviewStage] Preserve GLB original scale");
+                Debug.Log("[OnboardingPreviewStage] Preserve original material");
+                Debug.Log($"[OnboardingPreviewStage] Room size applied width={RoomWidth} depth={RoomDepth} height={RoomHeight}");
 
                 // 5m × 5m × 2.8m procedural room shell — back/left/right wall + ceiling + 몰딩.
                 // 이전 turn 에서 호출 해제됐던 것을 사용자 명시 요청에 따라 복원. furniture transform 은 안 건드림.
                 CreateRoomShell();
-                App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Back wall created behind bookshelf");
+                Debug.Log("[OnboardingPreviewStage] Back wall created behind bookshelf");
 
                 // Lighting — RuntimeSystems 제외로 MainScene light 가 없으므로 cozy 2-light preset.
                 BuildCozyLightingPreset(stageRoot.transform);
@@ -266,8 +266,8 @@ namespace App.Bootstrap
                     previewCamera.Render();
                 }
                 IsReady = true;
-                App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Initialize OK — preview stage ready.");
-                App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] RenderTexture size={actualRtWidth}x{actualRtHeight}");
+                Debug.Log("[OnboardingPreviewStage] Initialize OK — preview stage ready.");
+                Debug.Log($"[OnboardingPreviewStage] RenderTexture size={actualRtWidth}x{actualRtHeight}");
                 return true;
             }
             catch (System.Exception ex)
@@ -284,7 +284,7 @@ namespace App.Bootstrap
         public void ApplyTheme(RoomThemeAsset theme)
         {
             if (!IsReady || theme == null) return;
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Apply theme={theme.name}");
+            Debug.Log($"[OnboardingPreviewStage] Apply theme={theme.name}");
 
             var renderers = previewRoomRoot.GetComponentsInChildren<Renderer>(true);
             int wallSwap = 0, floorSwap = 0, bookshelfSwap = 0, deskSwap = 0, dashboardSwap = 0;
@@ -353,9 +353,9 @@ namespace App.Bootstrap
             FilterPrefabSubsetByThemePrefix(theme);
 
             if (theme.WallMaterial != null)
-                App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Apply theme wall material={theme.WallMaterial.name}");
+                Debug.Log($"[OnboardingPreviewStage] Apply theme wall material={theme.WallMaterial.name}");
             if (theme.FloorMaterial != null)
-                App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Apply theme floor material={theme.FloorMaterial.name}");
+                Debug.Log($"[OnboardingPreviewStage] Apply theme floor material={theme.FloorMaterial.name}");
 
             // **MaterialFactory.ApplyTheme(BookshelfThemeStyle)** — MainScene 의 RoomThemeApplier.ApplyMaterials
             // 끝점과 동일. 책장 mesh 의 _BaseColor 가 style 별 tint 로 set 됨.
@@ -365,12 +365,12 @@ namespace App.Bootstrap
                 if (System.Enum.IsDefined(typeof(BookshelfThemeStyle), style))
                 {
                     previewMaterialFactory.ApplyTheme(style);
-                    App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Apply theme bookshelf style={style} (MaterialFactory.ApplyTheme)");
+                    Debug.Log($"[OnboardingPreviewStage] Apply theme bookshelf style={style} (MaterialFactory.ApplyTheme)");
                 }
             }
 
             if (previewCamera != null) previewCamera.Render();
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingPreviewStage] Apply theme done — wall={wallSwap} floor={floorSwap} " +
                 $"bookshelf={bookshelfSwap} desk={deskSwap} dashboard={dashboardSwap}");
 
@@ -397,7 +397,7 @@ namespace App.Bootstrap
         {
             if (!IsReady || selection == null || selection.BaseTheme == null) return;
             ApplyTheme(selection.BaseTheme);
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Apply random slots={selection.SelectedSpecs.Count} (base material only, slot prefab spawn Phase A2)");
+            Debug.Log($"[OnboardingPreviewStage] Apply random slots={selection.SelectedSpecs.Count} (base material only, slot prefab spawn Phase A2)");
         }
 
         // 테마의 deco prefab 들 (bookshelf/floor/wall) 을 previewRoomRoot 자식으로 instantiate.
@@ -430,7 +430,7 @@ namespace App.Bootstrap
             bool useThemeDecoPrefabs = IsThemeUsingGlbDecoPrefabs(theme);
             if (!useThemeDecoPrefabs)
             {
-                App.Core.AppLog.Onboarding(
+                Debug.Log(
                     $"[OnboardingPreviewStage] Theme={theme.name} — deco prefab spawn skipped " +
                     $"(use base BookshelfRig + DashboardScreenPanel as-is, material/색만 theme apply).");
                 ApplyBookshelfRigFallbackVisibility(theme);
@@ -445,7 +445,7 @@ namespace App.Bootstrap
             int total = (theme.BookshelfDecoSpecs?.Count ?? 0)
                         + (theme.FloorDecoSpecs?.Count ?? 0)
                         + (theme.WallDecoSpecs?.Count ?? 0);
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Theme deco spawned count={spawned}/{total} (theme={theme.name})");
+            Debug.Log($"[OnboardingPreviewStage] Theme deco spawned count={spawned}/{total} (theme={theme.name})");
 
             // 테마 책장 prefab 이 spawn 됐으면 procedural BookshelfRig 를 hide — vintage GLB 책장만 보이게.
             ApplyBookshelfRigFallbackVisibility(theme);
@@ -473,7 +473,7 @@ namespace App.Bootstrap
             }
             if (hasThemeShelf)
             {
-                App.Core.AppLog.Onboarding(
+                Debug.Log(
                     $"[OnboardingPreviewStage] Bookshelf prefab source=theme " +
                     $"(ThemeSlot.Shelf spec count={themeShelfSpawnCountInLastApply}, procedural BookshelfRig hidden)");
                 return;
@@ -483,7 +483,7 @@ namespace App.Bootstrap
             bool expectedFallback = !IsThemeUsingGlbDecoPrefabs(theme);
             if (expectedFallback)
             {
-                App.Core.AppLog.Onboarding(
+                Debug.Log(
                     $"[OnboardingPreviewStage] Bookshelf prefab source=procedural " +
                     $"(base BookshelfRig 유지, material/색만 theme={(theme != null ? theme.name : "null")} 적용 — 정책상 정상)");
             }
@@ -518,19 +518,19 @@ namespace App.Bootstrap
                 if (spec.ThemeSlot == ThemeSlot.Shelf)
                 {
                     themeShelfSpawnCountInLastApply++;
-                    App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Apply theme bookshelf prefab={prefab.name}");
+                    Debug.Log($"[OnboardingPreviewStage] Apply theme bookshelf prefab={prefab.name}");
                 }
                 else if (spec.ThemeSlot == ThemeSlot.Table || spec.ThemeSlot == ThemeSlot.TableMini)
                 {
-                    App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Apply theme desk prefab={prefab.name}");
+                    Debug.Log($"[OnboardingPreviewStage] Apply theme desk prefab={prefab.name}");
                 }
                 else if (spec.ThemeSlot == ThemeSlot.Dashboard)
                 {
-                    App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Apply theme dashboard prefab={prefab.name}");
+                    Debug.Log($"[OnboardingPreviewStage] Apply theme dashboard prefab={prefab.name}");
                 }
                 n++;
             }
-            if (n > 0) App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Spawn {label} deco count={n}");
+            if (n > 0) Debug.Log($"[OnboardingPreviewStage] Spawn {label} deco count={n}");
             return n;
         }
 
@@ -557,7 +557,7 @@ namespace App.Bootstrap
             previewCamera.transform.eulerAngles = eulerAngles;
             previewCamera.fieldOfView = Mathf.Clamp(fov, 5f, 120f);
             previewCamera.Render();
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingPreviewStage] Camera manual override applied " +
                 $"position={worldPos} euler={eulerAngles} fov={previewCamera.fieldOfView}");
         }
@@ -594,7 +594,7 @@ namespace App.Bootstrap
             previewLight = null;
             fillLight = null;
             IsReady = false;
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Dispose");
+            Debug.Log("[OnboardingPreviewStage] Dispose");
         }
 
         // Room root pivot 정규화 — 사용자 보고 "room 이 공중에 떠 있는 miniature box" 회귀 fix.
@@ -655,10 +655,10 @@ namespace App.Bootstrap
             var offset = new Vector3(-rb_.center.x, -floorTopY, -rb_.center.z);
             previewRoomRoot.transform.position += offset;
 
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Room root normalized");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Room root offset={offset}");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Floor aligned y=0 (was floorTopY={floorTopY:F3})");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Room scale normalized — roomBounds.size={rb_.size}");
+            Debug.Log("[OnboardingPreviewStage] Room root normalized");
+            Debug.Log($"[OnboardingPreviewStage] Room root offset={offset}");
+            Debug.Log($"[OnboardingPreviewStage] Floor aligned y=0 (was floorTopY={floorTopY:F3})");
+            Debug.Log($"[OnboardingPreviewStage] Room scale normalized — roomBounds.size={rb_.size}");
         }
 
         // Furniture 를 fixed target 좌표로 재배치. bounds bottom-center 가 target 에 오도록 offset 계산.
@@ -685,7 +685,7 @@ namespace App.Bootstrap
                 dashboardScreenPanelInstance.transform.localScale = Vector3.one * DashboardScaleMultiplier;
                 dashboardScreenPanelInstance.transform.position = DashboardTargetPos;
                 dashboardScreenPanelInstance.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
-                App.Core.AppLog.Onboarding(
+                Debug.Log(
                     $"[OnboardingPreviewStage] Dashboard polished target={DashboardTargetPos} " +
                     $"scale={DashboardScaleMultiplier} rotation=(0, 90, 0)");
             }
@@ -694,7 +694,7 @@ namespace App.Bootstrap
             // 별도 instance 없으면 skip. "Rug" 또는 "Carpet" 이름의 renderer 가 있으면 reposition.
             TryRepositionInternalElement("Rug", new Vector3(0.25f, 0.01f, -0.55f));
 
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Final composition polished");
+            Debug.Log("[OnboardingPreviewStage] Final composition polished");
         }
 
         // RoomBackground prefab 안의 특정 이름 element 를 찾아 reposition. element 의 transform.position 을
@@ -709,10 +709,10 @@ namespace App.Bootstrap
                 if (t == null) continue;
                 if (!t.gameObject.name.Contains(nameContains, System.StringComparison.OrdinalIgnoreCase)) continue;
                 t.position = worldTarget;
-                App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] {nameContains} polished target={worldTarget} (matched={t.gameObject.name})");
+                Debug.Log($"[OnboardingPreviewStage] {nameContains} polished target={worldTarget} (matched={t.gameObject.name})");
                 return;
             }
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] {nameContains} polished skip — no matching GameObject in prefab.");
+            Debug.Log($"[OnboardingPreviewStage] {nameContains} polished skip — no matching GameObject in prefab.");
         }
 
         // instance 의 renderer bounds bottom-center 를 target 위치로 이동. 가구가 floor 위에 grounded
@@ -725,7 +725,7 @@ namespace App.Bootstrap
             var currentBottomCenter = new Vector3(b.Value.center.x, b.Value.min.y, b.Value.center.z);
             var offset = target - currentBottomCenter;
             inst.transform.position += offset;
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Furniture repositioned {label} target={target} offset={offset}");
+            Debug.Log($"[OnboardingPreviewStage] Furniture repositioned {label} target={target} offset={offset}");
         }
 
         // Furniture 가 화면에 안 보이는 회귀 진단용. final transform / bounds / renderer 상태를 한 줄로 로깅.
@@ -758,7 +758,7 @@ namespace App.Bootstrap
                 var planes = GeometryUtility.CalculateFrustumPlanes(previewCamera);
                 inFrustum = GeometryUtility.TestPlanesAABB(planes, b.Value);
             }
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingPreviewStage] {label} final position={inst.transform.position} {boundsStr} " +
                 $"renderers={rendererEnabled}/{rendererTotal} enabled (activeInHierarchy={rendererInHierarchyActive}) " +
                 $"layer={LayerMask.LayerToName(inst.layer)}/{inst.layer} inFrustum={inFrustum}");
@@ -787,7 +787,7 @@ namespace App.Bootstrap
             }
             if (enabledNow > 0)
             {
-                App.Core.AppLog.Onboarding(
+                Debug.Log(
                     $"[OnboardingPreviewStage] {label} renderers force-enabled — enabledNow={enabledNow} " +
                     $"alreadyEnabled={alreadyEnabled} total={renderers.Length}");
             }
@@ -818,8 +818,8 @@ namespace App.Bootstrap
                     }
                 }
             }
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Existing room surfaces detected floor={floorCount} wall={wallCount}");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Hidden existing walls count={hiddenWalls}");
+            Debug.Log($"[OnboardingPreviewStage] Existing room surfaces detected floor={floorCount} wall={wallCount}");
+            Debug.Log($"[OnboardingPreviewStage] Hidden existing walls count={hiddenWalls}");
         }
 
         // Room shell — fixed coordinate procedural surfaces (back/left/right wall + ceiling + ceiling molding).
@@ -828,13 +828,13 @@ namespace App.Bootstrap
         private void CreateRoomShell()
         {
             if (stageRoot == null) return;
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] PreviewStage coordinate system locked");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Room size width={RoomWidth} depth={RoomDepth} height={RoomHeight}");
+            Debug.Log("[OnboardingPreviewStage] PreviewStage coordinate system locked");
+            Debug.Log($"[OnboardingPreviewStage] Room size width={RoomWidth} depth={RoomDepth} height={RoomHeight}");
 
             // **Warm cream wallpaper tone** — user-spec polish 값 (회색/파랑 회귀 fix).
             var wallColor = new Color(0.93f, 0.88f, 0.78f);
             // ceiling / molding 변수는 ceiling 제거로 unused → 선언 자체 제거. 향후 ceiling 부활 시 재선언.
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Warm wall material applied");
+            Debug.Log("[OnboardingPreviewStage] Warm wall material applied");
 
             // Back wall (+Z, normal -Z 향함 — 카메라 -Z 에서 visible)
             backWallInstance = BuildProceduralQuadSurface(
@@ -843,7 +843,7 @@ namespace App.Bootstrap
                 Quaternion.Euler(0f, 180f, 0f),
                 new Vector3(RoomWidth, RoomHeight, 1f),
                 wallColor);
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Back wall created");
+            Debug.Log("[OnboardingPreviewStage] Back wall created");
 
             // Left wall (-X, normal +X 향함 — room 내부 visible)
             leftWallInstance = BuildProceduralQuadSurface(
@@ -852,7 +852,7 @@ namespace App.Bootstrap
                 Quaternion.Euler(0f, 90f, 0f),
                 new Vector3(RoomDepth, RoomHeight, 1f),
                 wallColor);
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Left wall created");
+            Debug.Log("[OnboardingPreviewStage] Left wall created");
 
             // Right wall (+X, normal -X 향함 — room 내부 visible)
             rightWallInstance = BuildProceduralQuadSurface(
@@ -861,7 +861,7 @@ namespace App.Bootstrap
                 Quaternion.Euler(0f, -90f, 0f),
                 new Vector3(RoomDepth, RoomHeight, 1f),
                 wallColor);
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Right wall created");
+            Debug.Log("[OnboardingPreviewStage] Right wall created");
 
             // Ceiling 제거: 미리보기는 화면 위에서 약간 내려보는 quarter-view 각도라 ceiling 자체가
             // 카메라 frustum 의 상단을 가려 책장/책상/노트북 영역을 좁히는 부작용. 사용자 명시 — preview 모드는
@@ -869,9 +869,9 @@ namespace App.Bootstrap
             // 변수 참조 (Dispose) 호환 위해 null 유지.
             ceilingInstance = null;
 
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 "[OnboardingPreviewStage] Procedural surfaces created back=true left=true right=true ceiling=false");
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Room structure sealed (open-top — ceiling/molding skipped)");
+            Debug.Log("[OnboardingPreviewStage] Room structure sealed (open-top — ceiling/molding skipped)");
         }
 
         // Procedural quad surface — wall/ceiling 공통 builder. stageRoot 자식 (world origin 기준).
@@ -931,7 +931,7 @@ namespace App.Bootstrap
                 new Vector3(trimThickness, trimHeight, RoomDepth),
                 moldingColor);
 
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Ceiling molding created");
+            Debug.Log("[OnboardingPreviewStage] Ceiling molding created");
         }
 
         private void BuildMoldingCube(string name, Vector3 worldPos, Vector3 size, Color color)
@@ -997,7 +997,7 @@ namespace App.Bootstrap
             if (TryApplyFrontalAnchorPose(camGo.transform, out var anchorFov))
             {
                 previewCamera.fieldOfView = anchorFov;
-                App.Core.AppLog.Onboarding(
+                Debug.Log(
                     $"[OnboardingPreviewStage] Camera applied MainScene FrontalAnchor pose — " +
                     $"position={camGo.transform.position} euler={camGo.transform.eulerAngles} fov={anchorFov}");
             }
@@ -1012,13 +1012,13 @@ namespace App.Bootstrap
             }
 
             bool uiExcluded = uiLayer < 0 || (previewCamera.cullingMask & (1 << uiLayer)) == 0;
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingPreviewStage] Final camera position={camGo.transform.position} " +
                 $"euler={camGo.transform.eulerAngles} fov={previewCamera.fieldOfView}");
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingPreviewStage] Camera cullingMask=0x{previewCamera.cullingMask:X} " +
                 $"(PreviewLayer={LayerMask.LayerToName(PreviewLayer)}/{PreviewLayer}, uiLayer={uiLayer})");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] UI layer excluded={uiExcluded}");
+            Debug.Log($"[OnboardingPreviewStage] UI layer excluded={uiExcluded}");
         }
 
         // CameraAnchorsPrefab 안의 FrontalAnchor 자식 찾아 카메라 transform 에 적용.
@@ -1089,7 +1089,7 @@ namespace App.Bootstrap
             fillLight.cullingMask = ~0;
             fillLight.shadows = LightShadows.None;
 
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Cozy lighting preset applied");
+            Debug.Log("[OnboardingPreviewStage] Cozy lighting preset applied");
         }
 
         // theme material 이 broken (Built-in Standard / missing shader) 이면 fallback 사용.
@@ -1111,7 +1111,7 @@ namespace App.Bootstrap
         private void ValidateAndFallbackMaterials(GameObject root)
         {
             if (root == null) return;
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Material validation start");
+            Debug.Log("[OnboardingPreviewStage] Material validation start");
             var renderers = root.GetComponentsInChildren<Renderer>(true);
             int brokenCount = 0;
             int replacedCount = 0;
@@ -1130,7 +1130,7 @@ namespace App.Bootstrap
                         needReplace = true;
                         var matName = shareds[s] != null ? shareds[s].name : "null";
                         var shaderName = shareds[s] != null && shareds[s].shader != null ? shareds[s].shader.name : "null";
-                        App.Core.AppLog.Onboarding(
+                        Debug.Log(
                             $"[OnboardingPreviewStage] Broken material detected renderer={r.gameObject.name} " +
                             $"material={matName} shader={shaderName}");
                     }
@@ -1146,7 +1146,7 @@ namespace App.Bootstrap
                         var kind = ClassifyRenderer(r);
                         instances[s] = GetFallbackMaterial(kind);
                         replacedCount++;
-                        App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Apply fallback material kind={kind} renderer={r.gameObject.name}");
+                        Debug.Log($"[OnboardingPreviewStage] Apply fallback material kind={kind} renderer={r.gameObject.name}");
                     }
                 }
                 r.materials = instances;
@@ -1154,9 +1154,9 @@ namespace App.Bootstrap
             // 정책: 정상 material 은 보존, broken shader (null/Standard/Hidden/InternalErrorShader/Legacy) 만 fallback.
             // fallback 색상도 카테고리별 warm tone (cream/brown/wood/navy/beige) — 회색 X.
             int preservedCount = renderers.Length - brokenCount;
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Preserve original material count={preservedCount} (정상 material 보존)");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Fallback material only for broken shader count={replacedCount}");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Pink/invalid material count={brokenCount} replaced={replacedCount}");
+            Debug.Log($"[OnboardingPreviewStage] Preserve original material count={preservedCount} (정상 material 보존)");
+            Debug.Log($"[OnboardingPreviewStage] Fallback material only for broken shader count={replacedCount}");
+            Debug.Log($"[OnboardingPreviewStage] Pink/invalid material count={brokenCount} replaced={replacedCount}");
         }
 
         private static bool IsBrokenMaterial(Material mat)
@@ -1297,9 +1297,9 @@ namespace App.Bootstrap
             var roomCenter = roomBounds.HasValue ? roomBounds.Value.center : furnCenter;
             var roomSize = roomBounds.HasValue ? roomBounds.Value.size : furnSize;
 
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStageCamera] furnitureBounds center={furnCenter} size={furnSize}");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStageCamera] roomBounds center={roomCenter} size={roomSize}");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStageCamera] excludedFromFit=Wall/Floor count={excludedCount}");
+            Debug.Log($"[OnboardingPreviewStageCamera] furnitureBounds center={furnCenter} size={furnSize}");
+            Debug.Log($"[OnboardingPreviewStageCamera] roomBounds center={roomCenter} size={roomSize}");
+            Debug.Log($"[OnboardingPreviewStageCamera] excludedFromFit=Wall/Floor count={excludedCount}");
 
             // FOV — 42° (사용자 권장 38~48, wide 왜곡 회피 + 가구 자연스러운 표현).
             float fov = 42f;
@@ -1347,16 +1347,16 @@ namespace App.Bootstrap
             // 측면 wall 은 유지 (cozy 느낌).
             HideObstructingWalls(previewCamera.transform.position, lookAt);
 
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Furniture-centered framing applied");
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Camera repositioned for interior view");
-            App.Core.AppLog.Onboarding("[OnboardingPreviewStage] Camera adjusted for frontal quarter view");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Furniture weighted center={weightedCenter}");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStageCamera] lookAt={lookAt}");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStageCamera] cameraPos={previewCamera.transform.position}");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStageCamera] distance={distance:F2}");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Final camera position={previewCamera.transform.position}");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Final camera rotation={previewCamera.transform.rotation.eulerAngles}");
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Final camera fov={fov}");
+            Debug.Log("[OnboardingPreviewStage] Furniture-centered framing applied");
+            Debug.Log("[OnboardingPreviewStage] Camera repositioned for interior view");
+            Debug.Log("[OnboardingPreviewStage] Camera adjusted for frontal quarter view");
+            Debug.Log($"[OnboardingPreviewStage] Furniture weighted center={weightedCenter}");
+            Debug.Log($"[OnboardingPreviewStageCamera] lookAt={lookAt}");
+            Debug.Log($"[OnboardingPreviewStageCamera] cameraPos={previewCamera.transform.position}");
+            Debug.Log($"[OnboardingPreviewStageCamera] distance={distance:F2}");
+            Debug.Log($"[OnboardingPreviewStage] Final camera position={previewCamera.transform.position}");
+            Debug.Log($"[OnboardingPreviewStage] Final camera rotation={previewCamera.transform.rotation.eulerAngles}");
+            Debug.Log($"[OnboardingPreviewStage] Final camera fov={fov}");
         }
 
         // Furniture-weighted center — 카메라 target 계산용.
@@ -1429,7 +1429,7 @@ namespace App.Bootstrap
                     hidden++;
                 }
             }
-            App.Core.AppLog.Onboarding($"[OnboardingPreviewStage] Empty void reduced — hidden obstructing walls count={hidden}");
+            Debug.Log($"[OnboardingPreviewStage] Empty void reduced — hidden obstructing walls count={hidden}");
         }
 
         private static void DisablePreviewOnlyComponents(GameObject root)
@@ -1531,7 +1531,7 @@ namespace App.Bootstrap
             string currentPrefix = ResolveCurrentThemePrefix(themeName);
             if (currentPrefix == null)
             {
-                App.Core.AppLog.Onboarding(
+                Debug.Log(
                     $"[OnboardingPreviewStage] Theme prefix filter skip — theme.name='{themeName}' 에 " +
                     $"매칭되는 prefix 없음. resetRestored={restoredByReset}");
                 // BookshelfRig 정책만 reconcile 하고 종료. (다른 prefix 자식 hide 는 안 함 — 알 수 없으니 전부 visible.)
@@ -1605,7 +1605,7 @@ namespace App.Bootstrap
                 // theme prefix 없음 → generic/base. reset 상태 (visible) 유지.
                 baseKept++;
             }
-            App.Core.AppLog.Onboarding(
+            Debug.Log(
                 $"[OnboardingPreviewStage] Theme prefix filter — current='{currentPrefix}' " +
                 $"resetRestored={restoredByReset} hidden={hiddenCount} " +
                 $"keptOnCurrentPrefix={keptOnCurrentPrefix} baseKept={baseKept}");

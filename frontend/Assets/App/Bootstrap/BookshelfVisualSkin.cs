@@ -187,7 +187,7 @@ namespace App.Bootstrap
     // 에서도 의미 있는 진단이라 보존. (MR #174 beshu #8 / 다른 리뷰어 #2 반영.)
     internal static class VisualSkinLog
     {
-        [System.Diagnostics.Conditional("DOTSHELF_LOG_ALL")]
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
         [System.Diagnostics.Conditional("DOTSHELF_LOG_VISUAL_SKIN")]
         internal static void Verbose(string message)
         {

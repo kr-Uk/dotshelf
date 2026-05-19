@@ -7,8 +7,7 @@ namespace App.Config
 {
     public enum AppApiMode
     {
-        RealApi = 0,
-        MockApi = 1
+        RealApi = 0
     }
 
     [CreateAssetMenu(fileName = "AppApiConfig", menuName = "App/Config/API Config")]
@@ -16,7 +15,7 @@ namespace App.Config
     {
         [Header("Environment")]
         [FormerlySerializedAs("useMockApi")]
-        [Tooltip("API mode. MockApi is honored only in Editor/Development builds; production builds force RealApi.")]
+        [Tooltip("HTTP API mode. For mock servers, keep the same API paths and change only the base URL.")]
         [SerializeField] private AppApiMode apiMode = AppApiMode.RealApi;
         [SerializeField] private string devBaseUrl = ApiEndpointDefaults.DevBaseUrl;
         [SerializeField] private string prodBaseUrl = ApiEndpointDefaults.ProdBaseUrl;
@@ -26,12 +25,9 @@ namespace App.Config
 
         [Header("Request")]
         [SerializeField] private int requestTimeoutSeconds = 10;
-        [Tooltip("Runtime APIManager success/health logs only. Domain trace logs require DOTSHELF_LOG_* or DOTSHELF_LOG_ALL scripting defines.")]
-        [SerializeField] private bool enableVerboseLog;
+        [SerializeField] private bool enableVerboseLog = true;
 
-        public AppApiMode ConfiguredApiMode => NormalizeApiMode(apiMode);
-        public AppApiMode ApiMode => ResolveRuntimeApiMode(ConfiguredApiMode);
-        public bool UsesMockApi => ApiMode == AppApiMode.MockApi;
+        public AppApiMode ApiMode => NormalizeApiMode(apiMode);
         public bool UsesHttpApi => true;
         public string DevBaseUrl => devBaseUrl;
         public string ProdBaseUrl => prodBaseUrl;
@@ -69,15 +65,6 @@ namespace App.Config
         private static AppApiMode NormalizeApiMode(AppApiMode value)
         {
             return Enum.IsDefined(typeof(AppApiMode), value) ? value : AppApiMode.RealApi;
-        }
-
-        private static AppApiMode ResolveRuntimeApiMode(AppApiMode value)
-        {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            return value;
-#else
-            return value == AppApiMode.MockApi ? AppApiMode.RealApi : value;
-#endif
         }
     }
 }

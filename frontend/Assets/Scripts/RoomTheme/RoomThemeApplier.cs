@@ -63,7 +63,7 @@ namespace Dotshelf.Scripts.RoomTheme
             // DecorationItemMarker + drag/select 가능) 으로 통합 처리. 사용자가 자유롭게
             // 옮기거나 삭제 가능. ApplyDecoSpecs 메서드 자체는 retain (legacy / 외부 호출 가능).
 
-            App.Core.AppLog.RoomTheme($"[RoomThemeApplier] Applied theme '{theme.DisplayName}' (assetId={theme.AssetId}).");
+            Debug.Log($"[RoomThemeApplier] Applied theme '{theme.DisplayName}' (assetId={theme.AssetId}).");
         }
 
         // 매칭 패턴은 RoomGameObjectPatterns에 통합 — RoomEditModeController도 같은 패턴 사용.
@@ -182,7 +182,7 @@ namespace Dotshelf.Scripts.RoomTheme
             bool applied = cachedBookshelfGenerator.SetActiveBookshelfDesignStyle(style);
             if (!applied)
             {
-                App.Core.AppLog.RoomTheme($"[RoomThemeApplier] BookshelfGenerator.SetActiveBookshelfDesignStyle({style}) skipped — bookshelf not ready 또는 동일 style. 다음 user 액션 시점에 자연 재동기화.");
+                Debug.Log($"[RoomThemeApplier] BookshelfGenerator.SetActiveBookshelfDesignStyle({style}) skipped — bookshelf not ready 또는 동일 style. 다음 user 액션 시점에 자연 재동기화.");
             }
         }
 
@@ -216,7 +216,7 @@ namespace Dotshelf.Scripts.RoomTheme
             spawned += SpawnDecoSpecs(theme.FloorDecoSpecs, root);
             spawned += SpawnWallDecoSpecs(theme.WallDecoSpecs, root);
 
-            App.Core.AppLog.RoomTheme($"[RoomThemeApplier] Theme deco spawn — total {spawned}/{specCount} (bookshelf={theme.BookshelfDecoSpecs?.Count ?? 0}, floor={theme.FloorDecoSpecs?.Count ?? 0}, wall={theme.WallDecoSpecs?.Count ?? 0}).");
+            Debug.Log($"[RoomThemeApplier] Theme deco spawn — total {spawned}/{specCount} (bookshelf={theme.BookshelfDecoSpecs?.Count ?? 0}, floor={theme.FloorDecoSpecs?.Count ?? 0}, wall={theme.WallDecoSpecs?.Count ?? 0}).");
         }
 
         // themeDecoRoot 가 미설정이면 자동 생성. 부모는 roomRoot 우선 (theme deco spec 의 local

@@ -76,7 +76,7 @@ namespace App.Core
                 yield break;
             }
 
-            using (var request = UnityWebRequestTexture.GetTexture(url, true))
+            using (var request = UnityWebRequestTexture.GetTexture(url))
             {
                 request.timeout = _timeoutSeconds;
                 yield return request.SendWebRequest();

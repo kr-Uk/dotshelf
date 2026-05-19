@@ -48,7 +48,6 @@ namespace BookshelfPorting.Runtime
         private const string RoomThumbnailPngContentType = "image/png";
         private const string RoomThumbnailJpegContentType = "image/jpeg";
         private static readonly int[] RoomThumbnailJpegQualities = { 92, 86, 80, 72, 64 };
-
         // Lifetime: per-controller instance. BE visit endpoint is not strictly
         // idempotent (visit count) so we de-dupe at the FE level — re-entering
         // the same other-user space within a single play session counts once.
@@ -239,18 +238,15 @@ namespace BookshelfPorting.Runtime
                             if (isOtherUserSpace)
                             {
                                 SpaceVisitorOverlayController.Instance?.SetCurrentSpace(space, request);
-                                PrefetchVisibleSpaceAssets(space, () =>
-                                {
-                                    LoadRemoteSpaceLayout(space.Id);
-                                    LoadBookshelfItems(response);
-                                });
+                                PrefetchVisibleSpaceAssets(space.Id, () => LoadRemoteSpaceLayout(space.Id));
                                 RecordVisitOnce(space.Id);
                             }
                             else
                             {
                                 SpaceVisitorOverlayController.Instance?.HideOverlay();
-                                LoadBookshelfItems(response);
                             }
+
+                            LoadBookshelfItems(response);
                         },
                         error => FinishRefresh(false, FormatError(error)));
                 },
@@ -267,9 +263,8 @@ namespace BookshelfPorting.Runtime
             isViewingOtherUserSpace = value;
         }
 
-        private void PrefetchVisibleSpaceAssets(SpaceResponseDto space, Action onCompleted = null)
+        private void PrefetchVisibleSpaceAssets(long spaceId, Action onCompleted = null)
         {
-            var spaceId = space?.Id ?? 0L;
             ClearVisibleSpaceAssetManifests();
             if (client == null || remoteAssetCacheService == null || spaceId <= 0L)
             {
@@ -291,9 +286,8 @@ namespace BookshelfPorting.Runtime
 
                     var roomEditModeController = FindRoomEditModeController();
                     roomEditModeController?.RegisterVisibleSpaceAssetManifests(manifests);
-                    BookshelfSkinResolver.RegisterVisibleAssetManifests(manifests);
-                    roomEditModeController?.ApplyServerSpaceVisuals(space);
-                    StartCoroutine(PrefetchVisibleSpaceAssetManifests(spaceId, manifests, onCompleted));
+                    StartCoroutine(PrefetchVisibleSpaceAssetManifests(spaceId, manifests));
+                    onCompleted?.Invoke();
                 },
                 error =>
                 {
@@ -335,14 +329,10 @@ namespace BookshelfPorting.Runtime
                 });
         }
 
-        private IEnumerator PrefetchVisibleSpaceAssetManifests(
-            long spaceId,
-            IReadOnlyList<DownloadManifestResponseDto> manifests,
-            Action onCompleted = null)
+        private IEnumerator PrefetchVisibleSpaceAssetManifests(long spaceId, IReadOnlyList<DownloadManifestResponseDto> manifests)
         {
             if (manifests == null || manifests.Count == 0)
             {
-                onCompleted?.Invoke();
                 yield break;
             }
 
@@ -370,10 +360,8 @@ namespace BookshelfPorting.Runtime
 
             if (cachedCount > 0)
             {
-                App.Core.AppLog.BookshelfSync($"[BookshelfApiSync] Remote asset cache prefetch completed: spaceId={spaceId}, files={cachedCount}");
+                Debug.Log($"[BookshelfApiSync] Remote asset cache prefetch completed: spaceId={spaceId}, files={cachedCount}");
             }
-
-            onCompleted?.Invoke();
         }
 
         private static void ApplyRoomVisuals(SpaceResponseDto space, bool isReadOnlyPreview)
@@ -1512,7 +1500,7 @@ namespace BookshelfPorting.Runtime
                 thumbnailUploadPending = true;
                 pendingThumbnailUploadSucceeded = onSucceeded;
                 pendingThumbnailUploadFailed = onFailed;
-                App.Core.AppLog.BookshelfSync("[BookshelfApiSync] Room thumbnail upload is in progress; queued latest capture.");
+                Debug.Log("[BookshelfApiSync] Room thumbnail upload is in progress; queued latest capture.");
                 return true;
             }
 
@@ -1627,7 +1615,7 @@ namespace BookshelfPorting.Runtime
                 thumbnail.ContentType,
                 result =>
                 {
-                    App.Core.AppLog.BookshelfSync($"[BookshelfApiSync] Room thumbnail uploaded: key={result?.ThumbnailKey}, url={result?.ThumbnailUrl}");
+                    Debug.Log($"[BookshelfApiSync] Room thumbnail uploaded: key={result?.ThumbnailKey}, url={result?.ThumbnailUrl}");
                     onSucceeded?.Invoke(result);
                     onCompleted?.Invoke();
                 },
@@ -1875,7 +1863,7 @@ namespace BookshelfPorting.Runtime
                     $"[Bookshelf] shelf.SpaceId == shelf.Id ({shelf.Id}) — BE 가 같은 값을 반환 중. " +
                     "/v1/bookshelves/{id}/items 가 spaceId 로 호출되는 것처럼 보일 수 있음. BE 측 점검 필요.");
             }
-            App.Core.AppLog.BookshelfSync($"[Bookshelf] GET /v1/bookshelves/{shelf.Id}/items (spaceId={shelf.SpaceId}, displayOrder={shelf.DisplayOrder})");
+            Debug.Log($"[Bookshelf] GET /v1/bookshelves/{shelf.Id}/items (spaceId={shelf.SpaceId}, displayOrder={shelf.DisplayOrder})");
 
             client.GetBookshelfItems(
                 shelf.Id,
@@ -2030,7 +2018,7 @@ namespace BookshelfPorting.Runtime
 
             if (generator.SetActiveBookshelfDesignStyle(desiredStyle))
             {
-                App.Core.AppLog.BookshelfSync($"[BookshelfApiSync] Re-synced local preview bookshelf style to {desiredStyle} after initial server bookshelf load.");
+                Debug.Log($"[BookshelfApiSync] Re-synced local preview bookshelf style to {desiredStyle} after initial server bookshelf load.");
             }
         }
 
@@ -2428,35 +2416,6 @@ namespace BookshelfPorting.Runtime
             }
         }
 
-        public static void RegisterVisibleAssetManifests(IReadOnlyList<DownloadManifestResponseDto> manifests)
-        {
-            if (manifests == null)
-            {
-                return;
-            }
-
-            var skinIndex = 0;
-            for (var i = 0; i < manifests.Count; i++)
-            {
-                var manifest = manifests[i];
-                if (manifest == null ||
-                    manifest.AssetId <= 0L ||
-                    !string.Equals(manifest.AssetType, "BOOKSHELF_SKIN", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                var style = ResolveStyleFromKey(manifest.Code, manifest.Name, skinIndex);
-                apiStylesByAssetId[manifest.AssetId] = style;
-                if (manifest.InventoryId.HasValue && manifest.InventoryId.Value > 0L)
-                {
-                    apiStylesByInventoryId[manifest.InventoryId.Value] = style;
-                }
-
-                skinIndex++;
-            }
-        }
-
         public static bool HasResolvableInventoryId(BookshelfThemeStyle style)
         {
             return apiSkinInventoryIdsByStyle.TryGetValue(style, out var inventoryId) && inventoryId > 0L;
@@ -2649,39 +2608,8 @@ namespace BookshelfPorting.Runtime
             if (!string.IsNullOrWhiteSpace(key))
             {
                 key = key.Trim().ToLowerInvariant();
-                if (key.Contains("spooky") || key.Contains("halloween") || key.Contains("ghost") || key.Contains("스푸키"))
-                {
-                    style = BookshelfThemeStyle.Spooky;
-                    return true;
-                }
-
-                if (key.Contains("fantasy") || key.Contains("magic") || key.Contains("castle") || key.Contains("판타지"))
-                {
-                    style = BookshelfThemeStyle.Fantasy;
-                    return true;
-                }
-
-                if (key.Contains("space") || key.Contains("cosmos") || key.Contains("galaxy") || key.Contains("우주"))
-                {
-                    style = BookshelfThemeStyle.Space;
-                    return true;
-                }
-
-                if (key.Contains("vintage") || key.Contains("retro") || key.Contains("antique") || key.Contains("빈티지"))
-                {
-                    style = BookshelfThemeStyle.Vintage;
-                    return true;
-                }
-
-                if (key.Contains("deepsea") || key.Contains("deep sea") || key.Contains("underwater") ||
-                    key.Contains("shell") || key.Contains("ocean") || key.Contains("sea") || key.Contains("깊은바다") ||
-                    key.Contains("깊은 바다"))
-                {
-                    style = BookshelfThemeStyle.DeepSea;
-                    return true;
-                }
-
-                if (key.Contains("dark") || key.Contains("black") || key.Contains("night"))
+                if (key.Contains("dark") || key.Contains("black") || key.Contains("night") ||
+                    key.Contains("underwater") || key.Contains("shell") || key.Contains("ocean") || key.Contains("sea"))
                 {
                     style = BookshelfThemeStyle.Dark;
                     return true;
