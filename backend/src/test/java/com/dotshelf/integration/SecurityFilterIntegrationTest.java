@@ -1,14 +1,21 @@
 package com.dotshelf.integration;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -20,6 +27,8 @@ import com.dotshelf.support.TestFixtures;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class SecurityFilterIntegrationTest {
+
+    private static final String APPLE_ORIGIN = "https://appleid.apple.com";
 
     @Autowired
     private MockMvc mockMvc;
@@ -67,7 +76,32 @@ class SecurityFilterIntegrationTest {
                 .andExpect(jsonPath("$.code").value("A003"));
     }
 
+    @Test
+    @DisplayName("Apple form_post 콜백은 appleid.apple.com Origin을 CORS에서 허용한다")
+    void appleDesktopCallbackFromAppleOrigin_passesCorsFilter() throws Exception {
+        String state = desktopAppleState("csrf-token", "http://127.0.0.1:18080/dotshelf/oauth/callback/");
+
+        mockMvc.perform(post("/v1/auth/apple/desktop-callback")
+                        .header(HttpHeaders.ORIGIN, APPLE_ORIGIN)
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("code", "apple-code")
+                        .param("state", state))
+                .andExpect(status().isFound())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, APPLE_ORIGIN))
+                .andExpect(header().string(
+                        HttpHeaders.LOCATION,
+                        "http://127.0.0.1:18080/dotshelf/oauth/callback/?code=apple-code&state=" + state
+                ));
+    }
+
     private String uniqueNickname(String prefix) {
         return prefix + "-" + System.nanoTime();
+    }
+
+    private String desktopAppleState(String csrfToken, String loopbackRedirectUri) {
+        String encodedLoopbackRedirectUri = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(loopbackRedirectUri.getBytes(StandardCharsets.UTF_8));
+        return csrfToken + "." + encodedLoopbackRedirectUri;
     }
 }
