@@ -2260,9 +2260,15 @@ namespace BookshelfPorting.Runtime
                 return VisibilityScope.Private;
             }
 
-            return string.Equals(value, "FOLLOWERS", StringComparison.OrdinalIgnoreCase)
-                ? VisibilityScope.Followers
-                : VisibilityScope.Public;
+            // MUTUAL = BE 정식값(맞팔). FOLLOWERS / FOLLOWERS_ONLY 는 레거시 별칭 — 함께 수용.
+            if (string.Equals(value, "MUTUAL", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "FOLLOWERS", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "FOLLOWERS_ONLY", StringComparison.OrdinalIgnoreCase))
+            {
+                return VisibilityScope.Followers;
+            }
+
+            return VisibilityScope.Public;
         }
 
         private static string ToApiAlignment(ShelfSectionAlignment alignment)
