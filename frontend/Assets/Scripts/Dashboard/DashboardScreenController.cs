@@ -392,6 +392,12 @@ namespace Dotshelf.Scripts.Dashboard
             ReloadDashboardIfReady();
         }
 
+        // 팔로워/팔로잉 목록의 "방문하기" 클릭 시 발행 — 인자는 대상 spaceId.
+        // BookshelfExperienceManager 가 구독해서 노트북 "다른 공간" 탭과 동일하게
+        // EnterSpaceById 로 실제 방(3D 공간) 으로 이동시킨다. 구독자가 없으면
+        // OnVisitUser 가 fallback 으로 dashboard 데이터만 reload.
+        public event Action<long> SpaceVisitRequested;
+
         private void ReloadDashboardIfReady()
         {
             if (!Application.isPlaying ||
@@ -2062,6 +2068,20 @@ namespace Dotshelf.Scripts.Dashboard
             {
                 return;
             }
+
+            // 노트북 "다른 공간" 탭 방문하기와 동일한 효과 — 실제 방(3D 공간) 으로 이동.
+            // BookshelfExperienceManager 가 SpaceVisitRequested 를 받아 EnterSpaceById 로
+            // 방을 로드 → CompleteVisitedSpaceLoad → FocusMainView 로 방문 공간에 진입한다.
+            // 이전엔 여기서 loadDashboardUseCase.Execute 만 호출해 dashboard 데이터만 갱신되고
+            // 방으로는 넘어가지 않던 회귀.
+            if (SpaceVisitRequested != null)
+            {
+                SpaceVisitRequested.Invoke(targetSpaceId);
+                return;
+            }
+
+            // fallback — SpaceVisitRequested 구독자가 없는 경우 (standalone dashboard 등).
+            // 방 이동 없이 기존처럼 dashboard 데이터만 visitor 모드로 reload.
             viewMode = ViewMode.Visitor;
             visitedSpaceId = targetSpaceId;
             ApplyViewMode();

@@ -532,6 +532,17 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private NotebookScreenController notebookScreenController = null;
         [SerializeField] private NotebookUiSceneLoader notebookUiSceneLoader = null;
         private NotebookScreenController subscribedNotebookScreenController;
+        private DashboardScreenController subscribedDashboardController;
+
+        // 다른 사용자 공간 방문을 어디서 시작했는지 — 방문 종료(뒤로가기) 시 복귀 지점 결정.
+        //   OtherSpacesNotebook: 노트북 "다른 공간" 탭에서 방문 → 종료 시 노트북으로 복귀
+        //   Guestbook:           방명록 팔로워/팔로잉 목록에서 방문 → 종료 시 방명록으로 복귀
+        private enum VisitedSpaceReturnTarget
+        {
+            OtherSpacesNotebook,
+            Guestbook,
+        }
+        private VisitedSpaceReturnTarget visitedSpaceReturnTarget = VisitedSpaceReturnTarget.OtherSpacesNotebook;
 
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
         private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
@@ -2228,6 +2239,7 @@ namespace BookshelfPorting.Runtime
             }
 
             DetachNotebookApiCallbacks();
+            DetachDashboardCallbacks();
             CancelBookAddCoverLoads();
             ClearBookAddCoverSpriteCache();
             if (pendingAdvertisementBookAddPlacementCoroutine != null)
@@ -6332,12 +6344,20 @@ namespace BookshelfPorting.Runtime
             SpaceVisitorOverlayController.Instance?.SetLoadingBlocked(false);
             SetNotebookScreenSuppressed(false);
 
-            openOtherSpacesTabAfterNotebookFocus = true;
             if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
             {
                 bookshelfApiSyncController.RefreshFromServer(HandleReturnFromVisitedSpaceRefreshCompleted);
             }
 
+            // 방문 진입점에 따라 복귀 — 방명록에서 방문했으면 방명록 포커스로, 노트북 "다른 공간"
+            // 탭에서 방문했으면 노트북 "다른 공간" 탭으로.
+            if (visitedSpaceReturnTarget == VisitedSpaceReturnTarget.Guestbook)
+            {
+                FocusGuestbook();
+                return;
+            }
+
+            openOtherSpacesTabAfterNotebookFocus = true;
             OpenOtherSpacesNotebookDirect();
         }
 
@@ -6513,7 +6533,11 @@ namespace BookshelfPorting.Runtime
 
             if (dashboardRefreshButton != null)
             {
-                var isDashboardFocused = CurrentFocusArea == ExperienceFocusArea.Guestbook && ShouldUseExternalDashboardPanel;
+                // 상대방 공간 방문 중에는 새로고침 버튼 숨김 — 방문자는 자기 데이터를 갱신하는
+                // 맥락이 아니므로 own-space 방명록 포커스일 때만 노출.
+                var isDashboardFocused = CurrentFocusArea == ExperienceFocusArea.Guestbook
+                                         && ShouldUseExternalDashboardPanel
+                                         && !IsViewingOtherUserSpace();
                 dashboardRefreshButton.gameObject.SetActive(isDashboardFocused);
                 if (isDashboardFocused)
                 {
@@ -15425,6 +15449,7 @@ namespace BookshelfPorting.Runtime
 
             if (controller != null)
             {
+                AttachDashboardCallbacks(controller);
                 SyncExternalDashboardTarget(controller);
                 controller.SetDimmed(!isFocused);
                 controller.SetInteractionEnabled(isFocused);
@@ -17210,6 +17235,36 @@ namespace BookshelfPorting.Runtime
             subscribedNotebookScreenController = null;
         }
 
+        // 대시보드(방명록) 컨트롤러의 SpaceVisitRequested 이벤트 구독. 외부 dashboard 패널은
+        // SetExternalDashboardPanelPresentation 에서 매 프레임 resolve 되므로 동일 controller
+        // 재구독을 가드. AttachNotebookApiCallbacks 와 동일 패턴.
+        private void AttachDashboardCallbacks(DashboardScreenController controller)
+        {
+            if (subscribedDashboardController == controller)
+            {
+                return;
+            }
+
+            DetachDashboardCallbacks();
+
+            subscribedDashboardController = controller;
+            if (subscribedDashboardController != null)
+            {
+                subscribedDashboardController.SpaceVisitRequested += HandleDashboardSpaceVisitRequested;
+            }
+        }
+
+        private void DetachDashboardCallbacks()
+        {
+            if (subscribedDashboardController == null)
+            {
+                return;
+            }
+
+            subscribedDashboardController.SpaceVisitRequested -= HandleDashboardSpaceVisitRequested;
+            subscribedDashboardController = null;
+        }
+
         private void HandleNotebookBookAddedToShelfThroughApi()
         {
             if (bookshelfApiSyncController == null || !bookshelfApiSyncController.IsServerSyncEnabled)
@@ -17266,7 +17321,30 @@ namespace BookshelfPorting.Runtime
             GetExternalDashboardController()?.RefreshAll();
         }
 
+        // 노트북 "다른 공간" 탭 visit 요청 진입점.
         private void HandleNotebookSpaceVisitRequested(NotebookSpaceVisitRequest request)
+        {
+            visitedSpaceReturnTarget = VisitedSpaceReturnTarget.OtherSpacesNotebook;
+            EnterVisitedSpaceFromRequest(request);
+        }
+
+        // 대시보드(방명록) 팔로워/팔로잉 목록의 "방문하기" 진입점. DashboardScreenController.
+        // SpaceVisitRequested 이벤트가 spaceId 만 전달하므로 request 를 구성해 공통 경로로 위임.
+        private void HandleDashboardSpaceVisitRequested(long spaceId)
+        {
+            if (spaceId <= 0)
+            {
+                return;
+            }
+
+            visitedSpaceReturnTarget = VisitedSpaceReturnTarget.Guestbook;
+            EnterVisitedSpaceFromRequest(new NotebookSpaceVisitRequest { SpaceId = spaceId });
+        }
+
+        // 노트북 "다른 공간" 탭 / 대시보드 팔로워·팔로잉 목록 양쪽 "방문하기" 의 공통 진입점.
+        // EnterSpaceById 로 대상 방(3D 공간) 을 로드하고, 완료 시 HandleVisitedSpaceLoadCompleted
+        // → CompleteVisitedSpaceLoad → FocusMainView 로 방문 공간에 진입한다.
+        private void EnterVisitedSpaceFromRequest(NotebookSpaceVisitRequest request)
         {
             var spaceId = request?.SpaceId ?? 0L;
             if (spaceId <= 0)
@@ -17353,7 +17431,12 @@ namespace BookshelfPorting.Runtime
                 SpaceVisitorOverlayController.Instance?.HideOverlay();
                 var detail = NormalizeMutationErrorMessage(message);
                 ShowBookshelfTransientStatus("공간 방문 실패", detail, true);
-                OpenOtherSpacesNotebookDirect();
+                // 방명록에서 방문 시도 → 실패 시 사용자는 자기 공간 방명록 포커스에 그대로 있으므로
+                // 노트북으로 끌고가지 않는다. 노트북 "다른 공간" 탭에서 방문한 경우만 노트북 재오픈.
+                if (visitedSpaceReturnTarget != VisitedSpaceReturnTarget.Guestbook)
+                {
+                    OpenOtherSpacesNotebookDirect();
+                }
                 RefreshHud();
                 return;
             }
