@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using App.Bootstrap.Exterior;
 using App.Infrastructure.Catalogs;
@@ -66,6 +67,63 @@ namespace Dotshelf.Scripts.RoomTheme
             Debug.Log($"[RoomThemeApplier] Applied theme '{theme.DisplayName}' (assetId={theme.AssetId}).");
         }
 
+        public bool ApplyFixedCategory(RoomThemeAsset theme, CustomizationCategory category)
+        {
+            if (theme == null)
+            {
+                return false;
+            }
+
+            switch (category)
+            {
+                case CustomizationCategory.Wallpaper:
+                    return ApplyThemeMaterial(
+                        theme.WallMaterial != null
+                            ? theme.WallMaterial
+                            : (materialFactory != null ? materialFactory.GetWallMaterial() : null),
+                        RoomGameObjectPatterns.IsWallpaperSurfaceName,
+                        normalizeWallpaper: true,
+                        label: "Wallpaper");
+                case CustomizationCategory.Floor:
+                    return ApplyThemeMaterial(
+                        theme.FloorMaterial != null
+                            ? theme.FloorMaterial
+                            : (materialFactory != null ? materialFactory.GetFloorMaterial() : null),
+                        name => name == RoomGameObjectPatterns.Floor,
+                        normalizeWallpaper: false,
+                        label: "Floor");
+                case CustomizationCategory.DashboardSkin:
+                    return ApplyThemeMaterial(
+                        theme.DashboardMaterial,
+                        name => RoomGameObjectPatterns.MatchesPrefix(name, RoomGameObjectPatterns.Dashboard),
+                        normalizeWallpaper: false,
+                        label: "Dashboard");
+                case CustomizationCategory.InteriorLight:
+                    RenderSettings.ambientLight = theme.AmbientTint;
+                    RenderSettings.ambientIntensity = theme.AmbientIntensity;
+                    return true;
+                case CustomizationCategory.ExteriorLight:
+                    if (theme.DefaultExterior != null && exteriorApplier != null)
+                    {
+                        exteriorApplier.Apply(theme.DefaultExterior);
+                        return true;
+                    }
+
+                    if (directionalLight == null)
+                    {
+                        return false;
+                    }
+
+                    directionalLight.color = theme.ExteriorLightColor;
+                    directionalLight.useColorTemperature = true;
+                    directionalLight.colorTemperature = theme.ExteriorLightKelvin;
+                    directionalLight.intensity = theme.ExteriorLightIntensity;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         // 매칭 패턴은 RoomGameObjectPatterns에 통합 — RoomEditModeController도 같은 패턴 사용.
         // BookshelfGenerator의 GameObject 이름이 바뀌면 그 한 파일만 갱신.
 
@@ -73,6 +131,48 @@ namespace Dotshelf.Scripts.RoomTheme
         // 카테고리별 visual swap 시 GameObject.Find/FindObjectsByType 매번 호출 안 하도록).
         public Transform RoomRoot => roomRoot;
         public Light DirectionalLight => directionalLight;
+
+        private bool ApplyThemeMaterial(Material material, Func<string, bool> matches, bool normalizeWallpaper, string label)
+        {
+            if (roomRoot == null || material == null || matches == null)
+            {
+                return false;
+            }
+
+            var swapped = 0;
+            var renderers = roomRoot.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                var objectName = renderer.gameObject.name;
+                if (!matches(objectName))
+                {
+                    continue;
+                }
+
+                renderer.sharedMaterial = material;
+                swapped++;
+                if (normalizeWallpaper)
+                {
+                    if (RoomGameObjectPatterns.IsCeilingName(objectName))
+                    {
+                        WallTilingNormalizer.ApplyHorizontalSurface(renderer, wallPatternWorldSize);
+                    }
+                    else
+                    {
+                        WallTilingNormalizer.Apply(renderer, wallPatternWorldSize);
+                    }
+                }
+            }
+
+            if (swapped == 0)
+            {
+                Debug.LogWarning($"[RoomThemeApplier] {label} category material matched 0 renderer(s).");
+                return false;
+            }
+
+            return true;
+        }
 
         private void ApplyMaterials(RoomThemeAsset theme)
         {

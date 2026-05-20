@@ -46,6 +46,10 @@ class ThemeFixedDefaultsMigrationTest {
         assertThat(themeTargetId("THEME_SPACE", "interiorLight")).isEqualTo(interiorLightAssetId);
         assertThat(themeTargetId("THEME_SPACE", "exteriorLight")).isEqualTo(exteriorLightAssetId);
         assertThat(themeTargetId("THEME_FANTASY", "dashboard")).isEqualTo(assetId("FANTASY_DASHBOARD_SKIN"));
+        assertThat(assetText("SPACE_WALLPAPER", "unity_resource_key"))
+                .isEqualTo("Assets/App/Composition/Configs/RoomThemes/RoomTheme_Space.asset#wallpaper");
+        assertThat(assetText("FANTASY_WALLPAPER", "unity_resource_key"))
+                .isEqualTo("Assets/App/Composition/Configs/RoomThemes/RoomTheme_Fantasy.asset#wallpaper");
         assertThat(assetText("SPACE_FLOOR", "unity_resource_key")).isEqualTo("legacy:space-floor");
         assertThat(assetText("SPACE_FLOOR", "asset_url")).isEqualTo("https://cdn.example.com/space-floor.glb");
         assertThat(assetText("FANTASY_DASHBOARD_SKIN", "unity_resource_key")).isNotBlank();
