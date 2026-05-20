@@ -49,6 +49,7 @@ namespace App.Bootstrap
         // LiberationSans SDF (which has no Hangul glyphs and prints □ for them).
         private const string PreferredKoreanFontAssetName = "NotoSansKR-Regular";
         private const string FallbackKoreanFontAssetName = "NOTOSANSKR SDF";
+        private const string HiddenDecorateInventoryThemeTag = "DeepSea";
 
         // Stack the decoration button below SettingsScreenController's two buttons.
         // Mirrors SettingsButtonWidth/Height/Margin/StackGap so the column is even.
@@ -1856,6 +1857,19 @@ namespace App.Bootstrap
                 .ToUpperInvariant();
         }
 
+        private static bool IsHiddenDecorateInventoryThemeText(string value)
+        {
+            if (ThemeTagsEqual(value, HiddenDecorateInventoryThemeTag))
+            {
+                return true;
+            }
+
+            var normalized = NormalizeIdentifier(value);
+            return normalized.Contains("DEEPSEA") ||
+                   normalized.Contains("UNDERWATER") ||
+                   normalized.Contains("깊은바다");
+        }
+
         private static CustomizationCategory ResolveRemotePlacementCategory(AssetResponseDto asset)
         {
             switch (NormalizeIdentifier(asset?.AssetType))
@@ -2786,12 +2800,22 @@ namespace App.Bootstrap
             for (var i = 0; i < inventoryEntries.Count; i++)
             {
                 var entry = inventoryEntries[i];
+                if (ShouldHideRemoteInventoryEntryFromInventory(entry))
+                {
+                    continue;
+                }
+
                 if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag))
                 {
                     continue;
                 }
 
                 if (ShouldSuppressRemoteCatalogDuplicate(entry))
+                {
+                    continue;
+                }
+
+                if (ShouldHideRemoteFurnitureSlotForVisibleLocalCatalog(entry))
                 {
                     continue;
                 }
@@ -2821,6 +2845,7 @@ namespace App.Bootstrap
                 {
                     var entry = catalog.Entries[i];
                     if (entry == null) continue;
+                    if (ShouldHideLocalCustomizationEntryFromInventory(entry)) continue;
                     if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag)) continue;
                     BuildCustomizationSlot(parent, slotIndex, category, entry);
                     slotIndex++;
@@ -2830,12 +2855,22 @@ namespace App.Bootstrap
             for (var i = 0; i < inventoryEntries.Count; i++)
             {
                 var entry = inventoryEntries[i];
+                if (ShouldHideRemoteInventoryEntryFromInventory(entry))
+                {
+                    continue;
+                }
+
                 if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag))
                 {
                     continue;
                 }
 
                 if (ShouldSuppressRemoteCatalogDuplicate(entry))
+                {
+                    continue;
+                }
+
+                if (ShouldHideRemoteFurnitureSlotForVisibleLocalCatalog(entry))
                 {
                     continue;
                 }
@@ -2883,9 +2918,10 @@ namespace App.Bootstrap
             {
                 var entry = catalog.Entries[i];
                 if (entry == null) continue;
+                if (ShouldHideLocalCustomizationEntryFromInventory(entry)) continue;
                 // 상단 메뉴 테마 필터 적용. 빈 ThemeTag (legacy/공통) 는 항상 통과.
                 if (applyThemeFilter && !RoomEditThemeFilter.MatchesActive(entry.ThemeTag)) continue;
-                BuildCustomizationSlot(parent, i, category, entry);
+                BuildCustomizationSlot(parent, rendered, category, entry);
                 rendered++;
             }
             Debug.Log($"[RoomEditModeController] Theme={RoomEditThemeFilter.DescribeActive()}, Category={category}, ResultCount={rendered}");
@@ -2902,6 +2938,11 @@ namespace App.Bootstrap
             for (var i = 0; i < inventoryEntries.Count; i++)
             {
                 var entry = inventoryEntries[i];
+                if (ShouldHideRemoteInventoryEntryFromInventory(entry))
+                {
+                    continue;
+                }
+
                 if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag))
                 {
                     continue;
@@ -2917,9 +2958,79 @@ namespace App.Bootstrap
                     continue;
                 }
 
+                if (ShouldHideRemoteFurnitureSlotForVisibleLocalCatalog(entry))
+                {
+                    continue;
+                }
+
                 BuildInventorySlot(parent, slotIndex, entry);
                 slotIndex++;
             }
+        }
+
+        private static bool ShouldHideLocalCustomizationEntryFromInventory(CustomizationEntry entry)
+        {
+            return entry != null &&
+                   IsHiddenDecorateInventoryThemeText(string.Concat(entry.ThemeTag, " ", entry.DisplayName));
+        }
+
+        private static bool ShouldHideRemoteInventoryEntryFromInventory(InventoryEntry entry)
+        {
+            if (!entry.IsRemoteAsset)
+            {
+                return false;
+            }
+
+            return IsHiddenDecorateInventoryThemeText(
+                string.Concat(entry.ThemeTag, " ", entry.DisplayName, " ", entry.SourceAssetPath));
+        }
+
+        private bool ShouldHideRemoteFurnitureSlotForVisibleLocalCatalog(InventoryEntry entry)
+        {
+            if (!TryResolveRemoteCustomizationCategory(entry, out var category))
+            {
+                return false;
+            }
+
+            var catalog = LoadCategoryCatalog(category);
+            if (catalog == null || catalog.Entries == null)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < catalog.Entries.Count; i++)
+            {
+                if (DoesRemoteFurnitureSlotDuplicateVisibleLocalTheme(category, entry, catalog.Entries[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool DoesRemoteFurnitureSlotDuplicateVisibleLocalTheme(
+            CustomizationCategory category,
+            InventoryEntry remoteEntry,
+            CustomizationEntry catalogEntry)
+        {
+            if (!remoteEntry.IsRemoteAsset || catalogEntry == null)
+            {
+                return false;
+            }
+
+            if (ShouldHideLocalCustomizationEntryFromInventory(catalogEntry))
+            {
+                return false;
+            }
+
+            if (!TryResolveRemoteCustomizationCategory(remoteEntry, out var remoteCategory) ||
+                remoteCategory != category)
+            {
+                return false;
+            }
+
+            return ThemeTagsEqual(remoteEntry.ThemeTag, catalogEntry.ThemeTag);
         }
 
         private bool ShouldSuppressRemoteCatalogDuplicate(InventoryEntry entry)
@@ -3595,8 +3706,20 @@ namespace App.Bootstrap
             {
                 var theme = themeCatalog.Entries[i];
                 if (theme == null) continue;
+                if (ShouldHideThemeFromInventory(theme)) continue;
                 BuildThemeSlot(parent, i, theme);
             }
+        }
+
+        private static bool ShouldHideThemeFromInventory(RoomThemeAsset theme)
+        {
+            if (theme == null)
+            {
+                return false;
+            }
+
+            return IsHiddenDecorateInventoryThemeText(
+                string.Concat(ResolveThemeFilterTag(theme), " ", theme.DisplayName, " ", theme.name));
         }
 
         private void BuildThemeSlot(Transform parent, int slotIndex, RoomThemeAsset theme)

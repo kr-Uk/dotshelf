@@ -661,6 +661,76 @@ namespace App.Tests.EditMode.Notebook
         }
 
         [Test]
+        public void DecorateInventory_HidesDeepSeaLocalCatalogEntry()
+        {
+            var catalogEntry = CreateCustomizationEntry(300020L, "깊은바다 책장", "DeepSea");
+
+            Assert.IsTrue(InvokeShouldHideLocalCustomizationEntryFromInventory(catalogEntry));
+        }
+
+        [Test]
+        public void DecorateInventory_HidesRemoteDeepSeaThemeEntry()
+        {
+            var remoteEntry = CreateInventoryEntry(remoteAssetId: 900123L, remoteInventoryId: 901L);
+            SetEntryField(remoteEntry, "IsRemoteAsset", true);
+            SetEntryField(remoteEntry, "DisplayName", "Underwater Shell Bookshelf");
+            SetEntryField(remoteEntry, "ThemeTag", "UnderwaterShell");
+
+            Assert.IsTrue(InvokeShouldHideRemoteInventoryEntryFromInventory(remoteEntry));
+        }
+
+        [Test]
+        public void DecorateThemeSlots_HidesDeepSeaTheme()
+        {
+            var theme = ScriptableObject.CreateInstance<RoomThemeAsset>();
+            try
+            {
+                SetField(theme, "assetId", 300000L);
+                SetField(theme, "displayName", "깊은바다");
+
+                Assert.IsTrue(InvokeShouldHideThemeFromInventory(theme));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(theme);
+            }
+        }
+
+        [Test]
+        public void RemoteFixedFurnitureSlot_HidesWhenVisibleLocalThemeExists()
+        {
+            var remoteEntry = CreateInventoryEntry(remoteAssetId: 900123L, remoteInventoryId: 901L);
+            SetEntryField(remoteEntry, "IsRemoteAsset", true);
+            SetEntryField(remoteEntry, "PlacementCategory", CustomizationCategory.Desk);
+            SetEntryField(remoteEntry, "ThemeTag", "Fantasy");
+            SetEntryField(remoteEntry, "ServerAssetType", "DESK_SET");
+
+            var catalogEntry = CreateCustomizationEntry(400030L, "판타지 책상", "Fantasy");
+
+            Assert.IsTrue(InvokeDoesRemoteFurnitureSlotDuplicateVisibleLocalTheme(
+                CustomizationCategory.Desk,
+                remoteEntry,
+                catalogEntry));
+        }
+
+        [Test]
+        public void RemoteFixedFurnitureSlot_DoesNotUseHiddenDeepSeaLocalAsVisibleDuplicate()
+        {
+            var remoteEntry = CreateInventoryEntry(remoteAssetId: 900123L, remoteInventoryId: 901L);
+            SetEntryField(remoteEntry, "IsRemoteAsset", true);
+            SetEntryField(remoteEntry, "PlacementCategory", CustomizationCategory.Desk);
+            SetEntryField(remoteEntry, "ThemeTag", "DeepSea");
+            SetEntryField(remoteEntry, "ServerAssetType", "DESK_SET");
+
+            var catalogEntry = CreateCustomizationEntry(300030L, "깊은바다 책상", "DeepSea");
+
+            Assert.IsFalse(InvokeDoesRemoteFurnitureSlotDuplicateVisibleLocalTheme(
+                CustomizationCategory.Desk,
+                remoteEntry,
+                catalogEntry));
+        }
+
+        [Test]
         public void ReloadRoomState_SkipsApplyWhenEditModeHasPendingVisualChange()
         {
             var controller = CreateController();
@@ -1186,6 +1256,45 @@ namespace App.Tests.EditMode.Notebook
         {
             var method = ControllerType.GetMethod(
                 "DoesRemoteInventoryEntryMatchCatalogEntry",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.IsNotNull(method);
+            return (bool)method.Invoke(null, new object[] { category, remoteEntry, catalogEntry });
+        }
+
+        private static bool InvokeShouldHideLocalCustomizationEntryFromInventory(CustomizationEntry entry)
+        {
+            var method = ControllerType.GetMethod(
+                "ShouldHideLocalCustomizationEntryFromInventory",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.IsNotNull(method);
+            return (bool)method.Invoke(null, new object[] { entry });
+        }
+
+        private static bool InvokeShouldHideRemoteInventoryEntryFromInventory(object remoteEntry)
+        {
+            var method = ControllerType.GetMethod(
+                "ShouldHideRemoteInventoryEntryFromInventory",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.IsNotNull(method);
+            return (bool)method.Invoke(null, new[] { remoteEntry });
+        }
+
+        private static bool InvokeShouldHideThemeFromInventory(RoomThemeAsset theme)
+        {
+            var method = ControllerType.GetMethod(
+                "ShouldHideThemeFromInventory",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.IsNotNull(method);
+            return (bool)method.Invoke(null, new object[] { theme });
+        }
+
+        private static bool InvokeDoesRemoteFurnitureSlotDuplicateVisibleLocalTheme(
+            CustomizationCategory category,
+            object remoteEntry,
+            CustomizationEntry catalogEntry)
+        {
+            var method = ControllerType.GetMethod(
+                "DoesRemoteFurnitureSlotDuplicateVisibleLocalTheme",
                 BindingFlags.Static | BindingFlags.NonPublic);
             Assert.IsNotNull(method);
             return (bool)method.Invoke(null, new object[] { category, remoteEntry, catalogEntry });
