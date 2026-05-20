@@ -17353,6 +17353,7 @@ namespace BookshelfPorting.Runtime
                 SpaceVisitorOverlayController.Instance?.HideOverlay();
                 var detail = NormalizeMutationErrorMessage(message);
                 ShowBookshelfTransientStatus("공간 방문 실패", detail, true);
+                bookshelfApiSyncController?.RefreshFromServer(HandleReturnFromVisitedSpaceRefreshCompleted);
                 OpenOtherSpacesNotebookDirect();
                 RefreshHud();
                 return;

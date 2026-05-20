@@ -100,6 +100,7 @@ namespace App.Application.Notebook
     public sealed class NotebookAssetDownloadManifestResult
     {
         public long AssetId { get; set; }
+        public long? InventoryId { get; set; }
         public string Code { get; set; }
         public string Name { get; set; }
         public string AssetType { get; set; }
