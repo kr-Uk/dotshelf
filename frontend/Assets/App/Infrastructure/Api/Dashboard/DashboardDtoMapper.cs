@@ -87,6 +87,7 @@ namespace App.Infrastructure.Api.Dashboard
                 currentFloorInventoryId: dto.CurrentFloorInventoryId,
                 currentDeskInventoryId: dto.CurrentDeskInventoryId,
                 currentDashboardInventoryId: dto.CurrentDashboardInventoryId,
+                currentNotebookInventoryId: dto.CurrentNotebookInventoryId,
                 currentInteriorLightInventoryId: dto.CurrentInteriorLightInventoryId,
                 currentExteriorLightInventoryId: dto.CurrentExteriorLightInventoryId);
         }

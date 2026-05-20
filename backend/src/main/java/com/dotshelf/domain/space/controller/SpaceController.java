@@ -229,6 +229,15 @@ public class SpaceController {
         return ApiResponse.success(spaceService.changeDashboard(userId, request));
     }
 
+    @Operation(summary = "노트북 오브젝트 변경", description = "현재 사용자의 공간 노트북 오브젝트를 지정한 인벤토리 에셋으로 변경하거나 기본값으로 되돌립니다.")
+    @PatchMapping("/me/notebook")
+    public ApiResponse<SpaceMutationResponse> changeNotebook(
+            @CurrentUser Long userId,
+            @RequestBody CategoryInventoryRequest request
+    ) {
+        return ApiResponse.success(spaceService.changeNotebook(userId, request));
+    }
+
     @Operation(summary = "실내 조명 변경", description = "현재 사용자의 공간 실내 조명을 지정한 인벤토리 에셋으로 변경하거나 기본값으로 되돌립니다.")
     @PatchMapping("/me/interior-light")
     public ApiResponse<SpaceMutationResponse> changeInteriorLight(

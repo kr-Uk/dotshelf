@@ -12,6 +12,7 @@ namespace App.Infrastructure.Mock.Dashboard
         public static long? CurrentFloorInventoryId;
         public static long? CurrentDeskInventoryId = 200030L;
         public static long? CurrentDashboardInventoryId;
+        public static long? CurrentNotebookInventoryId;
         public static long? CurrentInteriorLightInventoryId;
         public static long? CurrentExteriorLightInventoryId;
 
@@ -21,6 +22,7 @@ namespace App.Infrastructure.Mock.Dashboard
             CurrentFloorInventoryId = null;
             CurrentDeskInventoryId = null;
             CurrentDashboardInventoryId = null;
+            CurrentNotebookInventoryId = null;
             CurrentInteriorLightInventoryId = null;
             CurrentExteriorLightInventoryId = null;
         }
@@ -80,6 +82,10 @@ namespace App.Infrastructure.Mock.Dashboard
         public void ChangeDashboard(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
         {
             MockSpaceCustomizationState.CurrentDashboardInventoryId = inventoryId; onSuccess?.Invoke(false);
+        }
+        public void ChangeNotebook(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            MockSpaceCustomizationState.CurrentNotebookInventoryId = inventoryId; onSuccess?.Invoke(false);
         }
         public void ChangeInteriorLight(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
         {

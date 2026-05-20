@@ -625,6 +625,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("currentDashboardInventoryId")]
         public long? CurrentDashboardInventoryId { get; set; }
 
+        [JsonProperty("currentNotebookInventoryId")]
+        public long? CurrentNotebookInventoryId { get; set; }
+
         [JsonProperty("currentInteriorLightInventoryId")]
         public long? CurrentInteriorLightInventoryId { get; set; }
 

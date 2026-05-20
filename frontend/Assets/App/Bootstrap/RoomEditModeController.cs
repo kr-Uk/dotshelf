@@ -1271,14 +1271,6 @@ namespace App.Bootstrap
                     continue;
                 }
 
-                // Notebook does not have a persisted space inventory field/API yet.
-                // Keep local Notebook catalog previews, but do not surface remote
-                // NOTEBOOK assets as selectable server-backed customization entries.
-                if (IsUnsupportedRemoteInventoryAsset(asset))
-                {
-                    continue;
-                }
-
                 var displayName = FirstNonEmpty(asset?.Name, asset?.Code, $"Asset {item.AssetId}");
                 if (TryBindOwnedLocalAsset(item, asset, displayName))
                 {
@@ -1717,16 +1709,12 @@ namespace App.Bootstrap
                 case CustomizationCategory.Floor: return "FLOOR";
                 case CustomizationCategory.Desk: return "DESK_SET";
                 case CustomizationCategory.DashboardSkin: return "DASHBOARD_SKIN";
+                case CustomizationCategory.Notebook: return "NOTEBOOK";
                 case CustomizationCategory.BookshelfSkin: return "BOOKSHELF_SKIN";
                 case CustomizationCategory.InteriorLight: return "INTERIOR_LIGHT";
                 case CustomizationCategory.ExteriorLight: return "EXTERIOR_LIGHT";
                 default: return string.Empty;
             }
-        }
-
-        private static bool IsUnsupportedRemoteInventoryAsset(AssetResponseDto asset)
-        {
-            return DoesServerAssetTypeMatch(asset, "NOTEBOOK");
         }
 
         private static bool ThemeTagsEqual(string left, string right)
@@ -3338,11 +3326,6 @@ namespace App.Bootstrap
         private bool IsCategoryEntryCurrent(CustomizationCategory category, long assetId)
         {
             if (assetId <= 0) return false;
-            if (category == CustomizationCategory.Notebook)
-            {
-                return lastAppliedEntries.TryGetValue(category, out var appliedNotebook) &&
-                       appliedNotebook == assetId;
-            }
             if (category == CustomizationCategory.BookshelfSkin &&
                 lastAppliedEntries.TryGetValue(category, out var appliedBookshelfSkin))
             {
@@ -3386,6 +3369,7 @@ namespace App.Bootstrap
                 case CustomizationCategory.Floor:         return space.CurrentFloorInventoryId;
                 case CustomizationCategory.Desk:          return space.CurrentDeskInventoryId;
                 case CustomizationCategory.DashboardSkin: return space.CurrentDashboardInventoryId;
+                case CustomizationCategory.Notebook:      return space.CurrentNotebookInventoryId;
                 case CustomizationCategory.InteriorLight: return space.CurrentInteriorLightInventoryId;
                 case CustomizationCategory.ExteriorLight: return space.CurrentExteriorLightInventoryId;
                 default: return null;
@@ -3403,6 +3387,7 @@ namespace App.Bootstrap
                 case CustomizationCategory.Floor:         lastServerSpace.CurrentFloorInventoryId = inventoryId; break;
                 case CustomizationCategory.Desk:          lastServerSpace.CurrentDeskInventoryId = inventoryId; break;
                 case CustomizationCategory.DashboardSkin: lastServerSpace.CurrentDashboardInventoryId = inventoryId; break;
+                case CustomizationCategory.Notebook:      lastServerSpace.CurrentNotebookInventoryId = inventoryId; break;
                 case CustomizationCategory.InteriorLight: lastServerSpace.CurrentInteriorLightInventoryId = inventoryId; break;
                 case CustomizationCategory.ExteriorLight: lastServerSpace.CurrentExteriorLightInventoryId = inventoryId; break;
             }
@@ -4054,12 +4039,6 @@ namespace App.Bootstrap
             PersistLastAppliedEntries();
             RebuildInventorySlots();
 
-            if (category == CustomizationCategory.Notebook)
-            {
-                Debug.Log($"[RoomEditModeController] Notebook accessory applied locally: {entry.DisplayName} (assetId={entry.AssetId}).");
-                return;
-            }
-
             // local preview 전용 entry — 사용자 inventory 에 없는 placeholder. PATCH 시 401(인증)/403(S006) 으로 거부되므로
             // 백엔드 호출 자체를 skip 하고 RoomLighting 하위에 Preview Light 만 갱신.
             // 명시적 IsLocalPreview 플래그 + assetId 범위 fallback 으로 robust 판정 (catalog 재생성 안 해도 동작).
@@ -4162,6 +4141,8 @@ namespace App.Bootstrap
                     spaceSettingsRepo.ChangeDesk(invId, onSuccess, onError); break;
                 case CustomizationCategory.DashboardSkin:
                     spaceSettingsRepo.ChangeDashboard(invId, onSuccess, onError); break;
+                case CustomizationCategory.Notebook:
+                    spaceSettingsRepo.ChangeNotebook(invId, onSuccess, onError); break;
                 case CustomizationCategory.InteriorLight:
                     spaceSettingsRepo.ChangeInteriorLight(invId, onSuccess, onError); break;
                 case CustomizationCategory.ExteriorLight:
@@ -7256,6 +7237,7 @@ namespace App.Bootstrap
             ApplyCategoryById(CustomizationCategory.Floor, space.CurrentFloorInventoryId);
             ApplyCategoryById(CustomizationCategory.Desk, space.CurrentDeskInventoryId);
             ApplyCategoryById(CustomizationCategory.DashboardSkin, space.CurrentDashboardInventoryId);
+            ApplyCategoryById(CustomizationCategory.Notebook, space.CurrentNotebookInventoryId);
             ApplyCategoryById(CustomizationCategory.InteriorLight, space.CurrentInteriorLightInventoryId);
             ApplyCategoryById(CustomizationCategory.ExteriorLight, space.CurrentExteriorLightInventoryId);
             RebuildInventorySlots();
@@ -7283,6 +7265,7 @@ namespace App.Bootstrap
             ReapplyExplicitServerCategoryOverride(CustomizationCategory.Floor, lastServerSpace.CurrentFloorInventoryId);
             ReapplyExplicitServerCategoryOverride(CustomizationCategory.Desk, lastServerSpace.CurrentDeskInventoryId);
             ReapplyExplicitServerCategoryOverride(CustomizationCategory.DashboardSkin, lastServerSpace.CurrentDashboardInventoryId);
+            ReapplyExplicitServerCategoryOverride(CustomizationCategory.Notebook, lastServerSpace.CurrentNotebookInventoryId);
             ReapplyExplicitServerCategoryOverride(CustomizationCategory.InteriorLight, lastServerSpace.CurrentInteriorLightInventoryId);
             ReapplyExplicitServerCategoryOverride(CustomizationCategory.ExteriorLight, lastServerSpace.CurrentExteriorLightInventoryId);
         }
