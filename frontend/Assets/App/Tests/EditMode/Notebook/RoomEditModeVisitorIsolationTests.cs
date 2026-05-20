@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using App.Application.Dashboard;
 using App.Infrastructure.Catalogs;
 using App.Infrastructure.Api.Dtos;
 using NUnit.Framework;
@@ -128,6 +129,21 @@ namespace App.Tests.EditMode.Notebook
             var controller = CreateController();
             SetReadOnlyPreview(controller, true);
             AddVisibleInventoryAssetMap(controller, inventoryId: 500L, assetId: 77L);
+
+            var created = InvokeTryCreateRemoteInventoryEntry(controller, "inv:500", out var entry);
+
+            Assert.IsTrue(created);
+            Assert.IsTrue(GetEntryField<bool>(entry, "IsRemoteAsset"));
+            Assert.AreEqual(77L, GetEntryField<long>(entry, "RemoteAssetId"));
+            Assert.AreEqual(500L, GetEntryField<long>(entry, "RemoteInventoryId"));
+        }
+
+        [Test]
+        public void OwnSpaceInventoryKey_CreatesRemoteEntryFromOwnedInventoryMap()
+        {
+            var controller = CreateController();
+            SetReadOnlyPreview(controller, false);
+            AddOwnedInventoryAssetMap(controller, inventoryId: 500L, assetId: 77L);
 
             var created = InvokeTryCreateRemoteInventoryEntry(controller, "inv:500", out var entry);
 
@@ -279,6 +295,75 @@ namespace App.Tests.EditMode.Notebook
 
             Assert.AreEqual(0, root.transform.childCount);
             Assert.AreEqual(0, GetDictionaryCount(controller, "placedByInventoryKey"));
+        }
+
+        [Test]
+        public void ReplacingExternalLayout_DoesNotRebuildCacheFromSceneMarkers()
+        {
+            var controller = CreateController();
+            InvokeEnsurePlacedItemsRoot(controller);
+            var outside = new GameObject("OutsideDecorationMarker");
+            outside.transform.SetParent(host.transform, false);
+            AddDecorationMarker(outside, "asset:77");
+
+            InvokeApplyExternalDecorationLayoutPayload(controller, null, clearExisting: true);
+
+            Assert.AreEqual(0, GetDictionaryCount(controller, "placedByInventoryKey"));
+        }
+
+        [Test]
+        public void ThemeContentsWithoutPlacementChildren_DoesNotSuppressLocalThemeSpecs()
+        {
+            var emptyContents = new ThemeContents
+            {
+                Children = new List<ThemeContentItem>()
+            };
+            var requiredOnlyContents = new ThemeContents
+            {
+                Children = new List<ThemeContentItem>
+                {
+                    new ThemeContentItem { Required = true }
+                }
+            };
+            var placementContents = new ThemeContents
+            {
+                Children = new List<ThemeContentItem>
+                {
+                    new ThemeContentItem { AssetId = 77L }
+                }
+            };
+
+            Assert.IsFalse(InvokeHasThemePlacementContents(emptyContents));
+            Assert.IsFalse(InvokeHasThemePlacementContents(requiredOnlyContents));
+            Assert.IsTrue(InvokeHasThemePlacementContents(placementContents));
+        }
+
+        [Test]
+        public void EditModeRollbackHold_PreservesOriginalPlacementsAcrossRepeatedThemeSelection()
+        {
+            var controller = CreateController();
+            InvokeEnsurePlacedItemsRoot(controller);
+            SetEditModeActive(controller, true);
+            var root = GetPlacedItemsRoot(controller);
+            var first = new GameObject("FirstOriginalDecoration");
+            first.transform.SetParent(root.transform, false);
+
+            InvokeDetachPlacementForRollback(controller, detachAllPlacements: true);
+            var hold = GetField<GameObject>(controller, "placementRollbackHoldRoot");
+
+            Assert.IsNotNull(hold);
+            Assert.AreEqual(1, hold.transform.childCount);
+            Assert.AreEqual(0, root.transform.childCount);
+
+            var second = new GameObject("SecondOriginalDecoration");
+            second.transform.SetParent(root.transform, false);
+
+            InvokeDetachPlacementForRollback(controller, detachAllPlacements: true);
+            var currentHold = GetField<GameObject>(controller, "placementRollbackHoldRoot");
+
+            Assert.AreSame(hold, currentHold);
+            Assert.AreEqual(2, currentHold.transform.childCount);
+            Assert.AreEqual(0, root.transform.childCount);
         }
 
         [Test]
@@ -587,6 +672,15 @@ namespace App.Tests.EditMode.Notebook
             field.SetValue(controller, value);
         }
 
+        private static void SetEditModeActive(object controller, bool value)
+        {
+            var field = ControllerType.GetField(
+                "<IsEditModeActive>k__BackingField",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(field);
+            field.SetValue(controller, value);
+        }
+
         private static void AddInventoryEntry(
             object controller,
             long remoteAssetId,
@@ -687,6 +781,16 @@ namespace App.Tests.EditMode.Notebook
             Assert.IsNotNull(field);
             var map = (IDictionary)field.GetValue(controller);
             map[inventoryKey] = instance;
+        }
+
+        private static void AddDecorationMarker(GameObject instance, string inventoryKey)
+        {
+            var markerType = FindType("App.Bootstrap.DecorationItemMarker");
+            Assert.IsNotNull(markerType);
+            var marker = instance.AddComponent(markerType);
+            var field = markerType.GetField("InventoryKey", BindingFlags.Instance | BindingFlags.Public);
+            Assert.IsNotNull(field);
+            field.SetValue(marker, inventoryKey);
         }
 
         private static string NormalizeResourceKey(string key)
@@ -801,6 +905,24 @@ namespace App.Tests.EditMode.Notebook
                 BindingFlags.Instance | BindingFlags.Public);
             Assert.IsNotNull(method);
             method.Invoke(controller, new object[] { layoutPayload, clearExisting });
+        }
+
+        private static bool InvokeHasThemePlacementContents(ThemeContents contents)
+        {
+            var method = ControllerType.GetMethod(
+                "HasThemePlacementContents",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.IsNotNull(method);
+            return (bool)method.Invoke(null, new object[] { contents });
+        }
+
+        private static void InvokeDetachPlacementForRollback(object controller, bool detachAllPlacements)
+        {
+            var method = ControllerType.GetMethod(
+                "DetachPlacementForRollback",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(method);
+            method.Invoke(controller, new object[] { null, detachAllPlacements });
         }
 
         private static void InvokeInvalidateExternalDecorationLayoutRestores(object controller)

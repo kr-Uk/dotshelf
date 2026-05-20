@@ -1641,6 +1641,7 @@ namespace BookshelfPorting.Runtime
                         {
                             isBookshelfSkinCatalogLoading = false;
                             BookshelfSkinResolver.RegisterApiAssets(assetsResponse, inventory);
+                            FindRoomEditModeController()?.RegisterOwnedAssetInventory(inventory);
                             onCompleted?.Invoke();
                         },
                         error =>
