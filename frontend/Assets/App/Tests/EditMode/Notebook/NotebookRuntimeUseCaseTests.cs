@@ -67,6 +67,23 @@ namespace App.Tests.EditMode.Notebook
         }
 
         [Test]
+        public void LoadBookDetail_DelegatesBookId()
+        {
+            var repo = new FakeNotebookRuntimeRepository();
+            var useCase = new NotebookRuntimeUseCase(repo);
+            NotebookBookSearchItem captured = null;
+
+            useCase.LoadBookDetail(
+                91,
+                result => captured = result,
+                _ => Assert.Fail("should not error"));
+
+            Assert.IsNotNull(captured);
+            Assert.AreEqual(91, repo.LastBookDetailId);
+            Assert.AreEqual(91, captured.Id);
+        }
+
+        [Test]
         public void UploadMySpaceThumbnail_DelegatesPngImageAndReturnsThumbnailUrl()
         {
             var repo = new FakeNotebookRuntimeRepository();
@@ -97,6 +114,7 @@ namespace App.Tests.EditMode.Notebook
             public long LastFollowingsUserId;
             public string LastFollowingsCursor;
             public int LastFollowingsLimit;
+            public long LastBookDetailId;
             public byte[] LastThumbnailBytes;
             public string LastThumbnailContentType;
 
@@ -153,6 +171,11 @@ namespace App.Tests.EditMode.Notebook
                 onSuccess?.Invoke(new NotebookUserListResult(null));
             }
 
+            public void LoadBookDetail(long bookId, Action<NotebookBookSearchItem> onSuccess, Action<NotebookApiError> onError)
+            {
+                LastBookDetailId = bookId;
+                onSuccess?.Invoke(new NotebookBookSearchItem { Id = bookId });
+            }
             public void LoadBookReviews(long bookId, Action<NotebookReviewListResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookReviewListResult(null));
             public void CreateBookReview(long bookId, float rating, string content, Action<NotebookReviewItem> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookReviewItem { Id = bookId, Rating = rating, Content = content });
             public void SetUserBookFavorite(long userBookId, bool favorite, Action<NotebookToggleResult> onSuccess, Action<NotebookApiError> onError) => onSuccess?.Invoke(new NotebookToggleResult { Active = favorite });

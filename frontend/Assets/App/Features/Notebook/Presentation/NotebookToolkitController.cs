@@ -340,6 +340,34 @@ namespace App.Features.Notebook.Presentation
             public string CoverImageUrl { get; }
             public string PublishedDate { get; }
             public long? UserBookId { get; }
+
+            public BookViewModel WithServerStats(float rating, int reviews, int views, int records, long? userBookId)
+            {
+                return new BookViewModel(
+                    Id,
+                    Title,
+                    Author,
+                    Publisher,
+                    Summary,
+                    Genre,
+                    Status,
+                    Shelf,
+                    Price,
+                    rating,
+                    reviews,
+                    views,
+                    records,
+                    CoverColor,
+                    AccentColor,
+                    ApiSource,
+                    ServerBookId,
+                    Isbn13,
+                    Isbn10,
+                    SourceUrl,
+                    CoverImageUrl,
+                    PublishedDate,
+                    userBookId ?? UserBookId);
+            }
         }
 
         private sealed class BookReviewViewModel
@@ -563,6 +591,7 @@ namespace App.Features.Notebook.Presentation
         private readonly Dictionary<string, List<BookReviewViewModel>> bookReviewMap = new();
         private readonly List<UserViewModel> socialListUsers = new();
         private readonly HashSet<string> requestedBookReviewIds = new();
+        private readonly HashSet<string> requestedBookDetailIds = new();
         private readonly Dictionary<string, Texture2D> spaceThumbnailTextureCache = new();
         private readonly LinkedList<string> spaceThumbnailTextureCacheOrder = new();
         private readonly Dictionary<string, LinkedListNode<string>> spaceThumbnailTextureCacheNodes = new();
@@ -851,6 +880,7 @@ namespace App.Features.Notebook.Presentation
             apiDecorObjects = Array.Empty<DecorObjectViewModel>();
             bookReviewMap.Clear();
             requestedBookReviewIds.Clear();
+            requestedBookDetailIds.Clear();
             bookUserBookIds.Clear();
             shelfTargetLoading = false;
             selectedBookOverride = null;
@@ -4352,7 +4382,7 @@ namespace App.Features.Notebook.Presentation
 
             if (bookDetailReviewCount != null)
             {
-                bookDetailReviewCount.text = $"★ {book.Rating:0.0} · 리뷰 {GetBookReviews(book).Count:N0}개 · 조회 {book.Views:N0}";
+                bookDetailReviewCount.text = $"★ {book.Rating:0.0} · 리뷰 {DisplayReviewCount(book):N0}개 · 조회 {book.Views:N0}";
             }
 
             RefreshFavoriteBookButton(book);
@@ -4410,6 +4440,11 @@ namespace App.Features.Notebook.Presentation
             }
 
             return reviews;
+        }
+
+        private int DisplayReviewCount(BookViewModel book)
+        {
+            return book == null ? 0 : Mathf.Max(0, Mathf.Max(book.Reviews, GetBookReviews(book).Count));
         }
 
         private void RefreshBookReviews(BookViewModel book)
@@ -4492,6 +4527,108 @@ namespace App.Features.Notebook.Presentation
                 });
         }
 
+        private void RequestBookDetail(BookViewModel book)
+        {
+            if (book == null || requestedBookDetailIds.Contains(book.Id))
+            {
+                return;
+            }
+
+            if (notebookRuntimeUseCase == null || !TryResolveBookApiId(book, out var bookId))
+            {
+                return;
+            }
+
+            requestedBookDetailIds.Add(book.Id);
+            notebookRuntimeUseCase.LoadBookDetail(
+                bookId,
+                detail =>
+                {
+                    requestedBookDetailIds.Remove(book.Id);
+                    var updatedBook = ApplyBookDetailStats(book, detail);
+                    if (updatedBook != null)
+                    {
+                        ReplaceBookViewModel(book, updatedBook);
+                        RefreshLists();
+                        RefreshBookDetailPage(updatedBook);
+                    }
+                },
+                error =>
+                {
+                    UnityEngine.Debug.LogWarning($"Book detail API failed. book={book.Id}, code={error?.Code}, message={FirstText(error?.Message, error?.Error)}");
+                    requestedBookDetailIds.Remove(book.Id);
+                });
+        }
+
+        private BookViewModel ApplyBookDetailStats(BookViewModel book, NotebookBookSearchItem detail)
+        {
+            if (book == null || detail == null)
+            {
+                return null;
+            }
+
+            var rating = detail.AvgRating > 0 ? Mathf.Clamp((float)detail.AvgRating, 0f, 5f) : 0f;
+            var reviews = Mathf.Max(0, detail.ReviewCount);
+            var views = Mathf.Max(0, detail.ViewCount);
+            var records = Mathf.Max(0, detail.RecordCount);
+            var userBookId = detail.UserBookId.HasValue && detail.UserBookId.Value > 0
+                ? detail.UserBookId
+                : book.UserBookId;
+
+            SetLocalState(addedBookIds, book.Id, detail.Owned);
+            if (userBookId.HasValue && userBookId.Value > 0)
+            {
+                bookUserBookIds[book.Id] = userBookId.Value;
+            }
+
+            return book.WithServerStats(rating, reviews, views, records, userBookId);
+        }
+
+        private void ReplaceBookViewModel(BookViewModel original, BookViewModel updated)
+        {
+            if (original == null || updated == null)
+            {
+                return;
+            }
+
+            marketBooks = ReplaceBookViewModel(marketBooks, original, updated);
+            recommendedBooks = ReplaceBookViewModel(recommendedBooks, original, updated);
+            searchResults = ReplaceBookViewModel(searchResults, original, updated);
+            if (selectedBookOverride != null && SameBook(selectedBookOverride, original))
+            {
+                selectedBookOverride = updated;
+            }
+        }
+
+        private static BookViewModel[] ReplaceBookViewModel(BookViewModel[] source, BookViewModel original, BookViewModel updated)
+        {
+            if (source == null || source.Length == 0)
+            {
+                return source;
+            }
+
+            BookViewModel[] copy = null;
+            for (var i = 0; i < source.Length; i++)
+            {
+                if (!SameBook(source[i], original))
+                {
+                    continue;
+                }
+
+                copy ??= (BookViewModel[])source.Clone();
+                copy[i] = updated;
+            }
+
+            return copy ?? source;
+        }
+
+        private static bool SameBook(BookViewModel left, BookViewModel right)
+        {
+            return left != null &&
+                   right != null &&
+                   string.Equals(left.Id, right.Id, StringComparison.Ordinal);
+        }
+
         private VisualElement CreateBookReviewCard(BookReviewViewModel review)
         {
             var card = new VisualElement { name = "book-review-card" };
@@ -4544,6 +4681,7 @@ namespace App.Features.Notebook.Presentation
             showingAllBookReviews = false;
             selectedReviewRating = 5f;
             SetBookReviewsOpen(false, false);
+            RequestBookDetail(book);
             RequestBookReviews(book);
             RefreshBookDetailPage(book);
             if (bookDetailContent != null)
@@ -5381,9 +5519,9 @@ namespace App.Features.Notebook.Presentation
                     SetLocalState(favoriteBookIds, id, false);
                 }
 
-                var rating = dto.AvgRating > 0 ? Mathf.Clamp((float)dto.AvgRating, 1f, 5f) : 4.2f;
-                var reviews = Mathf.Max(dto.ReviewCount, dto.LikeCount, dto.PurchaseCount, dto.RecordCount, 1);
-                var views = Mathf.Max(dto.ViewCount, dto.PlacementCount + dto.RecordCount + dto.LikeCount, reviews * 12);
+                var rating = dto.AvgRating > 0 ? Mathf.Clamp((float)dto.AvgRating, 0f, 5f) : 0f;
+                var reviews = Mathf.Max(0, dto.ReviewCount);
+                var views = Mathf.Max(0, dto.ViewCount);
                 var records = Mathf.Max(dto.RecordCount, dto.PlacementCount);
                 var price = dto.PricePages > 0 ? dto.PricePages : dto.HasPaidCover ? 1200 : 0;
                 var coverColor = SearchCoverColor(i, id);
@@ -6724,7 +6862,8 @@ namespace App.Features.Notebook.Presentation
                 return true;
             }
 
-            return TryParseApiId(book.Id, out id);
+            return string.Equals(book.ApiSource, "LOCAL", StringComparison.OrdinalIgnoreCase)
+                   && TryParseApiId(book.Id, out id);
         }
 
         private bool TryResolveUserBookId(BookViewModel book, out long id)
