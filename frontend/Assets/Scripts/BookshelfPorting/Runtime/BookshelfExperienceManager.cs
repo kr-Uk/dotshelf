@@ -86,6 +86,7 @@ namespace BookshelfPorting.Runtime
         private const float VisitedSpaceLoadingPageWidth = 124f;
         private const float VisitedSpaceLoadingPageHeight = 148f;
         private const float VisitedSpaceLoadingHalfPageWidth = VisitedSpaceLoadingPageWidth * 0.5f;
+        private const string LikeReactionIconPath = "Assets/App/UI/Icons/Reactions/icon_like_heart.png";
         private static readonly Color32 DeleteButtonBackground = new(196, 78, 72, 255);
         private static readonly Color32 DeleteButtonHighlighted = new(176, 62, 58, 255);
         private static readonly Color32 DeleteButtonConfirmBackground = new(176, 50, 48, 255);
@@ -159,6 +160,8 @@ namespace BookshelfPorting.Runtime
         private static Texture2D roundedUiTexture;
         private static Sprite searchIconRingSprite;
         private static Texture2D searchIconRingTexture;
+        private static Sprite visitedOwnerLikeSprite;
+        private static Texture2D visitedOwnerLikeFallbackTexture;
 
         private enum BookSearchFilter
         {
@@ -867,6 +870,11 @@ namespace BookshelfPorting.Runtime
         private Button bookFocusRatingButton;
         private Button bookFocusWriteReportButton;
         private Text bookFocusRatingText;
+        private RectTransform visitedOwnerBookActionRow;
+        private Button visitedOwnerReviewButton;
+        private GameObject visitedOwnerLikeInfo;
+        private Image visitedOwnerLikeIconImage;
+        private Text visitedOwnerLikeText;
         private GameObject bookReviewWritePanel;
         private Text bookReviewWriteTitleText;
         private Text bookReviewWriteBookText;
@@ -5454,6 +5462,39 @@ namespace BookshelfPorting.Runtime
             bookFocusReportButton.gameObject.SetActive(false);
             bookFocusWriteReportButton = CreateButton(canvasObject.transform, "BookFocusWriteReportButton", "독후감 작성", new Vector2(0f, 128f), OpenActiveViewedBookReport, new Vector2(160f, 44f), new Vector2(0.5f, 0f));
             bookFocusWriteReportButton.gameObject.SetActive(false);
+            visitedOwnerBookActionRow = CreateHudContainer(canvasObject.transform, "VisitedOwnerBookActionRow", new Vector2(0f, 128f), new Vector2(420f, 44f), new Vector2(0.5f, 0f));
+            ConfigureHorizontalLayout(visitedOwnerBookActionRow, TextAnchor.MiddleCenter, 12f);
+            visitedOwnerBookActionRow.gameObject.SetActive(false);
+            visitedOwnerReviewButton = CreateButton(
+                visitedOwnerBookActionRow,
+                "VisitedOwnerReviewButton",
+                "이 공간의 리뷰 보기",
+                Vector2.zero,
+                OpenVisitedOwnerBookReview,
+                new Vector2(238f, 44f),
+                new Vector2(0f, 0.5f));
+            ConfigureFixedLayoutElement(visitedOwnerReviewButton.GetComponent<RectTransform>(), 238f, 44f);
+
+            var visitedOwnerLikeRect = CreateHudContainer(visitedOwnerBookActionRow, "VisitedOwnerLikeInfo", Vector2.zero, new Vector2(158f, 44f), new Vector2(0f, 0.5f));
+            ConfigureHorizontalLayout(visitedOwnerLikeRect, TextAnchor.MiddleCenter, 7f);
+            ConfigureFixedLayoutElement(visitedOwnerLikeRect, 158f, 44f);
+            visitedOwnerLikeInfo = visitedOwnerLikeRect.gameObject;
+            var visitedOwnerLikeBackground = visitedOwnerLikeInfo.AddComponent<Image>();
+            ApplyRoundedSprite(visitedOwnerLikeBackground);
+            visitedOwnerLikeBackground.color = new Color32(247, 243, 238, 235);
+            visitedOwnerLikeBackground.raycastTarget = false;
+            visitedOwnerLikeIconImage = CreateHudImage(visitedOwnerLikeRect, "VisitedOwnerLikeIcon", Vector2.zero, new Vector2(18f, 18f), new Vector2(0f, 0.5f), Color.white);
+            visitedOwnerLikeIconImage.sprite = GetVisitedOwnerLikeSprite();
+            visitedOwnerLikeIconImage.preserveAspect = true;
+            visitedOwnerLikeIconImage.raycastTarget = false;
+            ConfigureFixedLayoutElement(visitedOwnerLikeIconImage.GetComponent<RectTransform>(), 18f, 18f);
+            visitedOwnerLikeText = CreateLabel(visitedOwnerLikeRect, "VisitedOwnerLikeText", Vector2.zero, new Vector2(108f, 24f), TextAnchor.MiddleLeft);
+            visitedOwnerLikeText.fontSize = 14;
+            visitedOwnerLikeText.fontStyle = FontStyle.Bold;
+            visitedOwnerLikeText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            visitedOwnerLikeText.verticalOverflow = VerticalWrapMode.Truncate;
+            visitedOwnerLikeText.raycastTarget = false;
+            ConfigureFixedLayoutElement(visitedOwnerLikeText.rectTransform, 108f, 24f);
             bookFocusRatingText = CreateLabel(bookFocusToolbarPanel.transform, "BookFocusRatingText", new Vector2(0f, 22f), new Vector2(360f, 18f), TextAnchor.MiddleCenter);
             bookFocusRatingText.fontSize = 13;
             bookFocusRatingText.color = new Color32(84, 74, 66, 255);
@@ -6788,6 +6829,7 @@ namespace BookshelfPorting.Runtime
             RefreshGuestbookPanel();
             RefreshBookDetailPanel();
             RefreshBookFocusToolbar();
+            RefreshVisitedOwnerBookActions();
             RefreshBookReviewWritePanel();
             RefreshBookReportWritePanel();
             RefreshBookReportReadPanel();
@@ -7638,6 +7680,27 @@ namespace BookshelfPorting.Runtime
                     likeButtonWidth,
                     actionButtonHeight,
                     actionGap);
+            }
+
+            if (visitedOwnerBookActionRow != null)
+            {
+                var actionButtonHeight = Mathf.Clamp(toolbarHeight * 0.42f, 44f, 54f);
+                var reviewButtonWidth = Mathf.Clamp(toolbarWidth * 0.32f, 228f, 300f);
+                var likeInfoWidth = Mathf.Clamp(toolbarWidth * 0.18f, 148f, 180f);
+                var actionGap = Mathf.Clamp(toolbarWidth * 0.014f, 10f, 14f);
+                var totalActionsWidth = reviewButtonWidth + actionGap + likeInfoWidth;
+                var actionY = bottomOffset + toolbarHeight + Mathf.Clamp(canvasSize.y * 0.028f, 24f, 40f);
+
+                SetHudComponentRect(
+                    visitedOwnerBookActionRow,
+                    new Vector2(0.5f, 0f),
+                    new Vector2(0.5f, 0f),
+                    new Vector2(0f, actionY),
+                    new Vector2(totalActionsWidth, actionButtonHeight));
+
+                ConfigureHorizontalLayout(visitedOwnerBookActionRow, TextAnchor.MiddleCenter, actionGap);
+                ConfigureFixedLayoutElement(visitedOwnerReviewButton != null ? visitedOwnerReviewButton.GetComponent<RectTransform>() : null, reviewButtonWidth, actionButtonHeight);
+                ConfigureFixedLayoutElement(visitedOwnerLikeInfo != null ? visitedOwnerLikeInfo.GetComponent<RectTransform>() : null, likeInfoWidth, actionButtonHeight);
             }
 
             var sidePanelWidth = Mathf.Clamp(canvasSize.x * (isCompact ? 0.58f : 0.28f), 460f, 620f);
@@ -13478,6 +13541,87 @@ namespace BookshelfPorting.Runtime
             }
         }
 
+        private void RefreshVisitedOwnerBookActions()
+        {
+            if (visitedOwnerBookActionRow == null)
+            {
+                return;
+            }
+
+            var canShow = IsViewingOtherUserSpace() &&
+                          CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
+                          state != null &&
+                          state.IsViewingBook &&
+                          state.ActiveViewedBook != null &&
+                          !state.ActiveViewedBook.isDecoration &&
+                          !IsBookshelfEditMode &&
+                          !isBookPlacementEditorOpen &&
+                          !isBookReviewWritePanelOpen &&
+                          !isBookReportWritePanelOpen &&
+                          !isBookReportReadPanelOpen &&
+                          !isBookCoverSkinPanelOpen &&
+                          !isAdvertisementBookAddPanelOpen;
+            visitedOwnerBookActionRow.gameObject.SetActive(canShow);
+            if (!canShow)
+            {
+                return;
+            }
+
+            var activeBook = state.ActiveViewedBook;
+            var meta = dataStore != null ? dataStore.GetOrCreateBookMeta(activeBook) : null;
+            var hasOwnerReview = meta != null
+                ? !string.IsNullOrWhiteSpace(meta.reportBody)
+                : !string.IsNullOrWhiteSpace(activeBook.reportBody);
+            var ownerLiked = meta != null ? meta.isLiked : activeBook.isLiked;
+
+            if (visitedOwnerReviewButton != null)
+            {
+                SetButtonLabel(visitedOwnerReviewButton, hasOwnerReview ? "이 공간 주인의 리뷰 보기" : "작성된 리뷰 없음");
+                visitedOwnerReviewButton.interactable = hasOwnerReview;
+                StyleHudButton(
+                    visitedOwnerReviewButton,
+                    hasOwnerReview ? new Color32(88, 133, 117, 245) : new Color32(224, 219, 214, 140),
+                    hasOwnerReview ? new Color32(105, 150, 132, 255) : new Color32(224, 219, 214, 140),
+                    new Color32(224, 219, 214, 140),
+                    15,
+                    hasOwnerReview ? Color.white : new Color32(128, 118, 108, 255),
+                    true);
+            }
+
+            StyleVisitedOwnerLikeInfo(ownerLiked);
+            visitedOwnerBookActionRow.SetAsLastSibling();
+        }
+
+        private void StyleVisitedOwnerLikeInfo(bool ownerLiked)
+        {
+            if (visitedOwnerLikeInfo != null)
+            {
+                var background = visitedOwnerLikeInfo.GetComponent<Image>();
+                if (background != null)
+                {
+                    background.color = ownerLiked
+                        ? new Color32(128, 74, 106, 235)
+                        : new Color32(247, 243, 238, 235);
+                }
+            }
+
+            if (visitedOwnerLikeIconImage != null)
+            {
+                visitedOwnerLikeIconImage.sprite = GetVisitedOwnerLikeSprite();
+                visitedOwnerLikeIconImage.color = ownerLiked
+                    ? new Color32(247, 173, 194, 255)
+                    : new Color32(232, 226, 235, 255);
+            }
+
+            if (visitedOwnerLikeText != null)
+            {
+                visitedOwnerLikeText.text = ownerLiked ? "좋아요" : "좋아요 안 함";
+                visitedOwnerLikeText.color = ownerLiked
+                    ? new Color32(255, 224, 234, 255)
+                    : new Color32(86, 67, 93, 255);
+            }
+        }
+
         private void RefreshBookReviewWritePanel()
         {
             if (bookReviewWritePanel == null)
@@ -13615,6 +13759,23 @@ namespace BookshelfPorting.Runtime
             {
                 OpenBookReportWritePanel(book);
             }
+        }
+
+        private void OpenVisitedOwnerBookReview()
+        {
+            var book = state != null ? state.ActiveViewedBook : ActiveDetailBook;
+            if (book == null || dataStore == null || !IsViewingOtherUserSpace())
+            {
+                return;
+            }
+
+            var meta = dataStore.GetOrCreateBookMeta(book);
+            if (meta == null || string.IsNullOrWhiteSpace(meta.reportBody))
+            {
+                return;
+            }
+
+            OpenBookReportReadPanel(book);
         }
 
         private bool TryOpenReportAfterServerRefresh(BookEntity book)
@@ -16626,6 +16787,61 @@ namespace BookshelfPorting.Runtime
             }
 
             return searchIconRingSprite;
+        }
+
+        private static Sprite GetVisitedOwnerLikeSprite()
+        {
+            if (visitedOwnerLikeSprite != null)
+            {
+                return visitedOwnerLikeSprite;
+            }
+
+#if UNITY_EDITOR
+            visitedOwnerLikeSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(LikeReactionIconPath);
+            if (visitedOwnerLikeSprite != null)
+            {
+                return visitedOwnerLikeSprite;
+            }
+#endif
+
+            visitedOwnerLikeSprite = CreateFallbackVisitedOwnerLikeSprite();
+            return visitedOwnerLikeSprite;
+        }
+
+        private static Sprite CreateFallbackVisitedOwnerLikeSprite()
+        {
+            const int size = 64;
+            visitedOwnerLikeFallbackTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = "GeneratedVisitedOwnerLikeHeartIcon",
+                hideFlags = HideFlags.HideAndDontSave,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    var px = (x + 0.5f) / size * 2f - 1f;
+                    var py = (y + 0.5f) / size * 2f - 1f + 0.08f;
+                    var heart = Mathf.Pow(px * px + py * py - 0.42f, 3f) - px * px * py * py * py;
+                    var filledAlpha = Mathf.Clamp01((0.018f - heart) * 42f);
+                    var innerAlpha = Mathf.Clamp01((-0.045f - heart) * 42f);
+                    var alpha = Mathf.Clamp01(filledAlpha - innerAlpha);
+                    visitedOwnerLikeFallbackTexture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                }
+            }
+
+            visitedOwnerLikeFallbackTexture.Apply();
+            var sprite = Sprite.Create(
+                visitedOwnerLikeFallbackTexture,
+                new Rect(0f, 0f, size, size),
+                new Vector2(0.5f, 0.5f),
+                100f);
+            sprite.name = "GeneratedVisitedOwnerLikeHeartIcon";
+            sprite.hideFlags = HideFlags.HideAndDontSave;
+            return sprite;
         }
 
         private static void AddSoftShadow(GameObject target, Color color, Vector2 distance)
