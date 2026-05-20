@@ -3,6 +3,7 @@ package com.dotshelf.domain.guestbook.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
@@ -28,6 +29,7 @@ import com.dotshelf.domain.notification.event.NotificationEvents.GuestbookCreate
 import com.dotshelf.domain.notification.event.NotificationEvents.GuestbookReplyCreated;
 import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.service.SpaceService;
+import com.dotshelf.domain.user.repository.FollowRepository;
 import com.dotshelf.domain.user.repository.UserBlockRepository;
 import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.domain.user.service.UserService;
@@ -58,6 +60,9 @@ class GuestbookServiceTest {
 
     @Mock
     private UserBlockRepository userBlockRepository;
+
+    @Mock
+    private FollowRepository followRepository;
 
     @InjectMocks
     private GuestbookService guestbookService;
@@ -134,7 +139,8 @@ class GuestbookServiceTest {
         Guestbook second = guestbook(19L, 10L, 3L);
         Guestbook extra = guestbook(18L, 10L, 4L);
         GuestbookReply reply = reply(30L, 20L, 1L);
-        given(guestbookRepository.findGuestbookPage(any(), any(), any(), any()))
+        given(spaceService.getSpaceEntity(10L)).willReturn(TestFixtures.space(10L, 1L));
+        given(guestbookRepository.findGuestbookPage(any(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
                 .willReturn(List.of(first, second, extra));
         given(replyRepository.findActiveByGuestbookIdIn(any())).willReturn(List.of(reply));
         given(userRepository.findAllById(any())).willReturn(List.of(
@@ -158,6 +164,48 @@ class GuestbookServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("방명록 board가 PRIVATE면 비주인은 조회할 수 없다")
+    void getGuestbooks_privateBoardNonOwner_throwsForbidden() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeGuestbookVisibility("PRIVATE");
+        given(spaceService.getSpaceEntity(10L)).willReturn(space);
+
+        assertThatThrownBy(() -> guestbookService.getGuestbooks(99L, 10L, null, 15))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("방명록 board가 MUTUAL이면 맞팔 viewer는 조회할 수 있다")
+    void getGuestbooks_mutualBoardMutualViewer_succeeds() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeGuestbookVisibility("MUTUAL");
+        given(spaceService.getSpaceEntity(10L)).willReturn(space);
+        given(followRepository.existsMutualFollow(99L, 1L)).willReturn(true);
+        given(guestbookRepository.findGuestbookPage(any(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                .willReturn(List.of());
+
+        var response = guestbookService.getGuestbooks(99L, 10L, null, 15);
+
+        assertThat(response.guestbooks()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("공간 주인은 board가 PRIVATE여도 자기 방명록을 조회할 수 있다")
+    void getGuestbooks_ownerBypassesBoardScope() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeGuestbookVisibility("PRIVATE");
+        given(spaceService.getSpaceEntity(10L)).willReturn(space);
+        given(guestbookRepository.findGuestbookPage(any(), any(), any(), any(), anyBoolean(), anyBoolean(), any()))
+                .willReturn(List.of());
+
+        var response = guestbookService.getGuestbooks(1L, 10L, null, 15);
+
+        assertThat(response.guestbooks()).isEmpty();
     }
 
     @Test
@@ -232,10 +280,11 @@ class GuestbookServiceTest {
     }
 
     @Test
-    @DisplayName("방명록 작성자가 아니면 방명록을 삭제할 수 없다")
-    void delete_notWriter_throwsForbidden() {
+    @DisplayName("작성자도 공간 주인도 아니면 방명록을 삭제할 수 없다")
+    void delete_notWriterNorOwner_throwsForbidden() {
         given(userService.requireUserId(3L)).willReturn(3L);
         given(guestbookRepository.findById(20L)).willReturn(Optional.of(guestbook(20L, 10L, 2L)));
+        given(spaceService.getSpaceEntity(10L)).willReturn(TestFixtures.space(10L, 1L));
 
         assertThatThrownBy(() -> guestbookService.delete(3L, 20L))
                 .isInstanceOf(CustomException.class)
@@ -249,8 +298,23 @@ class GuestbookServiceTest {
         Guestbook guestbook = guestbook(20L, 10L, 2L);
         given(userService.requireUserId(2L)).willReturn(2L);
         given(guestbookRepository.findById(20L)).willReturn(Optional.of(guestbook));
+        given(spaceService.getSpaceEntity(10L)).willReturn(TestFixtures.space(10L, 1L));
 
         guestbookService.delete(2L, 20L);
+
+        assertThat(guestbook.getStatus()).isEqualTo("DELETED");
+        assertThat(guestbook.getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("공간 주인은 다른 사람이 쓴 방명록도 삭제할 수 있다")
+    void delete_spaceOwner_marksDeleted() {
+        Guestbook guestbook = guestbook(20L, 10L, 2L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(guestbookRepository.findById(20L)).willReturn(Optional.of(guestbook));
+        given(spaceService.getSpaceEntity(10L)).willReturn(TestFixtures.space(10L, 1L));
+
+        guestbookService.delete(1L, 20L);
 
         assertThat(guestbook.getStatus()).isEqualTo("DELETED");
         assertThat(guestbook.getDeletedAt()).isNotNull();

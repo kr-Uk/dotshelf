@@ -27,9 +27,11 @@ import com.dotshelf.domain.notification.event.NotificationEvents.GuestbookReplyC
 import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.user.entity.User;
+import com.dotshelf.domain.user.repository.FollowRepository;
 import com.dotshelf.domain.user.repository.UserBlockRepository;
 import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.domain.user.service.UserService;
+import com.dotshelf.global.common.VisibilityScope;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 
@@ -47,6 +49,7 @@ public class GuestbookService {
     private final ApplicationEventPublisher eventPublisher;
     private final UserRepository userRepository;
     private final UserBlockRepository userBlockRepository;
+    private final FollowRepository followRepository;
 
     private static final int DEFAULT_GUESTBOOK_LIMIT = 15;
     private static final int MAX_GUESTBOOK_LIMIT = 50;
@@ -54,18 +57,35 @@ public class GuestbookService {
     public GuestbookListResponse getGuestbooks(Long currentUserId, Long spaceId, String cursor, int limit) {
         int validLimit = clampLimit(limit, DEFAULT_GUESTBOOK_LIMIT, MAX_GUESTBOOK_LIMIT);
         Long cursorId = parseCursorId(cursor);
+
+        // 방명록 조회도 공간 접근 가드를 거친다 — 비공개 공간 / 차단 관계 차단.
+        Space space = spaceService.getSpaceEntity(spaceId);
+        spaceService.ensureCanViewSpace(currentUserId, space);
+
+        boolean isOwner = space.getOwnerUserId().equals(currentUserId);
+        boolean mutual = !isOwner
+                && followRepository.existsMutualFollow(currentUserId, space.getOwnerUserId());
+
+        // board 공개 범위(guestbookVisibilityScope) — PUBLIC 외에는 권한 있는 viewer 만 board 접근.
+        if (!isOwner && !isViewerAllowedByScope(space.getGuestbookVisibilityScope(), mutual)) {
+            throw new CustomException(ErrorCode.FORBIDDEN);
+        }
+
+        // 개별 글 visibilityScope 는 쿼리에서 직접 필터 — 페이지네이션 정합성 유지.
         List<Guestbook> page = guestbookRepository.findGuestbookPage(
-                spaceId, "ACTIVE", cursorId, PageRequest.of(0, validLimit + 1));
+                spaceId, "ACTIVE", cursorId, currentUserId, isOwner, mutual,
+                PageRequest.of(0, validLimit + 1));
         boolean hasMore = page.size() > validLimit;
         List<Guestbook> trimmed = hasMore ? page.subList(0, validLimit) : page;
         String nextCursor = hasMore ? String.valueOf(trimmed.get(trimmed.size() - 1).getId()) : null;
 
         // MR #60 #3 batch — 페이지 1회당 최대 45+ select → user/reply 한 번에 IN 쿼리.
-        List<GuestbookResponse> responses = buildGuestbookResponses(trimmed, currentUserId);
+        List<GuestbookResponse> responses = buildGuestbookResponses(trimmed, currentUserId, isOwner, mutual);
         return new GuestbookListResponse(responses, nextCursor);
     }
 
-    private List<GuestbookResponse> buildGuestbookResponses(List<Guestbook> guestbooks, Long viewerUserId) {
+    private List<GuestbookResponse> buildGuestbookResponses(
+            List<Guestbook> guestbooks, Long viewerUserId, boolean isOwner, boolean mutual) {
         if (guestbooks.isEmpty()) {
             return List.of();
         }
@@ -96,6 +116,9 @@ public class GuestbookService {
         for (Guestbook gb : guestbooks) {
             User writer = userById.get(gb.getWriterUserId());
             GuestbookReply reply = replyByGuestbookId.get(gb.getId());
+            if (reply != null && !isReplyVisible(reply, gb, viewerUserId, isOwner, mutual)) {
+                reply = null;
+            }
             User replyWriter = reply == null ? null : userById.get(reply.getWriterUserId());
             result.add(GuestbookResponse.from(gb, writer, reply, replyWriter, viewerUserId));
         }
@@ -144,14 +167,18 @@ public class GuestbookService {
                 guestbook.getId(),
                 guestbook.isAnonymous()
         ));
-        return buildGuestbookResponses(List.of(guestbook), currentUserId).get(0);
+        return buildGuestbookResponses(List.of(guestbook), currentUserId, false, false).get(0);
     }
 
     @Transactional
     public void delete(Long userId, Long guestbookId) {
         Long currentUserId = userService.requireUserId(userId);
         Guestbook guestbook = getGuestbook(guestbookId);
-        if (!guestbook.getWriterUserId().equals(currentUserId)) {
+        // 방명록은 작성자 본인뿐 아니라 공간 주인도 삭제할 수 있다 — 본인 공간에 달린 글이므로.
+        Space space = spaceService.getSpaceEntity(guestbook.getSpaceId());
+        boolean isWriter = currentUserId.equals(guestbook.getWriterUserId());
+        boolean isSpaceOwner = currentUserId.equals(space.getOwnerUserId());
+        if (!isWriter && !isSpaceOwner) {
             throw new CustomException(ErrorCode.FORBIDDEN);
         }
         guestbook.delete();
@@ -215,5 +242,26 @@ public class GuestbookService {
     private Guestbook getGuestbook(Long guestbookId) {
         return guestbookRepository.findById(guestbookId)
                 .orElseThrow(() -> new CustomException(ErrorCode.GUESTBOOK_NOT_FOUND));
+    }
+
+    // 답장(공간 주인 작성)의 visibilityScope 가시성 — board/글과 동일한 owner-relative 기준.
+    // 공간 주인 본인, 그리고 답장이 달린 글의 작성자는 항상 답장을 볼 수 있다.
+    private boolean isReplyVisible(GuestbookReply reply, Guestbook guestbook,
+                                   Long viewerUserId, boolean isOwner, boolean mutual) {
+        if (isOwner) {
+            return true;
+        }
+        if (viewerUserId != null && viewerUserId.equals(guestbook.getWriterUserId())) {
+            return true;
+        }
+        return isViewerAllowedByScope(reply.getVisibilityScope(), mutual);
+    }
+
+    // PUBLIC → 모두, MUTUAL → 맞팔 viewer 만, 그 외(PRIVATE) → 불가.
+    private static boolean isViewerAllowedByScope(String scope, boolean mutual) {
+        if (VisibilityScope.isPublic(scope)) {
+            return true;
+        }
+        return VisibilityScope.isMutual(scope) && mutual;
     }
 }
