@@ -2554,8 +2554,6 @@ namespace App.Bootstrap
             furnitureSubToolbarRoot.SetActive(false);
         }
 
-        // BookshelfSkin has no backend PATCH endpoint yet, so the button stays
-        // enabled and the selection is routed through the mock category state.
         private static bool IsFurnitureSubDisabled(string key) => false;
 
         private void BuildFurnitureSubButton(Transform parent, string key, string label)
@@ -3662,6 +3660,7 @@ namespace App.Bootstrap
                 case CustomizationCategory.Wallpaper:     return space.CurrentWallpaperInventoryId;
                 case CustomizationCategory.Floor:         return space.CurrentFloorInventoryId;
                 case CustomizationCategory.Desk:          return space.CurrentDeskInventoryId;
+                case CustomizationCategory.BookshelfSkin: return space.CurrentBookshelfSkinInventoryId;
                 case CustomizationCategory.DashboardSkin: return space.CurrentDashboardInventoryId;
                 case CustomizationCategory.Notebook:      return space.CurrentNotebookInventoryId;
                 case CustomizationCategory.InteriorLight: return space.CurrentInteriorLightInventoryId;
@@ -3680,6 +3679,7 @@ namespace App.Bootstrap
                 case CustomizationCategory.Wallpaper:     lastServerSpace.CurrentWallpaperInventoryId = inventoryId; break;
                 case CustomizationCategory.Floor:         lastServerSpace.CurrentFloorInventoryId = inventoryId; break;
                 case CustomizationCategory.Desk:          lastServerSpace.CurrentDeskInventoryId = inventoryId; break;
+                case CustomizationCategory.BookshelfSkin: lastServerSpace.CurrentBookshelfSkinInventoryId = inventoryId; break;
                 case CustomizationCategory.DashboardSkin: lastServerSpace.CurrentDashboardInventoryId = inventoryId; break;
                 case CustomizationCategory.Notebook:      lastServerSpace.CurrentNotebookInventoryId = inventoryId; break;
                 case CustomizationCategory.InteriorLight: lastServerSpace.CurrentInteriorLightInventoryId = inventoryId; break;
@@ -4468,6 +4468,8 @@ namespace App.Bootstrap
                     spaceSettingsRepo.ChangeFloor(invId, onSuccess, onError); break;
                 case CustomizationCategory.Desk:
                     spaceSettingsRepo.ChangeDesk(invId, onSuccess, onError); break;
+                case CustomizationCategory.BookshelfSkin:
+                    spaceSettingsRepo.ChangeBookshelfSkin(invId, onSuccess, onError); break;
                 case CustomizationCategory.DashboardSkin:
                     spaceSettingsRepo.ChangeDashboard(invId, onSuccess, onError); break;
                 case CustomizationCategory.Notebook:
@@ -7731,6 +7733,49 @@ namespace App.Bootstrap
             ApplyEntryVisual(category, entry);
         }
 
+        private static bool HasPositiveInventoryId(long? inventoryId)
+        {
+            return inventoryId.HasValue && inventoryId.Value > 0L;
+        }
+
+        private static bool HasExplicitServerCategoryInventory(SpaceResponseDto space)
+        {
+            return space != null &&
+                   (HasPositiveInventoryId(space.CurrentWallpaperInventoryId) ||
+                    HasPositiveInventoryId(space.CurrentFloorInventoryId) ||
+                    HasPositiveInventoryId(space.CurrentDeskInventoryId) ||
+                    HasPositiveInventoryId(space.CurrentBookshelfSkinInventoryId) ||
+                    HasPositiveInventoryId(space.CurrentDashboardInventoryId) ||
+                    HasPositiveInventoryId(space.CurrentNotebookInventoryId) ||
+                    HasPositiveInventoryId(space.CurrentInteriorLightInventoryId) ||
+                    HasPositiveInventoryId(space.CurrentExteriorLightInventoryId));
+        }
+
+        private void ApplyExplicitServerCategoryOverridesFromSpace(SpaceResponseDto space, bool persistState, bool forceAuthoritativeReapply)
+        {
+            if (space == null)
+            {
+                return;
+            }
+
+            if (HasPositiveInventoryId(space.CurrentWallpaperInventoryId))
+                ApplyCategoryById(CustomizationCategory.Wallpaper, space.CurrentWallpaperInventoryId, persistState, forceAuthoritativeReapply);
+            if (HasPositiveInventoryId(space.CurrentFloorInventoryId))
+                ApplyCategoryById(CustomizationCategory.Floor, space.CurrentFloorInventoryId, persistState, forceAuthoritativeReapply);
+            if (HasPositiveInventoryId(space.CurrentDeskInventoryId))
+                ApplyCategoryById(CustomizationCategory.Desk, space.CurrentDeskInventoryId, persistState, forceAuthoritativeReapply);
+            if (HasPositiveInventoryId(space.CurrentBookshelfSkinInventoryId))
+                ApplyCategoryById(CustomizationCategory.BookshelfSkin, space.CurrentBookshelfSkinInventoryId, persistState, forceAuthoritativeReapply);
+            if (HasPositiveInventoryId(space.CurrentDashboardInventoryId))
+                ApplyCategoryById(CustomizationCategory.DashboardSkin, space.CurrentDashboardInventoryId, persistState, forceAuthoritativeReapply);
+            if (HasPositiveInventoryId(space.CurrentNotebookInventoryId))
+                ApplyCategoryById(CustomizationCategory.Notebook, space.CurrentNotebookInventoryId, persistState, forceAuthoritativeReapply);
+            if (HasPositiveInventoryId(space.CurrentInteriorLightInventoryId))
+                ApplyCategoryById(CustomizationCategory.InteriorLight, space.CurrentInteriorLightInventoryId, persistState, forceAuthoritativeReapply);
+            if (HasPositiveInventoryId(space.CurrentExteriorLightInventoryId))
+                ApplyCategoryById(CustomizationCategory.ExteriorLight, space.CurrentExteriorLightInventoryId, persistState, forceAuthoritativeReapply);
+        }
+
         private void ApplySpaceVisualsToRoom(SpaceResponseDto space, bool persistState, bool forceAuthoritativeReapply = false)
         {
             if (space == null) return;
@@ -7756,12 +7801,14 @@ namespace App.Bootstrap
             //   (b) 풀 로그인 직후 (client.CurrentTheme = null) PlayerPrefs 에 마지막 local-preview
             //       이름이 저장돼 있으면 그 테마를 복원 적용 → wall/floor 자동 복원
             // 사용자가 명시적으로 다른 테마를 클릭하면 그 경로에서 정상 갱신 (PersistLastAppliedLocalPreviewTheme 갱신).
+            bool serverHasExplicitCategoryInventory = HasExplicitServerCategoryInventory(space);
             if (persistState &&
                 TryResolveProtectedFantasyLocalPreviewTheme(out var protectedFantasyTheme, out var protectedFantasySource))
             {
                 Debug.Log(
                     $"[FantasyDesk] ApplySpaceVisualsToRoom protecting local-preview fantasy source={protectedFantasySource} " +
-                    $"serverThemeId={space.CurrentThemeInventoryId?.ToString() ?? "null"} serverDeskId={space.CurrentDeskInventoryId?.ToString() ?? "null"}");
+                    $"serverThemeId={space.CurrentThemeInventoryId?.ToString() ?? "null"} serverDeskId={space.CurrentDeskInventoryId?.ToString() ?? "null"} " +
+                    $"hasExplicitCategory={serverHasExplicitCategoryInventory}");
                 if (themeApplier != null && themeApplier.CurrentTheme != protectedFantasyTheme)
                 {
                     themeApplier.Apply(protectedFantasyTheme);
@@ -7770,6 +7817,14 @@ namespace App.Bootstrap
                 }
                 SyncInventoryThemeFilterForTheme(protectedFantasyTheme);
                 ApplyThemeDefaultEntries(protectedFantasyTheme);
+                if (serverHasExplicitCategoryInventory)
+                {
+                    ApplyExplicitServerCategoryOverridesFromSpace(space, persistState, forceAuthoritativeReapply);
+                    RebuildInventorySlots();
+                    LogFantasyDeskHierarchyState("ApplySpaceVisualsToRoom.protectFantasyLocalPreview.withServerCategories");
+                    return;
+                }
+
                 RebuildInventorySlots();
                 LogFantasyDeskHierarchyState("ApplySpaceVisualsToRoom.protectFantasyLocalPreview");
                 return;
@@ -7777,7 +7832,7 @@ namespace App.Bootstrap
 
             bool serverHasNoTheme = !space.CurrentThemeInventoryId.HasValue || space.CurrentThemeInventoryId.Value <= 0;
             bool clientHasLocalPreviewTheme = themeApplier != null && IsLocalPreviewTheme(themeApplier.CurrentTheme);
-            if (persistState && serverHasNoTheme && clientHasLocalPreviewTheme)
+            if (persistState && serverHasNoTheme && clientHasLocalPreviewTheme && !serverHasExplicitCategoryInventory)
             {
                 themeApplier.Apply(themeApplier.CurrentTheme);
                 SyncInventoryThemeFilterForTheme(themeApplier.CurrentTheme);
@@ -7786,7 +7841,7 @@ namespace App.Bootstrap
                 RebuildInventorySlots();
                 return;
             }
-            if (persistState && serverHasNoTheme && themeApplier != null)
+            if (persistState && serverHasNoTheme && themeApplier != null && !serverHasExplicitCategoryInventory)
             {
                 // (b) 풀 로그인 직후 client.CurrentTheme 은 보통 null/Default. PlayerPrefs 에 마지막
                 //     local-preview 이름이 있으면 그 테마로 복원해 wall/floor 가 다음 세션에도 유지.
@@ -7861,6 +7916,7 @@ namespace App.Bootstrap
             ApplyCategoryById(CustomizationCategory.Wallpaper, space.CurrentWallpaperInventoryId, persistState, forceAuthoritativeReapply);
             ApplyCategoryById(CustomizationCategory.Floor, space.CurrentFloorInventoryId, persistState, forceAuthoritativeReapply);
             ApplyCategoryById(CustomizationCategory.Desk, space.CurrentDeskInventoryId, persistState, forceAuthoritativeReapply);
+            ApplyCategoryById(CustomizationCategory.BookshelfSkin, space.CurrentBookshelfSkinInventoryId, persistState, forceAuthoritativeReapply);
             ApplyCategoryById(CustomizationCategory.DashboardSkin, space.CurrentDashboardInventoryId, persistState, forceAuthoritativeReapply);
             ApplyCategoryById(CustomizationCategory.Notebook, space.CurrentNotebookInventoryId, persistState, forceAuthoritativeReapply);
             ApplyCategoryById(CustomizationCategory.InteriorLight, space.CurrentInteriorLightInventoryId, persistState, forceAuthoritativeReapply);
@@ -7889,6 +7945,7 @@ namespace App.Bootstrap
             ReapplyExplicitServerCategoryOverride(CustomizationCategory.Wallpaper, lastServerSpace.CurrentWallpaperInventoryId);
             ReapplyExplicitServerCategoryOverride(CustomizationCategory.Floor, lastServerSpace.CurrentFloorInventoryId);
             ReapplyExplicitServerCategoryOverride(CustomizationCategory.Desk, lastServerSpace.CurrentDeskInventoryId);
+            ReapplyExplicitServerCategoryOverride(CustomizationCategory.BookshelfSkin, lastServerSpace.CurrentBookshelfSkinInventoryId);
             ReapplyExplicitServerCategoryOverride(CustomizationCategory.DashboardSkin, lastServerSpace.CurrentDashboardInventoryId);
             ReapplyExplicitServerCategoryOverride(CustomizationCategory.Notebook, lastServerSpace.CurrentNotebookInventoryId);
             ReapplyExplicitServerCategoryOverride(CustomizationCategory.InteriorLight, lastServerSpace.CurrentInteriorLightInventoryId);
@@ -10499,6 +10556,8 @@ namespace App.Bootstrap
                     spaceSettingsRepo.ChangeFloor(inventoryId, onCategorySuccess, onCategoryError); break;
                 case CustomizationCategory.Desk:
                     spaceSettingsRepo.ChangeDesk(inventoryId, onCategorySuccess, onCategoryError); break;
+                case CustomizationCategory.BookshelfSkin:
+                    spaceSettingsRepo.ChangeBookshelfSkin(inventoryId, onCategorySuccess, onCategoryError); break;
                 case CustomizationCategory.DashboardSkin:
                     spaceSettingsRepo.ChangeDashboard(inventoryId, onCategorySuccess, onCategoryError); break;
                 case CustomizationCategory.Notebook:
@@ -10815,6 +10874,7 @@ namespace App.Bootstrap
                 CurrentWallpaperInventoryId = source.CurrentWallpaperInventoryId,
                 CurrentFloorInventoryId = source.CurrentFloorInventoryId,
                 CurrentDeskInventoryId = source.CurrentDeskInventoryId,
+                CurrentBookshelfSkinInventoryId = source.CurrentBookshelfSkinInventoryId,
                 CurrentDashboardInventoryId = source.CurrentDashboardInventoryId,
                 CurrentNotebookInventoryId = source.CurrentNotebookInventoryId,
                 CurrentInteriorLightInventoryId = source.CurrentInteriorLightInventoryId,

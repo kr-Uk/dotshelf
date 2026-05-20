@@ -69,6 +69,7 @@ namespace App.Infrastructure.Mock.Dashboard
                 currentWallpaperInventoryId: MockSpaceCustomizationState.CurrentWallpaperInventoryId,
                 currentFloorInventoryId: MockSpaceCustomizationState.CurrentFloorInventoryId,
                 currentDeskInventoryId: MockSpaceCustomizationState.CurrentDeskInventoryId,
+                currentBookshelfSkinInventoryId: MockSpaceCustomizationState.CurrentBookshelfSkinInventoryId,
                 currentDashboardInventoryId: MockSpaceCustomizationState.CurrentDashboardInventoryId,
                 currentNotebookInventoryId: MockSpaceCustomizationState.CurrentNotebookInventoryId,
                 currentInteriorLightInventoryId: MockSpaceCustomizationState.CurrentInteriorLightInventoryId,

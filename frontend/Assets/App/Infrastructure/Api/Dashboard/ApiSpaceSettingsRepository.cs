@@ -103,6 +103,13 @@ namespace App.Infrastructure.Api.Dashboard
                 onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
         }
 
+        public void ChangeBookshelfSkin(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            client.ChangeMyBookshelfSkin(BuildCategoryRequest(inventoryId),
+                onSuccess: dto => onSuccess?.Invoke(dto?.ThemeReset ?? false),
+                onError: error => onError?.Invoke(DashboardDtoMapper.MapError(error)));
+        }
+
         public void ChangeDashboard(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
         {
             client.ChangeMyDashboard(BuildCategoryRequest(inventoryId),

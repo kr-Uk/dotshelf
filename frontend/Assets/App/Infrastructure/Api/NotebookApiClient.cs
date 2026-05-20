@@ -346,6 +346,11 @@ namespace App.Infrastructure.Api
             return Patch<CategoryInventoryRequestDto, SpaceMutationResponseDto>("/v1/spaces/me/desk", request, onSuccess, onError);
         }
 
+        public Coroutine ChangeMyBookshelfSkin(CategoryInventoryRequestDto request, Action<SpaceMutationResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
+        {
+            return Patch<CategoryInventoryRequestDto, SpaceMutationResponseDto>("/v1/spaces/me/bookshelf-skin", request, onSuccess, onError);
+        }
+
         public Coroutine ChangeMyDashboard(CategoryInventoryRequestDto request, Action<SpaceMutationResponseDto> onSuccess, Action<ApiErrorResponseDto> onError = null)
         {
             return Patch<CategoryInventoryRequestDto, SpaceMutationResponseDto>("/v1/spaces/me/dashboard", request, onSuccess, onError);

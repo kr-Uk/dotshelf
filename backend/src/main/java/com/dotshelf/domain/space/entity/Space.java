@@ -71,6 +71,7 @@ public class Space extends BaseEntity {
     private Long currentWallpaperInventoryId;
     private Long currentFloorInventoryId;
     private Long currentDeskInventoryId;
+    private Long currentBookshelfSkinInventoryId;
     private Long currentDashboardInventoryId;
     private Long currentNotebookInventoryId;
     private Long currentInteriorLightInventoryId;
@@ -163,6 +164,10 @@ public class Space extends BaseEntity {
         this.currentDeskInventoryId = inventoryId;
     }
 
+    public void changeBookshelfSkin(Long inventoryId) {
+        this.currentBookshelfSkinInventoryId = inventoryId;
+    }
+
     public void changeDashboard(Long inventoryId) {
         this.currentDashboardInventoryId = inventoryId;
     }
@@ -193,6 +198,7 @@ public class Space extends BaseEntity {
         this.currentWallpaperInventoryId = null;
         this.currentFloorInventoryId = null;
         this.currentDeskInventoryId = null;
+        this.currentBookshelfSkinInventoryId = null;
         this.currentDashboardInventoryId = null;
         this.currentNotebookInventoryId = null;
         this.currentInteriorLightInventoryId = null;

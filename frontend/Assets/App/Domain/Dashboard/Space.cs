@@ -18,6 +18,7 @@ namespace App.Domain.Dashboard
         public long? CurrentWallpaperInventoryId { get; }
         public long? CurrentFloorInventoryId { get; }
         public long? CurrentDeskInventoryId { get; }
+        public long? CurrentBookshelfSkinInventoryId { get; }
         public long? CurrentDashboardInventoryId { get; }
         public long? CurrentNotebookInventoryId { get; }
         public long? CurrentInteriorLightInventoryId { get; }
@@ -36,6 +37,7 @@ namespace App.Domain.Dashboard
             long? currentWallpaperInventoryId = null,
             long? currentFloorInventoryId = null,
             long? currentDeskInventoryId = null,
+            long? currentBookshelfSkinInventoryId = null,
             long? currentDashboardInventoryId = null,
             long? currentNotebookInventoryId = null,
             long? currentInteriorLightInventoryId = null,
@@ -53,6 +55,7 @@ namespace App.Domain.Dashboard
             CurrentWallpaperInventoryId = currentWallpaperInventoryId;
             CurrentFloorInventoryId = currentFloorInventoryId;
             CurrentDeskInventoryId = currentDeskInventoryId;
+            CurrentBookshelfSkinInventoryId = currentBookshelfSkinInventoryId;
             CurrentDashboardInventoryId = currentDashboardInventoryId;
             CurrentNotebookInventoryId = currentNotebookInventoryId;
             CurrentInteriorLightInventoryId = currentInteriorLightInventoryId;

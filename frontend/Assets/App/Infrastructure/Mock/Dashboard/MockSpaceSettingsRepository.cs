@@ -11,6 +11,7 @@ namespace App.Infrastructure.Mock.Dashboard
         public static long? CurrentWallpaperInventoryId;
         public static long? CurrentFloorInventoryId;
         public static long? CurrentDeskInventoryId = 200030L;
+        public static long? CurrentBookshelfSkinInventoryId;
         public static long? CurrentDashboardInventoryId;
         public static long? CurrentNotebookInventoryId;
         public static long? CurrentInteriorLightInventoryId;
@@ -21,6 +22,7 @@ namespace App.Infrastructure.Mock.Dashboard
             CurrentWallpaperInventoryId = null;
             CurrentFloorInventoryId = null;
             CurrentDeskInventoryId = null;
+            CurrentBookshelfSkinInventoryId = null;
             CurrentDashboardInventoryId = null;
             CurrentNotebookInventoryId = null;
             CurrentInteriorLightInventoryId = null;
@@ -79,6 +81,10 @@ namespace App.Infrastructure.Mock.Dashboard
         {
             MockSpaceCustomizationState.CurrentDeskInventoryId = inventoryId; onSuccess?.Invoke(false);
         }
+        public void ChangeBookshelfSkin(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            MockSpaceCustomizationState.CurrentBookshelfSkinInventoryId = inventoryId; onSuccess?.Invoke(false);
+        }
         public void ChangeDashboard(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
         {
             MockSpaceCustomizationState.CurrentDashboardInventoryId = inventoryId; onSuccess?.Invoke(false);
@@ -115,5 +121,6 @@ namespace App.Infrastructure.Mock.Dashboard
         public VisibilityScope CurrentGuestbookVisibility => guestbookVisibility;
         public long? CurrentThemeInventoryId => MockSpaceCustomizationState.CurrentThemeInventoryId;
         public long? CurrentDeskInventoryId => MockSpaceCustomizationState.CurrentDeskInventoryId;
+        public long? CurrentBookshelfSkinInventoryId => MockSpaceCustomizationState.CurrentBookshelfSkinInventoryId;
     }
 }
