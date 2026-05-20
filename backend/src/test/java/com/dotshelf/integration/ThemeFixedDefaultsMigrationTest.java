@@ -46,11 +46,15 @@ class ThemeFixedDefaultsMigrationTest {
         assertThat(themeTargetId("THEME_SPACE", "interiorLight")).isEqualTo(interiorLightAssetId);
         assertThat(themeTargetId("THEME_SPACE", "exteriorLight")).isEqualTo(exteriorLightAssetId);
         assertThat(themeTargetId("THEME_FANTASY", "dashboard")).isEqualTo(assetId("FANTASY_DASHBOARD_SKIN"));
+        assertThat(assetText("SPACE_FLOOR", "unity_resource_key")).isEqualTo("legacy:space-floor");
+        assertThat(assetText("SPACE_FLOOR", "asset_url")).isEqualTo("https://cdn.example.com/space-floor.glb");
+        assertThat(assetText("FANTASY_DASHBOARD_SKIN", "unity_resource_key")).isNotBlank();
 
         assertThat(inventoryId(9001L, 7002L)).isNotNull();
         assertThat(inventoryId(9001L, floorAssetId)).isNotNull();
         assertThat(inventoryId(9001L, interiorLightAssetId)).isNotNull();
         assertThat(inventoryId(9001L, exteriorLightAssetId)).isNotNull();
+        assertThat(inventoryIdOrNull(9001L, 7011L)).isNull();
 
         assertSpaceBackfilledPreservingDeskOverride(
                 inventoryId(9001L, 7002L),
@@ -59,6 +63,7 @@ class ThemeFixedDefaultsMigrationTest {
                 inventoryId(9001L, 7005L),
                 inventoryId(9001L, interiorLightAssetId),
                 inventoryId(9001L, exteriorLightAssetId));
+        assertWrongTypeThemeTargetWasNotBackfilled();
     }
 
     private Flyway flyway(String targetVersion) {
@@ -78,6 +83,8 @@ class ThemeFixedDefaultsMigrationTest {
                     role, status, session_invalidated_at
                 ) VALUES
                     (9001, NOW(), NOW(), 'theme-defaults@example.com', 'theme-defaults', NULL,
+                     NULL, TRUE, NULL, NULL, 'USER', 'ACTIVE', NULL),
+                    (9002, NOW(), NOW(), 'theme-defaults-wrong-type@example.com', 'theme-defaults-wrong-type', NULL,
                      NULL, TRUE, NULL, NULL, 'USER', 'ACTIVE', NULL)
                 """);
         execute("""
@@ -98,11 +105,16 @@ class ThemeFixedDefaultsMigrationTest {
                     (7001, NOW(), NOW(), 7000, 'THEME_SPACE', 'Space Theme', 'NORMAL', 'SPACE',
                      'THEME', 'SPACE', NULL, NULL, NULL, NULL, NULL, 1, NULL, 0, 'DotShelf',
                      'DotShelf Studio',
-                     lo_from_bytea(0, convert_to('{"wallpaper":7002,"desk":7003,"dashboard":7004,"bookshelfSkinDefault":7005}', 'UTF8')),
+                     lo_from_bytea(0, convert_to('{"wallpaper":7002,"desk":7003,"dashboard":7004,"bookshelfSkinDefault":7005,"sortOrder":7011}', 'UTF8')),
                      NOW(), NULL, TRUE, TRUE, FALSE, 'Space', NULL),
                     (7010, NOW(), NOW(), 7000, 'THEME_FANTASY', 'Fantasy Theme', 'NORMAL', 'SPACE',
                      'THEME', 'FANTASY', NULL, NULL, NULL, NULL, NULL, 1, NULL, 0, 'DotShelf',
                      'DotShelf Studio', NULL, NOW(), NULL, TRUE, TRUE, FALSE, 'Fantasy', NULL),
+                    (7012, NOW(), NOW(), 7000, 'THEME_SPOOKY', 'Spooky Theme', 'NORMAL', 'SPACE',
+                     'THEME', 'SPOOKY', NULL, NULL, NULL, NULL, NULL, 1, NULL, 0, 'DotShelf',
+                     'DotShelf Studio',
+                     lo_from_bytea(0, convert_to('{"wallpaper":7003}', 'UTF8')),
+                     NOW(), NULL, TRUE, TRUE, FALSE, 'Spooky', NULL),
                     (7002, NOW(), NOW(), 7000, 'SPACE_WALLPAPER', 'Space Wallpaper', 'NORMAL', 'SPACE',
                      'WALLPAPER', 'SPACE', NULL, NULL, NULL, NULL, NULL, 1, NULL, 0, 'DotShelf',
                      'DotShelf Studio', NULL, NOW(), NULL, TRUE, TRUE, TRUE, 'Space', NULL),
@@ -115,16 +127,25 @@ class ThemeFixedDefaultsMigrationTest {
                     (7005, NOW(), NOW(), 7000, 'SPACE_BOOKSHELF_SKIN', 'Space Bookshelf', 'NORMAL', 'SPACE',
                      'BOOKSHELF_SKIN', 'SPACE', NULL, NULL, NULL, NULL, NULL, 1, NULL, 0, 'DotShelf',
                      'DotShelf Studio', NULL, NOW(), NULL, TRUE, TRUE, TRUE, 'Space', NULL),
+                    (7007, NOW(), NOW(), 7000, 'SPACE_FLOOR', 'Existing Space Floor', 'NORMAL', 'SPACE',
+                     'FLOOR', 'SPACE', 'legacy:space-floor', 'https://cdn.example.com/space-floor.glb', 'model/gltf-binary',
+                     1024, 'hash-space-floor', 3, 'https://cdn.example.com/space-floor.png', 0, 'DotShelf',
+                     'DotShelf Studio', NULL, NOW(), NULL, TRUE, TRUE, TRUE, 'Space', NULL),
                     (7006, NOW(), NOW(), 7000, 'CUSTOM_DESK_OVERRIDE', 'Custom Desk Override', 'NORMAL', 'SPACE',
                      'DESK_SET', 'CUSTOM', NULL, NULL, NULL, NULL, NULL, 1, NULL, 0, 'DotShelf',
-                     'DotShelf Studio', NULL, NOW(), NULL, TRUE, TRUE, TRUE, 'Custom', NULL)
+                     'DotShelf Studio', NULL, NOW(), NULL, TRUE, TRUE, TRUE, 'Custom', NULL),
+                    (7011, NOW(), NOW(), 7000, 'UNRELATED_DECOR', 'Unrelated Decor', 'NORMAL', 'SPACE',
+                     'ASSET', 'SPACE', NULL, NULL, NULL, NULL, NULL, 1, NULL, 0, 'DotShelf',
+                     'DotShelf Studio', NULL, NOW(), NULL, TRUE, TRUE, TRUE, 'Space', NULL)
                 """);
         execute("""
                 INSERT INTO public.user_asset_inventories (
                     id, created_at, updated_at, user_id, asset_id, grant_type, acquired_at
                 ) VALUES
                     (8001, NOW(), NOW(), 9001, 7001, 'DEFAULT', NOW()),
-                    (8002, NOW(), NOW(), 9001, 7006, 'PURCHASE', NOW())
+                    (8002, NOW(), NOW(), 9001, 7006, 'PURCHASE', NOW()),
+                    (8010, NOW(), NOW(), 9002, 7012, 'DEFAULT', NOW()),
+                    (8011, NOW(), NOW(), 9002, 7003, 'DEFAULT', NOW())
                 """);
         execute("""
                 INSERT INTO public.spaces (
@@ -133,7 +154,9 @@ class ThemeFixedDefaultsMigrationTest {
                     space_name, template_id, visibility_scope, visit_count, thumbnail_url
                 ) VALUES
                     (9201, NOW(), NOW(), 8001, 8002, NULL, 'PUBLIC', 3, 0, 9001,
-                     'Theme Defaults Room', NULL, 'PUBLIC', 0, NULL)
+                     'Theme Defaults Room', NULL, 'PUBLIC', 0, NULL),
+                    (9202, NOW(), NOW(), 8010, NULL, NULL, 'PUBLIC', 3, 0, 9002,
+                     'Wrong Type Theme Defaults Room', NULL, 'PUBLIC', 0, NULL)
                 """);
     }
 
@@ -152,6 +175,23 @@ class ThemeFixedDefaultsMigrationTest {
                  WHERE user_id = ?
                    AND asset_id = ?
                 """, userId, assetId);
+    }
+
+    private Long inventoryIdOrNull(Long userId, Long assetId) throws SQLException {
+        return queryOptionalLong("""
+                SELECT id
+                  FROM public.user_asset_inventories
+                 WHERE user_id = ?
+                   AND asset_id = ?
+                """, userId, assetId);
+    }
+
+    private String assetText(String code, String column) throws SQLException {
+        return queryString("""
+                SELECT %s
+                  FROM public.assets
+                 WHERE code = ?
+                """.formatted(column), code);
     }
 
     private Long themeTargetId(String themeCode, String key) throws SQLException {
@@ -194,6 +234,20 @@ class ThemeFixedDefaultsMigrationTest {
         }
     }
 
+    private void assertWrongTypeThemeTargetWasNotBackfilled() throws SQLException {
+        try (Connection connection = connection();
+             PreparedStatement statement = connection.prepareStatement("""
+                     SELECT current_wallpaper_inventory_id
+                       FROM public.spaces
+                      WHERE id = 9202
+                     """);
+             ResultSet resultSet = statement.executeQuery()) {
+            assertThat(resultSet.next()).isTrue();
+            assertThat(resultSet.getObject("current_wallpaper_inventory_id")).isNull();
+            assertThat(resultSet.next()).isFalse();
+        }
+    }
+
     private String currentFlywayVersion() throws SQLException {
         try (Connection connection = connection();
              PreparedStatement statement = connection.prepareStatement("""
@@ -218,6 +272,34 @@ class ThemeFixedDefaultsMigrationTest {
             try (ResultSet resultSet = statement.executeQuery()) {
                 assertThat(resultSet.next()).isTrue();
                 return resultSet.getLong(1);
+            }
+        }
+    }
+
+    private Long queryOptionalLong(String sql, Object... params) throws SQLException {
+        try (Connection connection = connection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < params.length; i++) {
+                statement.setObject(i + 1, params[i]);
+            }
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return null;
+                }
+                return resultSet.getLong(1);
+            }
+        }
+    }
+
+    private String queryString(String sql, Object... params) throws SQLException {
+        try (Connection connection = connection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < params.length; i++) {
+                statement.setObject(i + 1, params[i]);
+            }
+            try (ResultSet resultSet = statement.executeQuery()) {
+                assertThat(resultSet.next()).isTrue();
+                return resultSet.getString(1);
             }
         }
     }

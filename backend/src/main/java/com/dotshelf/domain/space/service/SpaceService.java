@@ -733,27 +733,35 @@ public class SpaceService {
             return;
         }
 
-        space.changeWallpaper(resolveOrGrantThemeDefaultInventoryId(userId, contents.wallpaper()));
-        space.changeFloor(resolveOrGrantThemeDefaultInventoryId(userId, contents.floor()));
-        space.changeDesk(resolveOrGrantThemeDefaultInventoryId(userId, contents.desk()));
-        space.changeDashboard(resolveOrGrantThemeDefaultInventoryId(userId, contents.dashboard()));
-        space.changeBookshelfSkin(resolveOrGrantThemeDefaultInventoryId(userId, contents.bookshelfSkinDefault()));
-        space.changeInteriorLight(resolveOrGrantThemeDefaultInventoryId(userId, contents.interiorLight()));
-        space.changeExteriorLight(resolveOrGrantThemeDefaultInventoryId(userId, contents.exteriorLight()));
+        space.changeWallpaper(resolveOrGrantThemeDefaultInventoryId(userId, contents.wallpaper(), ASSET_TYPE_WALLPAPER));
+        space.changeFloor(resolveOrGrantThemeDefaultInventoryId(userId, contents.floor(), ASSET_TYPE_FLOOR));
+        space.changeDesk(resolveOrGrantThemeDefaultInventoryId(userId, contents.desk(), ASSET_TYPE_DESK_SET));
+        space.changeDashboard(resolveOrGrantThemeDefaultInventoryId(userId, contents.dashboard(), ASSET_TYPE_DASHBOARD_SKIN));
+        space.changeBookshelfSkin(resolveOrGrantThemeDefaultInventoryId(userId, contents.bookshelfSkinDefault(), ASSET_TYPE_BOOKSHELF_SKIN));
+        space.changeInteriorLight(resolveOrGrantThemeDefaultInventoryId(userId, contents.interiorLight(), ASSET_TYPE_INTERIOR_LIGHT));
+        space.changeExteriorLight(resolveOrGrantThemeDefaultInventoryId(userId, contents.exteriorLight(), ASSET_TYPE_EXTERIOR_LIGHT));
     }
 
-    private Long resolveOrGrantThemeDefaultInventoryId(Long userId, Long assetId) {
+    private Long resolveOrGrantThemeDefaultInventoryId(Long userId, Long assetId, String expectedAssetType) {
         if (assetId == null || assetId <= 0L) {
             return null;
         }
 
+        Asset asset = assetRepository.findById(assetId)
+                .filter(Asset::isActive)
+                .orElseThrow(() -> new CustomException(ErrorCode.ASSET_NOT_FOUND));
+        if (expectedAssetType != null && !expectedAssetType.equalsIgnoreCase(asset.getAssetType())) {
+            throw new CustomException(ErrorCode.CATEGORY_INVENTORY_TYPE_MISMATCH);
+        }
+
         return userAssetInventoryRepository.findByUserIdAndAssetId(userId, assetId)
                 .map(UserAssetInventory::getId)
-                .orElseGet(() -> userAssetInventoryRepository.save(UserAssetInventory.builder()
-                        .userId(userId)
-                        .assetId(assetId)
-                        .grantType("DEFAULT")
-                        .build()).getId());
+                .orElseGet(() -> {
+                    userAssetInventoryRepository.insertDefaultGrantIfAbsent(userId, assetId);
+                    return userAssetInventoryRepository.findByUserIdAndAssetId(userId, assetId)
+                            .map(UserAssetInventory::getId)
+                            .orElseThrow(() -> new CustomException(ErrorCode.ASSET_NOT_FOUND));
+                });
     }
 
     /**

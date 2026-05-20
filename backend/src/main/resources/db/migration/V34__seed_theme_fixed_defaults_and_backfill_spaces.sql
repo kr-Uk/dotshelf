@@ -32,28 +32,28 @@ WITH interior_category AS (
 fixed_assets AS (
     SELECT *
     FROM (VALUES
-        ('DEEPSEA_WALLPAPER', 'DeepSea Wallpaper', 'WALLPAPER', 'DEEPSEA', 'DeepSea'),
-        ('DEEPSEA_FLOOR', 'DeepSea Floor', 'FLOOR', 'DEEPSEA', 'DeepSea'),
-        ('DEEPSEA_DASHBOARD_SKIN', 'DeepSea Dashboard Skin', 'DASHBOARD_SKIN', 'DEEPSEA', 'DeepSea'),
-        ('DEEPSEA_INTERIOR_LIGHT', 'DeepSea Interior Light', 'INTERIOR_LIGHT', 'DEEPSEA', 'DeepSea'),
-        ('DEEPSEA_EXTERIOR_LIGHT', 'DeepSea Exterior Light', 'EXTERIOR_LIGHT', 'DEEPSEA', 'DeepSea'),
-        ('FANTASY_FLOOR', 'Fantasy Floor', 'FLOOR', 'FANTASY', 'Fantasy'),
-        ('FANTASY_DASHBOARD_SKIN', 'Fantasy Dashboard Skin', 'DASHBOARD_SKIN', 'FANTASY', 'Fantasy'),
-        ('FANTASY_INTERIOR_LIGHT', 'Fantasy Interior Light', 'INTERIOR_LIGHT', 'FANTASY', 'Fantasy'),
-        ('FANTASY_EXTERIOR_LIGHT', 'Fantasy Exterior Light', 'EXTERIOR_LIGHT', 'FANTASY', 'Fantasy'),
-        ('SPACE_FLOOR', 'Space Floor', 'FLOOR', 'SPACE', 'Space'),
-        ('SPACE_DASHBOARD_SKIN', 'Space Dashboard Skin', 'DASHBOARD_SKIN', 'SPACE', 'Space'),
-        ('SPACE_INTERIOR_LIGHT', 'Space Interior Light', 'INTERIOR_LIGHT', 'SPACE', 'Space'),
-        ('SPACE_EXTERIOR_LIGHT', 'Space Exterior Light', 'EXTERIOR_LIGHT', 'SPACE', 'Space'),
-        ('SPOOKY_FLOOR', 'Spooky Floor', 'FLOOR', 'SPOOKY', 'Spooky'),
-        ('SPOOKY_DASHBOARD_SKIN', 'Spooky Dashboard Skin', 'DASHBOARD_SKIN', 'SPOOKY', 'Spooky'),
-        ('SPOOKY_INTERIOR_LIGHT', 'Spooky Interior Light', 'INTERIOR_LIGHT', 'SPOOKY', 'Spooky'),
-        ('SPOOKY_EXTERIOR_LIGHT', 'Spooky Exterior Light', 'EXTERIOR_LIGHT', 'SPOOKY', 'Spooky'),
-        ('VINTAGE_FLOOR', 'Vintage Floor', 'FLOOR', 'VINTAGE', 'Vintage'),
-        ('VINTAGE_DASHBOARD_SKIN', 'Vintage Dashboard Skin', 'DASHBOARD_SKIN', 'VINTAGE', 'Vintage'),
-        ('VINTAGE_INTERIOR_LIGHT', 'Vintage Interior Light', 'INTERIOR_LIGHT', 'VINTAGE', 'Vintage'),
-        ('VINTAGE_EXTERIOR_LIGHT', 'Vintage Exterior Light', 'EXTERIOR_LIGHT', 'VINTAGE', 'Vintage')
-    ) AS item(code, name, asset_type, collection_code, theme)
+        ('DEEPSEA_WALLPAPER', 'DeepSea Wallpaper', 'WALLPAPER', 'DEEPSEA', 'DeepSea', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_DeepSea.asset#wallpaper'),
+        ('DEEPSEA_FLOOR', 'DeepSea Floor', 'FLOOR', 'DEEPSEA', 'DeepSea', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_DeepSea.asset#floor'),
+        ('DEEPSEA_DASHBOARD_SKIN', 'DeepSea Dashboard Skin', 'DASHBOARD_SKIN', 'DEEPSEA', 'DeepSea', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_DeepSea.asset#dashboard'),
+        ('DEEPSEA_INTERIOR_LIGHT', 'DeepSea Interior Light', 'INTERIOR_LIGHT', 'DEEPSEA', 'DeepSea', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_DeepSea.asset#interiorLight'),
+        ('DEEPSEA_EXTERIOR_LIGHT', 'DeepSea Exterior Light', 'EXTERIOR_LIGHT', 'DEEPSEA', 'DeepSea', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_DeepSea.asset#exteriorLight'),
+        ('FANTASY_FLOOR', 'Fantasy Floor', 'FLOOR', 'FANTASY', 'Fantasy', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Fantasy.asset#floor'),
+        ('FANTASY_DASHBOARD_SKIN', 'Fantasy Dashboard Skin', 'DASHBOARD_SKIN', 'FANTASY', 'Fantasy', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Fantasy.asset#dashboard'),
+        ('FANTASY_INTERIOR_LIGHT', 'Fantasy Interior Light', 'INTERIOR_LIGHT', 'FANTASY', 'Fantasy', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Fantasy.asset#interiorLight'),
+        ('FANTASY_EXTERIOR_LIGHT', 'Fantasy Exterior Light', 'EXTERIOR_LIGHT', 'FANTASY', 'Fantasy', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Fantasy.asset#exteriorLight'),
+        ('SPACE_FLOOR', 'Space Floor', 'FLOOR', 'SPACE', 'Space', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Space.asset#floor'),
+        ('SPACE_DASHBOARD_SKIN', 'Space Dashboard Skin', 'DASHBOARD_SKIN', 'SPACE', 'Space', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Space.asset#dashboard'),
+        ('SPACE_INTERIOR_LIGHT', 'Space Interior Light', 'INTERIOR_LIGHT', 'SPACE', 'Space', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Space.asset#interiorLight'),
+        ('SPACE_EXTERIOR_LIGHT', 'Space Exterior Light', 'EXTERIOR_LIGHT', 'SPACE', 'Space', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Space.asset#exteriorLight'),
+        ('SPOOKY_FLOOR', 'Spooky Floor', 'FLOOR', 'SPOOKY', 'Spooky', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Spooky.asset#floor'),
+        ('SPOOKY_DASHBOARD_SKIN', 'Spooky Dashboard Skin', 'DASHBOARD_SKIN', 'SPOOKY', 'Spooky', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Spooky.asset#dashboard'),
+        ('SPOOKY_INTERIOR_LIGHT', 'Spooky Interior Light', 'INTERIOR_LIGHT', 'SPOOKY', 'Spooky', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Spooky.asset#interiorLight'),
+        ('SPOOKY_EXTERIOR_LIGHT', 'Spooky Exterior Light', 'EXTERIOR_LIGHT', 'SPOOKY', 'Spooky', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Spooky.asset#exteriorLight'),
+        ('VINTAGE_FLOOR', 'Vintage Floor', 'FLOOR', 'VINTAGE', 'Vintage', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Vintage.asset#floor'),
+        ('VINTAGE_DASHBOARD_SKIN', 'Vintage Dashboard Skin', 'DASHBOARD_SKIN', 'VINTAGE', 'Vintage', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Vintage.asset#dashboard'),
+        ('VINTAGE_INTERIOR_LIGHT', 'Vintage Interior Light', 'INTERIOR_LIGHT', 'VINTAGE', 'Vintage', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Vintage.asset#interiorLight'),
+        ('VINTAGE_EXTERIOR_LIGHT', 'Vintage Exterior Light', 'EXTERIOR_LIGHT', 'VINTAGE', 'Vintage', 'Assets/App/Composition/Configs/RoomThemes/RoomTheme_Vintage.asset#exteriorLight')
+    ) AS item(code, name, asset_type, collection_code, theme, unity_resource_key)
 )
 INSERT INTO public.assets (
     created_at,
@@ -94,7 +94,7 @@ SELECT
     'SPACE',
     fixed_assets.asset_type,
     fixed_assets.collection_code,
-    null,
+    fixed_assets.unity_resource_key,
     null,
     null,
     null,
@@ -122,13 +122,13 @@ ON CONFLICT (code) DO UPDATE SET
     asset_scope = excluded.asset_scope,
     asset_type = excluded.asset_type,
     collection_code = excluded.collection_code,
-    unity_resource_key = excluded.unity_resource_key,
-    asset_url = excluded.asset_url,
-    content_type = excluded.content_type,
-    file_size = excluded.file_size,
-    file_hash = excluded.file_hash,
+    unity_resource_key = COALESCE(assets.unity_resource_key, excluded.unity_resource_key),
+    asset_url = COALESCE(assets.asset_url, excluded.asset_url),
+    content_type = COALESCE(assets.content_type, excluded.content_type),
+    file_size = COALESCE(assets.file_size, excluded.file_size),
+    file_hash = COALESCE(assets.file_hash, excluded.file_hash),
     version = excluded.version,
-    preview_image_url = excluded.preview_image_url,
+    preview_image_url = COALESCE(assets.preview_image_url, excluded.preview_image_url),
     price_pages = excluded.price_pages,
     creator = excluded.creator,
     supplier = excluded.supplier,
@@ -198,14 +198,24 @@ theme_targets AS (
       ON theme.code = theme_map.theme_code
     LEFT JOIN public.assets wallpaper_asset
       ON wallpaper_asset.code = theme_map.collection_code || '_WALLPAPER'
+     AND wallpaper_asset.asset_type = 'WALLPAPER'
+     AND wallpaper_asset.is_active = true
     LEFT JOIN public.assets floor_asset
       ON floor_asset.code = theme_map.collection_code || '_FLOOR'
+     AND floor_asset.asset_type = 'FLOOR'
+     AND floor_asset.is_active = true
     LEFT JOIN public.assets dashboard_asset
       ON dashboard_asset.code = theme_map.collection_code || '_DASHBOARD_SKIN'
+     AND dashboard_asset.asset_type = 'DASHBOARD_SKIN'
+     AND dashboard_asset.is_active = true
     LEFT JOIN public.assets interior_light_asset
       ON interior_light_asset.code = theme_map.collection_code || '_INTERIOR_LIGHT'
+     AND interior_light_asset.asset_type = 'INTERIOR_LIGHT'
+     AND interior_light_asset.is_active = true
     LEFT JOIN public.assets exterior_light_asset
       ON exterior_light_asset.code = theme_map.collection_code || '_EXTERIOR_LIGHT'
+     AND exterior_light_asset.asset_type = 'EXTERIOR_LIGHT'
+     AND exterior_light_asset.is_active = true
 ),
 theme_defaults AS (
     SELECT
@@ -243,10 +253,19 @@ WITH theme_defaults AS (
     )
 ),
 default_asset_ids AS (
-    SELECT DISTINCT (value #>> '{}')::bigint AS asset_id
+    SELECT DISTINCT key, (value #>> '{}')::bigint AS asset_id
     FROM theme_defaults
     CROSS JOIN LATERAL jsonb_each(theme_defaults.compatible_targets) AS entries(key, value)
-    WHERE jsonb_typeof(value) = 'number'
+    WHERE key IN (
+        'wallpaper',
+        'floor',
+        'desk',
+        'dashboard',
+        'bookshelfSkinDefault',
+        'interiorLight',
+        'exteriorLight'
+    )
+      AND jsonb_typeof(value) = 'number'
 )
 INSERT INTO public.user_asset_inventories (
     created_at,
@@ -267,6 +286,16 @@ FROM public.users users
 CROSS JOIN default_asset_ids
 JOIN public.assets assets
   ON assets.id = default_asset_ids.asset_id
+ AND assets.is_active = true
+ AND (
+        (default_asset_ids.key = 'wallpaper' AND assets.asset_type = 'WALLPAPER')
+     OR (default_asset_ids.key = 'floor' AND assets.asset_type = 'FLOOR')
+     OR (default_asset_ids.key = 'desk' AND assets.asset_type = 'DESK_SET')
+     OR (default_asset_ids.key = 'dashboard' AND assets.asset_type = 'DASHBOARD_SKIN')
+     OR (default_asset_ids.key = 'bookshelfSkinDefault' AND assets.asset_type = 'BOOKSHELF_SKIN')
+     OR (default_asset_ids.key = 'interiorLight' AND assets.asset_type = 'INTERIOR_LIGHT')
+     OR (default_asset_ids.key = 'exteriorLight' AND assets.asset_type = 'EXTERIOR_LIGHT')
+    )
 WHERE users.deleted_at IS NULL
   AND UPPER(users.status) = 'ACTIVE'
   AND NOT EXISTS (
@@ -312,27 +341,55 @@ space_defaults AS (
      AND theme_inventory.user_id = space.owner_user_id
     JOIN theme_defaults
       ON theme_defaults.theme_asset_id = theme_inventory.asset_id
+    LEFT JOIN public.assets wallpaper_asset
+      ON wallpaper_asset.id = theme_defaults.wallpaper_asset_id
+     AND wallpaper_asset.asset_type = 'WALLPAPER'
+     AND wallpaper_asset.is_active = true
+    LEFT JOIN public.assets floor_asset
+      ON floor_asset.id = theme_defaults.floor_asset_id
+     AND floor_asset.asset_type = 'FLOOR'
+     AND floor_asset.is_active = true
+    LEFT JOIN public.assets desk_asset
+      ON desk_asset.id = theme_defaults.desk_asset_id
+     AND desk_asset.asset_type = 'DESK_SET'
+     AND desk_asset.is_active = true
+    LEFT JOIN public.assets dashboard_asset
+      ON dashboard_asset.id = theme_defaults.dashboard_asset_id
+     AND dashboard_asset.asset_type = 'DASHBOARD_SKIN'
+     AND dashboard_asset.is_active = true
+    LEFT JOIN public.assets bookshelf_skin_asset
+      ON bookshelf_skin_asset.id = theme_defaults.bookshelf_skin_asset_id
+     AND bookshelf_skin_asset.asset_type = 'BOOKSHELF_SKIN'
+     AND bookshelf_skin_asset.is_active = true
+    LEFT JOIN public.assets interior_light_asset
+      ON interior_light_asset.id = theme_defaults.interior_light_asset_id
+     AND interior_light_asset.asset_type = 'INTERIOR_LIGHT'
+     AND interior_light_asset.is_active = true
+    LEFT JOIN public.assets exterior_light_asset
+      ON exterior_light_asset.id = theme_defaults.exterior_light_asset_id
+     AND exterior_light_asset.asset_type = 'EXTERIOR_LIGHT'
+     AND exterior_light_asset.is_active = true
     LEFT JOIN public.user_asset_inventories wallpaper_inventory
       ON wallpaper_inventory.user_id = space.owner_user_id
-     AND wallpaper_inventory.asset_id = theme_defaults.wallpaper_asset_id
+     AND wallpaper_inventory.asset_id = wallpaper_asset.id
     LEFT JOIN public.user_asset_inventories floor_inventory
       ON floor_inventory.user_id = space.owner_user_id
-     AND floor_inventory.asset_id = theme_defaults.floor_asset_id
+     AND floor_inventory.asset_id = floor_asset.id
     LEFT JOIN public.user_asset_inventories desk_inventory
       ON desk_inventory.user_id = space.owner_user_id
-     AND desk_inventory.asset_id = theme_defaults.desk_asset_id
+     AND desk_inventory.asset_id = desk_asset.id
     LEFT JOIN public.user_asset_inventories dashboard_inventory
       ON dashboard_inventory.user_id = space.owner_user_id
-     AND dashboard_inventory.asset_id = theme_defaults.dashboard_asset_id
+     AND dashboard_inventory.asset_id = dashboard_asset.id
     LEFT JOIN public.user_asset_inventories bookshelf_skin_inventory
       ON bookshelf_skin_inventory.user_id = space.owner_user_id
-     AND bookshelf_skin_inventory.asset_id = theme_defaults.bookshelf_skin_asset_id
+     AND bookshelf_skin_inventory.asset_id = bookshelf_skin_asset.id
     LEFT JOIN public.user_asset_inventories interior_light_inventory
       ON interior_light_inventory.user_id = space.owner_user_id
-     AND interior_light_inventory.asset_id = theme_defaults.interior_light_asset_id
+     AND interior_light_inventory.asset_id = interior_light_asset.id
     LEFT JOIN public.user_asset_inventories exterior_light_inventory
       ON exterior_light_inventory.user_id = space.owner_user_id
-     AND exterior_light_inventory.asset_id = theme_defaults.exterior_light_asset_id
+     AND exterior_light_inventory.asset_id = exterior_light_asset.id
     WHERE space.deleted_at IS NULL
       AND space.current_theme_inventory_id IS NOT NULL
 )
