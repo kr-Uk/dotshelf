@@ -29,7 +29,7 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addMapping("/v1/auth/apple/desktop-callback")
                 .allowedOrigins(APPLE_SIGN_IN_ORIGIN)
                 .allowedMethods("GET", "POST", "OPTIONS")
-                .allowedHeaders("*")
+                .allowedHeaders("Content-Type")
                 .maxAge(3600);
 
         registry.addMapping("/**")

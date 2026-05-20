@@ -40,7 +40,7 @@ private static final String APPLE_SIGN_IN_ORIGIN = "https://appleid.apple.com";
 registry.addMapping("/v1/auth/apple/desktop-callback")
         .allowedOrigins(APPLE_SIGN_IN_ORIGIN)
         .allowedMethods("GET", "POST", "OPTIONS")
-        .allowedHeaders("*")
+        .allowedHeaders("Content-Type")
         .maxAge(3600);
 ```
 
@@ -48,6 +48,7 @@ registry.addMapping("/v1/auth/apple/desktop-callback")
 - Apple Origin은 전체 `/**`에 넣지 않고 callback 경로에만 허용했다.
 - Apple은 authorize 결과를 `form_post`로 보내므로 `POST` 허용이 필요하다.
 - 개발/호환용 query callback도 유지되므로 `GET`도 같이 열었다.
+- Apple `form_post` callback에 필요한 `Content-Type` 헤더만 허용해 header 범위를 좁혔다.
 
 ### CORS 필터까지 태우는 테스트
 
