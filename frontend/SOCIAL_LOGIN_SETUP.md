@@ -244,7 +244,8 @@ Apple은 클라이언트에서 받은 `identityToken`을 BE로 보낸다. BE는 
 
 ```text
 iOS Bundle ID: {apple-bundle-id}
-Services ID: {apple-services-id}
+Mobile Services ID: com.jihocompany.dotshelf.signin
+Desktop Services ID: com.jihocompany.dotshelf.desktop
 ```
 
 iOS 네이티브 Apple 로그인은 보통 Bundle ID가 `identityToken`의 `aud`로 들어온다. WebView, Android, Desktop 등 Services ID 기반 흐름을 쓰면 Services ID가 `aud`가 되므로 BE의 `APPLE_CLIENT_IDS`에 함께 등록한다.
@@ -254,8 +255,8 @@ Apple Developer 값은 Unity `ProjectSettings`와 Xcode 프로젝트의 실제 B
 
 ```text
 APPLE_CLIENT_ID={apple-bundle-id-or-services-id}
-APPLE_CLIENT_IDS={apple-bundle-id},{apple-services-id}
-APPLE_DESKTOP_CLIENT_ID={apple-services-id}
+APPLE_CLIENT_IDS={apple-bundle-id},com.jihocompany.dotshelf.signin,com.jihocompany.dotshelf.desktop
+APPLE_DESKTOP_CLIENT_ID=com.jihocompany.dotshelf.desktop
 APPLE_TEAM_ID={apple-team-id}
 APPLE_KEY_ID={apple-signin-key-id}
 APPLE_PRIVATE_KEY={apple-p8-private-key}
@@ -290,7 +291,7 @@ https://dev-api.dotshelf.digital/v1/auth/apple/desktop-callback
 
 이 URL은 Apple Developer의 Services ID Return URL에 등록되어 있어야 한다. Unity는 state 안에 실제 loopback callback URL을 base64url로 넣고, BE 콜백은 Apple form_post 응답을 다시 Unity loopback으로 302 redirect한다.
 
-Unity `LoginScreenController`의 `Desktop Browser OAuth Providers`에 Apple 항목을 추가할 때 `clientId`는 Apple Services ID를 넣는다. `authorizationRedirectUri`를 비워두면 기본값으로 `https://dev-api.dotshelf.digital/v1/auth/apple/desktop-callback`을 사용한다.
+Unity `LoginScreenController`의 `Desktop Browser OAuth Providers`에 Apple 항목을 추가할 때 `clientId`는 Desktop Services ID인 `com.jihocompany.dotshelf.desktop`을 넣는다. `authorizationRedirectUri`를 비워두면 기본값으로 `https://dev-api.dotshelf.digital/v1/auth/apple/desktop-callback`을 사용한다. 현재 `WindowsOAuthBrowserFlow`도 같은 Services ID를 기본값으로 가지고 있어서, 씬에 Apple 항목이 빠져도 desktop OAuth 시작 자체는 가능해야 한다.
 
 Unity가 최종적으로 BE `/v1/auth/social-login`에 보내는 요청:
 
