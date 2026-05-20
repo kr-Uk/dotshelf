@@ -2080,6 +2080,13 @@ namespace BookshelfPorting.Runtime
             canvas.overrideSorting = true;
             canvas.sortingOrder = 20;
 
+            var isFrontCover = kind == BookLabelKind.Cover;
+            if (isFrontCover)
+            {
+                CreateFrontCoverTextLabels(labelObject.transform, text, fontSize, color);
+                return;
+            }
+
             var textObject = new GameObject("Label", typeof(RectTransform));
             textObject.transform.SetParent(labelObject.transform, false);
             var textRect = textObject.GetComponent<RectTransform>();
@@ -2116,6 +2123,118 @@ namespace BookshelfPorting.Runtime
             var outline = textObject.AddComponent<Outline>();
             outline.effectColor = new Color(1f, 0.96f, 0.86f, 0.18f);
             outline.effectDistance = isSpineTitle ? new Vector2(0.35f, -0.35f) : new Vector2(0.5f, -0.5f);
+        }
+
+        private static void CreateFrontCoverTextLabels(Transform parent, string text, int baseFontSize, Color color)
+        {
+            SplitFrontCoverText(text, out var title, out var author);
+            var titleFontSize = Mathf.Max(baseFontSize + 1, Mathf.RoundToInt(baseFontSize * 1.08f));
+
+            var titleLabel = CreateFrontCoverTextLabel(
+                parent,
+                "TitleLabel",
+                title,
+                new Vector2(0f, 0.34f),
+                new Vector2(1f, 1f),
+                new Vector2(BookCoverCanvasPadding, BookCoverCanvasPadding),
+                new Vector2(-BookCoverCanvasPadding, -BookCoverCanvasPadding),
+                titleFontSize + 10,
+                titleFontSize + 10,
+                Mathf.Max(8, titleFontSize - 6),
+                FontStyle.Bold,
+                color,
+                0.86f);
+
+            var authorLabel = CreateFrontCoverTextLabel(
+                parent,
+                "AuthorLabel",
+                author,
+                new Vector2(0f, 0f),
+                new Vector2(1f, 0.36f),
+                new Vector2(BookCoverCanvasPadding, BookCoverCanvasPadding),
+                new Vector2(-BookCoverCanvasPadding, -BookCoverCanvasPadding),
+                baseFontSize + 3,
+                baseFontSize + 3,
+                Mathf.Max(8, baseFontSize - 6),
+                FontStyle.Normal,
+                color,
+                0.9f);
+
+            Debug.Log($"[BookCoverText] Focus cover title text={title}");
+            Debug.Log($"[BookCoverText] title fontSize before={baseFontSize}");
+            Debug.Log($"[BookCoverText] title fontSize after={titleLabel.fontSize}");
+            Debug.Log($"[BookCoverText] title bold applied={titleLabel.fontStyle == FontStyle.Bold}");
+            Debug.Log($"[BookCoverText] author fontSize unchanged={authorLabel.fontSize}");
+            Debug.Log($"[BookCoverText] title autoSize={titleLabel.resizeTextForBestFit}");
+        }
+
+        private static Text CreateFrontCoverTextLabel(
+            Transform parent,
+            string name,
+            string text,
+            Vector2 anchorMin,
+            Vector2 anchorMax,
+            Vector2 offsetMin,
+            Vector2 offsetMax,
+            int fontSize,
+            int resizeTextMaxSize,
+            int resizeTextMinSize,
+            FontStyle fontStyle,
+            Color color,
+            float lineSpacing)
+        {
+            var textObject = new GameObject(name, typeof(RectTransform));
+            textObject.transform.SetParent(parent, false);
+            var textRect = textObject.GetComponent<RectTransform>();
+            textRect.anchorMin = anchorMin;
+            textRect.anchorMax = anchorMax;
+            textRect.pivot = new Vector2(0.5f, 0.5f);
+            textRect.offsetMin = offsetMin;
+            textRect.offsetMax = offsetMax;
+            textRect.anchoredPosition = Vector2.zero;
+            textRect.localScale = Vector3.one;
+
+            var label = textObject.AddComponent<Text>();
+            var font = RuntimeUiFont.Resolve();
+            if (font != null)
+            {
+                label.font = font;
+            }
+
+            label.text = text;
+            label.fontSize = fontSize;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.horizontalOverflow = HorizontalWrapMode.Wrap;
+            label.verticalOverflow = VerticalWrapMode.Truncate;
+            label.resizeTextForBestFit = true;
+            label.resizeTextMinSize = resizeTextMinSize;
+            label.resizeTextMaxSize = resizeTextMaxSize;
+            label.lineSpacing = lineSpacing;
+            label.fontStyle = fontStyle;
+            label.color = color;
+            label.supportRichText = false;
+            label.raycastTarget = false;
+
+            var outline = textObject.AddComponent<Outline>();
+            outline.effectColor = new Color(1f, 0.96f, 0.86f, 0.18f);
+            outline.effectDistance = new Vector2(0.5f, -0.5f);
+
+            return label;
+        }
+
+        private static void SplitFrontCoverText(string text, out string title, out string author)
+        {
+            title = text ?? string.Empty;
+            author = string.Empty;
+
+            var separatorIndex = title.IndexOf("\n\n", System.StringComparison.Ordinal);
+            if (separatorIndex < 0)
+            {
+                return;
+            }
+
+            author = title.Substring(separatorIndex + 2);
+            title = title.Substring(0, separatorIndex);
         }
 
         private static Vector3 GetBookCoverCanvasScale()
