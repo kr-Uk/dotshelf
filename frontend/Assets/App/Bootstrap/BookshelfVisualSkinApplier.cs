@@ -1,5 +1,6 @@
 using App.Infrastructure.Catalogs;
 using BookshelfPorting.Runtime;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace App.Bootstrap
@@ -200,7 +201,40 @@ namespace App.Bootstrap
         private static void ClearSkinUnder(Transform functionalRoot)
         {
             if (functionalRoot == null) return;
-            var existing = functionalRoot.Find(BookshelfVisualSkin.SkinChildName);
+            var targets = new List<Transform>();
+            var skins = functionalRoot.GetComponentsInChildren<BookshelfVisualSkin>(true);
+            if (skins != null)
+            {
+                for (int i = 0; i < skins.Length; i++)
+                {
+                    if (skins[i] == null || skins[i].transform == null) continue;
+                    if (!targets.Contains(skins[i].transform))
+                    {
+                        targets.Add(skins[i].transform);
+                    }
+                }
+            }
+
+            var children = functionalRoot.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < children.Length; i++)
+            {
+                var child = children[i];
+                if (child == null || child == functionalRoot) continue;
+                if (child.gameObject.name != BookshelfVisualSkin.SkinChildName) continue;
+                if (!targets.Contains(child))
+                {
+                    targets.Add(child);
+                }
+            }
+
+            for (int i = targets.Count - 1; i >= 0; i--)
+            {
+                RestoreAndDestroySkin(targets[i]);
+            }
+        }
+
+        private static void RestoreAndDestroySkin(Transform existing)
+        {
             if (existing == null) return;
             var marker = existing.GetComponent<BookshelfVisualSkin>();
             if (marker != null)
@@ -213,6 +247,7 @@ namespace App.Bootstrap
                 }
                 hidden.Clear();
             }
+            existing.gameObject.SetActive(false);
             UnityObjectSafeDestroy.Destroy(existing.gameObject);
         }
 

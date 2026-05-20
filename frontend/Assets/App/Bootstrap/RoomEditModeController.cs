@@ -5967,6 +5967,7 @@ namespace App.Bootstrap
                 var child = placedItemsRoot.transform.GetChild(i).gameObject;
                 if (selectedObject == child) selectedObject = null;
                 if (draggingObject == child) draggingObject = null;
+                child.SetActive(false);
                 if (UnityEngine.Application.isPlaying) Destroy(child);
                 else DestroyImmediate(child);
             }
@@ -11531,6 +11532,19 @@ namespace App.Bootstrap
             }
             var restored = RestoreDecorationLayoutItems(items, restoreVersion);
             Debug.Log($"[RoomEdit][ServerLayout] restored {restored} decoration item(s) from server layout.");
+        }
+
+        public void ClearReadOnlyPreviewArtifactsForOwnSpaceRefresh()
+        {
+            InitializeIfNeeded();
+            EnsurePlacedItemsRoot();
+            InvalidateExternalDecorationLayoutRestores();
+            ClearAllPlacedDecos();
+            RestoreAllMeshSwaps();
+            ClearSlotVisualSkinsForThemeReset();
+            ClearVisibleSpaceAssetLookupMaps();
+            RebuildInventorySlots();
+            Debug.Log("[RoomEdit][VisitorIsolation] cleared read-only preview artifacts before own-space refresh.");
         }
 
         public void InvalidateExternalDecorationLayoutRestores()

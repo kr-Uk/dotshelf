@@ -272,7 +272,7 @@ namespace BookshelfPorting.Runtime
             roomEditModeController.SetReadOnlySpacePreview(false);
             if (shouldClearVisitorLayout)
             {
-                roomEditModeController.ApplyExternalDecorationLayoutPayload(null, clearExisting: true);
+                roomEditModeController.ClearReadOnlyPreviewArtifactsForOwnSpaceRefresh();
             }
 
             roomEditModeController.RestoreAuthoritativeSpaceVisuals();
