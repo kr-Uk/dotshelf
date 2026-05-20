@@ -684,6 +684,15 @@ namespace BookshelfPorting.Runtime
                 mainViewBaseCaptured = true;
             }
 
+            // orbit offset 이 0 (= 사용자가 drag 회전하지 않음 / 모드 진입 직후) 일 때는 carrier
+            // transform 을 건드리지 않는다. LookRotation(forward, worldUp) rebuild 가 이론상 idempotent
+            // 이지만 매 frame 적용 시 미세 floating-point drift / 부동 회전축 변환 차이로 "시작할 때
+            // 카메라 구도" 와 back-arrow 복귀 시 camera 구도가 미세하게 어긋나 보이는 회귀 방지.
+            if (Mathf.Approximately(mainViewYawOffset, 0f) && Mathf.Approximately(mainViewPitchOffset, 0f))
+            {
+                return;
+            }
+
             var offsetFromPivot = mainViewBasePosition - mainViewBasePivot;
             var yawRot = Quaternion.AngleAxis(mainViewYawOffset, Vector3.up);
             var yawedRight = yawRot * Vector3.right;
