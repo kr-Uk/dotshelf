@@ -3,6 +3,7 @@ package com.dotshelf.domain.space.entity;
 import java.time.LocalDateTime;
 
 import com.dotshelf.global.common.BaseEntity;
+import com.dotshelf.global.common.VisibilityScope;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -85,11 +86,11 @@ public class Space extends BaseEntity {
     }
 
     public void changeVisibility(String visibilityScope) {
-        this.visibilityScope = visibilityScope;
+        this.visibilityScope = VisibilityScope.normalize(visibilityScope);
     }
 
     public void changeGuestbookVisibility(String guestbookVisibilityScope) {
-        this.guestbookVisibilityScope = guestbookVisibilityScope;
+        this.guestbookVisibilityScope = VisibilityScope.normalize(guestbookVisibilityScope);
     }
 
     public void increaseVisitCount() {

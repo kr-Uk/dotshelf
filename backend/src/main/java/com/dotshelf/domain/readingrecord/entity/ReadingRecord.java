@@ -3,6 +3,7 @@ package com.dotshelf.domain.readingrecord.entity;
 import java.time.LocalDateTime;
 
 import com.dotshelf.global.common.BaseEntity;
+import com.dotshelf.global.common.VisibilityScope;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -56,13 +57,13 @@ public class ReadingRecord extends BaseEntity {
         this.userBookId = userBookId;
         this.title = title;
         this.content = content;
-        this.visibilityScope = visibilityScope == null ? "PUBLIC" : visibilityScope;
+        this.visibilityScope = VisibilityScope.normalize(visibilityScope);
     }
 
     public void update(String title, String content, String visibilityScope) {
         this.title = title;
         this.content = content;
-        this.visibilityScope = visibilityScope == null ? "PUBLIC" : visibilityScope;
+        this.visibilityScope = VisibilityScope.normalize(visibilityScope);
         this.status = "ACTIVE";
         this.deletedAt = null;
     }
