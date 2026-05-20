@@ -7,8 +7,6 @@ namespace BookshelfPorting.Runtime
     public class BookshelfState : MonoBehaviour
     {
         private const float SectionDropAreaMargin = 0.08f;
-        private const float MinimumSectionFitScale = 0.68f;
-
         [SerializeField] private float bookPadding = 0.01f;
         [SerializeField] private float shelfFrontInset = 0.01f;
         [SerializeField] private float animationDuration = 0.18f;
@@ -272,8 +270,7 @@ namespace BookshelfPorting.Runtime
             }
 
             RemoveMissingBooks(section);
-            var sectionScale = GetSectionLayoutScale(section, book);
-            var x = GetSectionLayoutStartX(section, section.books, sectionScale);
+            var x = GetSectionLayoutStartX(section, section.books);
             var insertIndex = 0;
 
             for (var i = 0; i < section.books.Count; i++)
@@ -284,14 +281,14 @@ namespace BookshelfPorting.Runtime
                     continue;
                 }
 
-                var footprint = existingBook.GetFootprint() * sectionScale;
+                var footprint = existingBook.GetLayoutFootprint();
                 var centerX = x + footprint * 0.5f;
                 if (localPosition.x <= centerX)
                 {
                     return insertIndex;
                 }
 
-                x += footprint + bookPadding;
+                x += footprint + GetLayoutSpacing(existingBook, book);
                 insertIndex++;
             }
 
@@ -300,7 +297,7 @@ namespace BookshelfPorting.Runtime
 
         public float GetDropLayoutScale(ShelfSection section, BookEntity book)
         {
-            return section != null ? GetSectionLayoutScale(section, book) : 1f;
+            return 1f;
         }
 
         public bool ChangeBookOrientation(BookEntity book, BookOrientation nextOrientation, MonoBehaviour runner)
@@ -502,7 +499,7 @@ namespace BookshelfPorting.Runtime
             }
 
             RemoveMissingBooks(section);
-            return GetSectionLayoutScale(section) >= MinimumSectionFitScale;
+            return CanSectionFitBooks(section, null);
         }
 
         private bool CanSectionContainBook(ShelfSection section, BookEntity book)
@@ -513,7 +510,7 @@ namespace BookshelfPorting.Runtime
             }
 
             RemoveMissingBooks(section);
-            return GetSectionLayoutScale(section, book) >= MinimumSectionFitScale;
+            return CanSectionFitBooks(section, book);
         }
 
         private void BuildSectionLayout(ShelfSection section, List<BookLayoutTarget> targets)
@@ -531,7 +528,6 @@ namespace BookshelfPorting.Runtime
             }
 
             RemoveMissingBooks(section);
-            var sectionScale = GetSectionLayoutScale(section, candidateBook);
             var sourceBooks = section.books;
             if (candidateBook != null)
             {
@@ -539,35 +535,36 @@ namespace BookshelfPorting.Runtime
                 sourceBooks = previewBooks;
             }
 
-            var x = GetSectionLayoutStartX(section, sourceBooks, sectionScale);
+            var x = GetSectionLayoutStartX(section, sourceBooks);
             for (var i = 0; i < sourceBooks.Count; i++)
             {
                 var book = sourceBooks[i];
-                var footprint = book.GetFootprint() * sectionScale;
-                // X uses scaled footprints while Z aligns the visual front edge inside the section depth.
+                var footprint = book.GetLayoutFootprint();
                 targets.Add(new BookLayoutTarget(
                     book,
                     new Vector3(
                         x + footprint * 0.5f,
-                        section.BookBaseY + book.height * sectionScale * 0.5f,
-                        section.GetFrontAlignedBookCenterZ(book, sectionScale, shelfFrontInset)),
+                        section.BookBaseY + book.height * 0.5f,
+                        section.GetFrontAlignedBookCenterZ(book, 1f, shelfFrontInset)),
                     BookFootprintUtility.GetVisualRotation(book.orientation),
-                    book.BaseLocalScale * sectionScale));
+                    book.BaseLocalScale));
 
-                x += footprint + bookPadding;
+                var nextBook = i + 1 < sourceBooks.Count ? sourceBooks[i + 1] : null;
+                x += footprint + GetLayoutSpacing(book, nextBook);
             }
         }
 
-        private float GetSectionLayoutStartX(ShelfSection section, List<BookEntity> sourceBooks, float sectionScale)
+        private float GetSectionLayoutStartX(ShelfSection section, List<BookEntity> sourceBooks)
         {
             if (section == null)
             {
                 return 0f;
             }
 
-            var contentWidth = GetSectionContentWidth(sourceBooks, sectionScale);
-            var leftStart = section.leftBound + bookPadding;
-            var rightStart = section.rightBound - bookPadding - contentWidth;
+            var contentWidth = GetSectionContentWidth(sourceBooks);
+            var edgePadding = BookFootprintUtility.GetEdgePadding(bookPadding);
+            var leftStart = section.leftBound + edgePadding;
+            var rightStart = section.rightBound - edgePadding - contentWidth;
             if (rightStart < leftStart)
             {
                 return leftStart;
@@ -584,7 +581,7 @@ namespace BookshelfPorting.Runtime
             }
         }
 
-        private float GetSectionContentWidth(List<BookEntity> sourceBooks, float sectionScale)
+        private float GetSectionContentWidth(List<BookEntity> sourceBooks)
         {
             if (sourceBooks == null || sourceBooks.Count == 0)
             {
@@ -601,13 +598,14 @@ namespace BookshelfPorting.Runtime
                     continue;
                 }
 
-                width += book.GetFootprint() * sectionScale;
+                width += book.GetLayoutFootprint();
                 bookCount++;
-            }
 
-            if (bookCount > 1)
-            {
-                width += bookPadding * (bookCount - 1);
+                var nextBook = FindNextBook(sourceBooks, i + 1);
+                if (nextBook != null)
+                {
+                    width += GetLayoutSpacing(book, nextBook);
+                }
             }
 
             return width;
@@ -640,16 +638,11 @@ namespace BookshelfPorting.Runtime
             target.Insert(clampedInsertIndex, candidateBook);
         }
 
-        private float GetSectionLayoutScale(ShelfSection section)
-        {
-            return GetSectionLayoutScale(section, null);
-        }
-
-        private float GetSectionLayoutScale(ShelfSection section, BookEntity candidateBook)
+        private bool CanSectionFitBooks(ShelfSection section, BookEntity candidateBook)
         {
             if (section == null)
             {
-                return 1f;
+                return false;
             }
 
             var footprintSum = 0f;
@@ -668,28 +661,53 @@ namespace BookshelfPorting.Runtime
                     candidateAlreadyIncluded = true;
                 }
 
-                footprintSum += book.GetFootprint();
+                footprintSum += book.GetLayoutFootprint();
                 bookCount++;
             }
 
             if (candidateBook != null && !candidateAlreadyIncluded)
             {
-                footprintSum += candidateBook.GetFootprint();
+                footprintSum += candidateBook.GetLayoutFootprint();
                 bookCount++;
             }
 
             if (bookCount == 0 || footprintSum <= 0f)
             {
-                return 1f;
+                return true;
             }
 
-            var availableForBooks = section.Width - bookPadding * (bookCount + 1);
+            BuildPreviewBookList(section, candidateBook, section.books.Count, previewBooks);
+            var requiredWidth = GetSectionContentWidth(previewBooks);
+            var availableForBooks = section.Width - BookFootprintUtility.GetEdgePadding(bookPadding) * 2f;
             if (availableForBooks <= 0f)
             {
-                return 0f;
+                return false;
             }
 
-            return Mathf.Min(1f, availableForBooks / footprintSum);
+            return requiredWidth <= availableForBooks;
+        }
+
+        private float GetLayoutSpacing(BookEntity left, BookEntity right)
+        {
+            return BookFootprintUtility.GetPairSpacing(bookPadding, left, right);
+        }
+
+        private static BookEntity FindNextBook(List<BookEntity> sourceBooks, int startIndex)
+        {
+            if (sourceBooks == null)
+            {
+                return null;
+            }
+
+            for (var i = startIndex; i < sourceBooks.Count; i++)
+            {
+                if (sourceBooks[i] != null)
+                {
+                    return sourceBooks[i];
+                }
+            }
+
+            return null;
         }
 
         private static BookEntity FindLargestBookExcept(ShelfSection section, BookEntity except)
@@ -760,7 +778,7 @@ namespace BookshelfPorting.Runtime
 
             target.localPosition = localPosition;
             target.localRotation = localRotation;
-            target.localScale = localScale;
+            ApplyBookScaleWithoutShrink(target, localScale);
         }
 
         private void StopLayoutAnimation(Transform target)
@@ -817,7 +835,7 @@ namespace BookshelfPorting.Runtime
 
                 target.localPosition = localPosition;
                 target.localRotation = localRotation;
-                target.localScale = localScale;
+                ApplyBookScaleWithoutShrink(target, localScale);
             }
             finally
             {
@@ -826,6 +844,29 @@ namespace BookshelfPorting.Runtime
                     activeLayoutAnimations.Remove(trackedTarget);
                 }
             }
+        }
+
+        private static void ApplyBookScaleWithoutShrink(Transform target, Vector3 expectedLocalScale)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            var book = target.GetComponent<BookEntity>();
+            if (book != null && !Approximately(target.localScale, expectedLocalScale))
+            {
+                Debug.LogWarning($"[BookPlacement] Unexpected scale change detected book={book.title} current={target.localScale} expected={expectedLocalScale}");
+            }
+
+            target.localScale = expectedLocalScale;
+        }
+
+        private static bool Approximately(Vector3 left, Vector3 right)
+        {
+            return Mathf.Approximately(left.x, right.x) &&
+                   Mathf.Approximately(left.y, right.y) &&
+                   Mathf.Approximately(left.z, right.z);
         }
 
         private readonly struct LayoutAnimationHandle

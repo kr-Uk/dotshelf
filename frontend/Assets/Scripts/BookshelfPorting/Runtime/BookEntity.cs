@@ -53,6 +53,10 @@ namespace BookshelfPorting.Runtime
         public bool reportLiked;
         public int reportLikeCount;
         public int reportCommentCount;
+        public string sizePresetId;
+        public int bookshelfIndex = -1;
+        public int cellIndex = -1;
+        public float offsetXInCell;
 
         public ShelfSection CurrentSection { get; private set; }
         public ShelfSection OriginalSection { get; private set; }
@@ -82,6 +86,23 @@ namespace BookshelfPorting.Runtime
 
             ApplyTint(color);
             ApplyOrientationVisualsImmediate();
+        }
+
+        public void ApplySizePreset(BookSizePreset preset)
+        {
+            sizePresetId = preset.Id;
+            thickness = preset.Thickness;
+            height = preset.Height;
+            depth = preset.Depth;
+            transform.localScale = new Vector3(thickness, height, depth);
+            BaseLocalScale = transform.localScale;
+        }
+
+        public void SetPlacementInfo(int nextBookshelfIndex, int nextCellIndex, float nextOffsetXInCell)
+        {
+            bookshelfIndex = nextBookshelfIndex;
+            cellIndex = nextCellIndex;
+            offsetXInCell = nextOffsetXInCell;
         }
 
         public void ApplyMetadata(Book book, UserBook userBook, ReadingRecord readingRecord)
@@ -137,6 +158,11 @@ namespace BookshelfPorting.Runtime
         public float GetFootprint()
         {
             return BookFootprintUtility.GetFootprint(thickness, depth, orientation);
+        }
+
+        public float GetLayoutFootprint()
+        {
+            return BookFootprintUtility.GetLayoutFootprint(thickness, depth, orientation);
         }
 
         public void SetOrientation(BookOrientation nextOrientation)
