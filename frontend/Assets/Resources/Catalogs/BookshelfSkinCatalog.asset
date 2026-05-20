@@ -18,7 +18,7 @@ MonoBehaviour:
     displayName: "\uAE4A\uC740\uBC14\uB2E4 \uCC45\uC7A5"
     description: "\uAE4A\uC740\uBC14\uB2E4 \uD14C\uB9C8 \uC804\uC6A9 \uCC45\uC7A5.
       \uAE30\uC874 BookshelfRoot \uC704\uCE58\uB97C \uAD50\uCCB4\uD55C\uB2E4."
-    previewSprite: {fileID: 0}
+    previewSprite: {fileID: 21300000, guid: 836757663ba970f4c8aa3253a8d93e0c, type: 3}
     themeTag: DeepSea
     isLocalPreview: 1
     materials: []
@@ -70,8 +70,8 @@ MonoBehaviour:
     notebookLocalScaleOverride: {x: 0, y: 0, z: 0}
   - assetId: 400020
     displayName: "\uD310\uD0C0\uC9C0 \uCC45\uC7A5"
-    description: "Fantasy theme bookshelf skin."
-    previewSprite: {fileID: 0}
+    description: Fantasy theme bookshelf skin.
+    previewSprite: {fileID: 21300000, guid: 7fbf05045f1a2c2458db56537f1fac6d, type: 3}
     themeTag: Fantasy
     isLocalPreview: 1
     materials: []
@@ -123,8 +123,8 @@ MonoBehaviour:
     notebookLocalScaleOverride: {x: 0, y: 0, z: 0}
   - assetId: 500020
     displayName: "\uC6B0\uC8FC \uCC45\uC7A5"
-    description: "Space theme bookshelf skin."
-    previewSprite: {fileID: 0}
+    description: Space theme bookshelf skin.
+    previewSprite: {fileID: 21300000, guid: ac1f31c9e7ff8aa43906af42ecb66cf2, type: 3}
     themeTag: Space
     isLocalPreview: 1
     materials: []
@@ -176,8 +176,8 @@ MonoBehaviour:
     notebookLocalScaleOverride: {x: 0, y: 0, z: 0}
   - assetId: 600020
     displayName: "\uC2A4\uD478\uD0A4 \uCC45\uC7A5"
-    description: "Spooky theme bookshelf skin."
-    previewSprite: {fileID: 0}
+    description: Spooky theme bookshelf skin.
+    previewSprite: {fileID: 21300000, guid: 8406fd2dbef7ca14e977b9f12cb8bff9, type: 3}
     themeTag: Spooky
     isLocalPreview: 1
     materials: []
@@ -229,8 +229,8 @@ MonoBehaviour:
     notebookLocalScaleOverride: {x: 0, y: 0, z: 0}
   - assetId: 200020
     displayName: "\uBE48\uD2F0\uC9C0 \uCC45\uC7A5"
-    description: "Vintage theme bookshelf skin."
-    previewSprite: {fileID: 0}
+    description: Vintage theme bookshelf skin.
+    previewSprite: {fileID: 21300000, guid: 3a08ed02b8f987748b312e94b1fbf79c, type: 3}
     themeTag: Vintage
     isLocalPreview: 1
     materials: []

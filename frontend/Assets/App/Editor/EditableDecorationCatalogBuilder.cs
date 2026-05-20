@@ -65,6 +65,7 @@ namespace App.EditorTools
                     fresh.AllowRotation = prior.AllowRotation;
                     fresh.Kind = prior.Kind;
                     fresh.ScaleMultiplierOverride = prior.ScaleMultiplierOverride;
+                    fresh.PreviewSprite = prior.PreviewSprite;
                 }
                 else
                 {

@@ -219,9 +219,10 @@ namespace App.Bootstrap
             ("ALL", "전체"),
             ("FURNITURE", "필수"),
             ("WALLPAPER", "벽지"),
+            ("FLOOR", "바닥"),
             ("LIGHT_INNER", "내부조명"),
             ("LIGHT_OUTER", "외부조명"),
-            ("OBJECT_SKIN", "필수 오브젝트 스킨"),
+            ("PLACEMENT", "배치"),
             ("THEME_FULL", "전체 테마"),
             ("SHOP", "샵"),
         };
@@ -243,6 +244,7 @@ namespace App.Bootstrap
             CustomizationCategory.DashboardSkin,
             CustomizationCategory.Notebook,
             CustomizationCategory.Wallpaper,
+            CustomizationCategory.Floor,
             CustomizationCategory.InteriorLight,
             CustomizationCategory.ExteriorLight,
         };
@@ -268,6 +270,7 @@ namespace App.Bootstrap
             public bool IsRemoteAsset;
             public long RemoteAssetId;
             public long RemoteInventoryId;
+            public Sprite PreviewSprite;
             public string PreviewImageUrl;
             public string ThemeTag;
             public string ServerAssetType;
@@ -1236,6 +1239,7 @@ namespace App.Bootstrap
                         DisplayName = string.IsNullOrWhiteSpace(entry.DisplayName) ? entry.Prefab.name : entry.DisplayName,
                         Prefab = entry.Prefab,
                         SourceAssetPath = entry.SourceAssetPath ?? string.Empty,
+                        PreviewSprite = entry.PreviewSprite,
                         PlacementCategory = placement,
                         AllowRotation = entry.AllowRotation,
                         Kind = entry.Kind,
@@ -2176,6 +2180,8 @@ namespace App.Bootstrap
             {
                 case "ALL":
                     return true;
+                case "PLACEMENT":
+                    return IsPlaceableInventoryCategory(entry.PlacementCategory);
                 case "FURNITURE":
                     // WallDeco (창문/네온사인) 와 BookshelfDeco 는 별도 placement → 가구 탭 제외.
                     // 나머지 (Wallpaper loader fallback → FloorDeco 포함, FloorDeco 자체)는 바닥 데코로 surface.
@@ -2967,7 +2973,7 @@ namespace App.Bootstrap
             }
 
             // v1.0 customization — 1:1 카테고리 매핑이 명확한 toolbar 키는 CustomizationCatalog로 처리.
-            // FURNITURE는 sub-tab(책상/책장스킨/대시보드스킨)으로 분기. OBJECT_SKIN은 후속 PR에서 sub-탭화.
+            // FURNITURE는 sub-tab(책상/책장스킨/대시보드스킨)으로 분기. PLACEMENT는 배치 가능한 에셋을 표시.
             if (selectedToolbarKey == "FURNITURE")
             {
                 if (TryResolveFurnitureSubCategory(selectedFurnitureSubKey, out var furnitureCategory))
@@ -2981,6 +2987,7 @@ namespace App.Bootstrap
             if (TryResolveCustomizationCategory(selectedToolbarKey, out var category))
             {
                 BuildCustomizationSlots(inventoryContentRoot.transform, category);
+                BuildRemoteCategorySlots(inventoryContentRoot.transform, category);
                 return;
             }
 
@@ -3076,12 +3083,13 @@ namespace App.Bootstrap
         }
 
         // toolbar 키 → CustomizationCategory 매핑. 1:1 명확 매핑만 true 반환,
-        // 묶음 탭(FURNITURE/OBJECT_SKIN/ALL)은 false.
+        // 묶음 탭(FURNITURE/PLACEMENT/ALL)은 false.
         private static bool TryResolveCustomizationCategory(string toolbarKey, out CustomizationCategory category)
         {
             switch (toolbarKey)
             {
                 case "WALLPAPER":   category = CustomizationCategory.Wallpaper; return true;
+                case "FLOOR":       category = CustomizationCategory.Floor; return true;
                 case "LIGHT_INNER": category = CustomizationCategory.InteriorLight; return true;
                 case "LIGHT_OUTER": category = CustomizationCategory.ExteriorLight; return true;
                 default:            category = default; return false;
@@ -3245,7 +3253,7 @@ namespace App.Bootstrap
             return false;
         }
 
-        private static bool DoesRemoteInventoryEntryMatchCatalogEntry(
+        private bool DoesRemoteInventoryEntryMatchCatalogEntry(
             CustomizationCategory category,
             InventoryEntry remoteEntry,
             CustomizationEntry catalogEntry)
@@ -3264,6 +3272,13 @@ namespace App.Bootstrap
             if (remoteEntry.RemoteAssetId > 0L &&
                 catalogEntry.AssetId > 0L &&
                 remoteEntry.RemoteAssetId == catalogEntry.AssetId)
+            {
+                return true;
+            }
+
+            if (remoteEntry.RemoteAssetId > 0L &&
+                ownedAssetsByAssetId.TryGetValue(remoteEntry.RemoteAssetId, out var serverAsset) &&
+                DoesServerAssetMatchEntry(category, serverAsset, catalogEntry))
             {
                 return true;
             }
@@ -3377,7 +3392,8 @@ namespace App.Bootstrap
             outline.effectDistance = new Vector2(1f, -1f);
 
             // 현재 적용 중인 항목은 강조 (Space 도메인의 카테고리별 ID와 비교)
-            if (IsCategoryEntryCurrent(category, entry.AssetId))
+            var isCurrentEntry = IsCategoryEntryCurrent(category, entry.AssetId);
+            if (isCurrentEntry)
             {
                 outline.effectColor = TextColor;
                 outline.effectDistance = new Vector2(2f, -2f);
@@ -3425,6 +3441,56 @@ namespace App.Bootstrap
             var capturedEntry = entry;
             var capturedCategory = category;
             button.onClick.AddListener(() => OnCustomizationEntrySelected(capturedCategory, capturedEntry));
+
+            if (isCurrentEntry)
+            {
+                AddPlacedBadge(slot.transform);
+            }
+        }
+
+        private void BuildRemoteCategorySlots(Transform parent, CustomizationCategory category)
+        {
+            var slotIndex = 0;
+            for (var i = 0; i < inventoryEntries.Count; i++)
+            {
+                var entry = inventoryEntries[i];
+                if (!entry.IsRemoteAsset)
+                {
+                    continue;
+                }
+
+                if (ShouldHideRemoteInventoryEntryFromInventory(entry))
+                {
+                    continue;
+                }
+
+                if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag))
+                {
+                    continue;
+                }
+
+                if (!TryResolveRemoteCustomizationCategory(entry, out var remoteCategory) ||
+                    remoteCategory != category)
+                {
+                    continue;
+                }
+
+                if (ShouldSuppressRemoteCatalogDuplicate(entry))
+                {
+                    continue;
+                }
+
+                BuildInventorySlot(parent, slotIndex, entry);
+                slotIndex++;
+            }
+        }
+
+
+        private static bool IsPlaceableInventoryCategory(CustomizationCategory category)
+        {
+            return category == CustomizationCategory.FloorDeco ||
+                   category == CustomizationCategory.WallDeco ||
+                   category == CustomizationCategory.BookshelfDeco;
         }
 
         // 현재 적용 중인 카테고리 항목인지 검사.
@@ -3770,7 +3836,18 @@ namespace App.Bootstrap
                 {
                     if (TryResolveOwnedAssetIdForInventory(serverInventoryId.Value, out var serverAssetId))
                     {
-                        return serverAssetId == assetId;
+                        if (serverAssetId == assetId)
+                        {
+                            return true;
+                        }
+
+                        if (ownedAssetsByAssetId.TryGetValue(serverAssetId, out var serverAsset))
+                        {
+                            var candidate = catalog?.FindByAssetId(assetId);
+                            return candidate != null && DoesServerAssetMatchEntry(category, serverAsset, candidate);
+                        }
+
+                        return false;
                     }
 
                     var localMockEntry = catalog?.FindByAssetId(serverInventoryId.Value);
@@ -8341,7 +8418,14 @@ namespace App.Bootstrap
             var glyph = CreateText(thumb.transform, "Glyph",
                 ResolveSlotInitial(entry.DisplayName), 28f, FontStyles.Bold, MutedTextColor, TextAlignmentOptions.Center);
             StretchToParent(glyph.rectTransform);
-            if (!string.IsNullOrWhiteSpace(entry.PreviewImageUrl))
+            if (entry.PreviewSprite != null)
+            {
+                thumb.sprite = entry.PreviewSprite;
+                thumb.type = Image.Type.Simple;
+                thumb.preserveAspect = true;
+                glyph.gameObject.SetActive(false);
+            }
+            else if (!string.IsNullOrWhiteSpace(entry.PreviewImageUrl))
             {
                 LoadInventoryPreview(entry.PreviewImageUrl, thumb, glyph);
             }
@@ -8377,23 +8461,30 @@ namespace App.Bootstrap
                 glyph.color = WithAlpha(MutedTextColor, 0.55f);
                 labelText.color = WithAlpha(TextColor, 0.55f);
 
-                var placedTag = CreateImage(slot.transform, "PlacedTag", Hex("#3A3A3A"));
-                placedTag.sprite = roundedRectSprite;
-                placedTag.type = Image.Type.Sliced;
-                var tagRect = placedTag.rectTransform;
-                tagRect.anchorMin = new Vector2(0.5f, 1f);
-                tagRect.anchorMax = new Vector2(0.5f, 1f);
-                tagRect.pivot = new Vector2(0.5f, 1f);
-                tagRect.sizeDelta = new Vector2(64f, 22f);
-                tagRect.anchoredPosition = new Vector2(0f, -4f);
-
-                var tagLabel = CreateText(placedTag.transform, "Label", "배치됨", 11f, FontStyles.Bold, Color.white, TextAlignmentOptions.Center);
-                StretchToParent(tagLabel.rectTransform);
+                AddPlacedBadge(slot.transform);
             }
         }
 
         // 인벤토리 자산 식별 키.
         //
+        private void AddPlacedBadge(Transform parent)
+        {
+            var placedTag = CreateImage(parent, "PlacedTag", Hex("#3A3A3A"));
+            placedTag.sprite = roundedRectSprite;
+            placedTag.type = Image.Type.Sliced;
+            placedTag.transform.SetAsLastSibling();
+
+            var tagRect = placedTag.rectTransform;
+            tagRect.anchorMin = new Vector2(0.5f, 1f);
+            tagRect.anchorMax = new Vector2(0.5f, 1f);
+            tagRect.pivot = new Vector2(0.5f, 1f);
+            tagRect.sizeDelta = new Vector2(64f, 22f);
+            tagRect.anchoredPosition = new Vector2(0f, -4f);
+
+            var tagLabel = CreateText(placedTag.transform, "Label", "배치됨", 11f, FontStyles.Bold, Color.white, TextAlignmentOptions.Center);
+            StretchToParent(tagLabel.rectTransform);
+        }
+
         // TODO(server-inventory): EditableDecorationCatalog 에 inventoryId / assetId 가 추가되면
         // "asset:{AssetId}" / "inv:{InventoryId}" 가 정식 키. 그 시점에는 fallback 들을 dev-only
         // assertion 으로 좁히고 prod 에서는 서버 ID 만 신뢰. PR !120 review #2 (beshu) 참조.
@@ -15719,7 +15810,7 @@ namespace App.Bootstrap
 
             const string roomEditCharacters =
                 "꾸미기 편집 샵 돌아가기 " +
-                "전체 필수 책상 책장 대시보드 노트북 벽지 내부조명 외부조명 필수 오브젝트 스킨 전체 테마 " +
+                "전체 필수 책상 책장 대시보드 노트북 벽지 바닥 내부조명 외부조명 배치 전체 테마 샵 배치됨 " +
                 "보유 인벤토리 " +
                 "회전 삭제 " +
                 "준비 중입니다 확인";

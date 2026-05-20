@@ -22,6 +22,7 @@ namespace App.Bootstrap
             public string DisplayName;
             public GameObject Prefab;
             public string SourceAssetPath;
+            public Sprite PreviewSprite;
             // Placement 분기 — RoomEditModeController.PlaceInventoryEntry 가 이 값으로
             // floor / wall / bookshelf 분기. default(0)=Wallpaper 인데 placement 카테고리
             // 가 아니라 Inspector 에서 의미가 모호 → loader 가 unset/Wallpaper 면
