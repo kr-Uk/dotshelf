@@ -28,16 +28,16 @@ class ThemeFixedDefaultsMigrationTest {
             .withPassword("dotshelf_test");
 
     @Test
-    @DisplayName("V34 seeds theme fixed defaults and backfills spaces without overwriting overrides")
-    void v34SeedsThemeFixedDefaultsAndBackfillsSpaces() throws SQLException {
+    @DisplayName("V34/V35 seed theme fixed defaults and backfill spaces without overwriting overrides")
+    void themeFixedDefaultsAreSeededAndBackfilled() throws SQLException {
         Flyway flywayToV33 = flyway("33");
         flywayToV33.clean();
         flywayToV33.migrate();
         seedSpaceThemeBeforeV34();
 
-        flyway("34").migrate();
+        flyway("35").migrate();
 
-        assertThat(currentFlywayVersion()).isEqualTo("34");
+        assertThat(currentFlywayVersion()).isEqualTo("35");
         Long floorAssetId = assetId("SPACE_FLOOR");
         Long interiorLightAssetId = assetId("SPACE_INTERIOR_LIGHT");
         Long exteriorLightAssetId = assetId("SPACE_EXTERIOR_LIGHT");
@@ -46,6 +46,7 @@ class ThemeFixedDefaultsMigrationTest {
         assertThat(themeTargetId("THEME_SPACE", "interiorLight")).isEqualTo(interiorLightAssetId);
         assertThat(themeTargetId("THEME_SPACE", "exteriorLight")).isEqualTo(exteriorLightAssetId);
         assertThat(themeTargetId("THEME_FANTASY", "dashboard")).isEqualTo(assetId("FANTASY_DASHBOARD_SKIN"));
+        assertThat(themeTargetId("THEME_FANTASY", "wallpaper")).isEqualTo(assetId("FANTASY_WALLPAPER"));
         assertThat(assetText("SPACE_WALLPAPER", "unity_resource_key"))
                 .isEqualTo("Assets/App/Composition/Configs/RoomThemes/RoomTheme_Space.asset#wallpaper");
         assertThat(assetText("FANTASY_WALLPAPER", "unity_resource_key"))
