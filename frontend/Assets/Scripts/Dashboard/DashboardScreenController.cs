@@ -203,6 +203,16 @@ namespace Dotshelf.Scripts.Dashboard
         private int currentGuestbookPageIndex;
         private string nextGuestbookCursor;
 
+        // ===== 방명록 overlay (screen-space 클론) 데이터 미러링 =====
+        // 마지막으로 렌더된 page 결과를 보관 — CaptureOverlaySnapshot 이 클론에 통째로 넘긴다.
+        private GuestbookListPage lastGuestbookPage;
+        private OwnedBookListPage lastRecentBooksPage;
+        private ReadingRecordListPage lastRecentRecordsPage;
+        // overlay mirror 모드 — true 면 이 컨트롤러는 자체 API fetch(LoadInitialData) 를 하지 않고
+        // ApplyOverlaySnapshot 으로 주입된 데이터만 렌더한다 (screen-space 방명록 overlay 클론 전용).
+        // 이 플래그가 false 인 한 아래 모든 추가 코드는 무영향 — world 방명록·다른 대시보드는 그대로다.
+        private bool overlayMirrorMode;
+
         // ====== Cached event handlers (Awake에서 1회 인스턴스화 → WireEvents/UnwireEvents가 정확한 인스턴스로 register/unregister) ======
 
         // 람다 핸들러 (인자 캡처 있어 메서드 그룹으로 못 쓰는 것)
@@ -392,7 +402,7 @@ namespace Dotshelf.Scripts.Dashboard
             ReloadDashboardIfReady();
         }
 
-        private void ReloadDashboardIfReady()
+        private void ReloadDashboardIfReady(bool force = false)
         {
             if (!Application.isPlaying ||
                 !isActiveAndEnabled ||
@@ -403,7 +413,7 @@ namespace Dotshelf.Scripts.Dashboard
                 return;
             }
 
-            LoadInitialData();
+            LoadInitialData(force);
         }
 
         /// <summary>
@@ -411,7 +421,8 @@ namespace Dotshelf.Scripts.Dashboard
         /// </summary>
         public void RefreshAll()
         {
-            ReloadDashboardIfReady();
+            // 명시적 새로고침 — overlay mirror 모드여도 force 로 실제 fetch 한다.
+            ReloadDashboardIfReady(true);
         }
 
         /// <summary>
@@ -438,6 +449,87 @@ namespace Dotshelf.Scripts.Dashboard
             }
 
             LoadRecentRecords();
+        }
+
+        // ===== 방명록 overlay (screen-space 클론) 데이터 미러링 API =====
+
+        // 이 컨트롤러를 overlay mirror 로 표시 — 자체 fetch 를 멈추고 ApplyOverlaySnapshot 으로만 렌더한다.
+        public void SetOverlayMirrorMode(bool enabled)
+        {
+            overlayMirrorMode = enabled;
+        }
+
+        // 현재 로드된 대시보드 데이터 일체를 묶어 반환한다 — world 방명록 컨트롤러에서 호출해
+        // overlay 클론에 넘긴다. 아직 로드 전이면 null.
+        public OverlaySnapshot CaptureOverlaySnapshot()
+        {
+            if (currentSnapshot == null)
+            {
+                return null;
+            }
+
+            return new OverlaySnapshot
+            {
+                IsMine = viewMode == ViewMode.Mine,
+                VisitedSpaceId = visitedSpaceId,
+                Dashboard = currentSnapshot,
+                GuestbookPage = lastGuestbookPage,
+                NextGuestbookCursor = nextGuestbookCursor,
+                BooksPage = lastRecentBooksPage,
+                RecordsPage = lastRecentRecordsPage,
+            };
+        }
+
+        // CaptureOverlaySnapshot 으로 받은 데이터를 API 호출 없이 즉시 렌더한다 — overlay 클론 전용.
+        // OnDashboardLoaded + 3개 sub-load 의 render 경로(RenderHeader/RenderGuestbookGrid/
+        // RenderBooksCarousel/RenderRecordsCarousel)를 그대로 재사용한다.
+        public void ApplyOverlaySnapshot(OverlaySnapshot snapshot)
+        {
+            if (snapshot == null || snapshot.Dashboard == null || root == null)
+            {
+                return;
+            }
+
+            viewMode = snapshot.IsMine ? ViewMode.Mine : ViewMode.Visitor;
+            visitedSpaceId = snapshot.VisitedSpaceId;
+            ApplyViewMode();
+
+            currentGuestbookPageIndex = 0;
+            guestbookCursorHistory.Clear();
+            guestbookCursorHistory.Add(null);
+
+            currentSnapshot = snapshot.Dashboard;
+            RenderHeader(snapshot.Dashboard);
+
+            if (snapshot.GuestbookPage != null)
+            {
+                nextGuestbookCursor = snapshot.NextGuestbookCursor;
+                RenderGuestbookGrid(snapshot.GuestbookPage);
+                UpdateGuestbookCount(snapshot.GuestbookPage);
+                UpdateGuestbookPagination();
+            }
+
+            if (snapshot.BooksPage != null)
+            {
+                RenderBooksCarousel(snapshot.BooksPage);
+            }
+
+            if (snapshot.RecordsPage != null)
+            {
+                RenderRecordsCarousel(snapshot.RecordsPage);
+            }
+        }
+
+        // overlay 클론에 넘기는 대시보드 데이터 묶음 (API 호출 없이 렌더용).
+        public sealed class OverlaySnapshot
+        {
+            public bool IsMine;
+            public long VisitedSpaceId;
+            public DashboardSnapshot Dashboard;
+            public GuestbookListPage GuestbookPage;
+            public string NextGuestbookCursor;
+            public OwnedBookListPage BooksPage;
+            public ReadingRecordListPage RecordsPage;
         }
 
         public void Configure(
@@ -838,11 +930,18 @@ namespace Dotshelf.Scripts.Dashboard
             if (viewMode == ViewMode.Mine) return;
             viewMode = ViewMode.Mine;
             ApplyViewMode();
-            LoadInitialData();
+            LoadInitialData(true);
         }
 
-        private void LoadInitialData()
+        private void LoadInitialData(bool force = false)
         {
+            // overlay mirror 모드(screen-space 방명록 클론) 는 자체 fetch 를 하지 않는다 —
+            // ApplyOverlaySnapshot 으로 world 방명록의 데이터를 주입받기 때문. 명시적 새로고침(force)만 예외.
+            if (overlayMirrorMode && !force)
+            {
+                return;
+            }
+
             currentGuestbookPageIndex = 0;
             guestbookCursorHistory.Clear();
             guestbookCursorHistory.Add(null);
@@ -1042,6 +1141,7 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void RenderBooksCarousel(OwnedBookListPage page)
         {
+            lastRecentBooksPage = page;
             if (booksCarousel == null)
             {
                 return;
@@ -1223,6 +1323,7 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void RenderRecordsCarousel(ReadingRecordListPage page)
         {
+            lastRecentRecordsPage = page;
             if (recordsCarousel == null)
             {
                 return;
@@ -1386,6 +1487,7 @@ namespace Dotshelf.Scripts.Dashboard
 
         private void RenderGuestbookGrid(GuestbookListPage page)
         {
+            lastGuestbookPage = page;
             if (guestbookGrid == null)
             {
                 return;
@@ -1816,6 +1918,14 @@ namespace Dotshelf.Scripts.Dashboard
             if (container == null) return;
             container.Clear();
             IReadOnlyList<PostItStyle> styles = AvailablePostItStyles();
+
+            // 스타일은 항상 하나가 선택돼 있어야 한다 (미선택 금지). 노랑(기본 포스트잇 색 FFF5C7)을 기본
+            // 선택하고, 카탈로그에 노랑이 없으면 첫 스타일을 기본으로 — 카탈로그 순서가 바뀌어도 노랑 유지.
+            VisualElement firstCell = null;
+            long firstId = 0;
+            VisualElement defaultCell = null;
+            long defaultId = 0;
+
             for (int i = 0; i < styles.Count; i++)
             {
                 long id = styles[i].AssetId;
@@ -1828,9 +1938,30 @@ namespace Dotshelf.Scripts.Dashboard
                 cell.Add(name);
                 cell.RegisterCallback<ClickEvent>(_ => onSelected(id, cell));
                 container.Add(cell);
+
+                if (firstCell == null)
+                {
+                    firstCell = cell;
+                    firstId = id;
+                }
+                if (defaultCell == null
+                    && string.Equals(styles[i].ColorHex, PostItStyle.DefaultColorHex, StringComparison.OrdinalIgnoreCase))
+                {
+                    defaultCell = cell;
+                    defaultId = id;
+                }
             }
-            selectedPostItStyleId = 0;
-            selectedPostItStyleCell = null;
+
+            if (defaultCell == null)
+            {
+                defaultCell = firstCell;
+                defaultId = firstId;
+            }
+            if (defaultCell != null)
+            {
+                // 기본 스타일을 즉시 선택 상태로 — onSelected 가 selected 클래스 + selectedPostItStyleId 설정.
+                onSelected(defaultId, defaultCell);
+            }
         }
 
         /// <summary>
