@@ -42,6 +42,7 @@ import com.dotshelf.domain.space.entity.Space;
 import com.dotshelf.domain.space.service.SpaceService;
 import com.dotshelf.domain.user.repository.FollowRepository;
 import com.dotshelf.domain.user.service.UserService;
+import com.dotshelf.global.common.VisibilityScope;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 
@@ -530,12 +531,11 @@ public class BookshelfService {
         if (viewerUserId != null && viewerUserId.equals(userBook.getUserId())) {
             return record;
         }
-        if ("PUBLIC".equalsIgnoreCase(record.visibilityScope())) {
+        if (VisibilityScope.isPublic(record.visibilityScope())) {
             return record;
         }
-        if ("FOLLOWERS".equalsIgnoreCase(record.visibilityScope())
-                && viewerUserId != null
-                && followRepository.existsByFollowerUserIdAndFollowingUserId(viewerUserId, userBook.getUserId())) {
+        if (VisibilityScope.isMutual(record.visibilityScope())
+                && followRepository.existsMutualFollow(viewerUserId, userBook.getUserId())) {
             return record;
         }
         return null;
