@@ -320,7 +320,12 @@ namespace App.Bootstrap
                 return false;
             }
 
-            if (!sync.LastInitialRefreshSucceeded && !generator.HasReceivedServerSnapshot)
+            if (!sync.HasAppliedInitialOwnSpaceVisuals || !sync.HasResolvedInitialOwnSpaceLayout)
+            {
+                return false;
+            }
+
+            if (!sync.LastInitialRefreshSucceeded)
             {
                 return true;
             }

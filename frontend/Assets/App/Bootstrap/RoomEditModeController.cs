@@ -749,7 +749,6 @@ namespace App.Bootstrap
         // 네트워크 부담 + 의도치 않은 부분 저장 방지.
         private bool isDirty;
         private SaveDecorationsUseCase saveDecorationsUseCase;
-        private LoadDecorationsUseCase loadDecorationsUseCase;
         private IDecorationRepository decorationRepository;
 
         // 편집 진입 시점 marker 스냅샷 — "저장하지 않고 나가기" 롤백 기준점.
@@ -778,15 +777,9 @@ namespace App.Bootstrap
         private readonly Dictionary<CustomizationCategory, long> editEntryAppliedEntriesSnapshot =
             new Dictionary<CustomizationCategory, long>();
 
-        // Scene-init saved decoration load guard (MR #128).
-        // BookshelfSceneInstaller.InstallIntoActiveScene 가 끝나면서 LoadSavedDecorationsAfterSceneInstall
-        // 을 호출했고 그 결과가 성공이었는지 — succeeded 의미. EnterEditMode 가 같은 데이터를 다시
-        // 읽어 marker 를 중복 spawn 하거나 transform 을 두 번 갱신하지 않게 차단한다.
-        //
-        // 중요: 시도 여부가 아니라 "성공한 적 있는가" 를 기록한다. 파일 손상/JSON 파싱 실패/향후
-        // ApiDecorationRepository 네트워크 실패 등으로 onError 가 발사되면 이 플래그는 false 로
-        // 남고, 다음 EnterEditMode 진입 시 fallback 경로로 한 번 더 시도된다 (MR #128 skh1205 리뷰
-        // #2 / revbot 리뷰 반영 — 이전엔 시도 즉시 true 로 set 해서 실패가 영구 차단됐었다).
+        // Scene-init local decoration restore guard.
+        // 로컬 장식 복구는 서버 layout 과 경합하지 않도록 비활성화되어 있으며, 이 플래그는
+        // EnterEditMode 가 같은 fallback 을 다시 열지 않게 막는 용도만 남긴다.
         private bool hasLoadedSavedDecorationsOnSceneInit;
 
         // Pending placement (Preview) state (MR #122).
@@ -1770,6 +1763,195 @@ namespace App.Bootstrap
         private bool TryFindCatalogEntryForServerAssetId(CustomizationCategory category, long serverAssetId, out CustomizationEntry entry)
         {
             return TryFindCatalogEntryForServerAssetId(category, serverAssetId, LoadCategoryCatalog(category), out entry);
+        }
+
+        private bool TryApplyServerFixedCategoryByAssetId(
+            CustomizationCategory category,
+            long serverAssetId,
+            bool persistState,
+            bool forceAuthoritativeReapply,
+            string source)
+        {
+            if (!IsRoomThemeFixedResourceCategory(category) || serverAssetId <= 0L)
+            {
+                return false;
+            }
+
+            ownedAssetsByAssetId.TryGetValue(serverAssetId, out var ownedAsset);
+            visibleRemoteAssetManifests.TryGetValue(serverAssetId, out var visibleManifest);
+            if (!TryResolveThemeForFixedServerAsset(category, ownedAsset, visibleManifest, out var theme) || theme == null)
+            {
+                return false;
+            }
+
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+            if (themeApplier == null)
+            {
+                return false;
+            }
+
+            if (IsMeshSwapCategory(category) && themeApplier.RoomRoot != null)
+            {
+                RestoreCategoryNativeMesh(category, themeApplier.RoomRoot);
+            }
+
+            if (!themeApplier.ApplyFixedCategory(theme, category))
+            {
+                return false;
+            }
+
+            if (category == CustomizationCategory.Wallpaper ||
+                category == CustomizationCategory.Floor ||
+                category == CustomizationCategory.DashboardSkin)
+            {
+                RefreshWallVisibilityAfterMaterialMutation($"{source}/{category}/fixed-resource");
+            }
+
+            lastAppliedEntries[category] = serverAssetId;
+            if (persistState)
+            {
+                PersistLastAppliedEntries();
+            }
+
+            Debug.Log(
+                $"[RoomEditModeController][CategoryRestore] {category}: server assetId={serverAssetId} " +
+                $"mapped to local theme '{theme.DisplayName}' via fixed resource metadata.");
+            return true;
+        }
+
+        private bool TryResolveThemeForFixedServerAsset(
+            CustomizationCategory category,
+            AssetResponseDto ownedAsset,
+            DownloadManifestResponseDto visibleManifest,
+            out RoomThemeAsset theme)
+        {
+            theme = null;
+            if (!IsRoomThemeFixedResourceCategory(category))
+            {
+                return false;
+            }
+
+            if (ownedAsset != null && !DoesServerAssetMatchCategory(category, ownedAsset))
+            {
+                return false;
+            }
+
+            if (visibleManifest != null && !DoesManifestAssetTypeMatchCategory(category, visibleManifest))
+            {
+                return false;
+            }
+
+            var resourceKey = FirstNonEmpty(visibleManifest?.UnityResourceKey, ownedAsset?.UnityResourceKey);
+            if (TryFindThemeByRoomThemeResourceKey(category, resourceKey, out theme))
+            {
+                return true;
+            }
+
+            var themeTag = NormalizeThemeTag(FirstNonEmpty(
+                visibleManifest?.Theme,
+                ownedAsset?.Theme,
+                visibleManifest?.CollectionCode,
+                ownedAsset?.CollectionCode,
+                visibleManifest?.Code,
+                ownedAsset?.Code,
+                visibleManifest?.Name,
+                ownedAsset?.Name));
+            return TryFindThemeByTag(themeTag, out theme);
+        }
+
+        private bool TryFindThemeByRoomThemeResourceKey(
+            CustomizationCategory category,
+            string unityResourceKey,
+            out RoomThemeAsset theme)
+        {
+            theme = null;
+            if (!TryParseRoomThemeResourceKey(unityResourceKey, out var themeTag, out var fragment))
+            {
+                return false;
+            }
+
+            if (!DoesRoomThemeResourceFragmentMatchCategory(category, fragment))
+            {
+                return false;
+            }
+
+            return TryFindThemeByTag(themeTag, out theme);
+        }
+
+        private static bool TryParseRoomThemeResourceKey(string unityResourceKey, out string themeTag, out string fragment)
+        {
+            themeTag = string.Empty;
+            fragment = string.Empty;
+            var normalized = NormalizeUnityResourceKey(unityResourceKey);
+            if (string.IsNullOrEmpty(normalized))
+            {
+                return false;
+            }
+
+            const string marker = "roomtheme_";
+            var start = normalized.IndexOf(marker, StringComparison.Ordinal);
+            if (start < 0)
+            {
+                return false;
+            }
+
+            start += marker.Length;
+            var end = normalized.IndexOf(".asset", start, StringComparison.Ordinal);
+            if (end <= start)
+            {
+                return false;
+            }
+
+            themeTag = NormalizeThemeTag(normalized.Substring(start, end - start));
+            var hash = normalized.IndexOf('#', end);
+            if (hash >= 0 && hash + 1 < normalized.Length)
+            {
+                fragment = normalized.Substring(hash + 1);
+            }
+
+            return !string.IsNullOrEmpty(themeTag);
+        }
+
+        private static bool DoesRoomThemeResourceFragmentMatchCategory(CustomizationCategory category, string fragment)
+        {
+            if (string.IsNullOrWhiteSpace(fragment))
+            {
+                return true;
+            }
+
+            var normalized = NormalizeIdentifier(fragment);
+            switch (category)
+            {
+                case CustomizationCategory.Wallpaper: return normalized == "WALLPAPER";
+                case CustomizationCategory.Floor: return normalized == "FLOOR";
+                case CustomizationCategory.DashboardSkin: return normalized == "DASHBOARD";
+                case CustomizationCategory.InteriorLight: return normalized == "INTERIORLIGHT";
+                case CustomizationCategory.ExteriorLight: return normalized == "EXTERIORLIGHT";
+                default: return false;
+            }
+        }
+
+        private static bool DoesManifestAssetTypeMatchCategory(CustomizationCategory category, DownloadManifestResponseDto manifest)
+        {
+            var expected = ExpectedServerAssetType(category);
+            if (manifest == null || string.IsNullOrEmpty(expected))
+            {
+                return false;
+            }
+
+            return NormalizeIdentifier(manifest.AssetType) == NormalizeIdentifier(expected);
+        }
+
+        private static bool IsRoomThemeFixedResourceCategory(CustomizationCategory category)
+        {
+            return category == CustomizationCategory.Wallpaper
+                || category == CustomizationCategory.Floor
+                || category == CustomizationCategory.DashboardSkin
+                || category == CustomizationCategory.InteriorLight
+                || category == CustomizationCategory.ExteriorLight;
         }
 
         private static bool DoesServerAssetMatchEntry(CustomizationCategory category, AssetResponseDto serverAsset, CustomizationEntry entry)
@@ -3263,11 +3445,9 @@ namespace App.Bootstrap
         private const string LastAppliedEntriesPrefsKey = "RoomEditMode.LastAppliedEntries.v1";
         private bool lastAppliedEntriesRestored;
 
-        // local-preview 테마는 PATCH skip 이라 server 가 모름 → 풀 로그아웃/로그인 후 자동 복원 못함.
-        // 사용자 보고 회귀: Vintage 적용 → 로그아웃 → 로그인 → 메인씬에 walls/floor 가 default 로 보임.
-        // 마지막 적용한 local-preview 테마의 ScriptableObject 이름 (예: "RoomTheme_Vintage") 을 저장해
-        // 다음 세션 ApplySpaceVisualsToRoom 에서 server null 응답이면 PlayerPrefs 값으로 복원.
-        // non-local-preview 테마를 적용하면 이 키를 비워둠 (server 가 권위 상태 보유).
+        // Legacy local-preview theme key. Main-room entry no longer restores this key;
+        // server space/layout state is authoritative.
+        // non-local-preview 테마를 적용하면 이 키를 비워둠.
         // **소유 경계 — LastAppliedEntriesPrefsKey 와 동일하게 ScopedKey() 로 user 별 분리.**
         private const string LastAppliedLocalPreviewThemePrefsKey = "RoomEditMode.LastAppliedLocalPreviewTheme.v1";
 
@@ -3371,38 +3551,6 @@ namespace App.Bootstrap
             return false;
         }
 #endif
-
-        private bool TryResolveProtectedFantasyLocalPreviewTheme(out RoomThemeAsset theme, out string source)
-        {
-            theme = null;
-            source = null;
-
-            var mode = TryFindLastAppliedThemeMode();
-            if (string.Equals(mode, ThemeModeRandom, StringComparison.Ordinal))
-            {
-                return false;
-            }
-
-            if (themeApplier != null &&
-                themeApplier.CurrentTheme != null &&
-                IsLocalPreviewTheme(themeApplier.CurrentTheme) &&
-                IsFantasyTheme(themeApplier.CurrentTheme))
-            {
-                theme = themeApplier.CurrentTheme;
-                source = "current_theme";
-                return true;
-            }
-
-            var savedTheme = TryFindLastAppliedLocalPreviewTheme();
-            if (savedTheme != null && IsFantasyTheme(savedTheme))
-            {
-                theme = savedTheme;
-                source = "player_prefs";
-                return true;
-            }
-
-            return false;
-        }
 
         internal bool TryGetCurrentTheme(out RoomThemeAsset theme)
         {
@@ -3564,8 +3712,8 @@ namespace App.Bootstrap
             }
         }
 
-        // local-preview 테마 적용 시점에 호출. 다음 세션 (앱 재시작 / 로그아웃-로그인) 의
-        // ApplySpaceVisualsToRoom 가 server null 응답을 받아도 이 키로 복원해 wall/floor 유지.
+        // local-preview 테마 적용 시점에 호출. 현재는 legacy 키 유지/정리용이며,
+        // 메인룸 진입 visual 복구에는 사용하지 않는다.
         private void PersistLastAppliedLocalPreviewTheme(RoomThemeAsset theme)
         {
             var key = ScopedKey(LastAppliedLocalPreviewThemePrefsKey);
@@ -3586,33 +3734,6 @@ namespace App.Bootstrap
             {
                 Debug.LogWarning($"[RoomEditModeController] PersistLastAppliedLocalPreviewTheme 실패 — {ex.GetType().Name}: {ex.Message}");
             }
-        }
-
-        // PlayerPrefs 에 저장된 local-preview 테마 이름으로 catalog 에서 lookup. 못 찾으면 null.
-        // ScriptableObject.name 은 자산 파일명 (예: "RoomTheme_Vintage") 이라 unique.
-        private RoomThemeAsset TryFindLastAppliedLocalPreviewTheme()
-        {
-            var key = ScopedKey(LastAppliedLocalPreviewThemePrefsKey);
-            if (key == null) return null; // 비로그인/owner 미상 — 다른 사용자 마지막 테마 복원 차단.
-            if (!UnityEngine.PlayerPrefs.HasKey(key)) return null;
-            var savedName = UnityEngine.PlayerPrefs.GetString(key, string.Empty);
-            if (string.IsNullOrEmpty(savedName)) return null;
-            if (themeCatalog == null) themeCatalog = Resources.Load<RoomThemeCatalogAsset>("RoomThemeCatalog");
-            if (themeCatalog == null || themeCatalog.Entries == null) return null;
-            for (int i = 0; i < themeCatalog.Entries.Count; i++)
-            {
-                var theme = themeCatalog.Entries[i];
-                if (theme == null) continue;
-                if (theme.name == savedName && IsLocalPreviewTheme(theme))
-                {
-                    return theme;
-                }
-            }
-            // 저장된 이름이 catalog 에 없음 — 자산 삭제/이름 변경 등. 키 정리.
-            var fallbackTheme = themeCatalog.DefaultTheme;
-            UnityEngine.PlayerPrefs.DeleteKey(key);
-            UnityEngine.PlayerPrefs.Save();
-            return fallbackTheme;
         }
 
         private bool IsCategoryEntryCurrent(CustomizationCategory category, long assetId)
@@ -3811,9 +3932,8 @@ namespace App.Bootstrap
         //
         // 5개 온보딩 테마 (Natural / Classic / Modern / Vintage / Pastel) 는 모두 isLocalPreview=true
         // 이므로 ApplyThemeSelected 내부에서 PATCH `/spaces/me/theme/.../apply` 가 자동 skip 됨 →
-        // 백엔드 의존 없이 즉시 visual swap. 동시에 PersistLastAppliedLocalPreviewTheme 가 user-scoped
-        // PlayerPrefs 에 저장 → 다음 세션 SceneInstall 시점에 RestoreLastLocalPreviewThemeOnSceneInstall
-        // 가 자동 복원.
+        // 백엔드 의존 없이 즉시 visual swap. PersistLastAppliedLocalPreviewTheme 는 user-scoped
+        // PlayerPrefs 에 저장하지만, 메인룸 SceneInstall 복원에는 더 이상 사용하지 않는다.
         //
         // mode=Reset 으로 고정한 이유: 온보딩 진입은 "이 사용자의 첫 룸 상태 결정" 이라 placement
         // reset 의도가 맞음. 편집 모드에서 사용자가 명시 클릭하는 경로는 ShowThemeApplyModeModal
@@ -4131,12 +4251,11 @@ namespace App.Bootstrap
             RebuildInventorySlots();
             if (persist && !IsEditModeActive)
             {
-                // local-preview 테마 영속화 — 다음 세션 (로그아웃/로그인) 의 ApplySpaceVisualsToRoom 가
-                // server null 응답을 받았을 때 이 PlayerPrefs 값으로 복원해 wall/floor 자동 적용.
+                // local-preview legacy key 유지. 메인룸 진입 복원에는 사용하지 않고,
                 // non-local-preview 면 서버 권위라 키 제거.
                 PersistLastAppliedLocalPreviewTheme(theme);
-                // mode=THEME 으로 갱신 + 이전 RANDOM selection 정리. 일반 단일 테마 흐름 진입이라
-                // RestoreLastLocalPreviewThemeOnSceneInstall 가 다음 세션에 mode 보고 단일 흐름 선택.
+                // mode=THEME 으로 갱신 + 이전 RANDOM selection 정리.
+                // SceneInstall 에서는 서버 layout 이 authoritative 이므로 이 값으로 로컬 복원하지 않는다.
                 PersistLastAppliedThemeMode(ThemeModeSingle);
                 ClearLastAppliedRandomThemeSelection();
                 InvalidateThemeContentsCache(theme, "ApplyThemeSelected");
@@ -4535,7 +4654,8 @@ namespace App.Bootstrap
             bool persistEntries = true,
             bool resetExistingPlacements = false,
             ThemeContents serverContents = null,
-            bool requestServerContents = true)
+            bool requestServerContents = true,
+            bool applyPlacementDefaults = true)
         {
             if (theme == null) return;
             var effectiveContents = serverContents;
@@ -4615,24 +4735,27 @@ namespace App.Bootstrap
                 ApplyServerCategoryDefaults(effectiveContents, persistEntries);
             }
 
-            var spawnedFromServerContents = 0;
-            if (hasServerPlacementContents)
+            if (applyPlacementDefaults)
             {
-                spawnedFromServerContents = SpawnThemeChildrenFromContents(theme, effectiveContents);
-            }
-
-            if (!hasServerPlacementContents ||
-                (hasServerPlacementContents && spawnedFromServerContents == 0 && HasLocalThemePlacementSpecs(theme)))
-            {
+                var spawnedFromServerContents = 0;
                 if (hasServerPlacementContents)
                 {
-                    Debug.LogWarning($"[RoomEdit][ThemeContents] server children for theme={theme.DisplayName} did not match local specs; using local theme placement specs.");
+                    spawnedFromServerContents = SpawnThemeChildrenFromContents(theme, effectiveContents);
                 }
 
-                SpawnLocalThemePlacementSpecs(theme);
+                if (!hasServerPlacementContents ||
+                    (hasServerPlacementContents && spawnedFromServerContents == 0 && HasLocalThemePlacementSpecs(theme)))
+                {
+                    if (hasServerPlacementContents)
+                    {
+                        Debug.LogWarning($"[RoomEdit][ThemeContents] server children for theme={theme.DisplayName} did not match local specs; using local theme placement specs.");
+                    }
+
+                    SpawnLocalThemePlacementSpecs(theme);
+                }
             }
 
-            if (!hasServerContents && requestServerContents)
+            if (applyPlacementDefaults && !hasServerContents && requestServerContents)
             {
                 RequestThemeContentsReapplyIfAvailable(theme, persistEntries, resetExistingPlacements);
             }
@@ -5488,28 +5611,9 @@ namespace App.Bootstrap
                 return;
             }
 
+            EnsureDecorationUseCases();
             var items = CollectDecorationLayoutItems(scopeToPlacedItemsRoot: true);
             Debug.Log($"[RoomEdit][Theme] Persist reset layout ({reason}) - {items.Count} item(s).");
-
-            if (ShouldUseServerDecorationLayout())
-            {
-                Debug.Log($"[RoomEdit][Theme] server layout authoritative; skipped legacy local reset layout save ({reason}).");
-                SaveLayoutSnapshotToServer(
-                    items,
-                    requireServerSave: true,
-                    onSuccess: () =>
-                    {
-                        TryUploadRoomThumbnail();
-                        ClearDirty("theme reset layout persisted");
-                    },
-                    onError: msg =>
-                    {
-                        Debug.LogWarning($"[RoomEdit][Theme] server reset layout save failed ({reason}): {msg}");
-                    });
-                return;
-            }
-
-            EnsureDecorationUseCases();
 
             if (saveDecorationsUseCase == null)
             {
@@ -5998,6 +6102,67 @@ namespace App.Bootstrap
         // 가 placedItemsRoot 로 다시 reparent. lifecycle 은 ApplyThemeSelected 진입 시 begin /
         // onSuccess|onError 에서 end 보장.
         private GameObject placementRollbackHoldRoot;
+
+        private void ClearAllSceneDecorationMarkers(string source)
+        {
+            var targets = new HashSet<GameObject>();
+            if (placedItemsRoot != null)
+            {
+                for (int i = 0; i < placedItemsRoot.transform.childCount; i++)
+                {
+                    var child = placedItemsRoot.transform.GetChild(i);
+                    if (child != null)
+                    {
+                        targets.Add(child.gameObject);
+                    }
+                }
+            }
+
+            var markers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < markers.Length; i++)
+            {
+                var marker = markers[i];
+                if (marker == null || marker.gameObject == null)
+                {
+                    continue;
+                }
+
+                targets.Add(marker.gameObject);
+            }
+
+            placedByInventoryKey.Clear();
+            int removed = 0;
+            foreach (var target in targets)
+            {
+                if (target == null)
+                {
+                    continue;
+                }
+
+                if (selectedObject != null &&
+                    (selectedObject == target || selectedObject.transform.IsChildOf(target.transform)))
+                {
+                    selectedObject = null;
+                }
+
+                if (draggingObject != null &&
+                    (draggingObject == target || draggingObject.transform.IsChildOf(target.transform)))
+                {
+                    draggingObject = null;
+                }
+
+                target.SetActive(false);
+                if (UnityEngine.Application.isPlaying) Destroy(target);
+                else DestroyImmediate(target);
+                removed++;
+            }
+
+            ClearAllPendingState();
+            if (removed > 0)
+            {
+                Debug.Log($"[RoomEdit][ServerLayout] cleared {removed} scene decoration object(s). source={source}");
+            }
+        }
 
         // ApplyThemeSelected 진입 시 호출 — incoming 테마가 차지할 슬롯/자산에 매칭되는
         // placement 만 hidden hold root 로 detach. 매칭 안 되는 사용자 placement 는 placedItemsRoot
@@ -7700,7 +7865,8 @@ namespace App.Bootstrap
                         persistEntries: false,
                         resetExistingPlacements: false,
                         serverContents: null,
-                        requestServerContents: false);
+                        requestServerContents: false,
+                        applyPlacementDefaults: false);
                 }
                 else
                 {
@@ -7740,60 +7906,33 @@ namespace App.Bootstrap
             var catalog = LoadCategoryCatalog(category);
             if (catalog == null || catalog.Entries == null)
             {
+                TryApplyServerFixedCategoryByAssetId(
+                    category,
+                    assetId,
+                    persistState: false,
+                    forceAuthoritativeReapply: true,
+                    source);
                 return;
             }
 
             if (!TryFindCatalogEntryForServerAssetId(category, assetId, catalog, out var entry) || entry == null)
             {
+                if (TryApplyServerFixedCategoryByAssetId(
+                    category,
+                    assetId,
+                    persistState: false,
+                    forceAuthoritativeReapply: true,
+                    source))
+                {
+                    return;
+                }
+
                 Debug.LogWarning($"[RoomEditModeController] {source}: {category} assetId={assetId} matched no local catalog entry.");
                 return;
             }
 
             TryRepairFantasyDeskPrefabReference(catalog, entry, source);
             ApplyEntryVisual(category, entry);
-        }
-
-        private static bool HasPositiveInventoryId(long? inventoryId)
-        {
-            return inventoryId.HasValue && inventoryId.Value > 0L;
-        }
-
-        private static bool HasExplicitServerCategoryInventory(SpaceResponseDto space)
-        {
-            return space != null &&
-                   (HasPositiveInventoryId(space.CurrentWallpaperInventoryId) ||
-                    HasPositiveInventoryId(space.CurrentFloorInventoryId) ||
-                    HasPositiveInventoryId(space.CurrentDeskInventoryId) ||
-                    HasPositiveInventoryId(space.CurrentBookshelfSkinInventoryId) ||
-                    HasPositiveInventoryId(space.CurrentDashboardInventoryId) ||
-                    HasPositiveInventoryId(space.CurrentNotebookInventoryId) ||
-                    HasPositiveInventoryId(space.CurrentInteriorLightInventoryId) ||
-                    HasPositiveInventoryId(space.CurrentExteriorLightInventoryId));
-        }
-
-        private void ApplyExplicitServerCategoryOverridesFromSpace(SpaceResponseDto space, bool persistState, bool forceAuthoritativeReapply)
-        {
-            if (space == null)
-            {
-                return;
-            }
-
-            if (HasPositiveInventoryId(space.CurrentWallpaperInventoryId))
-                ApplyCategoryById(CustomizationCategory.Wallpaper, space.CurrentWallpaperInventoryId, persistState, forceAuthoritativeReapply);
-            if (HasPositiveInventoryId(space.CurrentFloorInventoryId))
-                ApplyCategoryById(CustomizationCategory.Floor, space.CurrentFloorInventoryId, persistState, forceAuthoritativeReapply);
-            if (HasPositiveInventoryId(space.CurrentDeskInventoryId))
-                ApplyCategoryById(CustomizationCategory.Desk, space.CurrentDeskInventoryId, persistState, forceAuthoritativeReapply);
-            if (HasPositiveInventoryId(space.CurrentBookshelfSkinInventoryId))
-                ApplyCategoryById(CustomizationCategory.BookshelfSkin, space.CurrentBookshelfSkinInventoryId, persistState, forceAuthoritativeReapply);
-            if (HasPositiveInventoryId(space.CurrentDashboardInventoryId))
-                ApplyCategoryById(CustomizationCategory.DashboardSkin, space.CurrentDashboardInventoryId, persistState, forceAuthoritativeReapply);
-            if (HasPositiveInventoryId(space.CurrentNotebookInventoryId))
-                ApplyCategoryById(CustomizationCategory.Notebook, space.CurrentNotebookInventoryId, persistState, forceAuthoritativeReapply);
-            if (HasPositiveInventoryId(space.CurrentInteriorLightInventoryId))
-                ApplyCategoryById(CustomizationCategory.InteriorLight, space.CurrentInteriorLightInventoryId, persistState, forceAuthoritativeReapply);
-            if (HasPositiveInventoryId(space.CurrentExteriorLightInventoryId))
-                ApplyCategoryById(CustomizationCategory.ExteriorLight, space.CurrentExteriorLightInventoryId, persistState, forceAuthoritativeReapply);
         }
 
         private void ApplySpaceVisualsToRoom(SpaceResponseDto space, bool persistState, bool forceAuthoritativeReapply = false)
@@ -7811,71 +7950,9 @@ namespace App.Bootstrap
             // 해제를 인지하게 됨.
             if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
 
-            // Local-preview 테마 보호 (사용자 회귀 보고: Vintage 적용 → 저장 → 메인씬 → 편집모드
-            // 재진입 시 바닥/벽지 초기화). Vintage 같은 local-preview 테마는 PATCH skip 이라 server 가
-            // 모름 → space.CurrentThemeInventoryId == null → resolvedTheme = Default → Apply(Default) 가
-            // 벽/바닥 wipe. 후속 ApplyCategoryById 도 서버 null 이라 Entries[0] fallback.
-            //
-            // 두 단계 가드:
-            //   (a) 현재 세션 내 client 에 local-preview 가 이미 적용 중이면 skip (in-memory 유지)
-            //   (b) 풀 로그인 직후 (client.CurrentTheme = null) PlayerPrefs 에 마지막 local-preview
-            //       이름이 저장돼 있으면 그 테마를 복원 적용 → wall/floor 자동 복원
-            // 사용자가 명시적으로 다른 테마를 클릭하면 그 경로에서 정상 갱신 (PersistLastAppliedLocalPreviewTheme 갱신).
-            bool serverHasExplicitCategoryInventory = HasExplicitServerCategoryInventory(space);
-            if (persistState &&
-                TryResolveProtectedFantasyLocalPreviewTheme(out var protectedFantasyTheme, out var protectedFantasySource))
-            {
-                Debug.Log(
-                    $"[FantasyDesk] ApplySpaceVisualsToRoom protecting local-preview fantasy source={protectedFantasySource} " +
-                    $"serverThemeId={space.CurrentThemeInventoryId?.ToString() ?? "null"} serverDeskId={space.CurrentDeskInventoryId?.ToString() ?? "null"} " +
-                    $"hasExplicitCategory={serverHasExplicitCategoryInventory}");
-                if (themeApplier != null && themeApplier.CurrentTheme != protectedFantasyTheme)
-                {
-                    themeApplier.Apply(protectedFantasyTheme);
-                    SyncInventoryThemeFilterForTheme(protectedFantasyTheme);
-                    RefreshWallVisibilityAfterMaterialMutation("ApplySpaceVisualsToRoom.protectFantasyLocalPreview");
-                }
-                SyncInventoryThemeFilterForTheme(protectedFantasyTheme);
-                ApplyThemeDefaultEntries(protectedFantasyTheme);
-                if (serverHasExplicitCategoryInventory)
-                {
-                    ApplyExplicitServerCategoryOverridesFromSpace(space, persistState, forceAuthoritativeReapply);
-                    RebuildInventorySlots();
-                    LogFantasyDeskHierarchyState("ApplySpaceVisualsToRoom.protectFantasyLocalPreview.withServerCategories");
-                    return;
-                }
-
-                RebuildInventorySlots();
-                LogFantasyDeskHierarchyState("ApplySpaceVisualsToRoom.protectFantasyLocalPreview");
-                return;
-            }
-
-            bool serverHasNoTheme = !space.CurrentThemeInventoryId.HasValue || space.CurrentThemeInventoryId.Value <= 0;
-            bool clientHasLocalPreviewTheme = themeApplier != null && IsLocalPreviewTheme(themeApplier.CurrentTheme);
-            if (persistState && serverHasNoTheme && clientHasLocalPreviewTheme && !serverHasExplicitCategoryInventory)
-            {
-                themeApplier.Apply(themeApplier.CurrentTheme);
-                SyncInventoryThemeFilterForTheme(themeApplier.CurrentTheme);
-                RefreshWallVisibilityAfterMaterialMutation("ApplySpaceVisualsToRoom.reapplyCurrentLocalPreview");
-                ApplyThemeDefaultEntries(themeApplier.CurrentTheme);
-                RebuildInventorySlots();
-                return;
-            }
-            if (persistState && serverHasNoTheme && themeApplier != null && !serverHasExplicitCategoryInventory)
-            {
-                // (b) 풀 로그인 직후 client.CurrentTheme 은 보통 null/Default. PlayerPrefs 에 마지막
-                //     local-preview 이름이 있으면 그 테마로 복원해 wall/floor 가 다음 세션에도 유지.
-                var savedTheme = TryFindLastAppliedLocalPreviewTheme();
-                if (savedTheme != null && savedTheme != themeApplier.CurrentTheme)
-                {
-                    themeApplier.Apply(savedTheme);
-                    SyncInventoryThemeFilterForTheme(savedTheme);
-                    RefreshWallVisibilityAfterMaterialMutation("ApplySpaceVisualsToRoom.restoreLocalPreview");
-                    ApplyThemeDefaultEntries(savedTheme);
-                    RebuildInventorySlots();
-                    return;
-                }
-            }
+            // Server space data is authoritative on main-room entry. Do not restore
+            // local-preview PlayerPrefs themes here because that path can spawn stale
+            // theme placements before /spaces/{id}/layout clears and reapplies state.
 
             // 테마가 server reload 로 변경됐으면 default entries (mesh swap + 자동 placement deco)
             // 까지 재적용 — 안 그러면 [MR 135 review beshu Finding 2] 처럼 클릭 직후엔 보이던
@@ -7926,7 +8003,8 @@ namespace App.Bootstrap
                     persistEntries: persistState,
                     resetExistingPlacements: false,
                     serverContents: null,
-                    requestServerContents: persistState);
+                    requestServerContents: persistState,
+                    applyPlacementDefaults: false);
             }
             else if (resolvedTheme != null)
             {
@@ -8006,8 +8084,24 @@ namespace App.Bootstrap
             bool persistState = true,
             bool forceAuthoritativeReapply = false)
         {
+            var hasExplicitInventory = inventoryId.HasValue && inventoryId.Value > 0;
             var catalog = LoadCategoryCatalog(category);
-            if (catalog == null || catalog.Entries == null || catalog.Entries.Count == 0) return;
+            if (catalog == null || catalog.Entries == null || catalog.Entries.Count == 0)
+            {
+                if (hasExplicitInventory &&
+                    TryResolveOwnedAssetIdForInventory(inventoryId.Value, out var fixedAssetId) &&
+                    TryApplyServerFixedCategoryByAssetId(
+                        category,
+                        fixedAssetId,
+                        persistState,
+                        forceAuthoritativeReapply,
+                        "ApplyCategoryById.noCatalog"))
+                {
+                    return;
+                }
+
+                return;
+            }
             if (category == CustomizationCategory.Desk &&
                 themeApplier != null &&
                 IsFantasyTheme(themeApplier.CurrentTheme))
@@ -8016,7 +8110,6 @@ namespace App.Bootstrap
             }
 
             CustomizationEntry entry = null;
-            var hasExplicitInventory = inventoryId.HasValue && inventoryId.Value > 0;
             if (hasExplicitInventory)
             {
                 if (!TryResolveOwnedAssetIdForInventory(inventoryId.Value, out var assetId))
@@ -8046,6 +8139,16 @@ namespace App.Bootstrap
 
                 if (!TryFindCatalogEntryForServerAssetId(category, assetId, catalog, out entry))
                 {
+                    if (TryApplyServerFixedCategoryByAssetId(
+                        category,
+                        assetId,
+                        persistState,
+                        forceAuthoritativeReapply,
+                        "ApplyCategoryById.catalogMiss"))
+                    {
+                        return;
+                    }
+
                     Debug.LogWarning($"[RoomEditModeController][CategoryRestore] {category}: server assetId={assetId} matched no local catalog entry.");
                 }
             }
@@ -9604,28 +9707,13 @@ namespace App.Bootstrap
             // 이 두 번 갱신되어 NormalizeExistingDecorationScales/RefreshPlayableBounds 직후 다시
             // 덮어쓰여지는 race, (b) 향후 비동기 repo 도입 시 in-flight load 와 충돌 가능성이 있어
             // 명시적으로 skip. init load 가 fire 안 됐거나(installer 비호출 경로) 실패했으면
-            // fallback 으로 한 번 더 시도하되, 로그인 사용자는 서버 layout 동기화가 권위 데이터이므로
-            // legacy local JSON 복원은 하지 않는다. 성공 시에만 가드 플래그를 set 하므로 오프라인
-            // restore 실패가 영구 차단되지 않는다 (skh1205 리뷰 #2 / revbot 리뷰 반영).
-            if (!hasLoadedSavedDecorationsOnSceneInit)
-            {
-                if (ShouldUseServerDecorationLayout())
-                {
-                    hasLoadedSavedDecorationsOnSceneInit = true;
-                    Debug.Log("[RoomEdit][Load] 편집 모드 진입 fallback: 서버 layout 이 authoritative 이므로 legacy local decoration restore skip.");
-                }
-                else
-                {
-                    TryRestoreSavedDecorations(onCompleted: success =>
-                    {
-                        if (success) hasLoadedSavedDecorationsOnSceneInit = true;
-                        if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
-                        {
-                            LogFantasyDeskHierarchyState($"EnterEditMode.afterTryRestoreSavedDecorations success={success}");
-                        }
-                    });
-                }
-            }
+            // (파일 손상 / 권한 / 향후 API 네트워크 실패) fallback 으로 한 번 더 시도.
+            // 성공 시에만 가드 플래그를 set 하므로 실패가 영구 차단되지 않는다 (skh1205 리뷰 #2 /
+            // revbot 리뷰 반영).
+            // Server layout is authoritative. Do not reload the local decoration
+            // JSON fallback at edit entry because it can resurrect stale theme assets
+            // before /spaces/{id}/layout has reapplied the saved room state.
+            hasLoadedSavedDecorationsOnSceneInit = true;
             // 진입 시점 marker 스냅샷 — "저장하지 않고 나가기" 롤백 기준점. load 후 캡처 순서가 중요:
             // 사용자가 진입 화면에서 본 상태가 곧 롤백 목표 상태가 되도록.
             TakeEditEntrySnapshot();
@@ -10392,9 +10480,8 @@ namespace App.Bootstrap
 
         // ---------- Decoration 저장 / 로드 / dirty 추적 ----------
 
-        // 명시적 "저장" 버튼 핸들러. 현재 배치 루트의 DecorationItemMarker 들을
-        // DecorationLayoutItem 으로 직렬화 후 SaveDecorationsUseCase 로 영속화.
-        // 성공 시 ClearDirty + 토스트.
+        // 명시적 "저장" 버튼 핸들러. 현재 씬의 DecorationItemMarker 들을 DecorationLayoutItem 으로
+        // 직렬화 후 SaveDecorationsUseCase 로 영속화. 성공 시 ClearDirty + 토스트.
         private void OnSaveButtonClicked()
         {
             if (!IsEditModeActive) return;
@@ -10414,16 +10501,12 @@ namespace App.Bootstrap
                 return;
             }
 
-            var useServerDecorationLayout = ShouldUseServerDecorationLayout();
-            if (!useServerDecorationLayout)
+            EnsureDecorationUseCases();
+            if (saveDecorationsUseCase == null)
             {
-                EnsureDecorationUseCases();
-                if (saveDecorationsUseCase == null)
-                {
-                    Debug.LogError("[RoomEdit][Save] SaveDecorationsUseCase 생성 실패 — 저장 불가");
-                    onError?.Invoke("저장 시스템 초기화 실패");
-                    return;
-                }
+                Debug.LogError("[RoomEdit][Save] SaveDecorationsUseCase 생성 실패 — 저장 불가");
+                onError?.Invoke("저장 시스템 초기화 실패");
+                return;
             }
 
             CommitPendingEditVisualChanges(
@@ -10615,10 +10698,7 @@ namespace App.Bootstrap
 
         private void SaveCurrentDecorationLayout(Action onSuccess, Action<string> onError)
         {
-            // 저장은 현재 화면에 실제로 남아 있는 배치만 대상으로 한다. 씬 전체를 스캔하면
-            // 테마 교체 중 rollback hold root 에 숨겨 둔 이전 테마/에셋까지 payload 에 섞여
-            // 재진입 시 예전 오브젝트가 새 테마 위에 겹쳐 복원된다.
-            var items = CollectDecorationLayoutItems(scopeToPlacedItemsRoot: true);
+            var items = CollectDecorationLayoutItems();
             Debug.Log($"[RoomEdit][Save] 저장 대상 데코레이션 {items.Count}개");
             for (int i = 0; i < items.Count; i++)
             {
@@ -10628,50 +10708,18 @@ namespace App.Bootstrap
                     $"rotY={it.RotationY:0.#}° scale=({it.ScaleX:0.##},{it.ScaleY:0.##},{it.ScaleZ:0.##})");
             }
 
-            Action completeSave = () =>
-            {
-                Debug.Log($"[RoomEdit][Save] 저장 성공 — {items.Count}개 영속화 완료");
-                DiscardPlacementRollbackHold();
-                ClearPendingEditVisualChanges();
-                ClearDirty("save success");
-                TryUploadRoomThumbnail();
-                TakeEditEntrySnapshot();
-                TakeEditVisualSnapshot();
-                onSuccess?.Invoke();
-            };
-
-            Action<string> failServerSave = msg =>
-            {
-                Debug.LogError($"[RoomEdit][ServerLayout] 저장 실패 — {msg}");
-                onError?.Invoke(msg);
-            };
-
-            if (ShouldUseServerDecorationLayout())
-            {
-                Debug.Log("[RoomEdit][Save] 서버 layout 이 authoritative 이므로 legacy local decoration JSON save skip.");
-                SaveLayoutSnapshotToServer(
-                    items,
-                    requireServerSave: true,
-                    onSuccess: completeSave,
-                    onError: failServerSave);
-                return;
-            }
-
-            if (saveDecorationsUseCase == null)
-            {
-                Debug.LogError("[RoomEdit][Save] SaveDecorationsUseCase 생성 실패 — 저장 불가");
-                onError?.Invoke("저장 시스템 초기화 실패");
-                return;
-            }
-
             saveDecorationsUseCase.Execute(items,
                 onSuccess: () =>
                 {
-                    SaveLayoutSnapshotToServer(
-                        items,
-                        requireServerSave: false,
-                        onSuccess: completeSave,
-                        onError: failServerSave);
+                    Debug.Log($"[RoomEdit][Save] 저장 성공 — {items.Count}개 영속화 완료");
+                    TrySaveLayoutSnapshotToServer(items);
+                    DiscardPlacementRollbackHold();
+                    ClearPendingEditVisualChanges();
+                    ClearDirty("save success");
+                    TryUploadRoomThumbnail();
+                    TakeEditEntrySnapshot();
+                    TakeEditVisualSnapshot();
+                    onSuccess?.Invoke();
                 },
                 onError: msg =>
                 {
@@ -10687,26 +10735,9 @@ namespace App.Bootstrap
         // 런타임 ID 라 저장 파일에 들어가는 순간 다음 실행에서 매칭이 깨진다.
         private void TrySaveLayoutSnapshotToServer(IReadOnlyList<DecorationLayoutItem> items)
         {
-            SaveLayoutSnapshotToServer(items, requireServerSave: false, onSuccess: null, onError: null);
-        }
-
-        private void SaveLayoutSnapshotToServer(
-            IReadOnlyList<DecorationLayoutItem> items,
-            bool requireServerSave,
-            Action onSuccess,
-            Action<string> onError)
-        {
             if (IsReadOnlySpacePreview)
             {
                 Debug.Log("[RoomEdit][ServerLayout] skipped: read-only space preview cannot save layout.");
-                if (requireServerSave)
-                {
-                    onError?.Invoke("read-only space preview");
-                }
-                else
-                {
-                    onSuccess?.Invoke();
-                }
                 return;
             }
 
@@ -10714,14 +10745,6 @@ namespace App.Bootstrap
             if (apiManager == null || !apiManager.HasAccessToken)
             {
                 Debug.Log("[RoomEdit][ServerLayout] skipped: API token is missing.");
-                if (requireServerSave)
-                {
-                    onError?.Invoke("API token is missing");
-                }
-                else
-                {
-                    onSuccess?.Invoke();
-                }
                 return;
             }
 
@@ -10733,14 +10756,6 @@ namespace App.Bootstrap
             catch (Exception ex)
             {
                 Debug.LogWarning($"[RoomEdit][ServerLayout] client init failed: {ex.GetType().Name} {ex.Message}");
-                if (requireServerSave)
-                {
-                    onError?.Invoke($"{ex.GetType().Name}: {ex.Message}");
-                }
-                else
-                {
-                    onSuccess?.Invoke();
-                }
                 return;
             }
 
@@ -10760,20 +10775,10 @@ namespace App.Bootstrap
                     }
 
                     Debug.Log($"[RoomEdit][ServerLayout] saved layout snapshot v{response?.LayoutVersion ?? 0L}.");
-                    onSuccess?.Invoke();
                 },
                 error =>
                 {
-                    var message = $"{error?.Code}/{error?.Message}";
-                    Debug.LogWarning($"[RoomEdit][ServerLayout] save skipped/failed: {message}");
-                    if (requireServerSave)
-                    {
-                        onError?.Invoke(message);
-                    }
-                    else
-                    {
-                        onSuccess?.Invoke();
-                    }
+                    Debug.LogWarning($"[RoomEdit][ServerLayout] save skipped/failed: {error?.Code}/{error?.Message}");
                 });
         }
 
@@ -10858,7 +10863,7 @@ namespace App.Bootstrap
         // ApiDecorationRepository 로 교체하면 됨 (interface 동일).
         private void EnsureDecorationUseCases()
         {
-            if (saveDecorationsUseCase != null && loadDecorationsUseCase != null) return;
+            if (saveDecorationsUseCase != null) return;
             try
             {
                 if (decorationRepository == null)
@@ -10871,10 +10876,6 @@ namespace App.Bootstrap
                 if (saveDecorationsUseCase == null)
                 {
                     saveDecorationsUseCase = new SaveDecorationsUseCase(decorationRepository);
-                }
-                if (loadDecorationsUseCase == null)
-                {
-                    loadDecorationsUseCase = new LoadDecorationsUseCase(decorationRepository);
                 }
                 Debug.Log($"[RoomEdit][Save] decoration use cases ready (repo={decorationRepository.GetType().Name})");
             }
@@ -10900,8 +10901,8 @@ namespace App.Bootstrap
         }
 
         // 편집 진입 시점의 marker 상태를 스냅샷. "저장하지 않고 나가기" 롤백의 기준점.
-        // 호출 순서: RebuildPlacedByInventoryKeyFromScene → TryRestoreSavedDecorations → TakeEditEntrySnapshot
-        // (저장본 load 까지 끝난 직후 캡처해야 사용자가 본 진입 화면과 정확히 동일한 상태 보존).
+        // 호출 순서: RebuildPlacedByInventoryKeyFromScene → TakeEditEntrySnapshot.
+        // 저장본 복구는 서버 layout 경로에서만 처리한다.
         private void TakeEditEntrySnapshot()
         {
             editEntrySnapshot.Clear();
@@ -11021,7 +11022,8 @@ namespace App.Bootstrap
                         persistEntries: false,
                         resetExistingPlacements: false,
                         serverContents: null,
-                        requestServerContents: false);
+                        requestServerContents: false,
+                        applyPlacementDefaults: false);
                 }
                 else
                 {
@@ -11427,213 +11429,16 @@ namespace App.Bootstrap
             marker.InventoryKey = snap.InventoryKey;
         }
 
-        // BookshelfSceneInstaller.InstallIntoActiveScene 가 룸/책장/scene-baked decoration 생성을
-        // 모두 끝낸 직후 호출하는 진입점. 저장된 layout 을 메인 화면에서 즉시 보이도록 1회 복원
-        // (MR #128). 호출 책임은 installer 측에 있다 — controller 자체의 Start() 에서 트리거하면
-        // InstallScene 보다 먼저 실행될 수 있어 marker 매칭이 깨지는 순서 버그 발생 (MR #128
-        // skh1205 리뷰 #1).
-        //
-        // 동작:
-        //   1. 이미 성공적으로 1회 load 했으면 no-op (중복 spawn / 이중 갱신 차단).
-        //   2. UI/inventoryEntries 가 아직 빌드 안 됐을 수 있으므로 InitializeIfNeeded 보장.
-        //   3. scene-baked marker 와 placedByInventoryKey 동기화.
-        //   4. 로그인/API 토큰이 있으면 서버 layout 응답이 clearExisting=true 로 적용되므로 legacy
-        //      local JSON 복원은 skip. 토큰이 없는 오프라인/익명 모드에서만 TryRestoreSavedDecorations
-        //      호출 — 성공 시에만 hasLoadedSavedDecorationsOnSceneInit = true 로 set. 실패 시 false 유지
-        //      → 다음 EnterEditMode 가 fallback 으로 재시도 (MR #128 skh1205 리뷰 #2 / revbot 리뷰 —
-        //      flag race 수정).
+        // BookshelfSceneInstaller.InstallIntoActiveScene 가 룸/책장 생성을 끝낸 직후 호출하는 진입점.
+        // 로컬 PlayerPrefs/JSON 복구는 서버 layout 과 경합해 stale 테마 에셋을 되살릴 수 있으므로
+        // 여기서는 복원하지 않고, /spaces/me 와 /spaces/{id}/layout 동기화만 authoritative source 로 둔다.
         internal void LoadSavedDecorationsAfterSceneInstall()
         {
             if (hasLoadedSavedDecorationsOnSceneInit) return;
 
             InitializeIfNeeded();
-            // 씬에 미리 배치된 marker (scene-baked 또는 다른 코드가 만든 것) 와 controller-local
-            // cache 동기화. TryRestoreSavedDecorations 의 매칭 분기가 의존.
-            RebuildPlacedByInventoryKeyFromScene();
-            // 사용자 보고 회귀 fix — 로그아웃/로그인 후 메인씬에 walls/floor 가 default 로 보이는 케이스.
-            // local-preview 테마는 server 가 모르니 ReloadRoomState 도 복원 못함. 씬 install 시점에서
-            // PlayerPrefs 의 마지막 local-preview 이름 lookup 후 자동 적용. 편집모드 진입 전부터 vintage
-            // 벽지/바닥 visible.
-            RestoreLastLocalPreviewThemeOnSceneInstall();
-            if (ShouldUseServerDecorationLayout())
-            {
-                // 로그인 사용자는 /spaces/{id}/layout 응답이 clearExisting=true 로 적용된다.
-                // legacy local JSON 을 먼저 복원하면 예전 테마/에셋이 현재 서버 상태 위에 겹쳐 보일 수 있다.
-                hasLoadedSavedDecorationsOnSceneInit = true;
-                Debug.Log("[RoomEdit][Load] 서버 layout 이 authoritative 이므로 scene install legacy local decoration restore skip.");
-                return;
-            }
-            TryRestoreSavedDecorations(onCompleted: success =>
-            {
-                if (success)
-                {
-                    hasLoadedSavedDecorationsOnSceneInit = true;
-                    // 사용자 보고 회귀 fix — 로그인 → 메인씬 진입 시 vintage 자산이 raw GLB 크기로
-                    // 표시되던 케이스. TryInstantiateSavedItem 의 즉시 normalize 가 ref shelf bounds
-                    // 측정 실패 (BookshelfGenerator 의 procedural mesh 다음 frame 에 bounds valid)
-                    // 로 skip 되는 race. ref bounds 가 valid 해질 때까지 frame 단위 대기 후 일괄
-                    // 재정규화. 이미 올바른 자산은 factor≈1.0 라 visual 변화 없음.
-                    if (isActiveAndEnabled)
-                    {
-                        StartCoroutine(RenormalizeVintagePlacementsWhenBookshelfReady("LoadSavedDecorationsAfterSceneInstall"));
-                    }
-                }
-                if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
-                {
-                    LogFantasyDeskHierarchyState($"LoadSavedDecorationsAfterSceneInstall.afterRestore success={success}");
-                }
-            });
-        }
-
-        private static bool ShouldUseServerDecorationLayout()
-        {
-            var apiManager = APIManager.Instance;
-            return apiManager != null && apiManager.HasAccessToken;
-        }
-
-        // 씬 install 시점에 PlayerPrefs 저장된 local-preview 테마 복원. server 가 알 수 없는 테마라
-        // ApplySpaceVisualsToRoom 만 의존하면 풀 로그인 후 첫 메인씬에서 wall/floor 가 default 로 보인다.
-        // 호출: BookshelfSceneInstaller 끝점 (Generate 직후) → walls/floor renderer 가 이미 존재해 swap 가능.
-        //
-        // mode 분기: LastAppliedThemeMode 가 "RANDOM" 이고 random selection 직렬화가 valid 하면
-        // ApplyExternalRandomThemeSelection 으로 복원. 그 외 ("THEME" / 키 없음 / selection 못 찾음)
-        // 기존 단일 테마 복원 흐름 — backward compat 보장.
-        private void RestoreLastLocalPreviewThemeOnSceneInstall()
-        {
-            if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
-            if (themeApplier == null) return;
-            // 이미 local-preview 가 적용 중이면 (in-session 재진입) skip — 중복 Apply 회피.
-            if (themeApplier.CurrentTheme != null && IsLocalPreviewTheme(themeApplier.CurrentTheme))
-            {
-                return;
-            }
-
-            // mode=RANDOM 경로 — selection valid 시 우선 복원.
-            var mode = TryFindLastAppliedThemeMode();
-            if (string.Equals(mode, ThemeModeRandom, System.StringComparison.Ordinal))
-            {
-                var savedSelection = TryFindLastAppliedRandomThemeSelection();
-                if (savedSelection != null && savedSelection.SelectedSpecs.Count > 0 && savedSelection.BaseTheme != null)
-                {
-                    Debug.Log($"[RoomEditModeController] SceneInstall.restoreLocalPreview mode=RANDOM — applying random selection ({savedSelection.SelectedSpecs.Count} slots).");
-                    ApplyExternalRandomThemeSelection(savedSelection, "SceneInstall.restoreRandom");
-                    return;
-                }
-                Debug.LogWarning(
-                    "[RoomEditModeController] SceneInstall.restoreLocalPreview mode=RANDOM 이지만 selection 복원 실패 — 단일 테마 fallback.");
-            }
-
-            // mode=THEME (기본) 또는 RANDOM 복원 실패 fallback — 기존 단일 테마 흐름.
-            var savedTheme = TryFindLastAppliedLocalPreviewTheme();
-            if (savedTheme == null) return;
-
-            themeApplier.Apply(savedTheme);
-            SyncInventoryThemeFilterForTheme(savedTheme);
-            RefreshWallVisibilityAfterMaterialMutation("SceneInstall.restoreLocalPreview");
-            ApplyThemeDefaultEntries(savedTheme);
-        }
-
-        // 저장된 layout 복원.
-        //   - 씬에 marker 가 이미 있으면 transform 만 갱신 (e.g. scene-baked 자산).
-        //   - 씬에 marker 가 없으면 inventoryEntries 에서 prefab 매칭해 Instantiate (앱 재시작 후 복원 경로).
-        //   - prefab 매칭 실패하면 lost 로 집계 + 경고 (catalog 누락 / 이름 변경).
-        // MR #120 skh1205 리뷰 #1 반영 — 이전에는 unmatched 가 그냥 drop 되어 fresh scene 에서
-        // 사용자가 저장 토스트는 봤는데 방은 비어있는 회귀가 있었다.
-        // MR #128: 호출 경로가 "EnterEditMode 단독" → "InstallScene 끝점 + EnterEditMode fallback".
-        // onCompleted(bool success) 콜백으로 성공/실패를 호출자에게 전달하므로 호출자는 그 결과로
-        // hasLoadedSavedDecorationsOnSceneInit 같은 외부 가드 플래그를 정확히 관리할 수 있다.
-        // success=true: items 적용 완료 (빈 리스트 포함 — 정상 응답이므로 retry 불필요).
-        // success=false: useCase 미초기화 또는 repository onError 발사된 경우 — 호출자가 retry 가능.
-        private void TryRestoreSavedDecorations(Action<bool> onCompleted = null)
-        {
-            if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
-            {
-                Debug.Log("[FantasyDesk] TryRestoreSavedDecorations begin — decoration layout restore path does not target Desk/Notebook directly unless they were serialized as placements.");
-            }
-            EnsureDecorationUseCases();
-            if (loadDecorationsUseCase == null)
-            {
-                onCompleted?.Invoke(false);
-                return;
-            }
-            loadDecorationsUseCase.Execute(
-                onSuccess: items =>
-                {
-                    if (items == null || items.Count == 0)
-                    {
-                        Debug.Log("[RoomEdit][Load] 저장된 데코레이션 없음 (빈 리스트)");
-                        onCompleted?.Invoke(true);
-                        return;
-                    }
-                    int matched = 0, recreated = 0, lost = 0;
-                    for (int i = 0; i < items.Count; i++)
-                    {
-                        var it = items[i];
-                        if (placedByInventoryKey.TryGetValue(it.AssetId, out var existing) && existing != null)
-                        {
-                            // (V4 진단) 테마 spawn 으로 새로 박힌 transform 을 저장된 layout 으로
-                            // 덮어쓰는 케이스. ThemeSlotMarker 가 있고 그 슬롯이 현재 테마의 spec
-                            // 에 포함되면 저장값 무시하고 spec 값 유지. preset 이 saved 보다 우선.
-                            var slotMarker = existing.GetComponent<ThemeSlotMarker>();
-                            if (slotMarker != null && slotMarker.ThemeSlot != ThemeSlot.None &&
-                                IsSlotInCurrentTheme(slotMarker.ThemeSlot, out var presetSpec))
-                            {
-                                // saved transform 적용 skip — spec 값 그대로 유지.
-                                existing.transform.position = presetSpec.LocalPosition;
-                                existing.transform.localEulerAngles = presetSpec.LocalRotation;
-                                existing.transform.localScale = presetSpec.LocalScale;
-                                if (IsTransformLockedWallDecoAssetKey(slotMarker.AssetKey))
-                                {
-                                    existing.transform.localPosition = presetSpec.LocalPosition;
-                                    existing.transform.localEulerAngles = presetSpec.LocalRotation;
-                                    existing.transform.localScale = presetSpec.LocalScale;
-                                    AttachThemeDecoTransformLock(existing, presetSpec);
-                                }
-                                // 빈티지 자산 bounds 기반 재보정 — saved 값이 stale 해도 매 restore 시
-                                // 기준 책장 기준 동일 크기로 재계산. wall 자산 + designer 가 명시한
-                                // preset y > 0 (lamp/rug) 은 floor snap skip — SpawnThemeFloorDecoFromSpec
-                                // 와 동일한 정책.
-                                if (!IsTransformLockedWallDecoAssetKey(slotMarker.AssetKey))
-                                {
-                                    ApplyVintageScaleNormalization(existing, slotMarker.AssetKey, presetSpec.LocalScale, "TryRestoreSavedDecorations.preset-override");
-                                }
-                                if (existing.GetComponent<WallDecoMarker>() == null && Mathf.Approximately(presetSpec.LocalPosition.y, 0f))
-                                {
-                                    SnapBottomToFloor(existing);
-                                }
-                                matched++;
-                                continue;
-                            }
-                            existing.transform.position = new Vector3(it.PositionX, it.PositionY, it.PositionZ);
-                            existing.transform.rotation = Quaternion.Euler(0f, it.RotationY, 0f);
-                            existing.transform.localScale = new Vector3(it.ScaleX, it.ScaleY, it.ScaleZ);
-                            matched++;
-                            continue;
-                        }
-
-                        if (TryInstantiateSavedItem(it))
-                        {
-                            recreated++;
-                        }
-                        else
-                        {
-                            lost++;
-                        }
-                    }
-                    if (recreated > 0)
-                    {
-                        // 슬롯 disabled/배치됨 표시를 새로 생성된 인스턴스에 맞춰 갱신.
-                        RebuildInventorySlots();
-                    }
-                    Debug.Log(
-                        $"[RoomEdit][Load] 복원 완료 — 기존 marker 매칭 갱신 {matched}개, prefab 재생성 {recreated}개, 복원 불가 {lost}개");
-                    onCompleted?.Invoke(true);
-                },
-                onError: msg =>
-                {
-                    Debug.LogWarning($"[RoomEdit][Load] 저장 데이터 로드 실패: {msg}");
-                    onCompleted?.Invoke(false);
-                });
+            hasLoadedSavedDecorationsOnSceneInit = true;
+            Debug.Log("[RoomEdit][Load] local scene-install decoration restore disabled; waiting for server space/layout sync.");
         }
 
         // 저장된 layout item 1개를 prefab Instantiate 해서 씬에 복원. 성공 시 placedByInventoryKey 등록.
@@ -11649,8 +11454,7 @@ namespace App.Bootstrap
             InvalidatePendingThemeContentsReapplyRequests("external decoration layout");
             if (clearExisting)
             {
-                ClearAllPlacedDecos();
-                placedByInventoryKey.Clear();
+                ClearAllSceneDecorationMarkers("external decoration layout");
             }
             else
             {
@@ -11665,7 +11469,7 @@ namespace App.Bootstrap
             InitializeIfNeeded();
             EnsurePlacedItemsRoot();
             InvalidateExternalDecorationLayoutRestores();
-            ClearAllPlacedDecos();
+            ClearAllSceneDecorationMarkers("own-space refresh");
             RestoreAllMeshSwaps();
             ClearSlotVisualSkinsForThemeReset();
             ClearVisibleSpaceAssetLookupMaps();

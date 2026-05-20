@@ -37,6 +37,8 @@ namespace BookshelfPorting.Runtime
         private bool hasCompletedInitialRefresh;
         private bool lastInitialRefreshSucceeded;
         private string lastInitialRefreshMessage;
+        private bool hasAppliedInitialOwnSpaceVisuals;
+        private bool hasResolvedInitialOwnSpaceLayout;
         private int itemsLoadFailureCount;
         private string firstItemsLoadFailureMessage;
         private bool isBookshelfSkinCatalogLoading;
@@ -74,6 +76,10 @@ namespace BookshelfPorting.Runtime
         public bool LastInitialRefreshSucceeded => lastInitialRefreshSucceeded;
 
         public string LastInitialRefreshMessage => lastInitialRefreshMessage;
+
+        public bool HasAppliedInitialOwnSpaceVisuals => hasAppliedInitialOwnSpaceVisuals;
+
+        public bool HasResolvedInitialOwnSpaceLayout => hasResolvedInitialOwnSpaceLayout;
 
         public bool HasAccessToken => APIManager.Instance != null && APIManager.Instance.HasAccessToken;
 
@@ -184,6 +190,7 @@ namespace BookshelfPorting.Runtime
                     SetViewingOtherUserSpace(false);
                     experienceManager?.SetNotebookScreenSuppressed(false);
                     ApplyRoomVisuals(space, false);
+                    hasAppliedInitialOwnSpaceVisuals = true;
                     // The main room is not a visitor-action surface; those
                     // actions live on notebook space cards.
                     SpaceVisitorOverlayController.Instance?.HideOverlay();
@@ -208,7 +215,7 @@ namespace BookshelfPorting.Runtime
 
                             client.GetBookshelves(
                                 ownSpaceId,
-                                response => LoadBookshelfItems(response, ownSpaceId, false, requestVersion),
+                                response => LoadBookshelfItems(response, ownSpaceId, false, requestVersion, space.CurrentBookshelfSkinInventoryId),
                                 error => FinishRefreshIfCurrent(requestVersion, false, FormatError(error)));
                         });
                 },
@@ -224,6 +231,11 @@ namespace BookshelfPorting.Runtime
             queuedRefreshCompletions.Clear();
             itemsLoadFailureCount = 0;
             firstItemsLoadFailureMessage = null;
+            if (!targetsOtherUserSpace)
+            {
+                hasAppliedInitialOwnSpaceVisuals = false;
+                hasResolvedInitialOwnSpaceLayout = false;
+            }
             return requestVersion;
         }
 
@@ -375,7 +387,7 @@ namespace BookshelfPorting.Runtime
                                             space.Id,
                                             true,
                                             requestVersion,
-                                            () => LoadBookshelfItems(response, space.Id, true, requestVersion));
+                                            () => LoadBookshelfItems(response, space.Id, true, requestVersion, space.CurrentBookshelfSkinInventoryId));
                                     });
                                 RecordVisitOnce(space.Id);
                             }
@@ -388,7 +400,7 @@ namespace BookshelfPorting.Runtime
                                     space.Id,
                                     false,
                                     requestVersion,
-                                    () => LoadBookshelfItems(response, space.Id, false, requestVersion));
+                                    () => LoadBookshelfItems(response, space.Id, false, requestVersion, space.CurrentBookshelfSkinInventoryId));
                             }
                         },
                         error => FinishRefreshIfCurrent(requestVersion, false, FormatError(error)));
@@ -517,6 +529,10 @@ namespace BookshelfPorting.Runtime
 
                     var roomEditModeController = FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
                     roomEditModeController?.ApplyExternalDecorationLayoutPayload(response?.LayoutPayload, clearExisting: true);
+                    if (!expectedOtherUserSpace)
+                    {
+                        hasResolvedInitialOwnSpaceLayout = true;
+                    }
                     onCompleted?.Invoke();
                 },
                 error =>
@@ -529,9 +545,12 @@ namespace BookshelfPorting.Runtime
 
                     Debug.LogWarning(
                         $"[BookshelfApiSync] Space layout load skipped: spaceId={spaceId}, code={error?.Code}, message={error?.Message}");
+                    var roomEditModeController = FindFirstObjectByType<RoomEditModeController>(FindObjectsInactive.Include);
+                    roomEditModeController?.ApplyExternalDecorationLayoutPayload(null, clearExisting: true);
                     if (!expectedOtherUserSpace)
                     {
-                        FinishRefreshIfCurrent(requestVersion, false, FormatError(error));
+                        hasResolvedInitialOwnSpaceLayout = true;
+                        onCompleted?.Invoke();
                         return;
                     }
 
@@ -2062,7 +2081,12 @@ namespace BookshelfPorting.Runtime
             RefreshFromServer();
         }
 
-        private void LoadBookshelfItems(BookshelfListResponseDto response, long expectedSpaceId, bool expectedOtherUserSpace, int requestVersion)
+        private void LoadBookshelfItems(
+            BookshelfListResponseDto response,
+            long expectedSpaceId,
+            bool expectedOtherUserSpace,
+            int requestVersion,
+            long? spaceBookshelfSkinInventoryId = null)
         {
             if (!IsRefreshRequestCurrent(requestVersion) ||
                 !IsCurrentSpaceView(expectedSpaceId, expectedOtherUserSpace))
@@ -2084,7 +2108,7 @@ namespace BookshelfPorting.Runtime
 
             shelves.Sort((left, right) => left.DisplayOrder.CompareTo(right.DisplayOrder));
             var snapshots = new List<BookshelfRuntimeApiSnapshot>();
-            LoadBookshelfItemAt(shelves, snapshots, 0, expectedSpaceId, expectedOtherUserSpace, requestVersion);
+            LoadBookshelfItemAt(shelves, snapshots, 0, expectedSpaceId, expectedOtherUserSpace, requestVersion, spaceBookshelfSkinInventoryId);
         }
 
         private void LoadBookshelfItemAt(
@@ -2093,7 +2117,8 @@ namespace BookshelfPorting.Runtime
             int index,
             long expectedSpaceId,
             bool expectedOtherUserSpace,
-            int requestVersion)
+            int requestVersion,
+            long? spaceBookshelfSkinInventoryId)
         {
             if (!IsRefreshRequestCurrent(requestVersion) ||
                 !IsCurrentSpaceView(expectedSpaceId, expectedOtherUserSpace))
@@ -2103,6 +2128,7 @@ namespace BookshelfPorting.Runtime
 
             if (index >= shelves.Count)
             {
+                ApplySpaceBookshelfSkinOverride(snapshots, spaceBookshelfSkinInventoryId);
                 generator.ApplyServerBookshelves(snapshots);
                 SyncLocalPreviewBookshelfStyleFromCurrentTheme();
                 experienceManager?.NotifyBookshelfApiSynced();
@@ -2120,7 +2146,7 @@ namespace BookshelfPorting.Runtime
                     $"[Bookshelf] shelf.Id 비유효 (id={shelf.Id}, spaceId={shelf.SpaceId}) — items API skip + 빈 snapshot fallback. " +
                     "BE 응답의 'id' 필드 누락/0 값 의심.");
                 snapshots.Add(MapShelfOnly(shelf));
-                LoadBookshelfItemAt(shelves, snapshots, index + 1, expectedSpaceId, expectedOtherUserSpace, requestVersion);
+                LoadBookshelfItemAt(shelves, snapshots, index + 1, expectedSpaceId, expectedOtherUserSpace, requestVersion, spaceBookshelfSkinInventoryId);
                 return;
             }
             if (shelf.SpaceId > 0 && shelf.SpaceId == shelf.Id)
@@ -2142,7 +2168,7 @@ namespace BookshelfPorting.Runtime
                     }
 
                     snapshots.Add(MapRender(render, shelf));
-                    LoadBookshelfItemAt(shelves, snapshots, index + 1, expectedSpaceId, expectedOtherUserSpace, requestVersion);
+                    LoadBookshelfItemAt(shelves, snapshots, index + 1, expectedSpaceId, expectedOtherUserSpace, requestVersion, spaceBookshelfSkinInventoryId);
                 },
                 error =>
                 {
@@ -2158,8 +2184,35 @@ namespace BookshelfPorting.Runtime
                     var fallback = MapShelfOnly(shelf);
                     fallback.ItemsLoadFailed = true;
                     snapshots.Add(fallback);
-                    LoadBookshelfItemAt(shelves, snapshots, index + 1, expectedSpaceId, expectedOtherUserSpace, requestVersion);
+                    LoadBookshelfItemAt(shelves, snapshots, index + 1, expectedSpaceId, expectedOtherUserSpace, requestVersion, spaceBookshelfSkinInventoryId);
                 });
+        }
+
+        private static void ApplySpaceBookshelfSkinOverride(
+            IList<BookshelfRuntimeApiSnapshot> snapshots,
+            long? spaceBookshelfSkinInventoryId)
+        {
+            if (snapshots == null ||
+                snapshots.Count == 0 ||
+                !BookshelfSkinResolver.TryResolveThemeStyle(spaceBookshelfSkinInventoryId, out var spaceStyle) ||
+                spaceStyle == BookshelfThemeStyle.Default)
+            {
+                return;
+            }
+
+            var fallbackSkinInventoryId = spaceBookshelfSkinInventoryId.Value.ToString();
+            for (var i = 0; i < snapshots.Count; i++)
+            {
+                var snapshot = snapshots[i];
+                if (snapshot == null)
+                {
+                    continue;
+                }
+
+                snapshot.HasThemeStyle = true;
+                snapshot.ThemeStyle = spaceStyle;
+                snapshot.SkinInventoryId = fallbackSkinInventoryId;
+            }
         }
 
         private static BookshelfRuntimeApiSnapshot MapRender(
