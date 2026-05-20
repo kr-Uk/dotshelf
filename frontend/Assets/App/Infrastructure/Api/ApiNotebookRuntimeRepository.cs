@@ -480,6 +480,7 @@ namespace App.Infrastructure.Api
             return new NotebookAssetDownloadManifestResult
             {
                 AssetId = response?.AssetId ?? 0L,
+                InventoryId = response?.InventoryId,
                 Code = response?.Code,
                 Name = response?.Name,
                 AssetType = response?.AssetType,

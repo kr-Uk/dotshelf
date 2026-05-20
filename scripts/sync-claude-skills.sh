@@ -41,8 +41,11 @@ for SOURCE_DIR in "${SOURCES[@]}"; do
     [ -d "$SKILL_DIR" ] || continue
     NAME="$(basename "$SKILL_DIR")"
     TARGET="$ROOT_SKILLS_DIR/$NAME"
-    # 상대 경로로 심링크 (clone 위치 무관 동작).
-    REL_PATH="$(cd "$ROOT_SKILLS_DIR" && python3 -c "import os, sys; print(os.path.relpath(sys.argv[1], '.'))" "$SKILL_DIR")"
+    # 상대 경로로 심링크 (clone 위치 무관 동작). ROOT_SKILLS_DIR 는 항상 $REPO_ROOT/.claude/skills,
+    # SKILL_DIR 는 $REPO_ROOT/<frontend|backend>/.claude/skills/<name>/ 이므로 relpath 는
+    # 결정적 — ../../ + (repo root 기준 SKILL_DIR 상대경로). python3 의존 제거 (bash 네이티브).
+    SKILL_REL="${SKILL_DIR#"$REPO_ROOT"/}"
+    REL_PATH="../../${SKILL_REL%/}"
     ln -s "$REL_PATH" "$TARGET"
     CREATED=$((CREATED + 1))
     echo "  [+] $NAME -> $REL_PATH"

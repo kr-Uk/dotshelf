@@ -69,6 +69,11 @@ namespace App.Bootstrap
         private Button kakaoLoginButton;
         private Button googleLoginButton;
         private Button quitButton;
+        private GameObject loginProgressDialog;
+        private TMP_Text loginProgressTitleLabel;
+        private TMP_Text loginProgressMessageLabel;
+        private RectTransform loginProgressSpinner;
+        private Button loginProgressCancelButton;
         private ApplicationQuitter applicationQuitter;
 #if UNITY_EDITOR
         // Editor-only shortcuts. Field/build/wire/handler are all gated so
@@ -85,6 +90,11 @@ namespace App.Bootstrap
         private bool isInitialized;
         private bool listenersRegistered;
         private bool isLoginInFlight;
+        private bool loginProgressSpinnerActive;
+        private bool loginProgressFailureVisible;
+        private int loginAttemptSequence;
+        private int activeLoginAttemptId;
+        private SocialProvider activeLoginProvider;
         private IAuthService authService;
 
         [Header("Development Social Login")]
@@ -165,6 +175,14 @@ namespace App.Bootstrap
             CancelInFlightBrowserOAuth();
         }
 
+        private void Update()
+        {
+            if (loginProgressSpinnerActive && loginProgressSpinner != null)
+            {
+                loginProgressSpinner.Rotate(0f, 0f, -260f * Time.unscaledDeltaTime);
+            }
+        }
+
         private void CancelInFlightBrowserOAuth()
         {
             var cts = browserOAuthCts;
@@ -175,6 +193,98 @@ namespace App.Bootstrap
             browserOAuthCts = null;
             try { cts.Cancel(); } catch { /* already disposed */ }
             cts.Dispose();
+        }
+
+        private void OnLoginProgressCancelClicked()
+        {
+            var message = loginProgressFailureVisible
+                ? "다른 로그인 방식을 선택해주세요."
+                : "로그인이 취소되었습니다.";
+
+            activeLoginAttemptId = 0;
+            loginProgressFailureVisible = false;
+            isLoginInFlight = false;
+#if UNITY_IOS && !UNITY_EDITOR
+            pendingAppleNonce = null;
+#endif
+            CancelInFlightBrowserOAuth();
+            HideLoginProgressDialog();
+            SetInteractable(true);
+            SetMessage(loginMessageLabel, message);
+        }
+
+        private int StartLoginAttempt(SocialProvider provider, string message)
+        {
+            if (activeLoginAttemptId != 0 || isLoginInFlight)
+            {
+                return 0;
+            }
+
+            activeLoginProvider = provider;
+            activeLoginAttemptId = ++loginAttemptSequence;
+            loginProgressFailureVisible = false;
+            isLoginInFlight = true;
+            SetInteractable(false);
+            ShowLoginProgressDialog("로그인 중", message, true);
+            SetMessage(loginMessageLabel, message);
+            return activeLoginAttemptId;
+        }
+
+        private int EnsureLoginAttempt(SocialProvider provider, string message)
+        {
+            if (activeLoginAttemptId != 0)
+            {
+                if (activeLoginProvider != provider)
+                {
+                    return 0;
+                }
+
+                loginProgressFailureVisible = false;
+                isLoginInFlight = true;
+                SetInteractable(false);
+                ShowLoginProgressDialog("로그인 중", message, true);
+                SetMessage(loginMessageLabel, message);
+                return activeLoginAttemptId;
+            }
+
+            return StartLoginAttempt(provider, message);
+        }
+
+        private bool IsCurrentLoginAttempt(int attemptId)
+        {
+            return attemptId != 0 && attemptId == activeLoginAttemptId;
+        }
+
+        private void CompleteLoginAttempt(int attemptId)
+        {
+            if (!IsCurrentLoginAttempt(attemptId))
+            {
+                return;
+            }
+
+            activeLoginAttemptId = 0;
+            loginProgressFailureVisible = false;
+            isLoginInFlight = false;
+            HideLoginProgressDialog();
+            SetInteractable(true);
+        }
+
+        private void FailLoginAttempt(int attemptId, string message)
+        {
+            if (!IsCurrentLoginAttempt(attemptId))
+            {
+                return;
+            }
+
+            var resolvedMessage = string.IsNullOrWhiteSpace(message)
+                ? "로그인에 실패했습니다. 취소 후 다른 로그인 방식을 선택해주세요."
+                : message;
+
+            loginProgressFailureVisible = true;
+            isLoginInFlight = false;
+            SetInteractable(true);
+            SetMessage(loginMessageLabel, resolvedMessage);
+            ShowLoginProgressDialog("로그인 실패", resolvedMessage, false);
         }
 
         public void OnAppleLoginButtonClicked()
@@ -281,31 +391,41 @@ namespace App.Bootstrap
             string nonce = null,
             string redirectUri = null)
         {
-            if (isLoginInFlight)
+            var providerDisplayName = ProviderDisplayName(provider);
+            var attemptId = EnsureLoginAttempt(provider, $"{providerDisplayName} 로그인 중입니다...");
+            if (attemptId == 0)
             {
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(providerToken))
             {
-                SetMessage(loginMessageLabel, "소셜 로그인 토큰을 받지 못했습니다. 다시 시도해주세요.");
+                FailLoginAttempt(attemptId, "소셜 로그인 토큰을 받지 못했습니다. 다시 시도해주세요.");
                 return;
             }
 
             EnsureAuthService();
-            isLoginInFlight = true;
-            SetInteractable(false);
-            SetMessage(loginMessageLabel, $"{ProviderDisplayName(provider)} 로그인 중입니다...");
 
             try
             {
                 var result = await authService.SocialLoginAsync(provider, providerToken, tokenType, nonce, redirectUri);
-                ApplyLoginResult(result, ProviderDisplayName(provider));
+                if (IsCurrentLoginAttempt(attemptId))
+                {
+                    ApplyLoginResult(result, providerDisplayName, attemptId);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+                FailLoginAttempt(attemptId, "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.");
             }
             finally
             {
-                isLoginInFlight = false;
-                SetInteractable(true);
+                if (IsCurrentLoginAttempt(attemptId) && !loginProgressFailureVisible)
+                {
+                    isLoginInFlight = false;
+                    SetInteractable(true);
+                }
             }
         }
 
@@ -323,14 +443,16 @@ namespace App.Bootstrap
             string nonce = null,
             string codeVerifier = null)
         {
-            if (isLoginInFlight)
+            var providerDisplayName = ProviderDisplayName(provider);
+            var attemptId = EnsureLoginAttempt(provider, $"{providerDisplayName} 로그인 정보를 확인 중입니다...");
+            if (attemptId == 0)
             {
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(code))
             {
-                SetMessage(loginMessageLabel, "Authorization code 를 받지 못했습니다. 다시 시도해주세요.");
+                FailLoginAttempt(attemptId, "Authorization code 를 받지 못했습니다. 다시 시도해주세요.");
                 return;
             }
 
@@ -340,19 +462,27 @@ namespace App.Bootstrap
                 $"redirectUri='{redirectUri}' codeVerifierPresent={!string.IsNullOrWhiteSpace(codeVerifier)}");
 
             EnsureAuthService();
-            isLoginInFlight = true;
-            SetInteractable(false);
-            SetMessage(loginMessageLabel, $"{ProviderDisplayName(provider)} 로그인 정보를 확인 중입니다...");
 
             try
             {
                 var result = await authService.SocialLoginByCodeAsync(provider, code, redirectUri, state, nonce, codeVerifier);
-                ApplyLoginResult(result, ProviderDisplayName(provider));
+                if (IsCurrentLoginAttempt(attemptId))
+                {
+                    ApplyLoginResult(result, providerDisplayName, attemptId);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+                FailLoginAttempt(attemptId, "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.");
             }
             finally
             {
-                isLoginInFlight = false;
-                SetInteractable(true);
+                if (IsCurrentLoginAttempt(attemptId) && !loginProgressFailureVisible)
+                {
+                    isLoginInFlight = false;
+                    SetInteractable(true);
+                }
             }
         }
 
@@ -361,23 +491,23 @@ namespace App.Bootstrap
             // Platform-side native login for this provider is not wired into
             // this Unity project yet. Once the SDK is integrated, that code
             // should call SubmitSocialLogin(...) with the provider token.
-            SetMessage(
-                loginMessageLabel,
-                $"{displayName} 로그인 SDK 연동이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.");
+            var attemptId = StartLoginAttempt(provider, $"{displayName} 로그인을 준비 중입니다...");
+            FailLoginAttempt(attemptId, $"{displayName} 로그인 SDK 연동이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.");
         }
 
-        private void ApplyLoginResult(LoginResult result, string providerDisplayName)
+        private void ApplyLoginResult(LoginResult result, string providerDisplayName, int attemptId)
         {
             if (!result.IsSuccess)
             {
                 Debug.LogWarning(
                     $"[Auth] social-login failed code={result.ErrorCode ?? "(null)"} " +
                     $"message={result.ErrorMessage ?? "(null)"}");
-                SetMessage(loginMessageLabel, result.ErrorMessage);
+                FailLoginAttempt(attemptId, result.ErrorMessage);
                 return;
             }
 
             Debug.Log($"[Auth] social-login success userId={result.UserId} newUser={result.NewUser} onboarded={result.Onboarded}");
+            CompleteLoginAttempt(attemptId);
 
             AuthSession.SaveTokens(
                 result.UserId,
@@ -561,15 +691,13 @@ namespace App.Bootstrap
 #if UNITY_IOS && !UNITY_EDITOR
         private void StartNativeAppleLogin()
         {
-            if (isLoginInFlight)
+            var attemptId = StartLoginAttempt(SocialProvider.Apple, "Apple 로그인 창을 여는 중입니다...");
+            if (attemptId == 0)
             {
                 return;
             }
 
             pendingAppleNonce = GenerateRandomNonce();
-            isLoginInFlight = true;
-            SetInteractable(false);
-            SetMessage(loginMessageLabel, "Apple 로그인 창을 여는 중입니다...");
 
             try
             {
@@ -580,9 +708,7 @@ namespace App.Bootstrap
             {
                 Debug.LogError($"[Auth] Apple native login failed to start: {ex.Message}");
                 pendingAppleNonce = null;
-                isLoginInFlight = false;
-                SetInteractable(true);
-                SetMessage(loginMessageLabel, "Apple 로그인을 시작할 수 없습니다. 잠시 후 다시 시도해주세요.");
+                FailLoginAttempt(attemptId, "Apple 로그인을 시작할 수 없습니다. 잠시 후 다시 시도해주세요.");
             }
         }
 
@@ -597,14 +723,19 @@ namespace App.Bootstrap
 
         public void OnAppleSignInSucceeded(string identityToken)
         {
+            var attemptId = activeLoginAttemptId;
+            if (activeLoginProvider != SocialProvider.Apple || attemptId == 0)
+            {
+                Debug.Log("[Auth] Ignored stale Apple sign-in success callback.");
+                return;
+            }
+
             var nonce = pendingAppleNonce;
             pendingAppleNonce = null;
-            isLoginInFlight = false;
-            SetInteractable(true);
 
             if (string.IsNullOrWhiteSpace(identityToken) || string.IsNullOrWhiteSpace(nonce))
             {
-                SetMessage(loginMessageLabel, "Apple 로그인 응답이 올바르지 않습니다. 다시 시도해주세요.");
+                FailLoginAttempt(attemptId, "Apple 로그인 응답이 올바르지 않습니다. 다시 시도해주세요.");
                 return;
             }
 
@@ -613,10 +744,15 @@ namespace App.Bootstrap
 
         public void OnAppleSignInFailed(string errorCode)
         {
+            var attemptId = activeLoginAttemptId;
+            if (activeLoginProvider != SocialProvider.Apple || attemptId == 0)
+            {
+                Debug.Log("[Auth] Ignored stale Apple sign-in failure callback.");
+                return;
+            }
+
             pendingAppleNonce = null;
-            isLoginInFlight = false;
-            SetInteractable(true);
-            SetMessage(loginMessageLabel, ResolveAppleSignInErrorMessage(errorCode));
+            FailLoginAttempt(attemptId, ResolveAppleSignInErrorMessage(errorCode));
         }
 
         private static string ResolveAppleSignInErrorMessage(string errorCode)
@@ -646,8 +782,9 @@ namespace App.Bootstrap
 
             if (!enableDesktopBrowserOAuth)
             {
-                SetMessage(
-                    loginMessageLabel,
+                var attemptId = StartLoginAttempt(provider, $"{ProviderDisplayName(provider)} 로그인을 준비 중입니다...");
+                FailLoginAttempt(
+                    attemptId,
                     "데스크톱 OAuth 흐름이 비활성화되어 있습니다. LoginScreenController 의 Enable Desktop Browser OAuth 체크박스를 켜주세요.");
                 return;
             }
@@ -680,7 +817,10 @@ namespace App.Bootstrap
 
         private async Task RunDesktopBrowserOAuthAsync(SocialProvider provider, OAuthBrowserProviderConfig providerConfig)
         {
-            if (isLoginInFlight)
+            var attemptId = StartLoginAttempt(
+                provider,
+                $"{ProviderDisplayName(provider)} 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요.");
+            if (attemptId == 0)
             {
                 return;
             }
@@ -688,12 +828,6 @@ namespace App.Bootstrap
             CancelInFlightBrowserOAuth();
             browserOAuthCts = new CancellationTokenSource();
             var token = browserOAuthCts.Token;
-
-            isLoginInFlight = true;
-            SetInteractable(false);
-            SetMessage(
-                loginMessageLabel,
-                $"{ProviderDisplayName(provider)} 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요.");
 
             OAuthBrowserResult oauthResult;
             try
@@ -711,23 +845,23 @@ namespace App.Bootstrap
 
             // The await above resumes on the Unity main thread (default
             // sync context), so the Unity-API calls below are safe.
-            if (!oauthResult.IsSuccess)
+            if (!IsCurrentLoginAttempt(attemptId))
             {
-                SetMessage(
-                    loginMessageLabel,
-                    string.IsNullOrWhiteSpace(oauthResult.ErrorMessage)
-                        ? $"{ProviderDisplayName(provider)} 로그인에 실패했습니다."
-                        : oauthResult.ErrorMessage);
-                isLoginInFlight = false;
-                SetInteractable(true);
                 return;
             }
 
-            // Hand off to the shared submit path. SubmitSocialLoginCode owns
-            // its own isLoginInFlight gate, so release this stage's guard
-            // first to avoid a double-lock.
-            isLoginInFlight = false;
-            SetInteractable(true);
+            if (!oauthResult.IsSuccess)
+            {
+                FailLoginAttempt(
+                    attemptId,
+                    string.IsNullOrWhiteSpace(oauthResult.ErrorMessage)
+                        ? $"{ProviderDisplayName(provider)} 로그인에 실패했습니다."
+                        : oauthResult.ErrorMessage);
+                return;
+            }
+
+            // Hand off to the shared submit path while keeping the same
+            // active attempt locked until BE code exchange finishes.
             SubmitSocialLoginCode(
                 provider,
                 oauthResult.Code,
@@ -800,6 +934,7 @@ namespace App.Bootstrap
             AddButtonListener(appleLoginButton, OnAppleLoginButtonClicked);
             AddButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             AddButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
+            AddButtonListener(loginProgressCancelButton, OnLoginProgressCancelClicked);
             if (applicationQuitter != null)
             {
                 AddButtonListener(quitButton, applicationQuitter.Quit);
@@ -822,6 +957,7 @@ namespace App.Bootstrap
             RemoveButtonListener(appleLoginButton, OnAppleLoginButtonClicked);
             RemoveButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
             RemoveButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
+            RemoveButtonListener(loginProgressCancelButton, OnLoginProgressCancelClicked);
             if (applicationQuitter != null)
             {
                 RemoveButtonListener(quitButton, applicationQuitter.Quit);
@@ -907,6 +1043,7 @@ namespace App.Bootstrap
             StretchToParent((RectTransform)loginScreen.transform);
 
             BuildLoginScreen(loginScreen.transform);
+            BuildLoginProgressDialog(canvasObject.transform);
         }
 
         private void BuildLoginScreen(Transform parent)
@@ -1015,6 +1152,99 @@ namespace App.Bootstrap
                 24f);
 
             quitButton = CreateQuitButton(layoutRoot.transform);
+        }
+
+        private void BuildLoginProgressDialog(Transform parent)
+        {
+            var overlay = CreateImage(parent, "LoginProgressDialog", WithAlpha(Color.black, 0.42f));
+            StretchToParent(overlay.rectTransform);
+
+            var dialogObject = CreateImage(overlay.transform, "DialogCard", CardColor);
+            dialogObject.sprite = roundedRectSprite;
+            dialogObject.type = Image.Type.Sliced;
+            var dialogRect = dialogObject.rectTransform;
+            dialogRect.anchorMin = new Vector2(0.5f, 0.5f);
+            dialogRect.anchorMax = new Vector2(0.5f, 0.5f);
+            dialogRect.pivot = new Vector2(0.5f, 0.5f);
+            dialogRect.sizeDelta = new Vector2(460f, 286f);
+            dialogRect.anchoredPosition = Vector2.zero;
+
+            var dialogShadow = dialogObject.gameObject.AddComponent<Shadow>();
+            dialogShadow.effectColor = WithAlpha(TextColor, 0.22f);
+            dialogShadow.effectDistance = new Vector2(0f, -10f);
+
+            loginProgressTitleLabel = CreateText(
+                dialogObject.transform,
+                "Title",
+                "로그인 중",
+                22f,
+                FontStyles.Bold,
+                TextColor,
+                TextAlignmentOptions.Center,
+                new Vector2(0f, -36f),
+                new Vector2(360f, 34f));
+
+            loginProgressSpinner = CreateLoadingSpinner(dialogObject.transform);
+
+            loginProgressMessageLabel = CreateText(
+                dialogObject.transform,
+                "Message",
+                "로그인 중입니다.",
+                14f,
+                FontStyles.Normal,
+                MutedTextColor,
+                TextAlignmentOptions.Center,
+                new Vector2(0f, -138f),
+                new Vector2(360f, 62f));
+            loginProgressMessageLabel.enableWordWrapping = true;
+            loginProgressMessageLabel.overflowMode = TextOverflowModes.Ellipsis;
+
+            loginProgressCancelButton = CreateButton(
+                dialogObject.transform,
+                "CancelButton",
+                "취소",
+                SecondaryColor,
+                TextColor,
+                new Vector2(0f, -222f),
+                new Vector2(156f, 42f),
+                true,
+                BorderColor);
+
+            loginProgressDialog = overlay.gameObject;
+            loginProgressDialog.SetActive(false);
+        }
+
+        private RectTransform CreateLoadingSpinner(Transform parent)
+        {
+            var spinnerObject = CreateRectObject("LoadingSpinner", parent);
+            var spinnerRect = (RectTransform)spinnerObject.transform;
+            spinnerRect.anchorMin = new Vector2(0.5f, 1f);
+            spinnerRect.anchorMax = new Vector2(0.5f, 1f);
+            spinnerRect.pivot = new Vector2(0.5f, 0.5f);
+            spinnerRect.sizeDelta = new Vector2(54f, 54f);
+            spinnerRect.anchoredPosition = new Vector2(0f, -92f);
+
+            for (var i = 0; i < 12; i++)
+            {
+                var alpha = Mathf.Lerp(0.22f, 1f, (i + 1f) / 12f);
+                var tick = CreateImage(spinnerObject.transform, $"Tick{i:00}", WithAlpha(PrimaryColor, alpha));
+                tick.sprite = roundedRectSprite;
+                tick.type = Image.Type.Sliced;
+                tick.raycastTarget = false;
+
+                var tickRect = tick.rectTransform;
+                tickRect.anchorMin = new Vector2(0.5f, 0.5f);
+                tickRect.anchorMax = new Vector2(0.5f, 0.5f);
+                tickRect.pivot = new Vector2(0.5f, 0.5f);
+                tickRect.sizeDelta = new Vector2(4f, 12f);
+
+                var angle = i * 30f;
+                var radians = angle * Mathf.Deg2Rad;
+                tickRect.anchoredPosition = new Vector2(Mathf.Sin(radians) * 19f, Mathf.Cos(radians) * 19f);
+                tickRect.localRotation = Quaternion.Euler(0f, 0f, -angle);
+            }
+
+            return spinnerRect;
         }
 
         private void DisableLegacyLoginUi()
@@ -1286,6 +1516,11 @@ namespace App.Bootstrap
             var commonText =
                 "BOOK ROOM" +
                 "로그인" +
+                "로그인 중" +
+                "로그인 실패" +
+                "취소" +
+                "다른 로그인 방식을 선택해주세요." +
+                "로그인에 실패했습니다. 취소 후 다른 로그인 방식을 선택해주세요." +
                 "Apple 로그인" +
                 "Kakao 로그인" +
                 "Google 로그인" +
@@ -1444,6 +1679,38 @@ namespace App.Bootstrap
             }
 
             label.text = message;
+        }
+
+        private void ShowLoginProgressDialog(string title, string message, bool showSpinner)
+        {
+            if (loginProgressDialog == null)
+            {
+                return;
+            }
+
+            loginProgressDialog.SetActive(true);
+            SetMessage(loginProgressTitleLabel, string.IsNullOrWhiteSpace(title) ? "로그인 중" : title);
+            SetMessage(loginProgressMessageLabel, string.IsNullOrWhiteSpace(message) ? "로그인 중입니다." : message);
+            if (loginProgressSpinner != null)
+            {
+                loginProgressSpinner.gameObject.SetActive(showSpinner);
+            }
+
+            loginProgressSpinnerActive = showSpinner;
+            SetButtonLabel(loginProgressCancelButton, "취소");
+            if (loginProgressCancelButton != null)
+            {
+                loginProgressCancelButton.interactable = true;
+            }
+        }
+
+        private void HideLoginProgressDialog()
+        {
+            loginProgressSpinnerActive = false;
+            if (loginProgressDialog != null)
+            {
+                loginProgressDialog.SetActive(false);
+            }
         }
 
         private static void AddButtonListener(Button button, UnityEngine.Events.UnityAction callback)

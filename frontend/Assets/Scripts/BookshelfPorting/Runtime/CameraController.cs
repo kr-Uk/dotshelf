@@ -104,9 +104,13 @@ namespace BookshelfPorting.Runtime
         private float mainViewYawOffset;
         private float mainViewPitchOffset;
         private Vector3 mainViewBasePosition;
+        private Quaternion mainViewBaseRotation;
         private Vector3 mainViewBasePivot;
         private float mainViewBaseFieldOfView;
         private bool mainViewBaseCaptured;
+        // orbit 회전이 한 번이라도 카메라 transform 에 적용됐는지. offset 이 다시 0 으로
+        // 돌아왔을 때 base pose 를 1회 복원해야 하는지 판단용 (skh1205 #1 / beshu #1 review).
+        private bool mainViewRotationApplied;
         private Func<bool> frontalZoomInputPredicate;
         public event Action<CameraMode> ModeChanged;
         public event Action<CameraMode> TransitionCompleted;
@@ -666,6 +670,7 @@ namespace BookshelfPorting.Runtime
             mainViewYawOffset = 0f;
             mainViewPitchOffset = 0f;
             mainViewBaseCaptured = false;
+            mainViewRotationApplied = false;
         }
 
         private void ApplyMainViewRotation()
@@ -678,10 +683,28 @@ namespace BookshelfPorting.Runtime
             if (!mainViewBaseCaptured)
             {
                 mainViewBasePosition = targetCamera.transform.position;
+                mainViewBaseRotation = targetCamera.transform.rotation;
                 var forward = targetCamera.transform.forward;
                 mainViewBasePivot = mainViewBasePosition + forward * mainViewOrbitPivotDistance;
                 mainViewBaseFieldOfView = targetCamera.fieldOfView;
                 mainViewBaseCaptured = true;
+            }
+
+            // orbit offset 이 0 일 때:
+            //   - 한 번도 orbit 을 적용한 적 없으면 (mainViewRotationApplied=false) transform 을
+            //     건드리지 않는다 — 매 frame LookRotation rebuild 의 미세 floating-point drift 회피.
+            //   - orbit 후 다시 offset 0 으로 되돌린 경우 (mainViewRotationApplied=true) 는 카메라
+            //     가 직전 회전 pose 에 stale 하게 남아 있으므로 캡처된 base pose 로 1회 복원
+            //     (skh1205 #1 / beshu #1 review — offset 0 인데 카메라가 안 돌아오던 회귀).
+            if (Mathf.Approximately(mainViewYawOffset, 0f) && Mathf.Approximately(mainViewPitchOffset, 0f))
+            {
+                if (mainViewRotationApplied)
+                {
+                    targetCamera.transform.SetPositionAndRotation(mainViewBasePosition, mainViewBaseRotation);
+                    targetCamera.fieldOfView = mainViewBaseFieldOfView;
+                    mainViewRotationApplied = false;
+                }
+                return;
             }
 
             var offsetFromPivot = mainViewBasePosition - mainViewBasePivot;
@@ -700,6 +723,7 @@ namespace BookshelfPorting.Runtime
             targetCamera.transform.position = finalPosition;
             targetCamera.transform.rotation = Quaternion.LookRotation(lookDir.normalized, Vector3.up);
             targetCamera.fieldOfView = mainViewBaseFieldOfView;
+            mainViewRotationApplied = true;
         }
 
         private void SetFrontalZoomTarget(float distance)
