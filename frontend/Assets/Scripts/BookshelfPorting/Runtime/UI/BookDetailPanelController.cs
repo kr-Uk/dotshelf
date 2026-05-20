@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
@@ -95,6 +96,7 @@ namespace BookshelfPorting.Runtime
     internal sealed class BookDetailPanelController
     {
         private const float OverlayButtonBottomPaddingExtra = 12f;
+        private const string LikeReactionIconPath = "Assets/App/UI/Icons/Reactions/icon_like_heart.png";
 
         private static readonly Color32 DeleteButtonBackground = new(196, 78, 72, 255);
         private static readonly Color32 DeleteButtonHighlighted = new(176, 62, 58, 255);
@@ -103,6 +105,16 @@ namespace BookshelfPorting.Runtime
         private static readonly Color32 DeleteButtonDisabledBackground = new(224, 219, 214, 130);
         private static readonly Color32 DeleteButtonBorder = new(236, 178, 168, 190);
         private static readonly Color32 DeleteButtonDisabledText = new(142, 133, 124, 190);
+        private static readonly Color32 LikeButtonIdleBackground = new(247, 243, 238, 235);
+        private static readonly Color32 LikeButtonIdleHighlight = new(255, 249, 244, 255);
+        private static readonly Color32 LikeButtonActiveBackground = new(128, 74, 106, 242);
+        private static readonly Color32 LikeButtonActiveHighlight = new(150, 88, 122, 255);
+        private static readonly Color32 LikeButtonDisabledBackground = new(224, 219, 214, 140);
+        private static readonly Color32 LikeIconIdleColor = new(232, 226, 235, 255);
+        private static readonly Color32 LikeCountIdleColor = new(86, 67, 93, 255);
+        private static readonly Color32 LikeActiveColor = new(247, 173, 194, 255);
+        private static Sprite cachedLikeReactionSprite;
+        private static Texture2D fallbackLikeReactionTexture;
 
         private readonly Text eyebrowText;
         private readonly Text titleText;
@@ -116,6 +128,8 @@ namespace BookshelfPorting.Runtime
         private readonly Scrollbar descriptionScrollbar;
         private readonly Button readToggleButton;
         private readonly Button likeToggleButton;
+        private Image likeToggleIconImage;
+        private TMP_Text likeToggleCountText;
         private readonly Button ratingCycleButton;
         private readonly Button visibilityToggleButton;
         private readonly Button writeReportButton;
@@ -235,14 +249,7 @@ namespace BookshelfPorting.Runtime
             SetButtonActive(likeToggleButton, canToggleLike);
             likeToggleButton.interactable = canToggleLike;
             RuntimeHudStyle.SetButtonLabel(likeToggleButton, "좋아요");
-            RuntimeHudStyle.StyleButton(
-                likeToggleButton,
-                model.IsLiked ? new Color32(173, 122, 79, 245) : new Color32(238, 248, 241, 235),
-                model.IsLiked ? new Color32(191, 139, 92, 255) : new Color32(247, 255, 250, 255),
-                new Color32(224, 219, 214, 140),
-                18,
-                model.IsLiked ? Color.white : new Color32(53, 94, 73, 255),
-                true);
+            RefreshLikeToggleDisplay(model.TotalLikes, model.IsLiked);
             SetButtonActive(ratingCycleButton, false);
             SetButtonActive(visibilityToggleButton, false);
 
@@ -286,7 +293,7 @@ namespace BookshelfPorting.Runtime
             RuntimeHudLayout.SetChildRect(Panel, "BookPanelAccent", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -22f), new Vector2(84f, 3f));
             RuntimeHudLayout.SetChildActive(Panel, "BookPanelAccent", false);
             var topActionY = -30f;
-            var likeButtonWidth = 64f;
+            var likeButtonWidth = 72f;
             var reviewButtonWidth = 112f;
             var topActionGap = 8f;
             var topActionsWidth = likeButtonWidth + topActionGap + reviewButtonWidth;
@@ -327,6 +334,162 @@ namespace BookshelfPorting.Runtime
             SetComponentRect(addAdvertisementBookButton, new Vector2(padding, actionY), new Vector2(contentWidth, buttonHeight));
             SetComponentRect(deleteButton, new Vector2(padding, deleteY), new Vector2(contentWidth, buttonHeight));
             RefreshDescriptionScrollContent(false);
+        }
+
+        private void EnsureLikeToggleContent()
+        {
+            if (likeToggleButton == null || (likeToggleIconImage != null && likeToggleCountText != null))
+            {
+                return;
+            }
+
+            (likeToggleIconImage, likeToggleCountText) = BuildLikeToggleContent(likeToggleButton);
+        }
+
+        private static (Image IconImage, TMP_Text CountText) BuildLikeToggleContent(Button button)
+        {
+            if (button == null)
+            {
+                return (null, null);
+            }
+
+            var defaultLabel = button.transform.Find("Label");
+            if (defaultLabel != null)
+            {
+                defaultLabel.gameObject.SetActive(false);
+            }
+
+            var contentRect = RuntimeHudFactory.CreateContainer(
+                button.transform,
+                "LikeReactionContent",
+                Vector2.zero,
+                Vector2.zero,
+                new Vector2(0.5f, 0.5f));
+            contentRect.anchorMin = Vector2.zero;
+            contentRect.anchorMax = Vector2.one;
+            contentRect.pivot = new Vector2(0.5f, 0.5f);
+            contentRect.offsetMin = new Vector2(8f, 3f);
+            contentRect.offsetMax = new Vector2(-8f, -3f);
+
+            var layout = contentRect.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.spacing = 6f;
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+
+            var iconObject = new GameObject("LikeHeartIcon");
+            iconObject.transform.SetParent(contentRect, false);
+            var icon = iconObject.AddComponent<Image>();
+            icon.sprite = GetLikeReactionSprite();
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            var iconLayout = iconObject.AddComponent<LayoutElement>();
+            iconLayout.preferredWidth = 16f;
+            iconLayout.preferredHeight = 16f;
+            iconLayout.minWidth = 16f;
+            iconLayout.minHeight = 16f;
+
+            var countObject = new GameObject("LikeCountText");
+            countObject.transform.SetParent(contentRect, false);
+            var countText = countObject.AddComponent<TextMeshProUGUI>();
+            countText.text = "0";
+            countText.fontSize = 15f;
+            countText.fontStyle = FontStyles.Bold;
+            countText.alignment = TextAlignmentOptions.Center;
+            countText.margin = Vector4.zero;
+            countText.raycastTarget = false;
+            countText.textWrappingMode = TextWrappingModes.NoWrap;
+            countText.overflowMode = TextOverflowModes.Overflow;
+            var countLayout = countObject.AddComponent<LayoutElement>();
+            countLayout.minWidth = 10f;
+            countLayout.preferredWidth = 22f;
+            countLayout.preferredHeight = 18f;
+
+            return (icon, countText);
+        }
+
+        private void RefreshLikeToggleDisplay(string totalLikes, bool isLiked)
+        {
+            EnsureLikeToggleContent();
+            RuntimeHudStyle.StyleButton(
+                likeToggleButton,
+                isLiked ? LikeButtonActiveBackground : LikeButtonIdleBackground,
+                isLiked ? LikeButtonActiveHighlight : LikeButtonIdleHighlight,
+                LikeButtonDisabledBackground,
+                18,
+                isLiked ? LikeActiveColor : LikeCountIdleColor,
+                true);
+
+            var iconColor = isLiked ? LikeActiveColor : LikeIconIdleColor;
+            if (likeToggleIconImage != null)
+            {
+                likeToggleIconImage.sprite = GetLikeReactionSprite();
+                likeToggleIconImage.color = iconColor;
+            }
+
+            if (likeToggleCountText != null)
+            {
+                likeToggleCountText.text = string.IsNullOrWhiteSpace(totalLikes) ? "0" : totalLikes;
+                likeToggleCountText.color = isLiked ? LikeActiveColor : LikeCountIdleColor;
+            }
+        }
+
+        private static Sprite GetLikeReactionSprite()
+        {
+            if (cachedLikeReactionSprite != null)
+            {
+                return cachedLikeReactionSprite;
+            }
+
+#if UNITY_EDITOR
+            cachedLikeReactionSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(LikeReactionIconPath);
+            if (cachedLikeReactionSprite != null)
+            {
+                return cachedLikeReactionSprite;
+            }
+#endif
+
+            cachedLikeReactionSprite = CreateFallbackLikeReactionSprite();
+            return cachedLikeReactionSprite;
+        }
+
+        private static Sprite CreateFallbackLikeReactionSprite()
+        {
+            const int size = 64;
+            fallbackLikeReactionTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = "GeneratedLikeHeartIcon",
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            fallbackLikeReactionTexture.wrapMode = TextureWrapMode.Clamp;
+            fallbackLikeReactionTexture.filterMode = FilterMode.Bilinear;
+
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    var px = (x + 0.5f) / size * 2f - 1f;
+                    var py = (y + 0.5f) / size * 2f - 1f + 0.08f;
+                    var heart = Mathf.Pow(px * px + py * py - 0.42f, 3f) - px * px * py * py * py;
+                    var filledAlpha = Mathf.Clamp01((0.018f - heart) * 42f);
+                    var innerAlpha = Mathf.Clamp01((-0.045f - heart) * 42f);
+                    var alpha = Mathf.Clamp01(filledAlpha - innerAlpha);
+                    fallbackLikeReactionTexture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                }
+            }
+
+            fallbackLikeReactionTexture.Apply();
+            var sprite = Sprite.Create(
+                fallbackLikeReactionTexture,
+                new Rect(0f, 0f, size, size),
+                new Vector2(0.5f, 0.5f),
+                100f);
+            sprite.name = "GeneratedLikeHeartIcon";
+            sprite.hideFlags = HideFlags.HideAndDontSave;
+            return sprite;
         }
 
         private void RefreshDescriptionScrollContent(bool resetToTop)
