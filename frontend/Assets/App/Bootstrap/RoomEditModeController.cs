@@ -1966,6 +1966,7 @@ namespace App.Bootstrap
                 case CustomizationCategory.Desk:
                 case CustomizationCategory.InteriorLight:
                 case CustomizationCategory.ExteriorLight:
+                case CustomizationCategory.Notebook:
                     return true;
                 default:
                     return false;
@@ -2757,6 +2758,11 @@ namespace App.Bootstrap
                     continue;
                 }
 
+                if (ShouldSuppressRemoteCatalogDuplicate(entry))
+                {
+                    continue;
+                }
+
                 if (!MatchesCategory(entry, selectedToolbarKey))
                 {
                     continue;
@@ -2792,6 +2798,11 @@ namespace App.Bootstrap
             {
                 var entry = inventoryEntries[i];
                 if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag))
+                {
+                    continue;
+                }
+
+                if (ShouldSuppressRemoteCatalogDuplicate(entry))
                 {
                     continue;
                 }
@@ -2868,9 +2879,80 @@ namespace App.Bootstrap
                     continue;
                 }
 
+                if (ShouldSuppressRemoteCatalogDuplicate(entry))
+                {
+                    continue;
+                }
+
                 BuildInventorySlot(parent, slotIndex, entry);
                 slotIndex++;
             }
+        }
+
+        private bool ShouldSuppressRemoteCatalogDuplicate(InventoryEntry entry)
+        {
+            if (!TryResolveRemoteCustomizationCategory(entry, out var category))
+            {
+                return false;
+            }
+
+            var catalog = LoadCategoryCatalog(category);
+            if (catalog == null || catalog.Entries == null)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < catalog.Entries.Count; i++)
+            {
+                if (DoesRemoteInventoryEntryMatchCatalogEntry(category, entry, catalog.Entries[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool DoesRemoteInventoryEntryMatchCatalogEntry(
+            CustomizationCategory category,
+            InventoryEntry remoteEntry,
+            CustomizationEntry catalogEntry)
+        {
+            if (!remoteEntry.IsRemoteAsset || catalogEntry == null)
+            {
+                return false;
+            }
+
+            if (!TryResolveRemoteCustomizationCategory(remoteEntry, out var remoteCategory) ||
+                remoteCategory != category)
+            {
+                return false;
+            }
+
+            if (remoteEntry.RemoteAssetId > 0L &&
+                catalogEntry.AssetId > 0L &&
+                remoteEntry.RemoteAssetId == catalogEntry.AssetId)
+            {
+                return true;
+            }
+
+            var catalogTheme = NormalizeThemeTag(catalogEntry.ThemeTag);
+            if (string.IsNullOrEmpty(catalogTheme))
+            {
+                return false;
+            }
+
+            if (ThemeTagsEqual(catalogTheme, remoteEntry.ThemeTag))
+            {
+                return true;
+            }
+
+            var remoteText = NormalizeIdentifier(string.Concat(
+                remoteEntry.ServerAssetType, " ",
+                remoteEntry.ServerCategoryCode, " ",
+                remoteEntry.DisplayName));
+            return !string.IsNullOrEmpty(remoteText) &&
+                   remoteText.Contains(NormalizeIdentifier(catalogTheme));
         }
 
         private static bool MatchesRemoteFurnitureSubCategory(InventoryEntry entry, string subKey)

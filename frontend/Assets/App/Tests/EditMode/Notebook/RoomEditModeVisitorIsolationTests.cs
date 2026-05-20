@@ -608,6 +608,78 @@ namespace App.Tests.EditMode.Notebook
             Assert.IsFalse(GetField<bool>(sync, "activeRefreshTargetsOtherUserSpace"));
         }
 
+        [Test]
+        public void RemoteFixedAssetSlot_MatchesCatalogBackedAssetByServerAssetId()
+        {
+            var remoteEntry = CreateInventoryEntry(remoteAssetId: 300020L, remoteInventoryId: 900L);
+            SetEntryField(remoteEntry, "IsRemoteAsset", true);
+            SetEntryField(remoteEntry, "PlacementCategory", CustomizationCategory.BookshelfSkin);
+            SetEntryField(remoteEntry, "ThemeTag", "DeepSea");
+            SetEntryField(remoteEntry, "ServerAssetType", "BOOKSHELF_SKIN");
+
+            var catalogEntry = CreateCustomizationEntry(300020L, "깊은바다 책장", "DeepSea");
+
+            Assert.IsTrue(InvokeDoesRemoteInventoryEntryMatchCatalogEntry(
+                CustomizationCategory.BookshelfSkin,
+                remoteEntry,
+                catalogEntry));
+        }
+
+        [Test]
+        public void RemoteFixedAssetSlot_DoesNotMatchDifferentCatalogAsset()
+        {
+            var remoteEntry = CreateInventoryEntry(remoteAssetId: 300020L, remoteInventoryId: 900L);
+            SetEntryField(remoteEntry, "IsRemoteAsset", true);
+            SetEntryField(remoteEntry, "PlacementCategory", CustomizationCategory.BookshelfSkin);
+            SetEntryField(remoteEntry, "ThemeTag", string.Empty);
+            SetEntryField(remoteEntry, "ServerAssetType", "BOOKSHELF_SKIN");
+
+            var catalogEntry = CreateCustomizationEntry(400020L, "판타지 책장", "Fantasy");
+
+            Assert.IsFalse(InvokeDoesRemoteInventoryEntryMatchCatalogEntry(
+                CustomizationCategory.BookshelfSkin,
+                remoteEntry,
+                catalogEntry));
+        }
+
+        [Test]
+        public void BookshelfStyleSelection_PrefersExplicitShelfStyleOverCurrentTheme()
+        {
+            host = new GameObject(nameof(BookshelfStyleSelection_PrefersExplicitShelfStyleOverCurrentTheme));
+            var generator = host.AddComponent(GeneratorType);
+            var themeHost = new GameObject("RoomThemeApplier");
+            themeHost.transform.SetParent(host.transform, false);
+            var applier = themeHost.AddComponent(RoomThemeApplierType);
+
+            var currentTheme = ScriptableObject.CreateInstance<RoomThemeAsset>();
+            var catalog = ScriptableObject.CreateInstance(BookshelfThemeLayoutCatalogType);
+            var deepSea = BookshelfThemeStyleValue("DeepSea");
+            var fantasy = BookshelfThemeStyleValue("Fantasy");
+            var deepSeaLayout = CreateBookshelfThemeLayout(deepSea);
+            var fantasyLayout = CreateBookshelfThemeLayout(fantasy);
+            try
+            {
+                SetField(currentTheme, "bookshelfStyleIndex", Convert.ToInt32(deepSea));
+                SetField(applier, "currentTheme", currentTheme);
+                SetField(catalog, "layouts", CreateBookshelfThemeLayoutArray(deepSeaLayout, fantasyLayout));
+                SetField(generator, "cachedRoomThemeApplier", applier);
+                SetField(generator, "bookshelfThemeLayoutCatalog", catalog);
+
+                var styles = (IDictionary)GetField<object>(generator, "bookshelfDesignStyles");
+                styles[0] = fantasy;
+
+                Assert.AreEqual(fantasy, InvokeResolveActiveNavigationThemeStyle(generator));
+                Assert.AreEqual(fantasy, InvokeResolveRenderedBookshelfDesignStyle(generator, 0));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(currentTheme);
+                UnityEngine.Object.DestroyImmediate(catalog);
+                UnityEngine.Object.DestroyImmediate((UnityEngine.Object)deepSeaLayout);
+                UnityEngine.Object.DestroyImmediate((UnityEngine.Object)fantasyLayout);
+            }
+        }
+
         private static Type ControllerType
         {
             get
@@ -633,6 +705,66 @@ namespace App.Tests.EditMode.Notebook
             get
             {
                 var type = FindType("BookshelfPorting.Runtime.BookshelfGenerator");
+                Assert.IsNotNull(type);
+                return type;
+            }
+        }
+
+        private static Type RoomThemeApplierType
+        {
+            get
+            {
+                var type = FindType("Dotshelf.Scripts.RoomTheme.RoomThemeApplier");
+                Assert.IsNotNull(type);
+                return type;
+            }
+        }
+
+        private static Type BookshelfThemeStyleType
+        {
+            get
+            {
+                var type = FindType("BookshelfPorting.Runtime.BookshelfThemeStyle");
+                Assert.IsNotNull(type);
+                return type;
+            }
+        }
+
+        private static Type BookshelfThemeLayoutType
+        {
+            get
+            {
+                var type = FindType("BookshelfPorting.Runtime.BookshelfThemeLayout");
+                Assert.IsNotNull(type);
+                return type;
+            }
+        }
+
+        private static Type BookshelfThemeLayoutCatalogType
+        {
+            get
+            {
+                var type = FindType("BookshelfPorting.Runtime.BookshelfThemeLayoutCatalog");
+                Assert.IsNotNull(type);
+                return type;
+            }
+        }
+
+        private static Type BookshelfSectionLayoutType
+        {
+            get
+            {
+                var type = FindType("BookshelfPorting.Runtime.BookshelfSectionLayout");
+                Assert.IsNotNull(type);
+                return type;
+            }
+        }
+
+        private static Type ShelfSectionAlignmentType
+        {
+            get
+            {
+                var type = FindType("BookshelfPorting.Runtime.ShelfSectionAlignment");
                 Assert.IsNotNull(type);
                 return type;
             }
@@ -706,6 +838,61 @@ namespace App.Tests.EditMode.Notebook
             SetEntryField(entry, "RemoteAssetId", remoteAssetId);
             SetEntryField(entry, "RemoteInventoryId", remoteInventoryId);
             return entry;
+        }
+
+        private static CustomizationEntry CreateCustomizationEntry(long assetId, string displayName, string themeTag)
+        {
+            var entry = new CustomizationEntry();
+            SetField(entry, "assetId", assetId);
+            SetField(entry, "displayName", displayName);
+            SetField(entry, "themeTag", themeTag);
+            return entry;
+        }
+
+        private static object BookshelfThemeStyleValue(string name)
+        {
+            return Enum.Parse(BookshelfThemeStyleType, name);
+        }
+
+        private static object CreateBookshelfThemeLayout(object style)
+        {
+            var layout = ScriptableObject.CreateInstance(BookshelfThemeLayoutType);
+            SetField(layout, "style", style);
+            SetField(layout, "focusLocalPosition", new Vector3(0f, 0.8f, -0.175f));
+            SetField(layout, "focusSize", new Vector3(1.7f, 1.7f, 0.18f));
+            var sections = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(BookshelfSectionLayoutType));
+            sections.Add(Activator.CreateInstance(
+                BookshelfSectionLayoutType,
+                new[]
+                {
+                    0,
+                    0,
+                    -0.5f,
+                    0.5f,
+                    0.1f,
+                    0.4f,
+                    0f,
+                    -0.2f,
+                    0.2f,
+                    Enum.Parse(ShelfSectionAlignmentType, "Left"),
+                    false
+                }));
+            SetField(
+                layout,
+                "sections",
+                sections);
+            return layout;
+        }
+
+        private static Array CreateBookshelfThemeLayoutArray(params object[] layouts)
+        {
+            var array = Array.CreateInstance(BookshelfThemeLayoutType, layouts.Length);
+            for (var i = 0; i < layouts.Length; i++)
+            {
+                array.SetValue(layouts[i], i);
+            }
+
+            return array;
         }
 
         private static void AddVisibleInventoryAssetMap(object controller, long inventoryId, long assetId)
@@ -851,6 +1038,36 @@ namespace App.Tests.EditMode.Notebook
             var result = (bool)method.Invoke(controller, args);
             entry = args[1];
             return result;
+        }
+
+        private static bool InvokeDoesRemoteInventoryEntryMatchCatalogEntry(
+            CustomizationCategory category,
+            object remoteEntry,
+            CustomizationEntry catalogEntry)
+        {
+            var method = ControllerType.GetMethod(
+                "DoesRemoteInventoryEntryMatchCatalogEntry",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.IsNotNull(method);
+            return (bool)method.Invoke(null, new object[] { category, remoteEntry, catalogEntry });
+        }
+
+        private static object InvokeResolveActiveNavigationThemeStyle(object generator)
+        {
+            var method = GeneratorType.GetMethod(
+                "ResolveActiveNavigationThemeStyle",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(method);
+            return method.Invoke(generator, Array.Empty<object>());
+        }
+
+        private static object InvokeResolveRenderedBookshelfDesignStyle(object generator, int index)
+        {
+            var method = GeneratorType.GetMethod(
+                "ResolveRenderedBookshelfDesignStyle",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(method);
+            return method.Invoke(generator, new object[] { index });
         }
 
         private static IEnumerator InvokeLoadRemoteAssetGameObject(
