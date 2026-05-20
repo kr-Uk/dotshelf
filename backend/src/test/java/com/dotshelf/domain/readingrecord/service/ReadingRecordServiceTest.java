@@ -88,15 +88,15 @@ class ReadingRecordServiceTest {
     }
 
     @Test
-    @DisplayName("목록 조회는 PUBLIC과 팔로워 공개만 viewer에게 노출한다")
-    void getUserRecords_filtersVisibilityForFollower() {
+    @DisplayName("목록 조회는 PUBLIC과 맞팔 공개만 viewer에게 노출한다")
+    void getUserRecords_filtersVisibilityForMutual() {
         Instant now = Instant.now();
         given(readingRecordRepository.findUserRecordSummaries(2L)).willReturn(List.of(
                 summary(1L, "PUBLIC", 1, now.minusSeconds(3)),
-                summary(2L, "FOLLOWERS", 2, now.minusSeconds(2)),
+                summary(2L, "MUTUAL", 2, now.minusSeconds(2)),
                 summary(3L, "PRIVATE", 3, now.minusSeconds(1))
         ));
-        given(followRepository.existsByFollowerUserIdAndFollowingUserId(1L, 2L)).willReturn(true);
+        given(followRepository.existsMutualFollow(1L, 2L)).willReturn(true);
 
         var response = readingRecordService.getUserRecords(1L, 2L, "LATEST", null, 10);
 

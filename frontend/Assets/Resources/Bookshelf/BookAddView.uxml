@@ -1,0 +1,40 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <ui:Style src="BookAddView.uss" />
+    <ui:VisualElement name="root" class="shelf-add-root hidden" picking-mode="Position">
+        <ui:VisualElement name="backdrop" class="shelf-add-backdrop" picking-mode="Position" />
+        <ui:VisualElement name="frame" class="shelf-add-frame" picking-mode="Position">
+
+            <ui:VisualElement class="shelf-add-header">
+                <ui:VisualElement class="shelf-add-header-text">
+                    <ui:Label class="shelf-add-eyebrow" text="SHELF · ADD BOOKS" />
+                    <ui:Label name="title" class="shelf-add-title" text="책 추가" />
+                </ui:VisualElement>
+                <ui:Button name="close-button" class="shelf-add-close-button" text="✕" />
+            </ui:VisualElement>
+
+            <ui:VisualElement class="shelf-add-rule" />
+
+            <ui:VisualElement class="shelf-add-body">
+
+                <ui:Label name="hint" class="shelf-add-hint" text="" />
+
+                <ui:Label class="shelf-add-sub-label" text="추가할 책장" />
+                <ui:VisualElement name="shelf-selector" class="shelf-add-shelf-row" />
+
+                <ui:VisualElement class="shelf-add-mode-row">
+                    <ui:Button name="mode-search" class="shelf-add-mode" text="검색" />
+                    <ui:Button name="mode-recommended" class="shelf-add-mode" text="추천" />
+                    <ui:Button name="mode-ranking" class="shelf-add-mode" text="랭킹" />
+                </ui:VisualElement>
+
+                <ui:TextField name="search-input" class="shelf-add-input" max-length="40" />
+
+                <ui:ScrollView name="results" class="shelf-add-results" mode="Vertical" horizontal-scroller-visibility="Hidden" />
+
+                <ui:Label name="status" class="shelf-add-status" text="" />
+
+            </ui:VisualElement>
+
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

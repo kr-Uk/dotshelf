@@ -3,6 +3,7 @@ package com.dotshelf.domain.guestbook.entity;
 import java.time.LocalDateTime;
 
 import com.dotshelf.global.common.BaseEntity;
+import com.dotshelf.global.common.VisibilityScope;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -57,7 +58,7 @@ public class Guestbook extends BaseEntity {
         this.writerUserId = writerUserId;
         this.postItInventoryId = postItInventoryId;
         this.content = content;
-        this.visibilityScope = visibilityScope == null ? "PUBLIC" : visibilityScope;
+        this.visibilityScope = VisibilityScope.normalize(visibilityScope);
         this.anonymous = anonymous != null && anonymous;
     }
 

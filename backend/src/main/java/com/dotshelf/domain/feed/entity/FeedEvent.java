@@ -3,6 +3,7 @@ package com.dotshelf.domain.feed.entity;
 import java.time.LocalDateTime;
 
 import com.dotshelf.global.common.BaseEntity;
+import com.dotshelf.global.common.VisibilityScope;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -59,6 +60,6 @@ public class FeedEvent extends BaseEntity {
         this.eventType = eventType;
         this.targetType = targetType;
         this.targetId = targetId;
-        this.visibilityScope = visibilityScope == null ? "PUBLIC" : visibilityScope;
+        this.visibilityScope = VisibilityScope.normalize(visibilityScope);
     }
 }

@@ -16,11 +16,17 @@ public interface GuestbookRepository extends JpaRepository<Guestbook, Long> {
     @Query("SELECT g FROM Guestbook g "
             + "WHERE g.spaceId = :spaceId AND g.status = :status "
             + "AND (:cursorId IS NULL OR g.id < :cursorId) "
+            + "AND (:isOwner = true OR g.writerUserId = :viewerId "
+            + "     OR g.visibilityScope = 'PUBLIC' "
+            + "     OR (g.visibilityScope = 'MUTUAL' AND :mutual = true)) "
             + "ORDER BY g.id DESC")
     List<Guestbook> findGuestbookPage(
             @Param("spaceId") Long spaceId,
             @Param("status") String status,
             @Param("cursorId") Long cursorId,
+            @Param("viewerId") Long viewerId,
+            @Param("isOwner") boolean isOwner,
+            @Param("mutual") boolean mutual,
             Pageable pageable
     );
 }

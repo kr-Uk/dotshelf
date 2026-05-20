@@ -225,6 +225,32 @@ class SpaceServiceTest {
     }
 
     @Test
+    @DisplayName("MUTUAL 공간 상세 조회는 맞팔 viewer 에게 허용한다")
+    void getSpace_mutualSpaceMutualViewer_allowed() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeVisibility("MUTUAL");
+        given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
+        given(followRepository.existsMutualFollow(2L, 1L)).willReturn(true);
+
+        var response = spaceService.getSpace(2L, 10L);
+
+        assertThat(response.id()).isEqualTo(10L);
+    }
+
+    @Test
+    @DisplayName("MUTUAL 공간 상세 조회는 맞팔 아닌 viewer 를 거절한다")
+    void getSpace_mutualSpaceNonMutual_throwsForbidden() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeVisibility("MUTUAL");
+        given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
+
+        assertThatThrownBy(() -> spaceService.getSpace(2L, 10L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
     @DisplayName("공간 주인이 본인 공간을 방문하면 방문 수를 늘리지 않는다")
     void recordVisit_owner_doesNotIncreaseVisitCount() {
         Space space = TestFixtures.space(10L, 1L);
@@ -629,7 +655,7 @@ class SpaceServiceTest {
     }
 
     @Test
-    @DisplayName("방명록 공개 범위 수정은 guestbookVisibilityScope만 변경한다")
+    @DisplayName("방명록 공개 범위 수정 — FOLLOWERS 입력은 MUTUAL로 정규화된다")
     void updateGuestbookVisibility_changesGuestbookScope() {
         Space space = TestFixtures.space(10L, 1L);
         given(userService.requireUserId(1L)).willReturn(1L);
@@ -637,7 +663,7 @@ class SpaceServiceTest {
 
         var response = spaceService.updateGuestbookVisibility(1L, new VisibilityRequest("FOLLOWERS"));
 
-        assertThat(response.guestbookVisibilityScope()).isEqualTo("FOLLOWERS");
+        assertThat(response.guestbookVisibilityScope()).isEqualTo("MUTUAL");
         assertThat(space.getVisibilityScope()).isEqualTo("PUBLIC");
     }
 
@@ -885,7 +911,8 @@ class SpaceServiceTest {
 
         assertThat(spaceService.isPostItAllowed(10L, 100L)).isTrue();
         assertThat(spaceService.isPostItAllowed(10L, 999L)).isFalse();
-        assertThat(spaceService.isPostItAllowed(10L, null)).isFalse();
+        // null = 스타일 미선택(기본 포스트잇) — 화이트리스트와 무관하게 허용 (G005).
+        assertThat(spaceService.isPostItAllowed(10L, null)).isTrue();
     }
 
     @Test
