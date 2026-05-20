@@ -3,7 +3,6 @@ using App.Bootstrap;
 using App.Config;
 using App.Infrastructure.Api;
 using App.Infrastructure.Api.Dashboard;
-using App.Infrastructure.Mock.Dashboard;
 using UnityEngine;
 
 namespace Dotshelf.Scripts.Dashboard
@@ -60,7 +59,11 @@ namespace Dotshelf.Scripts.Dashboard
             }
 
             var resolvedApiConfig = ResolveApiConfig();
-            var effectiveMode = mode;
+            var effectiveMode = RepositoryMode.Api;
+            if (mode == RepositoryMode.Mock || (resolvedApiConfig != null && resolvedApiConfig.UsesMockApi))
+            {
+                Debug.LogWarning("[DashboardSceneInstaller] Mock repositories are disabled for this scene. Mock/real runs must use the same API repositories and differ only by base URL.");
+            }
 
             if (logChosenMode)
             {
@@ -73,26 +76,11 @@ namespace Dotshelf.Scripts.Dashboard
             IFollowRepository followRepo;
             ILibraryViewRepository libraryRepo;
 
-            if (effectiveMode == RepositoryMode.Mock)
-            {
-                dashboardRepo = new MockDashboardRepository();
-                guestbookRepo = new MockGuestbookRepository();
-                spaceSettingsRepo = new MockSpaceSettingsRepository();
-                followRepo = new MockFollowRepository();
-                libraryRepo = new MockLibraryViewRepository();
-            }
-            else
             {
                 APIManager resolvedApiManager = apiManager != null ? apiManager : ApiManagerProvider.EnsureInstance();
                 if (resolvedApiManager == null)
                 {
-                    Debug.LogWarning("[DashboardSceneInstaller] Api mode has no APIManager. Falling back to mock repositories so the dashboard stays usable.");
-                    dashboardRepo = new MockDashboardRepository();
-                    guestbookRepo = new MockGuestbookRepository();
-                    spaceSettingsRepo = new MockSpaceSettingsRepository();
-                    followRepo = new MockFollowRepository();
-                    libraryRepo = new MockLibraryViewRepository();
-                    controller.Configure(dashboardRepo, guestbookRepo, spaceSettingsRepo, followRepo, libraryRepo, isMockMode: true);
+                    Debug.LogError("[DashboardSceneInstaller] Api mode has no APIManager. Dashboard repositories were not configured.");
                     return;
                 }
 

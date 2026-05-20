@@ -1,0 +1,69 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b8208becc61d44fd921ccd9cf39c6c8, type: 3}
+  m_Name: NotebookCatalog
+  m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Catalogs.CustomizationCatalogAsset
+  category: 10
+  entries:
+  - assetId: 200040
+    displayName: "\uC0B0\uB73B \uB178\uD2B8\uBD81"
+    description: "\uC0B0\uB73B \uCC45\uC0C1\uC5D0\uC11C \uBD84\uB9AC\uD55C GoodVibes \uB178\uD2B8\uBD81/\uBAA8\uB2C8\uD130 \uC5D0\uC14B."
+    previewSprite: {fileID: 0}
+    themeTag: GoodVibes
+    isLocalPreview: 1
+    materials: []
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: -8098169881513260187, guid: e3f4a5b6c7d8901234567890abcdef03, type: 3}
+    placementAnchor: {x: -1.672, y: 0.831, z: -0.29}
+    placementRotation: {x: 0, y: 90, z: 0}
+    placementScale: {x: 0.3, y: 0.3, z: 0.3}
+    usePlacementTransformAsWorld: 1
+    lockVisualTransform: 0
+    treatAsDeskSurface: 0
+    overrideNotebookStation: 0
+    lockNotebookStationToMonitor: 0
+    notebookStationPosition: {x: 0, y: 0, z: 0}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
+    skinScaleMultiplier: {x: 1, y: 1, z: 1}
+    preserveSkinNativeScale: 0
+    skinLocalPositionOverride: {x: 0, y: 0, z: 0}
+    hideLaptopRenderers: 0
+    notebookScreenLocalPosition: {x: 0, y: 0, z: 0}
+    notebookScreenLocalRotation: {x: 0, y: 0, z: 0}
+    notebookScreenScaleMultiplier: {x: 1, y: 1, z: 1}
+    stretchCanvasAdImageOnDesk: 0
+    adImageAnchorMin: {x: 0, y: 0}
+    adImageAnchorMax: {x: 1, y: 1}
+    adImagePivot: {x: 0.5, y: 0.5}
+    adImageOffsetMin: {x: 0, y: 0}
+    adImageOffsetMax: {x: 0, y: 0}
+    adImageLocalScale: {x: 1, y: 1, z: 1}
+    overrideScreenSaverCanvasTransform: 0
+    screenSaverCanvasLocalPosition: {x: 0, y: 0, z: 0}
+    screenSaverCanvasLocalRotation: {x: 0, y: 0, z: 0}
+    screenSaverCanvasLocalScale: {x: 1, y: 1, z: 1}
+    screenSaverCanvasSizeDelta: {x: 0, y: 0}
+    overrideScreenSaverCanvasAnchors: 0
+    screenSaverCanvasAnchorMin: {x: 0.5, y: 0.5}
+    screenSaverCanvasAnchorMax: {x: 0.5, y: 0.5}
+    screenSaverCanvasPivot: {x: 0.5, y: 0.5}
+    notebookFocusCameraMode: 0
+    notebookLocalPositionOverride: {x: 0, y: 0, z: 0}
+    notebookLocalRotationOverride: {x: 0, y: 0, z: 0}
+    notebookLocalScaleOverride: {x: 0, y: 0, z: 0}

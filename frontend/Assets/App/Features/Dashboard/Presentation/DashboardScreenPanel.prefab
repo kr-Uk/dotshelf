@@ -75,7 +75,7 @@ MonoBehaviour:
   overridePanelSettings: {fileID: 0}
   viewMode: 0
   visitedSpaceId: 0
-  useMockRepositories: 1
+  useMockRepositories: 0
 --- !u!114 &3910612650708001484
 MonoBehaviour:
   m_ObjectHideFlags: 0

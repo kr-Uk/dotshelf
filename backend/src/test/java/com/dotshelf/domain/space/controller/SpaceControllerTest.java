@@ -312,8 +312,9 @@ class SpaceControllerTest {
         given(spaceService.changeFloor(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(22L));
         given(spaceService.changeDesk(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(23L));
         given(spaceService.changeDashboard(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(24L));
-        given(spaceService.changeInteriorLight(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(25L));
-        given(spaceService.changeExteriorLight(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(26L));
+        given(spaceService.changeNotebook(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(25L));
+        given(spaceService.changeInteriorLight(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(26L));
+        given(spaceService.changeExteriorLight(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(27L));
 
         mockMvc.perform(patch("/v1/spaces/me/wallpaper").header("X-Test-Admin-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryId\":21}"))
@@ -335,15 +336,20 @@ class SpaceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.space.currentWallpaperInventoryId").value(24));
 
-        mockMvc.perform(patch("/v1/spaces/me/interior-light").header("X-Test-Admin-User-Id", "1")
+        mockMvc.perform(patch("/v1/spaces/me/notebook").header("X-Test-Admin-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryId\":25}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.space.currentWallpaperInventoryId").value(25));
 
-        mockMvc.perform(patch("/v1/spaces/me/exterior-light").header("X-Test-Admin-User-Id", "1")
+        mockMvc.perform(patch("/v1/spaces/me/interior-light").header("X-Test-Admin-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryId\":26}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.space.currentWallpaperInventoryId").value(26));
+
+        mockMvc.perform(patch("/v1/spaces/me/exterior-light").header("X-Test-Admin-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryId\":27}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.space.currentWallpaperInventoryId").value(27));
     }
 
     @Test
@@ -492,6 +498,7 @@ class SpaceControllerTest {
                 null,
                 themeInventoryId,
                 wallpaperInventoryId,
+                null,
                 null,
                 null,
                 null,

@@ -22,7 +22,8 @@ namespace App.Infrastructure.Catalogs
         // 설치/삭제 3종 — placement 가능
         BookshelfDeco,    // 책장 섹션 내부에 배치
         FloorDeco,
-        WallDeco          // 창문(Window) 포함
+        WallDeco,         // 창문(Window) 포함
+        Notebook          // 책상 위 노트북/모니터형 소품. 기존 enum 값 보존을 위해 끝에 추가.
     }
 
     /// <summary>

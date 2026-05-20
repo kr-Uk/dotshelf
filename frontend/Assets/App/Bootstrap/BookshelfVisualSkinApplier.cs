@@ -111,6 +111,66 @@ namespace App.Bootstrap
             return true;
         }
 
+        // Customization catalog path: same functional-root attach policy as
+        // theme shelf specs, but the transform comes from CustomizationEntry.
+        public static bool TryAttach(CustomizationEntry entry, long themeId, string source)
+        {
+            if (entry == null)
+            {
+                Debug.LogWarning($"[BookshelfSkin] TryAttach skip - entry null. themeId={themeId} source={source}.");
+                return false;
+            }
+
+            if (entry.Prefab == null)
+            {
+                Debug.LogWarning($"[BookshelfSkin] TryAttach FAIL reason=prefab_null - entryAssetId={entry.AssetId} source={source}.");
+                return false;
+            }
+
+            if (!TryFindFunctionalRoot(out var functionalRoot, out var referenceSize, out var rootFailReason))
+            {
+                Debug.LogWarning($"[BookshelfSkin] TryAttach FAIL reason={rootFailReason} - entryAssetId={entry.AssetId} source={source}.");
+                return false;
+            }
+
+            ClearSkinUnder(functionalRoot);
+
+            var firstBookBefore = TryGetFirstBookWorldPosition(functionalRoot);
+            var go = Object.Instantiate(entry.Prefab, functionalRoot);
+            go.name = BookshelfVisualSkin.SkinChildName;
+            go.transform.localPosition = entry.PlacementAnchor;
+            go.transform.localEulerAngles = entry.PlacementRotation;
+            go.transform.localScale = entry.PlacementScale.sqrMagnitude > 1e-6f ? entry.PlacementScale : Vector3.one;
+
+            DisableAllColliders(go);
+            var visualBoundsAfter = ComputeRendererBoundsSafe(go);
+
+            var marker = go.AddComponent<BookshelfVisualSkin>();
+            marker.ThemeId = themeId;
+            marker.AssetKey = !string.IsNullOrWhiteSpace(entry.ThemeTag)
+                ? $"{entry.ThemeTag}:{entry.AssetId}"
+                : entry.AssetId.ToString();
+
+            HideFunctionalShellRenderers(functionalRoot, marker);
+
+            var firstBookAfter = TryGetFirstBookWorldPosition(functionalRoot);
+            var bookDelta = (firstBookBefore.HasValue && firstBookAfter.HasValue)
+                ? (firstBookAfter.Value - firstBookBefore.Value)
+                : Vector3.zero;
+
+            VisualSkinLog.Verbose($"[BookshelfSkin] entryAssetId={entry.AssetId} themeTag={entry.ThemeTag} functionalRoot={functionalRoot.name} " +
+                                  $"visualAttached={go.name} visualLocalPos={go.transform.localPosition} visualLocalEuler={go.transform.localEulerAngles} " +
+                                  $"visualLocalScale={go.transform.localScale} referenceBounds={referenceSize} visualBoundsAfter={(visualBoundsAfter?.size.ToString() ?? "null")} " +
+                                  $"firstBookBefore={(firstBookBefore?.ToString() ?? "null")} firstBookAfter={(firstBookAfter?.ToString() ?? "null")} bookDelta={bookDelta} source={source}");
+
+            if (bookDelta.sqrMagnitude > 1e-6f)
+            {
+                Debug.LogWarning($"[BookshelfSkin] BOOK INVARIANCE BROKEN - bookDelta={bookDelta} entryAssetId={entry.AssetId}. Check skin attach path.");
+            }
+
+            return true;
+        }
+
         // BooksRoot 자식 중 첫 GameObject 의 world position 을 반환. 자식이 없으면 null.
         // attach invariance (책 위치가 attach 로 영향받지 않는지) 회귀 가드 전용.
         private static Vector3? TryGetFirstBookWorldPosition(Transform functionalRoot)

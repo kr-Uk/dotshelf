@@ -253,6 +253,8 @@ namespace App.Tests.EditMode.Dashboard.Helpers
             => RouteCategoryCall("DESK", inventoryId, onSuccess, onError);
         public void ChangeDashboard(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
             => RouteCategoryCall("DASHBOARD", inventoryId, onSuccess, onError);
+        public void ChangeNotebook(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+            => RouteCategoryCall("NOTEBOOK", inventoryId, onSuccess, onError);
         public void ChangeInteriorLight(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
             => RouteCategoryCall("INTERIOR_LIGHT", inventoryId, onSuccess, onError);
         public void ChangeExteriorLight(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)

@@ -331,6 +331,7 @@ namespace App.Bootstrap
                 ("floor", ReadScalar(spaceResult, "currentFloorInventoryId")),
                 ("desk", ReadScalar(spaceResult, "currentDeskInventoryId")),
                 ("dashboard", ReadScalar(spaceResult, "currentDashboardInventoryId")),
+                ("notebook", ReadScalar(spaceResult, "currentNotebookInventoryId")),
                 ("interiorLight", ReadScalar(spaceResult, "currentInteriorLightInventoryId")),
                 ("exteriorLight", ReadScalar(spaceResult, "currentExteriorLightInventoryId")),
             };

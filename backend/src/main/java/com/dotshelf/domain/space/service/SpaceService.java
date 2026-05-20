@@ -97,6 +97,7 @@ public class SpaceService {
     private static final String ASSET_TYPE_FLOOR = "FLOOR";
     private static final String ASSET_TYPE_DESK_SET = "DESK_SET";
     private static final String ASSET_TYPE_DASHBOARD_SKIN = "DASHBOARD_SKIN";
+    private static final String ASSET_TYPE_NOTEBOOK = "NOTEBOOK";
     private static final String ASSET_TYPE_INTERIOR_LIGHT = "INTERIOR_LIGHT";
     private static final String ASSET_TYPE_EXTERIOR_LIGHT = "EXTERIOR_LIGHT";
 
@@ -255,6 +256,7 @@ public class SpaceService {
         addPositive(ids, space.getCurrentFloorInventoryId());
         addPositive(ids, space.getCurrentDeskInventoryId());
         addPositive(ids, space.getCurrentDashboardInventoryId());
+        addPositive(ids, space.getCurrentNotebookInventoryId());
         addPositive(ids, space.getCurrentInteriorLightInventoryId());
         addPositive(ids, space.getCurrentExteriorLightInventoryId());
         return ids.stream().distinct().toList();
@@ -603,6 +605,11 @@ public class SpaceService {
     @Transactional
     public SpaceMutationResponse changeDashboard(Long userId, CategoryInventoryRequest request) {
         return applyCategoryInventory(userId, request, ASSET_TYPE_DASHBOARD_SKIN, Space::changeDashboard);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeNotebook(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, ASSET_TYPE_NOTEBOOK, Space::changeNotebook);
     }
 
     @Transactional

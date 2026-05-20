@@ -32,6 +32,7 @@ public final class SpaceDtos {
             Long currentFloorInventoryId,
             Long currentDeskInventoryId,
             Long currentDashboardInventoryId,
+            Long currentNotebookInventoryId,
             Long currentInteriorLightInventoryId,
             Long currentExteriorLightInventoryId
     ) {
@@ -57,6 +58,7 @@ public final class SpaceDtos {
                     space.getCurrentFloorInventoryId(),
                     space.getCurrentDeskInventoryId(),
                     space.getCurrentDashboardInventoryId(),
+                    space.getCurrentNotebookInventoryId(),
                     space.getCurrentInteriorLightInventoryId(),
                     space.getCurrentExteriorLightInventoryId()
             );

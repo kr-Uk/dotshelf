@@ -16,6 +16,7 @@ using BookshelfPorting.Runtime;
 using Dotshelf.Scripts.Dashboard;
 using Dotshelf.Scripts.RoomTheme;
 using GLTFast;
+using Newtonsoft.Json;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -215,7 +216,7 @@ namespace App.Bootstrap
         private static readonly (string Key, string Label)[] ToolbarItems =
         {
             ("ALL", "전체"),
-            ("FURNITURE", "가구"),
+            ("FURNITURE", "필수"),
             ("WALLPAPER", "벽지"),
             ("LIGHT_INNER", "내부조명"),
             ("LIGHT_OUTER", "외부조명"),
@@ -224,13 +225,25 @@ namespace App.Bootstrap
             ("SHOP", "샵"),
         };
 
-        // FURNITURE 탭 선택 시 노출되는 sub-tab. CustomizationCategory의 외형형 가구 3종.
+        // FURNITURE 탭 선택 시 노출되는 sub-tab. CustomizationCategory의 필수 외형 요소.
         // (의자는 Desk = '노트북 & 책상 세트'에 묶여있어 별도 sub-tab 불필요.)
         private static readonly (string Key, string Label)[] FurnitureSubItems =
         {
             ("DESK", "책상"),
             ("BOOKSHELF_SKIN", "책장"),
             ("DASHBOARD_SKIN", "대시보드"),
+            ("NOTEBOOK", "노트북"),
+        };
+
+        private static readonly CustomizationCategory[] AllCatalogCategories =
+        {
+            CustomizationCategory.Desk,
+            CustomizationCategory.BookshelfSkin,
+            CustomizationCategory.DashboardSkin,
+            CustomizationCategory.Notebook,
+            CustomizationCategory.Wallpaper,
+            CustomizationCategory.InteriorLight,
+            CustomizationCategory.ExteriorLight,
         };
 
         private struct InventoryEntry
@@ -255,6 +268,9 @@ namespace App.Bootstrap
             public long RemoteAssetId;
             public long RemoteInventoryId;
             public string PreviewImageUrl;
+            public string ThemeTag;
+            public string ServerAssetType;
+            public string ServerCategoryCode;
         }
 
         [Serializable]
@@ -364,6 +380,8 @@ namespace App.Bootstrap
             localEntry.RemoteInventoryId = 0L;
             localEntry.IsRemoteAsset = false;
             localEntry.PreviewImageUrl = FirstNonEmpty(manifest.PreviewImageUrl, localEntry.PreviewImageUrl);
+            localEntry.ThemeTag = FirstNonEmpty(NormalizeThemeTag(manifest.Theme), localEntry.ThemeTag);
+            localEntry.ServerAssetType = manifest.AssetType;
             entry = localEntry;
             return true;
         }
@@ -424,6 +442,7 @@ namespace App.Bootstrap
         private RoomThemeCatalogAsset themeCatalog;
         private RoomThemeApplier themeApplier;
         private ApplyThemeWithModeUseCase themeUseCase;
+        private LoadThemeContentsUseCase themeContentsUseCase;
         private RoomThemeAsset previousAppliedTheme;
         private RoomThemeAsset pendingThemeApply;
 
@@ -732,9 +751,18 @@ namespace App.Bootstrap
         private int pendingSpaceVisualsReapplyCategoryVersion;
         private readonly Dictionary<long, long> ownedAssetIdByInventoryId = new Dictionary<long, long>();
         private readonly Dictionary<long, long> ownedInventoryIdByAssetId = new Dictionary<long, long>();
+        private readonly Dictionary<long, AssetResponseDto> ownedAssetsByAssetId = new Dictionary<long, AssetResponseDto>();
+        private readonly Dictionary<long, ThemeContents> themeContentsCache = new Dictionary<long, ThemeContents>();
+        private readonly Dictionary<long, int> themeContentsInFlightVersions = new Dictionary<long, int>();
+        private readonly Dictionary<long, int> themeContentsRequestVersions = new Dictionary<long, int>();
+        private readonly Dictionary<long, string> themeContentsSignatures = new Dictionary<long, string>();
+        private readonly Dictionary<long, float> themeContentsLastRefreshRealtime = new Dictionary<long, float>();
         private readonly Dictionary<long, DownloadManifestResponseDto> visibleRemoteAssetManifests = new Dictionary<long, DownloadManifestResponseDto>();
         private readonly Dictionary<long, InventoryEntry> visibleLocalAssetEntries = new Dictionary<long, InventoryEntry>();
         private readonly Dictionary<string, Sprite> inventoryPreviewSpriteCache = new Dictionary<string, Sprite>(StringComparer.Ordinal);
+        private readonly HashSet<string> inventoryPreviewLoadsInFlight = new HashSet<string>(StringComparer.Ordinal);
+        private const int MaxInventoryPreviewLoadsInFlight = 4;
+        private const float ThemeContentsBackgroundRefreshMinIntervalSeconds = 15f;
 
         private BookshelfExperienceManager cachedExperienceManager;
         private BookshelfApiSyncController cachedBookshelfApiSyncController;
@@ -751,6 +779,38 @@ namespace App.Bootstrap
         // Happy Home Paradise 의 가구 배치 UI 와 같은 방식. material/mesh 모두 hide 플래그로
         // 자산화되지 않게 만들고 Dispose 에서 명시 destroy — Play Mode 종료 후 Scene/Prefab
         // 에 잔류하지 않는다. drag/pending 양쪽에서 같은 인스턴스를 재사용 (중복 생성 방지).
+        private sealed class ThemeContentTransform
+        {
+            public string AssetKey { get; set; }
+            public string PlacementCategory { get; set; }
+            public string WallSide { get; set; }
+            public string ThemeSlot { get; set; }
+            public float PositionX { get; set; }
+            public float PositionY { get; set; }
+            public float PositionZ { get; set; }
+            public float RotationX { get; set; }
+            public float RotationY { get; set; }
+            public float RotationZ { get; set; }
+            public float ScaleX { get; set; } = 1f;
+            public float ScaleY { get; set; } = 1f;
+            public float ScaleZ { get; set; } = 1f;
+
+            public Vector3 LocalPosition => new Vector3(PositionX, PositionY, PositionZ);
+            public Vector3 LocalRotation => new Vector3(RotationX, RotationY, RotationZ);
+            public Vector3 LocalScale => new Vector3(ScaleX, ScaleY, ScaleZ);
+
+            public bool HasUsableScale =>
+                IsFinite(ScaleX) && IsFinite(ScaleY) && IsFinite(ScaleZ) &&
+                Mathf.Abs(ScaleX) > 1e-6f &&
+                Mathf.Abs(ScaleY) > 1e-6f &&
+                Mathf.Abs(ScaleZ) > 1e-6f;
+
+            private static bool IsFinite(float value)
+            {
+                return !float.IsNaN(value) && !float.IsInfinity(value);
+            }
+        }
+
         private sealed class PlacementFootprintPreview
         {
             private static readonly Color ValidFillColor = new Color(0.35f, 0.95f, 0.50f, 0.30f);
@@ -1192,6 +1252,7 @@ namespace App.Bootstrap
         {
             ownedAssetIdByInventoryId.Clear();
             ownedInventoryIdByAssetId.Clear();
+            ownedAssetsByAssetId.Clear();
             remoteAssetInventoryLoaded = true;
 
             for (var i = inventoryEntries.Count - 1; i >= 0; i--)
@@ -1206,6 +1267,9 @@ namespace App.Bootstrap
                 localEntry.RemoteAssetId = 0L;
                 localEntry.RemoteInventoryId = 0L;
                 localEntry.PreviewImageUrl = string.Empty;
+                localEntry.ThemeTag = string.Empty;
+                localEntry.ServerAssetType = string.Empty;
+                localEntry.ServerCategoryCode = string.Empty;
                 inventoryEntries[i] = localEntry;
             }
 
@@ -1227,6 +1291,11 @@ namespace App.Bootstrap
                 IndexOwnedInventoryItem(item);
 
                 var asset = item.Asset;
+                if (DoesServerAssetTypeMatch(asset, "THEME"))
+                {
+                    continue;
+                }
+
                 var displayName = FirstNonEmpty(asset?.Name, asset?.Code, $"Asset {item.AssetId}");
                 if (TryBindOwnedLocalAsset(item, asset, displayName))
                 {
@@ -1246,7 +1315,10 @@ namespace App.Bootstrap
                     IsRemoteAsset = true,
                     RemoteAssetId = item.AssetId,
                     RemoteInventoryId = item.InventoryId,
-                    PreviewImageUrl = asset?.PreviewImageUrl
+                    PreviewImageUrl = asset?.PreviewImageUrl,
+                    ThemeTag = ResolveRemoteThemeTag(asset),
+                    ServerAssetType = asset?.AssetType,
+                    ServerCategoryCode = asset?.CategoryCode
                 });
                 added++;
             }
@@ -1263,6 +1335,11 @@ namespace App.Bootstrap
                 pendingSpaceVisualsReapplyAfterInventory = false;
                 ApplySpaceVisualsToRoom(lastServerSpace);
             }
+
+            if (themeApplier != null && themeApplier.CurrentTheme != null)
+            {
+                RequestThemeContentsBackgroundRefresh(themeApplier.CurrentTheme, "RefreshRemoteAssetInventory");
+            }
         }
 
         private void IndexOwnedInventoryItem(InventoryItemResponseDto item)
@@ -1276,6 +1353,11 @@ namespace App.Bootstrap
             if (!ownedInventoryIdByAssetId.ContainsKey(item.AssetId))
             {
                 ownedInventoryIdByAssetId[item.AssetId] = item.InventoryId;
+            }
+
+            if (item.Asset != null)
+            {
+                ownedAssetsByAssetId[item.AssetId] = item.Asset;
             }
         }
 
@@ -1357,6 +1439,9 @@ namespace App.Bootstrap
                 entry.RemoteAssetId = item.AssetId;
                 entry.RemoteInventoryId = item.InventoryId;
                 entry.PreviewImageUrl = asset.PreviewImageUrl;
+                entry.ThemeTag = FirstNonEmpty(ResolveRemoteThemeTag(asset), entry.ThemeTag);
+                entry.ServerAssetType = asset.AssetType;
+                entry.ServerCategoryCode = asset.CategoryCode;
                 inventoryEntries[i] = entry;
                 return true;
             }
@@ -1364,8 +1449,337 @@ namespace App.Bootstrap
             return false;
         }
 
+        private static string ResolveRemoteThemeTag(AssetResponseDto asset)
+        {
+            var explicitTheme = NormalizeThemeTag(asset?.Theme);
+            if (!string.IsNullOrEmpty(explicitTheme))
+            {
+                return explicitTheme;
+            }
+
+            return NormalizeThemeTag(FirstNonEmpty(asset?.CollectionCode, asset?.Code, asset?.Name, string.Empty));
+        }
+
+        private static string NormalizeThemeTag(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var normalized = value.Trim()
+                .Replace("-", string.Empty)
+                .Replace("_", string.Empty)
+                .Replace(" ", string.Empty)
+                .ToUpperInvariant();
+
+            if (normalized.Contains("DEEPSEA")) return "DeepSea";
+            if (normalized.Contains("FANTASY")) return "Fantasy";
+            if (normalized.Contains("SPACE")) return "Space";
+            if (normalized.Contains("SPOOKY")) return "Spooky";
+            if (normalized.Contains("VINTAGE")) return "Vintage";
+            if (normalized.Contains("GOODVIBES")) return "GoodVibes";
+            if (normalized.Contains("PASTEL")) return "Pastel";
+            if (normalized.Contains("NATURAL")) return "Natural";
+            if (normalized.Contains("CLASSIC")) return "Classic";
+            if (normalized.Contains("MODERN")) return "Modern";
+
+            return value.Trim();
+        }
+
+        private bool TryResolveOwnedInventoryIdForTheme(RoomThemeAsset theme, out long inventoryId, out long serverAssetId)
+        {
+            inventoryId = 0L;
+            serverAssetId = 0L;
+            if (theme == null)
+            {
+                return false;
+            }
+
+            if (theme.AssetId > 0L && TryResolveOwnedInventoryIdForAsset(theme.AssetId, out inventoryId))
+            {
+                serverAssetId = theme.AssetId;
+                return true;
+            }
+
+            var themeTag = ResolveThemeFilterTag(theme);
+            if (string.IsNullOrEmpty(themeTag) || themeTag == RoomEditThemeFilter.AllThemesValue)
+            {
+                return false;
+            }
+
+            foreach (var pair in ownedAssetsByAssetId)
+            {
+                var asset = pair.Value;
+                if (!DoesServerAssetTypeMatch(asset, "THEME"))
+                {
+                    continue;
+                }
+
+                if (!ThemeTagsEqual(themeTag, ResolveRemoteThemeTag(asset)))
+                {
+                    continue;
+                }
+
+                if (ownedInventoryIdByAssetId.TryGetValue(pair.Key, out inventoryId) && inventoryId > 0L)
+                {
+                    serverAssetId = pair.Key;
+                    return true;
+                }
+            }
+
+            if (!remoteAssetInventoryLoaded && !isRemoteAssetInventoryLoading)
+            {
+                RefreshRemoteAssetInventory();
+            }
+
+            return false;
+        }
+
+        private bool TryResolveOwnedServerThemeAssetId(RoomThemeAsset theme, out long serverAssetId)
+        {
+            serverAssetId = 0L;
+            if (theme == null)
+            {
+                return false;
+            }
+
+            if (theme.AssetId > 0L && ownedAssetsByAssetId.ContainsKey(theme.AssetId))
+            {
+                serverAssetId = theme.AssetId;
+                return true;
+            }
+
+            if (TryResolveOwnedInventoryIdForTheme(theme, out _, out serverAssetId))
+            {
+                return serverAssetId > 0L;
+            }
+
+            return false;
+        }
+
+        private RoomThemeAsset ResolveThemeForServerAssetId(long serverAssetId)
+        {
+            if (themeCatalog == null)
+            {
+                return null;
+            }
+
+            var exact = serverAssetId > 0L ? themeCatalog.FindByAssetId(serverAssetId) : null;
+            if (exact != null)
+            {
+                return exact;
+            }
+
+            if (serverAssetId > 0L &&
+                ownedAssetsByAssetId.TryGetValue(serverAssetId, out var asset) &&
+                TryFindThemeByTag(ResolveRemoteThemeTag(asset), out var taggedTheme))
+            {
+                return taggedTheme;
+            }
+
+            return themeCatalog.Resolve(serverAssetId > 0L ? serverAssetId : (long?)null);
+        }
+
+        private bool TryFindThemeByTag(string themeTag, out RoomThemeAsset theme)
+        {
+            theme = null;
+            var normalizedTag = NormalizeThemeTag(themeTag);
+            if (string.IsNullOrEmpty(normalizedTag) || normalizedTag == RoomEditThemeFilter.AllThemesValue || themeCatalog == null)
+            {
+                return false;
+            }
+
+            var entries = themeCatalog.Entries;
+            if (entries == null)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < entries.Count; i++)
+            {
+                var candidate = entries[i];
+                if (candidate != null && ThemeTagsEqual(normalizedTag, ResolveThemeFilterTag(candidate)))
+                {
+                    theme = candidate;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryResolveOwnedInventoryIdForEntry(CustomizationCategory category, CustomizationEntry entry, out long inventoryId)
+        {
+            inventoryId = 0L;
+            if (entry == null)
+            {
+                return false;
+            }
+
+            if (entry.AssetId > 0L && TryResolveOwnedInventoryIdForAsset(entry.AssetId, out inventoryId))
+            {
+                return true;
+            }
+
+            foreach (var pair in ownedAssetsByAssetId)
+            {
+                if (!DoesServerAssetMatchEntry(category, pair.Value, entry))
+                {
+                    continue;
+                }
+
+                if (ownedInventoryIdByAssetId.TryGetValue(pair.Key, out inventoryId) && inventoryId > 0L)
+                {
+                    return true;
+                }
+            }
+
+            if (!remoteAssetInventoryLoaded && !isRemoteAssetInventoryLoading)
+            {
+                RefreshRemoteAssetInventory();
+            }
+
+            return false;
+        }
+
+        private bool TryFindCatalogEntryForServerAssetId(CustomizationCategory category, long serverAssetId, CustomizationCatalogAsset catalog, out CustomizationEntry entry)
+        {
+            entry = null;
+            if (catalog == null || catalog.Entries == null || serverAssetId <= 0L)
+            {
+                return false;
+            }
+
+            entry = catalog.FindByAssetId(serverAssetId);
+            if (entry != null)
+            {
+                return true;
+            }
+
+            if (!ownedAssetsByAssetId.TryGetValue(serverAssetId, out var serverAsset))
+            {
+                return false;
+            }
+
+            for (var i = 0; i < catalog.Entries.Count; i++)
+            {
+                var candidate = catalog.Entries[i];
+                if (candidate != null && DoesServerAssetMatchEntry(category, serverAsset, candidate))
+                {
+                    entry = candidate;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryFindCatalogEntryForServerAssetId(CustomizationCategory category, long serverAssetId, out CustomizationEntry entry)
+        {
+            return TryFindCatalogEntryForServerAssetId(category, serverAssetId, LoadCategoryCatalog(category), out entry);
+        }
+
+        private static bool DoesServerAssetMatchEntry(CustomizationCategory category, AssetResponseDto serverAsset, CustomizationEntry entry)
+        {
+            if (serverAsset == null || entry == null)
+            {
+                return false;
+            }
+
+            if (!DoesServerAssetMatchCategory(category, serverAsset))
+            {
+                return false;
+            }
+
+            var entryTheme = NormalizeThemeTag(entry.ThemeTag);
+            if (!string.IsNullOrEmpty(entryTheme) && ThemeTagsEqual(entryTheme, ResolveRemoteThemeTag(serverAsset)))
+            {
+                return true;
+            }
+
+            var assetText = NormalizeIdentifier(string.Concat(serverAsset.Code, " ", serverAsset.Name, " ", serverAsset.CollectionCode, " ", serverAsset.Theme));
+            return !string.IsNullOrEmpty(entryTheme) && assetText.Contains(NormalizeIdentifier(entryTheme));
+        }
+
+        private static bool DoesServerAssetMatchCategory(CustomizationCategory category, AssetResponseDto serverAsset)
+        {
+            var expected = ExpectedServerAssetType(category);
+            if (string.IsNullOrEmpty(expected) || serverAsset == null)
+            {
+                return false;
+            }
+
+            return DoesServerAssetTypeMatch(serverAsset, expected);
+        }
+
+        private static bool DoesServerAssetTypeMatch(AssetResponseDto serverAsset, string expectedType)
+        {
+            if (serverAsset == null || string.IsNullOrWhiteSpace(expectedType))
+            {
+                return false;
+            }
+
+            var expected = NormalizeIdentifier(expectedType);
+            return NormalizeIdentifier(serverAsset.AssetType) == expected ||
+                   NormalizeIdentifier(serverAsset.CategoryCode) == expected ||
+                   NormalizeIdentifier(serverAsset.Placement) == expected;
+        }
+
+        private static string ExpectedServerAssetType(CustomizationCategory category)
+        {
+            switch (category)
+            {
+                case CustomizationCategory.Wallpaper: return "WALLPAPER";
+                case CustomizationCategory.Floor: return "FLOOR";
+                case CustomizationCategory.Desk: return "DESK_SET";
+                case CustomizationCategory.DashboardSkin: return "DASHBOARD_SKIN";
+                case CustomizationCategory.Notebook: return "NOTEBOOK";
+                case CustomizationCategory.BookshelfSkin: return "BOOKSHELF_SKIN";
+                case CustomizationCategory.InteriorLight: return "INTERIOR_LIGHT";
+                case CustomizationCategory.ExteriorLight: return "EXTERIOR_LIGHT";
+                default: return string.Empty;
+            }
+        }
+
+        private static bool ThemeTagsEqual(string left, string right)
+        {
+            var normalizedLeft = NormalizeThemeTag(left);
+            var normalizedRight = NormalizeThemeTag(right);
+            return !string.IsNullOrEmpty(normalizedLeft) &&
+                   !string.IsNullOrEmpty(normalizedRight) &&
+                   string.Equals(normalizedLeft, normalizedRight, StringComparison.Ordinal);
+        }
+
+        private static string NormalizeIdentifier(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            return value.Trim()
+                .Replace("-", string.Empty)
+                .Replace("_", string.Empty)
+                .Replace(" ", string.Empty)
+                .ToUpperInvariant();
+        }
+
         private static CustomizationCategory ResolveRemotePlacementCategory(AssetResponseDto asset)
         {
+            switch (NormalizeIdentifier(asset?.AssetType))
+            {
+                case "WALLPAPER": return CustomizationCategory.Wallpaper;
+                case "FLOOR": return CustomizationCategory.Floor;
+                case "BOOKSHELFSKIN": return CustomizationCategory.BookshelfSkin;
+                case "DASHBOARDSKIN": return CustomizationCategory.DashboardSkin;
+                case "DESKSET":
+                case "DESK": return CustomizationCategory.Desk;
+                case "INTERIORLIGHT": return CustomizationCategory.InteriorLight;
+                case "EXTERIORLIGHT": return CustomizationCategory.ExteriorLight;
+                case "NOTEBOOK": return CustomizationCategory.Notebook;
+            }
+
             var placement = FirstNonEmpty(asset?.Placement, asset?.AssetType, asset?.CategoryCode, string.Empty).ToUpperInvariant();
             if (placement.Contains("WALL") || placement.Contains("POSTER") || placement.Contains("WINDOW"))
             {
@@ -1472,6 +1886,29 @@ namespace App.Bootstrap
                     // 나머지 (Wallpaper loader fallback → FloorDeco 포함, FloorDeco 자체)는 바닥 데코로 surface.
                     return entry.PlacementCategory != CustomizationCategory.WallDeco
                         && entry.PlacementCategory != CustomizationCategory.BookshelfDeco;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool TryResolveRemoteCustomizationCategory(InventoryEntry entry, out CustomizationCategory category)
+        {
+            category = entry.PlacementCategory;
+            if (!entry.IsRemoteAsset)
+            {
+                return false;
+            }
+
+            switch (entry.PlacementCategory)
+            {
+                case CustomizationCategory.Wallpaper:
+                case CustomizationCategory.Floor:
+                case CustomizationCategory.BookshelfSkin:
+                case CustomizationCategory.DashboardSkin:
+                case CustomizationCategory.Desk:
+                case CustomizationCategory.InteriorLight:
+                case CustomizationCategory.ExteriorLight:
+                    return true;
                 default:
                     return false;
             }
@@ -2022,12 +2459,9 @@ namespace App.Bootstrap
             furnitureSubToolbarRoot.SetActive(false);
         }
 
-        // 책장 스킨은 BE PATCH 경로 미지원 (ISpaceSettingsRepository.ChangeBookshelfSkin 없음 +
-        // SpaceResponseDto.CurrentBookshelfSkinInventoryId 없음 + GetCategoryIdFromSpace/
-        // OptimisticallyUpdateServerSpace 미지원). 클릭 가능하면 visual만 바뀌고 PATCH는 안 나가
-        // 다음 reload 에서 선택이 사라짐 — '저장 안 되는 UI'가 됨.
-        // 후속 PR에서 BE 경로 + DTO 필드 + repository 연결까지 묶어서 활성화 예정.
-        private static bool IsFurnitureSubDisabled(string key) => key == "BOOKSHELF_SKIN";
+        // BookshelfSkin has no backend PATCH endpoint yet, so the button stays
+        // enabled and the selection is routed through the mock category state.
+        private static bool IsFurnitureSubDisabled(string key) => false;
 
         private void BuildFurnitureSubButton(Transform parent, string key, string label)
         {
@@ -2049,7 +2483,7 @@ namespace App.Bootstrap
             outline.effectColor = WithAlpha(BorderColor, 0.85f);
             outline.effectDistance = new Vector2(1f, -1f);
 
-            string displayLabel = disabled ? $"{label} 준비 중" : label;
+            string displayLabel = label;
             var labelText = CreateText(background.transform, "Label", displayLabel, 14f, FontStyles.Bold,
                 disabled ? MutedTextColor : TextColor, TextAlignmentOptions.Center);
             labelText.overflowMode = TextOverflowModes.Ellipsis;
@@ -2115,6 +2549,7 @@ namespace App.Bootstrap
                 case "DESK":            category = CustomizationCategory.Desk;          return true;
                 case "BOOKSHELF_SKIN":  category = CustomizationCategory.BookshelfSkin; return true;
                 case "DASHBOARD_SKIN":  category = CustomizationCategory.DashboardSkin; return true;
+                case "NOTEBOOK":        category = CustomizationCategory.Notebook;      return true;
                 default:                category = default;                              return false;
             }
         }
@@ -2242,6 +2677,12 @@ namespace App.Bootstrap
                 return;
             }
 
+            if (selectedToolbarKey == "ALL")
+            {
+                BuildAllAssetSlots(inventoryContentRoot.transform);
+                return;
+            }
+
             // v1.0 customization — 1:1 카테고리 매핑이 명확한 toolbar 키는 CustomizationCatalog로 처리.
             // FURNITURE는 sub-tab(책상/책장스킨/대시보드스킨)으로 분기. OBJECT_SKIN은 후속 PR에서 sub-탭화.
             if (selectedToolbarKey == "FURNITURE")
@@ -2264,6 +2705,11 @@ namespace App.Bootstrap
             for (var i = 0; i < inventoryEntries.Count; i++)
             {
                 var entry = inventoryEntries[i];
+                if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag))
+                {
+                    continue;
+                }
+
                 if (!MatchesCategory(entry, selectedToolbarKey))
                 {
                     continue;
@@ -2271,6 +2717,48 @@ namespace App.Bootstrap
                 BuildInventorySlot(inventoryContentRoot.transform, slotIndex, entry);
                 slotIndex++;
             }
+        }
+
+        private void BuildAllAssetSlots(Transform parent)
+        {
+            int slotIndex = 0;
+            for (int c = 0; c < AllCatalogCategories.Length; c++)
+            {
+                var category = AllCatalogCategories[c];
+                var catalog = LoadCategoryCatalog(category);
+                if (catalog == null || catalog.Entries == null || catalog.Entries.Count == 0)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < catalog.Entries.Count; i++)
+                {
+                    var entry = catalog.Entries[i];
+                    if (entry == null) continue;
+                    if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag)) continue;
+                    BuildCustomizationSlot(parent, slotIndex, category, entry);
+                    slotIndex++;
+                }
+            }
+
+            for (var i = 0; i < inventoryEntries.Count; i++)
+            {
+                var entry = inventoryEntries[i];
+                if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag))
+                {
+                    continue;
+                }
+
+                if (!MatchesCategory(entry, selectedToolbarKey))
+                {
+                    continue;
+                }
+
+                BuildInventorySlot(parent, slotIndex, entry);
+                slotIndex++;
+            }
+
+            Debug.Log($"[RoomEditModeController] All assets shown. CatalogCategories={AllCatalogCategories.Length}, ResultCount={slotIndex}");
         }
 
         // toolbar 키 → CustomizationCategory 매핑. 1:1 명확 매핑만 true 반환,
@@ -2299,16 +2787,22 @@ namespace App.Bootstrap
             }
 
             int rendered = 0;
+            bool applyThemeFilter = ShouldApplyThemeFilterToCustomizationCategory(category);
             for (int i = 0; i < catalog.Entries.Count; i++)
             {
                 var entry = catalog.Entries[i];
                 if (entry == null) continue;
                 // 상단 메뉴 테마 필터 적용. 빈 ThemeTag (legacy/공통) 는 항상 통과.
-                if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag)) continue;
+                if (applyThemeFilter && !RoomEditThemeFilter.MatchesActive(entry.ThemeTag)) continue;
                 BuildCustomizationSlot(parent, i, category, entry);
                 rendered++;
             }
             Debug.Log($"[RoomEditModeController] Theme={RoomEditThemeFilter.DescribeActive()}, Category={category}, ResultCount={rendered}");
+        }
+
+        private bool ShouldApplyThemeFilterToCustomizationCategory(CustomizationCategory category)
+        {
+            return true;
         }
 
         private void BuildRemoteFurnitureSlots(Transform parent, string subKey)
@@ -2317,6 +2811,11 @@ namespace App.Bootstrap
             for (var i = 0; i < inventoryEntries.Count; i++)
             {
                 var entry = inventoryEntries[i];
+                if (!RoomEditThemeFilter.MatchesActive(entry.ThemeTag))
+                {
+                    continue;
+                }
+
                 if (!MatchesRemoteFurnitureSubCategory(entry, subKey))
                 {
                     continue;
@@ -2332,6 +2831,23 @@ namespace App.Bootstrap
             if (!entry.IsRemoteAsset)
             {
                 return false;
+            }
+
+            if (TryResolveRemoteCustomizationCategory(entry, out var fixedCategory))
+            {
+                switch (subKey)
+                {
+                    case "BOOKSHELF_SKIN":
+                        return fixedCategory == CustomizationCategory.BookshelfSkin;
+                    case "DASHBOARD_SKIN":
+                        return fixedCategory == CustomizationCategory.DashboardSkin;
+                    case "DESK":
+                        return fixedCategory == CustomizationCategory.Desk;
+                    case "NOTEBOOK":
+                        return fixedCategory == CustomizationCategory.Notebook;
+                    default:
+                        return false;
+                }
             }
 
             if (entry.PlacementCategory == CustomizationCategory.WallDeco ||
@@ -2835,18 +3351,30 @@ namespace App.Bootstrap
         private bool IsCategoryEntryCurrent(CustomizationCategory category, long assetId)
         {
             if (assetId <= 0) return false;
+            if (category == CustomizationCategory.BookshelfSkin &&
+                lastAppliedEntries.TryGetValue(category, out var appliedBookshelfSkin))
+            {
+                return appliedBookshelfSkin == assetId;
+            }
             // 1) 서버 상태 우선: lastServerSpace의 카테고리 ID와 직접 비교.
             //    serverId가 null이면 카테고리 미적용(기본 외형) — catalog의 첫 entry가 \"current\"로 표시.
             if (lastServerSpace != null)
             {
+                var catalog = LoadCategoryCatalog(category);
                 var serverInventoryId = GetCategoryIdFromSpace(category, lastServerSpace);
                 if (serverInventoryId.HasValue && serverInventoryId.Value > 0)
                 {
-                    return TryResolveOwnedAssetIdForInventory(serverInventoryId.Value, out var serverAssetId)
-                           && serverAssetId == assetId;
+                    if (TryResolveOwnedAssetIdForInventory(serverInventoryId.Value, out var serverAssetId))
+                    {
+                        return serverAssetId == assetId;
+                    }
+
+                    var localMockEntry = catalog?.FindByAssetId(serverInventoryId.Value);
+                    return localMockEntry != null &&
+                           IsLocalPreviewEntry(localMockEntry) &&
+                           serverInventoryId.Value == assetId;
                 }
                 // 서버상 미적용 → catalog default(첫 entry)가 \"current\"
-                var catalog = LoadCategoryCatalog(category);
                 if (catalog?.Entries != null && catalog.Entries.Count > 0)
                 {
                     var defaultEntry = catalog.Entries[0];
@@ -2866,6 +3394,7 @@ namespace App.Bootstrap
                 case CustomizationCategory.Floor:         return space.CurrentFloorInventoryId;
                 case CustomizationCategory.Desk:          return space.CurrentDeskInventoryId;
                 case CustomizationCategory.DashboardSkin: return space.CurrentDashboardInventoryId;
+                case CustomizationCategory.Notebook:      return space.CurrentNotebookInventoryId;
                 case CustomizationCategory.InteriorLight: return space.CurrentInteriorLightInventoryId;
                 case CustomizationCategory.ExteriorLight: return space.CurrentExteriorLightInventoryId;
                 default: return null;
@@ -2883,6 +3412,7 @@ namespace App.Bootstrap
                 case CustomizationCategory.Floor:         lastServerSpace.CurrentFloorInventoryId = inventoryId; break;
                 case CustomizationCategory.Desk:          lastServerSpace.CurrentDeskInventoryId = inventoryId; break;
                 case CustomizationCategory.DashboardSkin: lastServerSpace.CurrentDashboardInventoryId = inventoryId; break;
+                case CustomizationCategory.Notebook:      lastServerSpace.CurrentNotebookInventoryId = inventoryId; break;
                 case CustomizationCategory.InteriorLight: lastServerSpace.CurrentInteriorLightInventoryId = inventoryId; break;
                 case CustomizationCategory.ExteriorLight: lastServerSpace.CurrentExteriorLightInventoryId = inventoryId; break;
             }
@@ -3102,6 +3632,7 @@ namespace App.Bootstrap
             // (1) base material / lighting
             previousAppliedTheme = themeApplier.CurrentTheme;
             themeApplier.Apply(baseTheme);
+            SyncInventoryThemeFilterForTheme(baseTheme);
             RefreshWallVisibilityAfterMaterialMutation("ApplyExternalRandomThemeSelection");
             RebuildInventorySlots();
 
@@ -3241,6 +3772,49 @@ namespace App.Bootstrap
 
         // persist=false 호출 가능 — 온보딩 Step2 preview 처럼 사용자가 여러 카드를 둘러보는
         // 동안 PlayerPrefs 저장은 하지 않고 visual 만 적용하는 모드. 호출자가 명시.
+        private void SyncInventoryThemeFilterForTheme(RoomThemeAsset theme)
+        {
+            // Applying a full room theme must not narrow the decorate inventory.
+            // Theme filtering is only for the explicit editor/runtime filter control.
+            RoomEditThemeFilter.ClearSilently();
+        }
+
+        private static string ResolveThemeFilterTag(RoomThemeAsset theme)
+        {
+            if (theme == null)
+            {
+                return RoomEditThemeFilter.AllThemesValue;
+            }
+
+            switch (theme.AssetId)
+            {
+                case 300000L: return "DeepSea";
+                case 400000L: return "Fantasy";
+                case 500000L: return "Space";
+                case 600000L: return "Spooky";
+            }
+
+            var fromName = NormalizeThemeTag(theme.name);
+            if (!string.IsNullOrEmpty(fromName))
+            {
+                if (fromName == "DeepSea" ||
+                    fromName == "Fantasy" ||
+                    fromName == "Space" ||
+                    fromName == "Spooky" ||
+                    fromName == "Vintage" ||
+                    fromName == "GoodVibes" ||
+                    fromName == "Pastel" ||
+                    fromName == "Natural" ||
+                    fromName == "Classic" ||
+                    fromName == "Modern")
+                {
+                    return fromName;
+                }
+            }
+
+            return RoomEditThemeFilter.AllThemesValue;
+        }
+
         private void ApplyThemeSelected(RoomThemeAsset theme, ThemeApplyMode mode, bool persist = true)
         {
             if (theme == null) return;
@@ -3270,6 +3844,7 @@ namespace App.Bootstrap
             DetachPlacementForRollback(theme, resetAllPlacements);
 
             themeApplier.Apply(theme);
+            SyncInventoryThemeFilterForTheme(theme);
             // 벽 sharedMaterial 이 swap 됐으므로 편집 모드 중이면 fade 즉시 재적용 (탑다운/사선에서 occlusion 복귀 방지).
             RefreshWallVisibilityAfterMaterialMutation("ApplyThemeSelected");
             RebuildInventorySlots();
@@ -3283,6 +3858,7 @@ namespace App.Bootstrap
                 // RestoreLastLocalPreviewThemeOnSceneInstall 가 다음 세션에 mode 보고 단일 흐름 선택.
                 PersistLastAppliedThemeMode(ThemeModeSingle);
                 ClearLastAppliedRandomThemeSelection();
+                InvalidateThemeContentsCache(theme, "ApplyThemeSelected");
             }
 
             // 테마의 default entries 자동 적용 — visual 즉시 반영. PATCH 결과 무관 (401/네트워크
@@ -3300,7 +3876,12 @@ namespace App.Bootstrap
 
             // local preview 전용 테마 — placeholder (가구/벽지/바닥 미제작). 명시 플래그 + assetId<=0 fallback.
             // RoomThemeApplier 는 라이팅만 영향. POST /spaces/me/theme/{id}/apply 는 skip (401/403 회피).
-            if (IsLocalPreviewTheme(theme))
+            var hasServerThemeInventory = false;
+            var resolvedServerThemeAssetId = 0L;
+            var resolvedThemeInventoryId = 0L;
+            hasServerThemeInventory = TryResolveOwnedInventoryIdForTheme(theme, out resolvedThemeInventoryId, out resolvedServerThemeAssetId);
+
+            if (IsLocalPreviewTheme(theme) && !hasServerThemeInventory)
             {
                 Debug.Log($"[RoomEditModeController] Skip PATCH for local preview theme: {theme.DisplayName} (assetId={theme.AssetId}, mode={mode})");
                 DiscardPlacementRollbackHold();
@@ -3315,14 +3896,19 @@ namespace App.Bootstrap
                 return;
             }
 
-            if (theme.AssetId <= 0)
+            if (theme.AssetId <= 0 && !hasServerThemeInventory)
             {
                 Debug.LogWarning("[RoomEditModeController] theme AssetId가 없어 백엔드 theme apply skip (visual만 적용).");
                 DiscardPlacementRollbackHold();
                 return;
             }
 
-            if (!TryResolveOwnedInventoryIdForAsset(theme.AssetId, out var inventoryId))
+            long inventoryId;
+            if (hasServerThemeInventory)
+            {
+                inventoryId = resolvedThemeInventoryId;
+            }
+            else if (!TryResolveOwnedInventoryIdForTheme(theme, out inventoryId, out resolvedServerThemeAssetId))
             {
                 Debug.LogWarning(
                     $"[RoomEditModeController] theme '{theme.DisplayName}' assetId={theme.AssetId} 의 보유 inventoryId를 찾지 못해 " +
@@ -3390,6 +3976,7 @@ namespace App.Bootstrap
                         RestoreAllMeshSwaps();
                         RemoveSpawnedThemeDecos(theme.AssetId);
                         ReattachPlacementFromRollback();
+                        SyncInventoryThemeFilterForTheme(previousAppliedTheme);
                         RefreshWallVisibilityAfterMaterialMutation("ApplyThemeSelected/rollback");
                         RebuildInventorySlots();
                     }
@@ -3428,6 +4015,28 @@ namespace App.Bootstrap
         // 카테고리 카탈로그 셀 클릭 시 호출. visual swap + 백엔드 PATCH wiring (낙관적 적용).
         // themeReset 응답 시 룸 전체 reload 필요 (TODO: Space 재로드 hook 추가 — 후속 마디).
         // 빠른 연타 시 stale callback 무시 — categoryRequestVersion 카운터.
+        private void EnsureThemeContentsUseCase()
+        {
+            if (themeContentsUseCase != null) return;
+            var apiManager = APIManager.Instance;
+            if (apiManager == null || !apiManager.HasAccessToken)
+            {
+                return;
+            }
+
+            try
+            {
+                var apiClient = new NotebookApiClient(apiManager);
+                var repo = new ApiThemeContentsRepository(apiClient);
+                themeContentsUseCase = new LoadThemeContentsUseCase(repo);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[RoomEditModeController] LoadThemeContentsUseCase create failed ({ex.GetType().Name}).");
+                Debug.LogException(ex);
+            }
+        }
+
         private int categoryRequestVersion;
 
         private void OnCustomizationEntrySelected(CustomizationCategory category, CustomizationEntry entry)
@@ -3458,6 +4067,7 @@ namespace App.Bootstrap
             // local preview 전용 entry — 사용자 inventory 에 없는 placeholder. PATCH 시 401(인증)/403(S006) 으로 거부되므로
             // 백엔드 호출 자체를 skip 하고 RoomLighting 하위에 Preview Light 만 갱신.
             // 명시적 IsLocalPreview 플래그 + assetId 범위 fallback 으로 robust 판정 (catalog 재생성 안 해도 동작).
+            long? serverInventoryIdForPreview = null;
             if (IsLocalPreviewEntry(entry))
             {
                 if (category == CustomizationCategory.InteriorLight || category == CustomizationCategory.ExteriorLight)
@@ -3465,8 +4075,15 @@ namespace App.Bootstrap
                     ApplyLocalLightingPreview(category, entry);
                     Debug.Log($"[RoomEditModeController] Local preview lighting applied: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
                 }
-                Debug.Log($"[RoomEditModeController] Skip PATCH for local preview item: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
-                return;
+
+                if (!TryResolveOwnedInventoryIdForEntry(category, entry, out var resolvedPreviewInventoryId))
+                {
+                    Debug.Log($"[RoomEditModeController] Skip PATCH for local preview item without server inventory: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
+                    return;
+                }
+
+                serverInventoryIdForPreview = resolvedPreviewInventoryId;
+                Debug.Log($"[RoomEditModeController] Local catalog item is server-backed; PATCH will use inventoryId={resolvedPreviewInventoryId}: {category}/{entry.DisplayName} (assetId={entry.AssetId})");
             }
 
             // 백엔드 PATCH wiring
@@ -3481,14 +4098,21 @@ namespace App.Bootstrap
             long? invId = null;
             if (entry.AssetId > 0)
             {
-                if (!TryResolveOwnedInventoryIdForAsset(entry.AssetId, out var resolvedInventoryId))
+                if (serverInventoryIdForPreview.HasValue)
+                {
+                    invId = serverInventoryIdForPreview.Value;
+                }
+                else if (!TryResolveOwnedInventoryIdForEntry(category, entry, out var resolvedInventoryId))
                 {
                     Debug.LogWarning(
                         $"[RoomEditModeController] {category}/{entry.DisplayName} assetId={entry.AssetId} 의 보유 inventoryId를 찾지 못해 " +
                         "백엔드 PATCH skip. GET /v1/assets/me/inventory 응답 도착 후 다시 시도하세요.");
                     return;
                 }
-                invId = resolvedInventoryId;
+                else
+                {
+                    invId = resolvedInventoryId;
+                }
             }
 
             Action<bool> onSuccess = themeReset =>
@@ -3542,6 +4166,8 @@ namespace App.Bootstrap
                     spaceSettingsRepo.ChangeDesk(invId, onSuccess, onError); break;
                 case CustomizationCategory.DashboardSkin:
                     spaceSettingsRepo.ChangeDashboard(invId, onSuccess, onError); break;
+                case CustomizationCategory.Notebook:
+                    spaceSettingsRepo.ChangeNotebook(invId, onSuccess, onError); break;
                 case CustomizationCategory.InteriorLight:
                     spaceSettingsRepo.ChangeInteriorLight(invId, onSuccess, onError); break;
                 case CustomizationCategory.ExteriorLight:
@@ -3550,6 +4176,25 @@ namespace App.Bootstrap
                     Debug.LogWarning($"[RoomEditModeController] {category}는 카테고리별 PATCH 미지원 (책장/벽/바닥 데코는 별도 endpoint).");
                     break;
             }
+        }
+
+        private void ApplyRemoteCategoryInventoryEntry(CustomizationCategory category, InventoryEntry entry)
+        {
+            if (!entry.IsRemoteAsset || entry.RemoteAssetId <= 0L)
+            {
+                Debug.LogWarning($"[RoomEditModeController] Remote category apply skipped: invalid remote asset for {category}/{entry.DisplayName}.");
+                return;
+            }
+
+            if (!TryFindCatalogEntryForServerAssetId(category, entry.RemoteAssetId, out var localEntry) || localEntry == null)
+            {
+                Debug.LogWarning(
+                    $"[RoomEditModeController] Remote category asset has no local visual mapping: {category}/{entry.DisplayName} " +
+                    $"(assetId={entry.RemoteAssetId}, assetType={entry.ServerAssetType}).");
+                return;
+            }
+
+            ProceedCustomizationEntry(category, localEntry);
         }
 
         private void ApplyThemeResetVisualFallback()
@@ -3576,10 +4221,18 @@ namespace App.Bootstrap
         // PATCH 는 안 보냄 — visual 만. 사용자가 명시적으로 entry 클릭해야 BE 저장.
         // persistEntries=false — 온보딩 Step2 preview. lastAppliedEntries dict 는 그대로 갱신
         // (in-session visual 일관성) 되지만 PlayerPrefs 저장 호출은 skip → 다음 세션에 영향 없음.
-        private void ApplyThemeDefaultEntries(RoomThemeAsset theme, bool persistEntries = true, bool resetExistingPlacements = false)
-
+        private void ApplyThemeDefaultEntries(RoomThemeAsset theme, bool persistEntries = true, bool resetExistingPlacements = false, ThemeContents serverContents = null)
         {
             if (theme == null) return;
+            var effectiveContents = serverContents;
+            if (effectiveContents == null &&
+                TryResolveOwnedServerThemeAssetId(theme, out var cachedServerThemeId) &&
+                themeContentsCache.TryGetValue(cachedServerThemeId, out var cachedContents))
+            {
+                effectiveContents = cachedContents;
+            }
+            var hasServerContents = effectiveContents != null;
+
             Debug.Log($"[RoomEditModeController] ApplyThemeDefaultEntries 진입 — theme={theme.DisplayName}, defaults={(theme.DefaultEntries?.Count ?? 0)}, floorDecos={(theme.FloorDecoSpecs?.Count ?? 0)}, wallDecos={(theme.WallDecoSpecs?.Count ?? 0)}");
 
             // 정책: 테마 적용 = 그 테마 자산만 보이는 상태. 이전 테마가 spawn 한 모든
@@ -3610,7 +4263,7 @@ namespace App.Bootstrap
             // 2) 항시 카테고리 (Wallpaper/Floor/Desk/BookshelfSkin/DashboardSkin/InteriorLight/
             //    ExteriorLight) — ApplyEntryVisual 로 mesh / material / light swap
             var defaults = theme.DefaultEntries;
-            if (defaults != null)
+            if (!hasServerContents && defaults != null)
             {
                 for (int i = 0; i < defaults.Count; i++)
                 {
@@ -3642,19 +4295,34 @@ namespace App.Bootstrap
             // 3) 설치 카테고리 (FloorDeco/WallDeco) — placedItemsRoot 자식으로 spawn,
             //    DecorationItemMarker + ThemeSlotMarker 추가 → 사용자가 drag/select/delete 가능 +
             //    다음 테마 적용 시 슬롯 매칭 destroy 대상으로 식별.
-            if (theme.FloorDecoSpecs != null)
+            if (effectiveContents != null)
+            {
+                ApplyServerCategoryDefaults(effectiveContents, persistEntries);
+            }
+
+            if (effectiveContents != null)
+            {
+                SpawnThemeChildrenFromContents(theme, effectiveContents);
+            }
+
+            if (!hasServerContents && theme.FloorDecoSpecs != null)
             {
                 for (int i = 0; i < theme.FloorDecoSpecs.Count; i++)
                 {
                     SpawnThemeFloorDecoFromSpec(theme.FloorDecoSpecs[i], theme.AssetId);
                 }
             }
-            if (theme.WallDecoSpecs != null)
+            if (!hasServerContents && theme.WallDecoSpecs != null)
             {
                 for (int i = 0; i < theme.WallDecoSpecs.Count; i++)
                 {
                     SpawnThemeWallDecoFromSpec(theme.WallDecoSpecs[i], theme.AssetId);
                 }
+            }
+
+            if (!hasServerContents)
+            {
+                RequestThemeContentsReapplyIfAvailable(theme, persistEntries, resetExistingPlacements);
             }
 
             RebuildInventorySlots();
@@ -3672,6 +4340,712 @@ namespace App.Bootstrap
         // 좌표 기반 매칭은 의도적으로 사용 안 함 — 사용자가 슬롯 자산을 옮겨도 슬롯/자산 신원으로 식별.
         // Shelf and dashboard theme assets are attached to functional scene roots, not placedItemsRoot.
         // RESET must clear them separately so a previous theme skin cannot survive the full reset.
+        private void ApplyThemeCategoryDefaultsForMissingServerCategories(RoomThemeAsset theme, SpaceResponseDto space)
+        {
+            if (theme == null || space == null)
+            {
+                return;
+            }
+
+            if (TryGetCachedThemeContents(theme, out var contents))
+            {
+                var serverChanged = false;
+                serverChanged |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.Wallpaper, contents.Wallpaper);
+                serverChanged |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.Floor, contents.Floor);
+                serverChanged |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.Desk, contents.Desk);
+                serverChanged |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.DashboardSkin, contents.Dashboard);
+                serverChanged |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.BookshelfSkin, contents.BookshelfSkinDefault);
+                serverChanged |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.InteriorLight, contents.InteriorLight);
+                serverChanged |= TryApplyServerCategoryDefaultIfMissing(space, CustomizationCategory.ExteriorLight, contents.ExteriorLight);
+                if (serverChanged)
+                {
+                    PersistLastAppliedEntries();
+                }
+                return;
+            }
+
+            var changed = false;
+            var defaults = theme.DefaultEntries;
+            if (defaults != null)
+            {
+                for (int i = 0; i < defaults.Count; i++)
+                {
+                    var def = defaults[i];
+                    if (def == null || !IsServerCategoryInventoryMissing(def.Category, space))
+                    {
+                        continue;
+                    }
+
+                    changed |= TryApplyLocalThemeCategoryDefault(theme, def, "ApplySpaceVisualsToRoom.missingServerCategory");
+                }
+            }
+
+            if (changed)
+            {
+                PersistLastAppliedEntries();
+            }
+        }
+
+        private bool TryApplyLocalThemeCategoryDefault(RoomThemeAsset theme, CategoryDefault def, string source)
+        {
+            if (theme == null || def == null)
+            {
+                return false;
+            }
+
+            var catalog = LoadCategoryCatalog(def.Category);
+            if (catalog == null || catalog.Entries == null)
+            {
+                Debug.LogWarning($"[RoomEditModeController] catalog not found for theme default: {def.Category}.");
+                return false;
+            }
+
+            var entry = catalog.FindByAssetId(def.AssetId);
+            if (entry == null)
+            {
+                Debug.LogWarning($"[RoomEditModeController] {theme.DisplayName} default entry {def.Category}:{def.AssetId} has no local catalog mapping.");
+                return false;
+            }
+
+            TryRepairFantasyDeskPrefabReference(catalog, entry, source);
+            if (IsFantasyTheme(theme) && def.Category == CustomizationCategory.Desk)
+            {
+                Debug.Log($"[FantasyDesk] {source} theme={theme.DisplayName} category={def.Category} assetId={def.AssetId}");
+            }
+
+            ApplyEntryVisual(def.Category, entry);
+            if (entry.AssetId > 0L)
+            {
+                lastAppliedEntries[def.Category] = entry.AssetId;
+            }
+            else
+            {
+                lastAppliedEntries.Remove(def.Category);
+            }
+
+            return true;
+        }
+
+        private bool TryApplyServerCategoryDefaultIfMissing(SpaceResponseDto space, CustomizationCategory category, long? serverAssetId)
+        {
+            return IsServerCategoryInventoryMissing(category, space) &&
+                   TryApplyServerCategoryDefault(category, serverAssetId);
+        }
+
+        private static bool IsServerCategoryInventoryMissing(CustomizationCategory category, SpaceResponseDto space)
+        {
+            if (space == null)
+            {
+                return true;
+            }
+
+            var inventoryId = GetCategoryIdFromSpace(category, space);
+            return !inventoryId.HasValue || inventoryId.Value <= 0L;
+        }
+
+        private bool ShouldPreserveMissingServerCategoryVisual(CustomizationCategory category)
+        {
+            if (!lastAppliedEntries.ContainsKey(category))
+            {
+                return false;
+            }
+
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+
+            if (themeApplier == null || themeApplier.CurrentTheme == null)
+            {
+                return true;
+            }
+
+            if (TryGetCachedThemeContents(themeApplier.CurrentTheme, out _))
+            {
+                return ThemeHasCategoryDefault(themeApplier.CurrentTheme, category);
+            }
+
+            return true;
+        }
+
+        private bool ShouldSkipCatalogFallbackForServerOmittedCategory(CustomizationCategory category)
+        {
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+
+            return themeApplier != null &&
+                   themeApplier.CurrentTheme != null &&
+                   TryGetCachedThemeContents(themeApplier.CurrentTheme, out _) &&
+                   !ThemeHasCategoryDefault(themeApplier.CurrentTheme, category);
+        }
+
+        private bool ThemeHasCategoryDefault(RoomThemeAsset theme, CustomizationCategory category)
+        {
+            if (theme == null)
+            {
+                return false;
+            }
+
+            if (TryGetCachedThemeContents(theme, out var contents))
+            {
+                return TryGetThemeContentsCategoryDefault(contents, category, out _);
+            }
+
+            var defaults = theme.DefaultEntries;
+            if (defaults != null)
+            {
+                for (int i = 0; i < defaults.Count; i++)
+                {
+                    var def = defaults[i];
+                    if (def != null && def.Category == category && def.AssetId > 0L)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryGetCachedThemeContents(RoomThemeAsset theme, out ThemeContents contents)
+        {
+            contents = null;
+            return theme != null &&
+                   TryResolveOwnedServerThemeAssetId(theme, out var serverThemeAssetId) &&
+                   themeContentsCache.TryGetValue(serverThemeAssetId, out contents) &&
+                   contents != null;
+        }
+
+        private static bool TryGetThemeContentsCategoryDefault(ThemeContents contents, CustomizationCategory category, out long serverAssetId)
+        {
+            serverAssetId = 0L;
+            if (contents == null)
+            {
+                return false;
+            }
+
+            long? value;
+            switch (category)
+            {
+                case CustomizationCategory.Wallpaper:     value = contents.Wallpaper; break;
+                case CustomizationCategory.Floor:         value = contents.Floor; break;
+                case CustomizationCategory.Desk:          value = contents.Desk; break;
+                case CustomizationCategory.DashboardSkin: value = contents.Dashboard; break;
+                case CustomizationCategory.BookshelfSkin: value = contents.BookshelfSkinDefault; break;
+                case CustomizationCategory.InteriorLight: value = contents.InteriorLight; break;
+                case CustomizationCategory.ExteriorLight: value = contents.ExteriorLight; break;
+                default: value = null; break;
+            }
+
+            if (!value.HasValue || value.Value <= 0L)
+            {
+                return false;
+            }
+
+            serverAssetId = value.Value;
+            return true;
+        }
+
+        private void ApplyServerCategoryDefaults(ThemeContents contents, bool persistEntries)
+        {
+            if (contents == null)
+            {
+                return;
+            }
+
+            var changed = false;
+            changed |= ApplyServerCategoryDefaultAuthoritative(CustomizationCategory.Wallpaper, contents.Wallpaper);
+            changed |= ApplyServerCategoryDefaultAuthoritative(CustomizationCategory.Floor, contents.Floor);
+            changed |= ApplyServerCategoryDefaultAuthoritative(CustomizationCategory.Desk, contents.Desk);
+            changed |= ApplyServerCategoryDefaultAuthoritative(CustomizationCategory.DashboardSkin, contents.Dashboard);
+            changed |= ApplyServerCategoryDefaultAuthoritative(CustomizationCategory.BookshelfSkin, contents.BookshelfSkinDefault);
+            changed |= ApplyServerCategoryDefaultAuthoritative(CustomizationCategory.InteriorLight, contents.InteriorLight);
+            changed |= ApplyServerCategoryDefaultAuthoritative(CustomizationCategory.ExteriorLight, contents.ExteriorLight);
+
+            if (changed && persistEntries)
+            {
+                PersistLastAppliedEntries();
+            }
+        }
+
+        private bool ApplyServerCategoryDefaultAuthoritative(CustomizationCategory category, long? serverAssetId)
+        {
+            if (serverAssetId.HasValue && serverAssetId.Value > 0L)
+            {
+                return TryApplyServerCategoryDefault(category, serverAssetId);
+            }
+
+            return lastAppliedEntries.Remove(category);
+        }
+
+        private bool TryApplyServerCategoryDefault(CustomizationCategory category, long? serverAssetId)
+        {
+            if (!serverAssetId.HasValue || serverAssetId.Value <= 0L)
+            {
+                return false;
+            }
+
+            var catalog = LoadCategoryCatalog(category);
+            if (catalog == null || catalog.Entries == null)
+            {
+                return false;
+            }
+
+            if (!TryFindCatalogEntryForServerAssetId(category, serverAssetId.Value, catalog, out var entry) || entry == null)
+            {
+                Debug.LogWarning($"[RoomEdit][ThemeContents] {category}: server assetId={serverAssetId.Value} has no matching local catalog entry.");
+                return false;
+            }
+
+            TryRepairFantasyDeskPrefabReference(catalog, entry, "ThemeContents");
+            ApplyEntryVisual(category, entry);
+            if (entry.AssetId > 0L)
+            {
+                lastAppliedEntries[category] = entry.AssetId;
+            }
+            else
+            {
+                lastAppliedEntries.Remove(category);
+            }
+
+            return true;
+        }
+
+        private int SpawnThemeChildrenFromContents(RoomThemeAsset theme, ThemeContents contents)
+        {
+            var children = contents?.Children;
+            if (theme == null || children == null || children.Count == 0)
+            {
+                return 0;
+            }
+
+            var spawned = 0;
+            var unmatched = 0;
+            for (var i = 0; i < children.Count; i++)
+            {
+                var child = children[i];
+                if (child == null)
+                {
+                    continue;
+                }
+
+                var transform = ParseThemeContentTransform(child.DefaultTransform);
+                var assetKey = ResolveThemeChildAssetKey(child, transform);
+                if (!TryFindThemeChildSpec(theme, assetKey, child.Role, transform, out var spec, out var isWallSpec))
+                {
+                    unmatched++;
+                    continue;
+                }
+
+                if (isWallSpec || IsWallPlacement(transform))
+                {
+                    SpawnThemeWallDecoFromSpec(spec, theme.AssetId, transform);
+                }
+                else
+                {
+                    SpawnThemeFloorDecoFromSpec(spec, theme.AssetId, transform);
+                }
+                spawned++;
+            }
+
+            if (spawned > 0 || unmatched > 0)
+            {
+                Debug.Log($"[RoomEdit][ThemeContents] theme={theme.DisplayName} spawnedChildren={spawned}, unmatchedChildren={unmatched}.");
+            }
+
+            return spawned;
+        }
+
+        private ThemeContentTransform ParseThemeContentTransform(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            try
+            {
+                return JsonConvert.DeserializeObject<ThemeContentTransform>(raw);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[RoomEdit][ThemeContents] defaultTransform parse failed: {ex.GetType().Name} {ex.Message}");
+                return null;
+            }
+        }
+
+        private string ResolveThemeChildAssetKey(ThemeContentItem child, ThemeContentTransform transform)
+        {
+            var key = FirstNonEmpty(transform?.AssetKey);
+            if (!string.IsNullOrEmpty(key))
+            {
+                return key;
+            }
+
+            if (child != null &&
+                child.AssetId > 0L &&
+                ownedAssetsByAssetId.TryGetValue(child.AssetId, out var asset))
+            {
+                return FirstNonEmpty(asset.UnityResourceKey);
+            }
+
+            return string.Empty;
+        }
+
+        private bool TryFindThemeChildSpec(
+            RoomThemeAsset theme,
+            string assetKey,
+            string role,
+            ThemeContentTransform transform,
+            out RoomThemeDecoSpec spec,
+            out bool isWallSpec)
+        {
+            spec = null;
+            isWallSpec = false;
+            if (theme == null)
+            {
+                return false;
+            }
+
+            var inventoryKey = BuildInventoryKeyFromAssetKey(assetKey);
+            if (!string.IsNullOrEmpty(inventoryKey))
+            {
+                if (TryFindSpecByAssetKeyMatch(theme.WallDecoSpecs, inventoryKey, out spec))
+                {
+                    isWallSpec = true;
+                    return true;
+                }
+                if (TryFindSpecByAssetKeyMatch(theme.FloorDecoSpecs, inventoryKey, out spec))
+                {
+                    return true;
+                }
+                if (TryFindSpecByAssetKeyMatch(theme.BookshelfDecoSpecs, inventoryKey, out spec))
+                {
+                    return true;
+                }
+            }
+
+            if (TryParseThemeSlot(FirstNonEmpty(transform?.ThemeSlot, role), out var slot))
+            {
+                if (TryFindSpecBySlot(theme.WallDecoSpecs, slot, out spec))
+                {
+                    isWallSpec = true;
+                    return true;
+                }
+                if (TryFindSpecBySlot(theme.FloorDecoSpecs, slot, out spec))
+                {
+                    return true;
+                }
+                if (TryFindSpecBySlot(theme.BookshelfDecoSpecs, slot, out spec))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryParseThemeSlot(string raw, out ThemeSlot slot)
+        {
+            slot = ThemeSlot.None;
+            var normalized = NormalizeIdentifier(raw);
+            if (string.IsNullOrEmpty(normalized))
+            {
+                return false;
+            }
+
+            switch (normalized)
+            {
+                case "SHELF": slot = ThemeSlot.Shelf; return true;
+                case "TABLE": slot = ThemeSlot.Table; return true;
+                case "TABLEMINI": slot = ThemeSlot.TableMini; return true;
+                case "LAMP": slot = ThemeSlot.Lamp; return true;
+                case "FRAME": slot = ThemeSlot.Frame; return true;
+                case "RUG": slot = ThemeSlot.Rug; return true;
+                case "BED": slot = ThemeSlot.Bed; return true;
+                case "WINDOW": slot = ThemeSlot.Window; return true;
+                case "PLANT": slot = ThemeSlot.Plant; return true;
+                case "DASHBOARD": slot = ThemeSlot.Dashboard; return true;
+                default: return false;
+            }
+        }
+
+        private static bool IsWallPlacement(ThemeContentTransform transform)
+        {
+            if (transform == null)
+            {
+                return false;
+            }
+
+            var placement = NormalizeIdentifier(transform.PlacementCategory);
+            return placement == "WALLDECO" || placement == "WALL";
+        }
+
+        private static WallSide ResolveWallSide(RoomThemeDecoSpec spec, ThemeContentTransform transform)
+        {
+            if (TryParseWallSide(transform?.WallSide, out var side))
+            {
+                return side;
+            }
+
+            return spec != null ? spec.WallSide : WallSide.None;
+        }
+
+        private static bool TryParseWallSide(string raw, out WallSide side)
+        {
+            side = WallSide.None;
+            switch (NormalizeIdentifier(raw))
+            {
+                case "LEFT": side = WallSide.Left; return true;
+                case "RIGHT": side = WallSide.Right; return true;
+                case "BACK": side = WallSide.Back; return true;
+                case "FRONT": side = WallSide.Front; return true;
+                default: return false;
+            }
+        }
+
+        private void InvalidateThemeContentsCache(RoomThemeAsset theme, string source)
+        {
+            if (!TryResolveThemeContentsCacheKey(theme, out var serverThemeAssetId))
+            {
+                return;
+            }
+
+            themeContentsCache.Remove(serverThemeAssetId);
+            themeContentsInFlightVersions.Remove(serverThemeAssetId);
+            themeContentsSignatures.Remove(serverThemeAssetId);
+            themeContentsLastRefreshRealtime.Remove(serverThemeAssetId);
+            BumpThemeContentsRequestVersion(serverThemeAssetId);
+            Debug.Log($"[RoomEdit][ThemeContents] cache invalidated themeAssetId={serverThemeAssetId} source={source}.");
+        }
+
+        private bool TryResolveThemeContentsCacheKey(RoomThemeAsset theme, out long serverThemeAssetId)
+        {
+            if (TryResolveOwnedServerThemeAssetId(theme, out serverThemeAssetId) && serverThemeAssetId > 0L)
+            {
+                return true;
+            }
+
+            serverThemeAssetId = theme != null ? theme.AssetId : 0L;
+            return serverThemeAssetId > 0L;
+        }
+
+        private int BumpThemeContentsRequestVersion(long serverThemeAssetId)
+        {
+            themeContentsRequestVersions.TryGetValue(serverThemeAssetId, out var version);
+            version++;
+            themeContentsRequestVersions[serverThemeAssetId] = version;
+            return version;
+        }
+
+        private int NextThemeContentsRequestVersion(long serverThemeAssetId)
+        {
+            var version = BumpThemeContentsRequestVersion(serverThemeAssetId);
+            themeContentsInFlightVersions[serverThemeAssetId] = version;
+            return version;
+        }
+
+        private bool IsLatestThemeContentsRequest(long serverThemeAssetId, int requestVersion)
+        {
+            return themeContentsRequestVersions.TryGetValue(serverThemeAssetId, out var latestVersion) &&
+                   latestVersion == requestVersion;
+        }
+
+        private void ClearThemeContentsInFlight(long serverThemeAssetId, int requestVersion)
+        {
+            if (themeContentsInFlightVersions.TryGetValue(serverThemeAssetId, out var inFlightVersion) &&
+                inFlightVersion == requestVersion)
+            {
+                themeContentsInFlightVersions.Remove(serverThemeAssetId);
+            }
+        }
+
+        private string BuildThemeContentsSignature(ThemeContents contents)
+        {
+            if (contents == null)
+            {
+                return string.Empty;
+            }
+
+            var sb = new System.Text.StringBuilder(256);
+            sb.Append(contents.ThemeAssetId).Append('|')
+              .Append(contents.Wallpaper ?? 0L).Append('|')
+              .Append(contents.Floor ?? 0L).Append('|')
+              .Append(contents.Desk ?? 0L).Append('|')
+              .Append(contents.Dashboard ?? 0L).Append('|')
+              .Append(contents.BookshelfSkinDefault ?? 0L).Append('|')
+              .Append(contents.InteriorLight ?? 0L).Append('|')
+              .Append(contents.ExteriorLight ?? 0L);
+
+            var children = contents.Children;
+            if (children != null)
+            {
+                for (int i = 0; i < children.Count; i++)
+                {
+                    var child = children[i];
+                    if (child == null)
+                    {
+                        continue;
+                    }
+
+                    sb.Append("|c:")
+                      .Append(child.AssetId).Append(',')
+                      .Append(child.AssetType ?? string.Empty).Append(',')
+                      .Append(child.Role ?? string.Empty).Append(',')
+                      .Append(child.Required ? '1' : '0').Append(',')
+                      .Append(child.DefaultTransform ?? string.Empty);
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private void RequestThemeContentsBackgroundRefresh(RoomThemeAsset theme, string source)
+        {
+            if (!TryResolveOwnedServerThemeAssetId(theme, out var serverThemeAssetId) || serverThemeAssetId <= 0L)
+            {
+                return;
+            }
+
+            if (themeContentsInFlightVersions.ContainsKey(serverThemeAssetId))
+            {
+                return;
+            }
+
+            if (themeContentsLastRefreshRealtime.TryGetValue(serverThemeAssetId, out var lastRefreshAt) &&
+                Time.realtimeSinceStartup - lastRefreshAt < ThemeContentsBackgroundRefreshMinIntervalSeconds)
+            {
+                return;
+            }
+
+            RequestThemeContentsReapplyIfAvailable(
+                theme,
+                persistEntries: true,
+                resetExistingPlacements: false,
+                forceRefresh: true,
+                source: source);
+        }
+
+        private bool IsCurrentThemeForContentsResponse(RoomThemeAsset expectedTheme, long expectedServerThemeAssetId)
+        {
+            if (expectedTheme == null)
+            {
+                return false;
+            }
+
+            if (themeApplier == null)
+            {
+                themeApplier = FindFirstObjectByType<RoomThemeApplier>();
+            }
+
+            var currentTheme = themeApplier != null ? themeApplier.CurrentTheme : null;
+            if (currentTheme == null)
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(currentTheme, expectedTheme))
+            {
+                return true;
+            }
+
+            if (currentTheme.AssetId > 0L &&
+                expectedTheme.AssetId > 0L &&
+                currentTheme.AssetId == expectedTheme.AssetId)
+            {
+                return true;
+            }
+
+            return expectedServerThemeAssetId > 0L &&
+                   currentTheme.AssetId == expectedServerThemeAssetId;
+        }
+
+        private void RequestThemeContentsReapplyIfAvailable(
+            RoomThemeAsset theme,
+            bool persistEntries,
+            bool resetExistingPlacements,
+            bool forceRefresh = false,
+            string source = null)
+        {
+            if (theme == null)
+            {
+                return;
+            }
+
+            EnsureThemeContentsUseCase();
+            if (themeContentsUseCase == null)
+            {
+                return;
+            }
+
+            if (!TryResolveOwnedServerThemeAssetId(theme, out var serverThemeAssetId) || serverThemeAssetId <= 0L)
+            {
+                return;
+            }
+
+            if (!forceRefresh && themeContentsCache.ContainsKey(serverThemeAssetId))
+            {
+                return;
+            }
+
+            if (themeContentsInFlightVersions.ContainsKey(serverThemeAssetId))
+            {
+                return;
+            }
+
+            var requestVersion = NextThemeContentsRequestVersion(serverThemeAssetId);
+            themeContentsUseCase.Execute(
+                serverThemeAssetId,
+                contents =>
+                {
+                    if (this == null)
+                    {
+                        return;
+                    }
+
+                    ClearThemeContentsInFlight(serverThemeAssetId, requestVersion);
+                    if (!IsLatestThemeContentsRequest(serverThemeAssetId, requestVersion) || contents == null)
+                    {
+                        return;
+                    }
+
+                    var signature = BuildThemeContentsSignature(contents);
+                    var unchanged = themeContentsCache.ContainsKey(serverThemeAssetId) &&
+                                    themeContentsSignatures.TryGetValue(serverThemeAssetId, out var previousSignature) &&
+                                    string.Equals(previousSignature, signature, StringComparison.Ordinal);
+
+                    themeContentsCache[serverThemeAssetId] = contents;
+                    themeContentsSignatures[serverThemeAssetId] = signature;
+                    themeContentsLastRefreshRealtime[serverThemeAssetId] = Time.realtimeSinceStartup;
+
+                    if (!IsCurrentThemeForContentsResponse(theme, serverThemeAssetId))
+                    {
+                        return;
+                    }
+
+                    if (unchanged && !resetExistingPlacements)
+                    {
+                        Debug.Log($"[RoomEdit][ThemeContents] unchanged themeAssetId={serverThemeAssetId} source={source ?? "refresh"}; reapply skipped.");
+                        return;
+                    }
+
+                    ApplyThemeDefaultEntries(theme, persistEntries, resetExistingPlacements, contents);
+                    ReapplyExplicitServerCategoryOverridesIfCurrentTheme(theme);
+                },
+                error =>
+                {
+                    if (this == null)
+                    {
+                        return;
+                    }
+
+                    ClearThemeContentsInFlight(serverThemeAssetId, requestVersion);
+                    Debug.LogWarning($"[RoomEdit][ThemeContents] load failed themeAssetId={serverThemeAssetId}: {error?.Code}/{error?.Message}");
+                });
+        }
+
         private static void ClearSlotVisualSkinsForThemeReset()
         {
             BookshelfVisualSkinApplier.ClearSkin("theme reset");
@@ -4293,7 +5667,7 @@ namespace App.Bootstrap
         // Scale 정책 (사용자 명시 요구): spec.LocalScale 은 raw final localScale.
         // 어떤 정규화/곱셈도 거치지 않고 transform.localScale 에 그대로 박힌다 — 디자이너가
         // Inspector 에서 박은 값과 GameObject.transform.localScale 이 1:1.
-        private void SpawnThemeFloorDecoFromSpec(RoomThemeDecoSpec spec, long themeId)
+        private void SpawnThemeFloorDecoFromSpec(RoomThemeDecoSpec spec, long themeId, ThemeContentTransform transformOverride = null)
         {
             if (spec == null)
             {
@@ -4301,8 +5675,11 @@ namespace App.Bootstrap
                 return;
             }
 
+            var localPosition = transformOverride != null ? transformOverride.LocalPosition : spec.LocalPosition;
+            var localRotation = transformOverride != null ? transformOverride.LocalRotation : spec.LocalRotation;
+            var localScale = transformOverride != null && transformOverride.HasUsableScale ? transformOverride.LocalScale : spec.LocalScale;
             var prefabName = spec.Prefab != null ? spec.Prefab.name : "null";
-            Debug.Log($"[SpawnThemeFloorDecoFromSpec] enter themeId={themeId} assetKey={spec.AssetKey} themeSlot={spec.ThemeSlot} prefab={prefabName} localPosition={spec.LocalPosition} localScale={spec.LocalScale} anchorTag={spec.AnchorTag}");
+            Debug.Log($"[SpawnThemeFloorDecoFromSpec] enter themeId={themeId} assetKey={spec.AssetKey} themeSlot={spec.ThemeSlot} prefab={prefabName} localPosition={localPosition} localScale={localScale} anchorTag={spec.AnchorTag}");
 
             // misclassification heuristic — spec.ThemeSlot 가 None 인데 assetKey 에 shelf/dashboard
             // 가 들어가면 디자이너가 ThemeSlot 빠뜨린 회귀일 가능성 큼. 일반 placedItemsRoot 로
@@ -4368,16 +5745,16 @@ namespace App.Bootstrap
             var go = Instantiate(prefab);
             go.name = $"ThemeDeco_Floor_{SanitizeName(prefab.name)}";
             go.transform.SetParent(placedItemsRoot.transform, true);
-            go.transform.position = spec.LocalPosition;
-            go.transform.localEulerAngles = spec.LocalRotation;
-            go.transform.localScale = spec.LocalScale;
+            go.transform.position = localPosition;
+            go.transform.localEulerAngles = localRotation;
+            go.transform.localScale = localScale;
 
             // 빈티지 자산만 bounds 기반 추가 보정 — GLB 원본 크기 차이를 흡수해 같은 assetKey 면
             // 어디서 spawn 되든 동일 크기 보장. non-vintage 는 spec.LocalScale 그대로.
-            ApplyVintageScaleNormalization(go, spec.AssetKey, spec.LocalScale, "SpawnThemeFloorDecoFromSpec");
+            ApplyVintageScaleNormalization(go, spec.AssetKey, localScale, "SpawnThemeFloorDecoFromSpec");
             // 바닥 contact — spec.LocalPosition.y == 0 일 때만 자동 snap. 디자이너가 명시적으로
             // y > 0 박으면 (예: lamp 가 책상 위, rug 의 z-fight 0.012 offset) 그 의도 존중.
-            if (Mathf.Approximately(spec.LocalPosition.y, 0f))
+            if (Mathf.Approximately(localPosition.y, 0f))
             {
                 SnapBottomToFloor(go);
             }
@@ -4389,13 +5766,18 @@ namespace App.Bootstrap
         // 테마 wallDecoSpec → placedItemsRoot 자식 + WallDecoMarker (drag wall surface 동작). spec 의
         // localPosition 은 wall surface anchor frame 기준 — themeApplier.TryGetWallSurfaceAnchor
         // 로 world coord 변환. anchor 못 찾으면 fallback (localPosition 그대로 world).
-        private void SpawnThemeWallDecoFromSpec(RoomThemeDecoSpec spec, long themeId)
+        private void SpawnThemeWallDecoFromSpec(RoomThemeDecoSpec spec, long themeId, ThemeContentTransform transformOverride = null)
         {
+            if (spec == null) return;
             var prefab = themeAssetLoader.Resolve(spec);
-            if (spec == null || prefab == null) return;
+            if (prefab == null) return;
             EnsurePlacedItemsRoot();
             if (themeApplier == null) themeApplier = FindFirstObjectByType<RoomThemeApplier>();
             bool useLockedManualTransform = IsTransformLockedWallDecoAssetKey(spec.AssetKey);
+            var localPosition = transformOverride != null ? transformOverride.LocalPosition : spec.LocalPosition;
+            var localRotation = transformOverride != null ? transformOverride.LocalRotation : spec.LocalRotation;
+            var localScale = transformOverride != null && transformOverride.HasUsableScale ? transformOverride.LocalScale : spec.LocalScale;
+            var wallSide = ResolveWallSide(spec, transformOverride);
 
             // wall surface anchor 변환 복구 — spec.LocalPosition 은 wall surface frame 기준
             // local. wall placement 시스템 (drag 매칭 + obstruction) 일관성 유지. 사용자가 캡처한
@@ -4405,51 +5787,51 @@ namespace App.Bootstrap
             Quaternion worldRot;
             if (!useLockedManualTransform &&
                 themeApplier != null &&
-                themeApplier.TryGetWallSurfaceAnchor(spec.WallSide, out var anchorPos, out var anchorRot))
+                themeApplier.TryGetWallSurfaceAnchor(wallSide, out var anchorPos, out var anchorRot))
             {
-                worldPos = anchorPos + anchorRot * spec.LocalPosition;
-                worldRot = anchorRot * Quaternion.Euler(spec.LocalRotation);
+                worldPos = anchorPos + anchorRot * localPosition;
+                worldRot = anchorRot * Quaternion.Euler(localRotation);
             }
             else
             {
                 Debug.LogWarning($"[RoomEditModeController] WallDecoSpec WallSide={spec.WallSide} anchor 못 찾음 — localPosition 을 world fallback.");
                 if (useLockedManualTransform)
                 {
-                    worldRot = Quaternion.Euler(spec.LocalRotation);
+                    worldRot = Quaternion.Euler(localRotation);
                 }
-                worldPos = spec.LocalPosition;
-                worldRot = Quaternion.Euler(spec.LocalRotation);
+                worldPos = localPosition;
+                worldRot = Quaternion.Euler(localRotation);
             }
 
             var go = Instantiate(prefab);
             go.name = $"ThemeDeco_Wall_{SanitizeName(prefab.name)}";
             go.transform.SetParent(placedItemsRoot.transform, true);
             go.transform.SetPositionAndRotation(worldPos, worldRot);
-            go.transform.localScale = spec.LocalScale;
+            go.transform.localScale = localScale;
 
             // 빈티지 frame: 사용자 명시 transform 정확 적용 — anchor 변환 우회하고 spec 값을
             // localPosition/Rotation 그대로 박는다. placedItemsRoot 가 origin 이라 world == local.
             // 다른 wall deco (GoodVibes_NeonSign 등) 의 anchor 정책은 그대로 유지.
             if (IsAnchorBypassedWallDecoAssetKey(spec.AssetKey))
             {
-                go.transform.localPosition = spec.LocalPosition;
-                go.transform.localEulerAngles = spec.LocalRotation;
-                go.transform.localScale = spec.LocalScale;
+                go.transform.localPosition = localPosition;
+                go.transform.localEulerAngles = localRotation;
+                go.transform.localScale = localScale;
             }
 
             // 빈티지 자산 bounds 기반 추가 보정. wall 자산은 SnapBottomToFloor 안 함 — anchor 의
             // wall surface Y 가 이미 액자 적정 높이.
             if (!useLockedManualTransform)
             {
-                ApplyVintageScaleNormalization(go, spec.AssetKey, spec.LocalScale, "SpawnThemeWallDecoFromSpec");
+                ApplyVintageScaleNormalization(go, spec.AssetKey, localScale, "SpawnThemeWallDecoFromSpec");
             }
             else
             {
-                AttachThemeDecoTransformLock(go, spec);
+                AttachThemeDecoTransformLock(go, spec, transformOverride);
             }
 
             var marker = go.AddComponent<WallDecoMarker>();
-            marker.CurrentWall = spec.WallSide;
+            marker.CurrentWall = wallSide;
             marker.AllowRotation = false; // 테마 자동 spawn 은 회전 비활성 (사용자가 위치만 옮김)
 
             AttachThemeMarkers(go, spec, themeId);
@@ -4488,7 +5870,7 @@ namespace App.Bootstrap
                    fileName.StartsWith("fantasy_window", System.StringComparison.OrdinalIgnoreCase);
         }
 
-        private static void AttachThemeDecoTransformLock(GameObject go, RoomThemeDecoSpec spec)
+        private static void AttachThemeDecoTransformLock(GameObject go, RoomThemeDecoSpec spec, ThemeContentTransform transformOverride = null)
         {
             if (go == null || spec == null) return;
             var transformLock = go.GetComponent<ThemeDecoTransformLock>();
@@ -4497,7 +5879,10 @@ namespace App.Bootstrap
                 transformLock = go.AddComponent<ThemeDecoTransformLock>();
             }
 
-            transformLock.Configure(spec.AssetKey, spec.LocalPosition, spec.LocalRotation, spec.LocalScale);
+            var localPosition = transformOverride != null ? transformOverride.LocalPosition : spec.LocalPosition;
+            var localRotation = transformOverride != null ? transformOverride.LocalRotation : spec.LocalRotation;
+            var localScale = transformOverride != null && transformOverride.HasUsableScale ? transformOverride.LocalScale : spec.LocalScale;
+            transformLock.Configure(spec.AssetKey, localPosition, localRotation, localScale);
         }
 
         // 메인씬 진입 후 (로그인 → 메인씬, 또는 BookshelfSceneInstaller 이후) saved layout 복원
@@ -4809,7 +6194,8 @@ namespace App.Bootstrap
         {
             return category == CustomizationCategory.Desk
                 || category == CustomizationCategory.BookshelfSkin
-                || category == CustomizationCategory.DashboardSkin;
+                || category == CustomizationCategory.DashboardSkin
+                || category == CustomizationCategory.Notebook;
         }
 
         // category 매칭 native renderer 들 disable + prefab 을 첫 매칭 anchor 자식으로 spawn.
@@ -4818,6 +6204,94 @@ namespace App.Bootstrap
         // entry 단위로 받음 — entry.Prefab + entry.PlacementAnchor/Rotation/Scale + entry.NotebookStationOffset
         // 모두 활용. 사용자가 catalog Inspector 에서 mesh swap 시 fitting (위치/회전/스케일/모니터 위치)
         // 직접 지정 가능.
+        private void ApplyBookshelfLayoutForSkinEntry(CustomizationEntry entry, string source)
+        {
+            if (!TryResolveBookshelfThemeStyle(entry, out var style))
+            {
+                Debug.LogWarning(
+                    $"[RoomEditModeController] Bookshelf skin layout sync skipped: unresolved style " +
+                    $"assetId={(entry != null ? entry.AssetId : 0L)} themeTag='{entry?.ThemeTag}' source={source}");
+                return;
+            }
+
+            var generator = FindFirstObjectByType<BookshelfGenerator>(FindObjectsInactive.Include);
+            if (generator == null)
+            {
+                Debug.LogWarning($"[RoomEditModeController] Bookshelf skin layout sync skipped: BookshelfGenerator missing source={source}");
+                return;
+            }
+
+            var applied = generator.SetActiveBookshelfDesignStyle(style);
+            Debug.Log(
+                $"[RoomEditModeController] Bookshelf skin layout sync style={style} applied={applied} " +
+                $"assetId={entry.AssetId} themeTag='{entry.ThemeTag}' source={source}");
+        }
+
+        private static bool TryResolveBookshelfThemeStyle(CustomizationEntry entry, out BookshelfThemeStyle style)
+        {
+            style = BookshelfThemeStyle.Default;
+            if (entry == null)
+            {
+                return false;
+            }
+
+            switch (entry.AssetId)
+            {
+                case 200020L:
+                    style = BookshelfThemeStyle.Vintage;
+                    return true;
+                case 300020L:
+                    style = BookshelfThemeStyle.DeepSea;
+                    return true;
+                case 400020L:
+                    style = BookshelfThemeStyle.Fantasy;
+                    return true;
+                case 500020L:
+                    style = BookshelfThemeStyle.Space;
+                    return true;
+                case 600020L:
+                    style = BookshelfThemeStyle.Spooky;
+                    return true;
+            }
+
+            if (TryResolveBookshelfThemeStyleByTag(NormalizeThemeTag(entry.ThemeTag), out style))
+            {
+                return true;
+            }
+
+            var keyword = string.Concat(entry.DisplayName, " ", entry.Description, " ",
+                entry.Prefab != null ? entry.Prefab.name : string.Empty);
+            return TryResolveBookshelfThemeStyleByTag(NormalizeThemeTag(keyword), out style);
+        }
+
+        private static bool TryResolveBookshelfThemeStyleByTag(string tag, out BookshelfThemeStyle style)
+        {
+            style = BookshelfThemeStyle.Default;
+            switch (tag)
+            {
+                case "Vintage":
+                    style = BookshelfThemeStyle.Vintage;
+                    return true;
+                case "DeepSea":
+                    style = BookshelfThemeStyle.DeepSea;
+                    return true;
+                case "Fantasy":
+                    style = BookshelfThemeStyle.Fantasy;
+                    return true;
+                case "Space":
+                    style = BookshelfThemeStyle.Space;
+                    return true;
+                case "Spooky":
+                    style = BookshelfThemeStyle.Spooky;
+                    return true;
+                case "GoodVibes":
+                    style = BookshelfThemeStyle.GoodVibes;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         private void ApplyCategoryMeshSwap(CustomizationCategory category, CustomizationEntry entry, Transform roomRoot)
         {
             // Desk 만 별도 분기 — DeskVisualSkinApplier 로 delegate. 이전 mesh swap (roomRoot 자식
@@ -4832,6 +6306,8 @@ namespace App.Bootstrap
             // 이 남아 있으면 정리 (legacy 잔존물 cleanup).
             if (category == CustomizationCategory.Desk)
             {
+                RestoreCategoryNativeMesh(CustomizationCategory.Desk, roomRoot);
+
                 if (IsFantasyDeskEntry(entry))
                 {
                     Debug.Log($"[FantasyDesk] ApplyCategoryMeshSwap category={category} prefab={(entry.Prefab != null ? entry.Prefab.name : "null")} assetId={entry.AssetId}");
@@ -4882,7 +6358,7 @@ namespace App.Bootstrap
                 // localPosition 그대로인 상태에서 NotebookStation 이 옮겨가 monitor 화면과 일관성 유지.
                 // 기존 nativeNotebookStationLocalPos 캡처/복원 로직 (ApplyNotebookStationPlacement 내부 +
                 // RestoreNotebookStationPosition) 은 그대로라 테마 전환 시 native 복귀 보장.
-                if (entry.OverrideNotebookStation && entry.LockNotebookStationToMonitor && monitorTransform != null)
+                if (ShouldLockNotebookStationToMonitor(entry) && monitorTransform != null)
                 {
                     ApplyNotebookStationPlacement(roomRoot, entry, monitorTransform);
 
@@ -4901,6 +6377,24 @@ namespace App.Bootstrap
             }
 
             // 1) 이전 mesh swap 된 GameObject 정리 (이름 prefix 로 식별)
+            if (category == CustomizationCategory.BookshelfSkin)
+            {
+                string legacySwapName = $"MeshSwap_{category}";
+                for (int i = roomRoot.childCount - 1; i >= 0; i--)
+                {
+                    var child = roomRoot.GetChild(i);
+                    if (child.gameObject.name == legacySwapName)
+                    {
+                        if (UnityEngine.Application.isPlaying) Destroy(child.gameObject);
+                        else DestroyImmediate(child.gameObject);
+                    }
+                }
+
+                ApplyBookshelfLayoutForSkinEntry(entry, "ApplyCategoryMeshSwap");
+                BookshelfVisualSkinApplier.TryAttach(entry, entry.AssetId, "ApplyCategoryMeshSwap");
+                return;
+            }
+
             string swapName = $"MeshSwap_{category}";
             for (int i = roomRoot.childCount - 1; i >= 0; i--)
             {
@@ -4910,6 +6404,24 @@ namespace App.Bootstrap
                     if (UnityEngine.Application.isPlaying) Destroy(child.gameObject);
                     else DestroyImmediate(child.gameObject);
                 }
+            }
+
+            if (category == CustomizationCategory.Notebook)
+            {
+                var notebookGo = Instantiate(entry.Prefab, roomRoot);
+                notebookGo.name = swapName;
+                if (entry.UsePlacementTransformAsWorld)
+                {
+                    notebookGo.transform.SetPositionAndRotation(entry.PlacementAnchor, Quaternion.Euler(entry.PlacementRotation));
+                }
+                else
+                {
+                    notebookGo.transform.localPosition = entry.PlacementAnchor;
+                    notebookGo.transform.localEulerAngles = entry.PlacementRotation;
+                }
+                notebookGo.transform.localScale = entry.PlacementScale != Vector3.zero ? entry.PlacementScale : Vector3.one;
+                DisableAllCollidersOnVisual(notebookGo);
+                return;
             }
 
             // 2) primary anchor 검색 — 카테고리별 정확한 root transform 우선. "DeskRoot" /
@@ -5013,6 +6525,7 @@ namespace App.Bootstrap
             RestoreCategoryNativeMesh(CustomizationCategory.Desk, roomRoot);
             RestoreCategoryNativeMesh(CustomizationCategory.BookshelfSkin, roomRoot);
             RestoreCategoryNativeMesh(CustomizationCategory.DashboardSkin, roomRoot);
+            RestoreCategoryNativeMesh(CustomizationCategory.Notebook, roomRoot);
         }
 
         // Desk entry 의 monitorPrefab spawn — book 책상 mesh swap 의 일부. 별도 GameObject (이름
@@ -5185,7 +6698,7 @@ namespace App.Bootstrap
             var deskCatalog = LoadCategoryCatalog(CustomizationCategory.Desk);
             var deskEntry = deskCatalog != null ? deskCatalog.FindByAssetId(deskAssetId) : null;
             if (deskEntry == null) return;
-            if (deskEntry.OverrideNotebookStation)
+            if (ShouldLockNotebookStationToMonitor(deskEntry))
             {
                 ApplyNotebookStationPlacement(roomRoot, deskEntry, FindDeskMonitor(roomRoot));
             }
@@ -5381,6 +6894,10 @@ namespace App.Bootstrap
                         else DestroyImmediate(child.gameObject);
                     }
                 }
+            }
+            else if (category == CustomizationCategory.BookshelfSkin)
+            {
+                BookshelfVisualSkinApplier.ClearSkin("RestoreCategoryNativeMesh");
             }
             else if (category == CustomizationCategory.DashboardSkin)
             {
@@ -5653,8 +7170,10 @@ namespace App.Bootstrap
                 if (themeApplier != null && themeApplier.CurrentTheme != protectedFantasyTheme)
                 {
                     themeApplier.Apply(protectedFantasyTheme);
+                    SyncInventoryThemeFilterForTheme(protectedFantasyTheme);
                     RefreshWallVisibilityAfterMaterialMutation("ApplySpaceVisualsToRoom.protectFantasyLocalPreview");
                 }
+                SyncInventoryThemeFilterForTheme(protectedFantasyTheme);
                 ApplyThemeDefaultEntries(protectedFantasyTheme);
                 RebuildInventorySlots();
                 LogFantasyDeskHierarchyState("ApplySpaceVisualsToRoom.protectFantasyLocalPreview");
@@ -5666,6 +7185,7 @@ namespace App.Bootstrap
             if (serverHasNoTheme && clientHasLocalPreviewTheme)
             {
                 themeApplier.Apply(themeApplier.CurrentTheme);
+                SyncInventoryThemeFilterForTheme(themeApplier.CurrentTheme);
                 RefreshWallVisibilityAfterMaterialMutation("ApplySpaceVisualsToRoom.reapplyCurrentLocalPreview");
                 ApplyThemeDefaultEntries(themeApplier.CurrentTheme);
                 RebuildInventorySlots();
@@ -5679,6 +7199,7 @@ namespace App.Bootstrap
                 if (savedTheme != null && savedTheme != themeApplier.CurrentTheme)
                 {
                     themeApplier.Apply(savedTheme);
+                    SyncInventoryThemeFilterForTheme(savedTheme);
                     RefreshWallVisibilityAfterMaterialMutation("ApplySpaceVisualsToRoom.restoreLocalPreview");
                     ApplyThemeDefaultEntries(savedTheme);
                     RebuildInventorySlots();
@@ -5699,7 +7220,7 @@ namespace App.Bootstrap
                 {
                     if (TryResolveOwnedAssetIdForInventory(space.CurrentThemeInventoryId.Value, out var currentThemeAssetId))
                     {
-                        resolvedTheme = themeCatalog.Resolve(currentThemeAssetId);
+                        resolvedTheme = ResolveThemeForServerAssetId(currentThemeAssetId);
                     }
                     else
                     {
@@ -5716,8 +7237,13 @@ namespace App.Bootstrap
                 if (resolvedTheme != null && resolvedTheme != themeApplier.CurrentTheme)
                 {
                     themeApplier.Apply(resolvedTheme);
+                    SyncInventoryThemeFilterForTheme(resolvedTheme);
                     RefreshWallVisibilityAfterMaterialMutation("ReloadRoomState");
                     themeChanged = true;
+                }
+                if (resolvedTheme != null)
+                {
+                    SyncInventoryThemeFilterForTheme(resolvedTheme);
                 }
             }
 
@@ -5727,14 +7253,23 @@ namespace App.Bootstrap
             {
                 ApplyThemeDefaultEntries(resolvedTheme);
             }
+            else if (resolvedTheme != null)
+            {
+                ApplyThemeCategoryDefaultsForMissingServerCategories(resolvedTheme, space);
+            }
 
             ApplyCategoryById(CustomizationCategory.Wallpaper, space.CurrentWallpaperInventoryId);
             ApplyCategoryById(CustomizationCategory.Floor, space.CurrentFloorInventoryId);
             ApplyCategoryById(CustomizationCategory.Desk, space.CurrentDeskInventoryId);
             ApplyCategoryById(CustomizationCategory.DashboardSkin, space.CurrentDashboardInventoryId);
+            ApplyCategoryById(CustomizationCategory.Notebook, space.CurrentNotebookInventoryId);
             ApplyCategoryById(CustomizationCategory.InteriorLight, space.CurrentInteriorLightInventoryId);
             ApplyCategoryById(CustomizationCategory.ExteriorLight, space.CurrentExteriorLightInventoryId);
             RebuildInventorySlots();
+            if (resolvedTheme != null)
+            {
+                RequestThemeContentsBackgroundRefresh(resolvedTheme, "ApplySpaceVisualsToRoom");
+            }
             if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
             {
                 Debug.Log(
@@ -5742,6 +7277,50 @@ namespace App.Bootstrap
                     $"serverDeskId={space.CurrentDeskInventoryId?.ToString() ?? "null"}");
                 LogFantasyDeskHierarchyState("ApplySpaceVisualsToRoom.afterServerCategories");
             }
+        }
+
+        private void ReapplyExplicitServerCategoryOverridesIfCurrentTheme(RoomThemeAsset theme)
+        {
+            if (lastServerSpace == null || theme == null || !IsSpaceCurrentTheme(lastServerSpace, theme))
+            {
+                return;
+            }
+
+            ReapplyExplicitServerCategoryOverride(CustomizationCategory.Wallpaper, lastServerSpace.CurrentWallpaperInventoryId);
+            ReapplyExplicitServerCategoryOverride(CustomizationCategory.Floor, lastServerSpace.CurrentFloorInventoryId);
+            ReapplyExplicitServerCategoryOverride(CustomizationCategory.Desk, lastServerSpace.CurrentDeskInventoryId);
+            ReapplyExplicitServerCategoryOverride(CustomizationCategory.DashboardSkin, lastServerSpace.CurrentDashboardInventoryId);
+            ReapplyExplicitServerCategoryOverride(CustomizationCategory.Notebook, lastServerSpace.CurrentNotebookInventoryId);
+            ReapplyExplicitServerCategoryOverride(CustomizationCategory.InteriorLight, lastServerSpace.CurrentInteriorLightInventoryId);
+            ReapplyExplicitServerCategoryOverride(CustomizationCategory.ExteriorLight, lastServerSpace.CurrentExteriorLightInventoryId);
+        }
+
+        private void ReapplyExplicitServerCategoryOverride(CustomizationCategory category, long? inventoryId)
+        {
+            if (inventoryId.HasValue && inventoryId.Value > 0L)
+            {
+                ApplyCategoryById(category, inventoryId);
+            }
+        }
+
+        private bool IsSpaceCurrentTheme(SpaceResponseDto space, RoomThemeAsset theme)
+        {
+            if (space == null || theme == null || !space.CurrentThemeInventoryId.HasValue || space.CurrentThemeInventoryId.Value <= 0L)
+            {
+                return false;
+            }
+
+            if (!TryResolveOwnedAssetIdForInventory(space.CurrentThemeInventoryId.Value, out var currentThemeAssetId))
+            {
+                return false;
+            }
+
+            if (TryResolveOwnedServerThemeAssetId(theme, out var themeAssetId) && themeAssetId > 0L)
+            {
+                return currentThemeAssetId == themeAssetId;
+            }
+
+            return ResolveThemeForServerAssetId(currentThemeAssetId) == theme;
         }
 
         private void ApplyCategoryById(CustomizationCategory category, long? inventoryId)
@@ -5760,20 +7339,23 @@ namespace App.Bootstrap
             {
                 if (!TryResolveOwnedAssetIdForInventory(inventoryId.Value, out var assetId))
                 {
-                    Debug.LogWarning(
-                        $"[RoomEditModeController][CategoryRestore] {category}: server inventoryId={inventoryId.Value} 를 assetId로 매핑하지 못해 " +
-                        "catalog fallback을 보류합니다.");
-                    return;
+                    var localMockEntry = catalog.FindByAssetId(inventoryId.Value);
+                    if (localMockEntry != null && IsLocalPreviewEntry(localMockEntry))
+                    {
+                        assetId = inventoryId.Value;
+                    }
+                    else
+                    {
+                        Debug.LogWarning(
+                            $"[RoomEditModeController][CategoryRestore] {category}: server inventoryId={inventoryId.Value} 를 assetId로 매핑하지 못해 " +
+                            "catalog fallback을 보류합니다.");
+                        return;
+                    }
                 }
 
-                for (int i = 0; i < catalog.Entries.Count; i++)
+                if (!TryFindCatalogEntryForServerAssetId(category, assetId, catalog, out entry))
                 {
-                    var e = catalog.Entries[i];
-                    if (e != null && e.AssetId == assetId)
-                    {
-                        entry = e;
-                        break;
-                    }
+                    Debug.LogWarning($"[RoomEditModeController][CategoryRestore] {category}: server assetId={assetId} matched no local catalog entry.");
                 }
             }
 
@@ -5790,6 +7372,12 @@ namespace App.Bootstrap
             //     만 바뀌므로 Entries[0] fallback 유지 — 디자이너 의도된 default 외형.
             if (entry == null && IsMeshSwapCategory(category))
             {
+                if (ShouldPreserveMissingServerCategoryVisual(category))
+                {
+                    Debug.Log($"[RoomEditModeController][CategoryRestore] {category}: server inventoryId 없음 + current theme default 존재 → native restore skip, 현재 visual 유지.");
+                    return;
+                }
+
                 if (lastAppliedEntries.ContainsKey(category)
                     && themeApplier != null
                     && themeApplier.RoomRoot != null)
@@ -5809,7 +7397,17 @@ namespace App.Bootstrap
             // 가드가 있음 — 본 분기는 그 패턴을 wallpaper / floor / lights 에 확장.
             if (entry == null && lastAppliedEntries.ContainsKey(category))
             {
-                Debug.Log($"[RoomEditModeController][CategoryRestore] {category}: server inventoryId 없음 + 로컬 적용 흔적 (assetId={lastAppliedEntries[category]}) → Entries[0] fallback skip, 현재 visual 유지.");
+                if (ShouldPreserveMissingServerCategoryVisual(category))
+                {
+                    Debug.Log($"[RoomEditModeController][CategoryRestore] {category}: server inventoryId 없음 + 로컬 적용 흔적 (assetId={lastAppliedEntries[category]}) → Entries[0] fallback skip, 현재 visual 유지.");
+                    return;
+                }
+
+                lastAppliedEntries.Remove(category);
+                PersistLastAppliedEntries();
+            }
+            if (entry == null && ShouldSkipCatalogFallbackForServerOmittedCategory(category))
+            {
                 return;
             }
             if (entry == null && catalog.Entries.Count > 0)
@@ -5893,7 +7491,14 @@ namespace App.Bootstrap
             var button = slot.gameObject.AddComponent<Button>();
             button.targetGraphic = slot;
             var capturedEntry = entry;
-            button.onClick.AddListener(() => PlaceInventoryEntry(capturedEntry));
+            if (TryResolveRemoteCustomizationCategory(capturedEntry, out var remoteCategory))
+            {
+                button.onClick.AddListener(() => ApplyRemoteCategoryInventoryEntry(remoteCategory, capturedEntry));
+            }
+            else
+            {
+                button.onClick.AddListener(() => PlaceInventoryEntry(capturedEntry));
+            }
 
             // 동일 inventoryKey 가 이미 배치되어 있으면 슬롯 자체를 비활성 + "배치됨" 오버레이로 가린다.
             // 삭제하면 RebuildInventorySlots 가 다시 돌면서 자동 복구된다.
@@ -5948,37 +7553,52 @@ namespace App.Bootstrap
                 return;
             }
 
+            if (selectedToolbarKey == "ALL" ||
+                inventoryPreviewLoadsInFlight.Contains(normalizedUrl) ||
+                inventoryPreviewLoadsInFlight.Count >= MaxInventoryPreviewLoadsInFlight)
+            {
+                return;
+            }
+
+            inventoryPreviewLoadsInFlight.Add(normalizedUrl);
             StartCoroutine(LoadInventoryPreviewCoroutine(normalizedUrl, thumb, glyph));
         }
 
         private IEnumerator LoadInventoryPreviewCoroutine(string url, Image thumb, TMP_Text glyph)
         {
-            using (var request = UnityEngine.Networking.UnityWebRequestTexture.GetTexture(url))
+            try
             {
-                yield return request.SendWebRequest();
-                if (request.result != UnityEngine.Networking.UnityWebRequest.Result.Success)
+                using (var request = UnityEngine.Networking.UnityWebRequestTexture.GetTexture(url))
                 {
-                    Debug.LogWarning($"[RoomEdit][RemoteAsset] preview image load failed: {request.responseCode} {request.error} ({url})");
-                    yield break;
-                }
+                    yield return request.SendWebRequest();
+                    if (request.result != UnityEngine.Networking.UnityWebRequest.Result.Success)
+                    {
+                        Debug.LogWarning($"[RoomEdit][RemoteAsset] preview image load failed: {request.responseCode} {request.error} ({url})");
+                        yield break;
+                    }
 
-                var texture = UnityEngine.Networking.DownloadHandlerTexture.GetContent(request);
-                if (texture == null)
-                {
-                    Debug.LogWarning($"[RoomEdit][RemoteAsset] preview image response had no texture: {url}");
-                    yield break;
-                }
+                    var texture = UnityEngine.Networking.DownloadHandlerTexture.GetContent(request);
+                    if (texture == null)
+                    {
+                        Debug.LogWarning($"[RoomEdit][RemoteAsset] preview image response had no texture: {url}");
+                        yield break;
+                    }
 
-                var sprite = Sprite.Create(
-                    texture,
-                    new Rect(0f, 0f, texture.width, texture.height),
-                    new Vector2(0.5f, 0.5f),
-                    100f);
-                inventoryPreviewSpriteCache[url] = sprite;
-                if (thumb != null)
-                {
-                    ApplyInventoryPreview(thumb, glyph, sprite);
+                    var sprite = Sprite.Create(
+                        texture,
+                        new Rect(0f, 0f, texture.width, texture.height),
+                        new Vector2(0.5f, 0.5f),
+                        100f);
+                    inventoryPreviewSpriteCache[url] = sprite;
+                    if (thumb != null)
+                    {
+                        ApplyInventoryPreview(thumb, glyph, sprite);
+                    }
                 }
+            }
+            finally
+            {
+                inventoryPreviewLoadsInFlight.Remove(url);
             }
         }
 
@@ -8613,6 +10233,7 @@ namespace App.Bootstrap
             if (savedTheme == null) return;
 
             themeApplier.Apply(savedTheme);
+            SyncInventoryThemeFilterForTheme(savedTheme);
             RefreshWallVisibilityAfterMaterialMutation("SceneInstall.restoreLocalPreview");
             ApplyThemeDefaultEntries(savedTheme);
         }
@@ -9910,7 +11531,12 @@ namespace App.Bootstrap
             if (defaultTheme != null && defaultTheme != themeApplier.CurrentTheme)
             {
                 themeApplier.Apply(defaultTheme);
+                SyncInventoryThemeFilterForTheme(defaultTheme);
                 RefreshWallVisibilityAfterMaterialMutation("ResetThemeToDefaultLocally");
+            }
+            if (defaultTheme != null)
+            {
+                SyncInventoryThemeFilterForTheme(defaultTheme);
             }
             // 명시적 reset 이므로 PlayerPrefs 의 local-preview 키도 비움. 다음 세션에서 Default 로 시작.
             PersistLastAppliedLocalPreviewTheme(null);
@@ -9940,6 +11566,12 @@ namespace App.Bootstrap
             // 미지정 default) 는 기존 floor placement 유지.
             if (entry.IsRemoteAsset)
             {
+                if (TryResolveRemoteCustomizationCategory(entry, out var remoteCategory))
+                {
+                    ApplyRemoteCategoryInventoryEntry(remoteCategory, entry);
+                    return;
+                }
+
                 StartCoroutine(PlaceRemoteInventoryEntry(entry, inventoryKey, null));
                 return;
             }
@@ -12857,7 +14489,7 @@ namespace App.Bootstrap
 
             const string roomEditCharacters =
                 "꾸미기 편집 샵 돌아가기 " +
-                "전체 가구 벽지 내부조명 외부조명 필수 오브젝트 스킨 전체 테마 " +
+                "전체 필수 책상 책장 대시보드 노트북 벽지 내부조명 외부조명 필수 오브젝트 스킨 전체 테마 " +
                 "보유 인벤토리 " +
                 "회전 삭제 " +
                 "준비 중입니다 확인";

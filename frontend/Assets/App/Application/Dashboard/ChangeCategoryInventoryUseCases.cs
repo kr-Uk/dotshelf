@@ -57,6 +57,19 @@ namespace App.Application.Dashboard
         }
     }
 
+    public sealed class ChangeNotebookUseCase
+    {
+        private readonly ISpaceSettingsRepository repository;
+        public ChangeNotebookUseCase(ISpaceSettingsRepository repository)
+        {
+            this.repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        }
+        public void Execute(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            repository.ChangeNotebook(inventoryId, onSuccess, onError);
+        }
+    }
+
     public sealed class ChangeInteriorLightUseCase
     {
         private readonly ISpaceSettingsRepository repository;
