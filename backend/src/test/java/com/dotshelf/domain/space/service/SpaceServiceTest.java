@@ -791,6 +791,31 @@ class SpaceServiceTest {
     }
 
     @Test
+    @DisplayName("책장 스킨 카테고리 적용은 BOOKSHELF_SKIN 타입 인벤토리를 검증하고 공간에 저장한다")
+    void changeBookshelfSkin_ownedBookshelfSkinInventory_updatesSpace() {
+        Space space = TestFixtures.space(10L, 1L);
+        Asset bookshelfSkinAsset = Asset.builder()
+                .categoryId(1L)
+                .code("bookshelf_skin")
+                .name("bookshelf skin")
+                .assetScope("SPACE")
+                .assetType("BOOKSHELF_SKIN")
+                .pricePages(100)
+                .build();
+        TestFixtures.setId(bookshelfSkinAsset, 20L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+        given(userAssetInventoryRepository.findByIdAndUserId(30L, 1L))
+                .willReturn(Optional.of(TestFixtures.inventory(30L, 1L, 20L)));
+        given(assetRepository.findById(20L)).willReturn(Optional.of(bookshelfSkinAsset));
+
+        var response = spaceService.changeBookshelfSkin(1L, new CategoryInventoryRequest(30L));
+
+        assertThat(response.themeReset()).isFalse();
+        assertThat(response.space().currentBookshelfSkinInventoryId()).isEqualTo(30L);
+    }
+
+    @Test
     @DisplayName("잠긴 전체 테마 상태에서 카테고리를 변경하면 전체 테마와 책장 스킨을 초기화한다")
     void changeFloor_lockedTheme_resetsThemeAndBookshelfSkins() {
         Space space = TestFixtures.space(10L, 1L);

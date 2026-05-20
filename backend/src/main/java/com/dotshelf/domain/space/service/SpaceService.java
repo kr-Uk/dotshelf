@@ -96,6 +96,7 @@ public class SpaceService {
     private static final String ASSET_TYPE_WALLPAPER = "WALLPAPER";
     private static final String ASSET_TYPE_FLOOR = "FLOOR";
     private static final String ASSET_TYPE_DESK_SET = "DESK_SET";
+    private static final String ASSET_TYPE_BOOKSHELF_SKIN = "BOOKSHELF_SKIN";
     private static final String ASSET_TYPE_DASHBOARD_SKIN = "DASHBOARD_SKIN";
     private static final String ASSET_TYPE_NOTEBOOK = "NOTEBOOK";
     private static final String ASSET_TYPE_INTERIOR_LIGHT = "INTERIOR_LIGHT";
@@ -264,6 +265,7 @@ public class SpaceService {
         addPositive(ids, space.getCurrentWallpaperInventoryId());
         addPositive(ids, space.getCurrentFloorInventoryId());
         addPositive(ids, space.getCurrentDeskInventoryId());
+        addPositive(ids, space.getCurrentBookshelfSkinInventoryId());
         addPositive(ids, space.getCurrentDashboardInventoryId());
         addPositive(ids, space.getCurrentNotebookInventoryId());
         addPositive(ids, space.getCurrentInteriorLightInventoryId());
@@ -612,6 +614,11 @@ public class SpaceService {
     @Transactional
     public SpaceMutationResponse changeDesk(Long userId, CategoryInventoryRequest request) {
         return applyCategoryInventory(userId, request, ASSET_TYPE_DESK_SET, Space::changeDesk);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeBookshelfSkin(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, ASSET_TYPE_BOOKSHELF_SKIN, Space::changeBookshelfSkin);
     }
 
     @Transactional

@@ -864,6 +864,12 @@ namespace BookshelfPorting.Runtime
 
         private BookshelfThemeStyle ResolveActiveNavigationThemeStyle()
         {
+            var activeStyle = GetBookshelfDesignStyle(DisplayBookshelfIndex);
+            if (activeStyle != BookshelfThemeStyle.Default && ResolveBookshelfThemeLayout(activeStyle) != null)
+            {
+                return activeStyle;
+            }
+
             var theme = ResolveActiveNavigationTheme();
             if (theme != null)
             {
@@ -876,24 +882,24 @@ namespace BookshelfPorting.Runtime
                 }
             }
 
-            var activeStyle = GetBookshelfDesignStyle(DisplayBookshelfIndex);
-            if (activeStyle != BookshelfThemeStyle.Default && ResolveBookshelfThemeLayout(activeStyle) != null)
-            {
-                return activeStyle;
-            }
-
             return BookshelfThemeStyle.Default;
         }
 
         private BookshelfThemeStyle ResolveRenderedBookshelfDesignStyle(int index)
         {
+            var shelfStyle = GetBookshelfDesignStyle(index);
+            if (shelfStyle != BookshelfThemeStyle.Default && ResolveBookshelfThemeLayout(shelfStyle) != null)
+            {
+                return shelfStyle;
+            }
+
             var activeThemeStyle = ResolveActiveNavigationThemeStyle();
             if (activeThemeStyle != BookshelfThemeStyle.Default)
             {
                 return activeThemeStyle;
             }
 
-            return GetBookshelfDesignStyle(index);
+            return shelfStyle;
         }
 
         private void MarkNavigableBookshelfIndicesDirty()
