@@ -353,9 +353,10 @@ public class BookService {
 
     private List<BookSearchResponse> searchLocalBooks(String query) {
         String titleSearch = Book.normalizeTitleSearch(query);
-        return bookRepository.findTop20ByTitleSearchContainingOrAuthorContainingIgnoreCase(titleSearch, query)
-                .stream()
-                .map(BookSearchResponse::from)
+        List<Book> books = bookRepository.findTop20ByTitleSearchContainingOrAuthorContainingIgnoreCase(titleSearch, query);
+        Map<Long, Long> reviewCounts = reviewCounts(books);
+        return books.stream()
+                .map(book -> BookSearchResponse.from(book, reviewCounts.getOrDefault(book.getId(), 0L)))
                 .toList();
     }
 

@@ -332,6 +332,29 @@ namespace App.Tests.EditMode.Notebook
         }
 
         [Test]
+        public void PreparingOwnSpaceRefresh_PreservesOwnLayoutWhenNoVisitorPreviewIsActive()
+        {
+            var controller = CreateController();
+            SetReadOnlyPreview(controller, false);
+            InvokeEnsurePlacedItemsRoot(controller);
+            var root = GetPlacedItemsRoot(controller);
+            var child = new GameObject("OwnDecoration");
+            child.transform.SetParent(root.transform, false);
+            AddPlacedByInventoryKey(controller, "asset:77", child);
+
+            var sync = host.AddComponent(SyncControllerType);
+            SetField(sync, "currentSpaceId", (long?)1001L);
+            SetField(sync, "isViewingOtherUserSpace", false);
+
+            InvokePrivate(sync, "PrepareOwnSpaceRefreshVisualIsolation");
+
+            Assert.AreEqual(1, root.transform.childCount);
+            Assert.AreEqual(1, GetDictionaryCount(controller, "placedByInventoryKey"));
+            Assert.IsNull(GetField<long?>(sync, "currentSpaceId"));
+            Assert.IsFalse(GetField<bool>(sync, "isViewingOtherUserSpace"));
+        }
+
+        [Test]
         public void VisitorPreviewVisuals_DoNotReplaceAuthoritativeSpaceOrAppliedEntries()
         {
             var controller = CreateController();
@@ -406,6 +429,56 @@ namespace App.Tests.EditMode.Notebook
             Assert.IsFalse(GetField<bool>(sync, "isViewingOtherUserSpace"));
             Assert.IsFalse(GetField<bool>(sync, "isRefreshing"));
             Assert.IsFalse(GetField<bool>(sync, "activeRefreshTargetsOtherUserSpace"));
+        }
+
+        [Test]
+        public void RefreshFromServer_CancelsActiveVisitorCompletionBeforeOwnRefresh()
+        {
+            var controller = CreateController();
+            SetReadOnlyPreview(controller, true);
+            InvokeEnsurePlacedItemsRoot(controller);
+            var root = GetPlacedItemsRoot(controller);
+            var child = new GameObject("VisitorDecoration");
+            child.transform.SetParent(root.transform, false);
+            AddPlacedByInventoryKey(controller, "asset:77", child);
+
+            var sync = host.AddComponent(SyncControllerType);
+            SetField(sync, "client", CreateNotebookApiClient());
+            SetField(sync, "generator", host.AddComponent(GeneratorType));
+            SetField(sync, "configured", true);
+            SetField(sync, "currentSpaceId", (long?)1005L);
+            SetField(sync, "isViewingOtherUserSpace", true);
+            SetField(sync, "isRefreshing", true);
+            SetField(sync, "activeRefreshTargetsOtherUserSpace", true);
+
+            var staleCompleted = false;
+            var staleSuccess = true;
+            var newCompleted = false;
+            var newSuccess = true;
+            SetField(
+                sync,
+                "refreshCompletion",
+                new Action<bool, string>((success, _) =>
+                {
+                    staleCompleted = true;
+                    staleSuccess = success;
+                }));
+
+            InvokeRefreshFromServer(
+                sync,
+                (success, _) =>
+                {
+                    newCompleted = true;
+                    newSuccess = success;
+                });
+
+            Assert.IsTrue(staleCompleted);
+            Assert.IsFalse(staleSuccess);
+            Assert.IsTrue(newCompleted);
+            Assert.IsFalse(newSuccess);
+            Assert.IsFalse(GetProperty<bool>(controller, "IsReadOnlySpacePreview"));
+            Assert.AreEqual(0, root.transform.childCount);
+            Assert.AreEqual(0, GetDictionaryCount(controller, "placedByInventoryKey"));
         }
 
         [Test]
@@ -772,7 +845,16 @@ namespace App.Tests.EditMode.Notebook
                 methodName,
                 BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.IsNotNull(method);
-            method.Invoke(target, Array.Empty<object>());
+            var parameters = method.GetParameters();
+            var args = parameters.Length == 0
+                ? Array.Empty<object>()
+                : new object[parameters.Length];
+            for (var i = 0; i < parameters.Length; i++)
+            {
+                args[i] = parameters[i].HasDefaultValue ? parameters[i].DefaultValue : Type.Missing;
+            }
+
+            method.Invoke(target, args);
         }
 
         private static object CreateNotebookApiClient()

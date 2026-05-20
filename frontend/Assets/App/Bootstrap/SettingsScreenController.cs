@@ -38,10 +38,10 @@ namespace App.Bootstrap
         private const float SettingsButtonHeight = 60f;
         private const float SettingsButtonMargin = 32f;
         private const float SettingsButtonStackGap = 12f;
-        private const float QuickMenuToggleSize = 52f;
-        private const float QuickMenuWidth = 148f;
-        private const float QuickMenuItemHeight = 44f;
-        private const float QuickMenuItemSpacing = 8f;
+        private const float QuickMenuToggleSize = 62f;
+        private const float QuickMenuWidth = 180f;
+        private const float QuickMenuItemHeight = 54f;
+        private const float QuickMenuItemSpacing = 10f;
         private const float QuickMenuAnimationDuration = 0.2f;
         private const string QuickMenuIconPath = "Assets/App/UI/Icons/MainMenu/icon_menu.png";
         private const string QuickMenuIconFallbackPath = "Assets/App/UI/Icons/Common/icon_menu.png";
@@ -574,16 +574,19 @@ namespace App.Bootstrap
             rootRect.sizeDelta = new Vector2(QuickMenuWidth, QuickMenuToggleSize + 12f + (QuickMenuItemHeight * 3f) + (QuickMenuItemSpacing * 2f) + 24f);
             rootRect.anchoredPosition = new Vector2(-SettingsButtonMargin, -SettingsButtonMargin);
 
+            // 토글 버튼 배경 — 짙은 갈색 (warm dark brown). 완전 불투명으로 두어 배경이 비쳐
+            // 색이 탁해지지 않게 하고, 작은 원에서도 검정이 아닌 갈색으로 또렷하게 읽히도록
+            // 충분히 밝은 톤 (#6B4A2C 계열) 사용. 흰색 햄버거 아이콘이 그 위에서 대비.
             quickMenuToggleButton = CreateButton(
                 quickMenuRoot.transform,
                 "QuickMenuToggleButton",
                 string.Empty,
-                new Color(1f, 1f, 1f, 0.12f),
+                new Color(0.42f, 0.29f, 0.17f, 1f),
                 Color.white,
                 Vector2.zero,
                 new Vector2(QuickMenuToggleSize, QuickMenuToggleSize),
                 true,
-                new Color(1f, 1f, 1f, 0.18f));
+                new Color(1f, 1f, 1f, 0.22f));
             var toggleRect = (RectTransform)quickMenuToggleButton.transform;
             toggleRect.anchorMin = new Vector2(1f, 1f);
             toggleRect.anchorMax = new Vector2(1f, 1f);
@@ -607,7 +610,7 @@ namespace App.Bootstrap
             toggleIconRect.anchorMax = new Vector2(0.5f, 0.5f);
             toggleIconRect.pivot = new Vector2(0.5f, 0.5f);
             toggleIconRect.anchoredPosition = Vector2.zero;
-            toggleIconRect.sizeDelta = new Vector2(22f, 22f);
+            toggleIconRect.sizeDelta = new Vector2(27f, 27f);
 
             var toggleLabel = quickMenuToggleButton.GetComponentInChildren<TMP_Text>(true);
             if (toggleLabel != null)
@@ -616,14 +619,15 @@ namespace App.Bootstrap
             }
             AddQuickMenuButtonEffect(
                 quickMenuToggleButton,
-                new Color(1f, 1f, 1f, 0.12f),
-                new Color(1f, 1f, 1f, 0.18f),
-                new Color(1f, 1f, 1f, 0.10f),
+                new Color(0.42f, 0.29f, 0.17f, 1f),
+                new Color(0.52f, 0.37f, 0.23f, 1f),
+                new Color(0.32f, 0.22f, 0.13f, 1f),
                 1.03f,
                 0.96f);
 
+            // 밝은 배경 위에서도 버튼 외곽이 떠 보이도록 drop shadow 강화 (이전 0.14 → 0.32).
             var toggleShadow = quickMenuToggleButton.gameObject.AddComponent<Shadow>();
-            toggleShadow.effectColor = new Color(0f, 0f, 0f, 0.14f);
+            toggleShadow.effectColor = new Color(0f, 0f, 0f, 0.32f);
             toggleShadow.effectDistance = new Vector2(0f, -2f);
 
             quickMenuPanel = CreateRectObject("QuickMenuPanel", quickMenuRoot.transform);
@@ -639,11 +643,14 @@ namespace App.Bootstrap
             var panelImage = quickMenuPanel.AddComponent<Image>();
             panelImage.sprite = quickMenuRoundedSprite;
             panelImage.type = Image.Type.Sliced;
-            panelImage.color = new Color(0.08f, 0.08f, 0.08f, 0.45f);
+            // 패널 배경 — 짙은 갈색이되 반투명. solid 불투명 버튼(설정/종료/꾸미기)과 색이 너무
+            // 비슷해 묻히던 문제 → 반투명으로 두어 배경이 비치는 glass 레이어로 만들고, 그 위의
+            // 불투명 버튼들이 또렷하게 떠 보이게 한다.
+            panelImage.color = new Color(0.20f, 0.14f, 0.09f, 0.62f);
             panelImage.raycastTarget = true;
 
             var panelOutline = quickMenuPanel.AddComponent<Outline>();
-            panelOutline.effectColor = new Color(1f, 1f, 1f, 0.08f);
+            panelOutline.effectColor = new Color(1f, 1f, 1f, 0.16f);
             panelOutline.effectDistance = new Vector2(1f, -1f);
 
             var panelShadow = quickMenuPanel.AddComponent<Shadow>();
@@ -678,17 +685,24 @@ namespace App.Bootstrap
 
         private Button CreateQuickMenuItem(Transform parent, string objectName, string label, bool emphasized, UnityEngine.Events.UnityAction onClick)
         {
-            var background = emphasized ? new Color(1f, 0.93f, 0.72f, 0.16f) : new Color(1f, 1f, 1f, 0.045f);
+            // 햄버거 토글 버튼과 동일한 warm brown 테마.
+            //   - 일반 항목(설정/종료하기): 버튼과 같은 짙은 갈색 + 밝은 텍스트
+            //   - 강조 항목(꾸미기): 밝은 골드 + 어두운 텍스트 로 primary action 강조
+            var background = emphasized
+                ? new Color(0.95f, 0.85f, 0.62f, 1f)
+                : new Color(0.42f, 0.29f, 0.17f, 1f);
             var button = CreateButton(
                 parent,
                 objectName,
                 label,
                 background,
-                emphasized ? new Color(1f, 0.92f, 0.72f, 0.96f) : new Color(1f, 1f, 1f, 0.82f),
+                emphasized
+                    ? new Color(0.22f, 0.15f, 0.08f, 1f)
+                    : new Color(1f, 0.97f, 0.92f, 0.95f),
                 Vector2.zero,
                 new Vector2(QuickMenuWidth - 20f, QuickMenuItemHeight),
                 true,
-                new Color(1f, 1f, 1f, emphasized ? 0.12f : 0.07f));
+                new Color(1f, 1f, 1f, emphasized ? 0.28f : 0.14f));
             var rect = (RectTransform)button.transform;
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
@@ -708,15 +722,15 @@ namespace App.Bootstrap
             AddQuickMenuButtonEffect(
                 button,
                 background,
-                emphasized ? new Color(1f, 0.93f, 0.72f, 0.24f) : new Color(1f, 1f, 1f, 0.08f),
-                emphasized ? new Color(1f, 0.93f, 0.72f, 0.12f) : new Color(1f, 1f, 1f, 0.04f),
+                emphasized ? new Color(1f, 0.90f, 0.68f, 1f) : new Color(0.52f, 0.37f, 0.23f, 1f),
+                emphasized ? new Color(0.86f, 0.74f, 0.50f, 1f) : new Color(0.32f, 0.22f, 0.13f, 1f),
                 1.015f,
                 0.985f);
 
             var labelText = button.GetComponentInChildren<TMP_Text>(true);
             if (labelText != null)
             {
-                labelText.fontSize = 15f;
+                labelText.fontSize = 17f;
                 labelText.fontStyle = emphasized ? FontStyles.Bold : FontStyles.Normal;
                 labelText.alignment = TextAlignmentOptions.Center;
             }

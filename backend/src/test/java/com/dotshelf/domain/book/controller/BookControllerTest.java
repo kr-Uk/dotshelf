@@ -71,7 +71,9 @@ class BookControllerTest {
                         .param("page", "2")
                         .param("size", "5"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.books[0].title").value("Book 1"));
+                .andExpect(jsonPath("$.result.books[0].title").value("Book 1"))
+                .andExpect(jsonPath("$.result.books[0].reviewCount").value(2))
+                .andExpect(jsonPath("$.result.books[0].viewCount").value(5));
     }
 
     @Test
@@ -250,7 +252,29 @@ class BookControllerTest {
     }
 
     private BookSearchResponse searchResponse(Long id) {
-        return new BookSearchResponse(id, "LOCAL", "978", null, "Book " + id, "author", "publisher", null, null, null, null);
+        return new BookSearchResponse(
+                id,
+                "LOCAL",
+                "978",
+                null,
+                "Book " + id,
+                "author",
+                "publisher",
+                null,
+                null,
+                null,
+                null,
+                String.valueOf(id),
+                "978",
+                BigDecimal.valueOf(4.5),
+                2,
+                5,
+                1,
+                0,
+                0,
+                1,
+                false
+        );
     }
 
     private BookResponse bookResponse(Long id) {

@@ -103,6 +103,8 @@ public final class BookDtos {
             String bookId,
             String isbn,
             BigDecimal avgRating,
+            long reviewCount,
+            long viewCount,
             long placementCount,
             long purchaseCount,
             long likeCount,
@@ -142,11 +144,17 @@ public final class BookDtos {
                     0,
                     0,
                     0,
+                    0,
+                    0,
                     false
             );
         }
 
         public static BookSearchResponse from(Book book) {
+            return from(book, 0);
+        }
+
+        public static BookSearchResponse from(Book book, long reviewCount) {
             return new BookSearchResponse(
                     book.getId(),
                     book.getSource() == null ? "LOCAL" : book.getSource().name(),
@@ -162,6 +170,8 @@ public final class BookDtos {
                     String.valueOf(book.getId()),
                     primaryIsbn(book),
                     averageRating(book),
+                    reviewCount,
+                    book.getViewCount(),
                     book.getBookshelfAddCount(),
                     0,
                     book.getLikeCount(),

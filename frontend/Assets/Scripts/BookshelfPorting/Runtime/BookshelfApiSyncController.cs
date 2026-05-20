@@ -117,9 +117,15 @@ namespace BookshelfPorting.Runtime
 
         public void RefreshFromServer(Action<bool, string> onCompleted = null)
         {
+            var cancellingVisitorRefresh = isRefreshing && activeRefreshTargetsOtherUserSpace;
             if (!IsConfigured)
             {
-                PrepareOwnSpaceRefreshVisualIsolation();
+                if (cancellingVisitorRefresh)
+                {
+                    CompleteSupersededRefreshCallbacks("Visitor space refresh was cancelled.");
+                }
+
+                PrepareOwnSpaceRefreshVisualIsolation(cancellingVisitorRefresh);
                 ResetRefreshState();
                 CompleteRefreshWithoutRequest(onCompleted, false, "책장 API 동기화가 아직 준비되지 않았습니다.");
                 return;
@@ -134,8 +140,13 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            if (cancellingVisitorRefresh)
+            {
+                CompleteSupersededRefreshCallbacks("Visitor space refresh was cancelled.");
+            }
+
             var requestVersion = BeginRefresh(onCompleted, targetsOtherUserSpace: false);
-            PrepareOwnSpaceRefreshVisualIsolation();
+            PrepareOwnSpaceRefreshVisualIsolation(cancellingVisitorRefresh);
 
             // /v1/spaces/me requires a Bearer token. Skip when anonymous
             // (token wiped on logout, or never set on first launch) so we
@@ -215,13 +226,31 @@ namespace BookshelfPorting.Runtime
             return requestVersion;
         }
 
+        private void CompleteSupersededRefreshCallbacks(string message)
+        {
+            var completion = refreshCompletion;
+            var queuedCompletions = queuedRefreshCompletions.Count > 0
+                ? queuedRefreshCompletions.ToArray()
+                : Array.Empty<Action<bool, string>>();
+
+            refreshCompletion = null;
+            queuedRefreshCompletions.Clear();
+
+            completion?.Invoke(false, message);
+            for (var i = 0; i < queuedCompletions.Length; i++)
+            {
+                queuedCompletions[i]?.Invoke(false, message);
+            }
+        }
+
         private bool IsRefreshRequestCurrent(int requestVersion)
         {
             return requestVersion == refreshRequestVersion;
         }
 
-        private void PrepareOwnSpaceRefreshVisualIsolation()
+        private void PrepareOwnSpaceRefreshVisualIsolation(bool forceClearVisitorLayout = false)
         {
+            var wasViewingOtherUserSpace = isViewingOtherUserSpace;
             currentSpaceId = null;
             SetViewingOtherUserSpace(false);
             experienceManager?.SetNotebookScreenSuppressed(false);
@@ -235,8 +264,16 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            var shouldClearVisitorLayout = forceClearVisitorLayout ||
+                                           wasViewingOtherUserSpace ||
+                                           roomEditModeController.IsReadOnlySpacePreview;
+
             roomEditModeController.SetReadOnlySpacePreview(false);
-            roomEditModeController.ApplyExternalDecorationLayoutPayload(null, clearExisting: true);
+            if (shouldClearVisitorLayout)
+            {
+                roomEditModeController.ApplyExternalDecorationLayoutPayload(null, clearExisting: true);
+            }
+
             roomEditModeController.RestoreAuthoritativeSpaceVisuals();
         }
 
@@ -451,6 +488,12 @@ namespace BookshelfPorting.Runtime
         {
             if (client == null || spaceId <= 0L)
             {
+                if (!expectedOtherUserSpace)
+                {
+                    FinishRefreshIfCurrent(requestVersion, false, "Space layout request is unavailable.");
+                    return;
+                }
+
                 onCompleted?.Invoke();
                 return;
             }
@@ -459,11 +502,6 @@ namespace BookshelfPorting.Runtime
                 !IsCurrentSpaceView(spaceId, expectedOtherUserSpace))
             {
                 return;
-            }
-
-            if (!expectedOtherUserSpace)
-            {
-                FindRoomEditModeController()?.ApplyExternalDecorationLayoutPayload(null, clearExisting: true);
             }
 
             client.GetSpaceLayout(
@@ -492,7 +530,8 @@ namespace BookshelfPorting.Runtime
                         $"[BookshelfApiSync] Space layout load skipped: spaceId={spaceId}, code={error?.Code}, message={error?.Message}");
                     if (!expectedOtherUserSpace)
                     {
-                        FindRoomEditModeController()?.ApplyExternalDecorationLayoutPayload(null, clearExisting: true);
+                        FinishRefreshIfCurrent(requestVersion, false, FormatError(error));
+                        return;
                     }
 
                     onCompleted?.Invoke();
