@@ -132,6 +132,58 @@ class GuestbookServiceTest {
     }
 
     @Test
+    @DisplayName("PRIVATE board 공간에는 비주인이 방명록을 작성할 수 없다")
+    void create_privateBoardNonOwner_throwsForbidden() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeGuestbookVisibility("PRIVATE");
+        given(userService.requireUserId(2L)).willReturn(2L);
+        given(spaceService.getSpaceEntity(10L)).willReturn(space);
+        given(userBlockRepository.existsBlockBetween(1L, 2L)).willReturn(false);
+
+        assertThatThrownBy(() -> guestbookService.create(2L, 10L, guestbookRequest(false)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("MUTUAL board 공간에는 맞팔이 아니면 방명록을 작성할 수 없다")
+    void create_mutualBoardNonMutual_throwsForbidden() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeGuestbookVisibility("MUTUAL");
+        given(userService.requireUserId(2L)).willReturn(2L);
+        given(spaceService.getSpaceEntity(10L)).willReturn(space);
+        given(userBlockRepository.existsBlockBetween(1L, 2L)).willReturn(false);
+
+        assertThatThrownBy(() -> guestbookService.create(2L, 10L, guestbookRequest(false)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("MUTUAL board 공간에 맞팔 viewer 는 방명록을 작성할 수 있다")
+    void create_mutualBoardMutualViewer_succeeds() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeGuestbookVisibility("MUTUAL");
+        given(userService.requireUserId(2L)).willReturn(2L);
+        given(spaceService.getSpaceEntity(10L)).willReturn(space);
+        given(userBlockRepository.existsBlockBetween(1L, 2L)).willReturn(false);
+        given(followRepository.existsMutualFollow(2L, 1L)).willReturn(true);
+        given(spaceService.isPostItAllowed(10L, 100L)).willReturn(true);
+        given(guestbookRepository.save(any(Guestbook.class))).willAnswer(invocation -> {
+            Guestbook gb = invocation.getArgument(0);
+            TestFixtures.setId(gb, 20L);
+            return gb;
+        });
+        given(userRepository.findAllById(any())).willReturn(List.of(TestFixtures.user(2L, "writer")));
+
+        var response = guestbookService.create(2L, 10L, guestbookRequest(false));
+
+        assertThat(response.id()).isEqualTo(20L);
+    }
+
+    @Test
     @DisplayName("방명록 목록은 cursor/limit과 답장 batch를 반영하고 hasMore면 nextCursor를 반환한다")
     void getGuestbooks_hasMoreBuildsRepliesAndNextCursor() {
         Guestbook first = guestbook(20L, 10L, 2L, true);

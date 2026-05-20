@@ -150,6 +150,12 @@ public class GuestbookService {
         if (isBlockedRelation(space.getOwnerUserId(), currentUserId)) {
             throw new CustomException(ErrorCode.SPACE_ACCESS_BLOCKED);
         }
+        // 작성도 조회와 동일한 공간/board 접근 정책을 적용 — spaceId 만 알아도 우회 불가.
+        spaceService.ensureCanViewSpace(currentUserId, space);
+        boolean mutual = followRepository.existsMutualFollow(currentUserId, space.getOwnerUserId());
+        if (!isViewerAllowedByScope(space.getGuestbookVisibilityScope(), mutual)) {
+            throw new CustomException(ErrorCode.FORBIDDEN);
+        }
         if (!spaceService.isPostItAllowed(spaceId, request.postItInventoryId())) {
             throw new CustomException(ErrorCode.GUESTBOOK_POSTIT_NOT_ALLOWED);
         }
