@@ -4,6 +4,7 @@
 
 | 날짜 | 브랜치 | 문서 | 핵심 내용 |
 |---|---|---|---|
+| 2026-05-20 | `feat/fe/error2` | [2026-05-20-feat-fe-error2.md](2026-05-20-feat-fe-error2.md) | Unity 룸 레이아웃 저장/복원 source of truth 정리와 로컬 포팅 메뉴얼 작성 |
 | 2026-05-20 | `feat/fe/login` | [2026-05-20-feat-fe-login.md](2026-05-20-feat-fe-login.md) | 로그인 진행 다이얼로그, 로딩 표시, 취소 버튼, stale callback 방어 구현 |
 | 2026-05-20 | `codex/book-search-detail-api-stats` | [2026-05-20-codex-book-search-detail-api-stats.md](2026-05-20-codex-book-search-detail-api-stats.md) | 책 검색/상세 모달의 별점, 리뷰 수, 조회 수를 API 응답으로 연동하고 하드코딩 fallback 제거 |
 | 2026-05-18 | `feat/fe/apitest` | [2026-05-18-feat-fe-apitest.md](2026-05-18-feat-fe-apitest.md) | Unity API 연결 검증, assetId/inventoryId 계약 정리, 설정 화면 결제/신고/차단 API 연동 |

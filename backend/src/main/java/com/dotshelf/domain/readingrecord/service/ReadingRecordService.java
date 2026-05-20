@@ -23,6 +23,7 @@ import com.dotshelf.domain.user.repository.FollowRepository;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.common.CursorParser;
 import com.dotshelf.global.common.ToggleResponse;
+import com.dotshelf.global.common.VisibilityScope;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 
@@ -77,11 +78,10 @@ public class ReadingRecordService {
                     ownerUserId, all.size());
         }
         boolean owner = ownerUserId.equals(viewerUserId);
-        boolean follower = viewerUserId != null
-                && !owner
-                && followRepository.existsByFollowerUserIdAndFollowingUserId(viewerUserId, ownerUserId);
+        boolean mutual = !owner
+                && followRepository.existsMutualFollow(viewerUserId, ownerUserId);
         List<ReadingRecordSummary> visible = all.stream()
-                .filter(record -> isReadableVisibility(owner, follower, record.visibilityScope()))
+                .filter(record -> isReadableVisibility(owner, mutual, record.visibilityScope()))
                 .toList();
         List<ReadingRecordSummary> sorted = sortRecords(visible, sort);
 
@@ -224,23 +224,22 @@ public class ReadingRecordService {
     private void requireReadable(Long viewerUserId, ReadingRecord record) {
         UserBook userBook = bookService.getUserBook(record.getUserBookId());
         boolean owner = userBook.getUserId().equals(viewerUserId);
-        boolean follower = !owner
-                && viewerUserId != null
-                && followRepository.existsByFollowerUserIdAndFollowingUserId(viewerUserId, userBook.getUserId());
-        if (isReadableVisibility(owner, follower, record.getVisibilityScope())) {
+        boolean mutual = !owner
+                && followRepository.existsMutualFollow(viewerUserId, userBook.getUserId());
+        if (isReadableVisibility(owner, mutual, record.getVisibilityScope())) {
             return;
         }
         throw new CustomException(ErrorCode.FORBIDDEN);
     }
 
-    private static boolean isReadableVisibility(boolean owner, boolean follower, String visibilityScope) {
+    private static boolean isReadableVisibility(boolean owner, boolean mutual, String visibilityScope) {
         if (owner) {
             return true;
         }
-        if ("PUBLIC".equalsIgnoreCase(visibilityScope)) {
+        if (VisibilityScope.isPublic(visibilityScope)) {
             return true;
         }
-        return "FOLLOWERS".equalsIgnoreCase(visibilityScope) && follower;
+        return VisibilityScope.isMutual(visibilityScope) && mutual;
     }
 
     private void validateOwner(Long userId, Long recordId) {

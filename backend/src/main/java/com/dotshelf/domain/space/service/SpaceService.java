@@ -68,6 +68,7 @@ import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.common.CursorParser;
 import com.dotshelf.global.common.ToggleResponse;
+import com.dotshelf.global.common.VisibilityScope;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 import com.dotshelf.global.storage.ImageContentValidator;
@@ -290,10 +291,19 @@ public class SpaceService {
 
     public void ensureCanViewSpace(Long currentUserId, Space space) {
         ensureNotBlockedAgainstOwner(currentUserId, space.getOwnerUserId());
-        if (!Objects.equals(space.getOwnerUserId(), currentUserId)
-                && !"PUBLIC".equalsIgnoreCase(space.getVisibilityScope())) {
-            throw new CustomException(ErrorCode.FORBIDDEN);
+        if (Objects.equals(space.getOwnerUserId(), currentUserId)) {
+            return;
         }
+        String scope = space.getVisibilityScope();
+        if (VisibilityScope.isPublic(scope)) {
+            return;
+        }
+        // MUTUAL 공간은 맞팔 viewer 에게 허용 — visibility tier 일관성 (PUBLIC 외 차단이던 것을 보정).
+        if (VisibilityScope.isMutual(scope)
+                && followRepository.existsMutualFollow(currentUserId, space.getOwnerUserId())) {
+            return;
+        }
+        throw new CustomException(ErrorCode.FORBIDDEN);
     }
 
     public void ensureCanViewSpace(Long currentUserId, Long spaceId) {
@@ -815,6 +825,12 @@ public class SpaceService {
      * 공간 주인이 화이트리스트를 설정/저장한 시점부터만 enforcement가 적용된다.
      */
     public boolean isPostItAllowed(Long spaceId, Long postItInventoryId) {
+        // postItInventoryId 0/null = "스타일 미선택(기본 포스트잇)" — 화이트리스트와 무관하게 항상 허용한다.
+        // 공간 주인이 화이트리스트를 설정(allowAll=false)해도 '스타일 없음'으로 쓰는 방명록까지 막아선 안 된다.
+        // (G005 회귀 방지 — FE 는 미선택 시 0 을 전송하며, BE 엔 기본 포스트잇 개념이 없어 0 도 거부되던 문제.)
+        if (postItInventoryId == null || postItInventoryId == 0L) {
+            return true;
+        }
         SpaceGuestbookPostItWhitelist whitelist = whitelistRepository.findById(spaceId).orElse(null);
         if (whitelist == null) {
             return true;

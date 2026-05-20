@@ -605,7 +605,6 @@ namespace BookshelfPorting.Runtime
         private int firstBookshelfFeatureGuideStepIndex;
         private Button addBookshelfButton;
         private Button openBookshelfNameEditButton;
-        private Button openBookshelfDesignButton;
         private Button deleteBookshelfButton;
         private Button openBookAddButton;
         private Button openBookSearchButton;
@@ -621,13 +620,6 @@ namespace BookshelfPorting.Runtime
         private Text bookshelfDeleteConfirmMessageText;
         private Button confirmDeleteBookshelfButton;
         private Button cancelDeleteBookshelfButton;
-        private GameObject bookshelfDesignPanel;
-        private Text bookshelfDesignTitleText;
-        private Text bookshelfDesignHintText;
-        private Button defaultBookshelfDesignButton;
-        private Button warmBookshelfDesignButton;
-        private Button darkBookshelfDesignButton;
-        private Button closeBookshelfDesignButton;
         private GameObject bookAddPanel;
         private Text bookAddTitleText;
         private Text bookAddHintText;
@@ -805,6 +797,16 @@ namespace BookshelfPorting.Runtime
         [Tooltip("GuestbookBoard 자리에 띄울 새 dashboard prefab 인스턴스. 보통 scene root에 두고 코드가 reparent.")]
         [SerializeField] private GameObject externalDashboardPanel;
 
+        // 방명록 선명도 workaround — Unity 6.3 LTS world-space UIDocument dim 렌더링 버그 회피.
+        // externalDashboardPanel(world-space) 을 복제해 screen-space PanelSettings 로 띄운다.
+        // 포커싱 시 world-space 방명록 위에 동일 콘텐츠의 선명한 screen-space overlay 가 겹친다.
+        // 진짜 fix 는 Unity 6.5 PanelRenderer 마이그레이션 — 그 전 임시 방편.
+        private GameObject guestbookScreenOverlayPanel;
+        private DashboardScreenController guestbookScreenOverlayController;
+        // overlay 복제본을 화면에서 차지할 크기 — 1920x1080 dashboard-root 에 곱할 scale.
+        // (정확한 world-space 방명록 화면 투영 크기 매칭은 다음 단계, 우선 화면 비율 기준 고정값.)
+        private const float GuestbookOverlayScale = 0.82f;
+
         // SerializeField 의도 보존: useExternalDashboardPanel 자체는 Inspector 가 박은 값을 그대로 유지하고,
         // 회귀 fallback 으로만 켜는 runtime override flag 를 분리. 두 값을 모두 보고 효과 판정
         // (ShouldUseExternalDashboardPanel). MR !159 review #3 응답.
@@ -957,6 +959,13 @@ namespace BookshelfPorting.Runtime
         private int lastResponsiveLayoutHeight = -1;
         private readonly BookshelfOverlayStateController overlayStateController = new BookshelfOverlayStateController();
         private BookshelfPorting.Runtime.UI.BookshelfManageOverlayController bookshelfManageUiToolkitOverlay;
+        private BookshelfPorting.Runtime.UI.BookshelfUnsavedConfirmOverlayController bookshelfUnsavedConfirmUiToolkitOverlay;
+        private BookshelfPorting.Runtime.UI.BookshelfTutorialOverlayController bookshelfTutorialUiToolkitOverlay;
+        private BookshelfPorting.Runtime.UI.BookSearchOverlayController bookSearchUiToolkitOverlay;
+        private BookshelfPorting.Runtime.UI.BookAddOverlayController bookAddUiToolkitOverlay;
+        private BookshelfPorting.Runtime.UI.BookAddConfirmOverlayController bookAddConfirmUiToolkitOverlay;
+        private BookshelfPorting.Runtime.UI.AdBookAddOverlayController adBookAddUiToolkitOverlay;
+        private BookshelfPorting.Runtime.UI.BookCoverSkinOverlayController bookCoverSkinUiToolkitOverlay;
 
         // 클릭-다운 시점에 Focus* 를 바로 호출하지 않고 release 까지 보류해 drag-to-rotate
         // 와 click-to-focus 를 구분. 누적 이동량이 임계를 넘으면 drag 로 간주, pending 해제.
@@ -1126,6 +1135,7 @@ namespace BookshelfPorting.Runtime
 
             firstBookshelfTutorialMode = FirstBookshelfTutorialMode.None;
             isFirstBookshelfTutorialOpen = false;
+            bookshelfTutorialUiToolkitOverlay?.Hide();
             if (firstBookshelfTutorialBackdrop != null)
             {
                 firstBookshelfTutorialBackdrop.SetActive(false);
@@ -1147,6 +1157,13 @@ namespace BookshelfPorting.Runtime
             EnsureHud();
             EnsureExternalDashboardPanelWired();
             EnsureBookshelfManageUiToolkitOverlay();
+            EnsureBookshelfUnsavedConfirmUiToolkitOverlay();
+            EnsureBookshelfTutorialUiToolkitOverlay();
+            EnsureBookSearchUiToolkitOverlay();
+            EnsureBookAddUiToolkitOverlay();
+            EnsureBookAddConfirmUiToolkitOverlay();
+            EnsureAdBookAddUiToolkitOverlay();
+            EnsureBookCoverSkinUiToolkitOverlay();
         }
 
         // UI Toolkit overlay 컨트롤러를 별도 GameObject 로 띄우고 모든 액션 콜백을 manager 의 기존 메서드에 결선.
@@ -1178,6 +1195,175 @@ namespace BookshelfPorting.Runtime
             overlay.ReorderRequested = ReorderBookshelvesFromOverlay;
 
             bookshelfManageUiToolkitOverlay = overlay;
+        }
+
+        // 미저장 확인 UI Toolkit overlay 컨트롤러를 별도 GameObject 로 띄우고 콜백을 manager 메서드에 결선.
+        // 정적 confirm 다이얼로그 — snapshot 없음. ConfirmRequested/CancelRequested 만.
+        private void EnsureBookshelfUnsavedConfirmUiToolkitOverlay()
+        {
+            if (bookshelfUnsavedConfirmUiToolkitOverlay != null)
+            {
+                return;
+            }
+
+            var overlayGo = new GameObject("BookshelfUnsavedConfirmUiToolkitOverlay");
+            overlayGo.transform.SetParent(transform, false);
+            var overlay = overlayGo.AddComponent<BookshelfPorting.Runtime.UI.BookshelfUnsavedConfirmOverlayController>();
+            overlay.ConfirmRequested = ConfirmBookshelfUnsavedNavigation;
+            overlay.CancelRequested = CancelBookshelfUnsavedNavigation;
+
+            bookshelfUnsavedConfirmUiToolkitOverlay = overlay;
+        }
+
+        // 첫 책장 튜토리얼 UI Toolkit overlay 컨트롤러를 별도 GameObject 로 띄우고 콜백을 manager 메서드에 결선.
+        // 2-모드(CreateFirstShelf/FeatureGuide) 상태구동 — RefreshFirstBookshelfTutorialPanel 이 Show/Hide 제어.
+        private void EnsureBookshelfTutorialUiToolkitOverlay()
+        {
+            if (bookshelfTutorialUiToolkitOverlay != null)
+            {
+                return;
+            }
+
+            var overlayGo = new GameObject("BookshelfTutorialUiToolkitOverlay");
+            overlayGo.transform.SetParent(transform, false);
+            var overlay = overlayGo.AddComponent<BookshelfPorting.Runtime.UI.BookshelfTutorialOverlayController>();
+            overlay.PrimaryActionRequested = HandleBookshelfTutorialPrimaryAction;
+
+            bookshelfTutorialUiToolkitOverlay = overlay;
+        }
+
+        // 책 찾기 UI Toolkit overlay 컨트롤러를 별도 GameObject 로 띄우고 콜백을 manager 메서드에 결선.
+        private void EnsureBookSearchUiToolkitOverlay()
+        {
+            if (bookSearchUiToolkitOverlay != null)
+            {
+                return;
+            }
+
+            var overlayGo = new GameObject("BookSearchUiToolkitOverlay");
+            overlayGo.transform.SetParent(transform, false);
+            var overlay = overlayGo.AddComponent<BookshelfPorting.Runtime.UI.BookSearchOverlayController>();
+            overlay.Closed += CloseBookSearchPanel;
+            overlay.QueryChanged = () => HandleBookSearchChanged(null);
+            overlay.FilterSelected = index => SetBookSearchFilter((BookSearchFilter)index);
+            overlay.ShelfSelected = SelectBookSearchTargetBookshelf;
+            overlay.ResultSelected = OpenBookSearchResult;
+
+            bookSearchUiToolkitOverlay = overlay;
+        }
+
+        // 책 추가 UI Toolkit overlay 컨트롤러를 별도 GameObject 로 띄우고 콜백을 manager 메서드에 결선.
+        private void EnsureBookAddUiToolkitOverlay()
+        {
+            if (bookAddUiToolkitOverlay != null)
+            {
+                return;
+            }
+
+            var overlayGo = new GameObject("BookAddUiToolkitOverlay");
+            overlayGo.transform.SetParent(transform, false);
+            var overlay = overlayGo.AddComponent<BookshelfPorting.Runtime.UI.BookAddOverlayController>();
+            overlay.Closed += CloseBookAddPanel;
+            overlay.QueryChanged = () => HandleBookAddSearchChanged(null);
+            overlay.ModeSelected = index => SetBookAddBrowseMode((BookAddBrowseMode)index);
+            overlay.ShelfSelected = SelectBookAddTargetBookshelf;
+            overlay.ResultSelected = OpenBookAddConfirmForCatalogIndex;
+
+            bookAddUiToolkitOverlay = overlay;
+        }
+
+        // 책 추가 확인 UI Toolkit overlay 컨트롤러를 별도 GameObject 로 띄우고 콜백을 manager 메서드에 결선.
+        private void EnsureBookAddConfirmUiToolkitOverlay()
+        {
+            if (bookAddConfirmUiToolkitOverlay != null)
+            {
+                return;
+            }
+
+            var overlayGo = new GameObject("BookAddConfirmUiToolkitOverlay");
+            overlayGo.transform.SetParent(transform, false);
+            var overlay = overlayGo.AddComponent<BookshelfPorting.Runtime.UI.BookAddConfirmOverlayController>();
+            overlay.Closed += CloseBookAddConfirmPanel;
+            overlay.ReadingStatusSelected = index => SetPendingBookAddReadingStatus(IndexToReadingStatus(index));
+            overlay.OrientationSelected = index => SetPendingBookAddOrientation(IndexToOrientation(index));
+            overlay.ConfirmRequested = ConfirmAddCatalogBookToShelf;
+
+            bookAddConfirmUiToolkitOverlay = overlay;
+        }
+
+        // 광고책 추가(책장 선택) UI Toolkit overlay 컨트롤러를 별도 GameObject 로 띄우고 콜백을 manager 메서드에 결선.
+        private void EnsureAdBookAddUiToolkitOverlay()
+        {
+            if (adBookAddUiToolkitOverlay != null)
+            {
+                return;
+            }
+
+            var overlayGo = new GameObject("AdBookAddUiToolkitOverlay");
+            overlayGo.transform.SetParent(transform, false);
+            var overlay = overlayGo.AddComponent<BookshelfPorting.Runtime.UI.AdBookAddOverlayController>();
+            overlay.Closed += CloseAdvertisementBookAddPanel;
+            overlay.ShelfSelected = BeginAdvertisementBookAddToShelf;
+
+            adBookAddUiToolkitOverlay = overlay;
+        }
+
+        // 책 표지 스킨 UI Toolkit overlay 컨트롤러를 별도 GameObject 로 띄우고 콜백을 manager 메서드에 결선.
+        private void EnsureBookCoverSkinUiToolkitOverlay()
+        {
+            if (bookCoverSkinUiToolkitOverlay != null)
+            {
+                return;
+            }
+
+            var overlayGo = new GameObject("BookCoverSkinUiToolkitOverlay");
+            overlayGo.transform.SetParent(transform, false);
+            var overlay = overlayGo.AddComponent<BookshelfPorting.Runtime.UI.BookCoverSkinOverlayController>();
+            overlay.Closed += CloseBookCoverSkinPanel;
+            overlay.OptionSelected = ApplyBookCoverSkinOption;
+
+            bookCoverSkinUiToolkitOverlay = overlay;
+        }
+
+        // overlay snapshot 의 int 인덱스 ↔ 도메인 enum 매핑 (enum 직렬화 순서에 의존하지 않도록 명시 switch).
+        private static int ReadingStatusToIndex(App.Domain.ReadingStatus status)
+        {
+            switch (status)
+            {
+                case App.Domain.ReadingStatus.Reading: return 1;
+                case App.Domain.ReadingStatus.Read: return 2;
+                default: return 0;
+            }
+        }
+
+        private static App.Domain.ReadingStatus IndexToReadingStatus(int index)
+        {
+            switch (index)
+            {
+                case 1: return App.Domain.ReadingStatus.Reading;
+                case 2: return App.Domain.ReadingStatus.Read;
+                default: return App.Domain.ReadingStatus.Unread;
+            }
+        }
+
+        private static int OrientationToIndex(BookOrientation orientation)
+        {
+            switch (orientation)
+            {
+                case BookOrientation.Angled45: return 1;
+                case BookOrientation.Front: return 2;
+                default: return 0;
+            }
+        }
+
+        private static BookOrientation IndexToOrientation(int index)
+        {
+            switch (index)
+            {
+                case 1: return BookOrientation.Angled45;
+                case 2: return BookOrientation.Front;
+                default: return BookOrientation.Spine;
+            }
         }
 
         // 책장 추가 진행 — 응답 콜백이 직접 result modal 호출 (NotifyAddBookshelfResult).
@@ -2141,7 +2327,6 @@ namespace BookshelfPorting.Runtime
             HideOnboardingChromeIfActive(openBookAddButton != null ? openBookAddButton.gameObject : null);
             HideOnboardingChromeIfActive(openBookSearchButton != null ? openBookSearchButton.gameObject : null);
             HideOnboardingChromeIfActive(openBookshelfManageButton != null ? openBookshelfManageButton.gameObject : null);
-            HideOnboardingChromeIfActive(openBookshelfDesignButton != null ? openBookshelfDesignButton.gameObject : null);
             HideOnboardingChromeIfActive(addBookshelfButton != null ? addBookshelfButton.gameObject : null);
             HideOnboardingChromeIfActive(openBookshelfNameEditButton != null ? openBookshelfNameEditButton.gameObject : null);
             HideOnboardingChromeIfActive(deleteBookshelfButton != null ? deleteBookshelfButton.gameObject : null);
@@ -2573,13 +2758,18 @@ namespace BookshelfPorting.Runtime
 
         private bool TryPromptUnsavedBookshelfChanges(System.Action afterSaveAction)
         {
-            if (!IsBookshelfEditMode || !hasUnsavedBookshelfEditChanges || isBookshelfUnsavedConfirmPanelOpen)
+            if (!IsBookshelfEditMode || !hasUnsavedBookshelfEditChanges || IsBookshelfUnsavedConfirmOverlayVisible)
             {
                 return false;
             }
 
             pendingBookshelfNavigationAfterSave = afterSaveAction;
-            SetBookshelfOverlayMode(BookshelfOverlayMode.UnsavedConfirm);
+            // UI Toolkit overlay 가 대체. 구 uGUI 패턴처럼 SetBookshelfOverlayMode(UnsavedConfirm) 는
+            // 호출하지 않음 — isBookshelfUnsavedConfirmPanelOpen 을 set 하면 dead uGUI 패널이 같이 떠버린다.
+            // 단, SetBookshelfOverlayMode 의 책 배치 가이드/선택 모드 정리 side effect 는 보존한다.
+            isBookAddPlacementSelectionActive = false;
+            bookshelfGenerator?.HideBookAddPlacementGuide();
+            bookshelfUnsavedConfirmUiToolkitOverlay?.Show();
             RefreshHud();
             return true;
         }
@@ -2715,10 +2905,14 @@ namespace BookshelfPorting.Runtime
                 bookCoverSkinPanel.SetActive(false);
             }
 
+            bookCoverSkinUiToolkitOverlay?.Hide();
+
             if (advertisementBookAddPanel != null)
             {
                 advertisementBookAddPanel.SetActive(false);
             }
+
+            adBookAddUiToolkitOverlay?.Hide();
 
             isBookReviewWritePanelOpen = false;
             isBookReviewSaving = false;
@@ -2873,10 +3067,14 @@ namespace BookshelfPorting.Runtime
                 bookCoverSkinPanel.SetActive(false);
             }
 
+            bookCoverSkinUiToolkitOverlay?.Hide();
+
             if (advertisementBookAddPanel != null)
             {
                 advertisementBookAddPanel.SetActive(false);
             }
+
+            adBookAddUiToolkitOverlay?.Hide();
 
             if (isBookEditPanelOpen)
             {
@@ -4576,6 +4774,9 @@ namespace BookshelfPorting.Runtime
             if (mode == CameraMode.Whiteboard && CurrentFocusArea == ExperienceFocusArea.Guestbook)
             {
                 App.Bootstrap.VisualSkinLog.Verbose("[MonitorScreen] Focus enter dashboard");
+                // 카메라가 방명록 보드에 도착한 직후 — 이제 선명한 screen-space overlay 를 띄운다.
+                // 진입 시점이 아닌 전환 완료 시점에 노출해 카메라 이동 애니메이션을 가리지 않는다.
+                UpdateGuestbookScreenOverlay(true);
             }
 
             if (mode == CameraMode.Overview)
@@ -4805,8 +5006,6 @@ namespace BookshelfPorting.Runtime
             deleteBookshelfButton = CreateButton(canvasObject.transform, "DeleteBookshelfButton", "책장 삭제", new Vector2(128f, -68f), DeleteActiveBookshelf, new Vector2(92f, 34f), new Vector2(0.5f, 1f));
             deleteBookshelfButton.GetComponentInChildren<Text>().fontSize = 14;
 
-            openBookshelfDesignButton = CreateButton(canvasObject.transform, "OpenBookshelfDesignButton", "디자인변경", new Vector2(-184f, -34f), OpenBookshelfDesignPanel, new Vector2(122f, 44f), new Vector2(1f, 1f));
-            openBookshelfDesignButton.GetComponentInChildren<Text>().fontSize = 14;
 
             openBookAddButton = CreateButton(canvasObject.transform, "OpenBookAddButton", "책 추가", new Vector2(-268f, -20f), OpenBookAddPanel, new Vector2(104f, 44f), new Vector2(1f, 1f));
             openBookAddButton.GetComponentInChildren<Text>().fontSize = 15;
@@ -4875,23 +5074,6 @@ namespace BookshelfPorting.Runtime
             confirmDeleteBookshelfButton = CreateButton(bookshelfDeleteConfirmPanel.transform, "ConfirmDeleteBookshelfButton", "삭제", new Vector2(198f, -106f), ConfirmDeleteBookshelf, new Vector2(82f, 32f), new Vector2(0f, 1f));
             cancelDeleteBookshelfButton = CreateButton(bookshelfDeleteConfirmPanel.transform, "CancelDeleteBookshelfButton", "취소", new Vector2(286f, -106f), CloseBookshelfDeleteConfirmPanel, new Vector2(82f, 32f), new Vector2(0f, 1f));
 
-            bookshelfDesignPanel = CreatePanel(canvasObject.transform, "BookshelfDesignPanel", new Vector2(0f, -148f), new Vector2(480f, 210f), new Vector2(0.5f, 1f));
-            StyleBookshelfIndexPanel(bookshelfDesignPanel.GetComponent<Image>());
-            bookshelfDesignPanel.SetActive(false);
-            CreateHudImage(bookshelfDesignPanel.transform, "BookshelfDesignAccent", new Vector2(24f, -24f), new Vector2(84f, 3f), new Vector2(0f, 1f), new Color32(197, 128, 67, 170), false);
-            bookshelfDesignTitleText = CreateLabel(bookshelfDesignPanel.transform, "BookshelfDesignTitleText", new Vector2(24f, -36f), new Vector2(432f, 24f), TextAnchor.UpperLeft);
-            bookshelfDesignTitleText.text = "책장 디자인 변경";
-            bookshelfDesignTitleText.fontSize = 17;
-            bookshelfDesignTitleText.fontStyle = FontStyle.Bold;
-            bookshelfDesignTitleText.color = new Color32(63, 47, 38, 255);
-            bookshelfDesignHintText = CreateLabel(bookshelfDesignPanel.transform, "BookshelfDesignHintText", new Vector2(24f, -70f), new Vector2(432f, 32f), TextAnchor.UpperLeft);
-            bookshelfDesignHintText.text = "현재 책장에 적용할 분위기를 선택하세요.";
-            bookshelfDesignHintText.fontSize = 14;
-            bookshelfDesignHintText.color = new Color32(124, 111, 101, 255);
-            defaultBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "DefaultBookshelfDesignButton", "기본", new Vector2(24f, -116f), () => SetBookshelfDesignStyle(BookshelfThemeStyle.Default), new Vector2(128f, 38f), new Vector2(0f, 1f));
-            warmBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "WarmBookshelfDesignButton", "파스텔 캐빈", new Vector2(176f, -116f), () => SetBookshelfDesignStyle(BookshelfThemeStyle.Warm), new Vector2(128f, 38f), new Vector2(0f, 1f));
-            darkBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "DarkBookshelfDesignButton", "언더워터 쉘", new Vector2(328f, -116f), () => SetBookshelfDesignStyle(BookshelfThemeStyle.Dark), new Vector2(128f, 38f), new Vector2(0f, 1f));
-            closeBookshelfDesignButton = CreateButton(bookshelfDesignPanel.transform, "CloseBookshelfDesignButton", "저장", new Vector2(24f, -166f), CommitBookshelfDesignPanel, new Vector2(432f, 34f), new Vector2(0f, 1f));
 
             bookAddPanel = CreatePanel(canvasObject.transform, "BookAddPanel", new Vector2(0f, -128f), new Vector2(560f, 498f), new Vector2(0.5f, 1f));
             StyleBookshelfIndexPanel(bookAddPanel.GetComponent<Image>());
@@ -6165,7 +6347,6 @@ namespace BookshelfPorting.Runtime
             CloseOverlayPanels();
             CloseBookshelfNameEditPanel();
             CloseBookshelfDeleteConfirmPanel();
-            CloseBookshelfDesignPanel();
             CancelBookAddPlacementSelection(false, false);
             CloseBookAddPanel(false);
             CloseBookAddConfirmPanelSilently();
@@ -6343,7 +6524,6 @@ namespace BookshelfPorting.Runtime
             CloseBookshelfManagePanel();
             CloseBookshelfNameEditPanel();
             CloseBookshelfDeleteConfirmPanel();
-            CloseBookshelfDesignPanel();
             SpaceVisitorOverlayController.Instance?.HideOverlay();
             SpaceVisitorOverlayController.Instance?.SetLoadingBlocked(false);
             SetNotebookScreenSuppressed(false);
@@ -6718,13 +6898,10 @@ namespace BookshelfPorting.Runtime
         private void ApplyResponsiveBookshelfTopActionLayout(Vector4 safeMargins, float edge, float topOffset, Vector2 canvasSize)
         {
             var buttonHeight = Mathf.Clamp(canvasSize.y * 0.05f, 48f, 62f);
-            var gap = Mathf.Clamp(canvasSize.x * 0.008f, 12f, 18f);
-            var designWidth = Mathf.Clamp(canvasSize.x * 0.084f, 144f, 178f);
             var manageWidth = Mathf.Clamp(canvasSize.x * 0.078f, 136f, 166f);
             var rightOffset = safeMargins.z + edge;
 
-            SetTopRightButtonRect(openBookshelfDesignButton, rightOffset, topOffset, designWidth, buttonHeight);
-            SetTopRightButtonRect(openBookshelfManageButton, rightOffset + designWidth + gap, topOffset, manageWidth, buttonHeight);
+            SetTopRightButtonRect(openBookshelfManageButton, rightOffset, topOffset, manageWidth, buttonHeight);
         }
 
         private static void SetTopRightButtonRect(Button button, float rightOffset, float topOffset, float width, float height)
@@ -6843,7 +7020,6 @@ namespace BookshelfPorting.Runtime
 
             ApplyBookshelfNameEditPanelLayout(mediumPanelWidth, 128f, modalTop);
             ApplyBookshelfDeleteConfirmPanelLayout(mediumPanelWidth, 184f, modalTop + 8f);
-            ApplyBookshelfDesignPanelLayout(Mathf.Clamp(mediumPanelWidth + 48f, 620f, 760f), 282f, modalTop + 16f);
             ApplyBookAddPanelLayout(largeOverlayWidth, largeOverlayHeight, modalTop + 8f);
             ApplyBookAddConfirmPanelLayout(Mathf.Clamp(mediumPanelWidth + 24f, 620f, 740f), 520f, modalTop + 12f);
             ApplyBookSearchPanelLayout(canvasSize, safeMargins, edge, topOffset, bottomOffset, isCompact);
@@ -6895,30 +7071,6 @@ namespace BookshelfPorting.Runtime
             SetHudComponentRect(bookshelfDeleteConfirmMessageText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -76f), new Vector2(contentWidth, 60f));
             SetHudComponentRect(confirmDeleteBookshelfButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(cancelX - gap - buttonWidth, buttonY), new Vector2(buttonWidth, buttonHeight));
             SetHudComponentRect(cancelDeleteBookshelfButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(cancelX, buttonY), new Vector2(buttonWidth, buttonHeight));
-        }
-
-        private void ApplyBookshelfDesignPanelLayout(float panelWidth, float panelHeight, float top)
-        {
-            if (bookshelfDesignPanel == null)
-            {
-                return;
-            }
-
-            var padding = 38f;
-            var contentWidth = panelWidth - padding * 2f;
-            var gap = 16f;
-            var optionWidth = (contentWidth - gap * 2f) / 3f;
-            var optionY = -130f;
-
-            SetHudObjectRect(bookshelfDesignPanel, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -top), new Vector2(panelWidth, panelHeight));
-            SetHudChildRect(bookshelfDesignPanel, "BookshelfDesignAccent", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -28f), new Vector2(96f, 3f));
-            SetHudChildActive(bookshelfDesignPanel, "BookshelfDesignAccent", false);
-            SetHudComponentRect(bookshelfDesignTitleText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -44f), new Vector2(contentWidth, 28f));
-            SetHudComponentRect(bookshelfDesignHintText, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -82f), new Vector2(contentWidth, 38f));
-            SetHudComponentRect(defaultBookshelfDesignButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, optionY), new Vector2(optionWidth, 42f));
-            SetHudComponentRect(warmBookshelfDesignButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + optionWidth + gap, optionY), new Vector2(optionWidth, 42f));
-            SetHudComponentRect(darkBookshelfDesignButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding + (optionWidth + gap) * 2f, optionY), new Vector2(optionWidth, 42f));
-            SetHudComponentRect(closeBookshelfDesignButton, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -(panelHeight - padding - OverlayButtonBottomPaddingExtra - 40f)), new Vector2(contentWidth, 40f));
         }
 
         private void ApplyBookAddPanelLayout(float panelWidth, float panelHeight, float top)
@@ -8340,71 +8492,66 @@ namespace BookshelfPorting.Runtime
 
         private void RefreshFirstBookshelfTutorialPanel()
         {
-            if (firstBookshelfTutorialPanel == null || firstBookshelfTutorialBackdrop == null)
-            {
-                return;
-            }
-
             var mode = ResolveFirstBookshelfTutorialMode();
             var shouldShow = mode != FirstBookshelfTutorialMode.None;
             isFirstBookshelfTutorialOpen = shouldShow;
             firstBookshelfTutorialMode = mode;
-            firstBookshelfTutorialBackdrop.SetActive(shouldShow);
-            firstBookshelfTutorialPanel.SetActive(shouldShow);
+
             if (!shouldShow)
             {
+                bookshelfTutorialUiToolkitOverlay?.Hide();
                 return;
             }
 
-            ApplyFirstBookshelfTutorialContent(mode);
-            SuppressBookshelfModalBackgroundHud();
-            firstBookshelfTutorialBackdrop.transform.SetAsLastSibling();
-            firstBookshelfTutorialPanel.transform.SetAsLastSibling();
+            // 상태구동 — RefreshHud 마다 호출되므로 visible 이면 UpdateSnapshot, 아니면 Show.
+            var snapshot = BuildBookshelfTutorialSnapshot(mode);
+            if (bookshelfTutorialUiToolkitOverlay != null && bookshelfTutorialUiToolkitOverlay.IsVisible)
+            {
+                bookshelfTutorialUiToolkitOverlay.UpdateSnapshot(snapshot);
+            }
+            else
+            {
+                bookshelfTutorialUiToolkitOverlay?.Show(snapshot);
+            }
+        }
 
-            var canvasSize = GetHudCanvasSize();
-            var panelWidth = Mathf.Clamp(canvasSize.x * 0.48f, 580f, 760f);
-            var panelHeight = Mathf.Clamp(canvasSize.y * 0.40f, 340f, 430f);
-            SetHudObjectRect(
-                firstBookshelfTutorialPanel,
-                new Vector2(0.5f, 0.5f),
-                new Vector2(0.5f, 0.5f),
-                Vector2.zero,
-                new Vector2(panelWidth, panelHeight));
+        // mode·step 에 맞춰 튜토리얼 콘텐츠 빌드 (구 ApplyFirstBookshelfTutorialContent 의 텍스트와 동일).
+        private BookshelfPorting.Runtime.UI.BookshelfTutorialSnapshot BuildBookshelfTutorialSnapshot(FirstBookshelfTutorialMode mode)
+        {
+            if (mode == FirstBookshelfTutorialMode.FeatureGuide)
+            {
+                var step = Mathf.Clamp(firstBookshelfFeatureGuideStepIndex, 0, 2);
+                var steps = step switch
+                {
+                    0 => "1/3  하단의 추가 버튼으로 책을 검색하고 원하는 칸에 꽂을 수 있습니다.",
+                    1 => "2/3  책을 클릭하면 읽음 상태, 리뷰, 좋아요, 독후감을 관리할 수 있습니다.",
+                    _ => "3/3  상단의 책장관리 버튼으로 책장 이름과 공개 범위를 관리할 수 있습니다."
+                };
+                return new BookshelfPorting.Runtime.UI.BookshelfTutorialSnapshot(
+                    "책장에서 할 수 있는 일",
+                    "첫 책장이 준비되었습니다. 아래 안내를 끝까지 확인한 뒤 책장 사용을 시작할 수 있습니다.",
+                    steps,
+                    step < 2 ? "다음" : "시작하기");
+            }
 
-            var padding = Mathf.Clamp(panelWidth * 0.06f, 34f, 48f);
-            SetHudComponentRect(
-                firstBookshelfTutorialTitleText,
-                new Vector2(0f, 1f),
-                new Vector2(0f, 1f),
-                new Vector2(padding, -padding),
-                new Vector2(panelWidth - padding * 2f, 40f));
-            SetHudComponentRect(
-                firstBookshelfTutorialMessageText,
-                new Vector2(0f, 1f),
-                new Vector2(0f, 1f),
-                new Vector2(padding, -(padding + 56f)),
-                new Vector2(panelWidth - padding * 2f, 86f));
-            SetHudComponentRect(
-                firstBookshelfTutorialStepsText,
-                new Vector2(0f, 1f),
-                new Vector2(0f, 1f),
-                new Vector2(padding, -(padding + 160f)),
-                new Vector2(panelWidth - padding * 2f, 94f));
-            SetHudComponentRect(
-                firstBookshelfTutorialAddButton,
-                new Vector2(1f, 0f),
-                new Vector2(1f, 0f),
-                new Vector2(-padding, padding),
-                new Vector2(Mathf.Clamp(panelWidth * 0.30f, 178f, 220f), 52f));
+            return new BookshelfPorting.Runtime.UI.BookshelfTutorialSnapshot(
+                "첫 책장을 만들어볼까요?",
+                "아직 책장이 없습니다. 책장은 책을 전시하고 정리하는 기본 공간입니다. 먼저 책장 하나를 만들고 이름을 정해보세요.",
+                "1. 책장 추가\n2. 책장 이름 정하기\n3. 검색 또는 추가에서 첫 책 꽂기",
+                "책장 추가하기");
+        }
 
-            StyleHudButton(
-                firstBookshelfTutorialAddButton,
-                new Color32(78, 105, 83, 245),
-                new Color32(92, 121, 96, 255),
-                new Color32(224, 219, 214, 140),
-                17,
-                Color.white,
-                true);
+        // 튜토리얼 primary 버튼 → 현재 mode 에 맞춰 라우팅 (책장 추가 / 안내 다음 단계).
+        private void HandleBookshelfTutorialPrimaryAction()
+        {
+            if (firstBookshelfTutorialMode == FirstBookshelfTutorialMode.FeatureGuide)
+            {
+                AdvanceFirstBookshelfFeatureGuide();
+            }
+            else if (firstBookshelfTutorialMode == FirstBookshelfTutorialMode.CreateFirstShelf)
+            {
+                AddFirstBookshelfFromTutorial();
+            }
         }
 
         private FirstBookshelfTutorialMode ResolveFirstBookshelfTutorialMode()
@@ -8482,7 +8629,7 @@ namespace BookshelfPorting.Runtime
                     {
                         0 => "1/3  하단의 추가 버튼으로 책을 검색하고 원하는 칸에 꽂을 수 있습니다.",
                         1 => "2/3  책을 클릭하면 읽음 상태, 리뷰, 좋아요, 독후감을 관리할 수 있습니다.",
-                        _ => "3/3  상단의 책장관리·디자인변경 버튼으로 책장 이름, 공개 범위, 디자인을 관리할 수 있습니다."
+                        _ => "3/3  상단의 책장관리 버튼으로 책장 이름과 공개 범위를 관리할 수 있습니다."
                     };
                 }
 
@@ -8676,12 +8823,10 @@ namespace BookshelfPorting.Runtime
             if (bookshelfNameEditPanel == null ||
                 addBookshelfButton == null ||
                 openBookshelfNameEditButton == null ||
-                openBookshelfDesignButton == null ||
                 deleteBookshelfButton == null ||
                 openBookAddButton == null ||
                 openBookshelfManageButton == null ||
                 bookshelfDeleteConfirmPanel == null ||
-                bookshelfDesignPanel == null ||
                 bookAddPanel == null ||
                 bookAddConfirmPanel == null ||
                 bookshelfManagePanel == null ||
@@ -8700,7 +8845,7 @@ namespace BookshelfPorting.Runtime
                                           !isBookshelfSwitching &&
                                           bookshelfGenerator != null;
             var shouldShowEditControls = IsBookshelfEditMode && canShowBookshelfOverlay && CanMutateOwnedBookshelf();
-            // [책장관리] / [디자인변경] entry 버튼은 책장 포커싱 + 자기 책장 + 책장 1개 이상일 때 항시 노출.
+            // [책장관리] entry 버튼은 책장 포커싱 + 자기 책장 + 책장 1개 이상일 때 항시 노출.
             // edit mode 진입은 panel 열 때 자동으로 일어나므로 IsBookshelfEditMode 가드는 두지 않는다.
             var shouldShowEditEntryButtons = canShowBookshelfOverlay &&
                                              CanMutateOwnedBookshelf() &&
@@ -8738,25 +8883,13 @@ namespace BookshelfPorting.Runtime
                 ? "책장 삭제"
                 : "삭제 불가");
 
-            openBookshelfDesignButton.gameObject.SetActive(shouldShowEditEntryButtons);
-            openBookshelfDesignButton.interactable = shouldShowEditEntryButtons;
-            StyleHudButton(
-                openBookshelfDesignButton,
-                new Color32(255, 248, 236, 235),
-                new Color32(255, 255, 255, 245),
-                new Color32(224, 219, 214, 140),
-                14,
-                new Color32(63, 47, 38, 255),
-                true);
-
             var showNamePanel = shouldShowEditControls && isBookshelfNameEditPanelOpen;
             var showDeletePanel = shouldShowEditControls && isBookshelfDeleteConfirmPanelOpen;
-            var showDesignPanel = shouldShowEditControls && isBookshelfDesignPanelOpen;
             var showBookAddPanel = canShowBookshelfOverlay && isBookAddPanelOpen;
             var showBookAddConfirmPanel = canShowBookshelfOverlay && isBookAddConfirmPanelOpen;
             var showBookshelfManagePanel = shouldShowEditControls && isBookshelfManagePanelOpen;
             var showUnsavedConfirmPanel = isBookshelfUnsavedConfirmPanelOpen;
-            var showModal = showNamePanel || showDeletePanel || showDesignPanel || showBookAddPanel || showBookAddConfirmPanel || showBookshelfManagePanel || showUnsavedConfirmPanel;
+            var showModal = showNamePanel || showDeletePanel || showBookAddPanel || showBookAddConfirmPanel || showBookshelfManagePanel || showUnsavedConfirmPanel;
             if (showModal)
             {
                 SuppressBookshelfModalBackgroundHud();
@@ -8769,7 +8902,6 @@ namespace BookshelfPorting.Runtime
 
             bookshelfNameEditPanel.SetActive(showNamePanel);
             bookshelfDeleteConfirmPanel.SetActive(showDeletePanel);
-            bookshelfDesignPanel.SetActive(showDesignPanel);
             bookAddPanel.SetActive(showBookAddPanel);
             bookAddConfirmPanel.SetActive(showBookAddConfirmPanel);
             bookshelfManagePanel.SetActive(showBookshelfManagePanel);
@@ -8813,10 +8945,6 @@ namespace BookshelfPorting.Runtime
                 {
                     bookshelfDeleteConfirmPanel.transform.SetAsLastSibling();
                 }
-                else if (showDesignPanel)
-                {
-                    bookshelfDesignPanel.transform.SetAsLastSibling();
-                }
                 else if (showBookAddPanel)
                 {
                     bookAddPanel.transform.SetAsLastSibling();
@@ -8850,7 +8978,6 @@ namespace BookshelfPorting.Runtime
             else
             {
                 RefreshBookshelfDeleteConfirmPanel(displayIndex);
-                RefreshBookshelfDesignPanel(displayIndex);
                 RefreshBookshelfManagePanel();
             }
 
@@ -8919,11 +9046,6 @@ namespace BookshelfPorting.Runtime
             if (openBookshelfManageButton != null)
             {
                 openBookshelfManageButton.gameObject.SetActive(false);
-            }
-
-            if (openBookshelfDesignButton != null)
-            {
-                openBookshelfDesignButton.gameObject.SetActive(false);
             }
 
             if (emptyBookshelfAddButton != null)
@@ -8998,66 +9120,9 @@ namespace BookshelfPorting.Runtime
             RefreshBookshelfNameEditPanel();
         }
 
-        private void OpenBookshelfDesignPanel()
-        {
-            // 책장 포커싱 화면에서 [디자인변경] 버튼이 항시 노출되므로, panel 진입 시 자동으로
-            // edit mode 를 켜서 CanMutateBookshelfCollection() 의 IsBookshelfEditMode 가드를 통과시킨다.
-            if (!CanMutateOwnedBookshelf())
-            {
-                return;
-            }
-
-            if (!IsBookshelfEditMode)
-            {
-                SetBookshelfEditMode(true);
-                if (!IsBookshelfEditMode)
-                {
-                    return;
-                }
-            }
-
-            if (!CanMutateBookshelfCollection())
-            {
-                return;
-            }
-
-            CloseOverlayPanels(bookshelfDesignPanel);
-            if (usesHttpApiMode)
-            {
-                bookshelfApiSyncController?.RefreshBookshelfSkinCatalog();
-            }
-
-            SetBookshelfOverlayMode(BookshelfOverlayMode.Design);
-            RefreshHud();
-        }
-
-        // 디자인변경 panel 의 "저장" 버튼 핸들러. dirty 클리어 + edit mode 종료 후 panel 닫기.
-        // 실제 디자인 적용은 SetBookshelfDesignStyle 시점에 이미 서버로 PATCH 됐기 때문에 추가 PATCH 없음.
-        private void CommitBookshelfDesignPanel()
-        {
-            MarkBookshelfEditSaved();
-            CloseBookshelfDesignPanel();
-            if (IsBookshelfEditMode)
-            {
-                SetBookshelfEditMode(false);
-            }
-        }
-
-        private void CloseBookshelfDesignPanel()
-        {
-            isBookshelfDesignPanelOpen = false;
-            if (bookshelfDesignPanel != null)
-            {
-                bookshelfDesignPanel.SetActive(false);
-            }
-
-            if (bookshelfNameModalBackdrop != null && !HasOpenBookshelfModal())
-            {
-                bookshelfNameModalBackdrop.SetActive(false);
-            }
-
-            RefreshHud();
-        }
+        // UI Toolkit 미저장 확인 overlay 가시성 단일 진입점.
+        private bool IsBookshelfUnsavedConfirmOverlayVisible =>
+            bookshelfUnsavedConfirmUiToolkitOverlay != null && bookshelfUnsavedConfirmUiToolkitOverlay.IsVisible;
 
         private void OpenBookAddPanel()
         {
@@ -9078,11 +9143,7 @@ namespace BookshelfPorting.Runtime
             HideNonBookAddOverlays();
             SetBookshelfOverlayMode(BookshelfOverlayMode.BookAdd);
 
-            if (bookAddSearchInputField != null)
-            {
-                bookAddSearchInputField.text = string.Empty;
-            }
-
+            // 검색어 초기화는 overlay 의 Show() 가 담당.
             activeBookAddBrowseMode = BookAddBrowseMode.Ranking;
             shouldResetBookAddScrollToTop = true;
             RefreshHud();
@@ -9105,10 +9166,6 @@ namespace BookshelfPorting.Runtime
             }
 
             isBookshelfDesignPanelOpen = false;
-            if (bookshelfDesignPanel != null)
-            {
-                bookshelfDesignPanel.SetActive(false);
-            }
 
             ResetBookshelfManageDragState();
             isBookshelfManagePanelOpen = false;
@@ -9154,6 +9211,8 @@ namespace BookshelfPorting.Runtime
                 bookAddPanel.SetActive(false);
             }
 
+            bookAddUiToolkitOverlay?.Hide();
+
             if (bookshelfNameModalBackdrop != null &&
                 !isBookshelfNameEditPanelOpen &&
                 !isBookshelfDeleteConfirmPanelOpen &&
@@ -9173,7 +9232,7 @@ namespace BookshelfPorting.Runtime
             bookAddFeedbackMessage = string.Empty;
             shouldResetBookAddScrollToTop = true;
             activeBookAddBrowseMode = BookAddBrowseMode.Search;
-            var query = bookAddSearchInputField != null ? bookAddSearchInputField.text : string.Empty;
+            var query = bookAddUiToolkitOverlay != null ? bookAddUiToolkitOverlay.Query : string.Empty;
             RequestBookAddApiSearch(query);
             if (isBookAddPanelOpen)
             {
@@ -9219,7 +9278,7 @@ namespace BookshelfPorting.Runtime
             shouldResetBookAddScrollToTop = true;
             if (mode == BookAddBrowseMode.Search)
             {
-                RequestBookAddApiSearch(bookAddSearchInputField != null ? bookAddSearchInputField.text : string.Empty);
+                RequestBookAddApiSearch(bookAddUiToolkitOverlay != null ? bookAddUiToolkitOverlay.Query : string.Empty);
             }
             else
             {
@@ -9231,8 +9290,15 @@ namespace BookshelfPorting.Runtime
 
         private void RefreshBookAddPanel(int displayIndex)
         {
-            if (!isBookAddPanelOpen || bookAddPanel == null)
+            // 구 uGUI 패널은 휴면 — RefreshHud 가 isBookAddPanelOpen 기준 SetActive(true) 했을 수 있어 강제 off.
+            if (bookAddPanel != null)
             {
+                bookAddPanel.SetActive(false);
+            }
+
+            if (!isBookAddPanelOpen)
+            {
+                bookAddUiToolkitOverlay?.Hide();
                 return;
             }
 
@@ -9240,32 +9306,15 @@ namespace BookshelfPorting.Runtime
             var shelfName = bookshelfGenerator != null && displayIndex >= 0
                 ? bookshelfGenerator.GetBookshelfName(displayIndex)
                 : "현재 책장";
-            if (bookAddTitleText != null)
-            {
-                bookAddTitleText.text = $"{shelfName}에 책 추가";
-            }
-
-            if (bookAddHintText != null)
-            {
+            var title = $"{shelfName}에 책 추가";
             var sectionSummary = bookshelfGenerator != null && bookshelfGenerator.ActiveBookshelfSectionCount > 0
-                    ? $" 현재 빈 섹션 {bookshelfGenerator.ActiveBookshelfEmptySectionCount}/{bookshelfGenerator.ActiveBookshelfSectionCount}개."
-                    : string.Empty;
-                bookAddHintText.text = $"책장을 고른 뒤 원하는 책을 선택하고, 꽂을 위치를 직접 지정해 내 책장 분위기를 완성합니다.{sectionSummary}";
-            }
+                ? $" 현재 빈 섹션 {bookshelfGenerator.ActiveBookshelfEmptySectionCount}/{bookshelfGenerator.ActiveBookshelfSectionCount}개."
+                : string.Empty;
+            var hint = $"책장을 고른 뒤 원하는 책을 선택하고, 꽂을 위치를 직접 지정해 내 책장 분위기를 완성합니다.{sectionSummary}";
 
-            RefreshBookshelfSelectorButtons(bookAddShelfSelectorButtons, displayIndex, CanOpenBookAddPanel());
-
-            if (bookAddSearchInputField != null)
-            {
-                bookAddSearchInputField.interactable = canAdd && activeBookAddBrowseMode == BookAddBrowseMode.Search;
-            }
-
-            StyleBookAddBrowseButton(bookAddSearchModeButton, activeBookAddBrowseMode == BookAddBrowseMode.Search);
-            StyleBookAddBrowseButton(bookAddRecommendedModeButton, activeBookAddBrowseMode == BookAddBrowseMode.Recommended);
-            StyleBookAddBrowseButton(bookAddRankingModeButton, activeBookAddBrowseMode == BookAddBrowseMode.Ranking);
-
-            var query = activeBookAddBrowseMode == BookAddBrowseMode.Search && bookAddSearchInputField != null
-                ? bookAddSearchInputField.text
+            // 검색어는 overlay 의 TextField 가 단일 소유.
+            var query = activeBookAddBrowseMode == BookAddBrowseMode.Search && bookAddUiToolkitOverlay != null
+                ? bookAddUiToolkitOverlay.Query
                 : string.Empty;
             if (activeBookAddBrowseMode == BookAddBrowseMode.Search)
             {
@@ -9277,7 +9326,7 @@ namespace BookshelfPorting.Runtime
             }
 
             var catalogItems = GetBookAddCatalogItems(query);
-            var visibleSlot = 0;
+            var rows = new List<BookshelfPorting.Runtime.UI.BookAddRowItem>();
             var matchCount = 0;
             for (var i = 0; i < catalogItems.Count; i++)
             {
@@ -9287,90 +9336,73 @@ namespace BookshelfPorting.Runtime
                     continue;
                 }
 
-                if (visibleSlot < bookAddResultButtons.Length)
+                matchCount++;
+                if (rows.Count >= BookAddMaxResultCount)
                 {
-                    var button = bookAddResultButtons[visibleSlot];
-                    var isAlreadyAdded = IsCatalogBookAlreadyOnActiveShelf(i);
-                    bookAddResultCatalogIndices[visibleSlot] = i;
-                    if (button != null)
-                    {
-                        button.gameObject.SetActive(true);
-                        button.interactable = canAdd && !isAlreadyAdded;
-                        SetButtonLabel(button, BuildBookAddResultLabel(item, isAlreadyAdded));
-                        StyleBookAddResultButton(button, !isAlreadyAdded);
-                        LayoutBookAddResultRow(visibleSlot, item);
-                    }
+                    continue;
                 }
 
-                visibleSlot++;
-                matchCount++;
+                var isAlreadyAdded = IsCatalogBookAlreadyOnActiveShelf(i);
+                var meta = $"{FirstNonEmpty(item.Author, "저자 미상")} · {FirstNonEmpty(item.Publisher, "출판사 미상")}";
+                var summary = TruncateBookAddResultText(FirstNonEmpty(item.Summary, "책 설명이 없습니다."), 78);
+                rows.Add(new BookshelfPorting.Runtime.UI.BookAddRowItem(
+                    i,
+                    FirstNonEmpty(item.Title, "제목 없음"),
+                    meta,
+                    summary,
+                    BuildBookAddStatsLine(item),
+                    isAlreadyAdded));
             }
 
-            var visibleCount = Mathf.Min(matchCount, bookAddResultButtons.Length);
-            var viewportHeight = GetHudScrollViewportHeight(bookAddScrollRect, BookAddResultViewportHeight);
-            if (bookAddRowsContent != null)
+            var visibleCount = rows.Count;
+            string statusText;
+            if (!string.IsNullOrWhiteSpace(bookAddFeedbackMessage))
             {
-                var contentHeight = Mathf.Max(viewportHeight, visibleCount * BookAddResultRowHeight);
-                bookAddRowsContent.sizeDelta = new Vector2(0f, contentHeight);
+                statusText = bookAddFeedbackMessage;
+            }
+            else if (isBookAddApiSearchPending)
+            {
+                statusText = activeBookAddBrowseMode == BookAddBrowseMode.Search
+                    ? "서버에서 책을 검색하는 중입니다."
+                    : "서버에서 책 목록을 불러오는 중입니다.";
+            }
+            else if (!string.IsNullOrWhiteSpace(bookAddApiSearchMessage))
+            {
+                statusText = matchCount > 0
+                    ? $"{bookAddApiSearchMessage} · 표시 결과 {matchCount}개"
+                    : bookAddApiSearchMessage;
+            }
+            else if (matchCount == 0)
+            {
+                statusText = "검색 결과가 없습니다.";
+            }
+            else
+            {
+                statusText = matchCount > BookAddMaxResultCount
+                    ? $"검색 결과 {matchCount}개 중 {visibleCount}개 표시 · 스크롤"
+                    : $"검색 결과 {matchCount}개";
             }
 
-            var canScroll = visibleCount * BookAddResultRowHeight > viewportHeight + 1f;
-            ApplyHudScrollState(bookAddScrollRect, bookAddScrollbar, bookAddRowsContent, canScroll, shouldResetBookAddScrollToTop);
+            var snapshot = new BookshelfPorting.Runtime.UI.BookAddSnapshot(
+                title,
+                hint,
+                bookshelfGenerator != null ? bookshelfGenerator.BookshelfCount : 0,
+                displayIndex,
+                (int)activeBookAddBrowseMode,
+                canAdd && activeBookAddBrowseMode == BookAddBrowseMode.Search,
+                canAdd,
+                rows,
+                statusText,
+                shouldResetBookAddScrollToTop);
             shouldResetBookAddScrollToTop = false;
 
-            for (var i = visibleCount; i < bookAddResultButtons.Length; i++)
+            if (bookAddUiToolkitOverlay != null && bookAddUiToolkitOverlay.IsVisible)
             {
-                bookAddResultCatalogIndices[i] = -1;
-                if (bookAddResultButtons[i] != null)
-                {
-                    bookAddResultButtons[i].gameObject.SetActive(false);
-                }
-
-                BindBookAddCoverImage(i, null);
+                bookAddUiToolkitOverlay.UpdateSnapshot(snapshot);
             }
-
-            if (closeBookAddButton != null)
+            else
             {
-                StyleHudButton(
-                    closeBookAddButton,
-                    new Color32(245, 237, 226, 245),
-                    new Color32(255, 248, 236, 255),
-                    new Color32(224, 219, 214, 140),
-                    16,
-                    new Color32(84, 74, 66, 255),
-                    true);
-            }
-
-            if (bookAddStatusText != null)
-            {
-                if (!string.IsNullOrWhiteSpace(bookAddFeedbackMessage))
-                {
-                    bookAddStatusText.text = bookAddFeedbackMessage;
-                }
-                else if (isBookAddApiSearchPending)
-                {
-                    bookAddStatusText.text = activeBookAddBrowseMode == BookAddBrowseMode.Search
-                        ? "서버에서 책을 검색하는 중입니다."
-                        : "서버에서 책 목록을 불러오는 중입니다.";
-                }
-                else if (!string.IsNullOrWhiteSpace(bookAddApiSearchMessage))
-                {
-                    bookAddStatusText.text = matchCount > 0
-                        ? $"{bookAddApiSearchMessage} · 표시 결과 {matchCount}개"
-                        : bookAddApiSearchMessage;
-                }
-                else if (matchCount == 0)
-                {
-                    bookAddStatusText.text = "검색 결과가 없습니다.";
-                }
-                else
-                {
-                    bookAddStatusText.text = matchCount > bookAddResultButtons.Length
-                        ? $"검색 결과 {matchCount}개 중 {visibleCount}개 표시 · 스크롤"
-                        : canScroll
-                            ? $"검색 결과 {matchCount}개 · 스크롤"
-                            : $"검색 결과 {matchCount}개";
-                }
+                bookAddUiToolkitOverlay?.Show(snapshot);
             }
         }
 
@@ -9384,6 +9416,38 @@ namespace BookshelfPorting.Runtime
             }
 
             var catalogIndex = bookAddResultCatalogIndices[resultSlot];
+            var item = GetBookAddCatalogItem(catalogIndex);
+            if (item == null)
+            {
+                return;
+            }
+
+            if (IsCatalogBookAlreadyOnActiveShelf(item))
+            {
+                bookAddFeedbackMessage = GetCatalogBookDuplicateMessage(item);
+                RefreshBookAddPanel(bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1);
+                return;
+            }
+
+            pendingBookAddCatalogIndex = catalogIndex;
+            pendingBookAddBookshelfIndex = bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1;
+            pendingBookAddCatalogItem = item;
+            pendingBookAddOrientation = item.Orientation;
+            pendingBookAddReadingStatus = App.Domain.ReadingStatus.Unread;
+            bookAddFeedbackMessage = string.Empty;
+            SetBookshelfOverlayMode(BookshelfOverlayMode.BookAddConfirm);
+            RefreshBookshelfNameEditPanel();
+        }
+
+        // overlay 결과 행 click → 카탈로그 인덱스로 직접 책 추가 확인 단계 진입.
+        // 구 OpenBookAddConfirmPanel(slot) 의 catalogIndex 직접 버전 (slot↔catalog 매핑 배열 불필요).
+        private void OpenBookAddConfirmForCatalogIndex(int catalogIndex)
+        {
+            if (!CanOpenBookAddPanel())
+            {
+                return;
+            }
+
             var item = GetBookAddCatalogItem(catalogIndex);
             if (item == null)
             {
@@ -9445,6 +9509,7 @@ namespace BookshelfPorting.Runtime
             pendingBookAddCatalogIndex = -1;
             pendingBookAddBookshelfIndex = -1;
             pendingBookAddCatalogItem = null;
+            bookAddConfirmUiToolkitOverlay?.Hide();
             if (bookAddConfirmPanel != null)
             {
                 bookAddConfirmPanel.SetActive(false);
@@ -9467,7 +9532,7 @@ namespace BookshelfPorting.Runtime
             activeCoverSkinBook = book;
             ActiveDetailBook = book;
             isBookCoverSkinPanelOpen = true;
-            bookCoverSkinPanel.SetActive(true);
+            // 표시는 RefreshBookCoverSkinPanel 이 overlay 로 처리.
             RefreshHud();
         }
 
@@ -9480,6 +9545,7 @@ namespace BookshelfPorting.Runtime
                 bookCoverSkinPanel.SetActive(false);
             }
 
+            bookCoverSkinUiToolkitOverlay?.Hide();
             RefreshHud();
         }
 
@@ -9517,98 +9583,53 @@ namespace BookshelfPorting.Runtime
 
         private void RefreshBookCoverSkinPanel()
         {
-            if (bookCoverSkinPanel == null)
+            // 구 uGUI 패널은 휴면 — overlay 가 대체.
+            if (bookCoverSkinPanel != null)
             {
-                return;
+                bookCoverSkinPanel.SetActive(false);
             }
 
             var show = isBookCoverSkinPanelOpen &&
                        activeCoverSkinBook != null &&
                        CurrentFocusArea == ExperienceFocusArea.Bookshelf &&
                        !IsBookshelfEditMode;
-            bookCoverSkinPanel.SetActive(show);
             if (!show)
             {
+                bookCoverSkinUiToolkitOverlay?.Hide();
                 return;
             }
 
-            if (bookCoverSkinTitleText != null)
+            var hint = $"{TryGetBookDisplayTitle(activeCoverSkinBook)}에 적용할 표지를 선택하세요.";
+            var currentPath = activeCoverSkinBook.coverSkinResourcePath ?? string.Empty;
+            var options = new List<BookshelfPorting.Runtime.UI.BookCoverSkinOptionItem>(SponsoredBookCoverSkinOptions.Length);
+            for (var i = 0; i < SponsoredBookCoverSkinOptions.Length; i++)
             {
-                bookCoverSkinTitleText.text = "표지 변경";
-            }
-
-            if (bookCoverSkinHintText != null)
-            {
-                bookCoverSkinHintText.text = $"{TryGetBookDisplayTitle(activeCoverSkinBook)}에 적용할 표지를 선택하세요.";
-            }
-
-            for (var i = 0; i < bookCoverSkinButtons.Length; i++)
-            {
-                var option = i < SponsoredBookCoverSkinOptions.Length ? SponsoredBookCoverSkinOptions[i] : null;
-                var button = bookCoverSkinButtons[i];
-                if (button == null)
-                {
-                    continue;
-                }
-
-                var hasOption = option != null &&
-                                (string.IsNullOrWhiteSpace(option.ResourcePath) ||
-                                 TryGetCoverSkinPreviewSprite(option.ResourcePath, out _));
-                button.gameObject.SetActive(hasOption);
+                var option = SponsoredBookCoverSkinOptions[i];
+                // 구 패널과 동일 — 에셋을 못 찾는 스킨 옵션은 제외 (기본은 항상 포함).
+                var hasOption = string.IsNullOrWhiteSpace(option.ResourcePath) ||
+                                TryGetCoverSkinPreviewSprite(option.ResourcePath, out _);
                 if (!hasOption)
                 {
                     continue;
                 }
 
-                var isSelected = string.Equals(activeCoverSkinBook.coverSkinResourcePath ?? string.Empty, option.ResourcePath ?? string.Empty, System.StringComparison.Ordinal);
-                SetButtonLabel(button, isSelected ? $"✓ {option.Label}" : option.Label);
-                StyleHudButton(
-                    button,
-                    isSelected ? new Color32(88, 133, 117, 245) : new Color32(255, 255, 255, 238),
-                    isSelected ? new Color32(105, 150, 132, 255) : new Color32(241, 235, 230, 255),
-                    new Color32(224, 219, 214, 140),
-                    13,
-                    isSelected ? Color.white : new Color32(63, 47, 38, 255),
-                    true);
-
-                var label = GetButtonLabelText(button);
-                if (label != null)
-                {
-                    label.alignment = TextAnchor.LowerCenter;
-                    label.rectTransform.offsetMin = new Vector2(6f, 8f);
-                    label.rectTransform.offsetMax = new Vector2(-6f, -90f);
-                }
-
-                var preview = bookCoverSkinPreviewImages[i];
-                if (preview != null)
-                {
-                    if (string.IsNullOrWhiteSpace(option.ResourcePath))
-                    {
-                        preview.sprite = null;
-                        preview.color = new Color32(238, 231, 221, 235);
-                    }
-                    else if (TryGetCoverSkinPreviewSprite(option.ResourcePath, out var sprite))
-                    {
-                        preview.sprite = sprite;
-                        preview.color = Color.white;
-                    }
-                }
+                var isSelected = string.Equals(currentPath, option.ResourcePath ?? string.Empty, System.StringComparison.Ordinal);
+                options.Add(new BookshelfPorting.Runtime.UI.BookCoverSkinOptionItem(
+                    option.Label,
+                    option.Description,
+                    option.ResourcePath,
+                    isSelected));
             }
 
-            if (bookCoverSkinStatusText != null)
+            var snapshot = new BookshelfPorting.Runtime.UI.BookCoverSkinSnapshot(hint, options);
+            if (bookCoverSkinUiToolkitOverlay != null && bookCoverSkinUiToolkitOverlay.IsVisible)
             {
-                bookCoverSkinStatusText.text = "기본 표지는 글만 표시되고, 스킨은 책 전면 표지에 적용됩니다.";
+                bookCoverSkinUiToolkitOverlay.UpdateSnapshot(snapshot);
             }
-
-            StyleHudButton(
-                closeBookCoverSkinButton,
-                new Color32(245, 237, 226, 245),
-                new Color32(255, 248, 236, 255),
-                new Color32(224, 219, 214, 140),
-                16,
-                new Color32(84, 74, 66, 255),
-                true);
-            bookCoverSkinPanel.transform.SetAsLastSibling();
+            else
+            {
+                bookCoverSkinUiToolkitOverlay?.Show(snapshot);
+            }
         }
 
         private bool CanChangeCoverSkin(BookEntity book)
@@ -9653,7 +9674,7 @@ namespace BookshelfPorting.Runtime
             CloseOverlayPanels(advertisementBookAddPanel);
             ActiveDetailBook = book;
             isAdvertisementBookAddPanelOpen = true;
-            advertisementBookAddPanel.SetActive(true);
+            // 표시는 RefreshAdvertisementBookAddPanel 이 overlay 로 처리.
             RefreshHud();
         }
 
@@ -9670,6 +9691,7 @@ namespace BookshelfPorting.Runtime
                 advertisementBookAddPanel.SetActive(false);
             }
 
+            adBookAddUiToolkitOverlay?.Hide();
             if (refresh)
             {
                 RefreshHud();
@@ -9678,9 +9700,10 @@ namespace BookshelfPorting.Runtime
 
         private void RefreshAdvertisementBookAddPanel()
         {
-            if (advertisementBookAddPanel == null)
+            // 구 uGUI 패널은 휴면 — overlay 가 대체.
+            if (advertisementBookAddPanel != null)
             {
-                return;
+                advertisementBookAddPanel.SetActive(false);
             }
 
             var show = isAdvertisementBookAddPanelOpen &&
@@ -9688,67 +9711,35 @@ namespace BookshelfPorting.Runtime
                        bookshelfGenerator != null &&
                        bookshelfGenerator.BookshelfCount > 0 &&
                        !IsBookshelfEditMode;
-            advertisementBookAddPanel.SetActive(show);
             if (!show)
             {
+                adBookAddUiToolkitOverlay?.Hide();
                 return;
             }
 
-            if (advertisementBookAddTitleText != null)
+            var visibleShelfCount = Mathf.Min(bookshelfGenerator.BookshelfCount, BookshelfSelectorMaxButtons);
+            var shelves = new List<BookshelfPorting.Runtime.UI.AdBookAddShelfItem>(visibleShelfCount);
+            for (var i = 0; i < visibleShelfCount; i++)
             {
-                advertisementBookAddTitleText.text = "책장에 추가하기";
+                shelves.Add(new BookshelfPorting.Runtime.UI.AdBookAddShelfItem(
+                    i,
+                    bookshelfGenerator.GetBookshelfName(i),
+                    CanUseBookshelfServerPlacement(i)));
             }
 
-            if (advertisementBookAddHintText != null)
+            var status = bookshelfGenerator.BookshelfCount > BookshelfSelectorMaxButtons
+                ? $"책장이 많아 앞 {BookshelfSelectorMaxButtons}개만 표시됩니다."
+                : "책장을 선택하면 책장 화면으로 돌아가 배치 위치를 고릅니다.";
+
+            var snapshot = new BookshelfPorting.Runtime.UI.AdBookAddSnapshot(shelves, status);
+            if (adBookAddUiToolkitOverlay != null && adBookAddUiToolkitOverlay.IsVisible)
             {
-                advertisementBookAddHintText.text = "추가할 책장을 고른 뒤 빈 칸을 클릭해 위치를 선택하세요.";
+                adBookAddUiToolkitOverlay.UpdateSnapshot(snapshot);
             }
-
-            var visibleShelfCount = Mathf.Min(bookshelfGenerator.BookshelfCount, advertisementBookShelfButtons.Length);
-            for (var i = 0; i < advertisementBookShelfButtons.Length; i++)
+            else
             {
-                var button = advertisementBookShelfButtons[i];
-                if (button == null)
-                {
-                    continue;
-                }
-
-                var visible = i < visibleShelfCount;
-                button.gameObject.SetActive(visible);
-                if (!visible)
-                {
-                    continue;
-                }
-
-                var canUse = CanUseBookshelfServerPlacement(i);
-                SetButtonLabel(button, bookshelfGenerator.GetBookshelfName(i));
-                button.interactable = canUse;
-                StyleHudButton(
-                    button,
-                    canUse ? new Color32(255, 255, 255, 238) : new Color32(224, 219, 214, 140),
-                    canUse ? new Color32(241, 235, 230, 255) : new Color32(224, 219, 214, 140),
-                    new Color32(224, 219, 214, 140),
-                    13,
-                    canUse ? new Color32(63, 47, 38, 255) : new Color32(124, 111, 101, 190),
-                    true);
+                adBookAddUiToolkitOverlay?.Show(snapshot);
             }
-
-            if (advertisementBookAddStatusText != null)
-            {
-                advertisementBookAddStatusText.text = bookshelfGenerator.BookshelfCount > advertisementBookShelfButtons.Length
-                    ? $"책장이 많아 앞 {advertisementBookShelfButtons.Length}개만 표시됩니다."
-                    : "책장을 선택하면 책장 화면으로 돌아가 배치 위치를 고릅니다.";
-            }
-
-            StyleHudButton(
-                closeAdvertisementBookAddButton,
-                new Color32(245, 237, 226, 245),
-                new Color32(255, 248, 236, 255),
-                new Color32(224, 219, 214, 140),
-                16,
-                new Color32(84, 74, 66, 255),
-                true);
-            advertisementBookAddPanel.transform.SetAsLastSibling();
         }
 
         private void BeginAdvertisementBookAddToShelf(int targetBookshelfIndex)
@@ -10022,8 +10013,15 @@ namespace BookshelfPorting.Runtime
 
         private void RefreshBookAddConfirmPanel()
         {
-            if (!isBookAddConfirmPanelOpen || bookAddConfirmPanel == null)
+            // 구 uGUI 패널은 휴면 — RefreshHud 가 isBookAddConfirmPanelOpen 기준 SetActive(true) 했을 수 있어 강제 off.
+            if (bookAddConfirmPanel != null)
             {
+                bookAddConfirmPanel.SetActive(false);
+            }
+
+            if (!isBookAddConfirmPanelOpen)
+            {
+                bookAddConfirmUiToolkitOverlay?.Hide();
                 return;
             }
 
@@ -10034,46 +10032,25 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (bookAddConfirmTitleText != null)
-            {
-                bookAddConfirmTitleText.text = item.Title;
-            }
+            var shelfName = bookshelfGenerator != null
+                ? bookshelfGenerator.GetBookshelfName(pendingBookAddBookshelfIndex >= 0 ? pendingBookAddBookshelfIndex : bookshelfGenerator.DisplayBookshelfIndex)
+                : "현재 책장";
 
-            if (bookAddConfirmMetaText != null)
-            {
-                var shelfName = bookshelfGenerator != null
-                    ? bookshelfGenerator.GetBookshelfName(pendingBookAddBookshelfIndex >= 0 ? pendingBookAddBookshelfIndex : bookshelfGenerator.DisplayBookshelfIndex)
-                    : "현재 책장";
-                bookAddConfirmMetaText.text = $"{item.Author} · {item.Publisher} · {shelfName}";
-            }
+            var snapshot = new BookshelfPorting.Runtime.UI.BookAddConfirmSnapshot(
+                item.Title,
+                $"{item.Author} · {item.Publisher} · {shelfName}",
+                item.Summary,
+                ReadingStatusToIndex(pendingBookAddReadingStatus),
+                OrientationToIndex(pendingBookAddOrientation));
 
-            if (bookAddConfirmSummaryText != null)
+            if (bookAddConfirmUiToolkitOverlay != null && bookAddConfirmUiToolkitOverlay.IsVisible)
             {
-                bookAddConfirmSummaryText.text = item.Summary;
+                bookAddConfirmUiToolkitOverlay.UpdateSnapshot(snapshot);
             }
-
-            StyleBookPlacementOptionButton(bookAddConfirmSpineButton, pendingBookAddOrientation == BookOrientation.Spine);
-            StyleBookPlacementOptionButton(bookAddConfirmAngledButton, pendingBookAddOrientation == BookOrientation.Angled45);
-            StyleBookPlacementOptionButton(bookAddConfirmFrontButton, pendingBookAddOrientation == BookOrientation.Front);
-            StyleBookAddReadingStatusButton(bookAddConfirmUnreadButton, pendingBookAddReadingStatus == App.Domain.ReadingStatus.Unread);
-            StyleBookAddReadingStatusButton(bookAddConfirmReadingButton, pendingBookAddReadingStatus == App.Domain.ReadingStatus.Reading);
-            StyleBookAddReadingStatusButton(bookAddConfirmReadButton, pendingBookAddReadingStatus == App.Domain.ReadingStatus.Read);
-            StyleHudButton(
-                confirmBookAddButton,
-                new Color32(88, 133, 117, 245),
-                new Color32(72, 114, 100, 255),
-                new Color32(224, 219, 214, 140),
-                14,
-                Color.white,
-                true);
-            StyleHudButton(
-                cancelBookAddConfirmButton,
-                new Color32(245, 237, 226, 245),
-                new Color32(255, 248, 236, 255),
-                new Color32(224, 219, 214, 140),
-                14,
-                new Color32(84, 74, 66, 255),
-                true);
+            else
+            {
+                bookAddConfirmUiToolkitOverlay?.Show(snapshot);
+            }
         }
 
         private void AddCatalogBookToShelf(int catalogIndex, BookOrientation orientation)
@@ -10317,6 +10294,8 @@ namespace BookshelfPorting.Runtime
             // UI Toolkit overlay 가 visible 일 때도 isBookshelfManagePanelOpen 으로 간주 — CanOpenBookAddPanel,
             // HasOpenBookshelfModal 등 기존 가드가 새 overlay 도 정확히 인식하도록 단일 진실 보장.
             var isManagePanelOpenEffective = isBookshelfManagePanelOpen || IsBookshelfManageOverlayVisible;
+            // 미저장 확인도 동일 — UI Toolkit overlay 가 visible 이면 열린 것으로 간주.
+            var isUnsavedConfirmEffective = isBookshelfUnsavedConfirmPanelOpen || IsBookshelfUnsavedConfirmOverlayVisible;
 
             return new BookshelfOverlayStateSnapshot(
                 isBookshelfNameEditPanelOpen,
@@ -10325,7 +10304,7 @@ namespace BookshelfPorting.Runtime
                 isBookAddPanelOpen,
                 isBookAddConfirmPanelOpen,
                 isManagePanelOpenEffective,
-                isBookshelfUnsavedConfirmPanelOpen,
+                isUnsavedConfirmEffective,
                 isDeleteResultDialogOpen,
                 isBookSearchPanelOpen,
                 isBookAddPlacementSelectionActive,
@@ -10372,11 +10351,7 @@ namespace BookshelfPorting.Runtime
             isBookSearchPanelOpen = true;
             activeBookSearchFilter = BookSearchFilter.All;
             shouldResetBookSearchScrollToTop = true;
-            if (bookSearchInputField != null)
-            {
-                bookSearchInputField.text = string.Empty;
-            }
-
+            // 검색어 초기화는 overlay 의 Show() 가 담당.
             RefreshHud();
         }
 
@@ -10389,6 +10364,7 @@ namespace BookshelfPorting.Runtime
                 bookSearchPanel.SetActive(false);
             }
 
+            bookSearchUiToolkitOverlay?.Hide();
             RefreshHud();
         }
 
@@ -10437,24 +10413,20 @@ namespace BookshelfPorting.Runtime
                           !IsBookshelfEditMode &&
                           (state == null || (!state.IsViewingBook && state.ActiveDraggedBook == null)) &&
                           (bookshelfGenerator == null || !bookshelfGenerator.IsBookshelfSwitching);
-            bookSearchPanel.SetActive(canShow);
             if (!canShow)
             {
                 isBookSearchPanelOpen = false;
                 bookSearchResults.Clear();
+                bookSearchUiToolkitOverlay?.Hide();
                 return;
             }
 
-            if (bookSearchTitleText != null)
-            {
-                bookSearchTitleText.text = bookshelfGenerator != null
-                    ? $"{bookshelfGenerator.DisplayBookshelfName} 책 찾기"
-                    : "책 찾기";
-            }
+            var title = bookshelfGenerator != null
+                ? $"{bookshelfGenerator.DisplayBookshelfName} 책 찾기"
+                : "책 찾기";
 
-            RefreshBookshelfSelectorButtons(bookSearchShelfSelectorButtons, bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1, CurrentFocusArea == ExperienceFocusArea.Bookshelf);
-
-            var query = bookSearchInputField != null ? bookSearchInputField.text : string.Empty;
+            // 검색어는 overlay 의 TextField 가 단일 소유 — 여기서 읽어 검색에 사용.
+            var query = bookSearchUiToolkitOverlay != null ? bookSearchUiToolkitOverlay.Query : string.Empty;
             bookSearchResults.Clear();
             var allBooks = new List<BookEntity>();
             var allMatchCount = 0;
@@ -10494,74 +10466,49 @@ namespace BookshelfPorting.Runtime
                 }
             }
 
-            var visibleCount = Mathf.Min(bookSearchResults.Count, bookSearchResultButtons.Length);
-            var viewportHeight = GetHudScrollViewportHeight(bookSearchScrollRect, BookSearchResultViewportHeight);
-            if (bookSearchRowsContent != null)
+            var visibleCount = Mathf.Min(bookSearchResults.Count, BookSearchMaxResultCount);
+            var rows = new List<BookshelfPorting.Runtime.UI.BookSearchRowItem>(visibleCount);
+            for (var i = 0; i < visibleCount; i++)
             {
-                var contentHeight = Mathf.Max(viewportHeight, visibleCount * BookSearchResultRowHeight);
-                bookSearchRowsContent.sizeDelta = new Vector2(0f, contentHeight);
-            }
-
-            var canScroll = visibleCount * BookSearchResultRowHeight > viewportHeight + 1f;
-            ApplyHudScrollState(bookSearchScrollRect, bookSearchScrollbar, bookSearchRowsContent, canScroll, shouldResetBookSearchScrollToTop);
-            shouldResetBookSearchScrollToTop = false;
-
-            for (var i = 0; i < bookSearchResultButtons.Length; i++)
-            {
-                var button = bookSearchResultButtons[i];
-                if (button == null)
-                {
-                    continue;
-                }
-
-                var isVisible = i < visibleCount;
-                button.gameObject.SetActive(isVisible);
-                if (!isVisible)
-                {
-                    continue;
-                }
-
                 var book = bookSearchResults[i];
                 var meta = dataStore != null ? dataStore.GetOrCreateBookMeta(book) : null;
-                var title = TryGetBookDisplayTitle(book);
+                var rowTitle = TryGetBookDisplayTitle(book);
                 var author = meta != null ? meta.author : book.author;
                 var status = meta != null ? GetReadingStatusLabel(meta.readingStatus) : GetReadingStatusLabel(book.readingStatus);
-                SetButtonLabel(button, $"{title}\n{author} · {status}");
-                StyleBookAddResultButton(button);
+                rows.Add(new BookshelfPorting.Runtime.UI.BookSearchRowItem(i, rowTitle, $"{author} · {status}"));
             }
 
-            SetButtonLabel(bookSearchAllFilterButton, $"전체 {allMatchCount}");
-            SetButtonLabel(bookSearchReadingFilterButton, $"읽는 중 {readingMatchCount}");
-            SetButtonLabel(bookSearchReadFilterButton, $"완독 {readMatchCount}");
-            SetButtonLabel(bookSearchLikedFilterButton, $"좋아요 {likedMatchCount}");
-            StyleBookSearchFilterButton(bookSearchAllFilterButton, activeBookSearchFilter == BookSearchFilter.All);
-            StyleBookSearchFilterButton(bookSearchReadingFilterButton, activeBookSearchFilter == BookSearchFilter.Reading);
-            StyleBookSearchFilterButton(bookSearchReadFilterButton, activeBookSearchFilter == BookSearchFilter.Read);
-            StyleBookSearchFilterButton(bookSearchLikedFilterButton, activeBookSearchFilter == BookSearchFilter.Liked);
-            StyleHudButton(
-                closeBookSearchButton,
-                new Color32(245, 237, 226, 245),
-                new Color32(255, 248, 236, 255),
-                new Color32(224, 219, 214, 140),
-                16,
-                new Color32(84, 74, 66, 255),
-                true);
+            var sectionSummary = bookshelfGenerator != null && bookshelfGenerator.ActiveBookshelfSectionCount > 0
+                ? $" · 빈 섹션 {bookshelfGenerator.ActiveBookshelfEmptySectionCount}/{bookshelfGenerator.ActiveBookshelfSectionCount}"
+                : string.Empty;
+            var statusText = bookSearchResults.Count == 0
+                ? "일치하는 책이 없습니다."
+                : bookSearchResults.Count > BookSearchMaxResultCount
+                    ? $"{bookSearchResults.Count}권 중 {visibleCount}권 표시 · 스크롤{sectionSummary}"
+                    : $"{bookSearchResults.Count}권{sectionSummary}";
 
-            if (bookSearchStatusText != null)
+            var snapshot = new BookshelfPorting.Runtime.UI.BookSearchSnapshot(
+                title,
+                bookshelfGenerator != null ? bookshelfGenerator.BookshelfCount : 0,
+                bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1,
+                (int)activeBookSearchFilter,
+                allMatchCount,
+                readingMatchCount,
+                readMatchCount,
+                likedMatchCount,
+                rows,
+                statusText,
+                shouldResetBookSearchScrollToTop);
+            shouldResetBookSearchScrollToTop = false;
+
+            if (bookSearchUiToolkitOverlay != null && bookSearchUiToolkitOverlay.IsVisible)
             {
-                var sectionSummary = bookshelfGenerator != null && bookshelfGenerator.ActiveBookshelfSectionCount > 0
-                    ? $" · 빈 섹션 {bookshelfGenerator.ActiveBookshelfEmptySectionCount}/{bookshelfGenerator.ActiveBookshelfSectionCount}"
-                    : string.Empty;
-                bookSearchStatusText.text = bookSearchResults.Count == 0
-                    ? "일치하는 책이 없습니다."
-                    : bookSearchResults.Count > bookSearchResultButtons.Length
-                        ? $"{bookSearchResults.Count}권 중 {visibleCount}권 표시 · 스크롤{sectionSummary}"
-                        : canScroll
-                            ? $"{bookSearchResults.Count}권 · 스크롤{sectionSummary}"
-                            : $"{bookSearchResults.Count}권{sectionSummary}";
+                bookSearchUiToolkitOverlay.UpdateSnapshot(snapshot);
             }
-
-            bookSearchPanel.transform.SetAsLastSibling();
+            else
+            {
+                bookSearchUiToolkitOverlay?.Show(snapshot);
+            }
         }
 
         private void OpenBookSearchResult(int slot)
@@ -10612,7 +10559,7 @@ namespace BookshelfPorting.Runtime
             RefreshHud();
         }
 
-        // 책장관리 panel 의 "저장" 버튼 핸들러. 디자인변경과 동일 패턴.
+        // 책장관리 panel 의 "저장" 버튼 핸들러.
         private void CommitBookshelfManagePanel()
         {
             MarkBookshelfEditSaved();
@@ -11893,7 +11840,7 @@ namespace BookshelfPorting.Runtime
 
         private BookAddCatalogItem GetBookAddCatalogItem(int index)
         {
-            var query = bookAddSearchInputField != null ? bookAddSearchInputField.text : string.Empty;
+            var query = bookAddUiToolkitOverlay != null ? bookAddUiToolkitOverlay.Query : string.Empty;
             var catalog = GetBookAddCatalogItems(query);
             return index >= 0 && index < catalog.Count ? catalog[index] : null;
         }
@@ -12049,7 +11996,7 @@ namespace BookshelfPorting.Runtime
         {
             if (mode == BookAddBrowseMode.Search)
             {
-                RequestBookAddApiSearch(bookAddSearchInputField != null ? bookAddSearchInputField.text : string.Empty);
+                RequestBookAddApiSearch(bookAddUiToolkitOverlay != null ? bookAddUiToolkitOverlay.Query : string.Empty);
                 return;
             }
 
@@ -12665,138 +12612,6 @@ namespace BookshelfPorting.Runtime
             }
         }
 
-        private void RefreshBookshelfDesignPanel(int displayIndex)
-        {
-            if (!isBookshelfDesignPanelOpen ||
-                bookshelfGenerator == null ||
-                bookshelfDesignPanel == null)
-            {
-                return;
-            }
-
-            var style = bookshelfGenerator.GetBookshelfDesignStyle(displayIndex);
-            StyleBookshelfDesignButton(defaultBookshelfDesignButton, BookshelfThemeStyle.Default, style == BookshelfThemeStyle.Default, CanUseBookshelfDesignStyle(BookshelfThemeStyle.Default));
-            StyleBookshelfDesignButton(warmBookshelfDesignButton, BookshelfThemeStyle.Warm, style == BookshelfThemeStyle.Warm, CanUseBookshelfDesignStyle(BookshelfThemeStyle.Warm));
-            StyleBookshelfDesignButton(darkBookshelfDesignButton, BookshelfThemeStyle.Dark, style == BookshelfThemeStyle.Dark, CanUseBookshelfDesignStyle(BookshelfThemeStyle.Dark));
-            StyleHudButton(
-                closeBookshelfDesignButton,
-                new Color32(245, 237, 226, 245),
-                new Color32(255, 248, 236, 255),
-                new Color32(224, 219, 214, 140),
-                14,
-                new Color32(84, 74, 66, 255),
-                true);
-        }
-
-        private void SetBookshelfDesignStyle(BookshelfThemeStyle style)
-        {
-            if (!CanMutateBookshelfCollection())
-            {
-                return;
-            }
-
-            var displayIndex = bookshelfGenerator != null ? bookshelfGenerator.DisplayBookshelfIndex : -1;
-            if (!EnsureBookshelfApiMutationReady(displayIndex, "책장 디자인 변경"))
-            {
-                RefreshHud();
-                return;
-            }
-
-            var canPersistDesignStyle = style == BookshelfThemeStyle.Default ||
-                                        !usesHttpApiMode ||
-                                        BookshelfSkinResolver.ResolveInventoryId(style).HasValue;
-            if (!canPersistDesignStyle)
-            {
-                bookshelfApiSyncController?.RefreshBookshelfSkinCatalog();
-            }
-
-            var previous = displayIndex >= 0 ? bookshelfGenerator.GetBookshelfDesignStyle(displayIndex) : style;
-            if (bookshelfGenerator.SetActiveBookshelfDesignStyle(style))
-            {
-                if (previous != style)
-                {
-                    if (canPersistDesignStyle)
-                    {
-                        MarkBookshelfEditDirty();
-                        SyncBookshelfUpdateOrRefresh(displayIndex, "책장 디자인 변경");
-                    }
-                    else
-                    {
-                        var message = BookshelfSkinResolver.HasLoadedApiAssets
-                            ? "서버 책장 스킨 카탈로그에 없는 디자인이라 이번 화면에만 임시 적용했습니다."
-                            : "서버 책장 스킨 목록을 불러오는 중이라 이번 화면에만 임시 적용했습니다.";
-                        ShowBookshelfTransientStatus(
-                            "책장 디자인 임시 적용",
-                            message,
-                            false);
-                    }
-                }
-
-                RefreshHud();
-            }
-        }
-
-        private bool CanUseBookshelfDesignStyle(BookshelfThemeStyle style)
-        {
-            if (!usesHttpApiMode)
-            {
-                return true;
-            }
-
-            if (style == BookshelfThemeStyle.Default)
-            {
-                return true;
-            }
-
-            if (!BookshelfSkinResolver.HasLoadedApiAssets)
-            {
-                return true;
-            }
-
-            return BookshelfSkinResolver.HasResolvableInventoryId(style);
-        }
-
-        private static void StyleBookshelfDesignButton(Button button, BookshelfThemeStyle style, bool isActive, bool isEnabled)
-        {
-            if (button == null)
-            {
-                return;
-            }
-
-            button.interactable = isEnabled;
-
-            Color32 background;
-            Color32 highlighted;
-            Color32 textColor;
-            switch (style)
-            {
-                case BookshelfThemeStyle.Warm:
-                    background = isActive ? new Color32(220, 151, 90, 255) : new Color32(255, 237, 210, 245);
-                    highlighted = new Color32(239, 171, 106, 255);
-                    textColor = isActive ? Color.white : new Color32(122, 70, 34, 255);
-                    break;
-                case BookshelfThemeStyle.Dark:
-                    background = isActive ? new Color32(86, 67, 55, 255) : new Color32(232, 224, 216, 245);
-                    highlighted = new Color32(105, 83, 68, 255);
-                    textColor = isActive ? Color.white : new Color32(70, 54, 45, 255);
-                    break;
-                default:
-                    background = isActive ? new Color32(197, 128, 67, 255) : new Color32(255, 255, 255, 235);
-                    highlighted = isActive ? new Color32(214, 145, 82, 255) : new Color32(241, 235, 230, 255);
-                    textColor = isActive ? Color.white : new Color32(63, 47, 38, 255);
-                    break;
-            }
-
-            StyleHudButton(
-                button,
-                background,
-                highlighted,
-                new Color32(224, 219, 214, 140),
-                14,
-                textColor,
-                isEnabled);
-        }
-
         private void RefreshBookshelfDeleteConfirmPanel(int displayIndex)
         {
             if (!isBookshelfDeleteConfirmPanelOpen ||
@@ -12843,7 +12658,6 @@ namespace BookshelfPorting.Runtime
 
             CloseBookshelfNameEditPanel();
             CloseBookshelfDeleteConfirmPanel();
-            CloseBookshelfDesignPanel();
             CloseBookAddPanel(false);
             CloseBookAddConfirmPanelSilently();
             CloseOverlayPanels();
@@ -12921,7 +12735,6 @@ namespace BookshelfPorting.Runtime
             }
 
             CloseBookshelfNameEditPanel();
-            CloseBookshelfDesignPanel();
             CloseBookAddPanel(false);
             CloseBookAddConfirmPanelSilently();
             CloseOverlayPanels();
@@ -13113,8 +12926,7 @@ namespace BookshelfPorting.Runtime
                 CloseBookshelfManagePanel();
                 CloseBookshelfNameEditPanel();
                 CloseBookshelfDeleteConfirmPanel();
-                CloseBookshelfDesignPanel();
-            }
+                }
         }
 
         private bool CanUseOwnerBookActions()
@@ -15480,14 +15292,27 @@ namespace BookshelfPorting.Runtime
                 AttachDashboardCallbacks(controller);
                 SyncExternalDashboardTarget(controller);
                 controller.SetDimmed(!isFocused);
-                controller.SetInteractionEnabled(isFocused);
+                // 포커싱 시 world-space 방명록은 배경 — interaction 은 screen-space overlay 가 담당.
+                controller.SetInteractionEnabled(false);
+            }
+
+            // screen-space overlay 는 카메라 전환이 끝난 뒤에만 노출한다 (HandleCameraTransitionCompleted
+            // 의 CameraMode.Whiteboard 블록에서 show). 이 메서드는 per-frame 으로 호출되는데 진입 즉시
+            // 띄우면 fullscreen overlay 가 카메라 이동 애니메이션을 가려 "전환 없이 바로 넘어간" 것처럼
+            // 보인다. 여기서는 포커스 해제 시 숨기기만 담당 — 모든 unfocus 경로의 catch-all.
+            if (!isFocused)
+            {
+                UpdateGuestbookScreenOverlay(false);
             }
 
             SetGuestbookBoardHitAreaColliderEnabled(!isFocused);
 
-            if (!externalDashboardPanel.activeSelf)
+            // screen-space overlay 가 떠 있으면 dim 한 world UI 패널을 숨긴다 — overlay 카드 바깥
+            // 여백으로 world 패널이 비치지 않게. overlay 미표시면 정상대로 world 패널 표시.
+            bool overlayShown = guestbookScreenOverlayPanel != null && guestbookScreenOverlayPanel.activeSelf;
+            if (externalDashboardPanel.activeSelf == overlayShown)
             {
-                externalDashboardPanel.SetActive(true);
+                externalDashboardPanel.SetActive(!overlayShown);
             }
         }
 
@@ -15512,6 +15337,231 @@ namespace BookshelfPorting.Runtime
             }
 
             controller.ShowMineDashboard();
+        }
+
+        // ===== 방명록 screen-space overlay (world-space dim 버그 workaround) =====
+
+        // externalDashboardPanel(world-space) 을 1회 복제해 screen-space PanelSettings 로 전환.
+        // lazy — 첫 포커싱 시점에 생성 (externalDashboardPanel wiring 완료 보장).
+        private void EnsureGuestbookScreenOverlay()
+        {
+            if (guestbookScreenOverlayPanel != null)
+            {
+                return;
+            }
+            if (externalDashboardPanel == null)
+            {
+                return;
+            }
+
+            var clone = Instantiate(externalDashboardPanel);
+            clone.name = "GuestbookScreenSpaceOverlay";
+            clone.transform.SetParent(null, false);
+
+            // UIDocument 의 PanelSettings 를 screen-space 로 — 기존 world PanelSettings 를 복제 후
+            // renderMode 만 ScreenSpaceOverlay 로 바꿔서 themeStyleSheet/scaleMode 등은 유지.
+            var doc = clone.GetComponent<UIDocument>();
+            if (doc != null && doc.panelSettings != null)
+            {
+                var screenSettings = Instantiate(doc.panelSettings);
+                screenSettings.name = "GuestbookScreenOverlayPanelSettings";
+                ConfigureScreenOverlayPanelSettings(screenSettings);
+                doc.panelSettings = screenSettings;
+            }
+
+            guestbookScreenOverlayController = clone.GetComponent<DashboardScreenController>();
+            if (guestbookScreenOverlayController == null)
+            {
+                guestbookScreenOverlayController = clone.GetComponentInChildren<DashboardScreenController>(true);
+            }
+
+            // 클론을 overlay mirror 로 표시 — 자체 API fetch 를 멈추고, 포커싱 시 world 방명록의
+            // 이미 로드된 데이터를 ApplyOverlaySnapshot 으로 주입받는다 (데이터 로드 딜레이 제거).
+            if (guestbookScreenOverlayController != null)
+            {
+                guestbookScreenOverlayController.SetOverlayMirrorMode(true);
+            }
+
+            clone.SetActive(false);
+            guestbookScreenOverlayPanel = clone;
+            Debug.Log($"[GuestbookScreenOverlay] 복제 생성 완료 — controller={(guestbookScreenOverlayController != null)} " +
+                      $"panelSettings={(doc != null && doc.panelSettings != null ? doc.panelSettings.name : "null")}");
+        }
+
+        // 복제 PanelSettings 를 screen-space overlay 용으로 구성.
+        //   1) renderMode → ScreenSpaceOverlay (reflection — Unity 버전별 API 차이 대비)
+        //   2) scaleMode/referenceResolution → 1920x1080 기준 ScaleWithScreenSize (world 복제본의 scale 설정이
+        //      screen-space 에서 컴포넌트를 뒤죽박죽으로 만드는 문제 해결)
+        private static void ConfigureScreenOverlayPanelSettings(UnityEngine.UIElements.PanelSettings settings)
+        {
+            if (settings == null)
+            {
+                return;
+            }
+
+            var prop = typeof(UnityEngine.UIElements.PanelSettings).GetProperty("renderMode");
+            if (prop != null && prop.CanWrite)
+            {
+                try
+                {
+                    // PanelRenderMode enum — ScreenSpaceOverlay = 0 (asset m_RenderMode: 0=screen / 1=world).
+                    prop.SetValue(settings, System.Enum.ToObject(prop.PropertyType, 0));
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"[GuestbookScreenOverlay] renderMode 설정 실패 — {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[GuestbookScreenOverlay] PanelSettings.renderMode 프로퍼티 없음 — Unity 버전 확인 필요.");
+            }
+
+            // DashboardView 는 1920x1080 가상 캔버스 기준 layout — screen-space 도 같은 기준으로 맞춰 컴포넌트 비율 보존.
+            settings.scaleMode = UnityEngine.UIElements.PanelScaleMode.ScaleWithScreenSize;
+            settings.referenceResolution = new Vector2Int(1920, 1080);
+            settings.screenMatchMode = UnityEngine.UIElements.PanelScreenMatchMode.MatchWidthOrHeight;
+            settings.match = 0.5f;
+        }
+
+        // overlay 복제본의 dashboard-root 를 고정 1920x1080 + scale 로 축소 + 화면 중앙 배치.
+        // dashboard-root 가 flex-grow:1 이라 그대로 두면 화면 전체를 채움 → 오버레이가 아니라 전체화면이 되는 문제 해결.
+        private void ApplyGuestbookOverlayLayout()
+        {
+            if (guestbookScreenOverlayPanel == null)
+            {
+                return;
+            }
+
+            var doc = guestbookScreenOverlayPanel.GetComponent<UIDocument>();
+            if (doc == null || doc.rootVisualElement == null)
+            {
+                return;
+            }
+
+            var docRoot = doc.rootVisualElement;
+            docRoot.style.justifyContent = UnityEngine.UIElements.Justify.Center;
+            docRoot.style.alignItems = UnityEngine.UIElements.Align.Center;
+
+            // [흰 배경의 정체] DashboardScreenController.SetInteractionEnabled(true) 가 docRoot
+            // (= rootVisualElement) 에 `dashboard-root--interactive` 클래스를 붙이고, DashboardView.uss 의
+            // `.dashboard-root--interactive { background-color: white }` 가 docRoot 를 순백색으로 칠한다.
+            // world-space 패널에선 docRoot ≈ 대시보드 면적이라 의도대로지만, screen-space fullscreen
+            // 패널에선 docRoot = 화면 전체 → 화면 전체가 흰색이 된다. inline 으로 투명 override (inline > USS).
+            // 이러면 카드 바깥 여백엔 실제 3D 룸(보드·벽)이 비친다 — dim 도 흰색도 아니다.
+            docRoot.style.backgroundColor = Color.clear;
+
+            // 카드 바깥(backdrop) 클릭 → 포커스 해제 (책장관리 backdrop-click 패턴과 동일, 투명 backdrop).
+            // rootVisualElement 가 재생성될 수 있어 매 적용마다 unregister 후 register (중복 등록 방지).
+            docRoot.UnregisterCallback<UnityEngine.UIElements.ClickEvent>(OnGuestbookOverlayScrimClicked);
+            docRoot.RegisterCallback<UnityEngine.UIElements.ClickEvent>(OnGuestbookOverlayScrimClicked);
+
+            // 이 파일엔 `using UnityEngine.UIElements;` 가 없다 (uGUI 파일이라 UnityEngine.UI 의 Button/Image 등과
+            // 이름 충돌 회피). .Q() 는 UQueryExtensions 의 확장 메서드라 namespace import 없이는 잡히지 않으므로
+            // 정적 메서드 호출 형태로 fully-qualified 호출한다.
+            var dashboardRoot = UnityEngine.UIElements.UQueryExtensions.Q<UnityEngine.UIElements.VisualElement>(
+                docRoot, "dashboard-root");
+            if (dashboardRoot == null)
+            {
+                Debug.LogWarning("[GuestbookScreenOverlay] dashboard-root 를 찾지 못함 — layout 적용 skip.");
+                return;
+            }
+
+            // flex-grow 끄고 1920x1080 고정 → scale 로 축소. 컴포넌트 비율 유지된 채 화면 일부만 차지.
+            // StyleLength/StyleFloat 는 int implicit 변환이 없어 float 리터럴 필수.
+            dashboardRoot.style.flexGrow = 0f;
+            dashboardRoot.style.width = 1920f;
+            dashboardRoot.style.height = 1080f;
+            dashboardRoot.style.scale = new UnityEngine.UIElements.StyleScale(
+                new UnityEngine.UIElements.Scale(new Vector2(GuestbookOverlayScale, GuestbookOverlayScale)));
+        }
+
+        // 포커싱 진입/종료에 맞춰 screen-space overlay 토글. focused 면 world-space 방명록 위에 선명한 복제본 표시.
+        private void UpdateGuestbookScreenOverlay(bool focused)
+        {
+            if (focused)
+            {
+                EnsureGuestbookScreenOverlay();
+                if (guestbookScreenOverlayPanel == null)
+                {
+                    return;
+                }
+
+                if (!guestbookScreenOverlayPanel.activeSelf)
+                {
+                    guestbookScreenOverlayPanel.SetActive(true);
+                }
+
+                // dim 한 world UI 패널 즉시 숨김 — overlay 가 그 위를 대체. 카드 바깥엔 실제 룸이 보인다.
+                if (externalDashboardPanel != null && externalDashboardPanel.activeSelf)
+                {
+                    externalDashboardPanel.SetActive(false);
+                }
+
+                if (guestbookScreenOverlayController != null)
+                {
+                    guestbookScreenOverlayController.SetDimmed(false);
+                    guestbookScreenOverlayController.SetInteractionEnabled(true);
+                    // world 방명록의 이미 로드된 데이터를 클론에 즉시 주입 — API 호출/딜레이 없음.
+                    ApplyGuestbookOverlayData();
+                }
+
+                // dashboard-root layout (고정 크기 + scale + 중앙) — panel build 완료 후 다음 frame 에 적용.
+                StartCoroutine(ApplyGuestbookOverlayLayoutNextFrame());
+            }
+            else if (guestbookScreenOverlayPanel != null && guestbookScreenOverlayPanel.activeSelf)
+            {
+                guestbookScreenOverlayPanel.SetActive(false);
+            }
+        }
+
+        private System.Collections.IEnumerator ApplyGuestbookOverlayLayoutNextFrame()
+        {
+            yield return null;
+            ApplyGuestbookOverlayLayout();
+        }
+
+        // world 방명록 컨트롤러의 이미 로드된 데이터를 overlay 클론에 복사 주입 → API 호출 없이 즉시 표시.
+        // world 가 아직 로드 전이면(드문 케이스) mirror 모드를 풀고 클론이 직접 로드하도록 fallback.
+        private void ApplyGuestbookOverlayData()
+        {
+            if (guestbookScreenOverlayController == null || externalDashboardPanel == null)
+            {
+                return;
+            }
+
+            var worldController = externalDashboardPanel.GetComponent<DashboardScreenController>();
+            if (worldController == null)
+            {
+                worldController = externalDashboardPanel.GetComponentInChildren<DashboardScreenController>(true);
+            }
+
+            var snapshot = worldController != null ? worldController.CaptureOverlaySnapshot() : null;
+            if (snapshot != null)
+            {
+                guestbookScreenOverlayController.ApplyOverlaySnapshot(snapshot);
+            }
+            else
+            {
+                // world 방명록 미로드 — fallback: 클론이 직접 fetch (딜레이 있지만 정확).
+                guestbookScreenOverlayController.SetOverlayMirrorMode(false);
+                SyncExternalDashboardTarget(guestbookScreenOverlayController);
+            }
+        }
+
+        // overlay 카드 바깥(backdrop) 클릭 → 방명록 포커스 해제. 카드(dashboard-root)·자식 클릭은 무시.
+        // 책장관리 overlay 의 backdrop-click 패턴과 동일 — 좌상단 Back 버튼과 함께 쓰는 보조 종료 수단.
+        private void OnGuestbookOverlayScrimClicked(UnityEngine.UIElements.ClickEvent evt)
+        {
+            // 카드 또는 그 자식을 클릭하면 target != currentTarget(=docRoot) → 무시.
+            if (evt.target != evt.currentTarget)
+            {
+                return;
+            }
+
+            // overlay 를 먼저 숨겨 카메라 복귀 애니메이션이 가려지지 않게 한 뒤 포커스 해제.
+            UpdateGuestbookScreenOverlay(false);
+            ReturnFromFocusedArea();
         }
 
         private static void SetGuestbookBoardHitAreaColliderEnabled(bool enabled)
@@ -17346,6 +17396,16 @@ namespace BookshelfPorting.Runtime
         /// </summary>
         private void OnDashboardRefreshClicked()
         {
+            // 사용자가 보고 있는 건 screen-space overlay 클론이다 — 그 클론을 새로고침한다.
+            // 클론은 overlay mirror 모드(자체 fetch 안 함)지만 RefreshAll 은 force 라 실제 서버 fetch 한다.
+            if (guestbookScreenOverlayController != null
+                && guestbookScreenOverlayPanel != null
+                && guestbookScreenOverlayPanel.activeSelf)
+            {
+                guestbookScreenOverlayController.RefreshAll();
+            }
+
+            // world 방명록도 함께 새로고침 — 다음 포커싱 때 클론에 inject 될 source 를 최신으로 유지.
             GetExternalDashboardController()?.RefreshAll();
         }
 

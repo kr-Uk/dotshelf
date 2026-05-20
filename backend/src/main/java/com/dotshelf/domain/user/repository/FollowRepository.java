@@ -14,6 +14,15 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 
     boolean existsByFollowerUserIdAndFollowingUserId(Long followerUserId, Long followingUserId);
 
+    /** 두 사용자가 서로 팔로우(맞팔)하는지. */
+    default boolean existsMutualFollow(Long userIdA, Long userIdB) {
+        if (userIdA == null || userIdB == null || userIdA.equals(userIdB)) {
+            return false;
+        }
+        return existsByFollowerUserIdAndFollowingUserId(userIdA, userIdB)
+                && existsByFollowerUserIdAndFollowingUserId(userIdB, userIdA);
+    }
+
     Optional<Follow> findByFollowerUserIdAndFollowingUserId(Long followerUserId, Long followingUserId);
 
     void deleteByFollowerUserIdAndFollowingUserId(Long followerUserId, Long followingUserId);

@@ -28,6 +28,7 @@ namespace App.Infrastructure.Api.Dashboard
 
             switch (raw.ToUpperInvariant())
             {
+                case "MUTUAL":
                 case "FOLLOWERS_ONLY":
                 case "FOLLOWERS":
                     return VisibilityScope.FollowersOnly;

@@ -1,0 +1,17 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <ui:Style src="BookshelfTutorialView.uss" />
+    <ui:VisualElement name="root" class="shelf-tutorial-root hidden" picking-mode="Position">
+        <ui:VisualElement name="backdrop" class="shelf-tutorial-backdrop" picking-mode="Position" />
+        <ui:VisualElement name="card" class="shelf-tutorial-card" picking-mode="Position">
+            <ui:Label class="shelf-tutorial-eyebrow" text="GETTING STARTED  ·  시작하기" />
+            <ui:Label name="title" class="shelf-tutorial-title" text="" />
+            <ui:Label name="message" class="shelf-tutorial-message" text="" />
+            <ui:VisualElement class="shelf-tutorial-steps-card">
+                <ui:Label name="steps" class="shelf-tutorial-steps" text="" />
+            </ui:VisualElement>
+            <ui:VisualElement class="shelf-tutorial-actions">
+                <ui:Button name="primary-button" class="shelf-tutorial-primary" text="" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
