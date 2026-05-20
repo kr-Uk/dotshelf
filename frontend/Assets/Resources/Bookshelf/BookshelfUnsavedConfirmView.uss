@@ -1,0 +1,123 @@
+/* ============================================================================
+   미저장 확인 overlay — "Card Catalog" 디자인 / critical confirm modal.
+   디자인 토큰(공용): Resources/UI/DotshelfDesignTokens.uss 의 var(--ds-*).
+   셀렉터 prefix shelf-unsaved-* 로 분리 — 다른 overlay USS 와 광역 충돌 없음.
+   ============================================================================ */
+
+/* ----- Modal layer ----- */
+
+.shelf-unsaved-root {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.hidden { display: none; }
+
+.shelf-unsaved-backdrop {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: var(--ds-color-overlay-scrim);
+}
+
+/* ----- Confirm card — stamp 좌측 사이드로 critical 강조 ----- */
+
+.shelf-unsaved-card {
+    width: 440px;
+    max-width: 90%;
+    background-color: var(--ds-color-paper);
+    border-radius: var(--ds-radius-md);
+    border-top-width: var(--ds-border-hairline);
+    border-right-width: var(--ds-border-hairline);
+    border-bottom-width: var(--ds-border-hairline);
+    border-top-color: var(--ds-color-rule);
+    border-right-color: var(--ds-color-rule);
+    border-bottom-color: var(--ds-color-rule);
+    border-left-width: var(--ds-border-stamp);
+    border-left-color: var(--ds-color-stamp);
+    padding-top: var(--ds-space-7);
+    padding-bottom: var(--ds-space-6);
+    padding-left: var(--ds-space-8);
+    padding-right: var(--ds-space-8);
+    flex-direction: column;
+}
+
+.shelf-unsaved-eyebrow {
+    font-size: var(--ds-font-eyebrow);
+    color: var(--ds-color-stamp);
+    letter-spacing: var(--ds-track-eyebrow);
+    -unity-font-style: bold;
+    margin-bottom: var(--ds-space-3);
+}
+
+.shelf-unsaved-title {
+    font-size: var(--ds-font-headline);
+    -unity-font-style: bold;
+    color: var(--ds-color-ink);
+    margin-bottom: var(--ds-space-3);
+}
+
+.shelf-unsaved-message {
+    font-size: var(--ds-font-body-strong);
+    color: var(--ds-color-ink-soft);
+    margin-bottom: var(--ds-space-6);
+    white-space: normal;
+}
+
+/* ----- Actions ----- */
+
+.shelf-unsaved-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+}
+
+.shelf-unsaved-cancel {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-body);
+    padding-top: var(--ds-space-2);
+    padding-bottom: var(--ds-space-2);
+    padding-left: var(--ds-space-5);
+    padding-right: var(--ds-space-5);
+    margin-right: var(--ds-space-2);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    border-radius: var(--ds-radius-xs);
+    transition-property: background-color, color;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-unsaved-cancel:hover {
+    background-color: var(--ds-color-hover-ink);
+    color: var(--ds-color-ink);
+}
+
+.shelf-unsaved-cancel:active {
+    scale: 0.98 0.98;
+}
+
+.shelf-unsaved-confirm {
+    background-color: var(--ds-color-stamp);
+    color: var(--ds-color-on-stamp);
+    font-size: var(--ds-font-body);
+    -unity-font-style: bold;
+    letter-spacing: var(--ds-track-meta);
+    padding-top: 9px;
+    padding-bottom: 9px;
+    padding-left: var(--ds-space-6);
+    padding-right: var(--ds-space-6);
+    border-width: 0;
+    border-radius: var(--ds-radius-xs);
+    transition-property: background-color, translate, scale;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-unsaved-confirm:hover {
+    background-color: var(--ds-color-stamp-deep);
+    translate: 0 -1px;
+}
+
+.shelf-unsaved-confirm:active {
+    scale: 0.98 0.98;
+}

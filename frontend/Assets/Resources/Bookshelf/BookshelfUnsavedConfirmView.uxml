@@ -1,0 +1,15 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <ui:Style src="BookshelfUnsavedConfirmView.uss" />
+    <ui:VisualElement name="root" class="shelf-unsaved-root hidden" picking-mode="Position">
+        <ui:VisualElement name="backdrop" class="shelf-unsaved-backdrop" picking-mode="Position" />
+        <ui:VisualElement name="card" class="shelf-unsaved-card" picking-mode="Position">
+            <ui:Label class="shelf-unsaved-eyebrow" text="UNSAVED  ·  저장 안 됨" />
+            <ui:Label class="shelf-unsaved-title" text="수정된 사항이 있습니다" />
+            <ui:Label class="shelf-unsaved-message" text="저장하지 않고 이동하면 변경사항이 사라집니다. 저장 후 이동하시겠습니까?" />
+            <ui:VisualElement class="shelf-unsaved-actions">
+                <ui:Button name="cancel-button" class="shelf-unsaved-cancel" text="취소" />
+                <ui:Button name="confirm-button" class="shelf-unsaved-confirm" text="저장 후 이동" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

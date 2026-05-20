@@ -1,0 +1,40 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <ui:Style src="BookSearchView.uss" />
+    <ui:VisualElement name="root" class="shelf-search-root hidden" picking-mode="Position">
+        <ui:VisualElement name="backdrop" class="shelf-search-backdrop" picking-mode="Position" />
+        <ui:VisualElement name="frame" class="shelf-search-frame" picking-mode="Position">
+
+            <ui:VisualElement class="shelf-search-header">
+                <ui:VisualElement class="shelf-search-header-text">
+                    <ui:Label class="shelf-search-eyebrow" text="SHELF · SEARCH" />
+                    <ui:Label name="title" class="shelf-search-title" text="책 찾기" />
+                </ui:VisualElement>
+                <ui:Button name="close-button" class="shelf-search-close-button" text="✕" />
+            </ui:VisualElement>
+
+            <ui:VisualElement class="shelf-search-rule" />
+
+            <ui:VisualElement class="shelf-search-body">
+
+                <ui:Label class="shelf-search-sub-label" text="제목 또는 저자 검색" />
+                <ui:TextField name="search-input" class="shelf-search-input" max-length="40" />
+
+                <ui:Label class="shelf-search-sub-label shelf-search-sub-label-spaced" text="검색할 책장" />
+                <ui:VisualElement name="shelf-selector" class="shelf-search-shelf-row" />
+
+                <ui:VisualElement class="shelf-search-filter-row">
+                    <ui:Button name="filter-all" class="shelf-search-filter" text="전체" />
+                    <ui:Button name="filter-reading" class="shelf-search-filter" text="읽는 중" />
+                    <ui:Button name="filter-read" class="shelf-search-filter" text="완독" />
+                    <ui:Button name="filter-liked" class="shelf-search-filter" text="좋아요" />
+                </ui:VisualElement>
+
+                <ui:ScrollView name="results" class="shelf-search-results" mode="Vertical" horizontal-scroller-visibility="Hidden" />
+
+                <ui:Label name="status" class="shelf-search-status" text="" />
+
+            </ui:VisualElement>
+
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

@@ -1,0 +1,348 @@
+/* ============================================================================
+   책 추가 overlay — "Card Catalog" 디자인.
+   디자인 토큰(공용): Resources/UI/DotshelfDesignTokens.uss 의 var(--ds-*).
+   셀렉터 prefix shelf-add-* 로 분리 — 다른 overlay USS 와 광역 충돌 없음.
+   표지 이미지는 후속 task (현재 텍스트 위주 결과 행).
+   ============================================================================ */
+
+/* ----- Modal layer ----- */
+
+.shelf-add-root {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.hidden { display: none; }
+
+.shelf-add-backdrop {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: var(--ds-color-overlay-scrim);
+}
+
+.shelf-add-frame {
+    width: var(--ds-modal-width-lg);
+    max-width: 94%;
+    max-height: 90%;
+    background-color: var(--ds-color-paper);
+    border-radius: var(--ds-radius-md);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    padding-top: 30px;
+    padding-bottom: 28px;
+    padding-left: 38px;
+    padding-right: 38px;
+    flex-direction: column;
+}
+
+/* ----- Header ----- */
+
+.shelf-add-header {
+    flex-direction: row;
+    align-items: flex-end;
+    margin-bottom: var(--ds-space-4);
+    flex-shrink: 0;
+}
+
+.shelf-add-header-text {
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.shelf-add-eyebrow {
+    font-size: var(--ds-font-eyebrow);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-display);
+    -unity-font-style: bold;
+    margin-bottom: var(--ds-space-1);
+}
+
+.shelf-add-title {
+    font-size: var(--ds-font-display);
+    -unity-font-style: bold;
+    color: var(--ds-color-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shelf-add-close-button {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-headline);
+    width: 40px;
+    height: 40px;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    padding-right: 0;
+    border-radius: var(--ds-radius-sm);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    transition-property: background-color, color;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-add-close-button:hover {
+    background-color: var(--ds-color-ink);
+    color: var(--ds-color-ink-on-stamp);
+}
+
+.shelf-add-close-button:active {
+    scale: 0.96 0.96;
+}
+
+/* ----- Rule ----- */
+
+.shelf-add-rule {
+    height: 1px;
+    background-color: var(--ds-color-ink);
+    margin-bottom: var(--ds-space-4);
+    flex-shrink: 0;
+}
+
+/* ----- Body ----- */
+
+.shelf-add-body {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.shelf-add-hint {
+    font-size: var(--ds-font-body);
+    color: var(--ds-color-ink-soft);
+    letter-spacing: var(--ds-track-loose);
+    margin-bottom: var(--ds-space-4);
+    white-space: normal;
+}
+
+.shelf-add-sub-label {
+    font-size: var(--ds-font-caption);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-button);
+    -unity-font-style: bold;
+    margin-bottom: var(--ds-space-2);
+}
+
+/* ----- Shelf selector chips ----- */
+
+.shelf-add-shelf-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: var(--ds-space-4);
+}
+
+.shelf-add-shelf-chip {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-meta);
+    -unity-font-style: bold;
+    padding-top: 5px;
+    padding-bottom: 5px;
+    padding-left: var(--ds-space-3);
+    padding-right: var(--ds-space-3);
+    margin-right: 6px;
+    margin-bottom: 6px;
+    border-radius: var(--ds-radius-pill);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    transition-property: background-color, color, border-color, scale;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-add-shelf-chip:hover {
+    background-color: var(--ds-color-hover-ink);
+    color: var(--ds-color-ink);
+}
+
+.shelf-add-shelf-chip:active {
+    scale: 0.97 0.97;
+}
+
+.shelf-add-shelf-chip.selected {
+    background-color: var(--ds-color-stamp);
+    color: var(--ds-color-on-stamp);
+    border-color: var(--ds-color-stamp);
+}
+
+.shelf-add-shelf-chip:disabled {
+    opacity: 1;
+}
+
+/* ----- Mode tabs (검색 / 추천 / 랭킹) ----- */
+
+.shelf-add-mode-row {
+    flex-direction: row;
+    margin-bottom: var(--ds-space-3);
+    border-bottom-width: var(--ds-border-hairline);
+    border-bottom-color: var(--ds-color-rule);
+}
+
+.shelf-add-mode {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-body-strong);
+    -unity-font-style: bold;
+    padding-top: var(--ds-space-2);
+    padding-bottom: var(--ds-space-3);
+    padding-left: 0;
+    padding-right: 0;
+    margin-right: 26px;
+    border-width: 0;
+    border-bottom-width: var(--ds-border-stamp);
+    border-bottom-color: rgba(0, 0, 0, 0);
+    border-radius: 0;
+    transition-property: color, border-bottom-color;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-add-mode:hover {
+    color: var(--ds-color-ink);
+}
+
+.shelf-add-mode.selected {
+    color: var(--ds-color-stamp);
+    border-bottom-color: var(--ds-color-stamp);
+}
+
+/* ----- Search input ----- */
+
+.shelf-add-input {
+    margin-bottom: var(--ds-space-3);
+}
+
+.shelf-add-input > .unity-base-text-field__input {
+    background-color: var(--ds-color-paper-warm);
+    border-width: 0;
+    border-bottom-width: var(--ds-border-thick);
+    border-bottom-color: var(--ds-color-rule);
+    color: var(--ds-color-ink);
+    font-size: var(--ds-font-body-strong);
+    padding-top: var(--ds-space-3);
+    padding-bottom: var(--ds-space-3);
+    padding-left: var(--ds-space-3);
+    padding-right: var(--ds-space-3);
+    border-radius: var(--ds-radius-xs);
+    transition-property: border-bottom-color;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-add-input:focus > .unity-base-text-field__input {
+    border-bottom-color: var(--ds-color-stamp);
+}
+
+.shelf-add-input:disabled {
+    opacity: var(--ds-opacity-disabled);
+}
+
+/* ----- Results ----- */
+
+.shelf-add-results {
+    flex-grow: 1;
+    min-height: 180px;
+    max-height: 320px;
+    margin-bottom: var(--ds-space-3);
+}
+
+.shelf-add-result-row {
+    flex-direction: column;
+    align-items: flex-start;
+    background-color: var(--ds-color-paper-soft);
+    border-radius: var(--ds-radius-xs);
+    border-left-width: var(--ds-border-extra);
+    border-left-color: rgba(0, 0, 0, 0);
+    border-top-width: var(--ds-border-hairline);
+    border-right-width: var(--ds-border-hairline);
+    border-bottom-width: var(--ds-border-hairline);
+    border-top-color: var(--ds-color-rule-mute);
+    border-right-color: var(--ds-color-rule-mute);
+    border-bottom-color: var(--ds-color-rule-mute);
+    padding-top: var(--ds-space-3);
+    padding-bottom: var(--ds-space-3);
+    padding-left: var(--ds-space-4);
+    padding-right: var(--ds-space-4);
+    margin-top: 0;
+    margin-bottom: 6px;
+    margin-left: 0;
+    margin-right: 0;
+    transition-property: background-color, border-left-color, translate;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-add-result-row:hover {
+    background-color: var(--ds-color-paper-warm);
+    border-left-color: var(--ds-color-stamp);
+    translate: 2px 0;
+}
+
+.shelf-add-result-row:active {
+    scale: 0.99 0.99;
+}
+
+/* 이미 책장에 있는 책 — disabled. 색만이 아닌 opacity 로도 표시. */
+.shelf-add-result-row.is-added {
+    opacity: var(--ds-opacity-muted);
+}
+
+.shelf-add-result-row:disabled {
+    opacity: var(--ds-opacity-muted);
+}
+
+.shelf-add-result-title {
+    font-size: var(--ds-font-list);
+    color: var(--ds-color-ink);
+    -unity-font-style: bold;
+    white-space: normal;
+}
+
+.shelf-add-result-meta {
+    font-size: var(--ds-font-meta);
+    color: var(--ds-color-ink-mute);
+    letter-spacing: var(--ds-track-loose);
+    margin-top: 2px;
+    white-space: normal;
+}
+
+.shelf-add-result-summary {
+    font-size: var(--ds-font-body);
+    color: var(--ds-color-ink-soft);
+    margin-top: var(--ds-space-2);
+    white-space: normal;
+}
+
+.shelf-add-result-stats {
+    font-size: var(--ds-font-caption);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-loose);
+    margin-top: var(--ds-space-2);
+    white-space: normal;
+}
+
+.shelf-add-result-badge {
+    font-size: var(--ds-font-caption);
+    color: var(--ds-color-stamp);
+    -unity-font-style: bold;
+    letter-spacing: var(--ds-track-loose);
+    margin-top: var(--ds-space-2);
+}
+
+/* ----- Status ----- */
+
+.shelf-add-status {
+    font-size: var(--ds-font-body);
+    color: var(--ds-color-ink-soft);
+    letter-spacing: var(--ds-track-loose);
+    flex-shrink: 0;
+    white-space: normal;
+}
+
+.shelf-add-empty {
+    font-size: var(--ds-font-body);
+    color: var(--ds-color-ink-faint);
+    -unity-text-align: middle-center;
+    padding-top: var(--ds-space-8);
+    padding-bottom: var(--ds-space-8);
+    white-space: normal;
+}
