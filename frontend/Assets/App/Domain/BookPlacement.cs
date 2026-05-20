@@ -46,6 +46,10 @@ namespace App.Domain
         public decimal? PosX { get; set; }
         public decimal? PosY { get; set; }
         public decimal? PosZ { get; set; }
+        public int BookshelfIndex { get; set; }
+        public int CellIndex { get; set; }
+        public decimal? OffsetXInCell { get; set; }
+        public string SizePresetId { get; set; }
         public decimal ScaleX { get; set; } = 1m;
         public decimal ScaleY { get; set; } = 1m;
         public ShelfItemStatus Status { get; set; } = ShelfItemStatus.Active;
@@ -93,6 +97,10 @@ namespace App.Domain
                 PosX = PosX,
                 PosY = PosY,
                 PosZ = PosZ,
+                BookshelfIndex = BookshelfIndex,
+                CellIndex = CellIndex,
+                OffsetXInCell = OffsetXInCell,
+                SizePresetId = SizePresetId,
                 ScaleX = ScaleX,
                 ScaleY = ScaleY,
                 Status = Status
