@@ -9585,19 +9585,27 @@ namespace App.Bootstrap
             // 이 두 번 갱신되어 NormalizeExistingDecorationScales/RefreshPlayableBounds 직후 다시
             // 덮어쓰여지는 race, (b) 향후 비동기 repo 도입 시 in-flight load 와 충돌 가능성이 있어
             // 명시적으로 skip. init load 가 fire 안 됐거나(installer 비호출 경로) 실패했으면
-            // (파일 손상 / 권한 / 향후 API 네트워크 실패) fallback 으로 한 번 더 시도.
-            // 성공 시에만 가드 플래그를 set 하므로 실패가 영구 차단되지 않는다 (skh1205 리뷰 #2 /
-            // revbot 리뷰 반영).
+            // fallback 으로 한 번 더 시도하되, 로그인 사용자는 서버 layout 동기화가 권위 데이터이므로
+            // legacy local JSON 복원은 하지 않는다. 성공 시에만 가드 플래그를 set 하므로 오프라인
+            // restore 실패가 영구 차단되지 않는다 (skh1205 리뷰 #2 / revbot 리뷰 반영).
             if (!hasLoadedSavedDecorationsOnSceneInit)
             {
-                TryRestoreSavedDecorations(onCompleted: success =>
+                if (ShouldUseServerDecorationLayout())
                 {
-                    if (success) hasLoadedSavedDecorationsOnSceneInit = true;
-                    if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
+                    hasLoadedSavedDecorationsOnSceneInit = true;
+                    Debug.Log("[RoomEdit][Load] 편집 모드 진입 fallback: 서버 layout 이 authoritative 이므로 legacy local decoration restore skip.");
+                }
+                else
+                {
+                    TryRestoreSavedDecorations(onCompleted: success =>
                     {
-                        LogFantasyDeskHierarchyState($"EnterEditMode.afterTryRestoreSavedDecorations success={success}");
-                    }
-                });
+                        if (success) hasLoadedSavedDecorationsOnSceneInit = true;
+                        if (themeApplier != null && IsFantasyTheme(themeApplier.CurrentTheme))
+                        {
+                            LogFantasyDeskHierarchyState($"EnterEditMode.afterTryRestoreSavedDecorations success={success}");
+                        }
+                    });
+                }
             }
             // 진입 시점 marker 스냅샷 — "저장하지 않고 나가기" 롤백 기준점. load 후 캡처 순서가 중요:
             // 사용자가 진입 화면에서 본 상태가 곧 롤백 목표 상태가 되도록.
@@ -10365,8 +10373,9 @@ namespace App.Bootstrap
 
         // ---------- Decoration 저장 / 로드 / dirty 추적 ----------
 
-        // 명시적 "저장" 버튼 핸들러. 현재 씬의 DecorationItemMarker 들을 DecorationLayoutItem 으로
-        // 직렬화 후 SaveDecorationsUseCase 로 영속화. 성공 시 ClearDirty + 토스트.
+        // 명시적 "저장" 버튼 핸들러. 현재 배치 루트의 DecorationItemMarker 들을
+        // DecorationLayoutItem 으로 직렬화 후 SaveDecorationsUseCase 로 영속화.
+        // 성공 시 ClearDirty + 토스트.
         private void OnSaveButtonClicked()
         {
             if (!IsEditModeActive) return;
@@ -10583,7 +10592,10 @@ namespace App.Bootstrap
 
         private void SaveCurrentDecorationLayout(Action onSuccess, Action<string> onError)
         {
-            var items = CollectDecorationLayoutItems();
+            // 저장은 현재 화면에 실제로 남아 있는 배치만 대상으로 한다. 씬 전체를 스캔하면
+            // 테마 교체 중 rollback hold root 에 숨겨 둔 이전 테마/에셋까지 payload 에 섞여
+            // 재진입 시 예전 오브젝트가 새 테마 위에 겹쳐 복원된다.
+            var items = CollectDecorationLayoutItems(scopeToPlacedItemsRoot: true);
             Debug.Log($"[RoomEdit][Save] 저장 대상 데코레이션 {items.Count}개");
             for (int i = 0; i < items.Count; i++)
             {
@@ -10596,15 +10608,25 @@ namespace App.Bootstrap
             saveDecorationsUseCase.Execute(items,
                 onSuccess: () =>
                 {
-                    Debug.Log($"[RoomEdit][Save] 저장 성공 — {items.Count}개 영속화 완료");
-                    TrySaveLayoutSnapshotToServer(items);
-                    DiscardPlacementRollbackHold();
-                    ClearPendingEditVisualChanges();
-                    ClearDirty("save success");
-                    TryUploadRoomThumbnail();
-                    TakeEditEntrySnapshot();
-                    TakeEditVisualSnapshot();
-                    onSuccess?.Invoke();
+                    SaveLayoutSnapshotToServer(
+                        items,
+                        requireServerSave: ShouldUseServerDecorationLayout(),
+                        onSuccess: () =>
+                        {
+                            Debug.Log($"[RoomEdit][Save] 저장 성공 — {items.Count}개 영속화 완료");
+                            DiscardPlacementRollbackHold();
+                            ClearPendingEditVisualChanges();
+                            ClearDirty("save success");
+                            TryUploadRoomThumbnail();
+                            TakeEditEntrySnapshot();
+                            TakeEditVisualSnapshot();
+                            onSuccess?.Invoke();
+                        },
+                        onError: msg =>
+                        {
+                            Debug.LogError($"[RoomEdit][ServerLayout] 저장 실패 — {msg}");
+                            onError?.Invoke(msg);
+                        });
                 },
                 onError: msg =>
                 {
@@ -10620,9 +10642,26 @@ namespace App.Bootstrap
         // 런타임 ID 라 저장 파일에 들어가는 순간 다음 실행에서 매칭이 깨진다.
         private void TrySaveLayoutSnapshotToServer(IReadOnlyList<DecorationLayoutItem> items)
         {
+            SaveLayoutSnapshotToServer(items, requireServerSave: false, onSuccess: null, onError: null);
+        }
+
+        private void SaveLayoutSnapshotToServer(
+            IReadOnlyList<DecorationLayoutItem> items,
+            bool requireServerSave,
+            Action onSuccess,
+            Action<string> onError)
+        {
             if (IsReadOnlySpacePreview)
             {
                 Debug.Log("[RoomEdit][ServerLayout] skipped: read-only space preview cannot save layout.");
+                if (requireServerSave)
+                {
+                    onError?.Invoke("read-only space preview");
+                }
+                else
+                {
+                    onSuccess?.Invoke();
+                }
                 return;
             }
 
@@ -10630,6 +10669,14 @@ namespace App.Bootstrap
             if (apiManager == null || !apiManager.HasAccessToken)
             {
                 Debug.Log("[RoomEdit][ServerLayout] skipped: API token is missing.");
+                if (requireServerSave)
+                {
+                    onError?.Invoke("API token is missing");
+                }
+                else
+                {
+                    onSuccess?.Invoke();
+                }
                 return;
             }
 
@@ -10641,6 +10688,14 @@ namespace App.Bootstrap
             catch (Exception ex)
             {
                 Debug.LogWarning($"[RoomEdit][ServerLayout] client init failed: {ex.GetType().Name} {ex.Message}");
+                if (requireServerSave)
+                {
+                    onError?.Invoke($"{ex.GetType().Name}: {ex.Message}");
+                }
+                else
+                {
+                    onSuccess?.Invoke();
+                }
                 return;
             }
 
@@ -10660,10 +10715,20 @@ namespace App.Bootstrap
                     }
 
                     Debug.Log($"[RoomEdit][ServerLayout] saved layout snapshot v{response?.LayoutVersion ?? 0L}.");
+                    onSuccess?.Invoke();
                 },
                 error =>
                 {
-                    Debug.LogWarning($"[RoomEdit][ServerLayout] save skipped/failed: {error?.Code}/{error?.Message}");
+                    var message = $"{error?.Code}/{error?.Message}";
+                    Debug.LogWarning($"[RoomEdit][ServerLayout] save skipped/failed: {message}");
+                    if (requireServerSave)
+                    {
+                        onError?.Invoke(message);
+                    }
+                    else
+                    {
+                        onSuccess?.Invoke();
+                    }
                 });
         }
 
@@ -11327,9 +11392,11 @@ namespace App.Bootstrap
         //   1. 이미 성공적으로 1회 load 했으면 no-op (중복 spawn / 이중 갱신 차단).
         //   2. UI/inventoryEntries 가 아직 빌드 안 됐을 수 있으므로 InitializeIfNeeded 보장.
         //   3. scene-baked marker 와 placedByInventoryKey 동기화.
-        //   4. TryRestoreSavedDecorations 호출 — 성공 시에만 hasLoadedSavedDecorationsOnSceneInit
-        //      = true 로 set. 실패 시 false 유지 → 다음 EnterEditMode 가 fallback 으로 재시도
-        //      (MR #128 skh1205 리뷰 #2 / revbot 리뷰 — flag race 수정).
+        //   4. 로그인/API 토큰이 있으면 서버 layout 응답이 clearExisting=true 로 적용되므로 legacy
+        //      local JSON 복원은 skip. 토큰이 없는 오프라인/익명 모드에서만 TryRestoreSavedDecorations
+        //      호출 — 성공 시에만 hasLoadedSavedDecorationsOnSceneInit = true 로 set. 실패 시 false 유지
+        //      → 다음 EnterEditMode 가 fallback 으로 재시도 (MR #128 skh1205 리뷰 #2 / revbot 리뷰 —
+        //      flag race 수정).
         internal void LoadSavedDecorationsAfterSceneInstall()
         {
             if (hasLoadedSavedDecorationsOnSceneInit) return;
@@ -11343,6 +11410,14 @@ namespace App.Bootstrap
             // PlayerPrefs 의 마지막 local-preview 이름 lookup 후 자동 적용. 편집모드 진입 전부터 vintage
             // 벽지/바닥 visible.
             RestoreLastLocalPreviewThemeOnSceneInstall();
+            if (ShouldUseServerDecorationLayout())
+            {
+                // 로그인 사용자는 /spaces/{id}/layout 응답이 clearExisting=true 로 적용된다.
+                // legacy local JSON 을 먼저 복원하면 예전 테마/에셋이 현재 서버 상태 위에 겹쳐 보일 수 있다.
+                hasLoadedSavedDecorationsOnSceneInit = true;
+                Debug.Log("[RoomEdit][Load] 서버 layout 이 authoritative 이므로 scene install legacy local decoration restore skip.");
+                return;
+            }
             TryRestoreSavedDecorations(onCompleted: success =>
             {
                 if (success)
@@ -11363,6 +11438,12 @@ namespace App.Bootstrap
                     LogFantasyDeskHierarchyState($"LoadSavedDecorationsAfterSceneInstall.afterRestore success={success}");
                 }
             });
+        }
+
+        private static bool ShouldUseServerDecorationLayout()
+        {
+            var apiManager = APIManager.Instance;
+            return apiManager != null && apiManager.HasAccessToken;
         }
 
         // 씬 install 시점에 PlayerPrefs 저장된 local-preview 테마 복원. server 가 알 수 없는 테마라
