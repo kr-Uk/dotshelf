@@ -3,7 +3,6 @@ package com.dotshelf.domain.bookshelf.entity;
 import java.time.LocalDateTime;
 
 import com.dotshelf.global.common.BaseEntity;
-import com.dotshelf.global.common.VisibilityScope;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -62,7 +61,7 @@ public class Bookshelf extends BaseEntity {
         this.skinInventoryId = skinInventoryId;
         this.name = name;
         this.description = description;
-        this.visibilityScope = VisibilityScope.normalize(visibilityScope);
+        this.visibilityScope = visibilityScope == null ? "PUBLIC" : visibilityScope;
         this.displayOrder = displayOrder;
     }
 
@@ -74,7 +73,7 @@ public class Bookshelf extends BaseEntity {
             this.description = description;
         }
         if (visibilityScope != null && !visibilityScope.isBlank()) {
-            this.visibilityScope = VisibilityScope.normalize(visibilityScope);
+            this.visibilityScope = visibilityScope;
         }
         if (skinInventoryId != null) {
             this.skinInventoryId = skinInventoryId;
