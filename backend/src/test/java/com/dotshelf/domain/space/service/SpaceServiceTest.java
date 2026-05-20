@@ -26,6 +26,7 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.dto.AssetDtos.DownloadManifestResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.ThemeContentsResponse;
 import com.dotshelf.domain.asset.repository.AssetRepository;
 import com.dotshelf.domain.asset.repository.UserAssetInventoryRepository;
 import com.dotshelf.domain.asset.service.AssetService;
@@ -741,16 +742,96 @@ class SpaceServiceTest {
         given(userAssetInventoryRepository.findByIdAndUserId(30L, 1L))
                 .willReturn(Optional.of(TestFixtures.inventory(30L, 1L, 50L)));
         given(assetRepository.findById(50L)).willReturn(Optional.of(TestFixtures.themeAsset(50L, 1L, "SPACE", true)));
+        given(assetRepository.findById(101L)).willReturn(Optional.of(assetWithType(101L, "WALLPAPER")));
+        given(assetRepository.findById(103L)).willReturn(Optional.of(assetWithType(103L, "DESK_SET")));
+        given(assetRepository.findById(107L)).willReturn(Optional.of(assetWithType(107L, "BOOKSHELF_SKIN")));
         given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
         given(bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(10L)).willReturn(List.of(bookshelf));
+        given(assetService.getThemeContents(50L))
+                .willReturn(new ThemeContentsResponse(50L, 101L, null, 103L, null, null, null, 107L));
+        given(userAssetInventoryRepository.findByUserIdAndAssetId(1L, 101L))
+                .willReturn(Optional.of(TestFixtures.inventory(201L, 1L, 101L)));
+        given(userAssetInventoryRepository.findByUserIdAndAssetId(1L, 103L))
+                .willReturn(Optional.of(TestFixtures.inventory(203L, 1L, 103L)));
+        given(userAssetInventoryRepository.findByUserIdAndAssetId(1L, 107L))
+                .willReturn(Optional.of(TestFixtures.inventory(207L, 1L, 107L)));
 
         var response = spaceService.applyThemeWithMode(1L, 30L, ThemeApplyMode.RESET);
 
         assertThat(response.themeReset()).isTrue();
         assertThat(response.space().currentThemeInventoryId()).isEqualTo(30L);
-        assertThat(response.space().currentWallpaperInventoryId()).isNull();
+        assertThat(response.space().currentWallpaperInventoryId()).isEqualTo(201L);
+        assertThat(response.space().currentDeskInventoryId()).isEqualTo(203L);
+        assertThat(response.space().currentBookshelfSkinInventoryId()).isEqualTo(207L);
         assertThat(response.space().layoutVersion()).isEqualTo(1L);
         assertThat(bookshelf.getSkinInventoryId()).isNull();
+    }
+
+    @Test
+    @DisplayName("RESET theme apply grants missing default asset inventories")
+    void applyThemeWithMode_reset_grantsMissingDefaultInventories() {
+        Space space = TestFixtures.space(10L, 1L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(userAssetInventoryRepository.findByIdAndUserId(30L, 1L))
+                .willReturn(Optional.of(TestFixtures.inventory(30L, 1L, 50L)));
+        given(assetRepository.findById(50L)).willReturn(Optional.of(TestFixtures.themeAsset(50L, 1L, "SPACE", true)));
+        given(assetRepository.findById(101L)).willReturn(Optional.of(assetWithType(101L, "WALLPAPER")));
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+        given(bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(10L)).willReturn(List.of());
+        given(assetService.getThemeContents(50L))
+                .willReturn(new ThemeContentsResponse(50L, 101L, null, null, null, null, null, null));
+        given(userAssetInventoryRepository.findByUserIdAndAssetId(1L, 101L))
+                .willReturn(Optional.empty(), Optional.of(TestFixtures.inventory(201L, 1L, 101L)));
+        given(userAssetInventoryRepository.insertDefaultGrantIfAbsent(1L, 101L)).willReturn(1);
+
+        var response = spaceService.applyThemeWithMode(1L, 30L, ThemeApplyMode.RESET);
+
+        assertThat(response.space().currentWallpaperInventoryId()).isEqualTo(201L);
+        then(userAssetInventoryRepository).should().insertDefaultGrantIfAbsent(1L, 101L);
+    }
+
+    @Test
+    @DisplayName("RESET theme apply rejects default asset type mismatches")
+    void applyThemeWithMode_reset_defaultAssetTypeMismatch_throwsException() {
+        Space space = TestFixtures.space(10L, 1L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(userAssetInventoryRepository.findByIdAndUserId(30L, 1L))
+                .willReturn(Optional.of(TestFixtures.inventory(30L, 1L, 50L)));
+        given(assetRepository.findById(50L)).willReturn(Optional.of(TestFixtures.themeAsset(50L, 1L, "SPACE", true)));
+        given(assetRepository.findById(101L)).willReturn(Optional.of(assetWithType(101L, "DESK_SET")));
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+        given(bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(10L)).willReturn(List.of());
+        given(assetService.getThemeContents(50L))
+                .willReturn(new ThemeContentsResponse(50L, 101L, null, null, null, null, null, null));
+
+        assertThatThrownBy(() -> spaceService.applyThemeWithMode(1L, 30L, ThemeApplyMode.RESET))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.CATEGORY_INVENTORY_TYPE_MISMATCH);
+        then(userAssetInventoryRepository).should(never()).insertDefaultGrantIfAbsent(any(), any());
+    }
+
+    @Test
+    @DisplayName("RESET theme apply re-reads default inventory after concurrent grant")
+    void applyThemeWithMode_reset_concurrentDefaultGrant_reusesExistingInventory() {
+        Space space = TestFixtures.space(10L, 1L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(userAssetInventoryRepository.findByIdAndUserId(30L, 1L))
+                .willReturn(Optional.of(TestFixtures.inventory(30L, 1L, 50L)));
+        given(assetRepository.findById(50L)).willReturn(Optional.of(TestFixtures.themeAsset(50L, 1L, "SPACE", true)));
+        given(assetRepository.findById(101L)).willReturn(Optional.of(assetWithType(101L, "WALLPAPER")));
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+        given(bookshelfRepository.findBySpaceIdOrderByDisplayOrderAsc(10L)).willReturn(List.of());
+        given(assetService.getThemeContents(50L))
+                .willReturn(new ThemeContentsResponse(50L, 101L, null, null, null, null, null, null));
+        given(userAssetInventoryRepository.findByUserIdAndAssetId(1L, 101L))
+                .willReturn(Optional.empty(), Optional.of(TestFixtures.inventory(201L, 1L, 101L)));
+        given(userAssetInventoryRepository.insertDefaultGrantIfAbsent(1L, 101L)).willReturn(0);
+
+        var response = spaceService.applyThemeWithMode(1L, 30L, ThemeApplyMode.RESET);
+
+        assertThat(response.space().currentWallpaperInventoryId()).isEqualTo(201L);
+        then(userAssetInventoryRepository).should().insertDefaultGrantIfAbsent(1L, 101L);
     }
 
     @Test
@@ -1098,6 +1179,19 @@ class SpaceServiceTest {
         assertThat(response.items().getFirst().userBookId()).isEqualTo(2L);
         assertThat(response.items().getFirst().title()).isEqualTo("Beta");
         assertThat(response.nextCursor()).isEqualTo("2");
+    }
+
+    private Asset assetWithType(Long id, String assetType) {
+        Asset asset = Asset.builder()
+                .categoryId(1L)
+                .code("asset-" + id)
+                .name("asset-" + id)
+                .assetScope("SPACE")
+                .assetType(assetType)
+                .pricePages(0)
+                .build();
+        TestFixtures.setId(asset, id);
+        return asset;
     }
 
     private OwnedBookSummary ownedBook(Long userBookId, String title, LocalDate publishedDate, LocalDateTime addedAt) {
