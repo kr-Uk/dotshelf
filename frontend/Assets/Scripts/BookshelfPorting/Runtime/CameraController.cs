@@ -82,6 +82,13 @@ namespace BookshelfPorting.Runtime
         [SerializeField] private float mainViewMaxPitchDegrees = 25f;
         [SerializeField] private float mainViewOrbitPivotDistance = 1.8f;
 
+        // TryComputeMainViewPose 의 하드코딩 base pose 는 정면 기준 yaw -18.838° 로 틀어져 있다
+        // (책장 우측에서 좌측을 보는 cinematic 각도). orbit yaw clamp 가 이 base yaw 만큼 비대칭
+        // 이어야 절대 시야각이 좌우 대칭 (±mainViewMaxYawDegrees) 으로 유지된다 — 대칭 clamp 면
+        // 좌측 끝 orbit 시 절대 yaw 가 base 만큼 더 나가 방 뒷벽 gap 이 노출된다. base pose
+        // rotation 과 반드시 같은 값을 써야 하므로 const 로 공유.
+        private const float MainViewBaseYawDegrees = -18.838f;
+
         // MainView: the default main-scene pose. Derived at runtime from frontalAnchor
         // by pulling straight back along its forward axis (same look direction as the
         // bookshelf focus) and slightly widening the FOV so the surrounding room
@@ -461,7 +468,7 @@ namespace BookshelfPorting.Runtime
             // 두 단계 toggle (MainView ↔ QuarterView) 구조에서 좌우 대칭 정면을 가정했으나,
             // QuarterView 폐지 후엔 단일 기본 pose 만 있으면 충분.
             position = new Vector3(0.5770924f, 1.116157f, -2.342854f);
-            rotation = Quaternion.Euler(6.834f, -18.838f, 0f);
+            rotation = Quaternion.Euler(6.834f, MainViewBaseYawDegrees, 0f);
             fieldOfView = mainViewFieldOfView;
 
             // Camera 가 아직 attach 되지 않은 ultra-early 호출 (씬 셋업 전) 만 거른다.
@@ -642,7 +649,10 @@ namespace BookshelfPorting.Runtime
         }
 
         // Overview (MainView/QuarterView) 마우스 드래그 orbit 회전. screenDelta 의 X 는 yaw, Y 는
-        // pitch 에 누적되며 ±mainViewMaxYaw/Pitch 범위로 clamp 된다. 부호 convention:
+        // pitch 에 누적된다. pitch 는 ±mainViewMaxPitch 대칭 clamp. yaw 는 base pose 가 yaw
+        // MainViewBaseYawDegrees 만큼 틀어져 있어, 절대 시야각을 ±mainViewMaxYaw 대칭으로 유지
+        // 하려고 base yaw 만큼 offset 범위를 shift 한 비대칭 clamp 를 쓴다 (좌측 뒷벽 gap 노출
+        // 회피). 부호 convention:
         //   - drag right (delta.x > 0) → camera 가 오른쪽으로 orbit (yaw +)
         //   - drag up    (delta.y > 0) → camera 가 위쪽으로 orbit (pitch -, 카메라가 위로 들어올림)
         // base pose 는 ApplyMainViewRotation 진입 시점에 1회 캡처되며, 모드 전환 시
@@ -654,10 +664,14 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
+            // base pose 가 yaw MainViewBaseYawDegrees (음수, 좌측) 만큼 틀어져 있으므로
+            // offset 범위를 그만큼 shift — 절대 yaw (base + offset) 가 ±mainViewMaxYawDegrees
+            // 대칭 범위에 들어오게. base yaw -18.838° / maxYaw 50° 기준 offset 범위는
+            // 약 [-31.16°, +68.84°] → 절대 [-50°, +50°].
             mainViewYawOffset = Mathf.Clamp(
                 mainViewYawOffset + screenDelta.x * mainViewRotateSensitivity,
-                -mainViewMaxYawDegrees,
-                mainViewMaxYawDegrees);
+                -mainViewMaxYawDegrees - MainViewBaseYawDegrees,
+                mainViewMaxYawDegrees - MainViewBaseYawDegrees);
 
             mainViewPitchOffset = Mathf.Clamp(
                 mainViewPitchOffset - screenDelta.y * mainViewRotateSensitivity,
