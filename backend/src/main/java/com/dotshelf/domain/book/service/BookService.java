@@ -244,8 +244,13 @@ public class BookService {
                         .itemType("BOOK")
                         .userBookId(userBookId)
                         .build()));
-        bookshelfService.requireAvailablePlacement(request.bookshelfId(), request.sectionId(), request.slotNo(), item.getId());
-        item.move(request.bookshelfId(), request.sectionId(), request.slotNo(), request.facingDirection(), request.displayStyle());
+        bookshelfService.moveExistingItemToPlacement(
+                item,
+                request.bookshelfId(),
+                request.sectionId(),
+                request.slotNo(),
+                request.facingDirection(),
+                request.displayStyle());
         return UserBookResponse.from(userBook, item);
     }
 

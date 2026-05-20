@@ -232,9 +232,15 @@ public class BookshelfService {
                 .orElseThrow(() -> new CustomException(ErrorCode.BOOKSHELF_ITEM_NOT_FOUND));
         getOwnedBookshelf(currentUserId, item.getBookshelfId());
         getOwnedBookshelf(currentUserId, bookshelfId);
-        requireAvailablePlacement(bookshelfId, sectionId, slotNo, item.getId());
-        item.move(bookshelfId, sectionId, slotNo, facingDirection, displayStyle);
+        moveExistingItemToPlacement(item, bookshelfId, sectionId, slotNo, facingDirection, displayStyle);
         return BookshelfItemResponse.from(item);
+    }
+
+    @Transactional
+    public void moveExistingItemToPlacement(BookshelfItem item, Long bookshelfId, Long sectionId,
+                                            Integer slotNo, String facingDirection, String displayStyle) {
+        requirePlacementWithinCapacity(bookshelfId, sectionId, slotNo, item.getId());
+        moveItemIntoSlot(item, bookshelfId, sectionId, slotNo, facingDirection, displayStyle);
     }
 
     @Transactional
@@ -288,23 +294,7 @@ public class BookshelfService {
     }
 
     public void requireAvailablePlacement(Long bookshelfId, Long sectionId, Integer slotNo, Long existingItemId) {
-        BookshelfSection section = resolveSectionInBookshelf(bookshelfId, sectionId);
-        if (isReservedAdvertisementSection(section)) {
-            throw new CustomException(ErrorCode.INVALID_INPUT, "Reserved advertisement section cannot accept items.");
-        }
-        if (slotNo == null || slotNo < 0) {
-            throw new CustomException(ErrorCode.INVALID_INPUT, "Invalid bookshelf slot number.");
-        }
-        if (slotNo >= section.getMaxItemCount()) {
-            throw new CustomException(ErrorCode.INVALID_INPUT, "Bookshelf slot number exceeds section capacity.");
-        }
-
-        long activeItemCount = existingItemId == null
-                ? bookshelfItemRepository.countByBookshelfSectionIdAndStatus(sectionId, ACTIVE)
-                : bookshelfItemRepository.countByBookshelfSectionIdAndStatusAndIdNot(sectionId, ACTIVE, existingItemId);
-        if (activeItemCount >= section.getMaxItemCount()) {
-            throw new CustomException(ErrorCode.INVALID_INPUT, "Bookshelf section is full.");
-        }
+        requirePlacementWithinCapacity(bookshelfId, sectionId, slotNo, existingItemId);
 
         boolean occupied = existingItemId == null
                 ? bookshelfItemRepository.existsByBookshelfIdAndBookshelfSectionIdAndSlotNoAndStatus(bookshelfId, sectionId, slotNo, ACTIVE)
@@ -316,6 +306,82 @@ public class BookshelfService {
                         existingItemId);
         if (occupied) {
             throw new CustomException(ErrorCode.INVALID_INPUT, "Bookshelf slot is already occupied.");
+        }
+    }
+
+    private BookshelfSection requirePlacementWithinCapacity(Long bookshelfId, Long sectionId, Integer slotNo, Long existingItemId) {
+        BookshelfSection section = resolveSectionInBookshelf(bookshelfId, sectionId);
+        if (isReservedAdvertisementSection(section)) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "Reserved advertisement section cannot accept items.");
+        }
+        if (slotNo == null || slotNo < 1) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "Invalid bookshelf slot number.");
+        }
+        if (slotNo > section.getMaxItemCount()) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "Bookshelf slot number exceeds section capacity.");
+        }
+
+        long activeItemCount = existingItemId == null
+                ? bookshelfItemRepository.countByBookshelfSectionIdAndStatus(sectionId, ACTIVE)
+                : bookshelfItemRepository.countByBookshelfSectionIdAndStatusAndIdNot(sectionId, ACTIVE, existingItemId);
+        if (activeItemCount >= section.getMaxItemCount()) {
+            throw new CustomException(ErrorCode.INVALID_INPUT, "Bookshelf section is full.");
+        }
+        return section;
+    }
+
+    private void moveItemIntoSlot(
+            BookshelfItem movingItem,
+            Long targetBookshelfId,
+            Long targetSectionId,
+            Integer targetSlotNo,
+            String facingDirection,
+            String displayStyle
+    ) {
+        Long sourceSectionId = movingItem.getBookshelfSectionId();
+        if (sourceSectionId != null && !sourceSectionId.equals(targetSectionId)) {
+            compactSectionSlots(sourceSectionId, movingItem.getId());
+        }
+
+        List<BookshelfItem> targetItems = new ArrayList<>(
+                bookshelfItemRepository.findByBookshelfSectionIdAndStatusOrderBySlotNoAscIdAsc(targetSectionId, ACTIVE));
+        targetItems.removeIf(item -> item.getId().equals(movingItem.getId()));
+
+        int insertionIndex = Math.max(0, Math.min(targetSlotNo - 1, targetItems.size()));
+        targetItems.add(insertionIndex, movingItem);
+
+        for (int i = 0; i < targetItems.size(); i++) {
+            BookshelfItem item = targetItems.get(i);
+            int slotNo = i + 1;
+            if (item.getId().equals(movingItem.getId())) {
+                item.move(targetBookshelfId, targetSectionId, slotNo, facingDirection, displayStyle);
+            } else {
+                item.move(
+                        item.getBookshelfId(),
+                        item.getBookshelfSectionId(),
+                        slotNo,
+                        item.getFacingDirection(),
+                        item.getDisplayStyle());
+            }
+        }
+    }
+
+    private void compactSectionSlots(Long sectionId, Long excludedItemId) {
+        if (sectionId == null) {
+            return;
+        }
+
+        List<BookshelfItem> items = new ArrayList<>(
+                bookshelfItemRepository.findByBookshelfSectionIdAndStatusOrderBySlotNoAscIdAsc(sectionId, ACTIVE));
+        items.removeIf(item -> item.getId().equals(excludedItemId));
+        for (int i = 0; i < items.size(); i++) {
+            BookshelfItem item = items.get(i);
+            item.move(
+                    item.getBookshelfId(),
+                    item.getBookshelfSectionId(),
+                    i + 1,
+                    item.getFacingDirection(),
+                    item.getDisplayStyle());
         }
     }
 

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 
 import java.math.BigDecimal;
@@ -411,6 +412,16 @@ class BookServiceTest {
         given(userService.requireUserId(1L)).willReturn(1L);
         given(userBookRepository.findById(20L)).willReturn(Optional.of(userBook));
         given(bookshelfItemRepository.findByUserBookIdAndStatus(20L, "ACTIVE")).willReturn(Optional.of(item));
+        doAnswer(invocation -> {
+            BookshelfItem movedItem = invocation.getArgument(0);
+            movedItem.move(
+                    invocation.getArgument(1),
+                    invocation.getArgument(2),
+                    invocation.getArgument(3),
+                    invocation.getArgument(4),
+                    invocation.getArgument(5));
+            return null;
+        }).when(bookshelfService).moveExistingItemToPlacement(any(), any(), any(), any(), any(), any());
 
         var response = bookService.move(
                 1L,
@@ -424,6 +435,7 @@ class BookServiceTest {
         assertThat(response.placement().slotNo()).isEqualTo(7);
         then(bookshelfItemRepository).should().findByUserBookIdAndStatus(20L, "ACTIVE");
         then(bookshelfItemRepository).shouldHaveNoMoreInteractions();
+        then(bookshelfService).should().moveExistingItemToPlacement(item, 101L, 201L, 7, "BACK", "COVER");
     }
 
     @Test
