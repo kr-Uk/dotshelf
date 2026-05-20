@@ -17,6 +17,7 @@ namespace App.Tests.EditMode.Notebook
         [TearDown]
         public void TearDown()
         {
+            InvokeDeepSeaScreenOverrideDeactivate("test_teardown");
             if (host != null)
             {
                 UnityEngine.Object.DestroyImmediate(host);
@@ -692,6 +693,67 @@ namespace App.Tests.EditMode.Notebook
         }
 
         [Test]
+        public void DeepSeaScreenOverride_DeactivateRestoresCanvasAndAdImageTransforms()
+        {
+            host = new GameObject(nameof(DeepSeaScreenOverride_DeactivateRestoresCanvasAndAdImageTransforms));
+            var screen = CreateNotebookScreenHierarchy(host.transform, out var screenSaverCanvas, out var adImage);
+
+            screenSaverCanvas.localPosition = new Vector3(0f, -0.022f, -0.0012f);
+            screenSaverCanvas.localRotation = Quaternion.Euler(-90f, 0f, 180f);
+            screenSaverCanvas.localScale = Vector3.one * 0.000542f;
+            screenSaverCanvas.anchorMin = new Vector2(0.5f, 0.5f);
+            screenSaverCanvas.anchorMax = new Vector2(0.5f, 0.5f);
+            screenSaverCanvas.pivot = new Vector2(0.5f, 0.5f);
+            screenSaverCanvas.offsetMin = new Vector2(-400f, -225f);
+            screenSaverCanvas.offsetMax = new Vector2(400f, 225f);
+            screenSaverCanvas.sizeDelta = new Vector2(800f, 450f);
+
+            adImage.anchorMin = Vector2.zero;
+            adImage.anchorMax = Vector2.one;
+            adImage.pivot = new Vector2(0.5f, 0.5f);
+            adImage.offsetMin = Vector2.zero;
+            adImage.offsetMax = Vector2.zero;
+            adImage.localScale = Vector3.one;
+
+            var nativeCanvasPosition = screenSaverCanvas.localPosition;
+            var nativeCanvasRotation = screenSaverCanvas.localRotation;
+            var nativeCanvasScale = screenSaverCanvas.localScale;
+            var nativeAdOffsetMin = adImage.offsetMin;
+            var nativeAdOffsetMax = adImage.offsetMax;
+            var nativeAdScale = adImage.localScale;
+
+            var entry = new CustomizationEntry();
+            SetField(entry, "assetId", 300030L);
+            SetField(entry, "overrideScreenSaverCanvasTransform", true);
+            SetField(entry, "screenSaverCanvasLocalPosition", new Vector3(-0.002f, 0.041f, 0.019f));
+            SetField(entry, "screenSaverCanvasLocalRotation", new Vector3(-187.307f, 0f, -180f));
+            SetField(entry, "screenSaverCanvasLocalScale", new Vector3(0.0005316375f, 0.0005324333f, 0.0005f));
+            SetField(entry, "screenSaverCanvasSizeDelta", new Vector2(800f, 450f));
+            SetField(entry, "stretchCanvasAdImageOnDesk", true);
+            SetField(entry, "adImageAnchorMin", Vector2.zero);
+            SetField(entry, "adImageAnchorMax", Vector2.one);
+            SetField(entry, "adImagePivot", new Vector2(0.5f, 0.5f));
+            SetField(entry, "adImageOffsetMin", new Vector2(-5f, 4f));
+            SetField(entry, "adImageOffsetMax", new Vector2(-5f, 4f));
+            SetField(entry, "adImageLocalScale", new Vector3(0.9922f, 1.0775f, 1f));
+
+            InvokeDeepSeaScreenOverrideRegisterActive(host.transform, entry, "test");
+
+            Assert.AreNotEqual(nativeCanvasPosition, screenSaverCanvas.localPosition);
+            Assert.AreNotEqual(nativeAdOffsetMin, adImage.offsetMin);
+
+            InvokeDeepSeaScreenOverrideDeactivate("test");
+
+            Assert.AreEqual(nativeCanvasPosition, screenSaverCanvas.localPosition);
+            Assert.AreEqual(nativeCanvasRotation, screenSaverCanvas.localRotation);
+            Assert.AreEqual(nativeCanvasScale, screenSaverCanvas.localScale);
+            Assert.AreEqual(nativeAdOffsetMin, adImage.offsetMin);
+            Assert.AreEqual(nativeAdOffsetMax, adImage.offsetMax);
+            Assert.AreEqual(nativeAdScale, adImage.localScale);
+            Assert.AreSame(screen, screenSaverCanvas.parent);
+        }
+
+        [Test]
         public void BookshelfStyleSelection_PrefersExplicitShelfStyleOverCurrentTheme()
         {
             host = new GameObject(nameof(BookshelfStyleSelection_PrefersExplicitShelfStyleOverCurrentTheme));
@@ -833,6 +895,34 @@ namespace App.Tests.EditMode.Notebook
         {
             host = new GameObject(nameof(RoomEditModeVisitorIsolationTests));
             return host.AddComponent(ControllerType);
+        }
+
+        private static Transform CreateNotebookScreenHierarchy(
+            Transform roomRoot,
+            out RectTransform screenSaverCanvas,
+            out RectTransform adImage)
+        {
+            var notebookStation = new GameObject("NotebookStation");
+            notebookStation.transform.SetParent(roomRoot, false);
+
+            var desk = new GameObject("Desk");
+            desk.transform.SetParent(notebookStation.transform, false);
+
+            var notebook = new GameObject("Notebook");
+            notebook.transform.SetParent(desk.transform, false);
+
+            var screen = new GameObject("Screen");
+            screen.transform.SetParent(notebook.transform, false);
+
+            var canvas = new GameObject("ScreenSaverCanvas", typeof(RectTransform));
+            canvas.transform.SetParent(screen.transform, false);
+            screenSaverCanvas = (RectTransform)canvas.transform;
+
+            var ad = new GameObject("AdImage", typeof(RectTransform));
+            ad.transform.SetParent(screenSaverCanvas, false);
+            adImage = (RectTransform)ad.transform;
+
+            return screen.transform;
         }
 
         private static void SetReadOnlyPreview(object controller, bool value)
@@ -1113,6 +1203,31 @@ namespace App.Tests.EditMode.Notebook
             return (bool)method.Invoke(
                 controller,
                 new object[] { capturedCategoryVersion, capturedEditVisualVersion });
+        }
+
+        private static void InvokeDeepSeaScreenOverrideRegisterActive(
+            Transform roomRoot,
+            CustomizationEntry entry,
+            string reason)
+        {
+            var type = FindType("App.Bootstrap.DeepSeaScreenOverride");
+            Assert.IsNotNull(type);
+            var method = type.GetMethod("RegisterActive", BindingFlags.Static | BindingFlags.Public);
+            Assert.IsNotNull(method);
+            method.Invoke(null, new object[] { roomRoot, entry, reason });
+        }
+
+        private static void InvokeDeepSeaScreenOverrideDeactivate(string reason)
+        {
+            var type = FindType("App.Bootstrap.DeepSeaScreenOverride");
+            if (type == null)
+            {
+                return;
+            }
+
+            var method = type.GetMethod("Deactivate", BindingFlags.Static | BindingFlags.Public);
+            Assert.IsNotNull(method);
+            method.Invoke(null, new object[] { reason });
         }
 
         private static object InvokeResolveActiveNavigationThemeStyle(object generator)

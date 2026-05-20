@@ -7152,6 +7152,7 @@ namespace App.Bootstrap
             bool notebookTransformRestored = false;
             if (category == CustomizationCategory.Desk)
             {
+                DeepSeaScreenOverride.Deactivate("restore_desk_category");
                 // 새 경로 (DeskVisualSkinApplier) — Desk 자식 ThemeDeskVisual 정리 + hidden
                 // native renderer enable + laptop native localPosition 복원. marker 가 attach
                 // 시 캡처한 데이터로 처리.
