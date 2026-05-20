@@ -50,6 +50,7 @@ namespace BookshelfPorting.Runtime
             string title,
             string meta,
             string averageRating,
+            string ownerRating,
             string totalLikes,
             string reviewCount,
             string description,
@@ -65,6 +66,7 @@ namespace BookshelfPorting.Runtime
             Title = title;
             Meta = meta;
             AverageRating = averageRating;
+            OwnerRating = ownerRating;
             TotalLikes = totalLikes;
             ReviewCount = reviewCount;
             Description = description;
@@ -81,6 +83,7 @@ namespace BookshelfPorting.Runtime
         public string Title { get; }
         public string Meta { get; }
         public string AverageRating { get; }
+        public string OwnerRating { get; }
         public string TotalLikes { get; }
         public string ReviewCount { get; }
         public string Description { get; }
@@ -113,6 +116,8 @@ namespace BookshelfPorting.Runtime
         private static readonly Color32 LikeIconIdleColor = new(232, 226, 235, 255);
         private static readonly Color32 LikeCountIdleColor = new(86, 67, 93, 255);
         private static readonly Color32 LikeActiveColor = new(247, 173, 194, 255);
+        private static readonly Color32 OwnerRatingBadgeBackground = new(255, 248, 236, 118);
+        private static readonly Color32 OwnerRatingBadgeTextColor = new(151, 104, 64, 255);
         private static Sprite cachedLikeReactionSprite;
         private static Texture2D fallbackLikeReactionTexture;
 
@@ -122,6 +127,8 @@ namespace BookshelfPorting.Runtime
         private readonly Text averageRatingChipText;
         private readonly Text totalLikeChipText;
         private readonly Text reviewCountChipText;
+        private readonly Image ownerRatingBadgeBackground;
+        private readonly Text ownerRatingBadgeText;
         private readonly Text descriptionText;
         private readonly ScrollRect descriptionScrollRect;
         private readonly RectTransform descriptionContent;
@@ -136,11 +143,12 @@ namespace BookshelfPorting.Runtime
         private readonly Button readReportButton;
         private readonly Button addAdvertisementBookButton;
         private readonly Button placementButton;
+        private readonly RectTransform bottomActionRow;
         private readonly Button closeButton;
         private readonly Button deleteButton;
         private string renderedIdentityKey;
 
-        public BookDetailPanelController(Transform parent, BookDetailPanelCallbacks callbacks)
+        public BookDetailPanelController(Transform parent, Transform actionParent, BookDetailPanelCallbacks callbacks)
         {
             Panel = RuntimeHudFactory.CreatePanel(parent, "BookDetailPanel", new Vector2(-24f, -78f), new Vector2(380f, 436f), new Vector2(1f, 1f));
             RuntimeHudStyle.StyleBookDetailPanel(Panel.GetComponent<Image>());
@@ -197,12 +205,26 @@ namespace BookshelfPorting.Runtime
             descriptionText.horizontalOverflow = HorizontalWrapMode.Wrap;
             descriptionText.verticalOverflow = VerticalWrapMode.Overflow;
 
-            writeReportButton = RuntimeHudFactory.CreateButton(Panel.transform, "WriteReportButton", "리뷰 작성", new Vector2(20f, -282f), callbacks.OpenWriteReport, new Vector2(104f, 32f), new Vector2(0f, 1f));
+            bottomActionRow = RuntimeHudFactory.CreateContainer(actionParent ?? parent, "BookDetailBottomActionRow", Vector2.zero, new Vector2(232f, 44f), new Vector2(0.5f, 0f));
+            var bottomActionLayout = bottomActionRow.gameObject.AddComponent<HorizontalLayoutGroup>();
+            bottomActionLayout.childAlignment = TextAnchor.MiddleLeft;
+            bottomActionLayout.spacing = 10f;
+            bottomActionLayout.padding = new RectOffset(0, 0, 0, 0);
+            bottomActionLayout.childControlWidth = false;
+            bottomActionLayout.childControlHeight = false;
+            bottomActionLayout.childForceExpandWidth = false;
+            bottomActionLayout.childForceExpandHeight = false;
+            bottomActionRow.gameObject.SetActive(false);
+
+            writeReportButton = RuntimeHudFactory.CreateButton(bottomActionRow, "WriteReportButton", "리뷰 작성", Vector2.zero, callbacks.OpenWriteReport, new Vector2(128f, 44f), new Vector2(0f, 0.5f));
             readReportButton = RuntimeHudFactory.CreateButton(Panel.transform, "ReadReportButton", "독후감 보기", new Vector2(136f, -282f), callbacks.OpenReadReport, new Vector2(104f, 32f), new Vector2(0f, 1f));
             addAdvertisementBookButton = RuntimeHudFactory.CreateButton(Panel.transform, "AddAdvertisementBookButton", "책장에 추가하기", new Vector2(136f, -282f), callbacks.AddAdvertisementBook, new Vector2(104f, 32f), new Vector2(0f, 1f));
             placementButton = RuntimeHudFactory.CreateButton(Panel.transform, "DetailPlacementButton", "배치 변경", new Vector2(252f, -282f), callbacks.OpenPlacementEditor, new Vector2(108f, 32f), new Vector2(0f, 1f));
             readToggleButton = RuntimeHudFactory.CreateButton(Panel.transform, "ReadToggleButton", "상태 변경", new Vector2(20f, -322f), callbacks.ToggleReadState, new Vector2(164f, 34f), new Vector2(0f, 1f));
-            likeToggleButton = RuntimeHudFactory.CreateButton(Panel.transform, "LikeToggleButton", "좋아요", new Vector2(196f, -322f), callbacks.ToggleLikeState, new Vector2(164f, 34f), new Vector2(0f, 1f));
+            ownerRatingBadgeBackground = RuntimeHudFactory.CreateImage(Panel.transform, "BookOwnerRatingBadge", new Vector2(252f, -68f), new Vector2(108f, 28f), new Vector2(0f, 1f), OwnerRatingBadgeBackground);
+            ownerRatingBadgeText = RuntimeHudFactory.CreateLabel(Panel.transform, "BookOwnerRatingBadgeText", new Vector2(252f, -68f), new Vector2(108f, 28f), TextAnchor.MiddleCenter);
+            StyleOwnerRatingBadge(ownerRatingBadgeText);
+            likeToggleButton = RuntimeHudFactory.CreateButton(bottomActionRow, "LikeToggleButton", "좋아요", Vector2.zero, callbacks.ToggleLikeState, new Vector2(94f, 44f), new Vector2(0f, 0.5f));
             ratingCycleButton = RuntimeHudFactory.CreateButton(Panel.transform, "RatingCycleButton", "별점", new Vector2(20f, -360f), callbacks.CycleOwnerRating, new Vector2(164f, 34f), new Vector2(0f, 1f));
             visibilityToggleButton = RuntimeHudFactory.CreateButton(Panel.transform, "VisibilityToggleButton", "공개 범위 변경", new Vector2(196f, -360f), callbacks.ToggleVisibility, new Vector2(164f, 34f), new Vector2(0f, 1f));
             closeButton = RuntimeHudFactory.CreateButton(Panel.transform, "CloseBookDetailButton", "닫기", new Vector2(20f, -400f), callbacks.Close, new Vector2(340f, 32f), new Vector2(0f, 1f));
@@ -221,6 +243,7 @@ namespace BookshelfPorting.Runtime
                 if (!isActive)
                 {
                     renderedIdentityKey = null;
+                    HideFocusActionButtons();
                 }
             }
         }
@@ -229,6 +252,7 @@ namespace BookshelfPorting.Runtime
         {
             if (!IsVisible)
             {
+                HideFocusActionButtons();
                 return;
             }
 
@@ -236,6 +260,7 @@ namespace BookshelfPorting.Runtime
             eyebrowText.text = "책 상세";
             metaText.text = model.Meta;
             averageRatingChipText.text = $"★ {model.AverageRating}";
+            ownerRatingBadgeText.text = $"★ {model.OwnerRating}";
             totalLikeChipText.text = $"좋아요 {model.TotalLikes}개";
             reviewCountChipText.text = $"리뷰 {model.ReviewCount}개";
             descriptionText.text = model.Description;
@@ -256,7 +281,7 @@ namespace BookshelfPorting.Runtime
             SetButtonActive(writeReportButton, model.CanUseOwnerActions && !model.IsAdvertisementBook);
             writeReportButton.interactable = model.CanUseOwnerActions && !model.IsAdvertisementBook;
             RuntimeHudStyle.SetButtonLabel(writeReportButton, "리뷰 작성");
-            StyleStandardButton(writeReportButton, true, 13);
+            StyleStandardButton(writeReportButton, true, 15);
 
             SetButtonActive(readReportButton, !model.IsAdvertisementBook);
             readReportButton.interactable = model.HasReport;
@@ -284,6 +309,7 @@ namespace BookshelfPorting.Runtime
                 14,
                 new Color32(84, 74, 66, 255),
                 true);
+            RefreshFocusActionRowVisibility();
         }
 
         public void ApplyResponsiveLayout(float panelWidth, float panelHeight)
@@ -292,18 +318,12 @@ namespace BookshelfPorting.Runtime
             var contentWidth = Mathf.Max(320f, panelWidth - padding * 2f);
             RuntimeHudLayout.SetChildRect(Panel, "BookPanelAccent", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(padding, -22f), new Vector2(84f, 3f));
             RuntimeHudLayout.SetChildActive(Panel, "BookPanelAccent", false);
-            var topActionY = -30f;
-            var likeButtonWidth = 72f;
-            var reviewButtonWidth = 112f;
-            var topActionGap = 8f;
-            var topActionsWidth = likeButtonWidth + topActionGap + reviewButtonWidth;
-            var headingWidth = Mathf.Max(96f, contentWidth - topActionsWidth - 14f);
+            var ratingBadgeWidth = 108f;
+            var ratingBadgeHeight = 28f;
+            var headingWidth = Mathf.Max(96f, contentWidth - ratingBadgeWidth - 14f);
             SetComponentRect(eyebrowText, new Vector2(padding, -30f), new Vector2(headingWidth, 18f));
             SetComponentRect(titleText, new Vector2(padding, -54f), new Vector2(headingWidth, 56f));
             SetComponentRect(metaText, new Vector2(padding, -122f), new Vector2(contentWidth, 68f));
-
-            SetComponentRect(likeToggleButton, new Vector2(padding + contentWidth - likeButtonWidth, topActionY), new Vector2(likeButtonWidth, 32f));
-            SetComponentRect(writeReportButton, new Vector2(padding + contentWidth - likeButtonWidth - topActionGap - reviewButtonWidth, topActionY), new Vector2(reviewButtonWidth, 32f));
 
             var chipGap = Mathf.Clamp(contentWidth * 0.024f, 8f, 12f);
             var chipWidth = (contentWidth - chipGap * 2f) / 3f;
@@ -330,10 +350,35 @@ namespace BookshelfPorting.Runtime
             SetComponentRect(descriptionScrollRect, new Vector2(padding, hintY), new Vector2(descriptionWidth, hintHeight));
             SetComponentRect(descriptionScrollbar, new Vector2(padding + descriptionWidth + scrollbarGap, hintY), new Vector2(scrollbarWidth, hintHeight));
             SetComponentRect(descriptionText, Vector2.zero, new Vector2(descriptionWidth, hintHeight));
+            SetComponentRect(ownerRatingBadgeBackground, new Vector2(padding + contentWidth - ratingBadgeWidth, -68f), new Vector2(ratingBadgeWidth, ratingBadgeHeight));
+            SetComponentRect(ownerRatingBadgeText, new Vector2(padding + contentWidth - ratingBadgeWidth, -68f), new Vector2(ratingBadgeWidth, ratingBadgeHeight));
             SetComponentRect(readReportButton, new Vector2(padding, actionY), new Vector2(contentWidth, buttonHeight));
             SetComponentRect(addAdvertisementBookButton, new Vector2(padding, actionY), new Vector2(contentWidth, buttonHeight));
             SetComponentRect(deleteButton, new Vector2(padding, deleteY), new Vector2(contentWidth, buttonHeight));
             RefreshDescriptionScrollContent(false);
+        }
+
+        public void ApplyFocusActionLayout(Vector2 anchoredPosition, Vector2 size, float reviewButtonWidth, float likeButtonWidth, float buttonHeight, float gap)
+        {
+            RuntimeHudLayout.SetComponentRect(bottomActionRow, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), anchoredPosition, size);
+            var layout = bottomActionRow != null ? bottomActionRow.GetComponent<HorizontalLayoutGroup>() : null;
+            if (layout != null)
+            {
+                layout.spacing = gap;
+            }
+
+            SetLayoutSize(writeReportButton, reviewButtonWidth, buttonHeight);
+            SetLayoutSize(likeToggleButton, likeButtonWidth, buttonHeight);
+            RuntimeHudLayout.InsetTextToParent(RuntimeHudStyle.GetButtonLabelText(writeReportButton), 12f, 4f);
+            RefreshFocusActionRowVisibility();
+        }
+
+        public void HideFocusActionButtons()
+        {
+            if (bottomActionRow != null)
+            {
+                bottomActionRow.gameObject.SetActive(false);
+            }
         }
 
         private void EnsureLikeToggleContent()
@@ -404,8 +449,8 @@ namespace BookshelfPorting.Runtime
             countText.textWrappingMode = TextWrappingModes.NoWrap;
             countText.overflowMode = TextOverflowModes.Overflow;
             var countLayout = countObject.AddComponent<LayoutElement>();
-            countLayout.minWidth = 10f;
-            countLayout.preferredWidth = 22f;
+            countLayout.minWidth = 18f;
+            countLayout.preferredWidth = 36f;
             countLayout.preferredHeight = 18f;
 
             return (icon, countText);
@@ -518,6 +563,20 @@ namespace BookshelfPorting.Runtime
             text.verticalOverflow = VerticalWrapMode.Truncate;
         }
 
+        private static void StyleOwnerRatingBadge(Text text)
+        {
+            if (text == null)
+            {
+                return;
+            }
+
+            text.fontSize = 15;
+            text.fontStyle = FontStyle.Bold;
+            text.color = OwnerRatingBadgeTextColor;
+            text.horizontalOverflow = HorizontalWrapMode.Wrap;
+            text.verticalOverflow = VerticalWrapMode.Truncate;
+        }
+
         private static void StyleStandardButton(Button button, bool isEnabled, int fontSize)
         {
             RuntimeHudStyle.StyleButton(
@@ -555,6 +614,19 @@ namespace BookshelfPorting.Runtime
             }
         }
 
+        private void RefreshFocusActionRowVisibility()
+        {
+            if (bottomActionRow == null)
+            {
+                return;
+            }
+
+            bottomActionRow.gameObject.SetActive(
+                IsVisible &&
+                ((writeReportButton != null && writeReportButton.gameObject.activeSelf) ||
+                 (likeToggleButton != null && likeToggleButton.gameObject.activeSelf)));
+        }
+
         private static void SetComponentRect(Component target, Vector2 anchoredPosition, Vector2 size)
         {
             RuntimeHudLayout.SetComponentRect(target, new Vector2(0f, 1f), new Vector2(0f, 1f), anchoredPosition, size);
@@ -562,6 +634,31 @@ namespace BookshelfPorting.Runtime
             {
                 RuntimeHudLayout.InsetTextToParent(RuntimeHudStyle.GetButtonLabelText(button), 10f, 3f);
             }
+        }
+
+        private static void SetLayoutSize(Component target, float width, float height)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            var rect = target.GetComponent<RectTransform>();
+            if (rect != null)
+            {
+                rect.sizeDelta = new Vector2(width, height);
+            }
+
+            var layout = target.GetComponent<LayoutElement>();
+            if (layout == null)
+            {
+                layout = target.gameObject.AddComponent<LayoutElement>();
+            }
+
+            layout.minWidth = width;
+            layout.preferredWidth = width;
+            layout.minHeight = height;
+            layout.preferredHeight = height;
         }
     }
 }

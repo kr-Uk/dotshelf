@@ -4506,6 +4506,7 @@ namespace BookshelfPorting.Runtime
         private void HandleBookReviewCreated(BookEntity book, float fallbackRating, NotebookReviewItem review)
         {
             isBookReviewSaving = false;
+            var detailBook = book != null ? book : (ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null));
 
             if (book != null && dataStore != null)
             {
@@ -4536,7 +4537,7 @@ namespace BookshelfPorting.Runtime
                 bookReviewWritePanel.SetActive(false);
             }
 
-            RefreshBookDetailPanel();
+            RestoreBookDetailPanelAfterReview(detailBook);
             RefreshHud();
         }
 
@@ -4551,6 +4552,7 @@ namespace BookshelfPorting.Runtime
 
         private void CloseBookReviewWritePanel()
         {
+            var detailBook = activeReviewBook != null ? activeReviewBook : (ActiveDetailBook != null ? ActiveDetailBook : (state != null ? state.ActiveViewedBook : null));
             isBookReviewWritePanelOpen = false;
             isBookReviewSaving = false;
             activeReviewBook = null;
@@ -4565,7 +4567,23 @@ namespace BookshelfPorting.Runtime
                 bookReviewWritePanel.SetActive(false);
             }
 
+            RestoreBookDetailPanelAfterReview(detailBook);
             RefreshHud();
+        }
+
+        private void RestoreBookDetailPanelAfterReview(BookEntity detailBook)
+        {
+            if (detailBook == null ||
+                state == null ||
+                !state.IsViewingBook ||
+                bookDetailPanel == null)
+            {
+                return;
+            }
+
+            ActiveDetailBook = detailBook;
+            bookDetailPanel.SetActive(true);
+            RefreshBookDetailPanel();
         }
 
         private void SetBookReviewStatus(string message, bool isError = false)
@@ -5412,6 +5430,7 @@ namespace BookshelfPorting.Runtime
             bookshelfStatusAddButton = CreateButton(bookshelfStatusPanel.transform, "BookshelfStatusAddButton", "책 추가", new Vector2(18f, -92f), OpenBookAddFromStatusPanel, new Vector2(96f, 28f), new Vector2(0f, 1f));
 
             bookDetailPanelController = new BookDetailPanelController(
+                canvasObject.transform,
                 canvasObject.transform,
                 new BookDetailPanelCallbacks(
                     OpenBookReviewWritePanel,
@@ -7594,12 +7613,31 @@ namespace BookshelfPorting.Runtime
 
             if (bookFocusWriteReportButton != null)
             {
+                var actionButtonHeight = Mathf.Clamp(toolbarHeight * 0.42f, 44f, 54f);
+                var reportButtonWidth = Mathf.Clamp(toolbarWidth * 0.22f, 158f, 220f);
+                var reviewButtonWidth = Mathf.Clamp(toolbarWidth * 0.16f, 118f, 150f);
+                var likeButtonWidth = Mathf.Clamp(toolbarWidth * 0.12f, 92f, 116f);
+                var actionGap = Mathf.Clamp(toolbarWidth * 0.014f, 10f, 14f);
+                var detailActionsWidth = reviewButtonWidth + actionGap + likeButtonWidth;
+                var totalActionsWidth = reportButtonWidth + actionGap + detailActionsWidth;
+                var actionY = bottomOffset + toolbarHeight + Mathf.Clamp(canvasSize.y * 0.028f, 24f, 40f);
+                var reportButtonX = -totalActionsWidth * 0.5f + reportButtonWidth * 0.5f;
+                var detailActionsX = reportButtonX + reportButtonWidth * 0.5f + actionGap + detailActionsWidth * 0.5f;
+
                 SetHudComponentRect(
                     bookFocusWriteReportButton,
                     new Vector2(0.5f, 0f),
                     new Vector2(0.5f, 0f),
-                    new Vector2(0f, bottomOffset + toolbarHeight + Mathf.Clamp(canvasSize.y * 0.028f, 24f, 40f)),
-                    new Vector2(Mathf.Clamp(toolbarWidth * 0.22f, 158f, 220f), Mathf.Clamp(toolbarHeight * 0.42f, 44f, 54f)));
+                    new Vector2(reportButtonX, actionY),
+                    new Vector2(reportButtonWidth, actionButtonHeight));
+
+                bookDetailPanelController?.ApplyFocusActionLayout(
+                    new Vector2(detailActionsX, actionY),
+                    new Vector2(detailActionsWidth, actionButtonHeight),
+                    reviewButtonWidth,
+                    likeButtonWidth,
+                    actionButtonHeight,
+                    actionGap);
             }
 
             var sidePanelWidth = Mathf.Clamp(canvasSize.x * (isCompact ? 0.58f : 0.28f), 460f, 620f);
@@ -13246,6 +13284,7 @@ namespace BookshelfPorting.Runtime
         {
             if (bookDetailPanelController == null || !bookDetailPanelController.IsVisible || ActiveDetailBook == null || dataStore == null)
             {
+                bookDetailPanelController?.HideFocusActionButtons();
                 return;
             }
 
@@ -13270,6 +13309,7 @@ namespace BookshelfPorting.Runtime
                 $"출판사    {ResolveFallbackText(meta.publisher, "출판사 미상")}\n" +
                 $"저장 위치  {(section != null ? $"{section.row + 1}행 {section.column + 1}열" : "책장 밖")}",
                 GetAverageRatingLabel(averageRating),
+                meta.ownerRating > 0f ? FormatRatingValue(meta.ownerRating) : "0",
                 totalLikeCount.ToString(),
                 Mathf.Max(0, meta.reviewCount).ToString(),
                 ResolveFallbackText(meta.description, meta.memoPreview),
@@ -13332,6 +13372,11 @@ namespace BookshelfPorting.Runtime
             {
                 bookFocusWriteReportButton.gameObject.SetActive(canUseOwnerActions);
                 bookFocusWriteReportButton.interactable = canUseOwnerActions;
+            }
+
+            if (!canUseOwnerActions || bookDetailPanelController == null || !bookDetailPanelController.IsVisible)
+            {
+                bookDetailPanelController?.HideFocusActionButtons();
             }
 
             if (bookFocusRatingText != null)
