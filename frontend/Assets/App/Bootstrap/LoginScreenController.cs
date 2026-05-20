@@ -240,6 +240,8 @@ namespace App.Bootstrap
                 }
 
                 loginProgressFailureVisible = false;
+                isLoginInFlight = true;
+                SetInteractable(false);
                 ShowLoginProgressDialog("로그인 중", message, true);
                 SetMessage(loginMessageLabel, message);
                 return activeLoginAttemptId;
@@ -403,10 +405,6 @@ namespace App.Bootstrap
             }
 
             EnsureAuthService();
-            isLoginInFlight = true;
-            SetInteractable(false);
-            ShowLoginProgressDialog("로그인 중", $"{providerDisplayName} 로그인 중입니다...", true);
-            SetMessage(loginMessageLabel, $"{providerDisplayName} 로그인 중입니다...");
 
             try
             {
@@ -464,10 +462,6 @@ namespace App.Bootstrap
                 $"redirectUri='{redirectUri}' codeVerifierPresent={!string.IsNullOrWhiteSpace(codeVerifier)}");
 
             EnsureAuthService();
-            isLoginInFlight = true;
-            SetInteractable(false);
-            ShowLoginProgressDialog("로그인 중", $"{providerDisplayName} 로그인 정보를 확인 중입니다...", true);
-            SetMessage(loginMessageLabel, $"{providerDisplayName} 로그인 정보를 확인 중입니다...");
 
             try
             {
@@ -738,7 +732,6 @@ namespace App.Bootstrap
 
             var nonce = pendingAppleNonce;
             pendingAppleNonce = null;
-            isLoginInFlight = false;
 
             if (string.IsNullOrWhiteSpace(identityToken) || string.IsNullOrWhiteSpace(nonce))
             {
@@ -867,11 +860,8 @@ namespace App.Bootstrap
                 return;
             }
 
-            // Hand off to the shared submit path. SubmitSocialLoginCode owns
-            // its own isLoginInFlight gate, so release this stage's guard
-            // first to avoid a double-lock.
-            isLoginInFlight = false;
-            SetInteractable(true);
+            // Hand off to the shared submit path while keeping the same
+            // active attempt locked until BE code exchange finishes.
             SubmitSocialLoginCode(
                 provider,
                 oauthResult.Code,
