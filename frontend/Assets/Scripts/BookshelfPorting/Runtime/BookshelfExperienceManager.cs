@@ -543,6 +543,10 @@ namespace BookshelfPorting.Runtime
             Guestbook,
         }
         private VisitedSpaceReturnTarget visitedSpaceReturnTarget = VisitedSpaceReturnTarget.OtherSpacesNotebook;
+        // 방명록 origin 방문 종료 시, own-space refresh 완료 콜백에서 FocusGuestbook 을 실행할지.
+        // refresh 전에 FocusGuestbook 하면 IsViewingOtherUserSpace 가 아직 true 라 상대방
+        // dashboard 가 뜨는 race 회피용 (skh1205 #2 / beshu #2 review).
+        private bool pendingReturnToGuestbook;
 
         private SearchNotebookBooksUseCase searchNotebookBooksUseCase;
         private LoadNotebookMarketBooksUseCase loadNotebookMarketBooksUseCase;
@@ -6344,7 +6348,13 @@ namespace BookshelfPorting.Runtime
             SpaceVisitorOverlayController.Instance?.SetLoadingBlocked(false);
             SetNotebookScreenSuppressed(false);
 
-            if (bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled)
+            var serverSyncActive = bookshelfApiSyncController != null && bookshelfApiSyncController.IsServerSyncEnabled;
+
+            // 방명록 origin 은 own-space refresh 완료 후 focus 해야 안전 (race 회피). 매번 origin
+            // 기준으로 재설정해 직전 방문의 stale flag 가 남지 않게 한다.
+            pendingReturnToGuestbook = serverSyncActive && visitedSpaceReturnTarget == VisitedSpaceReturnTarget.Guestbook;
+
+            if (serverSyncActive)
             {
                 bookshelfApiSyncController.RefreshFromServer(HandleReturnFromVisitedSpaceRefreshCompleted);
             }
@@ -6353,7 +6363,13 @@ namespace BookshelfPorting.Runtime
             // 탭에서 방문했으면 노트북 "다른 공간" 탭으로.
             if (visitedSpaceReturnTarget == VisitedSpaceReturnTarget.Guestbook)
             {
-                FocusGuestbook();
+                // server sync 활성 시엔 refresh 완료 콜백(HandleReturnFromVisitedSpaceRefreshCompleted)
+                // 에서 FocusGuestbook — own-space 로 전환된 뒤 방명록을 열어야 상대방 dashboard 가
+                // 안 뜬다. sync 비활성(mock 등) 이면 race 가 없으므로 즉시 focus.
+                if (!serverSyncActive)
+                {
+                    FocusGuestbook();
+                }
                 return;
             }
 
@@ -6370,6 +6386,18 @@ namespace BookshelfPorting.Runtime
                     "내 공간 새로고침 실패",
                     NormalizeMutationErrorMessage(message),
                     true);
+            }
+
+            if (pendingReturnToGuestbook)
+            {
+                pendingReturnToGuestbook = false;
+                // own-space refresh 성공 시에만 방명록 focus — 실패 시 IsViewingOtherUserSpace 가
+                // 여전히 true 라 stale visitor dashboard 가 뜨므로 main view 에 머무른다
+                // (skh1205 #2 / beshu #2 review). 사용자는 뒤로가기를 다시 시도할 수 있다.
+                if (success)
+                {
+                    FocusGuestbook();
+                }
             }
 
             RefreshHud();
