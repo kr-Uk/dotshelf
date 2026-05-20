@@ -1271,6 +1271,14 @@ namespace App.Bootstrap
                     continue;
                 }
 
+                // Notebook does not have a persisted space inventory field/API yet.
+                // Keep local Notebook catalog previews, but do not surface remote
+                // NOTEBOOK assets as selectable server-backed customization entries.
+                if (IsUnsupportedRemoteInventoryAsset(asset))
+                {
+                    continue;
+                }
+
                 var displayName = FirstNonEmpty(asset?.Name, asset?.Code, $"Asset {item.AssetId}");
                 if (TryBindOwnedLocalAsset(item, asset, displayName))
                 {
@@ -1712,9 +1720,13 @@ namespace App.Bootstrap
                 case CustomizationCategory.BookshelfSkin: return "BOOKSHELF_SKIN";
                 case CustomizationCategory.InteriorLight: return "INTERIOR_LIGHT";
                 case CustomizationCategory.ExteriorLight: return "EXTERIOR_LIGHT";
-                case CustomizationCategory.Notebook: return "NOTEBOOK";
                 default: return string.Empty;
             }
+        }
+
+        private static bool IsUnsupportedRemoteInventoryAsset(AssetResponseDto asset)
+        {
+            return DoesServerAssetTypeMatch(asset, "NOTEBOOK");
         }
 
         private static bool ThemeTagsEqual(string left, string right)
@@ -1883,7 +1895,6 @@ namespace App.Bootstrap
                 case CustomizationCategory.Desk:
                 case CustomizationCategory.InteriorLight:
                 case CustomizationCategory.ExteriorLight:
-                case CustomizationCategory.Notebook:
                     return true;
                 default:
                     return false;
