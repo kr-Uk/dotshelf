@@ -116,6 +116,7 @@ namespace App.Tests.EditMode.Notebook
             var response = new DownloadManifestResponseDto
             {
                 AssetId = 10L,
+                InventoryId = 88L,
                 AssetType = "DESK",
                 CollectionCode = "NATURAL",
                 Version = 4,
@@ -146,6 +147,7 @@ namespace App.Tests.EditMode.Notebook
             var manifest = (NotebookAssetDownloadManifestResult)method.Invoke(null, new object[] { response });
 
             Assert.AreEqual(10L, manifest.AssetId);
+            Assert.AreEqual(88L, manifest.InventoryId);
             Assert.AreEqual("NATURAL", manifest.CollectionCode);
             Assert.AreEqual(1, manifest.Files.Count);
             Assert.AreEqual("https://cdn.test/desk.glb", manifest.Files[0].Url);
@@ -164,6 +166,7 @@ namespace App.Tests.EditMode.Notebook
                     new DownloadManifestResponseDto
                     {
                         AssetId = 10L,
+                        InventoryId = 88L,
                         AssetType = "DESK",
                         CollectionCode = "NATURAL",
                         Version = 4,
@@ -183,6 +186,7 @@ namespace App.Tests.EditMode.Notebook
             Assert.AreEqual(8L, result.LayoutVersion);
             Assert.AreEqual(1, result.Manifests.Count);
             Assert.AreEqual(10L, result.Manifests[0].AssetId);
+            Assert.AreEqual(88L, result.Manifests[0].InventoryId);
         }
     }
 }

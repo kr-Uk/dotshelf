@@ -53,7 +53,8 @@ BE 배포 검증, 로그 확인, 환경변수/시크릿 누락 디버깅, DB 상
 
 `frontend/.claude/skills/` 와 `backend/.claude/skills/` 의 실제 스킬 정의를 루트 `.claude/skills/`에서 심볼릭 링크로 참조해 루트 cwd에서 자동 발견되게 한다.
 
-- **새 스킬 추가 시**: 해당 sub-project의 `.claude/skills/<name>/SKILL.md` 작성 → `./scripts/sync-claude-skills.sh` 실행 → 변경 git add/commit
+- **sub-project 스킬 추가 시**: 해당 sub-project의 `.claude/skills/<name>/SKILL.md` 작성 → `./scripts/sync-claude-skills.sh` 실행 → 변경 git add/commit. 특정 디렉터리(Unity/BE) 정책·도메인에 매인 스킬은 여기에 둔다.
+- **repo 전체 적용 스킬**: 특정 sub-project 에 매이지 않는 스킬(예: git 워크플로)은 루트 `.claude/skills/<name>/SKILL.md` 에 **실제 디렉터리로 직접** 둔다. sync 스크립트는 심링크(`-type l`)만 정리하므로 루트 실제 디렉터리와 공존한다. 예: `post-merge-cleanup`.
 - **Windows 사용자**: `git config core.symlinks true` + Developer Mode 활성화 필요 (or WSL/Git Bash 사용). 미설정 시 심링크가 text 파일로 변환됨.
 
 ### MR 생성 시 이슈 / Atlassian 연결 확인

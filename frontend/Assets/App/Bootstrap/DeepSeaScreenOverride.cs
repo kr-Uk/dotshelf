@@ -35,6 +35,10 @@ namespace App.Bootstrap
         private static CustomizationEntry s_entry;
         // roomRoot reference — Screen Transform 을 resolve 하는 출발점.
         private static Transform s_roomRoot;
+        private static RectTransformState s_screenSaverCanvasState;
+        private static RectTransformState s_adImageState;
+        private static bool s_hasScreenSaverCanvasState;
+        private static bool s_hasAdImageState;
 
         public static bool IsActive => s_entry != null && s_roomRoot != null;
         public static long ActiveAssetId => s_entry != null ? s_entry.AssetId : 0L;
@@ -56,8 +60,14 @@ namespace App.Bootstrap
                 return;
             }
 
+            if (IsActive && (s_entry != entry || s_roomRoot != roomRoot))
+            {
+                RestoreNativeRectTransforms($"replace:{reason}");
+            }
+
             s_entry = entry;
             s_roomRoot = roomRoot;
+            CaptureNativeRectTransforms(roomRoot);
             Reapply(reason);
         }
 
@@ -69,9 +79,11 @@ namespace App.Bootstrap
             {
                 s_entry = null;
                 s_roomRoot = null;
+                ClearNativeRectTransformState();
                 return;
             }
             long prevAssetId = s_entry.AssetId;
+            RestoreNativeRectTransforms(reason);
             // Guard 정리 — Screen 에 부착된 ScreenSaverCanvasOverrideGuard 제거.
             // (DeskVisualSkinApplier.ClearSkinUnder 가 이미 destroy 하지만 idempotent 보호.)
             var screen = ResolveScreen(s_roomRoot);
@@ -85,7 +97,59 @@ namespace App.Bootstrap
             }
             s_entry = null;
             s_roomRoot = null;
+            ClearNativeRectTransformState();
             VisualSkinLog.Verbose($"[DeepSeaScreenUI] deactivated entryAssetId={prevAssetId} reason={reason}");
+        }
+
+        private static void CaptureNativeRectTransforms(Transform roomRoot)
+        {
+            if (s_hasScreenSaverCanvasState || s_hasAdImageState)
+            {
+                return;
+            }
+
+            var screen = ResolveScreen(roomRoot);
+            var screenSaverCanvas = screen != null ? FindChild(screen, "ScreenSaverCanvas") : null;
+            if (screenSaverCanvas != null &&
+                TryCaptureRectTransformState(screenSaverCanvas, out s_screenSaverCanvasState))
+            {
+                s_hasScreenSaverCanvasState = true;
+            }
+
+            var adImage = screenSaverCanvas != null ? FindChild(screenSaverCanvas, "AdImage") : null;
+            if (adImage != null && TryCaptureRectTransformState(adImage, out s_adImageState))
+            {
+                s_hasAdImageState = true;
+            }
+        }
+
+        private static void RestoreNativeRectTransforms(string reason)
+        {
+            var screen = ResolveScreen(s_roomRoot);
+            var screenSaverCanvas = screen != null ? FindChild(screen, "ScreenSaverCanvas") : null;
+            if (screenSaverCanvas != null && s_hasScreenSaverCanvasState)
+            {
+                ApplyRectTransformState(screenSaverCanvas, s_screenSaverCanvasState);
+            }
+
+            var adImage = screenSaverCanvas != null ? FindChild(screenSaverCanvas, "AdImage") : null;
+            if (adImage != null && s_hasAdImageState)
+            {
+                ApplyRectTransformState(adImage, s_adImageState);
+            }
+
+            if (s_hasScreenSaverCanvasState || s_hasAdImageState)
+            {
+                VisualSkinLog.Verbose($"[DeepSeaScreenUI] restored native screen canvas transforms reason={reason}");
+            }
+        }
+
+        private static void ClearNativeRectTransformState()
+        {
+            s_screenSaverCanvasState = default;
+            s_adImageState = default;
+            s_hasScreenSaverCanvasState = false;
+            s_hasAdImageState = false;
         }
 
         // 알려진 trigger 시점마다 호출 — 비활성 상태면 no-op 이라 호출 site 에서 가드 불필요.
@@ -252,6 +316,70 @@ namespace App.Bootstrap
                 guard = screen.gameObject.AddComponent<ScreenSaverCanvasOverrideGuard>();
             }
             guard.Initialize(entry);
+        }
+
+        private struct RectTransformState
+        {
+            public Vector3 LocalPosition;
+            public Quaternion LocalRotation;
+            public Vector3 LocalScale;
+            public Vector2 AnchorMin;
+            public Vector2 AnchorMax;
+            public Vector2 Pivot;
+            public Vector2 OffsetMin;
+            public Vector2 OffsetMax;
+            public Vector2 SizeDelta;
+            public bool HasRectTransform;
+        }
+
+        private static bool TryCaptureRectTransformState(Transform target, out RectTransformState state)
+        {
+            state = default;
+            if (target == null)
+            {
+                return false;
+            }
+
+            state.LocalPosition = target.localPosition;
+            state.LocalRotation = target.localRotation;
+            state.LocalScale = target.localScale;
+
+            var rect = target as RectTransform;
+            state.HasRectTransform = rect != null;
+            if (rect != null)
+            {
+                state.AnchorMin = rect.anchorMin;
+                state.AnchorMax = rect.anchorMax;
+                state.Pivot = rect.pivot;
+                state.OffsetMin = rect.offsetMin;
+                state.OffsetMax = rect.offsetMax;
+                state.SizeDelta = rect.sizeDelta;
+            }
+
+            return true;
+        }
+
+        private static void ApplyRectTransformState(Transform target, RectTransformState state)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            var rect = target as RectTransform;
+            if (rect != null && state.HasRectTransform)
+            {
+                rect.anchorMin = state.AnchorMin;
+                rect.anchorMax = state.AnchorMax;
+                rect.pivot = state.Pivot;
+                rect.offsetMin = state.OffsetMin;
+                rect.offsetMax = state.OffsetMax;
+                rect.sizeDelta = state.SizeDelta;
+            }
+
+            target.localPosition = state.LocalPosition;
+            target.localRotation = state.LocalRotation;
+            target.localScale = state.LocalScale;
         }
 
         // roomRoot → NotebookStation → Desk → Notebook → Screen.

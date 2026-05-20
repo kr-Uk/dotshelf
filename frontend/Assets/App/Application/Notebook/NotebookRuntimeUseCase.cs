@@ -101,6 +101,11 @@ namespace App.Application.Notebook
             repository.LoadUserFollowings(userId, cursor, limit, onSuccess, onError);
         }
 
+        public void LoadBookDetail(long bookId, Action<NotebookBookSearchItem> onSuccess, Action<NotebookApiError> onError)
+        {
+            repository.LoadBookDetail(bookId, onSuccess, onError);
+        }
+
         public void LoadBookReviews(long bookId, Action<NotebookReviewListResult> onSuccess, Action<NotebookApiError> onError)
         {
             repository.LoadBookReviews(bookId, onSuccess, onError);

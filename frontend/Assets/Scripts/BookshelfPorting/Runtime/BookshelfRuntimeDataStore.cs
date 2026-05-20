@@ -39,6 +39,10 @@ namespace BookshelfPorting.Runtime
     public class BookPlacementData
     {
         public string bookId;
+        public int bookshelfIndex;
+        public int cellIndex;
+        public float offsetXInCell;
+        public string sizePresetId;
         public int row;
         public int column;
         public string orientation;
@@ -180,6 +184,10 @@ namespace BookshelfPorting.Runtime
                         snapshot.layout.placements.Add(new BookPlacementData
                         {
                             bookId = book.bookId,
+                            bookshelfIndex = book.bookshelfIndex,
+                            cellIndex = book.cellIndex,
+                            offsetXInCell = book.offsetXInCell,
+                            sizePresetId = book.sizePresetId,
                             row = section.row,
                             column = section.column,
                             orientation = book.orientation.ToString()

@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7fcf5d37657e94c1a8a0ff4244296f90, type: 3}
   m_Name: RoomTheme_DeepSea
   m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Catalogs.RoomThemeAsset
-  assetId: 0
+  assetId: 300000
   displayName: "\uAE4A\uC740\uBC14\uB2E4"
   description: "\uAE4A\uC740 \uBC14\uB2E4 \uC9C8\uAC10\uACFC \uC0B0\uD638, \uD574\uC591
     \uC0DD\uBB3C \uC18C\uD488\uC744 \uBC30\uCE58\uD558\uB294 \uB85C\uCEEC \uD504\uB9AC\uBDF0

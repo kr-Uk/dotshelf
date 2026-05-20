@@ -87,7 +87,9 @@ namespace App.Infrastructure.Api.Dashboard
                 currentWallpaperInventoryId: dto.CurrentWallpaperInventoryId,
                 currentFloorInventoryId: dto.CurrentFloorInventoryId,
                 currentDeskInventoryId: dto.CurrentDeskInventoryId,
+                currentBookshelfSkinInventoryId: dto.CurrentBookshelfSkinInventoryId,
                 currentDashboardInventoryId: dto.CurrentDashboardInventoryId,
+                currentNotebookInventoryId: dto.CurrentNotebookInventoryId,
                 currentInteriorLightInventoryId: dto.CurrentInteriorLightInventoryId,
                 currentExteriorLightInventoryId: dto.CurrentExteriorLightInventoryId);
         }

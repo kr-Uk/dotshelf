@@ -72,6 +72,8 @@ namespace App.Auth
     // needs the client_id to get a working flow.
     public static class OAuthBrowserDefaults
     {
+        private const string AppleDesktopClientId = "com.jihocompany.dotshelf.desktop";
+
         public static OAuthBrowserProviderConfig CreateDefault(SocialProvider provider)
         {
             switch (provider)
@@ -110,11 +112,13 @@ namespace App.Auth
                         extraQuery = null
                     };
                 case SocialProvider.Apple:
+                    // Apple Desktop/Web uses the public Services ID as client_id.
+                    // The private key/client_secret stays server-side.
                     return new OAuthBrowserProviderConfig
                     {
                         provider = SocialProvider.Apple,
                         authorizeEndpoint = "https://appleid.apple.com/auth/authorize",
-                        clientId = string.Empty,
+                        clientId = AppleDesktopClientId,
                         scope = "name email",
                         responseType = "code",
                         useNonce = true,

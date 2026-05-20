@@ -35,7 +35,12 @@ namespace BookshelfPorting.Runtime
         private const float SectionWallClearance = 0.012f;
         private const string AdvertisementBookInstanceName = "AdvertisementBook_Section";
         private const string BookCoverLabelsName = "BookCoverLabels";
+        private const string BookPageEdgesName = "BookPageEdges";
+        private const string BookPageEdgeTextureAssetPath = "Assets/Arts/Textures/Books/book_page_edge_texture.png";
         private const float BookCoverSurfaceOffset = 0.506f;
+        private const float BookPageEdgeInset = 0.012f;
+        private const float BookPageEdgeSurfaceThickness = 0.006f;
+        private const float BookPageEdgeSurfaceEpsilon = 0.0008f;
         private const float BookCoverCanvasWidthCoverage = 0.78f;
         private const float BookCoverCanvasHeightCoverage = 0.78f;
         private const float BookCoverCanvasPadding = 12f;
@@ -142,6 +147,8 @@ namespace BookshelfPorting.Runtime
         private readonly List<GameObject> qaBookPrefabs = new List<GameObject>();
         private Material qaBooksMaterial;
         private Material qaBooksAltMaterial;
+        private Material bookPageEdgeMaterial;
+        private Texture2D generatedBookPageEdgeTexture;
         private Coroutine bookshelfSwitchCoroutine;
         private int activeBookshelfIndex;
         private Vector3 turntableRootBaseScale = Vector3.one;
@@ -864,6 +871,12 @@ namespace BookshelfPorting.Runtime
 
         private BookshelfThemeStyle ResolveActiveNavigationThemeStyle()
         {
+            var activeStyle = GetBookshelfDesignStyle(DisplayBookshelfIndex);
+            if (activeStyle != BookshelfThemeStyle.Default && ResolveBookshelfThemeLayout(activeStyle) != null)
+            {
+                return activeStyle;
+            }
+
             var theme = ResolveActiveNavigationTheme();
             if (theme != null)
             {
@@ -876,24 +889,24 @@ namespace BookshelfPorting.Runtime
                 }
             }
 
-            var activeStyle = GetBookshelfDesignStyle(DisplayBookshelfIndex);
-            if (activeStyle != BookshelfThemeStyle.Default && ResolveBookshelfThemeLayout(activeStyle) != null)
-            {
-                return activeStyle;
-            }
-
             return BookshelfThemeStyle.Default;
         }
 
         private BookshelfThemeStyle ResolveRenderedBookshelfDesignStyle(int index)
         {
+            var shelfStyle = GetBookshelfDesignStyle(index);
+            if (shelfStyle != BookshelfThemeStyle.Default && ResolveBookshelfThemeLayout(shelfStyle) != null)
+            {
+                return shelfStyle;
+            }
+
             var activeThemeStyle = ResolveActiveNavigationThemeStyle();
             if (activeThemeStyle != BookshelfThemeStyle.Default)
             {
                 return activeThemeStyle;
             }
 
-            return GetBookshelfDesignStyle(index);
+            return shelfStyle;
         }
 
         private void MarkNavigableBookshelfIndicesDirty()
@@ -1600,6 +1613,10 @@ namespace BookshelfPorting.Runtime
 
             var coverColor = ResolveBookCoverColor(book);
             ApplySolidBookCoverMaterial(book, coverColor, renderer);
+            if (!SupportsBookPageSubmesh(renderer))
+            {
+                RebuildBookPageEdges(book);
+            }
             if (TryGetBookCoverSkinSprite(book.coverSkinResourcePath, out var coverSkinSprite))
             {
                 RebuildBookCoverSkin(book, coverSkinSprite);
@@ -1652,7 +1669,30 @@ namespace BookshelfPorting.Runtime
             }
 
             book.tintRenderers = new[] { renderer };
-            renderer.sharedMaterial = CreateBookCoverMaterial(coverColor);
+            var coverMaterial = CreateBookCoverMaterial(coverColor);
+            if (SupportsBookPageSubmesh(renderer))
+            {
+                RemoveBookPageEdges(book);
+                renderer.sharedMaterials = new[] { coverMaterial, GetBookPageEdgeMaterial() };
+                LogBookVisualBounds(book, renderer, false);
+                return;
+            }
+
+            renderer.sharedMaterial = coverMaterial;
+        }
+
+        private static bool SupportsBookPageSubmesh(MeshRenderer renderer)
+        {
+            if (renderer == null)
+            {
+                return false;
+            }
+
+            var meshFilter = renderer.GetComponent<MeshFilter>();
+            return meshFilter != null &&
+                   meshFilter.sharedMesh != null &&
+                   meshFilter.sharedMesh.subMeshCount >= 2 &&
+                   string.Equals(meshFilter.sharedMesh.name, "ProceduralBookVisualMesh", System.StringComparison.Ordinal);
         }
 
         private void RemoveBookCoverLabels(BookEntity book)
@@ -1662,6 +1702,135 @@ namespace BookshelfPorting.Runtime
             {
                 DestroySpawnedObject(existingLabels.gameObject);
             }
+        }
+
+        private void RemoveBookPageEdges(BookEntity book)
+        {
+            var existingEdges = book.transform.Find(BookPageEdgesName);
+            if (existingEdges != null)
+            {
+                DestroySpawnedObject(existingEdges.gameObject);
+            }
+        }
+
+        private void RebuildBookPageEdges(BookEntity book)
+        {
+            if (book == null)
+            {
+                return;
+            }
+
+            RemoveBookPageEdges(book);
+            var material = GetBookPageEdgeMaterial();
+            if (material == null)
+            {
+                return;
+            }
+
+            var coverRenderer = book.GetComponent<MeshRenderer>();
+            if (coverRenderer == null)
+            {
+                return;
+            }
+
+            var edgesRoot = new GameObject(BookPageEdgesName);
+            edgesRoot.transform.SetParent(book.transform, false);
+            edgesRoot.transform.localPosition = Vector3.zero;
+            edgesRoot.transform.localRotation = Quaternion.identity;
+            edgesRoot.transform.localScale = Vector3.one;
+
+            var inset = Mathf.Clamp(BookPageEdgeInset, 0.001f, 0.08f);
+            var surfaceThickness = Mathf.Clamp(BookPageEdgeSurfaceThickness, 0.001f, 0.03f);
+            var halfSurfaceThickness = surfaceThickness * 0.5f;
+            var surfaceMax = 0.5f - BookPageEdgeSurfaceEpsilon;
+            var surfaceMin = -0.5f + BookPageEdgeSurfaceEpsilon;
+            var coverSpan = Mathf.Max(0.01f, 1f - inset * 2f);
+
+            CreateBookPageEdgeBox(
+                edgesRoot.transform,
+                "ForePageEdge",
+                new Vector3(0f, 0f, surfaceMax - halfSurfaceThickness),
+                new Vector3(coverSpan, coverSpan, surfaceThickness),
+                material);
+            CreateBookPageEdgeBox(
+                edgesRoot.transform,
+                "TopPageEdge",
+                new Vector3(0f, surfaceMax - halfSurfaceThickness, 0f),
+                new Vector3(coverSpan, surfaceThickness, coverSpan),
+                material);
+            CreateBookPageEdgeBox(
+                edgesRoot.transform,
+                "BottomPageEdge",
+                new Vector3(0f, surfaceMin + halfSurfaceThickness, 0f),
+                new Vector3(coverSpan, surfaceThickness, coverSpan),
+                material);
+
+            LogBookPageEdgeBounds(book, coverRenderer, edgesRoot);
+        }
+
+        private void CreateBookPageEdgeBox(Transform parent, string objectName, Vector3 localPosition, Vector3 localScale, Material material)
+        {
+            var edge = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            edge.name = objectName;
+            edge.transform.SetParent(parent, false);
+            edge.transform.localPosition = localPosition;
+            edge.transform.localRotation = Quaternion.identity;
+            edge.transform.localScale = localScale;
+
+            var collider = edge.GetComponent<Collider>();
+            if (collider != null)
+            {
+                DestroyImmediate(collider);
+            }
+
+            var renderer = edge.GetComponent<MeshRenderer>();
+            if (renderer != null)
+            {
+                renderer.sharedMaterial = material;
+            }
+        }
+
+        private void LogBookPageEdgeBounds(BookEntity book, MeshRenderer coverRenderer, GameObject edgesRoot)
+        {
+            if (book == null || coverRenderer == null || edgesRoot == null)
+            {
+                return;
+            }
+
+            var pageRenderers = edgesRoot.GetComponentsInChildren<Renderer>(true);
+            if (pageRenderers == null || pageRenderers.Length == 0)
+            {
+                return;
+            }
+
+            var coverBounds = CalculateLocalBounds(book.transform, new Renderer[] { coverRenderer });
+            var pageBounds = CalculateLocalBounds(book.transform, pageRenderers);
+            var protrudes =
+                pageBounds.min.x < coverBounds.min.x - 0.0001f ||
+                pageBounds.max.x > coverBounds.max.x + 0.0001f ||
+                pageBounds.min.y < coverBounds.min.y - 0.0001f ||
+                pageBounds.max.y > coverBounds.max.y + 0.0001f ||
+                pageBounds.min.z < coverBounds.min.z - 0.0001f ||
+                pageBounds.max.z > coverBounds.max.z + 0.0001f;
+
+            Debug.Log($"[BookVisual] coverBounds={coverBounds} pageEdgeBounds={pageBounds}");
+            Debug.Log($"[BookVisual] pageEdge protrudes outside cover: {protrudes}");
+            if (protrudes)
+            {
+                Debug.LogWarning($"[BookVisual] Page edge bounds exceeded cover bounds; inset constants need review book={book.title}");
+            }
+        }
+
+        private void LogBookVisualBounds(BookEntity book, MeshRenderer renderer, bool protrudes)
+        {
+            if (book == null || renderer == null)
+            {
+                return;
+            }
+
+            var bounds = CalculateLocalBounds(book.transform, new Renderer[] { renderer });
+            Debug.Log($"[BookVisual] coverBounds={bounds} pageEdgeBounds={bounds}");
+            Debug.Log($"[BookVisual] pageEdge protrudes outside cover: {protrudes}");
         }
 
         private void RebuildBookCoverLabels(BookEntity book, Color coverColor)
@@ -1917,6 +2086,13 @@ namespace BookshelfPorting.Runtime
             canvas.overrideSorting = true;
             canvas.sortingOrder = 20;
 
+            var isFrontCover = kind == BookLabelKind.Cover;
+            if (isFrontCover)
+            {
+                CreateFrontCoverTextLabels(labelObject.transform, text, fontSize, color);
+                return;
+            }
+
             var textObject = new GameObject("Label", typeof(RectTransform));
             textObject.transform.SetParent(labelObject.transform, false);
             var textRect = textObject.GetComponent<RectTransform>();
@@ -1945,10 +2121,126 @@ namespace BookshelfPorting.Runtime
             label.resizeTextMinSize = isSpineTitle ? fontSize : Mathf.Max(8, fontSize - 6);
             label.resizeTextMaxSize = fontSize;
             label.lineSpacing = isSpineTitle ? 0.76f : 0.9f;
-            label.fontStyle = isSpineTitle ? FontStyle.Bold : FontStyle.Normal;
+            label.fontStyle = FontStyle.Bold;
             label.color = color;
             label.supportRichText = false;
             label.raycastTarget = false;
+
+            var outline = textObject.AddComponent<Outline>();
+            outline.effectColor = new Color(1f, 0.96f, 0.86f, 0.18f);
+            outline.effectDistance = isSpineTitle ? new Vector2(0.35f, -0.35f) : new Vector2(0.5f, -0.5f);
+        }
+
+        private static void CreateFrontCoverTextLabels(Transform parent, string text, int baseFontSize, Color color)
+        {
+            SplitFrontCoverText(text, out var title, out var author);
+            var titleFontSize = Mathf.Max(baseFontSize + 1, Mathf.RoundToInt(baseFontSize * 1.08f));
+
+            var titleLabel = CreateFrontCoverTextLabel(
+                parent,
+                "TitleLabel",
+                title,
+                new Vector2(0f, 0.34f),
+                new Vector2(1f, 1f),
+                new Vector2(BookCoverCanvasPadding, BookCoverCanvasPadding),
+                new Vector2(-BookCoverCanvasPadding, -BookCoverCanvasPadding),
+                titleFontSize + 10,
+                titleFontSize + 10,
+                Mathf.Max(8, titleFontSize - 6),
+                FontStyle.Bold,
+                color,
+                0.86f);
+
+            var authorLabel = CreateFrontCoverTextLabel(
+                parent,
+                "AuthorLabel",
+                author,
+                new Vector2(0f, 0f),
+                new Vector2(1f, 0.36f),
+                new Vector2(BookCoverCanvasPadding, BookCoverCanvasPadding),
+                new Vector2(-BookCoverCanvasPadding, -BookCoverCanvasPadding),
+                baseFontSize + 3,
+                baseFontSize + 3,
+                Mathf.Max(8, baseFontSize - 6),
+                FontStyle.Normal,
+                color,
+                0.9f);
+
+            Debug.Log($"[BookCoverText] Focus cover title text={title}");
+            Debug.Log($"[BookCoverText] title fontSize before={baseFontSize}");
+            Debug.Log($"[BookCoverText] title fontSize after={titleLabel.fontSize}");
+            Debug.Log($"[BookCoverText] title bold applied={titleLabel.fontStyle == FontStyle.Bold}");
+            Debug.Log($"[BookCoverText] author fontSize unchanged={authorLabel.fontSize}");
+            Debug.Log($"[BookCoverText] title autoSize={titleLabel.resizeTextForBestFit}");
+        }
+
+        private static Text CreateFrontCoverTextLabel(
+            Transform parent,
+            string name,
+            string text,
+            Vector2 anchorMin,
+            Vector2 anchorMax,
+            Vector2 offsetMin,
+            Vector2 offsetMax,
+            int fontSize,
+            int resizeTextMaxSize,
+            int resizeTextMinSize,
+            FontStyle fontStyle,
+            Color color,
+            float lineSpacing)
+        {
+            var textObject = new GameObject(name, typeof(RectTransform));
+            textObject.transform.SetParent(parent, false);
+            var textRect = textObject.GetComponent<RectTransform>();
+            textRect.anchorMin = anchorMin;
+            textRect.anchorMax = anchorMax;
+            textRect.pivot = new Vector2(0.5f, 0.5f);
+            textRect.offsetMin = offsetMin;
+            textRect.offsetMax = offsetMax;
+            textRect.anchoredPosition = Vector2.zero;
+            textRect.localScale = Vector3.one;
+
+            var label = textObject.AddComponent<Text>();
+            var font = RuntimeUiFont.Resolve();
+            if (font != null)
+            {
+                label.font = font;
+            }
+
+            label.text = text;
+            label.fontSize = fontSize;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.horizontalOverflow = HorizontalWrapMode.Wrap;
+            label.verticalOverflow = VerticalWrapMode.Truncate;
+            label.resizeTextForBestFit = true;
+            label.resizeTextMinSize = resizeTextMinSize;
+            label.resizeTextMaxSize = resizeTextMaxSize;
+            label.lineSpacing = lineSpacing;
+            label.fontStyle = fontStyle;
+            label.color = color;
+            label.supportRichText = false;
+            label.raycastTarget = false;
+
+            var outline = textObject.AddComponent<Outline>();
+            outline.effectColor = new Color(1f, 0.96f, 0.86f, 0.18f);
+            outline.effectDistance = new Vector2(0.5f, -0.5f);
+
+            return label;
+        }
+
+        private static void SplitFrontCoverText(string text, out string title, out string author)
+        {
+            title = text ?? string.Empty;
+            author = string.Empty;
+
+            var separatorIndex = title.IndexOf("\n\n", System.StringComparison.Ordinal);
+            if (separatorIndex < 0)
+            {
+                return;
+            }
+
+            author = title.Substring(separatorIndex + 2);
+            title = title.Substring(0, separatorIndex);
         }
 
         private static Vector3 GetBookCoverCanvasScale()
@@ -2002,6 +2294,142 @@ namespace BookshelfPorting.Runtime
             return material;
         }
 
+        private Material GetBookPageEdgeMaterial()
+        {
+            if (bookPageEdgeMaterial != null)
+            {
+                return bookPageEdgeMaterial;
+            }
+
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null)
+            {
+                shader = Shader.Find("Standard");
+            }
+
+            if (shader == null)
+            {
+                return null;
+            }
+
+            var pageColor = new Color(1f, 0.985f, 0.94f, 1f);
+            bookPageEdgeMaterial = new Material(shader)
+            {
+                name = "BookPageEdgeMaterial"
+            };
+
+            var texture = LoadBookPageEdgeTexture();
+            if (texture != null)
+            {
+                texture.wrapMode = TextureWrapMode.Repeat;
+                texture.filterMode = FilterMode.Bilinear;
+                if (bookPageEdgeMaterial.HasProperty("_BaseMap"))
+                {
+                    bookPageEdgeMaterial.SetTexture("_BaseMap", texture);
+                    bookPageEdgeMaterial.SetTextureScale("_BaseMap", new Vector2(3f, 1f));
+                }
+
+                if (bookPageEdgeMaterial.HasProperty("_MainTex"))
+                {
+                    bookPageEdgeMaterial.SetTexture("_MainTex", texture);
+                    bookPageEdgeMaterial.SetTextureScale("_MainTex", new Vector2(3f, 1f));
+                }
+            }
+
+            bookPageEdgeMaterial.color = pageColor;
+            if (bookPageEdgeMaterial.HasProperty("_BaseColor"))
+            {
+                bookPageEdgeMaterial.SetColor("_BaseColor", pageColor);
+            }
+
+            if (bookPageEdgeMaterial.HasProperty("_Metallic"))
+            {
+                bookPageEdgeMaterial.SetFloat("_Metallic", 0f);
+            }
+
+            if (bookPageEdgeMaterial.HasProperty("_Smoothness"))
+            {
+                bookPageEdgeMaterial.SetFloat("_Smoothness", 0.10f);
+            }
+
+            LogBookPageEdgeMaterialSettings(bookPageEdgeMaterial, texture);
+
+            return bookPageEdgeMaterial;
+        }
+
+        private static void LogBookPageEdgeMaterialSettings(Material material, Texture texture)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            var tiling = Vector2.one;
+            if (material.HasProperty("_BaseMap"))
+            {
+                tiling = material.GetTextureScale("_BaseMap");
+            }
+            else if (material.HasProperty("_MainTex"))
+            {
+                tiling = material.GetTextureScale("_MainTex");
+            }
+
+            var baseColor = material.HasProperty("_BaseColor") ? material.GetColor("_BaseColor") : material.color;
+            Debug.Log($"[BookTexture] PageEdge material={material.name}");
+            Debug.Log($"[BookTexture] PageEdge texture={(texture != null ? texture.name : "null")}");
+            Debug.Log($"[BookTexture] PageEdge tiling={tiling}");
+            Debug.Log($"[BookTexture] PageEdge baseColor={baseColor}");
+        }
+
+        private Texture2D LoadBookPageEdgeTexture()
+        {
+#if UNITY_EDITOR
+            var assetTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(BookPageEdgeTextureAssetPath);
+            if (assetTexture != null)
+            {
+                return assetTexture;
+            }
+#endif
+
+            return GetGeneratedBookPageEdgeTexture();
+        }
+
+        private Texture2D GetGeneratedBookPageEdgeTexture()
+        {
+            if (generatedBookPageEdgeTexture != null)
+            {
+                return generatedBookPageEdgeTexture;
+            }
+
+            const int textureWidth = 64;
+            const int textureHeight = 64;
+            var paper = new Color(0.91f, 0.86f, 0.74f, 1f);
+            var line = new Color(0.62f, 0.55f, 0.43f, 1f);
+            generatedBookPageEdgeTexture = new Texture2D(textureWidth, textureHeight, TextureFormat.RGBA32, false)
+            {
+                name = "GeneratedBookPageEdgeTexture",
+                wrapMode = TextureWrapMode.Repeat,
+                filterMode = FilterMode.Bilinear
+            };
+
+            for (var y = 0; y < textureHeight; y++)
+            {
+                var isLine = y % 6 == 0 || y % 17 == 0;
+                for (var x = 0; x < textureWidth; x++)
+                {
+                    var subtleNoise = ((x * 13 + y * 7) % 11) / 255f;
+                    var color = isLine ? line : paper;
+                    color.r = Mathf.Clamp01(color.r + subtleNoise);
+                    color.g = Mathf.Clamp01(color.g + subtleNoise);
+                    color.b = Mathf.Clamp01(color.b + subtleNoise);
+                    generatedBookPageEdgeTexture.SetPixel(x, y, color);
+                }
+            }
+
+            generatedBookPageEdgeTexture.Apply(false, false);
+            return generatedBookPageEdgeTexture;
+        }
+
         private static Color ResolveBookCoverColor(BookEntity book)
         {
             var seed = !string.IsNullOrWhiteSpace(book.bookId)
@@ -2031,8 +2459,7 @@ namespace BookshelfPorting.Runtime
 
         private static Color GetCoverTextColor(Color coverColor)
         {
-            var luminance = coverColor.r * 0.299f + coverColor.g * 0.587f + coverColor.b * 0.114f;
-            return luminance > 0.57f ? new Color(0.08f, 0.075f, 0.07f) : new Color(0.98f, 0.965f, 0.93f);
+            return new Color(0.10f, 0.10f, 0.10f, 1f);
         }
 
         private static string FormatFrontCoverText(BookEntity book)
@@ -2138,22 +2565,147 @@ namespace BookshelfPorting.Runtime
 
         private BookEntity CreateProceduralBook(int variantIndex, int sectionIndex, int bookIndex, Transform targetBooksRoot)
         {
-            var bookObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var bookObject = new GameObject($"Shelf{variantIndex}_Book_{sectionIndex}_{bookIndex}");
+            var meshFilter = bookObject.AddComponent<MeshFilter>();
+            meshFilter.sharedMesh = CreateBookVisualMesh();
+            var renderer = bookObject.AddComponent<MeshRenderer>();
+            var collider = bookObject.AddComponent<BoxCollider>();
+            collider.size = Vector3.one;
             bookObject.name = $"Shelf{variantIndex}_Book_{sectionIndex}_{bookIndex}";
             bookObject.transform.SetParent(targetBooksRoot, false);
 
-            var thickness = Random.Range(thicknessRange.x, thicknessRange.y);
-            var bookHeight = Random.Range(heightRange.x, heightRange.y);
-            bookObject.transform.localScale = new Vector3(thickness, bookHeight, bookDepth);
+            var preset = SelectBookSizePreset(bookObject.name);
+            bookObject.transform.localScale = new Vector3(preset.Thickness, preset.Height, preset.Depth);
 
-            var renderer = bookObject.GetComponent<MeshRenderer>();
             var coverColor = ResolveBookCoverColorFromSeed(bookObject.name);
-            renderer.sharedMaterial = CreateBookCoverMaterial(coverColor);
+            renderer.sharedMaterials = new[] { CreateBookCoverMaterial(coverColor), GetBookPageEdgeMaterial() };
 
             var entity = bookObject.AddComponent<BookEntity>();
             entity.tintRenderers = new[] { renderer };
-            entity.Initialize(bookObject.name, thickness, bookHeight, bookDepth, coverColor);
+            entity.Initialize(bookObject.name, preset.Thickness, preset.Height, preset.Depth, coverColor);
+            entity.sizePresetId = preset.Id;
+            Debug.Log($"[BookshelfPlacement] Selected preset: {preset.Id} for bookId={entity.bookId}");
             return entity;
+        }
+
+        private static BookSizePreset SelectBookSizePreset(string deterministicSeed, string sizePresetId = null)
+        {
+            return BookSizePresets.Resolve(sizePresetId, deterministicSeed);
+        }
+
+        private static void ApplyPresetToBook(BookEntity book, string deterministicSeed, string sizePresetId = null)
+        {
+            if (book == null)
+            {
+                return;
+            }
+
+            var preset = SelectBookSizePreset(deterministicSeed, sizePresetId);
+            book.ApplySizePreset(preset);
+            Debug.Log($"[BookshelfPlacement] Selected preset: {preset.Id} for bookId={book.bookId}");
+            Debug.Log($"[BookPlacement] Selected preset={preset.Id} height={preset.Height:F3} thickness={preset.Thickness:F3}");
+        }
+
+        private static Mesh CreateBookVisualMesh()
+        {
+            var mesh = new Mesh { name = "ProceduralBookVisualMesh" };
+            var vertices = new List<Vector3>();
+            var uvs = new List<Vector2>();
+            var coverTriangles = new List<int>();
+            var pageTriangles = new List<int>();
+
+            AddBookFace(vertices, uvs, coverTriangles,
+                new Vector3(0.5f, -0.5f, -0.5f),
+                new Vector3(0.5f, 0.5f, -0.5f),
+                new Vector3(0.5f, 0.5f, 0.5f),
+                new Vector3(0.5f, -0.5f, 0.5f));
+            AddBookFace(vertices, uvs, coverTriangles,
+                new Vector3(-0.5f, -0.5f, 0.5f),
+                new Vector3(-0.5f, 0.5f, 0.5f),
+                new Vector3(-0.5f, 0.5f, -0.5f),
+                new Vector3(-0.5f, -0.5f, -0.5f));
+            AddBookFace(vertices, uvs, coverTriangles,
+                new Vector3(-0.5f, -0.5f, -0.5f),
+                new Vector3(-0.5f, 0.5f, -0.5f),
+                new Vector3(0.5f, 0.5f, -0.5f),
+                new Vector3(0.5f, -0.5f, -0.5f));
+
+            AddBookFaceRotatedUv(vertices, uvs, pageTriangles,
+                new Vector3(0.5f, -0.5f, 0.5f),
+                new Vector3(0.5f, 0.5f, 0.5f),
+                new Vector3(-0.5f, 0.5f, 0.5f),
+                new Vector3(-0.5f, -0.5f, 0.5f));
+            AddBookFaceRotatedUv(vertices, uvs, pageTriangles,
+                new Vector3(-0.5f, 0.5f, -0.5f),
+                new Vector3(-0.5f, 0.5f, 0.5f),
+                new Vector3(0.5f, 0.5f, 0.5f),
+                new Vector3(0.5f, 0.5f, -0.5f));
+            AddBookFaceRotatedUv(vertices, uvs, pageTriangles,
+                new Vector3(-0.5f, -0.5f, 0.5f),
+                new Vector3(-0.5f, -0.5f, -0.5f),
+                new Vector3(0.5f, -0.5f, -0.5f),
+                new Vector3(0.5f, -0.5f, 0.5f));
+
+            mesh.SetVertices(vertices);
+            mesh.SetUVs(0, uvs);
+            mesh.subMeshCount = 2;
+            mesh.SetTriangles(coverTriangles, 0);
+            mesh.SetTriangles(pageTriangles, 1);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        private static void AddBookFace(
+            List<Vector3> vertices,
+            List<Vector2> uvs,
+            List<int> triangles,
+            Vector3 bottomLeft,
+            Vector3 topLeft,
+            Vector3 topRight,
+            Vector3 bottomRight)
+        {
+            var start = vertices.Count;
+            vertices.Add(bottomLeft);
+            vertices.Add(topLeft);
+            vertices.Add(topRight);
+            vertices.Add(bottomRight);
+            uvs.Add(new Vector2(0f, 0f));
+            uvs.Add(new Vector2(0f, 1f));
+            uvs.Add(new Vector2(1f, 1f));
+            uvs.Add(new Vector2(1f, 0f));
+            triangles.Add(start);
+            triangles.Add(start + 1);
+            triangles.Add(start + 2);
+            triangles.Add(start);
+            triangles.Add(start + 2);
+            triangles.Add(start + 3);
+        }
+
+        private static void AddBookFaceRotatedUv(
+            List<Vector3> vertices,
+            List<Vector2> uvs,
+            List<int> triangles,
+            Vector3 bottomLeft,
+            Vector3 topLeft,
+            Vector3 topRight,
+            Vector3 bottomRight)
+        {
+            var start = vertices.Count;
+            vertices.Add(bottomLeft);
+            vertices.Add(topLeft);
+            vertices.Add(topRight);
+            vertices.Add(bottomRight);
+            uvs.Add(new Vector2(0f, 1f));
+            uvs.Add(new Vector2(0f, 0f));
+            uvs.Add(new Vector2(1f, 0f));
+            uvs.Add(new Vector2(1f, 1f));
+            triangles.Add(start);
+            triangles.Add(start + 1);
+            triangles.Add(start + 2);
+            triangles.Add(start);
+            triangles.Add(start + 2);
+            triangles.Add(start + 3);
         }
 
         private static Color ResolveBookCoverColorFromSeed(string seed)
@@ -2782,8 +3334,30 @@ namespace BookshelfPorting.Runtime
             var targetSection = FindFirstSectionWithSpace(book);
             if (targetSection == null)
             {
+                Debug.Log("[BookshelfPlacement] No available cell, creating new bookshelf");
+                Debug.Log("[BookPlacement] No cell available, create new bookshelf");
                 DestroySpawnedObject(book.gameObject);
-                return null;
+                if (!AddBookshelf())
+                {
+                    return null;
+                }
+
+                var newBook = CreateConfiguredUserBook(title, author, publisher, description, orientation, isDecoration);
+                if (newBook == null)
+                {
+                    return null;
+                }
+
+                var newSection = FindFirstSectionWithSpace(newBook);
+                if (newSection == null)
+                {
+                    DestroySpawnedObject(newBook.gameObject);
+                    return null;
+                }
+
+                Debug.Log($"[BookshelfPlacement] Created bookshelf={activeBookshelfIndex} and placed book");
+                Debug.Log($"[BookPlacement] Created bookshelf={activeBookshelfIndex}");
+                return TryPlaceConfiguredBookInSection(newBook, newSection, newSection.books.Count, true);
             }
 
             return TryPlaceConfiguredBookInSection(book, targetSection, targetSection.books.Count, true);
@@ -2820,8 +3394,35 @@ namespace BookshelfPorting.Runtime
             SetCollidersEnabled(bookColliders, true);
             if (!hasPlacement)
             {
-                DestroySpawnedObject(book.gameObject);
-                return null;
+                targetSection = FindFirstSectionWithSpace(book);
+                insertIndex = targetSection != null ? targetSection.books.Count : 0;
+                if (targetSection == null)
+                {
+                    Debug.Log("[BookshelfPlacement] No available cell, creating new bookshelf");
+                    Debug.Log("[BookPlacement] No cell available, create new bookshelf");
+                    DestroySpawnedObject(book.gameObject);
+                    if (!AddBookshelf())
+                    {
+                        return null;
+                    }
+
+                    book = CreateConfiguredUserBook(title, author, publisher, description, orientation, isDecoration);
+                    if (book == null)
+                    {
+                        return null;
+                    }
+
+                    targetSection = FindFirstSectionWithSpace(book);
+                    insertIndex = targetSection != null ? targetSection.books.Count : 0;
+                    if (targetSection == null)
+                    {
+                        DestroySpawnedObject(book.gameObject);
+                        return null;
+                    }
+
+                    Debug.Log($"[BookshelfPlacement] Created bookshelf={activeBookshelfIndex} and placed book");
+                    Debug.Log($"[BookPlacement] Created bookshelf={activeBookshelfIndex}");
+                }
             }
 
             return TryPlaceConfiguredBookInSection(book, targetSection, insertIndex, true);
@@ -2917,9 +3518,10 @@ namespace BookshelfPorting.Runtime
 
         private Vector3 ResolveBookAddGuideCandidateScale()
         {
-            var thickness = Mathf.Clamp((thicknessRange.x + thicknessRange.y) * 0.5f, 0.02f, 0.08f);
-            var bookHeight = Mathf.Clamp((heightRange.x + heightRange.y) * 0.5f, 0.12f, 0.34f);
-            return new Vector3(thickness, bookHeight, Mathf.Max(0.04f, bookDepth));
+            return new Vector3(
+                BookSizePresets.Medium.Thickness,
+                BookSizePresets.Medium.Height,
+                BookSizePresets.Medium.Depth);
         }
 
         private void EnsureBookAddPlacementGuideVisuals()
@@ -3043,9 +3645,34 @@ namespace BookshelfPorting.Runtime
                 : description.Trim();
             book.memoPreview = book.description;
             book.isDecoration = isDecoration;
+            ApplyPresetToBook(book, CreateBookSizeSeed(book));
+            Debug.Log($"[BookPlacement] Add book title={book.title}");
+            Debug.Log($"[BookPlacement] Selected preset={book.sizePresetId} height={book.height:F3} thickness={book.thickness:F3}");
             book.SetOrientation(orientation);
             RefreshBookCoverVisuals(book);
             return book;
+        }
+
+        private static string CreateBookSizeSeed(BookEntity book)
+        {
+            if (book == null)
+            {
+                return string.Empty;
+            }
+
+            if (!string.IsNullOrWhiteSpace(book.title))
+            {
+                return !string.IsNullOrWhiteSpace(book.author)
+                    ? $"{book.title}|{book.author}"
+                    : book.title;
+            }
+
+            if (!string.IsNullOrWhiteSpace(book.bookId))
+            {
+                return book.bookId;
+            }
+
+            return book.gameObject != null ? book.gameObject.name : string.Empty;
         }
 
         private BookEntity TryPlaceConfiguredBookInSection(BookEntity book, ShelfSection targetSection, int insertIndex, bool animateInsertion)
@@ -3060,6 +3687,7 @@ namespace BookshelfPorting.Runtime
                 return null;
             }
 
+            targetSection.alignment = ShelfSectionAlignment.Left;
             if (!state.TryPlaceBookForDrop(book, targetSection, insertIndex, out var targetLocalPosition, out var targetLocalRotation, out var targetLocalScale))
             {
                 DestroySpawnedObject(book.gameObject);
@@ -3079,6 +3707,11 @@ namespace BookshelfPorting.Runtime
                 state.LayoutSection(targetSection, state, false);
             }
 
+            var cellIndex = targetSection.row * columns + targetSection.column;
+            var offsetXInCell = ComputeOffsetXInCellWithStateSpacing(targetSection, book);
+            book.SetPlacementInfo(activeBookshelfIndex, cellIndex, offsetXInCell);
+            Debug.Log($"[BookshelfPlacement] Placed book in bookshelf={activeBookshelfIndex} cell={cellIndex} offset={offsetXInCell:F3}");
+            Debug.Log($"[BookPlacement] Placed bookshelf={activeBookshelfIndex} cell={cellIndex} x={book.transform.localPosition.x:F3}");
             SaveActiveBookshelfLayoutSnapshot();
             BookshelfSwitchStateChanged?.Invoke();
             return book;
@@ -3134,6 +3767,10 @@ namespace BookshelfPorting.Runtime
             out int insertIndex)
         {
             section = state.FindAvailableDropSection(localPosition, candidateBook, 0.02f);
+            if (section != null && candidateBook != null && !CanSectionFitCandidate(section, candidateBook, state != null ? state.BookPadding : 0.01f))
+            {
+                section = null;
+            }
             insertIndex = section != null ? state.ComputeDropInsertIndex(localPosition, section, candidateBook) : 0;
             return section != null;
         }
@@ -3152,7 +3789,7 @@ namespace BookshelfPorting.Runtime
             var target = book.transform;
             var startPosition = targetLocalPosition + addedBookInsertionLocalOffset;
             var startRotation = targetLocalRotation * Quaternion.Euler(0f, -8f, 0f);
-            var startScale = targetLocalScale * 0.84f;
+            var startScale = targetLocalScale;
             var duration = Mathf.Max(0.01f, addedBookInsertionDuration);
             var elapsed = 0f;
 
@@ -3201,10 +3838,203 @@ namespace BookshelfPorting.Runtime
                     continue;
                 }
 
-                if (!section.isAdvertisementSection &&
-                    (candidate == null || section.CanFit(candidate, state != null ? state.BookPadding : 0.01f)))
+                if (section.isAdvertisementSection)
+                {
+                    continue;
+                }
+
+                var spacing = state != null ? state.BookPadding : 0.01f;
+                var usedWidth = ComputeUsedWidth(section, spacing);
+                var requiredWidth = candidate != null
+                    ? candidate.GetLayoutFootprint() + GetRequiredPairSpacing(section, candidate, spacing)
+                    : 0f;
+                var edgePadding = BookFootprintUtility.GetEdgePadding(spacing);
+                var capacity = Mathf.Max(0f, section.Width - edgePadding * 2f);
+                Debug.Log($"[BookshelfPlacement] Try cell={i} usedWidth={usedWidth:F3} requiredWidth={requiredWidth:F3} capacity={capacity:F3}");
+                Debug.Log($"[BookPlacement] Try bookshelf={activeBookshelfIndex} cell={i} usedWidth={usedWidth:F3} required={requiredWidth:F3} capacity={capacity:F3}");
+
+                if (candidate == null || CanSectionFitCandidate(section, candidate, spacing))
                 {
                     return section;
+                }
+
+                Debug.Log("[BookPlacement] Cell full, move next cell");
+            }
+
+            return null;
+        }
+
+        private static bool CanSectionFitCandidate(ShelfSection section, BookEntity candidate, float spacing)
+        {
+            if (section == null || section.isAdvertisementSection || candidate == null)
+            {
+                return false;
+            }
+
+            var safeSpacing = Mathf.Max(0f, spacing);
+            var usedWidth = ComputeUsedWidth(section, safeSpacing);
+            var requiredWidth = candidate.GetLayoutFootprint() + GetRequiredPairSpacing(section, candidate, safeSpacing);
+            var edgePadding = BookFootprintUtility.GetEdgePadding(safeSpacing);
+            var capacity = Mathf.Max(0f, section.Width - edgePadding * 2f);
+            var remaining = capacity - usedWidth;
+            var canFit = usedWidth + requiredWidth <= capacity;
+            if (!canFit)
+            {
+                Debug.Log($"[BookshelfFit] Reject book: remaining={remaining:F3} required={requiredWidth:F3} orientation={candidate.orientation} spacing={GetRequiredPairSpacing(section, candidate, safeSpacing):F3} edgePadding={edgePadding:F3}");
+            }
+
+            return canFit;
+        }
+
+        private static float ComputeUsedWidth(ShelfSection section, float spacing)
+        {
+            if (section == null)
+            {
+                return 0f;
+            }
+
+            var usedWidth = 0f;
+            BookEntity previousBook = null;
+            for (var i = section.books.Count - 1; i >= 0; i--)
+            {
+                if (section.books[i] == null)
+                {
+                    section.books.RemoveAt(i);
+                }
+            }
+
+            for (var i = 0; i < section.books.Count; i++)
+            {
+                var book = section.books[i];
+                if (book == null)
+                {
+                    continue;
+                }
+
+                if (previousBook != null)
+                {
+                    usedWidth += BookFootprintUtility.GetPairSpacing(spacing, previousBook, book);
+                }
+
+                usedWidth += book.GetLayoutFootprint();
+                previousBook = book;
+            }
+
+            return usedWidth;
+        }
+
+        private static float GetRequiredPairSpacing(ShelfSection section, BookEntity candidate, float spacing)
+        {
+            var lastBook = GetLastBook(section);
+            return lastBook != null
+                ? BookFootprintUtility.GetPairSpacing(spacing, lastBook, candidate)
+                : 0f;
+        }
+
+        private static BookEntity GetLastBook(ShelfSection section)
+        {
+            if (section == null)
+            {
+                return null;
+            }
+
+            for (var i = section.books.Count - 1; i >= 0; i--)
+            {
+                if (section.books[i] != null)
+                {
+                    return section.books[i];
+                }
+            }
+
+            return null;
+        }
+
+        private static float ComputeOffsetXInCell(ShelfSection section, BookEntity targetBook)
+        {
+            if (section == null || targetBook == null)
+            {
+                return 0f;
+            }
+
+            var spacing = 0.01f;
+            var offset = BookFootprintUtility.GetEdgePadding(spacing);
+            BookEntity previousBook = null;
+            for (var i = 0; i < section.books.Count; i++)
+            {
+                var book = section.books[i];
+                if (book == null)
+                {
+                    continue;
+                }
+
+                if (book == targetBook)
+                {
+                    return offset;
+                }
+
+                offset += book.GetLayoutFootprint();
+                previousBook = book;
+                var nextBook = FindNextBook(section.books, i + 1);
+                if (nextBook != null)
+                {
+                    offset += BookFootprintUtility.GetPairSpacing(spacing, previousBook, nextBook);
+                }
+            }
+
+            return offset;
+        }
+
+        private float ComputeOffsetXInCellWithStateSpacing(ShelfSection section, BookEntity targetBook)
+        {
+            return ComputeOffsetXInCell(section, targetBook, state != null ? state.BookPadding : 0.01f);
+        }
+
+        private static float ComputeOffsetXInCell(ShelfSection section, BookEntity targetBook, float spacing)
+        {
+            if (section == null || targetBook == null)
+            {
+                return 0f;
+            }
+
+            var offset = BookFootprintUtility.GetEdgePadding(spacing);
+            BookEntity previousBook = null;
+            for (var i = 0; i < section.books.Count; i++)
+            {
+                var book = section.books[i];
+                if (book == null)
+                {
+                    continue;
+                }
+
+                if (book == targetBook)
+                {
+                    return offset;
+                }
+
+                offset += book.GetLayoutFootprint();
+                previousBook = book;
+                var nextBook = FindNextBook(section.books, i + 1);
+                if (nextBook != null)
+                {
+                    offset += BookFootprintUtility.GetPairSpacing(spacing, previousBook, nextBook);
+                }
+            }
+
+            return offset;
+        }
+
+        private static BookEntity FindNextBook(List<BookEntity> books, int startIndex)
+        {
+            if (books == null)
+            {
+                return null;
+            }
+
+            for (var i = startIndex; i < books.Count; i++)
+            {
+                if (books[i] != null)
+                {
+                    return books[i];
                 }
             }
 
@@ -3376,7 +4206,11 @@ namespace BookshelfPorting.Runtime
                         averageRating: book.averageRating,
                         totalLikeCount: ResolveSnapshotLikeCount(book.totalLikeCount, book.isLiked),
                         reviewCount: book.reviewCount,
-                        hasAggregateBookStats: book.hasAggregateBookStats));
+                        hasAggregateBookStats: book.hasAggregateBookStats,
+                        bookshelfIndex: book.bookshelfIndex,
+                        cellIndex: book.cellIndex,
+                        offsetXInCell: book.offsetXInCell,
+                        sizePresetId: book.sizePresetId));
                 }
 
                 snapshot.Sections.Add(sectionSnapshot);
@@ -3494,7 +4328,10 @@ namespace BookshelfPorting.Runtime
                     averageRating: source.AverageRating,
                     totalLikeCount: ResolveSnapshotLikeCount(source.TotalLikeCount, source.IsLiked),
                     reviewCount: source.ReviewCount,
-                    hasAggregateBookStats: source.HasAggregateBookStats));
+                    hasAggregateBookStats: source.HasAggregateBookStats,
+                    bookshelfIndex: variantIndex,
+                    cellIndex: row * columns + column,
+                    sizePresetId: SelectBookSizePreset(CreateServerBookKey(variantIndex, source, section.Books.Count)).Id));
             }
 
             return snapshot;
@@ -3625,7 +4462,8 @@ namespace BookshelfPorting.Runtime
                 averageRating: book != null ? (float)book.AverageRating : 0f,
                 totalLikeCount: book != null ? ResolveSnapshotLikeCount((int)book.LikeCount, isLiked) : 0,
                 reviewCount: book != null ? Mathf.Max(0, book.RatingCount) : 0,
-                hasAggregateBookStats: book != null);
+                hasAggregateBookStats: book != null,
+                sizePresetId: SelectBookSizePreset(bookKey).Id);
         }
 
         private static int ResolveSnapshotLikeCount(int likeCount, bool isLiked)
@@ -3955,8 +4793,24 @@ namespace BookshelfPorting.Runtime
 
                     book.SetOrientation(placement.Orientation);
                     ApplySnapshotToBook(book, placement);
-                    book.SetSection(targetSection);
-                    targetSection.books.Add(book);
+
+                    var resolvedSection = ResolveRestoredBookSection(targetSections, targetSection, book);
+                    if (resolvedSection != targetSection)
+                    {
+                        Debug.LogWarning(
+                            $"[BookPlacement] Restored book moved to avoid overlap title={book.title} " +
+                            $"fromCell={targetSection.row * columns + targetSection.column} " +
+                            $"toCell={(resolvedSection != null ? resolvedSection.row * columns + resolvedSection.column : -1)}");
+                    }
+
+                    if (resolvedSection == null)
+                    {
+                        resolvedSection = targetSection;
+                        Debug.LogWarning($"[BookPlacement] No restore cell available; keeping original cell title={book.title}");
+                    }
+
+                    book.SetSection(resolvedSection);
+                    resolvedSection.books.Add(book);
                     restoredBooks.Add(book);
                 }
             }
@@ -3988,6 +4842,48 @@ namespace BookshelfPorting.Runtime
             }
 
             return null;
+        }
+
+        private ShelfSection ResolveRestoredBookSection(List<ShelfSection> sections, ShelfSection requestedSection, BookEntity book)
+        {
+            if (sections == null || requestedSection == null || book == null)
+            {
+                return requestedSection;
+            }
+
+            var spacing = state != null ? state.BookPadding : 0.01f;
+            var requestedIndex = GetSectionLinearIndex(requestedSection);
+            for (var i = 0; i < sections.Count; i++)
+            {
+                var section = sections[i];
+                if (section == null || section.isAdvertisementSection)
+                {
+                    continue;
+                }
+
+                if (GetSectionLinearIndex(section) < requestedIndex)
+                {
+                    continue;
+                }
+
+                var usedWidth = ComputeUsedWidth(section, spacing);
+                var requiredWidth = book.GetLayoutFootprint() + GetRequiredPairSpacing(section, book, spacing);
+                var edgePadding = BookFootprintUtility.GetEdgePadding(spacing);
+                var capacity = Mathf.Max(0f, section.Width - edgePadding * 2f);
+                Debug.Log($"[BookPlacement] Restore try bookshelf={activeBookshelfIndex} cell={GetSectionLinearIndex(section)} usedWidth={usedWidth:F3} required={requiredWidth:F3} capacity={capacity:F3}");
+
+                if (CanSectionFitCandidate(section, book, spacing))
+                {
+                    return section;
+                }
+            }
+
+            return null;
+        }
+
+        private int GetSectionLinearIndex(ShelfSection section)
+        {
+            return section != null ? section.row * columns + section.column : -1;
         }
 
         private BookEntity CreateRestoredBook(
@@ -4051,6 +4947,11 @@ namespace BookshelfPorting.Runtime
             book.isPaidCoverOwned = placement.IsPaidCoverOwned;
             book.coverSkinResourcePath = placement.CoverSkinResourcePath;
             book.isDecoration = placement.IsDecoration;
+            ApplyPresetToBook(book, CreateBookSizeSeed(book), placement.SizePresetId);
+            book.SetPlacementInfo(
+                placement.BookshelfIndex >= 0 ? placement.BookshelfIndex : activeBookshelfIndex,
+                placement.CellIndex,
+                placement.OffsetXInCell);
             RefreshBookCoverVisuals(book);
         }
 
@@ -4113,8 +5014,7 @@ namespace BookshelfPorting.Runtime
             for (var i = 0; i < sections.Count; i++)
             {
                 var section = sections[i];
-                var sectionScale = GetSectionLayoutScale(section, padding);
-                var x = GetSectionLayoutStartX(section, padding, sectionScale);
+                var x = GetSectionLayoutStartX(section, padding);
                 for (var j = 0; j < section.books.Count; j++)
                 {
                     var book = section.books[j];
@@ -4123,62 +5023,31 @@ namespace BookshelfPorting.Runtime
                         continue;
                     }
 
-                    var footprint = book.GetFootprint() * sectionScale;
+                    var footprint = book.GetLayoutFootprint();
+                    book.SetPlacementInfo(activeBookshelfIndex, section.row * columns + section.column, x - section.leftBound);
                     book.transform.localPosition = new Vector3(
                         x + footprint * 0.5f,
-                        section.BookBaseY + book.height * sectionScale * 0.5f,
-                        section.GetFrontAlignedBookCenterZ(book, sectionScale, frontInset));
+                        section.BookBaseY + book.height * 0.5f,
+                        section.GetFrontAlignedBookCenterZ(book, 1f, frontInset));
                     book.transform.localRotation = BookFootprintUtility.GetVisualRotation(book.orientation);
-                    book.transform.localScale = book.BaseLocalScale * sectionScale;
-                    x += footprint + padding;
+                    book.transform.localScale = book.BaseLocalScale;
+                    var nextBook = FindNextBook(section.books, j + 1);
+                    x += footprint + (nextBook != null ? BookFootprintUtility.GetPairSpacing(padding, book, nextBook) : 0f);
                 }
             }
         }
 
-        private static float GetSectionLayoutScale(ShelfSection section, float padding)
-        {
-            if (section == null)
-            {
-                return 1f;
-            }
-
-            var footprintSum = 0f;
-            var bookCount = 0;
-            for (var i = 0; i < section.books.Count; i++)
-            {
-                if (section.books[i] == null)
-                {
-                    continue;
-                }
-
-                footprintSum += section.books[i].GetFootprint();
-                bookCount++;
-            }
-
-            if (bookCount == 0 || footprintSum <= 0f)
-            {
-                return 1f;
-            }
-
-            var availableForBooks = section.Width - padding * (bookCount + 1);
-            if (availableForBooks <= 0f)
-            {
-                return MinimumSectionFitScale;
-            }
-
-            return Mathf.Min(1f, availableForBooks / footprintSum);
-        }
-
-        private static float GetSectionLayoutStartX(ShelfSection section, float padding, float sectionScale)
+        private static float GetSectionLayoutStartX(ShelfSection section, float padding)
         {
             if (section == null)
             {
                 return 0f;
             }
 
-            var contentWidth = GetSectionContentWidth(section, padding, sectionScale);
-            var leftStart = section.leftBound + padding;
-            var rightStart = section.rightBound - padding - contentWidth;
+            var contentWidth = GetSectionContentWidth(section, padding);
+            var edgePadding = BookFootprintUtility.GetEdgePadding(padding);
+            var leftStart = section.leftBound + edgePadding;
+            var rightStart = section.rightBound - edgePadding - contentWidth;
             if (rightStart < leftStart)
             {
                 return leftStart;
@@ -4232,7 +5101,7 @@ namespace BookshelfPorting.Runtime
             return materialFactory.GetBookshelfWoodMaterial(ResolveRenderedBookshelfDesignStyle(index));
         }
 
-        private static float GetSectionContentWidth(ShelfSection section, float padding, float sectionScale)
+        private static float GetSectionContentWidth(ShelfSection section, float padding)
         {
             if (section == null || section.books.Count == 0)
             {
@@ -4249,13 +5118,14 @@ namespace BookshelfPorting.Runtime
                     continue;
                 }
 
-                width += book.GetFootprint() * sectionScale;
+                width += book.GetLayoutFootprint();
                 bookCount++;
-            }
 
-            if (bookCount > 1)
-            {
-                width += padding * (bookCount - 1);
+                var nextBook = FindNextBook(section.books, i + 1);
+                if (nextBook != null)
+                {
+                    width += BookFootprintUtility.GetPairSpacing(padding, book, nextBook);
+                }
             }
 
             return width;
@@ -5127,7 +5997,11 @@ namespace BookshelfPorting.Runtime
                 float averageRating = 0f,
                 int totalLikeCount = 0,
                 int reviewCount = 0,
-                bool hasAggregateBookStats = false)
+                bool hasAggregateBookStats = false,
+                int bookshelfIndex = -1,
+                int cellIndex = -1,
+                float offsetXInCell = 0f,
+                string sizePresetId = null)
             {
                 BookKey = bookKey;
                 Orientation = orientation;
@@ -5157,6 +6031,10 @@ namespace BookshelfPorting.Runtime
                 TotalLikeCount = totalLikeCount;
                 ReviewCount = reviewCount;
                 HasAggregateBookStats = hasAggregateBookStats;
+                BookshelfIndex = bookshelfIndex;
+                CellIndex = cellIndex;
+                OffsetXInCell = offsetXInCell;
+                SizePresetId = sizePresetId;
             }
 
             public string BookKey { get; }
@@ -5187,6 +6065,10 @@ namespace BookshelfPorting.Runtime
             public int TotalLikeCount { get; }
             public int ReviewCount { get; }
             public bool HasAggregateBookStats { get; }
+            public int BookshelfIndex { get; }
+            public int CellIndex { get; }
+            public float OffsetXInCell { get; }
+            public string SizePresetId { get; }
         }
     }
 

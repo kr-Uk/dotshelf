@@ -35,7 +35,9 @@ namespace App.Application.Dashboard
         void ChangeWallpaper(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError);
         void ChangeFloor(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError);
         void ChangeDesk(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError);
+        void ChangeBookshelfSkin(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError);
         void ChangeDashboard(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError);
+        void ChangeNotebook(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError);
         void ChangeInteriorLight(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError);
         void ChangeExteriorLight(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError);
 

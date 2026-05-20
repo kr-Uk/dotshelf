@@ -472,6 +472,9 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("assetId")]
         public long AssetId { get; set; }
 
+        [JsonProperty("inventoryId")]
+        public long? InventoryId { get; set; }
+
         [JsonProperty("code")]
         public string Code { get; set; }
 
@@ -617,8 +620,14 @@ namespace App.Infrastructure.Api.Dtos
         [JsonProperty("currentDeskInventoryId")]
         public long? CurrentDeskInventoryId { get; set; }
 
+        [JsonProperty("currentBookshelfSkinInventoryId")]
+        public long? CurrentBookshelfSkinInventoryId { get; set; }
+
         [JsonProperty("currentDashboardInventoryId")]
         public long? CurrentDashboardInventoryId { get; set; }
+
+        [JsonProperty("currentNotebookInventoryId")]
+        public long? CurrentNotebookInventoryId { get; set; }
 
         [JsonProperty("currentInteriorLightInventoryId")]
         public long? CurrentInteriorLightInventoryId { get; set; }
@@ -730,6 +739,28 @@ namespace App.Infrastructure.Api.Dtos
 
         [JsonProperty("bookshelfSkinDefault")]
         public long? BookshelfSkinDefault { get; set; }
+
+        [JsonProperty("children")]
+        public List<ThemeContentItemResponseDto> Children { get; set; }
+    }
+
+    [Serializable]
+    public sealed class ThemeContentItemResponseDto
+    {
+        [JsonProperty("assetId")]
+        public long AssetId { get; set; }
+
+        [JsonProperty("assetType")]
+        public string AssetType { get; set; }
+
+        [JsonProperty("role")]
+        public string Role { get; set; }
+
+        [JsonProperty("required")]
+        public bool Required { get; set; }
+
+        [JsonProperty("defaultTransform")]
+        public string DefaultTransform { get; set; }
     }
 
     [Serializable]

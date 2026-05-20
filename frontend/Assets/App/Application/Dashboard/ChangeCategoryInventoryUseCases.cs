@@ -2,7 +2,7 @@ using System;
 
 namespace App.Application.Dashboard
 {
-    // 카테고리별 적용 + 전체 테마(mode) 적용 7 UseCase. 모두 ISpaceSettingsRepository 위에 한 줄짜리 위임.
+    // 카테고리별 적용 + 전체 테마(mode) 적용 UseCase. 모두 ISpaceSettingsRepository 위에 한 줄짜리 위임.
     // onSuccess(bool themeReset) — true면 클라이언트가 룸 전체 reload.
 
     public sealed class ChangeWallpaperUseCase
@@ -44,6 +44,19 @@ namespace App.Application.Dashboard
         }
     }
 
+    public sealed class ChangeBookshelfSkinUseCase
+    {
+        private readonly ISpaceSettingsRepository repository;
+        public ChangeBookshelfSkinUseCase(ISpaceSettingsRepository repository)
+        {
+            this.repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        }
+        public void Execute(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            repository.ChangeBookshelfSkin(inventoryId, onSuccess, onError);
+        }
+    }
+
     public sealed class ChangeDashboardSkinUseCase
     {
         private readonly ISpaceSettingsRepository repository;
@@ -54,6 +67,19 @@ namespace App.Application.Dashboard
         public void Execute(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
         {
             repository.ChangeDashboard(inventoryId, onSuccess, onError);
+        }
+    }
+
+    public sealed class ChangeNotebookUseCase
+    {
+        private readonly ISpaceSettingsRepository repository;
+        public ChangeNotebookUseCase(ISpaceSettingsRepository repository)
+        {
+            this.repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        }
+        public void Execute(long? inventoryId, Action<bool> onSuccess, Action<DashboardApiError> onError)
+        {
+            repository.ChangeNotebook(inventoryId, onSuccess, onError);
         }
     }
 

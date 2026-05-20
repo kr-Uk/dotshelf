@@ -15,6 +15,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class WebConfig implements WebMvcConfigurer {
 
+    private static final String APPLE_SIGN_IN_ORIGIN = "https://appleid.apple.com";
+
     private final CurrentUserArgumentResolver currentUserArgumentResolver;
 
     @Override
@@ -24,6 +26,12 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/v1/auth/apple/desktop-callback")
+                .allowedOrigins(APPLE_SIGN_IN_ORIGIN)
+                .allowedMethods("GET", "POST", "OPTIONS")
+                .allowedHeaders("Content-Type")
+                .maxAge(3600);
+
         registry.addMapping("/**")
                 .allowedOrigins(
                         "http://localhost:3000",

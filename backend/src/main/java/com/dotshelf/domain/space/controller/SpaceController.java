@@ -220,6 +220,15 @@ public class SpaceController {
         return ApiResponse.success(spaceService.changeDesk(userId, request));
     }
 
+    @Operation(summary = "책장 스킨 변경", description = "현재 사용자의 공간 책장 스킨을 지정한 인벤토리 에셋으로 변경하거나 기본값으로 되돌립니다.")
+    @PatchMapping("/me/bookshelf-skin")
+    public ApiResponse<SpaceMutationResponse> changeBookshelfSkin(
+            @CurrentUser Long userId,
+            @RequestBody CategoryInventoryRequest request
+    ) {
+        return ApiResponse.success(spaceService.changeBookshelfSkin(userId, request));
+    }
+
     @Operation(summary = "대시보드 오브젝트 변경", description = "현재 사용자의 공간 대시보드 오브젝트를 지정한 인벤토리 에셋으로 변경하거나 기본값으로 되돌립니다.")
     @PatchMapping("/me/dashboard")
     public ApiResponse<SpaceMutationResponse> changeDashboard(
@@ -227,6 +236,15 @@ public class SpaceController {
             @RequestBody CategoryInventoryRequest request
     ) {
         return ApiResponse.success(spaceService.changeDashboard(userId, request));
+    }
+
+    @Operation(summary = "노트북 오브젝트 변경", description = "현재 사용자의 공간 노트북 오브젝트를 지정한 인벤토리 에셋으로 변경하거나 기본값으로 되돌립니다.")
+    @PatchMapping("/me/notebook")
+    public ApiResponse<SpaceMutationResponse> changeNotebook(
+            @CurrentUser Long userId,
+            @RequestBody CategoryInventoryRequest request
+    ) {
+        return ApiResponse.success(spaceService.changeNotebook(userId, request));
     }
 
     @Operation(summary = "실내 조명 변경", description = "현재 사용자의 공간 실내 조명을 지정한 인벤토리 에셋으로 변경하거나 기본값으로 되돌립니다.")

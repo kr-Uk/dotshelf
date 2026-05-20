@@ -331,6 +331,14 @@ namespace App.Infrastructure.Api
                 error => onError?.Invoke(MapError(error)));
         }
 
+        public void LoadBookDetail(long bookId, Action<NotebookBookSearchItem> onSuccess, Action<NotebookApiError> onError)
+        {
+            client.GetBook(
+                bookId,
+                response => onSuccess?.Invoke(MapBook(response)),
+                error => onError?.Invoke(MapError(error)));
+        }
+
         public void LoadBookReviews(long bookId, Action<NotebookReviewListResult> onSuccess, Action<NotebookApiError> onError)
         {
             client.GetBookReviews(
@@ -472,6 +480,7 @@ namespace App.Infrastructure.Api
             return new NotebookAssetDownloadManifestResult
             {
                 AssetId = response?.AssetId ?? 0L,
+                InventoryId = response?.InventoryId,
                 Code = response?.Code,
                 Name = response?.Name,
                 AssetType = response?.AssetType,
@@ -578,6 +587,44 @@ namespace App.Infrastructure.Api
                 .Where(review => review != null)
                 .Select(MapReview)
                 .ToArray();
+        }
+
+        private static NotebookBookSearchItem MapBook(BookListItemDto item)
+        {
+            if (item == null)
+            {
+                return null;
+            }
+
+            return new NotebookBookSearchItem
+            {
+                Id = item.Id,
+                Source = item.Source,
+                BookId = item.BookId,
+                Isbn = item.Isbn,
+                Isbn13 = item.Isbn13,
+                Isbn10 = item.Isbn10,
+                Title = item.Title,
+                Author = item.Author,
+                Publisher = item.Publisher,
+                PublishedDate = item.PublishedDate,
+                Description = item.Description,
+                CoverImageUrl = item.CoverImageUrl,
+                SourceUrl = item.SourceUrl,
+                AvgRating = item.AvgRating,
+                ReviewCount = item.ReviewCount,
+                ViewCount = item.ViewCount,
+                PricePages = item.PricePages,
+                Rank = item.Rank,
+                Owned = item.Owned,
+                UserBookId = item.UserBookId,
+                LikeCount = item.LikeCount,
+                PurchaseCount = item.PurchaseCount,
+                RecordCount = item.RecordCount,
+                PlacementCount = item.PlacementCount,
+                BookshelfAddCount = item.EffectiveBookshelfAddCount,
+                HasPaidCover = item.HasPaidCover
+            };
         }
 
         private static IReadOnlyList<NotebookPurchaseHistoryItem> MapPurchaseHistory(PurchaseHistoryListResponseDto response)

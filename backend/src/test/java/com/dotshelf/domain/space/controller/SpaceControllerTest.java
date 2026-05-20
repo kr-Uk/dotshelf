@@ -308,12 +308,14 @@ class SpaceControllerTest {
     @Test
     @DisplayName("카테고리별 외형 변경 엔드포인트는 각각 맞는 서비스 메서드로 연결된다")
     void categoryAppearanceEndpoints_routeToMatchingServices() throws Exception {
-        given(spaceService.changeWallpaper(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(21L));
-        given(spaceService.changeFloor(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(22L));
-        given(spaceService.changeDesk(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(23L));
-        given(spaceService.changeDashboard(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(24L));
-        given(spaceService.changeInteriorLight(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(25L));
-        given(spaceService.changeExteriorLight(any(), any(CategoryInventoryRequest.class))).willReturn(mutation(26L));
+        given(spaceService.changeWallpaper(any(), any(CategoryInventoryRequest.class))).willReturn(categoryMutation("wallpaper", 21L));
+        given(spaceService.changeFloor(any(), any(CategoryInventoryRequest.class))).willReturn(categoryMutation("floor", 22L));
+        given(spaceService.changeDesk(any(), any(CategoryInventoryRequest.class))).willReturn(categoryMutation("desk", 23L));
+        given(spaceService.changeBookshelfSkin(any(), any(CategoryInventoryRequest.class))).willReturn(categoryMutation("bookshelfSkin", 28L));
+        given(spaceService.changeDashboard(any(), any(CategoryInventoryRequest.class))).willReturn(categoryMutation("dashboard", 24L));
+        given(spaceService.changeNotebook(any(), any(CategoryInventoryRequest.class))).willReturn(categoryMutation("notebook", 25L));
+        given(spaceService.changeInteriorLight(any(), any(CategoryInventoryRequest.class))).willReturn(categoryMutation("interiorLight", 26L));
+        given(spaceService.changeExteriorLight(any(), any(CategoryInventoryRequest.class))).willReturn(categoryMutation("exteriorLight", 27L));
 
         mockMvc.perform(patch("/v1/spaces/me/wallpaper").header("X-Test-Admin-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryId\":21}"))
@@ -323,27 +325,37 @@ class SpaceControllerTest {
         mockMvc.perform(patch("/v1/spaces/me/floor").header("X-Test-Admin-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryId\":22}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.space.currentWallpaperInventoryId").value(22));
+                .andExpect(jsonPath("$.result.space.currentFloorInventoryId").value(22));
 
         mockMvc.perform(patch("/v1/spaces/me/desk").header("X-Test-Admin-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryId\":23}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.space.currentWallpaperInventoryId").value(23));
+                .andExpect(jsonPath("$.result.space.currentDeskInventoryId").value(23));
+
+        mockMvc.perform(patch("/v1/spaces/me/bookshelf-skin").header("X-Test-Admin-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryId\":28}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.space.currentBookshelfSkinInventoryId").value(28));
 
         mockMvc.perform(patch("/v1/spaces/me/dashboard").header("X-Test-Admin-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryId\":24}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.space.currentWallpaperInventoryId").value(24));
+                .andExpect(jsonPath("$.result.space.currentDashboardInventoryId").value(24));
 
-        mockMvc.perform(patch("/v1/spaces/me/interior-light").header("X-Test-Admin-User-Id", "1")
+        mockMvc.perform(patch("/v1/spaces/me/notebook").header("X-Test-Admin-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryId\":25}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.space.currentWallpaperInventoryId").value(25));
+                .andExpect(jsonPath("$.result.space.currentNotebookInventoryId").value(25));
 
-        mockMvc.perform(patch("/v1/spaces/me/exterior-light").header("X-Test-Admin-User-Id", "1")
+        mockMvc.perform(patch("/v1/spaces/me/interior-light").header("X-Test-Admin-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryId\":26}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.space.currentWallpaperInventoryId").value(26));
+                .andExpect(jsonPath("$.result.space.currentInteriorLightInventoryId").value(26));
+
+        mockMvc.perform(patch("/v1/spaces/me/exterior-light").header("X-Test-Admin-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryId\":27}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.space.currentExteriorLightInventoryId").value(27));
     }
 
     @Test
@@ -470,6 +482,41 @@ class SpaceControllerTest {
         return new SpaceMutationResponse(spaceResponse("PUBLIC", null, inventoryId), false);
     }
 
+    private SpaceMutationResponse categoryMutation(String category, Long inventoryId) {
+        Long wallpaper = null;
+        Long floor = null;
+        Long desk = null;
+        Long bookshelfSkin = null;
+        Long dashboard = null;
+        Long notebook = null;
+        Long interiorLight = null;
+        Long exteriorLight = null;
+
+        switch (category) {
+            case "wallpaper" -> wallpaper = inventoryId;
+            case "floor" -> floor = inventoryId;
+            case "desk" -> desk = inventoryId;
+            case "bookshelfSkin" -> bookshelfSkin = inventoryId;
+            case "dashboard" -> dashboard = inventoryId;
+            case "notebook" -> notebook = inventoryId;
+            case "interiorLight" -> interiorLight = inventoryId;
+            case "exteriorLight" -> exteriorLight = inventoryId;
+            default -> throw new IllegalArgumentException("Unknown category: " + category);
+        }
+
+        return new SpaceMutationResponse(spaceResponse(
+                "PUBLIC",
+                null,
+                wallpaper,
+                floor,
+                desk,
+                bookshelfSkin,
+                dashboard,
+                notebook,
+                interiorLight,
+                exteriorLight), false);
+    }
+
     private SpaceResponse spaceResponse(String visibilityScope) {
         return spaceResponse(visibilityScope, null);
     }
@@ -479,6 +526,31 @@ class SpaceControllerTest {
     }
 
     private SpaceResponse spaceResponse(String visibilityScope, Long themeInventoryId, Long wallpaperInventoryId) {
+        return spaceResponse(
+                visibilityScope,
+                themeInventoryId,
+                wallpaperInventoryId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    private SpaceResponse spaceResponse(
+            String visibilityScope,
+            Long themeInventoryId,
+            Long wallpaperInventoryId,
+            Long floorInventoryId,
+            Long deskInventoryId,
+            Long bookshelfSkinInventoryId,
+            Long dashboardInventoryId,
+            Long notebookInventoryId,
+            Long interiorLightInventoryId,
+            Long exteriorLightInventoryId
+    ) {
         return new SpaceResponse(
                 10L,
                 1L,
@@ -492,11 +564,13 @@ class SpaceControllerTest {
                 null,
                 themeInventoryId,
                 wallpaperInventoryId,
-                null,
-                null,
-                null,
-                null,
-                null
+                floorInventoryId,
+                deskInventoryId,
+                bookshelfSkinInventoryId,
+                dashboardInventoryId,
+                notebookInventoryId,
+                interiorLightInventoryId,
+                exteriorLightInventoryId
         );
     }
 }

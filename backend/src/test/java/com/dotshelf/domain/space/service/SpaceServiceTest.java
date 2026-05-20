@@ -766,6 +766,56 @@ class SpaceServiceTest {
     }
 
     @Test
+    @DisplayName("노트북 카테고리 적용은 NOTEBOOK 타입 인벤토리를 검증하고 공간에 저장한다")
+    void changeNotebook_ownedNotebookInventory_updatesSpace() {
+        Space space = TestFixtures.space(10L, 1L);
+        Asset notebookAsset = Asset.builder()
+                .categoryId(1L)
+                .code("notebook")
+                .name("notebook")
+                .assetScope("SPACE")
+                .assetType("NOTEBOOK")
+                .pricePages(100)
+                .build();
+        TestFixtures.setId(notebookAsset, 20L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+        given(userAssetInventoryRepository.findByIdAndUserId(30L, 1L))
+                .willReturn(Optional.of(TestFixtures.inventory(30L, 1L, 20L)));
+        given(assetRepository.findById(20L)).willReturn(Optional.of(notebookAsset));
+
+        var response = spaceService.changeNotebook(1L, new CategoryInventoryRequest(30L));
+
+        assertThat(response.themeReset()).isFalse();
+        assertThat(response.space().currentNotebookInventoryId()).isEqualTo(30L);
+    }
+
+    @Test
+    @DisplayName("책장 스킨 카테고리 적용은 BOOKSHELF_SKIN 타입 인벤토리를 검증하고 공간에 저장한다")
+    void changeBookshelfSkin_ownedBookshelfSkinInventory_updatesSpace() {
+        Space space = TestFixtures.space(10L, 1L);
+        Asset bookshelfSkinAsset = Asset.builder()
+                .categoryId(1L)
+                .code("bookshelf_skin")
+                .name("bookshelf skin")
+                .assetScope("SPACE")
+                .assetType("BOOKSHELF_SKIN")
+                .pricePages(100)
+                .build();
+        TestFixtures.setId(bookshelfSkinAsset, 20L);
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(spaceRepository.findFirstByOwnerUserIdAndDeletedAtIsNullOrderByIdAsc(1L)).willReturn(Optional.of(space));
+        given(userAssetInventoryRepository.findByIdAndUserId(30L, 1L))
+                .willReturn(Optional.of(TestFixtures.inventory(30L, 1L, 20L)));
+        given(assetRepository.findById(20L)).willReturn(Optional.of(bookshelfSkinAsset));
+
+        var response = spaceService.changeBookshelfSkin(1L, new CategoryInventoryRequest(30L));
+
+        assertThat(response.themeReset()).isFalse();
+        assertThat(response.space().currentBookshelfSkinInventoryId()).isEqualTo(30L);
+    }
+
+    @Test
     @DisplayName("잠긴 전체 테마 상태에서 카테고리를 변경하면 전체 테마와 책장 스킨을 초기화한다")
     void changeFloor_lockedTheme_resetsThemeAndBookshelfSkins() {
         Space space = TestFixtures.space(10L, 1L);
@@ -855,7 +905,10 @@ class SpaceServiceTest {
 
         assertThat(response.spaceId()).isEqualTo(10L);
         assertThat(response.manifests()).singleElement()
-                .satisfies(manifest -> assertThat(manifest.assetId()).isEqualTo(20L));
+                .satisfies(manifest -> {
+                    assertThat(manifest.assetId()).isEqualTo(20L);
+                    assertThat(manifest.inventoryId()).isEqualTo(101L);
+                });
     }
 
     @Test
@@ -890,10 +943,46 @@ class SpaceServiceTest {
         assertThat(response.manifests())
                 .extracting(DownloadManifestResponse::assetId)
                 .containsExactlyInAnyOrder(20L, 30L, 40L);
+        assertThat(response.manifests())
+                .filteredOn(manifest -> manifest.assetId().equals(40L))
+                .singleElement()
+                .satisfies(manifest -> assertThat(manifest.inventoryId()).isEqualTo(102L));
     }
 
     @Test
-    @DisplayName("공간 asset manifest는 layoutPayload의 path: 참조도 unityResourceKey 매칭으로 포함한다")
+    @DisplayName("visible asset manifest preserves distinct inventory ids for the same asset")
+    void getVisibleAssetManifests_preservesDistinctInventoryIdsForSameAsset() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeDesk(101L);
+        SpaceLayoutSnapshot snapshot = SpaceLayoutSnapshot.builder()
+                .spaceId(10L)
+                .layoutVersion(2L)
+                .layoutPayload("""
+                        {"items":[{"AssetId":"inv:102"}]}
+                        """)
+                .savedByUserId(1L)
+                .build();
+        given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
+        given(userBlockRepository.existsBlockBetween(2L, 1L)).willReturn(false);
+        given(layoutSnapshotRepository.findFirstBySpaceIdOrderByLayoutVersionDesc(10L)).willReturn(Optional.of(snapshot));
+        given(userAssetInventoryRepository.findByUserId(1L)).willReturn(List.of(
+                TestFixtures.inventory(101L, 1L, 20L),
+                TestFixtures.inventory(102L, 1L, 20L)));
+        given(assetService.getDownloadManifestForVisibleAsset(20L))
+                .willReturn(new DownloadManifestResponse(20L, "DESK", "NATURAL", 1, List.of()));
+
+        var response = spaceService.getVisibleAssetManifests(2L, 10L);
+
+        assertThat(response.manifests())
+                .extracting(DownloadManifestResponse::assetId)
+                .containsExactly(20L, 20L);
+        assertThat(response.manifests())
+                .extracting(DownloadManifestResponse::inventoryId)
+                .containsExactlyInAnyOrder(101L, 102L);
+    }
+
+    @Test
+    @DisplayName("space asset manifest includes layout path references by unityResourceKey")
     void getVisibleAssetManifests_includesLegacyPathReferences() {
         Space space = TestFixtures.space(10L, 1L);
         SpaceLayoutSnapshot snapshot = SpaceLayoutSnapshot.builder()

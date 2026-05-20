@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using App.Application.Dashboard;
 using App.Domain.Dashboard;
 using App.Infrastructure.Catalogs;
-using App.Infrastructure.Mock.Dashboard;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UIElements;
@@ -38,9 +37,8 @@ namespace Dotshelf.Scripts.Dashboard
         // Default 0 (미정). 옛 default 1L 은 dev DB 에 spaceId=1 이 없어 GET /v1/spaces/1/dashboard 호출 시 404/500 유발.
         // 이제 외부에서 visitedSpaceId 를 명시 set 하지 않으면 LoadInitialData/카드 클릭 콜백이 dashboard 호출 자체를 skip.
         [SerializeField] private long visitedSpaceId;
-        // prefab 의 직렬화 default 는 true 지만 SceneInstaller.Configure(... isMockMode) 가 실제 주입된 repo 에 맞춰
-        // runtime 에 덮어쓴다. OnVisitUser/LoadInitialData 의 real-API mode 가드는 이 필드 (post-Configure) 에 의존.
-        [SerializeField] private bool useMockRepositories = true;
+        // SceneInstaller.Configure(... isMockMode) keeps this in sync with the injected repositories.
+        [SerializeField] private bool useMockRepositories;
 
         // dashboard fetch 발사 출처 — 같은 호출이 어디서 나왔는지 다음 사고 시 로그에서 즉시 식별하기 위함.
         // /v1/spaces/1/dashboard 가 다시 찍히면 source 가 어떤 값인지로 ingress 경로를 좁힐 수 있다.
@@ -402,6 +400,12 @@ namespace Dotshelf.Scripts.Dashboard
             ReloadDashboardIfReady();
         }
 
+        // 팔로워/팔로잉 목록의 "방문하기" 클릭 시 발행 — 인자는 대상 spaceId.
+        // BookshelfExperienceManager 가 구독해서 노트북 "다른 공간" 탭과 동일하게
+        // EnterSpaceById 로 실제 방(3D 공간) 으로 이동시킨다. 구독자가 없으면
+        // OnVisitUser 가 fallback 으로 dashboard 데이터만 reload.
+        public event Action<long> SpaceVisitRequested;
+
         private void ReloadDashboardIfReady(bool force = false)
         {
             if (!Application.isPlaying ||
@@ -581,8 +585,8 @@ namespace Dotshelf.Scripts.Dashboard
 
             if (!configured || !HasConfiguredUseCases())
             {
-                BuildMockUseCases();
-                configured = true;
+                Debug.LogError("[Dashboard] repositories are not configured. DashboardSceneInstaller must inject API repositories before OnEnable.");
+                return;
             }
 
             root = document.rootVisualElement;
@@ -623,18 +627,6 @@ namespace Dotshelf.Scripts.Dashboard
             }
 
             ClearCoverTextureCache();
-        }
-
-        private void BuildMockUseCases()
-        {
-            useMockRepositories = true;
-            // SceneInstaller가 없는 경우의 fallback. Mock으로 단독 동작.
-            BuildUseCasesFromRepos(
-                new MockDashboardRepository(),
-                new MockGuestbookRepository(),
-                new MockSpaceSettingsRepository(),
-                new MockFollowRepository(),
-                new MockLibraryViewRepository());
         }
 
         private bool HasConfiguredUseCases()
@@ -2193,6 +2185,20 @@ namespace Dotshelf.Scripts.Dashboard
             {
                 return;
             }
+
+            // 노트북 "다른 공간" 탭 방문하기와 동일한 효과 — 실제 방(3D 공간) 으로 이동.
+            // BookshelfExperienceManager 가 SpaceVisitRequested 를 받아 EnterSpaceById 로
+            // 방을 로드 → CompleteVisitedSpaceLoad → FocusMainView 로 방문 공간에 진입한다.
+            // 이전엔 여기서 loadDashboardUseCase.Execute 만 호출해 dashboard 데이터만 갱신되고
+            // 방으로는 넘어가지 않던 회귀.
+            if (SpaceVisitRequested != null)
+            {
+                SpaceVisitRequested.Invoke(targetSpaceId);
+                return;
+            }
+
+            // fallback — SpaceVisitRequested 구독자가 없는 경우 (standalone dashboard 등).
+            // 방 이동 없이 기존처럼 dashboard 데이터만 visitor 모드로 reload.
             viewMode = ViewMode.Visitor;
             visitedSpaceId = targetSpaceId;
             ApplyViewMode();

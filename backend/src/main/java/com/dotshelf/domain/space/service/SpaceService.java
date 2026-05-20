@@ -96,7 +96,9 @@ public class SpaceService {
     private static final String ASSET_TYPE_WALLPAPER = "WALLPAPER";
     private static final String ASSET_TYPE_FLOOR = "FLOOR";
     private static final String ASSET_TYPE_DESK_SET = "DESK_SET";
+    private static final String ASSET_TYPE_BOOKSHELF_SKIN = "BOOKSHELF_SKIN";
     private static final String ASSET_TYPE_DASHBOARD_SKIN = "DASHBOARD_SKIN";
+    private static final String ASSET_TYPE_NOTEBOOK = "NOTEBOOK";
     private static final String ASSET_TYPE_INTERIOR_LIGHT = "INTERIOR_LIGHT";
     private static final String ASSET_TYPE_EXTERIOR_LIGHT = "EXTERIOR_LIGHT";
 
@@ -161,29 +163,38 @@ public class SpaceService {
                 .map(UserAssetInventory::getAssetId)
                 .collect(Collectors.toSet());
 
-        List<Long> assetIds = new ArrayList<>();
-        inventoryIds.stream()
-                .map(ownerInventoriesById::get)
-                .filter(Objects::nonNull)
-                .map(UserAssetInventory::getAssetId)
-                .forEach(assetIds::add);
+        List<VisibleAssetManifestRef> manifestRefs = new ArrayList<>();
+        for (Long inventoryId : inventoryIds) {
+            UserAssetInventory inventory = ownerInventoriesById.get(inventoryId);
+            if (inventory == null) {
+                continue;
+            }
+
+            manifestRefs.add(new VisibleAssetManifestRef(inventory.getAssetId(), inventory.getId()));
+        }
         layoutAssetIds.stream()
                 .filter(ownedAssetIds::contains)
-                .forEach(assetIds::add);
+                .map(assetId -> new VisibleAssetManifestRef(assetId, null))
+                .forEach(manifestRefs::add);
         if (!layoutUnityResourceKeys.isEmpty()) {
             assetRepository.findByUnityResourceKeyIn(layoutUnityResourceKeys).stream()
                     .filter(asset -> ownedAssetIds.contains(asset.getId()))
                     .map(Asset::getId)
-                    .forEach(assetIds::add);
+                    .map(assetId -> new VisibleAssetManifestRef(assetId, null))
+                    .forEach(manifestRefs::add);
         }
 
-        assetIds = assetIds.stream().distinct().toList();
-        if (assetIds.isEmpty()) {
+        Set<String> seenRefs = new HashSet<>();
+        manifestRefs = manifestRefs.stream()
+                .filter(ref -> seenRefs.add(ref.assetId() + ":" + ref.inventoryId()))
+                .toList();
+        if (manifestRefs.isEmpty()) {
             return new SpaceAssetManifestListResponse(space.getId(), space.getLayoutVersion(), List.of());
         }
 
-        List<DownloadManifestResponse> manifests = assetIds.stream()
-                .map(assetService::getDownloadManifestForVisibleAsset)
+        List<DownloadManifestResponse> manifests = manifestRefs.stream()
+                .map(ref -> assetService.getDownloadManifestForVisibleAsset(ref.assetId())
+                        .withInventoryId(ref.inventoryId()))
                 .toList();
         return new SpaceAssetManifestListResponse(space.getId(), space.getLayoutVersion(), manifests);
     }
@@ -254,10 +265,15 @@ public class SpaceService {
         addPositive(ids, space.getCurrentWallpaperInventoryId());
         addPositive(ids, space.getCurrentFloorInventoryId());
         addPositive(ids, space.getCurrentDeskInventoryId());
+        addPositive(ids, space.getCurrentBookshelfSkinInventoryId());
         addPositive(ids, space.getCurrentDashboardInventoryId());
+        addPositive(ids, space.getCurrentNotebookInventoryId());
         addPositive(ids, space.getCurrentInteriorLightInventoryId());
         addPositive(ids, space.getCurrentExteriorLightInventoryId());
         return ids.stream().distinct().toList();
+    }
+
+    private record VisibleAssetManifestRef(Long assetId, Long inventoryId) {
     }
 
     private static void addPositive(List<Long> ids, Long value) {
@@ -601,8 +617,18 @@ public class SpaceService {
     }
 
     @Transactional
+    public SpaceMutationResponse changeBookshelfSkin(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, ASSET_TYPE_BOOKSHELF_SKIN, Space::changeBookshelfSkin);
+    }
+
+    @Transactional
     public SpaceMutationResponse changeDashboard(Long userId, CategoryInventoryRequest request) {
         return applyCategoryInventory(userId, request, ASSET_TYPE_DASHBOARD_SKIN, Space::changeDashboard);
+    }
+
+    @Transactional
+    public SpaceMutationResponse changeNotebook(Long userId, CategoryInventoryRequest request) {
+        return applyCategoryInventory(userId, request, ASSET_TYPE_NOTEBOOK, Space::changeNotebook);
     }
 
     @Transactional
