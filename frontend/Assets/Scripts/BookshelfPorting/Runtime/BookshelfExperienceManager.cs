@@ -17459,6 +17459,7 @@ namespace BookshelfPorting.Runtime
                 SpaceVisitorOverlayController.Instance?.HideOverlay();
                 var detail = NormalizeMutationErrorMessage(message);
                 ShowBookshelfTransientStatus("공간 방문 실패", detail, true);
+                bookshelfApiSyncController?.RefreshFromServer(HandleReturnFromVisitedSpaceRefreshCompleted);
                 // 방명록에서 방문 시도 → 실패 시 사용자는 자기 공간 방명록 포커스에 그대로 있으므로
                 // 노트북으로 끌고가지 않는다. 노트북 "다른 공간" 탭에서 방문한 경우만 노트북 재오픈.
                 if (visitedSpaceReturnTarget != VisitedSpaceReturnTarget.Guestbook)

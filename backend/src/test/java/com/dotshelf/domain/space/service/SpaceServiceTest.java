@@ -879,7 +879,10 @@ class SpaceServiceTest {
 
         assertThat(response.spaceId()).isEqualTo(10L);
         assertThat(response.manifests()).singleElement()
-                .satisfies(manifest -> assertThat(manifest.assetId()).isEqualTo(20L));
+                .satisfies(manifest -> {
+                    assertThat(manifest.assetId()).isEqualTo(20L);
+                    assertThat(manifest.inventoryId()).isEqualTo(101L);
+                });
     }
 
     @Test
@@ -914,10 +917,46 @@ class SpaceServiceTest {
         assertThat(response.manifests())
                 .extracting(DownloadManifestResponse::assetId)
                 .containsExactlyInAnyOrder(20L, 30L, 40L);
+        assertThat(response.manifests())
+                .filteredOn(manifest -> manifest.assetId().equals(40L))
+                .singleElement()
+                .satisfies(manifest -> assertThat(manifest.inventoryId()).isEqualTo(102L));
     }
 
     @Test
-    @DisplayName("공간 asset manifest는 layoutPayload의 path: 참조도 unityResourceKey 매칭으로 포함한다")
+    @DisplayName("visible asset manifest preserves distinct inventory ids for the same asset")
+    void getVisibleAssetManifests_preservesDistinctInventoryIdsForSameAsset() {
+        Space space = TestFixtures.space(10L, 1L);
+        space.changeDesk(101L);
+        SpaceLayoutSnapshot snapshot = SpaceLayoutSnapshot.builder()
+                .spaceId(10L)
+                .layoutVersion(2L)
+                .layoutPayload("""
+                        {"items":[{"AssetId":"inv:102"}]}
+                        """)
+                .savedByUserId(1L)
+                .build();
+        given(spaceRepository.findById(10L)).willReturn(Optional.of(space));
+        given(userBlockRepository.existsBlockBetween(2L, 1L)).willReturn(false);
+        given(layoutSnapshotRepository.findFirstBySpaceIdOrderByLayoutVersionDesc(10L)).willReturn(Optional.of(snapshot));
+        given(userAssetInventoryRepository.findByUserId(1L)).willReturn(List.of(
+                TestFixtures.inventory(101L, 1L, 20L),
+                TestFixtures.inventory(102L, 1L, 20L)));
+        given(assetService.getDownloadManifestForVisibleAsset(20L))
+                .willReturn(new DownloadManifestResponse(20L, "DESK", "NATURAL", 1, List.of()));
+
+        var response = spaceService.getVisibleAssetManifests(2L, 10L);
+
+        assertThat(response.manifests())
+                .extracting(DownloadManifestResponse::assetId)
+                .containsExactly(20L, 20L);
+        assertThat(response.manifests())
+                .extracting(DownloadManifestResponse::inventoryId)
+                .containsExactlyInAnyOrder(101L, 102L);
+    }
+
+    @Test
+    @DisplayName("space asset manifest includes layout path references by unityResourceKey")
     void getVisibleAssetManifests_includesLegacyPathReferences() {
         Space space = TestFixtures.space(10L, 1L);
         SpaceLayoutSnapshot snapshot = SpaceLayoutSnapshot.builder()
