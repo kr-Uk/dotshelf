@@ -272,6 +272,61 @@ class BookshelfServiceTest {
     }
 
     @Test
+    @DisplayName("moveItem reorders occupied slots in the same section")
+    void moveItem_reordersSameSectionSlots() {
+        BookshelfItem first = itemAtSlot(31L, 3L, 7L, 21L, 1);
+        BookshelfItem second = itemAtSlot(32L, 3L, 7L, 22L, 2);
+        BookshelfItem moving = itemAtSlot(30L, 3L, 7L, 20L, 3);
+
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(bookshelfItemRepository.findById(30L)).willReturn(Optional.of(moving));
+        given(bookshelfRepository.findById(3L)).willReturn(Optional.of(TestFixtures.bookshelf(3L, 10L, 0)));
+        given(spaceService.getSpaceEntity(10L)).willReturn(TestFixtures.space(10L, 1L));
+        given(sectionRepository.findById(7L)).willReturn(Optional.of(TestFixtures.bookshelfSection(7L, 3L, 0, 0)));
+        given(bookshelfItemRepository.countByBookshelfSectionIdAndStatusAndIdNot(7L, "ACTIVE", 30L)).willReturn(2L);
+        given(bookshelfItemRepository.findByBookshelfSectionIdAndStatusOrderBySlotNoAscIdAsc(7L, "ACTIVE"))
+                .willReturn(List.of(first, second, moving));
+
+        var response = bookshelfService.moveItem(1L, 30L, 3L, 7L, 1, "FRONT", "COVER");
+
+        assertThat(response.slotNo()).isEqualTo(1);
+        assertThat(moving.getSlotNo()).isEqualTo(1);
+        assertThat(first.getSlotNo()).isEqualTo(2);
+        assertThat(second.getSlotNo()).isEqualTo(3);
+        assertThat(moving.getDisplayStyle()).isEqualTo("COVER");
+    }
+
+    @Test
+    @DisplayName("moveItem compacts the source section and shifts the target section")
+    void moveItem_reordersAcrossSections() {
+        BookshelfItem moving = itemAtSlot(30L, 3L, 7L, 20L, 1);
+        BookshelfItem sourceSecond = itemAtSlot(31L, 3L, 7L, 21L, 2);
+        BookshelfItem targetFirst = itemAtSlot(32L, 3L, 8L, 22L, 1);
+        BookshelfItem targetSecond = itemAtSlot(33L, 3L, 8L, 23L, 2);
+
+        given(userService.requireUserId(1L)).willReturn(1L);
+        given(bookshelfItemRepository.findById(30L)).willReturn(Optional.of(moving));
+        given(bookshelfRepository.findById(3L)).willReturn(Optional.of(TestFixtures.bookshelf(3L, 10L, 0)));
+        given(spaceService.getSpaceEntity(10L)).willReturn(TestFixtures.space(10L, 1L));
+        given(sectionRepository.findById(8L)).willReturn(Optional.of(TestFixtures.bookshelfSection(8L, 3L, 0, 1)));
+        given(bookshelfItemRepository.countByBookshelfSectionIdAndStatusAndIdNot(8L, "ACTIVE", 30L)).willReturn(2L);
+        given(bookshelfItemRepository.findByBookshelfSectionIdAndStatusOrderBySlotNoAscIdAsc(7L, "ACTIVE"))
+                .willReturn(List.of(moving, sourceSecond));
+        given(bookshelfItemRepository.findByBookshelfSectionIdAndStatusOrderBySlotNoAscIdAsc(8L, "ACTIVE"))
+                .willReturn(List.of(targetFirst, targetSecond));
+
+        var response = bookshelfService.moveItem(1L, 30L, 3L, 8L, 1, "FRONT", "COVER");
+
+        assertThat(response.sectionId()).isEqualTo(8L);
+        assertThat(response.slotNo()).isEqualTo(1);
+        assertThat(moving.getBookshelfSectionId()).isEqualTo(8L);
+        assertThat(moving.getSlotNo()).isEqualTo(1);
+        assertThat(sourceSecond.getSlotNo()).isEqualTo(1);
+        assertThat(targetFirst.getSlotNo()).isEqualTo(2);
+        assertThat(targetSecond.getSlotNo()).isEqualTo(3);
+    }
+
+    @Test
     @DisplayName("삭제된 책장 ID로는 책장을 조회할 수 없다")
     void getBookshelf_deletedBookshelfThrowsNotFound() {
         Bookshelf bookshelf = TestFixtures.bookshelf(3L, 10L, 0);
@@ -331,6 +386,12 @@ class BookshelfServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
+
+    private static BookshelfItem itemAtSlot(Long id, Long bookshelfId, Long sectionId, Long userBookId, Integer slotNo) {
+        BookshelfItem item = TestFixtures.bookshelfItem(id, bookshelfId, sectionId, userBookId);
+        item.move(bookshelfId, sectionId, slotNo, "FRONT", "SPINE");
+        return item;
     }
 
     private static Asset bookshelfSkinAsset(Long id) {

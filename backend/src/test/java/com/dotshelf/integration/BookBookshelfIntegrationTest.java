@@ -109,7 +109,7 @@ class BookBookshelfIntegrationTest extends IntegrationTestSupport {
                                 """.formatted(secondShelf.getId(), secondSections.get(0).getId())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.placement.bookshelfId").value(secondShelf.getId()))
-                .andExpect(jsonPath("$.result.placement.slotNo").value(2));
+                .andExpect(jsonPath("$.result.placement.slotNo").value(1));
         assertThat(itemRepository.findByUserBookIdAndStatus(userBook.getId(), "ACTIVE").orElseThrow().getBookshelfId())
                 .isEqualTo(secondShelf.getId());
 
