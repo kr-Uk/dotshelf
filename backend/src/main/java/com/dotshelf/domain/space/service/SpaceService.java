@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.dotshelf.domain.asset.dto.AssetDtos.DownloadManifestResponse;
+import com.dotshelf.domain.asset.dto.AssetDtos.ThemeContentsResponse;
 import com.dotshelf.domain.asset.entity.Asset;
 import com.dotshelf.domain.asset.entity.UserAssetInventory;
 import com.dotshelf.domain.asset.repository.AssetRepository;
@@ -672,7 +673,7 @@ public class SpaceService {
             throw new CustomException(ErrorCode.THEME_MODE_NOT_IMPLEMENTED);
         }
         Long currentUserId = userService.requireUserId(userId);
-        verifyOwnedInventoryWithType(inventoryId, currentUserId, "THEME");
+        Asset themeAsset = verifyOwnedInventoryWithType(inventoryId, currentUserId, "THEME");
 
         Space space = findOrCreateMySpace(currentUserId);
         // RESET 모드: 카테고리 ID + 모든 책장 skin 초기화 (resetCustomization은 layoutVersion++도 처리)
@@ -683,6 +684,7 @@ public class SpaceService {
         }
 
         space.applyTheme(inventoryId);
+        applyThemeCategoryDefaults(space, currentUserId, themeAsset.getId());
         return SpaceMutationResponse.of(space, isLiked(space.getId(), currentUserId), true);
     }
 
@@ -714,7 +716,7 @@ public class SpaceService {
      * inventoryId가 사용자 본인 인벤토리인지 + assetType이 카테고리에 맞는지 확인.
      * 위반 시 THEME_NOT_OWNED 또는 CATEGORY_INVENTORY_TYPE_MISMATCH.
      */
-    private void verifyOwnedInventoryWithType(Long inventoryId, Long userId, String expectedAssetType) {
+    private Asset verifyOwnedInventoryWithType(Long inventoryId, Long userId, String expectedAssetType) {
         UserAssetInventory inv = userAssetInventoryRepository.findByIdAndUserId(inventoryId, userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.THEME_NOT_OWNED));
         Asset asset = assetRepository.findById(inv.getAssetId())
@@ -722,6 +724,36 @@ public class SpaceService {
         if (expectedAssetType != null && !expectedAssetType.equalsIgnoreCase(asset.getAssetType())) {
             throw new CustomException(ErrorCode.CATEGORY_INVENTORY_TYPE_MISMATCH);
         }
+        return asset;
+    }
+
+    private void applyThemeCategoryDefaults(Space space, Long userId, Long themeAssetId) {
+        ThemeContentsResponse contents = assetService.getThemeContents(themeAssetId);
+        if (contents == null) {
+            return;
+        }
+
+        space.changeWallpaper(resolveOrGrantThemeDefaultInventoryId(userId, contents.wallpaper()));
+        space.changeFloor(resolveOrGrantThemeDefaultInventoryId(userId, contents.floor()));
+        space.changeDesk(resolveOrGrantThemeDefaultInventoryId(userId, contents.desk()));
+        space.changeDashboard(resolveOrGrantThemeDefaultInventoryId(userId, contents.dashboard()));
+        space.changeBookshelfSkin(resolveOrGrantThemeDefaultInventoryId(userId, contents.bookshelfSkinDefault()));
+        space.changeInteriorLight(resolveOrGrantThemeDefaultInventoryId(userId, contents.interiorLight()));
+        space.changeExteriorLight(resolveOrGrantThemeDefaultInventoryId(userId, contents.exteriorLight()));
+    }
+
+    private Long resolveOrGrantThemeDefaultInventoryId(Long userId, Long assetId) {
+        if (assetId == null || assetId <= 0L) {
+            return null;
+        }
+
+        return userAssetInventoryRepository.findByUserIdAndAssetId(userId, assetId)
+                .map(UserAssetInventory::getId)
+                .orElseGet(() -> userAssetInventoryRepository.save(UserAssetInventory.builder()
+                        .userId(userId)
+                        .assetId(assetId)
+                        .grantType("DEFAULT")
+                        .build()).getId());
     }
 
     /**
