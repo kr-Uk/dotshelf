@@ -171,8 +171,18 @@ http://localhost:18080/oauth/kakao/callback
 
 ```
 APPLE_CLIENT_ID={apple-bundle-id-or-services-id}
-APPLE_CLIENT_IDS={apple-bundle-id},{apple-services-id}
+APPLE_CLIENT_IDS={apple-bundle-id},com.jihocompany.dotshelf.signin,com.jihocompany.dotshelf.desktop
+APPLE_DESKTOP_CLIENT_ID=com.jihocompany.dotshelf.desktop
+APPLE_TEAM_ID={apple-team-id}
+APPLE_KEY_ID={apple-signin-key-id}
+APPLE_PRIVATE_KEY={apple-p8-private-key}
+APPLE_DESKTOP_REDIRECT_URI=https://dev-api.dotshelf.digital/v1/auth/apple/desktop-callback
 ```
+
+- `APPLE_CLIENT_IDS`: Apple `identityToken` 의 `aud` 허용 목록. iOS Bundle ID, 모바일 Services ID, Desktop Services ID를 모두 포함한다.
+- `APPLE_DESKTOP_CLIENT_ID`: Desktop/Web authorization code 교환 시 Apple `client_secret` JWT의 `sub`로 쓰는 Services ID.
+- `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`: Desktop/Web authorization code를 Apple token endpoint에서 교환할 때 `client_secret` JWT 서명에 사용하는 Apple Developer 값.
+- `APPLE_DESKTOP_REDIRECT_URI`: Apple Developer Services ID의 Return URL과 일치해야 하는 BE callback URL.
 
 적용 절차:
 
@@ -184,7 +194,7 @@ vi .env
 docker compose config --quiet
 ```
 
-> `APPLE_CLIENT_ID`, `APPLE_CLIENT_IDS` 는 secret 은 아니지만, 실제 앱 식별자가 repo 설정과 어긋나면 Apple `identityToken` 의 `aud` 검증에서 `INVALID_TOKEN` 이 발생한다.
+> `APPLE_CLIENT_ID`, `APPLE_CLIENT_IDS`, `APPLE_DESKTOP_CLIENT_ID`, `APPLE_DESKTOP_REDIRECT_URI` 는 secret 은 아니지만, 실제 앱 식별자 및 Apple Developer Return URL 설정과 어긋나면 Apple 로그인에서 `INVALID_TOKEN` 또는 `invalid_client` 가 발생한다. `APPLE_PRIVATE_KEY` 는 secret 이므로 app 서버 런타임 환경에만 보관하고 repo, 로그, MR 본문에 노출하지 않는다.
 
 ## Blue-Green 도입으로 추가된 변수 3개 (2026-04-23)
 
@@ -257,7 +267,7 @@ ssh dotshelf "cat >> ~/.ssh/authorized_keys" < ~/.ssh/gitlab-ci-dotshelf-deploy.
 - [ ] 기본 변수 12개와 Blue-Green 추가 변수 3개가 전부 **Protected ✅** 인지 (Variables 목록 상단에서 자물쇠 아이콘 확인)
 - [ ] multiline 변수(`SSH_PRIVATE_KEY`, `EC2_KNOWN_HOSTS`)는 Masked 가 꺼져 있는지
 - [ ] 단일 라인 secret(`GOOGLE_CLIENT_SECRET`, `KAKAO_CLIENT_SECRET`)은 Masked 가 켜져 있는지
-- [ ] Apple Sign in 사용 시 app 서버 `/opt/dotshelf/.env` 에 `APPLE_CLIENT_ID`, `APPLE_CLIENT_IDS` 가 있고 `docker compose config --quiet` 이 통과하는지
+- [ ] Apple Sign in 사용 시 app 서버 `/opt/dotshelf/.env` 에 `APPLE_CLIENT_ID`, `APPLE_CLIENT_IDS`, `APPLE_DESKTOP_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, `APPLE_DESKTOP_REDIRECT_URI` 가 있고 `docker compose config --quiet` 이 통과하는지
 - [ ] `EC2_KNOWN_HOSTS` 의 Type 이 **`Variable`** (File 아님) 이고 호스트 키 **9줄** (app 3 + prod public 3 + docker bridge 3) 모두 포함인지
 - [ ] `PROD_HOST` 가 **`172.17.0.1`** (docker bridge) 로 설정되어 있는지 — prod public IP 쓰면 hairpin NAT 로 SSH 타임아웃
 - [ ] `SSH_PRIVATE_KEY` 대응 공개키가 **app + prod 양쪽 `authorized_keys`** 에 있는지
@@ -280,3 +290,4 @@ ssh dotshelf "cat >> ~/.ssh/authorized_keys" < ~/.ssh/gitlab-ci-dotshelf-deploy.
 - 2026-04-23 · **Blue-Green 배포 도입** 으로 prod 접속용 변수 3개 (`PROD_HOST`, `PROD_USER`, `PROD_DEPLOY_PATH`) 추가. `SSH_PRIVATE_KEY` 대응 공개키를 prod 서버 `authorized_keys` 에도 등록 필요
 - 2026-04-23 (hotfix) · 첫 Blue-Green 배포 시 `PROD_HOST=3.38.240.110` (prod public IP) 에서 **hairpin NAT 타임아웃** 발생. `PROD_HOST` 를 **`172.17.0.1`** (docker bridge) 로 교체하고 `EC2_KNOWN_HOSTS` 에 bridge IP 호스트 키 3줄 추가. 총 9줄 구성
 - 2026-04-27 · Apple Sign in 검증용 `APPLE_CLIENT_ID`, `APPLE_CLIENT_IDS` 는 GitLab Variables 가 아니라 app 서버 `/opt/dotshelf/.env` 에 추가하도록 절차 정리
+- 2026-05-20 · Desktop Apple 로그인용 `APPLE_DESKTOP_CLIENT_ID`, `APPLE_DESKTOP_REDIRECT_URI` 와 Apple `client_secret` JWT 서명용 env 설정 절차 추가
