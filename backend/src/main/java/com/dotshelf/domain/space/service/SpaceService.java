@@ -68,6 +68,7 @@ import com.dotshelf.domain.user.repository.UserRepository;
 import com.dotshelf.domain.user.service.UserService;
 import com.dotshelf.global.common.CursorParser;
 import com.dotshelf.global.common.ToggleResponse;
+import com.dotshelf.global.common.VisibilityScope;
 import com.dotshelf.global.error.CustomException;
 import com.dotshelf.global.error.ErrorCode;
 import com.dotshelf.global.storage.ImageContentValidator;
@@ -290,10 +291,19 @@ public class SpaceService {
 
     public void ensureCanViewSpace(Long currentUserId, Space space) {
         ensureNotBlockedAgainstOwner(currentUserId, space.getOwnerUserId());
-        if (!Objects.equals(space.getOwnerUserId(), currentUserId)
-                && !"PUBLIC".equalsIgnoreCase(space.getVisibilityScope())) {
-            throw new CustomException(ErrorCode.FORBIDDEN);
+        if (Objects.equals(space.getOwnerUserId(), currentUserId)) {
+            return;
         }
+        String scope = space.getVisibilityScope();
+        if (VisibilityScope.isPublic(scope)) {
+            return;
+        }
+        // MUTUAL 공간은 맞팔 viewer 에게 허용 — visibility tier 일관성 (PUBLIC 외 차단이던 것을 보정).
+        if (VisibilityScope.isMutual(scope)
+                && followRepository.existsMutualFollow(currentUserId, space.getOwnerUserId())) {
+            return;
+        }
+        throw new CustomException(ErrorCode.FORBIDDEN);
     }
 
     public void ensureCanViewSpace(Long currentUserId, Long spaceId) {
