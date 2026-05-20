@@ -43,6 +43,8 @@ namespace BookshelfPorting.Runtime
         private string firstItemsLoadFailureMessage;
         private bool isBookshelfSkinCatalogLoading;
         private InventoryResponseDto cachedAssetInventory;
+        private readonly Dictionary<long, long> visibleBookshelfSkinAssetIdByInventoryId = new Dictionary<long, long>();
+        private long? visibleFallbackBookshelfSkinAssetId;
         private const int RoomThumbnailCaptureWidth = 2048;
         private const int RoomThumbnailCaptureHeight = 1152;
         private const int RoomThumbnailMaxUploadBytes = 2 * 1024 * 1024;
@@ -458,6 +460,7 @@ namespace BookshelfPorting.Runtime
                     }
 
                     var roomEditModeController = FindRoomEditModeController();
+                    RegisterVisibleBookshelfSkinManifests(manifests);
                     roomEditModeController?.RegisterVisibleSpaceAssetManifests(manifests);
                     StartCoroutine(PrefetchVisibleSpaceAssetManifests(spaceId, expectedOtherUserSpace, requestVersion, manifests));
                     onCompleted?.Invoke();
@@ -476,10 +479,69 @@ namespace BookshelfPorting.Runtime
                 });
         }
 
-        private static void ClearVisibleSpaceAssetManifests()
+        private void ClearVisibleSpaceAssetManifests()
         {
+            visibleBookshelfSkinAssetIdByInventoryId.Clear();
+            visibleFallbackBookshelfSkinAssetId = null;
+
             var roomEditModeController = FindRoomEditModeController();
             roomEditModeController?.RegisterVisibleSpaceAssetManifests(Array.Empty<DownloadManifestResponseDto>());
+        }
+
+        private void RegisterVisibleBookshelfSkinManifests(IReadOnlyList<DownloadManifestResponseDto> manifests)
+        {
+            visibleBookshelfSkinAssetIdByInventoryId.Clear();
+            visibleFallbackBookshelfSkinAssetId = null;
+
+            if (manifests == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < manifests.Count; i++)
+            {
+                var manifest = manifests[i];
+                if (!IsBookshelfSkinManifest(manifest))
+                {
+                    continue;
+                }
+
+                if (manifest.InventoryId.HasValue && manifest.InventoryId.Value > 0L)
+                {
+                    visibleBookshelfSkinAssetIdByInventoryId[manifest.InventoryId.Value] = manifest.AssetId;
+                }
+
+                visibleFallbackBookshelfSkinAssetId ??= manifest.AssetId;
+            }
+        }
+
+        private static bool IsBookshelfSkinManifest(DownloadManifestResponseDto manifest)
+        {
+            if (manifest == null || manifest.AssetId <= 0L)
+            {
+                return false;
+            }
+
+            if (string.Equals(manifest.AssetType, "BOOKSHELF_SKIN", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return BookshelfSkinResolver.TryResolveThemeStyle(manifest.AssetId, out var style) &&
+                   style != BookshelfThemeStyle.Default;
+        }
+
+        private long? ResolveVisibleBookshelfSkinAssetId(long? spaceBookshelfSkinInventoryId)
+        {
+            if (spaceBookshelfSkinInventoryId.HasValue &&
+                spaceBookshelfSkinInventoryId.Value > 0L &&
+                visibleBookshelfSkinAssetIdByInventoryId.TryGetValue(spaceBookshelfSkinInventoryId.Value, out var assetId) &&
+                assetId > 0L)
+            {
+                return assetId;
+            }
+
+            return visibleFallbackBookshelfSkinAssetId;
         }
 
         private static void InvalidateExternalDecorationLayoutRestores()
@@ -2128,7 +2190,10 @@ namespace BookshelfPorting.Runtime
 
             if (index >= shelves.Count)
             {
-                ApplySpaceBookshelfSkinOverride(snapshots, spaceBookshelfSkinInventoryId);
+                var visibleBookshelfSkinAssetId = expectedOtherUserSpace
+                    ? ResolveVisibleBookshelfSkinAssetId(spaceBookshelfSkinInventoryId)
+                    : null;
+                ApplySpaceBookshelfSkinOverride(snapshots, spaceBookshelfSkinInventoryId, visibleBookshelfSkinAssetId);
                 generator.ApplyServerBookshelves(snapshots);
                 SyncLocalPreviewBookshelfStyleFromCurrentTheme();
                 experienceManager?.NotifyBookshelfApiSynced();
@@ -2190,17 +2255,20 @@ namespace BookshelfPorting.Runtime
 
         private static void ApplySpaceBookshelfSkinOverride(
             IList<BookshelfRuntimeApiSnapshot> snapshots,
-            long? spaceBookshelfSkinInventoryId)
+            long? spaceBookshelfSkinInventoryId,
+            long? spaceBookshelfSkinAssetId = null)
         {
             if (snapshots == null ||
                 snapshots.Count == 0 ||
-                !BookshelfSkinResolver.TryResolveThemeStyle(spaceBookshelfSkinInventoryId, out var spaceStyle) ||
+                !TryResolveSpaceBookshelfStyle(spaceBookshelfSkinInventoryId, spaceBookshelfSkinAssetId, out var spaceStyle) ||
                 spaceStyle == BookshelfThemeStyle.Default)
             {
                 return;
             }
 
-            var fallbackSkinInventoryId = spaceBookshelfSkinInventoryId.Value.ToString();
+            var fallbackSkinInventoryId = spaceBookshelfSkinInventoryId.HasValue && spaceBookshelfSkinInventoryId.Value > 0L
+                ? spaceBookshelfSkinInventoryId.Value.ToString()
+                : spaceBookshelfSkinAssetId.GetValueOrDefault().ToString();
             for (var i = 0; i < snapshots.Count; i++)
             {
                 var snapshot = snapshots[i];
@@ -2213,6 +2281,19 @@ namespace BookshelfPorting.Runtime
                 snapshot.ThemeStyle = spaceStyle;
                 snapshot.SkinInventoryId = fallbackSkinInventoryId;
             }
+        }
+
+        private static bool TryResolveSpaceBookshelfStyle(
+            long? spaceBookshelfSkinInventoryId,
+            long? spaceBookshelfSkinAssetId,
+            out BookshelfThemeStyle spaceStyle)
+        {
+            if (BookshelfSkinResolver.TryResolveThemeStyle(spaceBookshelfSkinAssetId, out spaceStyle))
+            {
+                return true;
+            }
+
+            return BookshelfSkinResolver.TryResolveThemeStyle(spaceBookshelfSkinInventoryId, out spaceStyle);
         }
 
         private static BookshelfRuntimeApiSnapshot MapRender(
@@ -2342,7 +2423,8 @@ namespace BookshelfPorting.Runtime
                 return;
             }
 
-            if (generator.GetBookshelfDesignStyle(generator.ActiveBookshelfIndex) == desiredStyle)
+            var currentStyle = generator.GetBookshelfDesignStyle(generator.ActiveBookshelfIndex);
+            if (currentStyle != BookshelfThemeStyle.Default)
             {
                 return;
             }

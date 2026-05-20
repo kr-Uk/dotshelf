@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using App.Application.Dashboard;
+using App.Domain.Decoration;
 using App.Infrastructure.Catalogs;
 using App.Infrastructure.Api.Dtos;
 using NUnit.Framework;
@@ -365,6 +366,33 @@ namespace App.Tests.EditMode.Notebook
             Assert.AreSame(hold, currentHold);
             Assert.AreEqual(2, currentHold.transform.childCount);
             Assert.AreEqual(0, root.transform.childCount);
+        }
+
+        [Test]
+        public void ScopedDecorationLayoutSave_ExcludesRollbackHoldPlacements()
+        {
+            var controller = CreateController();
+            InvokeEnsurePlacedItemsRoot(controller);
+            SetEditModeActive(controller, true);
+            var root = GetPlacedItemsRoot(controller);
+
+            var previousThemeDecoration = new GameObject("PreviousThemeDecoration");
+            previousThemeDecoration.transform.SetParent(root.transform, false);
+            AddDecorationMarker(previousThemeDecoration, "path:Assets/Arts/Models/space_rocket.glb");
+
+            InvokeDetachPlacementForRollback(controller, detachAllPlacements: true);
+            var hold = GetField<GameObject>(controller, "placementRollbackHoldRoot");
+            Assert.IsNotNull(hold);
+            Assert.AreEqual(1, hold.transform.childCount);
+
+            var currentDecoration = new GameObject("CurrentThemeDecoration");
+            currentDecoration.transform.SetParent(root.transform, false);
+            AddDecorationMarker(currentDecoration, "path:Assets/Arts/Models/fantasy_lamp1.glb");
+
+            var items = InvokeCollectDecorationLayoutItems(controller, scopeToPlacedItemsRoot: true);
+
+            Assert.AreEqual(1, items.Count);
+            Assert.AreEqual("path:Assets/Arts/Models/fantasy_lamp1.glb", items[0].AssetId);
         }
 
         [Test]
@@ -920,6 +948,67 @@ namespace App.Tests.EditMode.Notebook
             Assert.IsTrue(GetProperty<bool>(snapshot, "HasThemeStyle"));
             Assert.AreEqual(BookshelfThemeStyleValue("Space"), GetProperty<object>(snapshot, "ThemeStyle"));
             Assert.AreEqual("500020", GetProperty<string>(snapshot, "SkinInventoryId"));
+        }
+
+        [Test]
+        public void BookshelfSnapshotStyleOverride_UsesVisibleAssetIdForVisitorInventory()
+        {
+            var snapshots = CreateBookshelfRuntimeApiSnapshotList();
+            var snapshot = CreateBookshelfRuntimeApiSnapshot();
+            SetPublicProperty(snapshot, "BookshelfId", "1");
+            snapshots.Add(snapshot);
+
+            InvokeApplySpaceBookshelfSkinOverride(snapshots, 990000L, 400020L);
+
+            Assert.IsTrue(GetProperty<bool>(snapshot, "HasThemeStyle"));
+            Assert.AreEqual(BookshelfThemeStyleValue("Fantasy"), GetProperty<object>(snapshot, "ThemeStyle"));
+            Assert.AreEqual("990000", GetProperty<string>(snapshot, "SkinInventoryId"));
+        }
+
+        [Test]
+        public void BookshelfSnapshotStyleOverride_UsesVisibleAssetIdWhenSpaceInventoryIsMissing()
+        {
+            var snapshots = CreateBookshelfRuntimeApiSnapshotList();
+            var snapshot = CreateBookshelfRuntimeApiSnapshot();
+            SetPublicProperty(snapshot, "BookshelfId", "1");
+            snapshots.Add(snapshot);
+
+            InvokeApplySpaceBookshelfSkinOverride(snapshots, null, 500020L);
+
+            Assert.IsTrue(GetProperty<bool>(snapshot, "HasThemeStyle"));
+            Assert.AreEqual(BookshelfThemeStyleValue("Space"), GetProperty<object>(snapshot, "ThemeStyle"));
+            Assert.AreEqual("500020", GetProperty<string>(snapshot, "SkinInventoryId"));
+        }
+
+        [Test]
+        public void LocalPreviewBookshelfSync_DoesNotOverrideExplicitServerBookshelfSkin()
+        {
+            CreateController();
+            var sync = host.AddComponent(SyncControllerType);
+            var generator = host.AddComponent(GeneratorType);
+            var themeHost = new GameObject("RoomThemeApplier");
+            var applier = themeHost.AddComponent(RoomThemeApplierType);
+            var currentTheme = ScriptableObject.CreateInstance<RoomThemeAsset>();
+            var fantasy = BookshelfThemeStyleValue("Fantasy");
+            var space = BookshelfThemeStyleValue("Space");
+            try
+            {
+                SetField(currentTheme, "isLocalPreview", true);
+                SetField(currentTheme, "bookshelfStyleIndex", Convert.ToInt32(space));
+                SetField(applier, "currentTheme", currentTheme);
+                SetField(sync, "generator", generator);
+                var styles = (IDictionary)GetField<object>(generator, "bookshelfDesignStyles");
+                styles[0] = fantasy;
+
+                InvokeSyncLocalPreviewBookshelfStyleFromCurrentTheme(sync);
+
+                Assert.AreEqual(fantasy, InvokeGetBookshelfDesignStyle(generator, 0));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(currentTheme);
+                UnityEngine.Object.DestroyImmediate(themeHost);
+            }
         }
 
         [Test]
@@ -1485,15 +1574,34 @@ namespace App.Tests.EditMode.Notebook
             return method.Invoke(generator, new object[] { index });
         }
 
+        private static object InvokeGetBookshelfDesignStyle(object generator, int index)
+        {
+            var method = GeneratorType.GetMethod(
+                "GetBookshelfDesignStyle",
+                BindingFlags.Instance | BindingFlags.Public);
+            Assert.IsNotNull(method);
+            return method.Invoke(generator, new object[] { index });
+        }
+
+        private static void InvokeSyncLocalPreviewBookshelfStyleFromCurrentTheme(object controller)
+        {
+            var method = SyncControllerType.GetMethod(
+                "SyncLocalPreviewBookshelfStyleFromCurrentTheme",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(method);
+            method.Invoke(controller, Array.Empty<object>());
+        }
+
         private static void InvokeApplySpaceBookshelfSkinOverride(
             IList snapshots,
-            long? skinInventoryId)
+            long? skinInventoryId,
+            long? skinAssetId = null)
         {
             var method = SyncControllerType.GetMethod(
                 "ApplySpaceBookshelfSkinOverride",
                 BindingFlags.Static | BindingFlags.NonPublic);
             Assert.IsNotNull(method);
-            method.Invoke(null, new object[] { snapshots, skinInventoryId });
+            method.Invoke(null, new object[] { snapshots, skinInventoryId, skinAssetId });
         }
 
         private static void InvokeApplyThemeDefaultEntries(
@@ -1592,6 +1700,17 @@ namespace App.Tests.EditMode.Notebook
                 BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.IsNotNull(method);
             method.Invoke(controller, new object[] { null, detachAllPlacements });
+        }
+
+        private static List<DecorationLayoutItem> InvokeCollectDecorationLayoutItems(
+            object controller,
+            bool scopeToPlacedItemsRoot)
+        {
+            var method = ControllerType.GetMethod(
+                "CollectDecorationLayoutItems",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(method);
+            return (List<DecorationLayoutItem>)method.Invoke(controller, new object[] { scopeToPlacedItemsRoot });
         }
 
         private static void InvokeInvalidateExternalDecorationLayoutRestores(object controller)
