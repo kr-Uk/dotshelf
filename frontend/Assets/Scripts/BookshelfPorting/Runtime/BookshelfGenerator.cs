@@ -35,7 +35,12 @@ namespace BookshelfPorting.Runtime
         private const float SectionWallClearance = 0.012f;
         private const string AdvertisementBookInstanceName = "AdvertisementBook_Section";
         private const string BookCoverLabelsName = "BookCoverLabels";
+        private const string BookPageEdgesName = "BookPageEdges";
+        private const string BookPageEdgeTextureAssetPath = "Assets/Arts/Textures/Books/book_page_edge_texture.png";
         private const float BookCoverSurfaceOffset = 0.506f;
+        private const float BookPageEdgeInset = 0.012f;
+        private const float BookPageEdgeSurfaceThickness = 0.006f;
+        private const float BookPageEdgeSurfaceEpsilon = 0.0008f;
         private const float BookCoverCanvasWidthCoverage = 0.78f;
         private const float BookCoverCanvasHeightCoverage = 0.78f;
         private const float BookCoverCanvasPadding = 12f;
@@ -142,6 +147,8 @@ namespace BookshelfPorting.Runtime
         private readonly List<GameObject> qaBookPrefabs = new List<GameObject>();
         private Material qaBooksMaterial;
         private Material qaBooksAltMaterial;
+        private Material bookPageEdgeMaterial;
+        private Texture2D generatedBookPageEdgeTexture;
         private Coroutine bookshelfSwitchCoroutine;
         private int activeBookshelfIndex;
         private Vector3 turntableRootBaseScale = Vector3.one;
@@ -1600,6 +1607,10 @@ namespace BookshelfPorting.Runtime
 
             var coverColor = ResolveBookCoverColor(book);
             ApplySolidBookCoverMaterial(book, coverColor, renderer);
+            if (!SupportsBookPageSubmesh(renderer))
+            {
+                RebuildBookPageEdges(book);
+            }
             if (TryGetBookCoverSkinSprite(book.coverSkinResourcePath, out var coverSkinSprite))
             {
                 RebuildBookCoverSkin(book, coverSkinSprite);
@@ -1652,7 +1663,30 @@ namespace BookshelfPorting.Runtime
             }
 
             book.tintRenderers = new[] { renderer };
-            renderer.sharedMaterial = CreateBookCoverMaterial(coverColor);
+            var coverMaterial = CreateBookCoverMaterial(coverColor);
+            if (SupportsBookPageSubmesh(renderer))
+            {
+                RemoveBookPageEdges(book);
+                renderer.sharedMaterials = new[] { coverMaterial, GetBookPageEdgeMaterial() };
+                LogBookVisualBounds(book, renderer, false);
+                return;
+            }
+
+            renderer.sharedMaterial = coverMaterial;
+        }
+
+        private static bool SupportsBookPageSubmesh(MeshRenderer renderer)
+        {
+            if (renderer == null)
+            {
+                return false;
+            }
+
+            var meshFilter = renderer.GetComponent<MeshFilter>();
+            return meshFilter != null &&
+                   meshFilter.sharedMesh != null &&
+                   meshFilter.sharedMesh.subMeshCount >= 2 &&
+                   string.Equals(meshFilter.sharedMesh.name, "ProceduralBookVisualMesh", System.StringComparison.Ordinal);
         }
 
         private void RemoveBookCoverLabels(BookEntity book)
@@ -1662,6 +1696,135 @@ namespace BookshelfPorting.Runtime
             {
                 DestroySpawnedObject(existingLabels.gameObject);
             }
+        }
+
+        private void RemoveBookPageEdges(BookEntity book)
+        {
+            var existingEdges = book.transform.Find(BookPageEdgesName);
+            if (existingEdges != null)
+            {
+                DestroySpawnedObject(existingEdges.gameObject);
+            }
+        }
+
+        private void RebuildBookPageEdges(BookEntity book)
+        {
+            if (book == null)
+            {
+                return;
+            }
+
+            RemoveBookPageEdges(book);
+            var material = GetBookPageEdgeMaterial();
+            if (material == null)
+            {
+                return;
+            }
+
+            var coverRenderer = book.GetComponent<MeshRenderer>();
+            if (coverRenderer == null)
+            {
+                return;
+            }
+
+            var edgesRoot = new GameObject(BookPageEdgesName);
+            edgesRoot.transform.SetParent(book.transform, false);
+            edgesRoot.transform.localPosition = Vector3.zero;
+            edgesRoot.transform.localRotation = Quaternion.identity;
+            edgesRoot.transform.localScale = Vector3.one;
+
+            var inset = Mathf.Clamp(BookPageEdgeInset, 0.001f, 0.08f);
+            var surfaceThickness = Mathf.Clamp(BookPageEdgeSurfaceThickness, 0.001f, 0.03f);
+            var halfSurfaceThickness = surfaceThickness * 0.5f;
+            var surfaceMax = 0.5f - BookPageEdgeSurfaceEpsilon;
+            var surfaceMin = -0.5f + BookPageEdgeSurfaceEpsilon;
+            var coverSpan = Mathf.Max(0.01f, 1f - inset * 2f);
+
+            CreateBookPageEdgeBox(
+                edgesRoot.transform,
+                "ForePageEdge",
+                new Vector3(0f, 0f, surfaceMax - halfSurfaceThickness),
+                new Vector3(coverSpan, coverSpan, surfaceThickness),
+                material);
+            CreateBookPageEdgeBox(
+                edgesRoot.transform,
+                "TopPageEdge",
+                new Vector3(0f, surfaceMax - halfSurfaceThickness, 0f),
+                new Vector3(coverSpan, surfaceThickness, coverSpan),
+                material);
+            CreateBookPageEdgeBox(
+                edgesRoot.transform,
+                "BottomPageEdge",
+                new Vector3(0f, surfaceMin + halfSurfaceThickness, 0f),
+                new Vector3(coverSpan, surfaceThickness, coverSpan),
+                material);
+
+            LogBookPageEdgeBounds(book, coverRenderer, edgesRoot);
+        }
+
+        private void CreateBookPageEdgeBox(Transform parent, string objectName, Vector3 localPosition, Vector3 localScale, Material material)
+        {
+            var edge = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            edge.name = objectName;
+            edge.transform.SetParent(parent, false);
+            edge.transform.localPosition = localPosition;
+            edge.transform.localRotation = Quaternion.identity;
+            edge.transform.localScale = localScale;
+
+            var collider = edge.GetComponent<Collider>();
+            if (collider != null)
+            {
+                DestroyImmediate(collider);
+            }
+
+            var renderer = edge.GetComponent<MeshRenderer>();
+            if (renderer != null)
+            {
+                renderer.sharedMaterial = material;
+            }
+        }
+
+        private void LogBookPageEdgeBounds(BookEntity book, MeshRenderer coverRenderer, GameObject edgesRoot)
+        {
+            if (book == null || coverRenderer == null || edgesRoot == null)
+            {
+                return;
+            }
+
+            var pageRenderers = edgesRoot.GetComponentsInChildren<Renderer>(true);
+            if (pageRenderers == null || pageRenderers.Length == 0)
+            {
+                return;
+            }
+
+            var coverBounds = CalculateLocalBounds(book.transform, new Renderer[] { coverRenderer });
+            var pageBounds = CalculateLocalBounds(book.transform, pageRenderers);
+            var protrudes =
+                pageBounds.min.x < coverBounds.min.x - 0.0001f ||
+                pageBounds.max.x > coverBounds.max.x + 0.0001f ||
+                pageBounds.min.y < coverBounds.min.y - 0.0001f ||
+                pageBounds.max.y > coverBounds.max.y + 0.0001f ||
+                pageBounds.min.z < coverBounds.min.z - 0.0001f ||
+                pageBounds.max.z > coverBounds.max.z + 0.0001f;
+
+            Debug.Log($"[BookVisual] coverBounds={coverBounds} pageEdgeBounds={pageBounds}");
+            Debug.Log($"[BookVisual] pageEdge protrudes outside cover: {protrudes}");
+            if (protrudes)
+            {
+                Debug.LogWarning($"[BookVisual] Page edge bounds exceeded cover bounds; inset constants need review book={book.title}");
+            }
+        }
+
+        private void LogBookVisualBounds(BookEntity book, MeshRenderer renderer, bool protrudes)
+        {
+            if (book == null || renderer == null)
+            {
+                return;
+            }
+
+            var bounds = CalculateLocalBounds(book.transform, new Renderer[] { renderer });
+            Debug.Log($"[BookVisual] coverBounds={bounds} pageEdgeBounds={bounds}");
+            Debug.Log($"[BookVisual] pageEdge protrudes outside cover: {protrudes}");
         }
 
         private void RebuildBookCoverLabels(BookEntity book, Color coverColor)
@@ -1945,10 +2108,14 @@ namespace BookshelfPorting.Runtime
             label.resizeTextMinSize = isSpineTitle ? fontSize : Mathf.Max(8, fontSize - 6);
             label.resizeTextMaxSize = fontSize;
             label.lineSpacing = isSpineTitle ? 0.76f : 0.9f;
-            label.fontStyle = isSpineTitle ? FontStyle.Bold : FontStyle.Normal;
+            label.fontStyle = FontStyle.Bold;
             label.color = color;
             label.supportRichText = false;
             label.raycastTarget = false;
+
+            var outline = textObject.AddComponent<Outline>();
+            outline.effectColor = new Color(1f, 0.96f, 0.86f, 0.18f);
+            outline.effectDistance = isSpineTitle ? new Vector2(0.35f, -0.35f) : new Vector2(0.5f, -0.5f);
         }
 
         private static Vector3 GetBookCoverCanvasScale()
@@ -2002,6 +2169,142 @@ namespace BookshelfPorting.Runtime
             return material;
         }
 
+        private Material GetBookPageEdgeMaterial()
+        {
+            if (bookPageEdgeMaterial != null)
+            {
+                return bookPageEdgeMaterial;
+            }
+
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null)
+            {
+                shader = Shader.Find("Standard");
+            }
+
+            if (shader == null)
+            {
+                return null;
+            }
+
+            var pageColor = new Color(1f, 0.985f, 0.94f, 1f);
+            bookPageEdgeMaterial = new Material(shader)
+            {
+                name = "BookPageEdgeMaterial"
+            };
+
+            var texture = LoadBookPageEdgeTexture();
+            if (texture != null)
+            {
+                texture.wrapMode = TextureWrapMode.Repeat;
+                texture.filterMode = FilterMode.Bilinear;
+                if (bookPageEdgeMaterial.HasProperty("_BaseMap"))
+                {
+                    bookPageEdgeMaterial.SetTexture("_BaseMap", texture);
+                    bookPageEdgeMaterial.SetTextureScale("_BaseMap", new Vector2(3f, 1f));
+                }
+
+                if (bookPageEdgeMaterial.HasProperty("_MainTex"))
+                {
+                    bookPageEdgeMaterial.SetTexture("_MainTex", texture);
+                    bookPageEdgeMaterial.SetTextureScale("_MainTex", new Vector2(3f, 1f));
+                }
+            }
+
+            bookPageEdgeMaterial.color = pageColor;
+            if (bookPageEdgeMaterial.HasProperty("_BaseColor"))
+            {
+                bookPageEdgeMaterial.SetColor("_BaseColor", pageColor);
+            }
+
+            if (bookPageEdgeMaterial.HasProperty("_Metallic"))
+            {
+                bookPageEdgeMaterial.SetFloat("_Metallic", 0f);
+            }
+
+            if (bookPageEdgeMaterial.HasProperty("_Smoothness"))
+            {
+                bookPageEdgeMaterial.SetFloat("_Smoothness", 0.10f);
+            }
+
+            LogBookPageEdgeMaterialSettings(bookPageEdgeMaterial, texture);
+
+            return bookPageEdgeMaterial;
+        }
+
+        private static void LogBookPageEdgeMaterialSettings(Material material, Texture texture)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            var tiling = Vector2.one;
+            if (material.HasProperty("_BaseMap"))
+            {
+                tiling = material.GetTextureScale("_BaseMap");
+            }
+            else if (material.HasProperty("_MainTex"))
+            {
+                tiling = material.GetTextureScale("_MainTex");
+            }
+
+            var baseColor = material.HasProperty("_BaseColor") ? material.GetColor("_BaseColor") : material.color;
+            Debug.Log($"[BookTexture] PageEdge material={material.name}");
+            Debug.Log($"[BookTexture] PageEdge texture={(texture != null ? texture.name : "null")}");
+            Debug.Log($"[BookTexture] PageEdge tiling={tiling}");
+            Debug.Log($"[BookTexture] PageEdge baseColor={baseColor}");
+        }
+
+        private Texture2D LoadBookPageEdgeTexture()
+        {
+#if UNITY_EDITOR
+            var assetTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(BookPageEdgeTextureAssetPath);
+            if (assetTexture != null)
+            {
+                return assetTexture;
+            }
+#endif
+
+            return GetGeneratedBookPageEdgeTexture();
+        }
+
+        private Texture2D GetGeneratedBookPageEdgeTexture()
+        {
+            if (generatedBookPageEdgeTexture != null)
+            {
+                return generatedBookPageEdgeTexture;
+            }
+
+            const int textureWidth = 64;
+            const int textureHeight = 64;
+            var paper = new Color(0.91f, 0.86f, 0.74f, 1f);
+            var line = new Color(0.62f, 0.55f, 0.43f, 1f);
+            generatedBookPageEdgeTexture = new Texture2D(textureWidth, textureHeight, TextureFormat.RGBA32, false)
+            {
+                name = "GeneratedBookPageEdgeTexture",
+                wrapMode = TextureWrapMode.Repeat,
+                filterMode = FilterMode.Bilinear
+            };
+
+            for (var y = 0; y < textureHeight; y++)
+            {
+                var isLine = y % 6 == 0 || y % 17 == 0;
+                for (var x = 0; x < textureWidth; x++)
+                {
+                    var subtleNoise = ((x * 13 + y * 7) % 11) / 255f;
+                    var color = isLine ? line : paper;
+                    color.r = Mathf.Clamp01(color.r + subtleNoise);
+                    color.g = Mathf.Clamp01(color.g + subtleNoise);
+                    color.b = Mathf.Clamp01(color.b + subtleNoise);
+                    generatedBookPageEdgeTexture.SetPixel(x, y, color);
+                }
+            }
+
+            generatedBookPageEdgeTexture.Apply(false, false);
+            return generatedBookPageEdgeTexture;
+        }
+
         private static Color ResolveBookCoverColor(BookEntity book)
         {
             var seed = !string.IsNullOrWhiteSpace(book.bookId)
@@ -2031,8 +2334,7 @@ namespace BookshelfPorting.Runtime
 
         private static Color GetCoverTextColor(Color coverColor)
         {
-            var luminance = coverColor.r * 0.299f + coverColor.g * 0.587f + coverColor.b * 0.114f;
-            return luminance > 0.57f ? new Color(0.08f, 0.075f, 0.07f) : new Color(0.98f, 0.965f, 0.93f);
+            return new Color(0.10f, 0.10f, 0.10f, 1f);
         }
 
         private static string FormatFrontCoverText(BookEntity book)
@@ -2138,16 +2440,20 @@ namespace BookshelfPorting.Runtime
 
         private BookEntity CreateProceduralBook(int variantIndex, int sectionIndex, int bookIndex, Transform targetBooksRoot)
         {
-            var bookObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var bookObject = new GameObject($"Shelf{variantIndex}_Book_{sectionIndex}_{bookIndex}");
+            var meshFilter = bookObject.AddComponent<MeshFilter>();
+            meshFilter.sharedMesh = CreateBookVisualMesh();
+            var renderer = bookObject.AddComponent<MeshRenderer>();
+            var collider = bookObject.AddComponent<BoxCollider>();
+            collider.size = Vector3.one;
             bookObject.name = $"Shelf{variantIndex}_Book_{sectionIndex}_{bookIndex}";
             bookObject.transform.SetParent(targetBooksRoot, false);
 
             var preset = SelectBookSizePreset(bookObject.name);
             bookObject.transform.localScale = new Vector3(preset.Thickness, preset.Height, preset.Depth);
 
-            var renderer = bookObject.GetComponent<MeshRenderer>();
             var coverColor = ResolveBookCoverColorFromSeed(bookObject.name);
-            renderer.sharedMaterial = CreateBookCoverMaterial(coverColor);
+            renderer.sharedMaterials = new[] { CreateBookCoverMaterial(coverColor), GetBookPageEdgeMaterial() };
 
             var entity = bookObject.AddComponent<BookEntity>();
             entity.tintRenderers = new[] { renderer };
@@ -2173,6 +2479,108 @@ namespace BookshelfPorting.Runtime
             book.ApplySizePreset(preset);
             Debug.Log($"[BookshelfPlacement] Selected preset: {preset.Id} for bookId={book.bookId}");
             Debug.Log($"[BookPlacement] Selected preset={preset.Id} height={preset.Height:F3} thickness={preset.Thickness:F3}");
+        }
+
+        private static Mesh CreateBookVisualMesh()
+        {
+            var mesh = new Mesh { name = "ProceduralBookVisualMesh" };
+            var vertices = new List<Vector3>();
+            var uvs = new List<Vector2>();
+            var coverTriangles = new List<int>();
+            var pageTriangles = new List<int>();
+
+            AddBookFace(vertices, uvs, coverTriangles,
+                new Vector3(0.5f, -0.5f, -0.5f),
+                new Vector3(0.5f, 0.5f, -0.5f),
+                new Vector3(0.5f, 0.5f, 0.5f),
+                new Vector3(0.5f, -0.5f, 0.5f));
+            AddBookFace(vertices, uvs, coverTriangles,
+                new Vector3(-0.5f, -0.5f, 0.5f),
+                new Vector3(-0.5f, 0.5f, 0.5f),
+                new Vector3(-0.5f, 0.5f, -0.5f),
+                new Vector3(-0.5f, -0.5f, -0.5f));
+            AddBookFace(vertices, uvs, coverTriangles,
+                new Vector3(-0.5f, -0.5f, -0.5f),
+                new Vector3(-0.5f, 0.5f, -0.5f),
+                new Vector3(0.5f, 0.5f, -0.5f),
+                new Vector3(0.5f, -0.5f, -0.5f));
+
+            AddBookFaceRotatedUv(vertices, uvs, pageTriangles,
+                new Vector3(0.5f, -0.5f, 0.5f),
+                new Vector3(0.5f, 0.5f, 0.5f),
+                new Vector3(-0.5f, 0.5f, 0.5f),
+                new Vector3(-0.5f, -0.5f, 0.5f));
+            AddBookFaceRotatedUv(vertices, uvs, pageTriangles,
+                new Vector3(-0.5f, 0.5f, -0.5f),
+                new Vector3(-0.5f, 0.5f, 0.5f),
+                new Vector3(0.5f, 0.5f, 0.5f),
+                new Vector3(0.5f, 0.5f, -0.5f));
+            AddBookFaceRotatedUv(vertices, uvs, pageTriangles,
+                new Vector3(-0.5f, -0.5f, 0.5f),
+                new Vector3(-0.5f, -0.5f, -0.5f),
+                new Vector3(0.5f, -0.5f, -0.5f),
+                new Vector3(0.5f, -0.5f, 0.5f));
+
+            mesh.SetVertices(vertices);
+            mesh.SetUVs(0, uvs);
+            mesh.subMeshCount = 2;
+            mesh.SetTriangles(coverTriangles, 0);
+            mesh.SetTriangles(pageTriangles, 1);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        private static void AddBookFace(
+            List<Vector3> vertices,
+            List<Vector2> uvs,
+            List<int> triangles,
+            Vector3 bottomLeft,
+            Vector3 topLeft,
+            Vector3 topRight,
+            Vector3 bottomRight)
+        {
+            var start = vertices.Count;
+            vertices.Add(bottomLeft);
+            vertices.Add(topLeft);
+            vertices.Add(topRight);
+            vertices.Add(bottomRight);
+            uvs.Add(new Vector2(0f, 0f));
+            uvs.Add(new Vector2(0f, 1f));
+            uvs.Add(new Vector2(1f, 1f));
+            uvs.Add(new Vector2(1f, 0f));
+            triangles.Add(start);
+            triangles.Add(start + 1);
+            triangles.Add(start + 2);
+            triangles.Add(start);
+            triangles.Add(start + 2);
+            triangles.Add(start + 3);
+        }
+
+        private static void AddBookFaceRotatedUv(
+            List<Vector3> vertices,
+            List<Vector2> uvs,
+            List<int> triangles,
+            Vector3 bottomLeft,
+            Vector3 topLeft,
+            Vector3 topRight,
+            Vector3 bottomRight)
+        {
+            var start = vertices.Count;
+            vertices.Add(bottomLeft);
+            vertices.Add(topLeft);
+            vertices.Add(topRight);
+            vertices.Add(bottomRight);
+            uvs.Add(new Vector2(0f, 1f));
+            uvs.Add(new Vector2(0f, 0f));
+            uvs.Add(new Vector2(1f, 0f));
+            uvs.Add(new Vector2(1f, 1f));
+            triangles.Add(start);
+            triangles.Add(start + 1);
+            triangles.Add(start + 2);
+            triangles.Add(start);
+            triangles.Add(start + 2);
+            triangles.Add(start + 3);
         }
 
         private static Color ResolveBookCoverColorFromSeed(string seed)
