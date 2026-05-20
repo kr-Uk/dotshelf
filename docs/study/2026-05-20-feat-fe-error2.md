@@ -73,6 +73,7 @@ var items = CollectDecorationLayoutItems(scopeToPlacedItemsRoot: true);
 
 - 서버 저장 실패 시 dirty 상태를 유지한다.
 - 재진입 기준이 서버 layout이므로, 서버 저장 실패를 조용히 넘기지 않는다.
+- 서버 layout 권위 모드에서는 legacy local JSON 저장 자체를 건너뛰어 local/server partial save 상태를 만들지 않는다.
 - 비로그인/오프라인 모드에서는 기존처럼 local JSON 저장으로 동작할 수 있다.
 
 ### 포팅 메뉴얼 구조화

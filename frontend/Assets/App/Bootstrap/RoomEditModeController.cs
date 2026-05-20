@@ -5488,9 +5488,28 @@ namespace App.Bootstrap
                 return;
             }
 
-            EnsureDecorationUseCases();
             var items = CollectDecorationLayoutItems(scopeToPlacedItemsRoot: true);
             Debug.Log($"[RoomEdit][Theme] Persist reset layout ({reason}) - {items.Count} item(s).");
+
+            if (ShouldUseServerDecorationLayout())
+            {
+                Debug.Log($"[RoomEdit][Theme] server layout authoritative; skipped legacy local reset layout save ({reason}).");
+                SaveLayoutSnapshotToServer(
+                    items,
+                    requireServerSave: true,
+                    onSuccess: () =>
+                    {
+                        TryUploadRoomThumbnail();
+                        ClearDirty("theme reset layout persisted");
+                    },
+                    onError: msg =>
+                    {
+                        Debug.LogWarning($"[RoomEdit][Theme] server reset layout save failed ({reason}): {msg}");
+                    });
+                return;
+            }
+
+            EnsureDecorationUseCases();
 
             if (saveDecorationsUseCase == null)
             {
@@ -10395,12 +10414,16 @@ namespace App.Bootstrap
                 return;
             }
 
-            EnsureDecorationUseCases();
-            if (saveDecorationsUseCase == null)
+            var useServerDecorationLayout = ShouldUseServerDecorationLayout();
+            if (!useServerDecorationLayout)
             {
-                Debug.LogError("[RoomEdit][Save] SaveDecorationsUseCase 생성 실패 — 저장 불가");
-                onError?.Invoke("저장 시스템 초기화 실패");
-                return;
+                EnsureDecorationUseCases();
+                if (saveDecorationsUseCase == null)
+                {
+                    Debug.LogError("[RoomEdit][Save] SaveDecorationsUseCase 생성 실패 — 저장 불가");
+                    onError?.Invoke("저장 시스템 초기화 실패");
+                    return;
+                }
             }
 
             CommitPendingEditVisualChanges(
@@ -10605,28 +10628,50 @@ namespace App.Bootstrap
                     $"rotY={it.RotationY:0.#}° scale=({it.ScaleX:0.##},{it.ScaleY:0.##},{it.ScaleZ:0.##})");
             }
 
+            Action completeSave = () =>
+            {
+                Debug.Log($"[RoomEdit][Save] 저장 성공 — {items.Count}개 영속화 완료");
+                DiscardPlacementRollbackHold();
+                ClearPendingEditVisualChanges();
+                ClearDirty("save success");
+                TryUploadRoomThumbnail();
+                TakeEditEntrySnapshot();
+                TakeEditVisualSnapshot();
+                onSuccess?.Invoke();
+            };
+
+            Action<string> failServerSave = msg =>
+            {
+                Debug.LogError($"[RoomEdit][ServerLayout] 저장 실패 — {msg}");
+                onError?.Invoke(msg);
+            };
+
+            if (ShouldUseServerDecorationLayout())
+            {
+                Debug.Log("[RoomEdit][Save] 서버 layout 이 authoritative 이므로 legacy local decoration JSON save skip.");
+                SaveLayoutSnapshotToServer(
+                    items,
+                    requireServerSave: true,
+                    onSuccess: completeSave,
+                    onError: failServerSave);
+                return;
+            }
+
+            if (saveDecorationsUseCase == null)
+            {
+                Debug.LogError("[RoomEdit][Save] SaveDecorationsUseCase 생성 실패 — 저장 불가");
+                onError?.Invoke("저장 시스템 초기화 실패");
+                return;
+            }
+
             saveDecorationsUseCase.Execute(items,
                 onSuccess: () =>
                 {
                     SaveLayoutSnapshotToServer(
                         items,
-                        requireServerSave: ShouldUseServerDecorationLayout(),
-                        onSuccess: () =>
-                        {
-                            Debug.Log($"[RoomEdit][Save] 저장 성공 — {items.Count}개 영속화 완료");
-                            DiscardPlacementRollbackHold();
-                            ClearPendingEditVisualChanges();
-                            ClearDirty("save success");
-                            TryUploadRoomThumbnail();
-                            TakeEditEntrySnapshot();
-                            TakeEditVisualSnapshot();
-                            onSuccess?.Invoke();
-                        },
-                        onError: msg =>
-                        {
-                            Debug.LogError($"[RoomEdit][ServerLayout] 저장 실패 — {msg}");
-                            onError?.Invoke(msg);
-                        });
+                        requireServerSave: false,
+                        onSuccess: completeSave,
+                        onError: failServerSave);
                 },
                 onError: msg =>
                 {
