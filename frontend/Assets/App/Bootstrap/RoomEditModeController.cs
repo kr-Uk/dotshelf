@@ -810,6 +810,7 @@ namespace App.Bootstrap
         private bool remoteAssetInventoryLoaded;
         private bool pendingSpaceVisualsReapplyAfterInventory;
         private int pendingSpaceVisualsReapplyCategoryVersion;
+        private readonly HashSet<CustomizationCategory> missingCategoryCatalogCache = new HashSet<CustomizationCategory>();
         private readonly Dictionary<long, long> ownedAssetIdByInventoryId = new Dictionary<long, long>();
         private readonly Dictionary<long, long> ownedInventoryIdByAssetId = new Dictionary<long, long>();
         private readonly Dictionary<long, AssetResponseDto> ownedAssetsByAssetId = new Dictionary<long, AssetResponseDto>();
@@ -1169,6 +1170,7 @@ namespace App.Bootstrap
             WarmupGlyphs(fontAsset);
             EnsureEventSystem();
             LoadInventoryEntries();
+            EnsureThemeCatalogLoaded("InitializeIfNeeded");
             remoteAssetCacheService ??= new RemoteAssetCacheService();
 
             BuildCanvas();
@@ -1496,6 +1498,7 @@ namespace App.Bootstrap
         {
             pendingSpaceVisualsReapplyAfterInventory = true;
             pendingSpaceVisualsReapplyCategoryVersion = categoryRequestVersion;
+            spaceVisualsRequireAuthoritativeReapply = true;
         }
 
         private bool TryBindOwnedLocalAsset(InventoryItemResponseDto item, AssetResponseDto asset, string displayName)
@@ -1830,6 +1833,11 @@ namespace App.Bootstrap
         {
             theme = null;
             if (!IsRoomThemeFixedResourceCategory(category))
+            {
+                return false;
+            }
+
+            if (!EnsureThemeCatalogLoaded("TryResolveThemeForFixedServerAsset"))
             {
                 return false;
             }
@@ -3313,6 +3321,10 @@ namespace App.Bootstrap
             {
                 return cached;
             }
+            if (missingCategoryCatalogCache.Contains(category))
+            {
+                return null;
+            }
             var path = $"Catalogs/{category}Catalog";
             var loaded = Resources.Load<CustomizationCatalogAsset>(path);
             if (loaded != null)
@@ -3338,6 +3350,10 @@ namespace App.Bootstrap
             else
             {
                 Debug.LogWarning($"[CatalogLoad] category={category} Resources.Load(\"{path}\") → null. Resources/Catalogs/{category}Catalog.asset 존재/import 확인.");
+            }
+            if (loaded == null)
+            {
+                missingCategoryCatalogCache.Add(category);
             }
             return loaded;
         }
@@ -3422,7 +3438,7 @@ namespace App.Bootstrap
             = new System.Collections.Generic.Dictionary<CustomizationCategory, long>();
         private int suppressLastAppliedEntriesPersistenceDepth;
         private bool isApplyingReadOnlySpacePreviewVisuals;
-        private bool spaceVisualsRequireAuthoritativeReapply;
+        private bool spaceVisualsRequireAuthoritativeReapply = true;
         private bool hasPrePreviewAuthoritativeVisualSnapshot;
         private RoomThemeAsset prePreviewAuthoritativeTheme;
         private readonly Dictionary<CustomizationCategory, long> prePreviewAuthoritativeAppliedEntries =
@@ -3813,13 +3829,8 @@ namespace App.Bootstrap
         // (백엔드 PATCH /spaces/me/theme wiring은 후속 마디 — A3-4).
         private void BuildThemeSlots(Transform parent)
         {
-            if (themeCatalog == null)
+            if (!EnsureThemeCatalogLoaded("BuildThemeSlots"))
             {
-                themeCatalog = Resources.Load<RoomThemeCatalogAsset>("RoomThemeCatalog");
-            }
-            if (themeCatalog == null || themeCatalog.Entries == null || themeCatalog.Entries.Count == 0)
-            {
-                Debug.LogWarning("[RoomEditModeController] RoomThemeCatalog 비어있음 — Resources/RoomThemeCatalog.asset에 카탈로그 + 테마 항목을 추가하세요.");
                 return;
             }
 
@@ -3830,6 +3841,22 @@ namespace App.Bootstrap
                 if (ShouldHideThemeFromInventory(theme)) continue;
                 BuildThemeSlot(parent, i, theme);
             }
+        }
+
+        private bool EnsureThemeCatalogLoaded(string source)
+        {
+            if (themeCatalog == null)
+            {
+                themeCatalog = Resources.Load<RoomThemeCatalogAsset>("RoomThemeCatalog");
+            }
+
+            if (themeCatalog == null || themeCatalog.Entries == null || themeCatalog.Entries.Count == 0)
+            {
+                Debug.LogWarning($"[RoomEditModeController] RoomThemeCatalog empty or missing. source={source}");
+                return false;
+            }
+
+            return true;
         }
 
         private static bool ShouldHideThemeFromInventory(RoomThemeAsset theme)
@@ -7765,7 +7792,7 @@ namespace App.Bootstrap
             }
             finally
             {
-                if (forceAuthoritativeReapply)
+                if (forceAuthoritativeReapply && !pendingSpaceVisualsReapplyAfterInventory)
                 {
                     spaceVisualsRequireAuthoritativeReapply = false;
                 }
@@ -7953,6 +7980,7 @@ namespace App.Bootstrap
             // Server space data is authoritative on main-room entry. Do not restore
             // local-preview PlayerPrefs themes here because that path can spawn stale
             // theme placements before /spaces/{id}/layout clears and reapplies state.
+            var hasThemeCatalog = EnsureThemeCatalogLoaded("ApplySpaceVisualsToRoom");
 
             // 테마가 server reload 로 변경됐으면 default entries (mesh swap + 자동 placement deco)
             // 까지 재적용 — 안 그러면 [MR 135 review beshu Finding 2] 처럼 클릭 직후엔 보이던
@@ -7961,7 +7989,7 @@ namespace App.Bootstrap
             // 동일 가드.
             bool themeChanged = false;
             RoomThemeAsset resolvedTheme = null;
-            if (themeApplier != null && themeCatalog != null)
+            if (themeApplier != null && hasThemeCatalog)
             {
                 if (space.CurrentThemeInventoryId.HasValue && space.CurrentThemeInventoryId.Value > 0)
                 {
@@ -10698,7 +10726,7 @@ namespace App.Bootstrap
 
         private void SaveCurrentDecorationLayout(Action onSuccess, Action<string> onError)
         {
-            var items = CollectDecorationLayoutItems();
+            var items = CollectDecorationLayoutItems(scopeToPlacedItemsRoot: true);
             Debug.Log($"[RoomEdit][Save] 저장 대상 데코레이션 {items.Count}개");
             for (int i = 0; i < items.Count; i++)
             {
@@ -10794,7 +10822,7 @@ namespace App.Bootstrap
         {
             var list = new List<DecorationLayoutItem>();
             var markers = FindObjectsByType<DecorationItemMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            int skipped = 0, unstable = 0, pending = 0;
+            int skipped = 0, unstable = 0, pending = 0, inactive = 0;
             for (int i = 0; i < markers.Length; i++)
             {
                 var m = markers[i];
@@ -10804,6 +10832,11 @@ namespace App.Bootstrap
                 // 비교로 자동 destroy 한다.
                 if (scopeToPlacedItemsRoot && (placedItemsRoot == null || !m.transform.IsChildOf(placedItemsRoot.transform)))
                 {
+                    continue;
+                }
+                if (scopeToPlacedItemsRoot && !m.gameObject.activeInHierarchy)
+                {
+                    inactive++;
                     continue;
                 }
                 if (pendingPlacements.Contains(m.gameObject))
@@ -10838,11 +10871,11 @@ namespace App.Bootstrap
                     ScaleZ = t.localScale.z,
                 });
             }
-            if (skipped > 0 || unstable > 0 || pending > 0)
+            if (skipped > 0 || unstable > 0 || pending > 0 || inactive > 0)
             {
                 Debug.LogWarning(
                     $"[RoomEdit][Save] 저장 제외 — InventoryKey 누락 {skipped}개, prefab-iid (불안정) {unstable}개, " +
-                    $"미확정 preview {pending}개");
+                    $"미확정 preview {pending}개, inactive {inactive}개");
             }
             return list;
         }
