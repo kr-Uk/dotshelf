@@ -3,6 +3,7 @@ package com.dotshelf.domain.bookshelf.service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -355,9 +356,10 @@ public class BookshelfService {
             BookshelfItem item = targetItems.get(i);
             int slotNo = i + 1;
             if (item.getId().equals(movingItem.getId())) {
-                item.move(targetBookshelfId, targetSectionId, slotNo, facingDirection, displayStyle);
+                moveIfChanged(item, targetBookshelfId, targetSectionId, slotNo, facingDirection, displayStyle);
             } else {
-                item.move(
+                moveIfChanged(
+                        item,
                         item.getBookshelfId(),
                         item.getBookshelfSectionId(),
                         slotNo,
@@ -377,13 +379,34 @@ public class BookshelfService {
         items.removeIf(item -> item.getId().equals(excludedItemId));
         for (int i = 0; i < items.size(); i++) {
             BookshelfItem item = items.get(i);
-            item.move(
+            moveIfChanged(
+                    item,
                     item.getBookshelfId(),
                     item.getBookshelfSectionId(),
                     i + 1,
                     item.getFacingDirection(),
                     item.getDisplayStyle());
         }
+    }
+
+    private void moveIfChanged(
+            BookshelfItem item,
+            Long bookshelfId,
+            Long bookshelfSectionId,
+            Integer slotNo,
+            String facingDirection,
+            String displayStyle
+    ) {
+        String resolvedFacingDirection = facingDirection == null ? item.getFacingDirection() : facingDirection;
+        String resolvedDisplayStyle = displayStyle == null ? item.getDisplayStyle() : displayStyle;
+        if (Objects.equals(item.getBookshelfId(), bookshelfId)
+                && Objects.equals(item.getBookshelfSectionId(), bookshelfSectionId)
+                && Objects.equals(item.getSlotNo(), slotNo)
+                && Objects.equals(item.getFacingDirection(), resolvedFacingDirection)
+                && Objects.equals(item.getDisplayStyle(), resolvedDisplayStyle)) {
+            return;
+        }
+        item.move(bookshelfId, bookshelfSectionId, slotNo, facingDirection, displayStyle);
     }
 
     private BookshelfSection resolveSectionInBookshelf(Long bookshelfId, Long sectionId) {
