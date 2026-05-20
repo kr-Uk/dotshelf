@@ -389,6 +389,24 @@ namespace App.Bootstrap
             RebuildInventorySlots();
         }
 
+        private bool TryMergeCachedAssetInventoryFromBookshelfSync()
+        {
+            if (remoteAssetInventoryLoaded)
+            {
+                return false;
+            }
+
+            var syncController = FindFirstObjectByType<BookshelfApiSyncController>(FindObjectsInactive.Include);
+            if (syncController == null || !syncController.TryGetCachedAssetInventory(out var inventory))
+            {
+                return false;
+            }
+
+            MergeRemoteAssetInventory(inventory);
+            RebuildInventorySlots();
+            return true;
+        }
+
         private void ClearVisibleSpaceAssetLookupMaps()
         {
             visibleRemoteAssetManifests.Clear();
@@ -753,6 +771,7 @@ namespace App.Bootstrap
         private bool hasPendingThemeVisualSave;
         private RoomThemeAsset pendingThemeVisualSave;
         private ThemeApplyMode pendingThemeVisualSaveMode;
+        private int editVisualChangeVersion;
         private RoomThemeAsset editEntryThemeSnapshot;
         private SpaceResponseDto editEntryServerSpaceSnapshot;
         private readonly Dictionary<CustomizationCategory, long> editEntryAppliedEntriesSnapshot =
@@ -1427,6 +1446,13 @@ namespace App.Bootstrap
                 return true;
             }
 
+            if (TryMergeCachedAssetInventoryFromBookshelfSync() &&
+                ownedInventoryIdByAssetId.TryGetValue(assetId, out inventoryId) &&
+                inventoryId > 0L)
+            {
+                return true;
+            }
+
             if (!remoteAssetInventoryLoaded && !isRemoteAssetInventoryLoading)
             {
                 RefreshRemoteAssetInventory();
@@ -1449,6 +1475,13 @@ namespace App.Bootstrap
             }
 
             if (ownedAssetIdByInventoryId.TryGetValue(inventoryId, out assetId) && assetId > 0L)
+            {
+                return true;
+            }
+
+            if (TryMergeCachedAssetInventoryFromBookshelfSync() &&
+                ownedAssetIdByInventoryId.TryGetValue(inventoryId, out assetId) &&
+                assetId > 0L)
             {
                 return true;
             }
@@ -2936,23 +2969,7 @@ namespace App.Bootstrap
                 return true;
             }
 
-            var catalogTheme = NormalizeThemeTag(catalogEntry.ThemeTag);
-            if (string.IsNullOrEmpty(catalogTheme))
-            {
-                return false;
-            }
-
-            if (ThemeTagsEqual(catalogTheme, remoteEntry.ThemeTag))
-            {
-                return true;
-            }
-
-            var remoteText = NormalizeIdentifier(string.Concat(
-                remoteEntry.ServerAssetType, " ",
-                remoteEntry.ServerCategoryCode, " ",
-                remoteEntry.DisplayName));
-            return !string.IsNullOrEmpty(remoteText) &&
-                   remoteText.Contains(NormalizeIdentifier(catalogTheme));
+            return false;
         }
 
         private static bool MatchesRemoteFurnitureSubCategory(InventoryEntry entry, string subKey)
@@ -4015,6 +4032,7 @@ namespace App.Bootstrap
                 hasPendingThemeVisualSave = true;
                 pendingThemeVisualSave = theme;
                 pendingThemeVisualSaveMode = mode;
+                MarkPendingEditVisualChanged("theme");
                 SetDirty($"PendingTheme/{theme.DisplayName}");
                 RebuildInventorySlots();
                 return;
@@ -4220,6 +4238,7 @@ namespace App.Bootstrap
             if (IsEditModeActive)
             {
                 pendingCategoryVisualSaves[category] = entry;
+                MarkPendingEditVisualChanged($"category/{category}");
                 SetDirty($"PendingCategory/{category}");
                 return;
             }
@@ -7386,12 +7405,12 @@ namespace App.Bootstrap
             }
 
             int capturedCategoryVersion = categoryRequestVersion;
+            int capturedEditVisualVersion = editVisualChangeVersion;
             apiClient.GetMySpace(
                 space =>
                 {
-                    if (categoryRequestVersion != capturedCategoryVersion)
+                    if (ShouldSkipReloadedSpaceVisualApply(capturedCategoryVersion, capturedEditVisualVersion))
                     {
-                        Debug.Log("[RoomEditModeController] stale GET /spaces/me 응답 — 이후 PATCH 발생으로 무시.");
                         onComplete?.Invoke();
                         return;
                     }
@@ -7403,6 +7422,24 @@ namespace App.Bootstrap
                     Debug.LogWarning($"[RoomEditModeController] GET /spaces/me 실패 — reload skip ({error?.Code}/{error?.Message}).");
                     onComplete?.Invoke();
                 });
+        }
+
+        private bool ShouldSkipReloadedSpaceVisualApply(int capturedCategoryVersion, int capturedEditVisualVersion)
+        {
+            if (categoryRequestVersion != capturedCategoryVersion)
+            {
+                Debug.Log("[RoomEditModeController] stale GET /spaces/me response ignored because a category PATCH finished later.");
+                return true;
+            }
+
+            if (IsEditModeActive &&
+                (HasPendingEditVisualChanges() || editVisualChangeVersion != capturedEditVisualVersion))
+            {
+                Debug.Log("[RoomEditModeController] stale GET /spaces/me response ignored because edit-mode visual changes are pending.");
+                return true;
+            }
+
+            return false;
         }
 
         // Space 응답의 6 카테고리 ID로 visual 재적용. catalog에 매칭 entry 없으면 default(첫 entry).
@@ -9724,9 +9761,9 @@ namespace App.Bootstrap
             isUnsavedChangesModalOpen = false;
         }
 
-        private void OnSaveAndExitClicked()
+        private void OnLegacyDiscardExitFallbackClicked()
         {
-            Debug.Log("[RoomEdit][Save] save-and-exit is disabled; exit discards unsaved changes.");
+            Debug.Log("[RoomEdit][Save] legacy exit fallback discards unsaved changes.");
             HideUnsavedChangesModal();
             RestoreEditVisualSnapshot();
             ReattachPlacementFromRollback();
@@ -10719,6 +10756,12 @@ namespace App.Bootstrap
         private bool HasPendingEditVisualChanges()
         {
             return hasPendingThemeVisualSave || pendingCategoryVisualSaves.Count > 0;
+        }
+
+        private void MarkPendingEditVisualChanged(string reason)
+        {
+            editVisualChangeVersion++;
+            Debug.Log($"[RoomEdit][Save] pending visual version={editVisualChangeVersion} ({reason})");
         }
 
         private void ClearPendingEditVisualChanges()

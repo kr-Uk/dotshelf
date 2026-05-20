@@ -643,6 +643,55 @@ namespace App.Tests.EditMode.Notebook
         }
 
         [Test]
+        public void RemoteFixedAssetSlot_DoesNotMatchSameThemeDifferentServerAssetId()
+        {
+            var remoteEntry = CreateInventoryEntry(remoteAssetId: 900123L, remoteInventoryId: 901L);
+            SetEntryField(remoteEntry, "IsRemoteAsset", true);
+            SetEntryField(remoteEntry, "PlacementCategory", CustomizationCategory.BookshelfSkin);
+            SetEntryField(remoteEntry, "ThemeTag", "DeepSea");
+            SetEntryField(remoteEntry, "ServerAssetType", "BOOKSHELF_SKIN");
+
+            var catalogEntry = CreateCustomizationEntry(300020L, "깊은바다 책장", "DeepSea");
+
+            Assert.IsFalse(InvokeDoesRemoteInventoryEntryMatchCatalogEntry(
+                CustomizationCategory.BookshelfSkin,
+                remoteEntry,
+                catalogEntry));
+        }
+
+        [Test]
+        public void ReloadRoomState_SkipsApplyWhenEditModeHasPendingVisualChange()
+        {
+            var controller = CreateController();
+            SetEditModeActive(controller, true);
+
+            var capturedCategoryVersion = GetField<int>(controller, "categoryRequestVersion");
+            var capturedEditVisualVersion = GetField<int>(controller, "editVisualChangeVersion");
+            SetField(controller, "hasPendingThemeVisualSave", true);
+
+            Assert.IsTrue(InvokeShouldSkipReloadedSpaceVisualApply(
+                controller,
+                capturedCategoryVersion,
+                capturedEditVisualVersion));
+        }
+
+        [Test]
+        public void ReloadRoomState_SkipsApplyWhenEditVisualVersionChanged()
+        {
+            var controller = CreateController();
+            SetEditModeActive(controller, true);
+
+            var capturedCategoryVersion = GetField<int>(controller, "categoryRequestVersion");
+            var capturedEditVisualVersion = GetField<int>(controller, "editVisualChangeVersion");
+            SetField(controller, "editVisualChangeVersion", capturedEditVisualVersion + 1);
+
+            Assert.IsTrue(InvokeShouldSkipReloadedSpaceVisualApply(
+                controller,
+                capturedCategoryVersion,
+                capturedEditVisualVersion));
+        }
+
+        [Test]
         public void BookshelfStyleSelection_PrefersExplicitShelfStyleOverCurrentTheme()
         {
             host = new GameObject(nameof(BookshelfStyleSelection_PrefersExplicitShelfStyleOverCurrentTheme));
@@ -1050,6 +1099,20 @@ namespace App.Tests.EditMode.Notebook
                 BindingFlags.Static | BindingFlags.NonPublic);
             Assert.IsNotNull(method);
             return (bool)method.Invoke(null, new object[] { category, remoteEntry, catalogEntry });
+        }
+
+        private static bool InvokeShouldSkipReloadedSpaceVisualApply(
+            object controller,
+            int capturedCategoryVersion,
+            int capturedEditVisualVersion)
+        {
+            var method = ControllerType.GetMethod(
+                "ShouldSkipReloadedSpaceVisualApply",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(method);
+            return (bool)method.Invoke(
+                controller,
+                new object[] { capturedCategoryVersion, capturedEditVisualVersion });
         }
 
         private static object InvokeResolveActiveNavigationThemeStyle(object generator)

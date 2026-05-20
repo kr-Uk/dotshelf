@@ -40,6 +40,7 @@ namespace BookshelfPorting.Runtime
         private int itemsLoadFailureCount;
         private string firstItemsLoadFailureMessage;
         private bool isBookshelfSkinCatalogLoading;
+        private InventoryResponseDto cachedAssetInventory;
         private const int RoomThumbnailCaptureWidth = 2048;
         private const int RoomThumbnailCaptureHeight = 1152;
         private const int RoomThumbnailMaxUploadBytes = 2 * 1024 * 1024;
@@ -1610,8 +1611,18 @@ namespace BookshelfPorting.Runtime
             }
 
             client.GetAssetInventory(
-                onLoaded,
+                inventory =>
+                {
+                    cachedAssetInventory = inventory;
+                    onLoaded?.Invoke(inventory);
+                },
                 error => Debug.LogWarning($"Asset inventory load failed: {FormatError(error)}"));
+        }
+
+        public bool TryGetCachedAssetInventory(out InventoryResponseDto inventory)
+        {
+            inventory = cachedAssetInventory;
+            return inventory != null;
         }
 
         public void RefreshBookshelfSkinCatalog(Action onCompleted = null)
@@ -1640,6 +1651,7 @@ namespace BookshelfPorting.Runtime
                         inventory =>
                         {
                             isBookshelfSkinCatalogLoading = false;
+                            cachedAssetInventory = inventory;
                             BookshelfSkinResolver.RegisterApiAssets(assetsResponse, inventory);
                             FindRoomEditModeController()?.RegisterOwnedAssetInventory(inventory);
                             onCompleted?.Invoke();
