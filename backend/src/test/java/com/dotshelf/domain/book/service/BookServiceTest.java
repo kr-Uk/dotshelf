@@ -125,6 +125,8 @@ class BookServiceTest {
     @DisplayName("도서 검색은 로컬 결과를 우선하고 카카오 중복 결과를 ISBN 기준으로 제거한다")
     void searchBooks_mergesLocalAndKakaoResultsWithoutDuplicates() {
         Book localBook = TestFixtures.book(10L, "로컬 도서");
+        localBook.increaseViewCount();
+        localBook.increaseViewCount();
         BookSearchResponse duplicateFromKakao = new BookSearchResponse(
                 null,
                 "KAKAO",
@@ -153,6 +155,11 @@ class BookServiceTest {
         );
         given(bookRepository.findTop20ByTitleSearchContainingOrAuthorContainingIgnoreCase("로컬", "로컬"))
                 .willReturn(List.of(localBook));
+        given(bookReviewRepository.findByBookIdInAndStatus(List.of(10L), "ACTIVE"))
+                .willReturn(List.of(
+                        TestFixtures.bookReview(1L, 10L, 1L),
+                        TestFixtures.bookReview(2L, 10L, 2L)
+                ));
         given(kakaoBookSearchClient.search("로컬", 1, 10))
                 .willReturn(new KakaoBookSearchClient.SearchResult(List.of(duplicateFromKakao, kakaoOnly), true));
 
@@ -160,6 +167,10 @@ class BookServiceTest {
 
         assertThat(response.books()).extracting(BookSearchResponse::title)
                 .containsExactly("로컬 도서", "카카오 신규");
+        assertThat(response.books().getFirst().reviewCount()).isEqualTo(2L);
+        assertThat(response.books().getFirst().viewCount()).isEqualTo(2L);
+        assertThat(response.books().get(1).reviewCount()).isZero();
+        assertThat(response.books().get(1).viewCount()).isZero();
         assertThat(response.isEnd()).isTrue();
     }
 

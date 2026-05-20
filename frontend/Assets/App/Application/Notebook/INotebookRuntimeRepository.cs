@@ -40,6 +40,8 @@ namespace App.Application.Notebook
 
         void LoadUserFollowings(long userId, string cursor, int limit, Action<NotebookUserListResult> onSuccess, Action<NotebookApiError> onError);
 
+        void LoadBookDetail(long bookId, Action<NotebookBookSearchItem> onSuccess, Action<NotebookApiError> onError);
+
         void LoadBookReviews(long bookId, Action<NotebookReviewListResult> onSuccess, Action<NotebookApiError> onError);
 
         void CreateBookReview(long bookId, float rating, string content, Action<NotebookReviewItem> onSuccess, Action<NotebookApiError> onError);
