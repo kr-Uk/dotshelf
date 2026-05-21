@@ -1,15 +1,16 @@
 {
-    "latestVersion":  "0.3.0",
+    "latestVersion":  "0.3.1",
     "mandatory":  false,
-    "packageUrl":  "https://cdn.dotshelf.digital/windows/Dotshelf-0.3.0.zip",
-    "sha256":  "1105B6E55E07338A8D148825BA4FC8A734333D1FE70625C16F51B269B99FD67C",
+    "packageUrl":  "https://cdn.dotshelf.digital/windows/Dotshelf-0.3.1.zip",
+    "sha256":  "23E380FE88D4DA4C6F8F6B834E0F642AF874570129A9AFF5CBFD5621F79CA300",
     "entrypoint":  "Dotshelf.exe",
     "minLauncherVersion":  "0.1.0",
     "releaseNotes":  [
-                         "페이지 충전 결제 기능 추가 (INICIS)",
-                         "원격 자산 캐시 도입 — 설치 후 신규 에셋 동적 로드",
-                         "노트북 툴킷 / 룸 편집 모드 / 메인 씬 전환 UX 대폭 개선",
-                         "공간 방문자 오버레이 / 세션 리프레시 안정화",
-                         "책장 테마 레이아웃 보강"
+                         "온보딩·프로필 화면 리디자인 + 테마 미리보기 그리드 도입",
+                         "책장 UI 전면 업데이트 — 책 카드 리뉴얼, 관리 오버레이, 테마 포커스 네비, 레이아웃 복구",
+                         "메인 씬 카메라·플로팅 메뉴·객체 편집 UX 개선 (orbit yaw 클램프, 복귀 자세, 편집 동작 다듬기)",
+                         "노트북 디테일/시장 UI 정돈 + 책 검색·상세 통계 API 연동",
+                         "다른 공간 방문자 격리 + 게스트북 공개 여부 + 기본 책상 중복 표시 보정",
+                         "로그인 안정화 (Apple/iOS 소셜, 종료 동작, 아이콘 정합성) + 룸/테마 성능·빌드 무결성 fix"
                      ]
 }
