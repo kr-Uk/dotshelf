@@ -1,6 +1,8 @@
 #if UNITY_EDITOR
+using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using BookshelfPorting.Runtime;
 using UnityEditor;
 using UnityEngine;
@@ -9,20 +11,11 @@ namespace BookshelfPorting.Editor
 {
     public sealed class BookshelfThemeLayoutTunerWindow : EditorWindow
     {
-        private const string DefaultLayoutPath = "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_UnderwaterShell.asset";
+        private const string LayoutFolderPath = "Assets/Resources/BookshelfThemeLayouts";
+        private const string DefaultLayoutPath = LayoutFolderPath + "/BookshelfThemeLayout_UnderwaterShell.asset";
         private const float MinimumColumnWidth = 0.05f;
         private const float MinimumDepth = 0.05f;
-        private static readonly LayoutOption[] LayoutOptions =
-        {
-            new LayoutOption("Pastel Cabin", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_PastelCabin.asset"),
-            new LayoutOption("Underwater Shell", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_UnderwaterShell.asset"),
-            new LayoutOption("Vintage", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_VintageShelf.asset"),
-            new LayoutOption("Spooky", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_Spooky.asset"),
-            new LayoutOption("Fantasy", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_Fantasy.asset"),
-            new LayoutOption("Space", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_Space.asset"),
-            new LayoutOption("Good Vibes", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_GoodVibes.asset"),
-            new LayoutOption("Deep Sea", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_DeepSea.asset")
-        };
+        private static List<LayoutOption> layoutOptions;
 
         private BookshelfThemeLayout layout;
         private readonly RowTuning[] rows = new RowTuning[4];
@@ -78,9 +71,10 @@ namespace BookshelfPorting.Editor
 
         private void OnGUI()
         {
+            var options = GetLayoutOptions();
             using (new EditorGUILayout.HorizontalScope())
             {
-                for (var i = 0; i < LayoutOptions.Length; i++)
+                for (var i = 0; i < options.Count; i++)
                 {
                     if (i > 0 && i % 4 == 0)
                     {
@@ -88,7 +82,7 @@ namespace BookshelfPorting.Editor
                         EditorGUILayout.BeginHorizontal();
                     }
 
-                    var option = LayoutOptions[i];
+                    var option = options[i];
                     if (GUILayout.Button(option.Label, GUILayout.Height(28f)))
                     {
                         LoadLayout(option.Path);
@@ -346,6 +340,72 @@ namespace BookshelfPorting.Editor
             return changed;
         }
 
+        private static IReadOnlyList<LayoutOption> GetLayoutOptions()
+        {
+            if (layoutOptions != null)
+            {
+                return layoutOptions;
+            }
+
+            layoutOptions = new List<LayoutOption>();
+            if (AssetDatabase.IsValidFolder(LayoutFolderPath))
+            {
+                var guids = AssetDatabase.FindAssets("t:BookshelfThemeLayout", new[] { LayoutFolderPath });
+                foreach (var guid in guids)
+                {
+                    var path = AssetDatabase.GUIDToAssetPath(guid);
+                    if (string.IsNullOrEmpty(path))
+                    {
+                        continue;
+                    }
+
+                    layoutOptions.Add(new LayoutOption(BuildLayoutLabel(path), path));
+                }
+            }
+
+            layoutOptions.Sort((left, right) =>
+            {
+                var leftIsDefault = string.Equals(left.Path, DefaultLayoutPath, StringComparison.OrdinalIgnoreCase);
+                var rightIsDefault = string.Equals(right.Path, DefaultLayoutPath, StringComparison.OrdinalIgnoreCase);
+                if (leftIsDefault != rightIsDefault)
+                {
+                    return leftIsDefault ? -1 : 1;
+                }
+
+                return string.Compare(left.Label, right.Label, StringComparison.OrdinalIgnoreCase);
+            });
+
+            return layoutOptions;
+        }
+
+        private static string BuildLayoutLabel(string path)
+        {
+            var name = Path.GetFileNameWithoutExtension(path);
+            const string prefix = "BookshelfThemeLayout_";
+            if (name.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                name = name.Substring(prefix.Length);
+            }
+
+            name = name.Replace('_', ' ');
+            var builder = new StringBuilder(name.Length + 8);
+            for (var i = 0; i < name.Length; i++)
+            {
+                var c = name[i];
+                if (i > 0 &&
+                    char.IsUpper(c) &&
+                    !char.IsWhiteSpace(name[i - 1]) &&
+                    (char.IsLower(name[i - 1]) || i + 1 < name.Length && char.IsLower(name[i + 1])))
+                {
+                    builder.Append(' ');
+                }
+
+                builder.Append(c);
+            }
+
+            return builder.ToString().Trim();
+        }
+
         private void LoadLayout(string path)
         {
             layout = AssetDatabase.LoadAssetAtPath<BookshelfThemeLayout>(path);
@@ -471,14 +531,15 @@ namespace BookshelfPorting.Editor
 
             var serialized = new SerializedObject(layout);
             var sections = serialized.FindProperty("sections");
-            for (var i = 0; i < sections.arraySize; i++)
+            if (sections.arraySize <= 0)
             {
-                var section = sections.GetArrayElementAtIndex(i);
-                depth.FrontBoundZ = section.FindPropertyRelative("frontBoundZ").floatValue;
-                depth.BackBoundZ = section.FindPropertyRelative("backBoundZ").floatValue;
-                EnsureMinimumDepth(depth);
                 return;
             }
+
+            var section = sections.GetArrayElementAtIndex(0);
+            depth.FrontBoundZ = section.FindPropertyRelative("frontBoundZ").floatValue;
+            depth.BackBoundZ = section.FindPropertyRelative("backBoundZ").floatValue;
+            EnsureMinimumDepth(depth);
         }
 
         private void ApplyTuningToLayout()

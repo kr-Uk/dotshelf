@@ -577,6 +577,7 @@ namespace App.Features.Notebook.Presentation
         private const int MaxRemoteSpaceThumbnailHeight = 1152;
         private const int MaxRemoteAssetPreviewWidth = 2048;
         private const int MaxRemoteAssetPreviewHeight = 2048;
+        private const int MaxAssetPreviewTextureCacheCount = 64;
         private const int MaxBookCoverTextureCacheCount = 64;
         private const int MaxRemoteBookCoverWidth = 2048;
         private const int MaxRemoteBookCoverHeight = 3072;
@@ -585,7 +586,9 @@ namespace App.Features.Notebook.Presentation
         private const NotebookShelfDisplayStyle DefaultDisplayStyle = NotebookShelfDisplayStyle.Spine;
         private const string PanelSettingsResource = "NotebookPanelSettings";
         private const string CommonSearchIconPath = "Assets/App/UI/Icons/Common/icon_search.png";
-        private const string CustomizationPreviewRoot = "Assets/App/Composition/Previews/Customization";
+        private const string CustomizationPreviewResourceRoot = "App/Composition/Previews/Customization";
+        private const string CustomizationPreviewAssetRoot = "Assets/Resources/" + CustomizationPreviewResourceRoot;
+        private const string CustomizationPreviewUrlPrefix = "resources://customization/";
 
         private static readonly Color PageBack = Hex(0xF0EEE9);
         private static readonly Color Surface = Hex(0xF7FFF7);
@@ -609,9 +612,7 @@ namespace App.Features.Notebook.Presentation
         private static Sprite commonSearchIconSprite;
         private static Texture2D searchIconTexture;
         private static Texture2D closeIconTexture;
-#if UNITY_EDITOR
-        private static Dictionary<string, string> customizationPreviewPathByKey;
-#endif
+        private static Dictionary<string, Sprite> customizationPreviewSpriteByKey;
         private static readonly string[] SuggestedSearches = { "소설", "에세이", "심리", "베스트셀러", "SF", "자기계발", "인문" };
 
         private static readonly string[] HeaderTabs = { "책 시장", "다른 공간", "꾸미기 시장" };
@@ -649,6 +650,8 @@ namespace App.Features.Notebook.Presentation
         private readonly LinkedList<string> spaceThumbnailTextureCacheOrder = new();
         private readonly Dictionary<string, LinkedListNode<string>> spaceThumbnailTextureCacheNodes = new();
         private readonly Dictionary<string, Texture2D> assetPreviewTextureCache = new();
+        private readonly LinkedList<string> assetPreviewTextureCacheOrder = new();
+        private readonly Dictionary<string, LinkedListNode<string>> assetPreviewTextureCacheNodes = new();
         private readonly Dictionary<string, Texture2D> bookCoverTextureCache = new();
         private readonly LinkedList<string> bookCoverTextureCacheOrder = new();
         private readonly Dictionary<string, LinkedListNode<string>> bookCoverTextureCacheNodes = new();
@@ -5353,7 +5356,6 @@ namespace App.Features.Notebook.Presentation
 
         private static string ResolveLocalCustomizationPreviewPath(NotebookAssetItem item)
         {
-#if UNITY_EDITOR
             if (item == null)
             {
                 return string.Empty;
@@ -5420,9 +5422,6 @@ namespace App.Features.Notebook.Presentation
             }
 
             return FindCustomizationPreviewPath(candidates);
-#else
-            return string.Empty;
-#endif
         }
 
         private static string PreviewStemFromResourceKey(string resourceKey)
@@ -5509,48 +5508,92 @@ namespace App.Features.Notebook.Presentation
 
         private static string FindCustomizationPreviewPath(IEnumerable<string> candidates)
         {
-#if UNITY_EDITOR
             if (candidates == null)
             {
                 return string.Empty;
             }
 
-            EnsureCustomizationPreviewPathMap();
+            EnsureCustomizationPreviewSpriteMap();
             foreach (var candidate in candidates)
             {
                 var key = NormalizePreviewKey(candidate);
                 if (!string.IsNullOrEmpty(key) &&
-                    customizationPreviewPathByKey != null &&
-                    customizationPreviewPathByKey.TryGetValue(key, out var path))
+                    customizationPreviewSpriteByKey != null &&
+                    customizationPreviewSpriteByKey.ContainsKey(key))
                 {
-                    return path;
+                    return CustomizationPreviewUrlPrefix + key;
                 }
             }
-#endif
             return string.Empty;
         }
 
-#if UNITY_EDITOR
-        private static void EnsureCustomizationPreviewPathMap()
+        private static void EnsureCustomizationPreviewSpriteMap()
         {
-            if (customizationPreviewPathByKey != null)
+            if (customizationPreviewSpriteByKey != null)
             {
                 return;
             }
 
-            customizationPreviewPathByKey = new Dictionary<string, string>();
-            var guids = UnityEditor.AssetDatabase.FindAssets("t:Texture2D", new[] { CustomizationPreviewRoot });
-            foreach (var guid in guids)
+            customizationPreviewSpriteByKey = new Dictionary<string, Sprite>();
+            var sprites = Resources.LoadAll<Sprite>(CustomizationPreviewResourceRoot);
+            foreach (var sprite in sprites)
             {
-                var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
-                var key = NormalizePreviewKey(System.IO.Path.GetFileNameWithoutExtension(path));
-                if (!string.IsNullOrEmpty(key) && !customizationPreviewPathByKey.ContainsKey(key))
+                if (sprite == null)
                 {
-                    customizationPreviewPathByKey.Add(key, path);
+                    continue;
+                }
+
+                var key = NormalizePreviewKey(sprite.name);
+                if (!string.IsNullOrEmpty(key) && !customizationPreviewSpriteByKey.ContainsKey(key))
+                {
+                    customizationPreviewSpriteByKey.Add(key, sprite);
                 }
             }
-        }
+
+#if UNITY_EDITOR
+            if (customizationPreviewSpriteByKey.Count == 0 &&
+                UnityEditor.AssetDatabase.IsValidFolder(CustomizationPreviewAssetRoot))
+            {
+                var guids = UnityEditor.AssetDatabase.FindAssets("t:Texture2D", new[] { CustomizationPreviewAssetRoot });
+                foreach (var guid in guids)
+                {
+                    var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                    var sprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(path);
+                    if (sprite == null)
+                    {
+                        continue;
+                    }
+
+                    var key = NormalizePreviewKey(sprite.name);
+                    if (!string.IsNullOrEmpty(key) && !customizationPreviewSpriteByKey.ContainsKey(key))
+                    {
+                        customizationPreviewSpriteByKey.Add(key, sprite);
+                    }
+                }
+            }
 #endif
+        }
+
+        private static bool TryGetCustomizationPreviewSprite(string previewUrl, out Sprite sprite)
+        {
+            sprite = null;
+            if (string.IsNullOrWhiteSpace(previewUrl) ||
+                !previewUrl.StartsWith(CustomizationPreviewUrlPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var key = previewUrl.Substring(CustomizationPreviewUrlPrefix.Length);
+            if (string.IsNullOrEmpty(key))
+            {
+                return false;
+            }
+
+            EnsureCustomizationPreviewSpriteMap();
+            return customizationPreviewSpriteByKey != null &&
+                   customizationPreviewSpriteByKey.TryGetValue(key, out sprite) &&
+                   sprite != null;
+        }
 
         private static string NormalizeObjectCategoryForApi(string category)
         {
@@ -8037,7 +8080,7 @@ namespace App.Features.Notebook.Presentation
             }
 
             preview.userData = url;
-            if (assetPreviewTextureCache.TryGetValue(url, out var cached) && cached != null)
+            if (TryGetCachedAssetPreviewTexture(url, out var cached))
             {
                 ApplyObjectPreviewTexture(preview, cached);
                 return true;
@@ -8049,24 +8092,103 @@ namespace App.Features.Notebook.Presentation
 
         private static bool TryApplyLocalObjectPreviewTexture(VisualElement preview, string assetPath)
         {
+            if (preview == null || string.IsNullOrWhiteSpace(assetPath))
+            {
+                return false;
+            }
+
+            if (TryGetCustomizationPreviewSprite(assetPath, out var sprite))
+            {
+                preview.userData = assetPath;
+                ApplyObjectPreviewSprite(preview, sprite);
+                return true;
+            }
+
 #if UNITY_EDITOR
-            if (preview == null || string.IsNullOrWhiteSpace(assetPath) || !assetPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+            if (assetPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
             {
-                return false;
-            }
+                sprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
+                if (sprite != null)
+                {
+                    preview.userData = assetPath;
+                    ApplyObjectPreviewSprite(preview, sprite);
+                    return true;
+                }
 
-            var texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
-            if (texture == null)
-            {
-                return false;
+                var texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+                if (texture != null)
+                {
+                    preview.userData = assetPath;
+                    ApplyObjectPreviewTexture(preview, texture);
+                    return true;
+                }
             }
-
-            preview.userData = assetPath;
-            ApplyObjectPreviewTexture(preview, texture);
-            return true;
-#else
-            return false;
 #endif
+            return false;
+        }
+
+        private bool TryGetCachedAssetPreviewTexture(string url, out Texture2D texture)
+        {
+            if (!assetPreviewTextureCache.TryGetValue(url, out texture) || texture == null)
+            {
+                assetPreviewTextureCache.Remove(url);
+                if (assetPreviewTextureCacheNodes.TryGetValue(url, out var staleNode))
+                {
+                    assetPreviewTextureCacheOrder.Remove(staleNode);
+                    assetPreviewTextureCacheNodes.Remove(url);
+                }
+
+                texture = null;
+                return false;
+            }
+
+            if (assetPreviewTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                assetPreviewTextureCacheOrder.Remove(node);
+                assetPreviewTextureCacheOrder.AddLast(node);
+            }
+
+            return true;
+        }
+
+        private void CacheAssetPreviewTexture(string url, Texture2D texture)
+        {
+            if (assetPreviewTextureCache.TryGetValue(url, out var previous) && previous != null && previous != texture)
+            {
+                Destroy(previous);
+            }
+
+            assetPreviewTextureCache[url] = texture;
+
+            if (assetPreviewTextureCacheNodes.TryGetValue(url, out var node))
+            {
+                assetPreviewTextureCacheOrder.Remove(node);
+                assetPreviewTextureCacheOrder.AddLast(node);
+            }
+            else
+            {
+                node = assetPreviewTextureCacheOrder.AddLast(url);
+                assetPreviewTextureCacheNodes[url] = node;
+            }
+
+            TrimAssetPreviewTextureCache();
+        }
+
+        private void TrimAssetPreviewTextureCache()
+        {
+            while (assetPreviewTextureCache.Count > MaxAssetPreviewTextureCacheCount && assetPreviewTextureCacheOrder.First != null)
+            {
+                var oldestUrl = assetPreviewTextureCacheOrder.First.Value;
+                assetPreviewTextureCacheOrder.RemoveFirst();
+                assetPreviewTextureCacheNodes.Remove(oldestUrl);
+
+                if (assetPreviewTextureCache.TryGetValue(oldestUrl, out var texture) && texture != null)
+                {
+                    Destroy(texture);
+                }
+
+                assetPreviewTextureCache.Remove(oldestUrl);
+            }
         }
 
         private static bool IsRemoteImageUrl(string url)
@@ -8100,12 +8222,7 @@ namespace App.Features.Notebook.Presentation
                     yield break;
                 }
 
-                if (assetPreviewTextureCache.TryGetValue(url, out var previous) && previous != null && previous != texture)
-                {
-                    Destroy(previous);
-                }
-
-                assetPreviewTextureCache[url] = texture;
+                CacheAssetPreviewTexture(url, texture);
                 if (preview != null && preview.panel != null && Equals(preview.userData, url))
                 {
                     ApplyObjectPreviewTexture(preview, texture);
@@ -8124,6 +8241,18 @@ namespace App.Features.Notebook.Presentation
             }
 
             assetPreviewTextureCache.Clear();
+            assetPreviewTextureCacheOrder.Clear();
+            assetPreviewTextureCacheNodes.Clear();
+        }
+
+        private static void ApplyObjectPreviewSprite(VisualElement preview, Sprite sprite)
+        {
+            preview.Clear();
+            preview.style.backgroundColor = Color.clear;
+            preview.style.backgroundImage = new StyleBackground(sprite);
+            preview.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Cover);
+            preview.style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Center);
+            preview.style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center);
         }
 
         private static void ApplyObjectPreviewTexture(VisualElement preview, Texture2D texture)
