@@ -13,7 +13,7 @@ namespace App.EditorTools
     {
         private const string CatalogRoot = "Assets/Resources/Catalogs";
         private const string EditableCatalogPath = "Assets/Resources/EditableDecorationCatalog.asset";
-        private const string OutputRoot = "Assets/App/Composition/Previews/Customization";
+        private const string OutputRoot = "Assets/Resources/App/Composition/Previews/Customization";
         private const int PreviewSize = 256;
         private const float Padding = 1.18f;
 

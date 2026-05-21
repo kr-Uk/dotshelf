@@ -17,6 +17,7 @@ MonoBehaviour:
   prefabLocalPosition: {x: -0.00081950426, y: 0.80081284, z: 0.000736475}
   prefabLocalEulerAngles: {x: 0, y: 0, z: 0}
   prefabLocalScale: {x: 0.8422692, y: 0.8422692, z: 0.8422692}
+  preservePrefabLocalTransform: 0
   focusLocalPosition: {x: 0, y: 0.8000001, z: -0.44041502}
   focusSize: {x: 1.6999543, y: 1.7000002, z: 0.18}
   sections:
