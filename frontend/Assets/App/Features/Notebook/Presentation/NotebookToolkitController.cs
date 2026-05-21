@@ -2182,6 +2182,7 @@ namespace App.Features.Notebook.Presentation
             detailScrollFrame.style.width = Length.Percent(100);
             detailScrollFrame.style.overflow = Overflow.Hidden;
             panel.Add(detailScrollFrame);
+            headerArea.BringToFront();
 
             var detailScroll = new ScrollView(ScrollViewMode.Vertical) { name = "book-detail-scroll" };
             bookDetailScrollView = detailScroll;
