@@ -1,0 +1,24 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <ui:Style src="BookCoverSkinView.uss" />
+    <ui:VisualElement name="root" class="shelf-skin-root hidden" picking-mode="Position">
+        <ui:VisualElement name="backdrop" class="shelf-skin-backdrop" picking-mode="Position" />
+        <ui:VisualElement name="frame" class="shelf-skin-frame" picking-mode="Position">
+
+            <ui:VisualElement class="shelf-skin-header">
+                <ui:VisualElement class="shelf-skin-header-text">
+                    <ui:Label class="shelf-skin-eyebrow" text="BOOK · COVER" />
+                    <ui:Label class="shelf-skin-title" text="표지 변경" />
+                </ui:VisualElement>
+                <ui:Button name="close-button" class="shelf-skin-close-button" text="✕" />
+            </ui:VisualElement>
+
+            <ui:VisualElement class="shelf-skin-rule" />
+
+            <ui:VisualElement class="shelf-skin-body">
+                <ui:Label name="hint" class="shelf-skin-hint" text="" />
+                <ui:VisualElement name="options" class="shelf-skin-options" />
+            </ui:VisualElement>
+
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

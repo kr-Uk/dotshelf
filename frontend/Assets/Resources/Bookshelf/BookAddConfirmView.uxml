@@ -1,0 +1,48 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <ui:Style src="BookAddConfirmView.uss" />
+    <ui:VisualElement name="root" class="shelf-confirm-root hidden" picking-mode="Position">
+        <ui:VisualElement name="backdrop" class="shelf-confirm-backdrop" picking-mode="Position" />
+        <ui:VisualElement name="frame" class="shelf-confirm-frame" picking-mode="Position">
+
+            <ui:VisualElement class="shelf-confirm-header">
+                <ui:VisualElement class="shelf-confirm-header-text">
+                    <ui:Label class="shelf-confirm-eyebrow" text="ADD BOOK · 추가 확인" />
+                    <ui:Label class="shelf-confirm-title" text="이 책을 추가할까요?" />
+                </ui:VisualElement>
+                <ui:Button name="close-button" class="shelf-confirm-close-button" text="✕" />
+            </ui:VisualElement>
+
+            <ui:VisualElement class="shelf-confirm-rule" />
+
+            <ui:VisualElement class="shelf-confirm-body">
+
+                <ui:VisualElement class="shelf-confirm-book">
+                    <ui:Label name="book-title" class="shelf-confirm-book-title" text="" />
+                    <ui:Label name="book-meta" class="shelf-confirm-book-meta" text="" />
+                    <ui:Label name="book-summary" class="shelf-confirm-book-summary" text="" />
+                </ui:VisualElement>
+
+                <ui:Label class="shelf-confirm-sub-label" text="독서 상태" />
+                <ui:VisualElement class="shelf-confirm-chip-row">
+                    <ui:Button name="status-unread" class="shelf-confirm-chip" text="안 읽음" />
+                    <ui:Button name="status-reading" class="shelf-confirm-chip" text="읽는 중" />
+                    <ui:Button name="status-read" class="shelf-confirm-chip" text="읽음" />
+                </ui:VisualElement>
+
+                <ui:Label class="shelf-confirm-sub-label shelf-confirm-sub-label-spaced" text="책 배치" />
+                <ui:VisualElement class="shelf-confirm-chip-row">
+                    <ui:Button name="orient-spine" class="shelf-confirm-chip" text="측면" />
+                    <ui:Button name="orient-angled" class="shelf-confirm-chip" text="45°" />
+                    <ui:Button name="orient-front" class="shelf-confirm-chip" text="정면" />
+                </ui:VisualElement>
+
+                <ui:VisualElement class="shelf-confirm-actions">
+                    <ui:Button name="cancel-button" class="shelf-confirm-cancel" text="취소" />
+                    <ui:Button name="confirm-button" class="shelf-confirm-confirm" text="추가" />
+                </ui:VisualElement>
+
+            </ui:VisualElement>
+
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

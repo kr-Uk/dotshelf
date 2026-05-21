@@ -1,0 +1,27 @@
+{
+  "name": "App.Tests.EditMode",
+  "rootNamespace": "App.Tests.EditMode",
+  "references": [
+    "App.Domain",
+    "App.Application",
+    "App.Features",
+    "App.Infrastructure",
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "nunit.framework.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

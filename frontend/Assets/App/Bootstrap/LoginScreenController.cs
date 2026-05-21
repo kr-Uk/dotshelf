@@ -1,0 +1,2003 @@
+using System;
+using System.Security.Cryptography;
+using System.Threading;
+using System.Threading.Tasks;
+using App.Auth;
+using App.Config;
+using App.Infrastructure.Api;
+using TMPro;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.SceneManagement;
+using UnityEngine.TextCore.LowLevel;
+using UnityEngine.UI;
+#if UNITY_IOS && !UNITY_EDITOR
+using System.Runtime.InteropServices;
+#endif
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem.UI;
+#endif
+
+namespace App.Bootstrap
+{
+    [DefaultExecutionOrder(-900)]
+    [DisallowMultipleComponent]
+    public sealed class LoginScreenController : MonoBehaviour
+    {
+        private const string CanvasName = "LoginCanvas";
+#if UNITY_IOS && !UNITY_EDITOR
+        private const string AppleSignInCallbackObjectName = "DotShelfAppleSignInCallback";
+#endif
+        private const string PreferredKoreanFontAssetName = "NotoSansKR-Regular";
+        private const string FallbackKoreanFontAssetName = "NOTOSANSKR SDF";
+        private const float CardWidth = 720f;
+        private const float CardHeight = 640f;
+        private const float SocialButtonHeight = 52f;
+        private const float SocialPaneWidth = 360f;
+        private const float QuitButtonWidth = 104f;
+        private const float QuitButtonHeight = 34f;
+        private const float QuitButtonRightPadding = 4f;
+        private const float QuitButtonBottomPadding = 8f;
+        private const int UiLayer = 5;
+        private const int CanvasSortingOrder = 5000;
+
+        private static readonly Color BackgroundColor = Hex("#F4EFE6");
+        private static readonly Color CardColor = Hex("#FFFDF9");
+        private static readonly Color AccentTint = Hex("#D9C7A7");
+        private static readonly Color PrimaryColor = Hex("#2B5C8A");
+        private static readonly Color PrimaryPressedColor = Hex("#21496D");
+        private static readonly Color PrimaryHighlightColor = Hex("#3A749F");
+        private static readonly Color SecondaryColor = Hex("#F8F1E4");
+        private static readonly Color AppleColor = Hex("#111111");
+        private static readonly Color KakaoColor = Hex("#FEE500");
+        private static readonly Color GoogleColor = Hex("#FFFFFF");
+        private static readonly Color BorderColor = Hex("#D8CCBC");
+        private static readonly Color TextColor = Hex("#2D2418");
+        private static readonly Color MutedTextColor = Hex("#7C6A56");
+        private static readonly Color ErrorColor = Hex("#C14E4E");
+
+        private Canvas demoCanvas;
+        private TMP_FontAsset fontAsset;
+        private TMP_FontAsset fallbackFontAsset;
+        private Sprite whiteSprite;
+        private Sprite roundedRectSprite;
+
+        private GameObject loginScreen;
+
+        private TMP_Text loginMessageLabel;
+        private Button appleLoginButton;
+        private Button kakaoLoginButton;
+        private Button googleLoginButton;
+        private Button quitButton;
+        private GameObject loginProgressDialog;
+        private TMP_Text loginProgressTitleLabel;
+        private TMP_Text loginProgressMessageLabel;
+        private RectTransform loginProgressSpinner;
+        private Button loginProgressCancelButton;
+        private ApplicationQuitter applicationQuitter;
+#if UNITY_EDITOR
+        // Editor-only shortcuts. Field/build/wire/handler are all gated so
+        // player builds ship without any dev affordance.
+        //   devShortcutButton          — "[DEV] 빠른 입장": MainScene 즉시 진입
+        //   devOnboardingTestButton    — "[DEV] 온보딩 테스트": 로그인 없이 Step1부터
+        // Both flip DevMainSceneMode.IsActive so downstream code (nickname
+        // check, profile save, /v1/spaces/me sync) can short-circuit BE calls
+        // when BE auth is not wired up yet.
+        private Button devShortcutButton;
+        private Button devOnboardingTestButton;
+#endif
+
+        private bool isInitialized;
+        private bool listenersRegistered;
+        private bool isLoginInFlight;
+        private bool loginProgressSpinnerActive;
+        private bool loginProgressFailureVisible;
+        private int loginAttemptSequence;
+        private int activeLoginAttemptId;
+        private SocialProvider activeLoginProvider;
+        private IAuthService authService;
+
+        [Header("Development Social Login")]
+        // Default off so a forgotten inspector token cannot be sent from a release build.
+        // Editor/dev builds can flip this on per-scene; runtime guard below also restricts use.
+        [SerializeField] private bool useDevelopmentSocialTokens = false;
+        [SerializeField] private string googleDevelopmentToken;
+        [SerializeField] private SocialTokenType googleDevelopmentTokenType = SocialTokenType.IdToken;
+        [SerializeField] private string kakaoDevelopmentToken;
+        [SerializeField] private SocialTokenType kakaoDevelopmentTokenType = SocialTokenType.AccessToken;
+        [SerializeField] private string appleDevelopmentToken;
+        [SerializeField] private SocialTokenType appleDevelopmentTokenType = SocialTokenType.IdToken;
+        [SerializeField] private string appleDevelopmentNonce;
+
+        [Header("Desktop Browser OAuth")]
+        // On Windows / macOS / Linux standalone builds and the editor, social
+        // login uses the authorization-code flow: Unity opens an external
+        // browser and a transient loopback HttpListener catches the redirect.
+        // Mobile platforms ignore these fields and fall through to the SDK
+        // path (currently a stub).
+        [SerializeField] private bool enableDesktopBrowserOAuth = true;
+        [SerializeField] private OAuthBrowserProviderConfig[] desktopBrowserOAuthProviders;
+        [Header("Social Login Icons")]
+        [SerializeField] private Sprite googleLoginIcon;
+        [SerializeField] private Sprite kakaoLoginIcon;
+        [SerializeField] private Sprite appleLoginIcon;
+
+        private CancellationTokenSource browserOAuthCts;
+#if UNITY_IOS && !UNITY_EDITOR
+        private string pendingAppleNonce;
+
+        [DllImport("__Internal")]
+        private static extern void DotshelfAppleSignIn_Start(string nonce, string callbackObjectName);
+#endif
+
+        public void InitializeIfNeeded()
+        {
+            if (isInitialized)
+            {
+                return;
+            }
+
+            isInitialized = true;
+            whiteSprite = CreateWhiteSprite();
+            roundedRectSprite = CreateRoundedRectSprite(64, 30);
+            fontAsset = ResolveFontAsset();
+            WarmupLoginGlyphs(fontAsset);
+
+            BuildDemoCanvas();
+            ApplyFontToLoginCanvas();
+            EnsureEventSystem();
+            DisableLegacyLoginUi();
+            SetMessage(loginMessageLabel, string.Empty);
+            Canvas.ForceUpdateCanvases();
+        }
+
+        private void Awake()
+        {
+            InitializeIfNeeded();
+        }
+
+        private void OnEnable()
+        {
+            InitializeIfNeeded();
+            RegisterListeners();
+        }
+
+        private void OnDisable()
+        {
+            UnregisterListeners();
+            // Cancel any in-flight browser OAuth wait so the listener task does
+            // not outlive the controller and leak the loopback HttpListener.
+            CancelInFlightBrowserOAuth();
+        }
+
+        private void OnDestroy()
+        {
+            CancelInFlightBrowserOAuth();
+        }
+
+        private void Update()
+        {
+            if (loginProgressSpinnerActive && loginProgressSpinner != null)
+            {
+                loginProgressSpinner.Rotate(0f, 0f, -260f * Time.unscaledDeltaTime);
+            }
+        }
+
+        private void CancelInFlightBrowserOAuth()
+        {
+            var cts = browserOAuthCts;
+            if (cts == null)
+            {
+                return;
+            }
+            browserOAuthCts = null;
+            try { cts.Cancel(); } catch { /* already disposed */ }
+            cts.Dispose();
+        }
+
+        private void OnLoginProgressCancelClicked()
+        {
+            var message = loginProgressFailureVisible
+                ? "다른 로그인 방식을 선택해주세요."
+                : "로그인이 취소되었습니다.";
+
+            activeLoginAttemptId = 0;
+            loginProgressFailureVisible = false;
+            isLoginInFlight = false;
+#if UNITY_IOS && !UNITY_EDITOR
+            pendingAppleNonce = null;
+#endif
+            CancelInFlightBrowserOAuth();
+            HideLoginProgressDialog();
+            SetInteractable(true);
+            SetMessage(loginMessageLabel, message);
+        }
+
+        private int StartLoginAttempt(SocialProvider provider, string message)
+        {
+            if (activeLoginAttemptId != 0 || isLoginInFlight)
+            {
+                return 0;
+            }
+
+            activeLoginProvider = provider;
+            activeLoginAttemptId = ++loginAttemptSequence;
+            loginProgressFailureVisible = false;
+            isLoginInFlight = true;
+            SetInteractable(false);
+            ShowLoginProgressDialog("로그인 중", message, true);
+            SetMessage(loginMessageLabel, message);
+            return activeLoginAttemptId;
+        }
+
+        private int EnsureLoginAttempt(SocialProvider provider, string message)
+        {
+            if (activeLoginAttemptId != 0)
+            {
+                if (activeLoginProvider != provider)
+                {
+                    return 0;
+                }
+
+                loginProgressFailureVisible = false;
+                isLoginInFlight = true;
+                SetInteractable(false);
+                ShowLoginProgressDialog("로그인 중", message, true);
+                SetMessage(loginMessageLabel, message);
+                return activeLoginAttemptId;
+            }
+
+            return StartLoginAttempt(provider, message);
+        }
+
+        private bool IsCurrentLoginAttempt(int attemptId)
+        {
+            return attemptId != 0 && attemptId == activeLoginAttemptId;
+        }
+
+        private void CompleteLoginAttempt(int attemptId)
+        {
+            if (!IsCurrentLoginAttempt(attemptId))
+            {
+                return;
+            }
+
+            activeLoginAttemptId = 0;
+            loginProgressFailureVisible = false;
+            isLoginInFlight = false;
+            HideLoginProgressDialog();
+            SetInteractable(true);
+        }
+
+        private void FailLoginAttempt(int attemptId, string message)
+        {
+            if (!IsCurrentLoginAttempt(attemptId))
+            {
+                return;
+            }
+
+            var resolvedMessage = string.IsNullOrWhiteSpace(message)
+                ? "로그인에 실패했습니다. 취소 후 다른 로그인 방식을 선택해주세요."
+                : message;
+
+            loginProgressFailureVisible = true;
+            isLoginInFlight = false;
+            SetInteractable(true);
+            SetMessage(loginMessageLabel, resolvedMessage);
+            ShowLoginProgressDialog("로그인 실패", resolvedMessage, false);
+        }
+
+        public void OnAppleLoginButtonClicked()
+        {
+            StartSocialLogin(SocialProvider.Apple);
+        }
+
+        public void OnKakaoLoginButtonClicked()
+        {
+            StartSocialLogin(SocialProvider.Kakao);
+        }
+
+        public void OnGoogleLoginButtonClicked()
+        {
+            StartSocialLogin(SocialProvider.Google);
+        }
+
+#if UNITY_EDITOR
+        // Editor-only shortcut handler. Bypasses social-login entirely and
+        // jumps straight to MainScene as an anonymous-API session.
+        //
+        // Auth state is wiped first so leftover tokens (accessToken,
+        // refreshToken) from a prior play do not leak into the dev session.
+        // After Clear() the session is anonymous and BookshelfSceneInstaller
+        // boots against the real API.
+        //
+        // APIManager.Instance may already be alive (DontDestroyOnLoad) with
+        // a hydrated token from earlier in the same play session — also reset
+        // its in-memory accessToken so the next request goes out anonymous.
+        //
+        // Application is fully-qualified because App.Application (UseCase
+        // layer) shadows UnityEngine.Application here.
+        public void OnDevShortcutButtonClicked()
+        {
+            if (!UnityEngine.Application.isPlaying)
+            {
+                return;
+            }
+
+            AuthSession.Clear();
+            if (APIManager.Instance != null)
+            {
+                APIManager.Instance.SetAccessToken(string.Empty);
+            }
+            // Mark this play session as dev-mode for editor-only shortcuts.
+            // RealApi bookshelf/book flows still use the backend as source of
+            // truth and stay empty until login instead of falling back to local
+            // catalog data. Cleared automatically when the play session ends
+            // because DevMainSceneMode is a static, not EditorPrefs.
+            DevMainSceneMode.Activate();
+
+            Debug.Log("[DEV MODE] entering MainScene by dev button");
+            MainSceneTransitionCover.Show("개발용 모드로 메인 화면 진입");
+            SetCanvasVisible(false);
+            SceneFlowManager.GoToMain();
+        }
+
+        // Editor-only: enter the onboarding flow from Step1 without a real
+        // login. Auth artefacts are wiped (same reason as the quick-entry
+        // path: leftover access tokens would make the flow think it is
+        // authenticated). DevMainSceneMode.Activate() flips the flag that
+        // OnboardingScreenController checks to short-circuit nickname check
+        // and profile save against BE — see those handlers for the gate.
+        public void OnDevOnboardingTestButtonClicked()
+        {
+            if (!UnityEngine.Application.isPlaying)
+            {
+                return;
+            }
+
+            AuthSession.Clear();
+            if (APIManager.Instance != null)
+            {
+                APIManager.Instance.SetAccessToken(string.Empty);
+            }
+            DevMainSceneMode.Activate();
+
+            var onboardingController = GetComponent<OnboardingScreenController>();
+            if (onboardingController == null)
+            {
+                Debug.LogError("[DEV] OnboardingScreenController is missing on LoginScene prefab — dev onboarding test cannot start.");
+                return;
+            }
+
+            Debug.Log("[DEV MODE] entering onboarding step 1 (test)");
+            SetCanvasVisible(false);
+            onboardingController.InitializeIfNeeded();
+            // Use the regular onboarding flow so Step1 is visible — the whole
+            // point of the test button is to exercise Step1→Step2→Step3
+            // without BE.
+            onboardingController.StartOnboarding();
+        }
+#endif
+
+        // External entry point for the mobile SDK token flow — once a
+        // platform SDK obtains a provider token, call this to ship it to
+        // BE /v1/auth/social-login. Apple iOS now uses this path with an
+        // identityToken + nonce pair; Google/Kakao mobile SDKs can plug into
+        // the same method later. Desktop runs the browser-OAuth code flow.
+        public async void SubmitSocialLogin(
+            SocialProvider provider,
+            string providerToken,
+            SocialTokenType tokenType = SocialTokenType.Default,
+            string nonce = null,
+            string redirectUri = null)
+        {
+            var providerDisplayName = ProviderDisplayName(provider);
+            var attemptId = EnsureLoginAttempt(provider, $"{providerDisplayName} 로그인 중입니다...");
+            if (attemptId == 0)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(providerToken))
+            {
+                FailLoginAttempt(attemptId, "소셜 로그인 토큰을 받지 못했습니다. 다시 시도해주세요.");
+                return;
+            }
+
+            EnsureAuthService();
+
+            try
+            {
+                var result = await authService.SocialLoginAsync(provider, providerToken, tokenType, nonce, redirectUri);
+                if (IsCurrentLoginAttempt(attemptId))
+                {
+                    ApplyLoginResult(result, providerDisplayName, attemptId);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+                FailLoginAttempt(attemptId, "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.");
+            }
+            finally
+            {
+                if (IsCurrentLoginAttempt(attemptId) && !loginProgressFailureVisible)
+                {
+                    isLoginInFlight = false;
+                    SetInteractable(true);
+                }
+            }
+        }
+
+        // External entry point for the desktop browser-OAuth code flow.
+        // After WindowsOAuthBrowserFlow captures the redirect, the resulting
+        // (code, redirectUri, state, nonce) tuple ships to BE which performs
+        // the server-side code-for-tokens exchange and returns the same
+        // AuthTokenResponseDto as the mobile path — so ApplyLoginResult is
+        // shared between flows.
+        public async void SubmitSocialLoginCode(
+            SocialProvider provider,
+            string code,
+            string redirectUri,
+            string state,
+            string nonce = null,
+            string codeVerifier = null)
+        {
+            var providerDisplayName = ProviderDisplayName(provider);
+            var attemptId = EnsureLoginAttempt(provider, $"{providerDisplayName} 로그인 정보를 확인 중입니다...");
+            if (attemptId == 0)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                FailLoginAttempt(attemptId, "Authorization code 를 받지 못했습니다. 다시 시도해주세요.");
+                return;
+            }
+
+            // 진단 로그 — code/state 자체는 노출 안 함, presence 만.
+            Debug.Log(
+                $"[Auth] SubmitSocialLoginCode provider={provider} codePresent={!string.IsNullOrWhiteSpace(code)} " +
+                $"redirectUri='{redirectUri}' codeVerifierPresent={!string.IsNullOrWhiteSpace(codeVerifier)}");
+
+            EnsureAuthService();
+
+            try
+            {
+                var result = await authService.SocialLoginByCodeAsync(provider, code, redirectUri, state, nonce, codeVerifier);
+                if (IsCurrentLoginAttempt(attemptId))
+                {
+                    ApplyLoginResult(result, providerDisplayName, attemptId);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+                FailLoginAttempt(attemptId, "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.");
+            }
+            finally
+            {
+                if (IsCurrentLoginAttempt(attemptId) && !loginProgressFailureVisible)
+                {
+                    isLoginInFlight = false;
+                    SetInteractable(true);
+                }
+            }
+        }
+
+        private void BeginNativeSocialLogin(SocialProvider provider, string displayName)
+        {
+            // Platform-side native login for this provider is not wired into
+            // this Unity project yet. Once the SDK is integrated, that code
+            // should call SubmitSocialLogin(...) with the provider token.
+            var attemptId = StartLoginAttempt(provider, $"{displayName} 로그인을 준비 중입니다...");
+            FailLoginAttempt(attemptId, $"{displayName} 로그인 SDK 연동이 준비되지 않았습니다. 잠시 후 다시 시도해주세요.");
+        }
+
+        private void ApplyLoginResult(LoginResult result, string providerDisplayName, int attemptId)
+        {
+            if (!result.IsSuccess)
+            {
+                Debug.LogWarning(
+                    $"[Auth] social-login failed code={result.ErrorCode ?? "(null)"} " +
+                    $"message={result.ErrorMessage ?? "(null)"}");
+                FailLoginAttempt(attemptId, result.ErrorMessage);
+                return;
+            }
+
+            Debug.Log($"[Auth] social-login success userId={result.UserId} newUser={result.NewUser} onboarded={result.Onboarded}");
+            CompleteLoginAttempt(attemptId);
+
+            AuthSession.SaveTokens(
+                result.UserId,
+                result.AccessToken,
+                result.RefreshToken,
+                result.ExpiresIn,
+                result.NewUser,
+                result.Onboarded);
+
+            // 재로그인 회귀 fix — APIManager 는 DontDestroyOnLoad 라 첫 진입 후의 Awake/Hydrate 가
+            // 다시 호출되지 않는다. 로그아웃이 in-memory accessToken 을 "" 로 비웠으므로 PlayerPrefs 만
+            // 저장하면 다음 API 호출이 Authorization header 없이 나가 401 → dashboard / bookshelf 빈
+            // 상태로 보이는 회귀. SessionRefresh.TryRefreshAndRetry 와 동일 대칭으로 in-memory 도 set.
+            APIManager.Instance?.SetAccessToken(result.AccessToken);
+
+            // Route based on the BE response:
+            //   newUser=true     → first social-login, account just created → run onboarding from step 1.
+            //   onboarded=false  → existing account that never finished onboarding → also run onboarding.
+            //   otherwise        → returning, fully onboarded user → go straight to MainScene.
+            // Either flag means onboarding is required, so OR them.
+            var requiresOnboarding = result.NewUser || !result.Onboarded;
+            if (requiresOnboarding)
+            {
+                SetMessage(loginMessageLabel, $"{providerDisplayName} 로그인에 성공했습니다. 프로필 설정을 진행해주세요.");
+                var onboardingController = GetComponent<OnboardingScreenController>();
+                if (onboardingController == null)
+                {
+                    Debug.LogError("[LoginDemo] OnboardingScreenController is missing from LoginScene prefab — cannot run onboarding for new/incomplete user.");
+                    // Fall through to main-scene transition so the user is not left on a blank login screen.
+                    MainSceneTransitionCover.Show("메인 화면으로 이동 중입니다.");
+                    SetCanvasVisible(false);
+                    SceneFlowManager.GoToMain();
+                    return;
+                }
+
+                onboardingController.InitializeIfNeeded();
+                onboardingController.StartOnboarding();
+                return;
+            }
+
+            SetMessage(loginMessageLabel, $"{providerDisplayName} 로그인에 성공했습니다. 메인 화면으로 이동합니다.");
+            MainSceneTransitionCover.Show("메인 화면으로 이동 중입니다.");
+            SetCanvasVisible(false);
+            SceneFlowManager.GoToMain();
+        }
+
+        private static string ProviderDisplayName(SocialProvider provider)
+        {
+            return provider switch
+            {
+                SocialProvider.Google => "Google",
+                SocialProvider.Kakao => "Kakao",
+                SocialProvider.Apple => "Apple",
+                _ => provider.ToString()
+            };
+        }
+
+        private static string GenerateRandomNonce()
+        {
+            var bytes = new byte[32];
+            using (var generator = RandomNumberGenerator.Create())
+            {
+                generator.GetBytes(bytes);
+            }
+
+            return Convert.ToBase64String(bytes)
+                .TrimEnd('=')
+                .Replace('+', '-')
+                .Replace('/', '_');
+        }
+
+        private void EnsureAuthService()
+        {
+            if (authService != null)
+            {
+                return;
+            }
+
+            // Pull base URL / timeout from AppApiConfig if a host (AppRoot/ConfigLoader)
+            // is present in the scene. Without this the auth client always hits the
+            // hardcoded production URL, ignoring dev/staging environment settings.
+            var apiConfig = ResolveApiConfig();
+            string overrideBaseUrl = null;
+            int overrideTimeoutSeconds = 0;
+            if (apiConfig != null)
+            {
+                overrideBaseUrl = apiConfig.ResolveBaseUrl();
+                overrideTimeoutSeconds = apiConfig.RequestTimeoutSeconds;
+            }
+
+            // baseUrl 결정 출처 로그 — Editor 와 Build 의 baseUrl 일관성 가시화.
+            // (AppApiConfig 미발견 시 AuthApiClient 가 ApiEndpointDefaults.DefaultBaseUrl 사용 — Build mode 의존.)
+            string source = apiConfig != null ? "AppApiConfig.ResolveBaseUrl" : "ApiEndpointDefaults.DefaultBaseUrl";
+            string effective = !string.IsNullOrWhiteSpace(overrideBaseUrl)
+                ? overrideBaseUrl
+                : App.Domain.ApiEndpointDefaults.DefaultBaseUrl;
+            Debug.Log($"[Auth] AuthApiClient baseUrl='{effective}' source={source}");
+
+            var client = AuthApiClient.EnsureInstance(overrideBaseUrl, overrideTimeoutSeconds);
+            authService = new BackendAuthService(client);
+        }
+
+        private static AppApiConfig ResolveApiConfig()
+        {
+            var appRoot = FindFirstObjectByType<AppRoot>(FindObjectsInactive.Include);
+            if (appRoot != null && appRoot.ApiConfig != null)
+            {
+                return appRoot.ApiConfig;
+            }
+
+            var configLoader = FindFirstObjectByType<ConfigLoader>(FindObjectsInactive.Include);
+            return configLoader != null ? configLoader.ApiConfig : null;
+        }
+
+        private void SetInteractable(bool interactable)
+        {
+            if (appleLoginButton != null) appleLoginButton.interactable = interactable;
+            if (kakaoLoginButton != null) kakaoLoginButton.interactable = interactable;
+            if (googleLoginButton != null) googleLoginButton.interactable = interactable;
+            if (quitButton != null) quitButton.interactable = interactable;
+#if UNITY_EDITOR
+            if (devShortcutButton != null) devShortcutButton.interactable = interactable;
+            if (devOnboardingTestButton != null) devOnboardingTestButton.interactable = interactable;
+#endif
+        }
+
+        private static void SetButtonLabel(Button button, string text)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            var label = button.GetComponentInChildren<TMP_Text>(true);
+            if (label != null)
+            {
+                label.text = text;
+            }
+        }
+
+        // Social login is the only registration path: BE creates the account on
+        // the first /v1/auth/social-login call (newUser=true), so the UI never
+        // needs a separate sign-up entry. New users are routed through
+        // ApplyLoginResult into the existing onboarding flow once BE returns.
+        //
+        // Routing order:
+        //   1. Dev token override (editor / dev builds only) — fastest test path
+        //   2. Platform-specific:
+        //        Desktop (Windows / macOS / Linux / editor) → browser OAuth code flow
+        //        Mobile  (iOS / Android)                    → SDK token flow (stub)
+        // The SDK-missing message is reserved for the mobile branch only;
+        // desktop always runs the browser flow even with no inspector config
+        // (the flow itself surfaces a specific config-missing message).
+        private void StartSocialLogin(SocialProvider provider)
+        {
+            if (TryGetDevelopmentSocialLoginPayload(provider, out var token, out var tokenType, out var nonce))
+            {
+                SubmitSocialLogin(provider, token, tokenType, nonce);
+                return;
+            }
+
+#if UNITY_IOS && !UNITY_EDITOR
+            if (provider == SocialProvider.Apple)
+            {
+                StartNativeAppleLogin();
+                return;
+            }
+#endif
+
+#if UNITY_STANDALONE || UNITY_EDITOR
+            // Desktop / editor — always run the browser OAuth flow. Even if
+            // the inspector array is empty we still call the flow so the user
+            // sees a specific "OAuth 클라이언트 ID가 설정되어 있지 않습니다"
+            // message rather than the generic SDK-missing one.
+            StartDesktopBrowserOAuth(provider);
+#else
+            BeginNativeSocialLogin(provider, ProviderDisplayName(provider));
+#endif
+        }
+
+#if UNITY_IOS && !UNITY_EDITOR
+        private void StartNativeAppleLogin()
+        {
+            var attemptId = StartLoginAttempt(SocialProvider.Apple, "Apple 로그인 창을 여는 중입니다...");
+            if (attemptId == 0)
+            {
+                return;
+            }
+
+            pendingAppleNonce = GenerateRandomNonce();
+
+            try
+            {
+                EnsureAppleSignInCallbackObjectName();
+                DotshelfAppleSignIn_Start(pendingAppleNonce, AppleSignInCallbackObjectName);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Auth] Apple native login failed to start: {ex.Message}");
+                pendingAppleNonce = null;
+                FailLoginAttempt(attemptId, "Apple 로그인을 시작할 수 없습니다. 잠시 후 다시 시도해주세요.");
+            }
+        }
+
+        private void EnsureAppleSignInCallbackObjectName()
+        {
+            if (!string.Equals(gameObject.name, AppleSignInCallbackObjectName, StringComparison.Ordinal))
+            {
+                Debug.Log($"[Auth] Rename Apple sign-in callback object '{gameObject.name}' to '{AppleSignInCallbackObjectName}'.");
+                gameObject.name = AppleSignInCallbackObjectName;
+            }
+        }
+
+        public void OnAppleSignInSucceeded(string identityToken)
+        {
+            var attemptId = activeLoginAttemptId;
+            if (activeLoginProvider != SocialProvider.Apple || attemptId == 0)
+            {
+                Debug.Log("[Auth] Ignored stale Apple sign-in success callback.");
+                return;
+            }
+
+            var nonce = pendingAppleNonce;
+            pendingAppleNonce = null;
+
+            if (string.IsNullOrWhiteSpace(identityToken) || string.IsNullOrWhiteSpace(nonce))
+            {
+                FailLoginAttempt(attemptId, "Apple 로그인 응답이 올바르지 않습니다. 다시 시도해주세요.");
+                return;
+            }
+
+            SubmitSocialLogin(SocialProvider.Apple, identityToken, SocialTokenType.IdToken, nonce);
+        }
+
+        public void OnAppleSignInFailed(string errorCode)
+        {
+            var attemptId = activeLoginAttemptId;
+            if (activeLoginProvider != SocialProvider.Apple || attemptId == 0)
+            {
+                Debug.Log("[Auth] Ignored stale Apple sign-in failure callback.");
+                return;
+            }
+
+            pendingAppleNonce = null;
+            FailLoginAttempt(attemptId, ResolveAppleSignInErrorMessage(errorCode));
+        }
+
+        private static string ResolveAppleSignInErrorMessage(string errorCode)
+        {
+            return errorCode switch
+            {
+                "CANCELLED" => "Apple 로그인이 취소되었습니다.",
+                "MISSING_NONCE" => "Apple 로그인 보안값을 만들지 못했습니다. 다시 시도해주세요.",
+                "UNSUPPORTED_IOS_VERSION" => "Apple 로그인은 iOS 13 이상에서 사용할 수 있습니다.",
+                "ALREADY_IN_PROGRESS" => "Apple 로그인이 이미 진행 중입니다.",
+                "MISSING_IDENTITY_TOKEN" => "Apple 로그인 토큰을 받지 못했습니다. 다시 시도해주세요.",
+                "INVALID_IDENTITY_TOKEN" => "Apple 로그인 토큰이 올바르지 않습니다. 다시 시도해주세요.",
+                _ => "Apple 로그인에 실패했습니다. 다시 시도해주세요."
+            };
+        }
+#endif
+
+#if UNITY_STANDALONE || UNITY_EDITOR
+        private void StartDesktopBrowserOAuth(SocialProvider provider)
+        {
+            // Editor/Build 차이 진단용 — 런타임 AddComponent 시 Inspector 값 누락 가능성 가시화.
+            bool inspectorOverridePresent = ResolveBrowserOAuthConfig(provider) != null;
+            Debug.Log(
+                $"[OAuth] Starting desktop browser OAuth. provider={provider} " +
+                $"enableDesktopBrowserOAuth={enableDesktopBrowserOAuth} " +
+                $"inspectorOverride={(inspectorOverridePresent ? "present" : "missing — fallback to built-in defaults")}");
+
+            if (!enableDesktopBrowserOAuth)
+            {
+                var attemptId = StartLoginAttempt(provider, $"{ProviderDisplayName(provider)} 로그인을 준비 중입니다...");
+                FailLoginAttempt(
+                    attemptId,
+                    "데스크톱 OAuth 흐름이 비활성화되어 있습니다. LoginScreenController 의 Enable Desktop Browser OAuth 체크박스를 켜주세요.");
+                return;
+            }
+
+            // Inspector entry may be null (no array yet) or partial (only
+            // clientId). MergeWithDefaults fills in built-in authorize endpoint /
+            // scope so the inspector typically only needs a clientId per provider.
+            var userConfig = ResolveBrowserOAuthConfig(provider);
+            var providerConfig = OAuthBrowserDefaults.MergeWithDefaults(provider, userConfig);
+
+            _ = RunDesktopBrowserOAuthAsync(provider, providerConfig);
+        }
+
+        private OAuthBrowserProviderConfig ResolveBrowserOAuthConfig(SocialProvider provider)
+        {
+            if (desktopBrowserOAuthProviders == null)
+            {
+                return null;
+            }
+
+            foreach (var candidate in desktopBrowserOAuthProviders)
+            {
+                if (candidate != null && candidate.provider == provider)
+                {
+                    return candidate;
+                }
+            }
+            return null;
+        }
+
+        private async Task RunDesktopBrowserOAuthAsync(SocialProvider provider, OAuthBrowserProviderConfig providerConfig)
+        {
+            var attemptId = StartLoginAttempt(
+                provider,
+                $"{ProviderDisplayName(provider)} 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요.");
+            if (attemptId == 0)
+            {
+                return;
+            }
+
+            CancelInFlightBrowserOAuth();
+            browserOAuthCts = new CancellationTokenSource();
+            var token = browserOAuthCts.Token;
+
+            OAuthBrowserResult oauthResult;
+            try
+            {
+                oauthResult = await WindowsOAuthBrowserFlow.ExecuteAsync(providerConfig, cancellationToken: token);
+            }
+            catch (OperationCanceledException)
+            {
+                oauthResult = OAuthBrowserResult.Failure("CANCELLED", "로그인이 취소되었습니다.");
+            }
+            catch (Exception ex)
+            {
+                oauthResult = OAuthBrowserResult.Failure("OAUTH_UNEXPECTED", ex.Message);
+            }
+
+            // The await above resumes on the Unity main thread (default
+            // sync context), so the Unity-API calls below are safe.
+            if (!IsCurrentLoginAttempt(attemptId))
+            {
+                return;
+            }
+
+            if (!oauthResult.IsSuccess)
+            {
+                FailLoginAttempt(
+                    attemptId,
+                    string.IsNullOrWhiteSpace(oauthResult.ErrorMessage)
+                        ? $"{ProviderDisplayName(provider)} 로그인에 실패했습니다."
+                        : oauthResult.ErrorMessage);
+                return;
+            }
+
+            // Hand off to the shared submit path while keeping the same
+            // active attempt locked until BE code exchange finishes.
+            SubmitSocialLoginCode(
+                provider,
+                oauthResult.Code,
+                oauthResult.RedirectUri,
+                oauthResult.State,
+                oauthResult.Nonce,
+                oauthResult.CodeVerifier);
+        }
+#endif
+
+        private bool TryGetDevelopmentSocialLoginPayload(
+            SocialProvider provider,
+            out string token,
+            out SocialTokenType tokenType,
+            out string nonce)
+        {
+            token = null;
+            tokenType = SocialTokenType.Default;
+            nonce = null;
+
+            if (!useDevelopmentSocialTokens)
+            {
+                return false;
+            }
+
+#if !(UNITY_EDITOR || DEVELOPMENT_BUILD)
+            // Hard-block release builds from ever using inspector-supplied test tokens,
+            // even if useDevelopmentSocialTokens was accidentally checked on the prefab.
+            Debug.LogWarning("[Auth] Development social tokens are disabled in release builds.");
+            return false;
+#else
+            switch (provider)
+            {
+                case SocialProvider.Google:
+                    token = googleDevelopmentToken;
+                    tokenType = googleDevelopmentTokenType;
+                    return !string.IsNullOrWhiteSpace(token);
+                case SocialProvider.Kakao:
+                    token = kakaoDevelopmentToken;
+                    tokenType = kakaoDevelopmentTokenType;
+                    return !string.IsNullOrWhiteSpace(token);
+                case SocialProvider.Apple:
+                    token = appleDevelopmentToken;
+                    tokenType = appleDevelopmentTokenType;
+                    nonce = appleDevelopmentNonce;
+                    return !string.IsNullOrWhiteSpace(token) && !string.IsNullOrWhiteSpace(nonce);
+                default:
+                    return false;
+            }
+#endif
+        }
+
+        public void SetCanvasVisible(bool isVisible)
+        {
+            if (demoCanvas == null)
+            {
+                return;
+            }
+
+            demoCanvas.gameObject.SetActive(isVisible);
+        }
+
+        private void RegisterListeners()
+        {
+            if (listenersRegistered)
+            {
+                return;
+            }
+
+            AddButtonListener(appleLoginButton, OnAppleLoginButtonClicked);
+            AddButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
+            AddButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
+            AddButtonListener(loginProgressCancelButton, OnLoginProgressCancelClicked);
+            if (applicationQuitter != null)
+            {
+                AddButtonListener(quitButton, applicationQuitter.Quit);
+            }
+#if UNITY_EDITOR
+            AddButtonListener(devShortcutButton, OnDevShortcutButtonClicked);
+            AddButtonListener(devOnboardingTestButton, OnDevOnboardingTestButtonClicked);
+#endif
+
+            listenersRegistered = true;
+        }
+
+        private void UnregisterListeners()
+        {
+            if (!listenersRegistered)
+            {
+                return;
+            }
+
+            RemoveButtonListener(appleLoginButton, OnAppleLoginButtonClicked);
+            RemoveButtonListener(kakaoLoginButton, OnKakaoLoginButtonClicked);
+            RemoveButtonListener(googleLoginButton, OnGoogleLoginButtonClicked);
+            RemoveButtonListener(loginProgressCancelButton, OnLoginProgressCancelClicked);
+            if (applicationQuitter != null)
+            {
+                RemoveButtonListener(quitButton, applicationQuitter.Quit);
+            }
+#if UNITY_EDITOR
+            RemoveButtonListener(devShortcutButton, OnDevShortcutButtonClicked);
+            RemoveButtonListener(devOnboardingTestButton, OnDevOnboardingTestButtonClicked);
+#endif
+
+            listenersRegistered = false;
+        }
+
+        private void BuildDemoCanvas()
+        {
+            var existingCanvasObject = FindExistingDemoCanvasObject();
+            if (existingCanvasObject != null)
+            {
+                Destroy(existingCanvasObject);
+            }
+
+            var canvasObject = new GameObject(CanvasName, typeof(RectTransform));
+            canvasObject.layer = UiLayer;
+            SceneManager.MoveGameObjectToScene(canvasObject, gameObject.scene);
+
+            demoCanvas = canvasObject.AddComponent<Canvas>();
+            demoCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            demoCanvas.overrideSorting = true;
+            demoCanvas.sortingOrder = CanvasSortingOrder;
+            demoCanvas.pixelPerfect = false;
+            demoCanvas.targetDisplay = 0;
+
+            var scaler = canvasObject.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1080f, 1920f);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
+            scaler.referencePixelsPerUnit = 100f;
+            canvasObject.AddComponent<GraphicRaycaster>();
+
+            var canvasRect = (RectTransform)canvasObject.transform;
+            canvasRect.anchorMin = Vector2.zero;
+            canvasRect.anchorMax = Vector2.one;
+            canvasRect.pivot = new Vector2(0.5f, 0.5f);
+            canvasRect.offsetMin = Vector2.zero;
+            canvasRect.offsetMax = Vector2.zero;
+            canvasRect.anchoredPosition = Vector2.zero;
+            canvasRect.sizeDelta = Vector2.zero;
+
+            var background = CreateImage(canvasObject.transform, "Background", BackgroundColor);
+            StretchToParent(background.rectTransform);
+
+            CreateAccentBlob(background.transform, "TopAccent", new Vector2(0.82f, 0.89f), new Vector2(260f, 260f));
+            CreateAccentBlob(background.transform, "BottomAccent", new Vector2(0.16f, 0.16f), new Vector2(220f, 220f));
+
+            var card = CreateImage(background.transform, "LoginCard", CardColor);
+            card.sprite = roundedRectSprite;
+            card.type = Image.Type.Sliced;
+            card.pixelsPerUnitMultiplier = 1f;
+
+            var cardRect = card.rectTransform;
+            cardRect.anchorMin = new Vector2(0.5f, 0.5f);
+            cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+            cardRect.pivot = new Vector2(0.5f, 0.5f);
+            cardRect.sizeDelta = new Vector2(CardWidth, CardHeight);
+            cardRect.anchoredPosition = Vector2.zero;
+
+            var cardShadow = card.gameObject.AddComponent<Shadow>();
+            cardShadow.effectColor = WithAlpha(TextColor, 0.15f);
+            cardShadow.effectDistance = new Vector2(0f, -14f);
+
+            var topBand = CreateImage(card.transform, "TopBand", WithAlpha(AccentTint, 0.18f));
+            topBand.sprite = roundedRectSprite;
+            topBand.type = Image.Type.Sliced;
+            topBand.raycastTarget = false;
+            var topBandRect = topBand.rectTransform;
+            topBandRect.anchorMin = new Vector2(0f, 1f);
+            topBandRect.anchorMax = new Vector2(1f, 1f);
+            topBandRect.pivot = new Vector2(0.5f, 1f);
+            topBandRect.offsetMin = new Vector2(0f, -20f);
+            topBandRect.offsetMax = new Vector2(0f, 0f);
+
+            loginScreen = CreateRectObject("LoginScreen", card.transform);
+            StretchToParent((RectTransform)loginScreen.transform);
+
+            BuildLoginScreen(loginScreen.transform);
+            BuildLoginProgressDialog(canvasObject.transform);
+        }
+
+        private void BuildLoginScreen(Transform parent)
+        {
+            var layoutRoot = CreateRectObject("LoginLayoutRoot", parent);
+            StretchWithPadding((RectTransform)layoutRoot.transform, new Vector2(56f, 44f), new Vector2(-56f, -44f));
+
+            var pane = CreateColumn(layoutRoot.transform, "SocialPane", SocialPaneWidth, 16f);
+            ConfigurePaneLayout(pane, TextAnchor.MiddleCenter);
+
+            // CreateColumn returns a RectTransform that expects to be sized by
+            // a parent HorizontalLayoutGroup. Now that we render only this
+            // single pane, anchor it to fill the layout root vertically and
+            // size it to the configured pane width so the VerticalLayoutGroup
+            // inside it has a width to lay out children against.
+            pane.anchorMin = new Vector2(0.5f, 0f);
+            pane.anchorMax = new Vector2(0.5f, 1f);
+            pane.pivot = new Vector2(0.5f, 0.5f);
+            pane.anchoredPosition = Vector2.zero;
+            pane.sizeDelta = new Vector2(SocialPaneWidth, 0f);
+
+            var brand = CreateLayoutText(
+                pane.transform,
+                "Brand",
+                "BOOK ROOM",
+                14f,
+                FontStyles.Bold,
+                MutedTextColor,
+                TextAlignmentOptions.Center,
+                22f);
+            brand.characterSpacing = 6f;
+
+            var title = CreateLayoutText(
+                pane.transform,
+                "Title",
+                "로그인",
+                28f,
+                FontStyles.Bold,
+                TextColor,
+                TextAlignmentOptions.Center,
+                40f);
+            title.margin = new Vector4(0f, 0f, 0f, 8f);
+
+            googleLoginButton = CreateSocialLoginButton(
+                pane.transform,
+                "GoogleLoginButton",
+                "Google 로그인",
+                googleLoginIcon,
+                GoogleColor,
+                TextColor,
+                true,
+                BorderColor,
+                SocialButtonHeight);
+            kakaoLoginButton = CreateSocialLoginButton(
+                pane.transform,
+                "KakaoLoginButton",
+                "Kakao 로그인",
+                kakaoLoginIcon,
+                KakaoColor,
+                TextColor,
+                false,
+                BorderColor,
+                SocialButtonHeight);
+            appleLoginButton = CreateSocialLoginButton(
+                pane.transform,
+                "AppleLoginButton",
+                "Apple 로그인",
+                appleLoginIcon,
+                AppleColor,
+                Color.white,
+                false,
+                BorderColor,
+                SocialButtonHeight);
+#if UNITY_EDITOR
+            // Visually distinct (red outline + red label on the card background)
+            // so a dev never confuses these with a real login button. Stripped
+            // from player builds entirely by the surrounding UNITY_EDITOR.
+            devShortcutButton = CreateStackButton(
+                pane.transform,
+                "DevShortcutButton",
+                "[DEV] 빠른 입장",
+                CardColor,
+                Color.red,
+                true,
+                Color.red,
+                SocialButtonHeight);
+            devOnboardingTestButton = CreateStackButton(
+                pane.transform,
+                "DevOnboardingTestButton",
+                "[DEV] 온보딩 테스트",
+                CardColor,
+                Color.red,
+                true,
+                Color.red,
+                SocialButtonHeight);
+#endif
+
+            loginMessageLabel = CreateLayoutText(
+                pane.transform,
+                "LoginMessage",
+                string.Empty,
+                14f,
+                FontStyles.Normal,
+                ErrorColor,
+                TextAlignmentOptions.Center,
+                24f);
+
+            quitButton = CreateQuitButton(layoutRoot.transform);
+        }
+
+        private void BuildLoginProgressDialog(Transform parent)
+        {
+            var overlay = CreateImage(parent, "LoginProgressDialog", WithAlpha(Color.black, 0.42f));
+            StretchToParent(overlay.rectTransform);
+
+            var dialogObject = CreateImage(overlay.transform, "DialogCard", CardColor);
+            dialogObject.sprite = roundedRectSprite;
+            dialogObject.type = Image.Type.Sliced;
+            var dialogRect = dialogObject.rectTransform;
+            dialogRect.anchorMin = new Vector2(0.5f, 0.5f);
+            dialogRect.anchorMax = new Vector2(0.5f, 0.5f);
+            dialogRect.pivot = new Vector2(0.5f, 0.5f);
+            dialogRect.sizeDelta = new Vector2(460f, 286f);
+            dialogRect.anchoredPosition = Vector2.zero;
+
+            var dialogShadow = dialogObject.gameObject.AddComponent<Shadow>();
+            dialogShadow.effectColor = WithAlpha(TextColor, 0.22f);
+            dialogShadow.effectDistance = new Vector2(0f, -10f);
+
+            loginProgressTitleLabel = CreateText(
+                dialogObject.transform,
+                "Title",
+                "로그인 중",
+                22f,
+                FontStyles.Bold,
+                TextColor,
+                TextAlignmentOptions.Center,
+                new Vector2(0f, -36f),
+                new Vector2(360f, 34f));
+
+            loginProgressSpinner = CreateLoadingSpinner(dialogObject.transform);
+
+            loginProgressMessageLabel = CreateText(
+                dialogObject.transform,
+                "Message",
+                "로그인 중입니다.",
+                14f,
+                FontStyles.Normal,
+                MutedTextColor,
+                TextAlignmentOptions.Center,
+                new Vector2(0f, -138f),
+                new Vector2(360f, 62f));
+            loginProgressMessageLabel.enableWordWrapping = true;
+            loginProgressMessageLabel.overflowMode = TextOverflowModes.Ellipsis;
+
+            loginProgressCancelButton = CreateButton(
+                dialogObject.transform,
+                "CancelButton",
+                "취소",
+                SecondaryColor,
+                TextColor,
+                new Vector2(0f, -222f),
+                new Vector2(156f, 42f),
+                true,
+                BorderColor);
+
+            loginProgressDialog = overlay.gameObject;
+            loginProgressDialog.SetActive(false);
+        }
+
+        private RectTransform CreateLoadingSpinner(Transform parent)
+        {
+            var spinnerObject = CreateRectObject("LoadingSpinner", parent);
+            var spinnerRect = (RectTransform)spinnerObject.transform;
+            spinnerRect.anchorMin = new Vector2(0.5f, 1f);
+            spinnerRect.anchorMax = new Vector2(0.5f, 1f);
+            spinnerRect.pivot = new Vector2(0.5f, 0.5f);
+            spinnerRect.sizeDelta = new Vector2(54f, 54f);
+            spinnerRect.anchoredPosition = new Vector2(0f, -92f);
+
+            for (var i = 0; i < 12; i++)
+            {
+                var alpha = Mathf.Lerp(0.22f, 1f, (i + 1f) / 12f);
+                var tick = CreateImage(spinnerObject.transform, $"Tick{i:00}", WithAlpha(PrimaryColor, alpha));
+                tick.sprite = roundedRectSprite;
+                tick.type = Image.Type.Sliced;
+                tick.raycastTarget = false;
+
+                var tickRect = tick.rectTransform;
+                tickRect.anchorMin = new Vector2(0.5f, 0.5f);
+                tickRect.anchorMax = new Vector2(0.5f, 0.5f);
+                tickRect.pivot = new Vector2(0.5f, 0.5f);
+                tickRect.sizeDelta = new Vector2(4f, 12f);
+
+                var angle = i * 30f;
+                var radians = angle * Mathf.Deg2Rad;
+                tickRect.anchoredPosition = new Vector2(Mathf.Sin(radians) * 19f, Mathf.Cos(radians) * 19f);
+                tickRect.localRotation = Quaternion.Euler(0f, 0f, -angle);
+            }
+
+            return spinnerRect;
+        }
+
+        private void DisableLegacyLoginUi()
+        {
+            if (TryGetComponent<Canvas>(out var rootCanvas))
+            {
+                rootCanvas.enabled = false;
+            }
+
+            if (TryGetComponent<LoginUiStyler>(out var styler))
+            {
+                styler.enabled = false;
+            }
+
+            var scene = gameObject.scene;
+            if (!scene.IsValid())
+            {
+                return;
+            }
+
+            foreach (var rootObject in scene.GetRootGameObjects())
+            {
+                if (rootObject == null || rootObject == gameObject)
+                {
+                    continue;
+                }
+
+                if (rootObject.name == "Canvas")
+                {
+                    rootObject.SetActive(false);
+                }
+            }
+        }
+
+        private void EnsureEventSystem()
+        {
+            if (UnityEngine.Object.FindFirstObjectByType<EventSystem>() != null)
+            {
+                return;
+            }
+
+            var eventSystemObject = new GameObject("EventSystem", typeof(EventSystem));
+#if ENABLE_INPUT_SYSTEM
+            eventSystemObject.AddComponent<InputSystemUIInputModule>();
+#else
+            eventSystemObject.AddComponent<StandaloneInputModule>();
+#endif
+        }
+
+        private Button CreateButton(
+            Transform parent,
+            string objectName,
+            string labelText,
+            Color backgroundColor,
+            Color labelColor,
+            Vector2 anchoredPosition,
+            Vector2 size,
+            bool outlined,
+            Color outlineColor)
+        {
+            var buttonImage = CreateImage(parent, objectName, backgroundColor);
+            buttonImage.sprite = roundedRectSprite;
+            buttonImage.type = Image.Type.Sliced;
+
+            var buttonRect = buttonImage.rectTransform;
+            buttonRect.anchorMin = new Vector2(0.5f, 1f);
+            buttonRect.anchorMax = new Vector2(0.5f, 1f);
+            buttonRect.pivot = new Vector2(0.5f, 1f);
+            buttonRect.sizeDelta = size;
+            buttonRect.anchoredPosition = anchoredPosition;
+
+            if (outlined)
+            {
+                var outline = buttonImage.gameObject.AddComponent<Outline>();
+                outline.effectColor = WithAlpha(outlineColor, 0.95f);
+                outline.effectDistance = new Vector2(1f, -1f);
+            }
+
+            var button = buttonImage.gameObject.AddComponent<Button>();
+            button.targetGraphic = buttonImage;
+            button.transition = Selectable.Transition.ColorTint;
+
+            var colors = button.colors;
+            colors.normalColor = backgroundColor;
+            colors.highlightedColor = Blend(backgroundColor, Color.white, 0.08f);
+            colors.pressedColor = outlined ? Blend(backgroundColor, TextColor, 0.06f) : PrimaryPressedColor;
+            colors.selectedColor = outlined ? Blend(backgroundColor, Color.white, 0.08f) : PrimaryHighlightColor;
+            colors.disabledColor = WithAlpha(backgroundColor, 0.5f);
+            colors.fadeDuration = 0.08f;
+            button.colors = colors;
+
+            if (!string.IsNullOrEmpty(labelText))
+            {
+                var label = CreateText(buttonImage.transform, "Label", labelText, 16f, FontStyles.Bold, labelColor, TextAlignmentOptions.Center, Vector2.zero, Vector2.zero);
+                StretchToParent(label.rectTransform);
+            }
+
+            return button;
+        }
+
+        private TMP_Text CreateText(
+            Transform parent,
+            string objectName,
+            string value,
+            float fontSize,
+            FontStyles fontStyle,
+            Color color,
+            TextAlignmentOptions alignment,
+            Vector2 anchoredPosition,
+            Vector2 sizeDelta,
+            float characterSpacing = 0f,
+            Vector2? pivotOverride = null)
+        {
+            var textObject = CreateRectObject(objectName, parent);
+            var rectTransform = (RectTransform)textObject.transform;
+            rectTransform.anchorMin = new Vector2(0.5f, 1f);
+            rectTransform.anchorMax = new Vector2(0.5f, 1f);
+            rectTransform.pivot = pivotOverride ?? new Vector2(0.5f, 1f);
+            rectTransform.sizeDelta = sizeDelta;
+            rectTransform.anchoredPosition = anchoredPosition;
+
+            var text = textObject.AddComponent<TextMeshProUGUI>();
+            ApplyFontToText(text);
+            text.text = value;
+            text.fontSize = fontSize;
+            text.fontStyle = fontStyle;
+            text.color = color;
+            text.alignment = alignment;
+            text.characterSpacing = characterSpacing;
+            text.raycastTarget = false;
+
+            return text;
+        }
+
+        private Image CreateImage(Transform parent, string objectName, Color color)
+        {
+            var imageObject = CreateRectObject(objectName, parent);
+            var image = imageObject.AddComponent<Image>();
+            image.sprite = whiteSprite;
+            image.color = color;
+            image.type = Image.Type.Simple;
+            image.raycastTarget = true;
+            return image;
+        }
+
+        private void CreateAccentBlob(Transform parent, string objectName, Vector2 anchor, Vector2 size)
+        {
+            var image = CreateImage(parent, objectName, WithAlpha(AccentTint, 0.22f));
+            image.sprite = roundedRectSprite;
+            image.type = Image.Type.Sliced;
+            image.raycastTarget = false;
+            var rect = image.rectTransform;
+            rect.anchorMin = anchor;
+            rect.anchorMax = anchor;
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = size;
+            rect.anchoredPosition = Vector2.zero;
+        }
+
+        private TMP_FontAsset ResolveFontAsset()
+        {
+            var preferredFontAsset = FindFontAssetByName(PreferredKoreanFontAssetName);
+            if (preferredFontAsset != null)
+            {
+                fallbackFontAsset = preferredFontAsset;
+                return preferredFontAsset;
+            }
+
+            preferredFontAsset = FindFontAssetByName(FallbackKoreanFontAssetName);
+            if (preferredFontAsset != null)
+            {
+                fallbackFontAsset = preferredFontAsset;
+                return preferredFontAsset;
+            }
+
+            fallbackFontAsset = TMP_Settings.defaultFontAsset;
+
+            var existingText = UnityEngine.Object.FindFirstObjectByType<TextMeshProUGUI>(FindObjectsInactive.Include);
+            var candidateFontAsset = existingText != null ? existingText.font : TMP_Settings.defaultFontAsset;
+
+            if (TryCreateDynamicFontAsset(candidateFontAsset, out var dynamicFontAsset))
+            {
+                fallbackFontAsset = candidateFontAsset;
+                return dynamicFontAsset;
+            }
+
+            if (TryCreateDynamicFontAsset(fallbackFontAsset, out dynamicFontAsset))
+            {
+                return dynamicFontAsset;
+            }
+
+            if (candidateFontAsset != null)
+            {
+                return candidateFontAsset;
+            }
+
+            return Resources.Load<TMP_FontAsset>("Fonts & Materials/LiberationSans SDF");
+        }
+
+        private TMP_FontAsset FindFontAssetByName(string fontAssetName)
+        {
+            if (string.IsNullOrWhiteSpace(fontAssetName))
+            {
+                return null;
+            }
+
+            var fontAssets = Resources.FindObjectsOfTypeAll<TMP_FontAsset>();
+            foreach (var candidate in fontAssets)
+            {
+                if (candidate != null && string.Equals(candidate.name, fontAssetName, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        private void ApplyFontToLoginCanvas()
+        {
+            if (demoCanvas == null || fontAsset == null)
+            {
+                return;
+            }
+
+            var tmpTexts = demoCanvas.GetComponentsInChildren<TMP_Text>(true);
+            foreach (var tmpText in tmpTexts)
+            {
+                ApplyFontToText(tmpText);
+            }
+        }
+
+        private void ApplyFontToText(TMP_Text text)
+        {
+            if (text == null || fontAsset == null)
+            {
+                return;
+            }
+
+            text.font = fontAsset;
+            if (fontAsset.material != null)
+            {
+                text.fontSharedMaterial = fontAsset.material;
+            }
+
+            if (fallbackFontAsset != null && text.font != null && text.font != fallbackFontAsset)
+            {
+                var fallbackTable = text.font.fallbackFontAssetTable;
+                if (fallbackTable == null)
+                {
+                    fallbackTable = new System.Collections.Generic.List<TMP_FontAsset>();
+                    text.font.fallbackFontAssetTable = fallbackTable;
+                }
+
+                if (!fallbackTable.Contains(fallbackFontAsset))
+                {
+                    fallbackTable.Add(fallbackFontAsset);
+                }
+            }
+        }
+
+        private void WarmupLoginGlyphs(TMP_FontAsset targetFontAsset)
+        {
+            if (targetFontAsset == null || targetFontAsset.atlasPopulationMode != AtlasPopulationMode.Dynamic)
+            {
+                return;
+            }
+
+            var commonText =
+                "BOOK ROOM" +
+                "로그인" +
+                "로그인 중" +
+                "로그인 실패" +
+                "취소" +
+                "다른 로그인 방식을 선택해주세요." +
+                "로그인에 실패했습니다. 취소 후 다른 로그인 방식을 선택해주세요." +
+                "Apple 로그인" +
+                "Kakao 로그인" +
+                "Google 로그인" +
+                "Apple 로그인 중입니다..." +
+                "Kakao 로그인 중입니다..." +
+                "Google 로그인 중입니다..." +
+                "Kakao 로그인 창을 여는 중입니다..." +
+                "Kakao 인증 정보를 서버에 확인하는 중입니다..." +
+                "Apple 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
+                "Kakao 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
+                "Google 로그인에 성공했습니다. 메인 화면으로 이동합니다." +
+                "Apple 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
+                "Kakao 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
+                "Google 로그인에 성공했습니다. 프로필 설정을 진행해주세요." +
+                "Apple 로그인 창을 여는 중입니다..." +
+                "Apple 로그인 응답이 올바르지 않습니다. 다시 시도해주세요." +
+                "Apple 로그인을 시작할 수 없습니다. 잠시 후 다시 시도해주세요." +
+                "Apple 로그인이 취소되었습니다." +
+                "Apple 로그인 보안값을 만들지 못했습니다. 다시 시도해주세요." +
+                "Apple 로그인은 iOS 13 이상에서 사용할 수 있습니다." +
+                "Apple 로그인 토큰을 받지 못했습니다. 다시 시도해주세요." +
+                "Apple 로그인 토큰이 올바르지 않습니다. 다시 시도해주세요." +
+                "Apple 로그인에 실패했습니다. 다시 시도해주세요." +
+                "Apple 로그인 SDK 연동이 준비되지 않았습니다. 잠시 후 다시 시도해주세요." +
+                "Kakao 로그인 SDK 연동이 준비되지 않았습니다. 잠시 후 다시 시도해주세요." +
+                "Google 로그인 SDK 연동이 준비되지 않았습니다. 잠시 후 다시 시도해주세요." +
+                "Kakao 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요." +
+                "Google 로그인은 현재 데스크톱 빌드에서만 지원됩니다. 모바일 SDK 연동 업데이트를 기다려주세요." +
+                "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요." +
+                "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요." +
+                "Apple 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요." +
+                "Kakao 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요." +
+                "Google 로그인 페이지를 브라우저에서 여는 중입니다. 브라우저에서 로그인을 완료해주세요." +
+                "Apple 로그인 정보를 확인 중입니다..." +
+                "Kakao 로그인 정보를 확인 중입니다..." +
+                "Google 로그인 정보를 확인 중입니다..." +
+                "Authorization code 를 받지 못했습니다. 다시 시도해주세요." +
+                "브라우저 로그인 응답을 시간 안에 받지 못했습니다. 다시 시도해주세요." +
+                "로그인이 취소되었습니다." +
+                "State 검증에 실패했습니다. 다시 시도해주세요." +
+                "OAuth 클라이언트 ID가 설정되어 있지 않습니다." +
+                "데스크톱 OAuth 흐름이 비활성화되어 있습니다.";
+
+            targetFontAsset.TryAddCharacters(commonText, out _);
+        }
+
+        private bool TryCreateDynamicFontAsset(TMP_FontAsset sourceFontAsset, out TMP_FontAsset dynamicFontAsset)
+        {
+            dynamicFontAsset = null;
+            if (sourceFontAsset == null || sourceFontAsset.sourceFontFile == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                dynamicFontAsset = TMP_FontAsset.CreateFontAsset(
+                    sourceFontAsset.sourceFontFile,
+                    90,
+                    9,
+                    GlyphRenderMode.SDFAA,
+                    1024,
+                    1024,
+                    AtlasPopulationMode.Dynamic,
+                    true);
+
+                if (dynamicFontAsset == null)
+                {
+                    return false;
+                }
+
+                dynamicFontAsset.name = $"{sourceFontAsset.name}_LoginDynamic";
+                dynamicFontAsset.hideFlags = HideFlags.HideAndDontSave;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private Sprite CreateWhiteSprite()
+        {
+            var texture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+            texture.name = "LoginUiWhite";
+            texture.hideFlags = HideFlags.HideAndDontSave;
+            texture.SetPixel(0, 0, Color.white);
+            texture.Apply(false, true);
+
+            var sprite = Sprite.Create(texture, new Rect(0f, 0f, 1f, 1f), new Vector2(0.5f, 0.5f), 1f);
+            sprite.name = "LoginUiWhiteSprite";
+            return sprite;
+        }
+
+        private Sprite CreateRoundedRectSprite(int size, int radius)
+        {
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            texture.name = "LoginUiRounded";
+            texture.hideFlags = HideFlags.HideAndDontSave;
+            texture.wrapMode = TextureWrapMode.Clamp;
+            texture.filterMode = FilterMode.Bilinear;
+
+            var pixels = new Color32[size * size];
+            var solid = new Color32(255, 255, 255, 255);
+            var transparent = new Color32(255, 255, 255, 0);
+
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    pixels[(y * size) + x] = IsInsideRoundedRect(x, y, size, radius) ? solid : transparent;
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+
+            var border = new Vector4(radius, radius, radius, radius);
+            var sprite = Sprite.Create(
+                texture,
+                new Rect(0f, 0f, size, size),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0u,
+                SpriteMeshType.FullRect,
+                border);
+
+            sprite.name = "LoginUiRoundedSprite";
+            return sprite;
+        }
+
+        private static bool IsInsideRoundedRect(int x, int y, int size, int radius)
+        {
+            if (x >= radius && x < size - radius)
+            {
+                return true;
+            }
+
+            if (y >= radius && y < size - radius)
+            {
+                return true;
+            }
+
+            var cornerCenterX = x < radius ? radius - 1 : size - radius;
+            var cornerCenterY = y < radius ? radius - 1 : size - radius;
+            var dx = x - cornerCenterX;
+            var dy = y - cornerCenterY;
+            return (dx * dx) + (dy * dy) <= radius * radius;
+        }
+
+        private void SetMessage(TMP_Text label, string message)
+        {
+            if (label == null)
+            {
+                return;
+            }
+
+            label.text = message;
+        }
+
+        private void ShowLoginProgressDialog(string title, string message, bool showSpinner)
+        {
+            if (loginProgressDialog == null)
+            {
+                return;
+            }
+
+            loginProgressDialog.SetActive(true);
+            SetMessage(loginProgressTitleLabel, string.IsNullOrWhiteSpace(title) ? "로그인 중" : title);
+            SetMessage(loginProgressMessageLabel, string.IsNullOrWhiteSpace(message) ? "로그인 중입니다." : message);
+            if (loginProgressSpinner != null)
+            {
+                loginProgressSpinner.gameObject.SetActive(showSpinner);
+            }
+
+            loginProgressSpinnerActive = showSpinner;
+            SetButtonLabel(loginProgressCancelButton, "취소");
+            if (loginProgressCancelButton != null)
+            {
+                loginProgressCancelButton.interactable = true;
+            }
+        }
+
+        private void HideLoginProgressDialog()
+        {
+            loginProgressSpinnerActive = false;
+            if (loginProgressDialog != null)
+            {
+                loginProgressDialog.SetActive(false);
+            }
+        }
+
+        private static void AddButtonListener(Button button, UnityEngine.Events.UnityAction callback)
+        {
+            if (button != null)
+            {
+                button.onClick.AddListener(callback);
+            }
+        }
+
+        private static void RemoveButtonListener(Button button, UnityEngine.Events.UnityAction callback)
+        {
+            if (button != null)
+            {
+                button.onClick.RemoveListener(callback);
+            }
+        }
+
+        private static GameObject CreateRectObject(string objectName, Transform parent)
+        {
+            var gameObject = new GameObject(objectName, typeof(RectTransform));
+            gameObject.layer = UiLayer;
+            gameObject.transform.SetParent(parent, false);
+            return gameObject;
+        }
+
+        private RectTransform CreateColumn(Transform parent, string objectName, float preferredWidth, float spacing)
+        {
+            var columnObject = CreateRectObject(objectName, parent);
+            var columnRect = (RectTransform)columnObject.transform;
+
+            var layoutElement = columnObject.AddComponent<LayoutElement>();
+            layoutElement.minWidth = preferredWidth;
+            layoutElement.preferredWidth = preferredWidth;
+            layoutElement.flexibleWidth = 0f;
+            layoutElement.flexibleHeight = 1f;
+
+            var verticalLayout = columnObject.AddComponent<VerticalLayoutGroup>();
+            verticalLayout.padding = new RectOffset(0, 0, 6, 6);
+            verticalLayout.spacing = spacing;
+            verticalLayout.childAlignment = TextAnchor.MiddleCenter;
+            verticalLayout.childControlWidth = true;
+            verticalLayout.childControlHeight = true;
+            verticalLayout.childForceExpandWidth = true;
+            verticalLayout.childForceExpandHeight = false;
+
+            return columnRect;
+        }
+
+        private static void ConfigurePaneLayout(RectTransform pane, TextAnchor alignment)
+        {
+            if (pane == null)
+            {
+                return;
+            }
+
+            if (pane.TryGetComponent<VerticalLayoutGroup>(out var layoutGroup))
+            {
+                layoutGroup.childAlignment = alignment;
+            }
+        }
+
+        private TMP_Text CreateLayoutText(
+            Transform parent,
+            string objectName,
+            string value,
+            float fontSize,
+            FontStyles fontStyle,
+            Color color,
+            TextAlignmentOptions alignment,
+            float preferredHeight)
+        {
+            var text = CreateText(parent, objectName, value, fontSize, fontStyle, color, alignment, Vector2.zero, Vector2.zero);
+            var rectTransform = text.rectTransform;
+            rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            rectTransform.anchoredPosition = Vector2.zero;
+            rectTransform.sizeDelta = Vector2.zero;
+
+            var layoutElement = text.gameObject.AddComponent<LayoutElement>();
+            layoutElement.preferredHeight = preferredHeight;
+            layoutElement.flexibleWidth = 1f;
+            layoutElement.minHeight = preferredHeight;
+
+            return text;
+        }
+
+        private Button CreateStackButton(
+            Transform parent,
+            string objectName,
+            string labelText,
+            Color backgroundColor,
+            Color labelColor,
+            bool outlined,
+            Color outlineColor,
+            float preferredHeight)
+        {
+            var button = CreateButton(parent, objectName, labelText, backgroundColor, labelColor, Vector2.zero, Vector2.zero, outlined, outlineColor);
+            var rectTransform = ((RectTransform)button.transform);
+            rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            rectTransform.anchoredPosition = Vector2.zero;
+            rectTransform.sizeDelta = Vector2.zero;
+
+            var layoutElement = button.gameObject.AddComponent<LayoutElement>();
+            layoutElement.minHeight = preferredHeight;
+            layoutElement.preferredHeight = preferredHeight;
+            layoutElement.flexibleWidth = 1f;
+
+            return button;
+        }
+
+        private Button CreateQuitButton(Transform parent)
+        {
+            var button = CreateButton(
+                parent,
+                "QuitButton",
+                "종료하기",
+                WithAlpha(CardColor, 0.02f),
+                MutedTextColor,
+                Vector2.zero,
+                new Vector2(QuitButtonWidth, QuitButtonHeight),
+                true,
+                WithAlpha(BorderColor, 0.85f));
+
+            applicationQuitter = button.gameObject.AddComponent<ApplicationQuitter>();
+
+            var rectTransform = (RectTransform)button.transform;
+            rectTransform.anchorMin = new Vector2(1f, 0f);
+            rectTransform.anchorMax = new Vector2(1f, 0f);
+            rectTransform.pivot = new Vector2(1f, 0f);
+            rectTransform.anchoredPosition = new Vector2(-QuitButtonRightPadding, QuitButtonBottomPadding);
+
+            var colors = button.colors;
+            colors.normalColor = WithAlpha(CardColor, 0.02f);
+            colors.highlightedColor = WithAlpha(AccentTint, 0.12f);
+            colors.pressedColor = WithAlpha(AccentTint, 0.2f);
+            colors.selectedColor = WithAlpha(AccentTint, 0.12f);
+            colors.disabledColor = WithAlpha(CardColor, 0.02f);
+            button.colors = colors;
+
+            if (button.TryGetComponent<Outline>(out var outline))
+            {
+                outline.effectColor = WithAlpha(BorderColor, 0.9f);
+                outline.effectDistance = new Vector2(1f, -1f);
+            }
+
+            return button;
+        }
+
+        private Button CreateSocialLoginButton(
+            Transform parent,
+            string objectName,
+            string labelText,
+            Sprite iconSprite,
+            Color backgroundColor,
+            Color labelColor,
+            bool outlined,
+            Color outlineColor,
+            float preferredHeight)
+        {
+            var button = CreateStackButton(parent, objectName, string.Empty, backgroundColor, labelColor, outlined, outlineColor, preferredHeight);
+
+            var contentGroup = CreateRectObject("ContentGroup", button.transform);
+            var contentGroupRect = (RectTransform)contentGroup.transform;
+            contentGroupRect.anchorMin = new Vector2(0.5f, 0.5f);
+            contentGroupRect.anchorMax = new Vector2(0.5f, 0.5f);
+            contentGroupRect.pivot = new Vector2(0.5f, 0.5f);
+            contentGroupRect.anchoredPosition = Vector2.zero;
+            contentGroupRect.sizeDelta = new Vector2(0f, 0f);
+
+            var groupLayout = contentGroup.AddComponent<HorizontalLayoutGroup>();
+            groupLayout.childAlignment = TextAnchor.MiddleCenter;
+            groupLayout.spacing = 9f;
+            groupLayout.childControlWidth = false;
+            groupLayout.childControlHeight = false;
+            groupLayout.childForceExpandWidth = false;
+            groupLayout.childForceExpandHeight = false;
+            groupLayout.padding = new RectOffset(0, 0, 0, 0);
+
+            var groupFitter = contentGroup.AddComponent<ContentSizeFitter>();
+            groupFitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            groupFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var icon = CreateImage(contentGroup.transform, "IconImage", Color.white);
+            icon.sprite = iconSprite;
+            icon.type = Image.Type.Simple;
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            var iconRect = icon.rectTransform;
+            iconRect.anchorMin = new Vector2(0.5f, 0.5f);
+            iconRect.anchorMax = new Vector2(0.5f, 0.5f);
+            iconRect.pivot = new Vector2(0.5f, 0.5f);
+            iconRect.anchoredPosition = Vector2.zero;
+            iconRect.sizeDelta = new Vector2(20f, 20f);
+            var iconLayout = icon.gameObject.AddComponent<LayoutElement>();
+            iconLayout.minWidth = 20f;
+            iconLayout.preferredWidth = 20f;
+            iconLayout.minHeight = 20f;
+            iconLayout.preferredHeight = 20f;
+
+            var label = CreateText(
+                contentGroup.transform,
+                "LabelText",
+                labelText,
+                16f,
+                FontStyles.Bold,
+                labelColor,
+                TextAlignmentOptions.MidlineLeft,
+                Vector2.zero,
+                Vector2.zero);
+            var labelRect = label.rectTransform;
+            labelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            labelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            labelRect.pivot = new Vector2(0.5f, 0.5f);
+            labelRect.anchoredPosition = Vector2.zero;
+            label.enableWordWrapping = false;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+            label.alignment = TextAlignmentOptions.MidlineLeft;
+            label.raycastTarget = false;
+            label.ForceMeshUpdate();
+            var preferredLabelWidth = Mathf.Clamp(label.GetPreferredValues(labelText, 220f, 24f).x, 80f, 160f);
+            labelRect.sizeDelta = new Vector2(preferredLabelWidth, 24f);
+            var labelLayout = label.gameObject.AddComponent<LayoutElement>();
+            labelLayout.minWidth = preferredLabelWidth;
+            labelLayout.preferredWidth = preferredLabelWidth;
+            labelLayout.preferredHeight = 24f;
+
+            return button;
+        }
+
+        private GameObject FindExistingDemoCanvasObject()
+        {
+            var scene = gameObject.scene;
+            if (!scene.IsValid())
+            {
+                return null;
+            }
+
+            foreach (var rootObject in scene.GetRootGameObjects())
+            {
+                if (rootObject != null && rootObject.name == CanvasName)
+                {
+                    return rootObject;
+                }
+            }
+
+            return null;
+        }
+
+        private static void StretchToParent(RectTransform rectTransform)
+        {
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            rectTransform.offsetMin = Vector2.zero;
+            rectTransform.offsetMax = Vector2.zero;
+            rectTransform.anchoredPosition = Vector2.zero;
+        }
+
+        private static void StretchWithPadding(RectTransform rectTransform, Vector2 minOffset, Vector2 maxOffset)
+        {
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            rectTransform.offsetMin = minOffset;
+            rectTransform.offsetMax = maxOffset;
+            rectTransform.anchoredPosition = Vector2.zero;
+        }
+
+        private static Color Blend(Color from, Color to, float t)
+        {
+            return Color.Lerp(from, to, Mathf.Clamp01(t));
+        }
+
+        private static Color WithAlpha(Color color, float alpha)
+        {
+            color.a = alpha;
+            return color;
+        }
+
+        private static Color Hex(string htmlColor)
+        {
+            ColorUtility.TryParseHtmlString(htmlColor, out var color);
+            return color;
+        }
+    }
+}

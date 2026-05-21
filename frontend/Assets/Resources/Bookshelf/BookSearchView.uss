@@ -1,0 +1,310 @@
+/* ============================================================================
+   책 찾기 overlay — "Card Catalog" 디자인.
+   디자인 토큰(공용): Resources/UI/DotshelfDesignTokens.uss 의 var(--ds-*).
+   셀렉터 prefix shelf-search-* 로 분리 — 다른 overlay USS 와 광역 충돌 없음.
+   ============================================================================ */
+
+/* ----- Modal layer ----- */
+
+.shelf-search-root {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.hidden { display: none; }
+
+.shelf-search-backdrop {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: var(--ds-color-overlay-scrim);
+}
+
+.shelf-search-frame {
+    width: var(--ds-modal-width-md);
+    max-width: 94%;
+    max-height: 90%;
+    background-color: var(--ds-color-paper);
+    border-radius: var(--ds-radius-md);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    padding-top: 30px;
+    padding-bottom: 28px;
+    padding-left: 38px;
+    padding-right: 38px;
+    flex-direction: column;
+}
+
+/* ----- Header ----- */
+
+.shelf-search-header {
+    flex-direction: row;
+    align-items: flex-end;
+    margin-bottom: var(--ds-space-5);
+    flex-shrink: 0;
+}
+
+.shelf-search-header-text {
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.shelf-search-eyebrow {
+    font-size: var(--ds-font-eyebrow);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-display);
+    -unity-font-style: bold;
+    margin-bottom: var(--ds-space-1);
+}
+
+.shelf-search-title {
+    font-size: var(--ds-font-display);
+    -unity-font-style: bold;
+    color: var(--ds-color-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shelf-search-close-button {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-headline);
+    width: 40px;
+    height: 40px;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    padding-right: 0;
+    border-radius: var(--ds-radius-sm);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    transition-property: background-color, color;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-search-close-button:hover {
+    background-color: var(--ds-color-ink);
+    color: var(--ds-color-ink-on-stamp);
+}
+
+.shelf-search-close-button:active {
+    scale: 0.96 0.96;
+}
+
+/* ----- Rule ----- */
+
+.shelf-search-rule {
+    height: 1px;
+    background-color: var(--ds-color-ink);
+    margin-bottom: var(--ds-space-5);
+    flex-shrink: 0;
+}
+
+/* ----- Body ----- */
+
+.shelf-search-body {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.shelf-search-sub-label {
+    font-size: var(--ds-font-caption);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-button);
+    -unity-font-style: bold;
+    margin-bottom: var(--ds-space-2);
+}
+
+.shelf-search-sub-label-spaced {
+    margin-top: var(--ds-space-4);
+}
+
+/* ----- Search input ----- */
+
+.shelf-search-input {
+    margin-bottom: 0;
+}
+
+.shelf-search-input > .unity-base-text-field__input {
+    background-color: var(--ds-color-paper-warm);
+    border-width: 0;
+    border-bottom-width: var(--ds-border-thick);
+    border-bottom-color: var(--ds-color-rule);
+    color: var(--ds-color-ink);
+    font-size: var(--ds-font-body-strong);
+    padding-top: var(--ds-space-3);
+    padding-bottom: var(--ds-space-3);
+    padding-left: var(--ds-space-3);
+    padding-right: var(--ds-space-3);
+    border-radius: var(--ds-radius-xs);
+    transition-property: border-bottom-color;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-search-input:focus > .unity-base-text-field__input {
+    border-bottom-color: var(--ds-color-stamp);
+}
+
+/* ----- Shelf selector chips ----- */
+
+.shelf-search-shelf-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: var(--ds-space-4);
+}
+
+.shelf-search-shelf-chip {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-meta);
+    -unity-font-style: bold;
+    padding-top: 5px;
+    padding-bottom: 5px;
+    padding-left: var(--ds-space-3);
+    padding-right: var(--ds-space-3);
+    margin-right: 6px;
+    margin-bottom: 6px;
+    border-radius: var(--ds-radius-pill);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    transition-property: background-color, color, border-color, scale;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-search-shelf-chip:hover {
+    background-color: var(--ds-color-hover-ink);
+    color: var(--ds-color-ink);
+}
+
+.shelf-search-shelf-chip:active {
+    scale: 0.97 0.97;
+}
+
+.shelf-search-shelf-chip.selected {
+    background-color: var(--ds-color-stamp);
+    color: var(--ds-color-on-stamp);
+    border-color: var(--ds-color-stamp);
+}
+
+.shelf-search-shelf-chip:disabled {
+    opacity: 1;
+}
+
+/* ----- Filter chips (underline 형) ----- */
+
+.shelf-search-filter-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: var(--ds-space-3);
+    border-bottom-width: var(--ds-border-hairline);
+    border-bottom-color: var(--ds-color-rule);
+    padding-bottom: var(--ds-space-2);
+}
+
+.shelf-search-filter {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-body);
+    -unity-font-style: bold;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    padding-left: 0;
+    padding-right: 0;
+    margin-right: 20px;
+    margin-bottom: 2px;
+    border-width: 0;
+    border-bottom-width: var(--ds-border-thick);
+    border-bottom-color: rgba(0, 0, 0, 0);
+    border-radius: 0;
+    transition-property: color, border-bottom-color;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-search-filter:hover {
+    color: var(--ds-color-ink);
+}
+
+.shelf-search-filter.selected {
+    color: var(--ds-color-stamp);
+    border-bottom-color: var(--ds-color-stamp);
+}
+
+/* ----- Results ----- */
+
+.shelf-search-results {
+    flex-grow: 1;
+    min-height: 150px;
+    max-height: 280px;
+    margin-bottom: var(--ds-space-3);
+}
+
+.shelf-search-result-row {
+    flex-direction: column;
+    align-items: flex-start;
+    background-color: var(--ds-color-paper-soft);
+    border-radius: var(--ds-radius-xs);
+    border-left-width: var(--ds-border-extra);
+    border-left-color: rgba(0, 0, 0, 0);
+    border-top-width: var(--ds-border-hairline);
+    border-right-width: var(--ds-border-hairline);
+    border-bottom-width: var(--ds-border-hairline);
+    border-top-color: var(--ds-color-rule-mute);
+    border-right-color: var(--ds-color-rule-mute);
+    border-bottom-color: var(--ds-color-rule-mute);
+    padding-top: var(--ds-space-2);
+    padding-bottom: var(--ds-space-2);
+    padding-left: var(--ds-space-3);
+    padding-right: var(--ds-space-3);
+    margin-top: 0;
+    margin-bottom: 6px;
+    margin-left: 0;
+    margin-right: 0;
+    transition-property: background-color, border-left-color, translate;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-search-result-row:hover {
+    background-color: var(--ds-color-paper-warm);
+    border-left-color: rgba(28, 22, 18, 0.40);
+    translate: 2px 0;
+}
+
+.shelf-search-result-row:active {
+    scale: 0.99 0.99;
+}
+
+.shelf-search-result-title {
+    font-size: var(--ds-font-list);
+    color: var(--ds-color-ink);
+    -unity-font-style: bold;
+    white-space: normal;
+}
+
+.shelf-search-result-meta {
+    font-size: var(--ds-font-meta);
+    color: var(--ds-color-ink-mute);
+    letter-spacing: var(--ds-track-loose);
+    margin-top: 2px;
+    white-space: normal;
+}
+
+/* ----- Status ----- */
+
+.shelf-search-status {
+    font-size: var(--ds-font-body);
+    color: var(--ds-color-ink-soft);
+    letter-spacing: var(--ds-track-loose);
+    flex-shrink: 0;
+    white-space: normal;
+}
+
+.shelf-search-empty {
+    font-size: var(--ds-font-body);
+    color: var(--ds-color-ink-faint);
+    -unity-text-align: middle-center;
+    padding-top: var(--ds-space-8);
+    padding-bottom: var(--ds-space-8);
+    white-space: normal;
+}

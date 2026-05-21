@@ -1,0 +1,261 @@
+/* ============================================================================
+   책 추가 확인 overlay — "Card Catalog" 디자인.
+   디자인 토큰(공용): Resources/UI/DotshelfDesignTokens.uss 의 var(--ds-*).
+   셀렉터 prefix shelf-confirm-* 로 분리 — 다른 overlay USS 와 광역 충돌 없음.
+   ============================================================================ */
+
+/* ----- Modal layer ----- */
+
+.shelf-confirm-root {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.hidden { display: none; }
+
+.shelf-confirm-backdrop {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: var(--ds-color-overlay-scrim);
+}
+
+.shelf-confirm-frame {
+    width: var(--ds-modal-width-md);
+    max-width: 94%;
+    max-height: 90%;
+    background-color: var(--ds-color-paper);
+    border-radius: var(--ds-radius-md);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    padding-top: 30px;
+    padding-bottom: 28px;
+    padding-left: 38px;
+    padding-right: 38px;
+    flex-direction: column;
+}
+
+/* ----- Header ----- */
+
+.shelf-confirm-header {
+    flex-direction: row;
+    align-items: flex-end;
+    margin-bottom: var(--ds-space-5);
+    flex-shrink: 0;
+}
+
+.shelf-confirm-header-text {
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.shelf-confirm-eyebrow {
+    font-size: var(--ds-font-eyebrow);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-display);
+    -unity-font-style: bold;
+    margin-bottom: var(--ds-space-1);
+}
+
+.shelf-confirm-title {
+    font-size: var(--ds-font-hero);
+    -unity-font-style: bold;
+    color: var(--ds-color-ink);
+}
+
+.shelf-confirm-close-button {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-headline);
+    width: 40px;
+    height: 40px;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    padding-right: 0;
+    border-radius: var(--ds-radius-sm);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    transition-property: background-color, color;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-confirm-close-button:hover {
+    background-color: var(--ds-color-ink);
+    color: var(--ds-color-ink-on-stamp);
+}
+
+.shelf-confirm-close-button:active {
+    scale: 0.96 0.96;
+}
+
+/* ----- Rule ----- */
+
+.shelf-confirm-rule {
+    height: 1px;
+    background-color: var(--ds-color-ink);
+    margin-bottom: var(--ds-space-5);
+    flex-shrink: 0;
+}
+
+/* ----- Body ----- */
+
+.shelf-confirm-body {
+    flex-direction: column;
+}
+
+/* ----- Book info card ----- */
+
+.shelf-confirm-book {
+    flex-direction: column;
+    background-color: var(--ds-color-paper-warm);
+    border-radius: var(--ds-radius-sm);
+    border-left-width: var(--ds-border-stamp);
+    border-left-color: var(--ds-color-stamp);
+    border-top-width: var(--ds-border-hairline);
+    border-right-width: var(--ds-border-hairline);
+    border-bottom-width: var(--ds-border-hairline);
+    border-top-color: var(--ds-color-rule-soft);
+    border-right-color: var(--ds-color-rule-soft);
+    border-bottom-color: var(--ds-color-rule-soft);
+    padding-top: var(--ds-space-4);
+    padding-bottom: var(--ds-space-4);
+    padding-left: var(--ds-space-5);
+    padding-right: var(--ds-space-5);
+    margin-bottom: var(--ds-space-6);
+}
+
+.shelf-confirm-book-title {
+    font-size: var(--ds-font-headline);
+    -unity-font-style: bold;
+    color: var(--ds-color-ink-strong);
+    white-space: normal;
+}
+
+.shelf-confirm-book-meta {
+    font-size: var(--ds-font-meta);
+    color: var(--ds-color-ink-mute);
+    letter-spacing: var(--ds-track-loose);
+    margin-top: var(--ds-space-1);
+    white-space: normal;
+}
+
+.shelf-confirm-book-summary {
+    font-size: var(--ds-font-body);
+    color: var(--ds-color-ink-soft);
+    margin-top: var(--ds-space-3);
+    white-space: normal;
+}
+
+/* ----- Sub-label ----- */
+
+.shelf-confirm-sub-label {
+    font-size: var(--ds-font-caption);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-button);
+    -unity-font-style: bold;
+    margin-bottom: var(--ds-space-2);
+}
+
+.shelf-confirm-sub-label-spaced {
+    margin-top: var(--ds-space-4);
+}
+
+/* ----- Option chips ----- */
+
+.shelf-confirm-chip-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: var(--ds-space-2);
+}
+
+.shelf-confirm-chip {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-body);
+    -unity-font-style: bold;
+    padding-top: 7px;
+    padding-bottom: 7px;
+    padding-left: var(--ds-space-4);
+    padding-right: var(--ds-space-4);
+    margin-right: var(--ds-space-2);
+    border-radius: var(--ds-radius-pill);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    transition-property: background-color, color, border-color, scale;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-confirm-chip:hover {
+    background-color: var(--ds-color-hover-ink);
+    color: var(--ds-color-ink);
+}
+
+.shelf-confirm-chip:active {
+    scale: 0.97 0.97;
+}
+
+.shelf-confirm-chip.selected {
+    background-color: var(--ds-color-stamp);
+    color: var(--ds-color-on-stamp);
+    border-color: var(--ds-color-stamp);
+}
+
+/* ----- Actions ----- */
+
+.shelf-confirm-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+    margin-top: var(--ds-space-6);
+}
+
+.shelf-confirm-cancel {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-body);
+    padding-top: var(--ds-space-2);
+    padding-bottom: var(--ds-space-2);
+    padding-left: var(--ds-space-5);
+    padding-right: var(--ds-space-5);
+    margin-right: var(--ds-space-2);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    border-radius: var(--ds-radius-xs);
+    transition-property: background-color, color;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-confirm-cancel:hover {
+    background-color: var(--ds-color-hover-ink);
+    color: var(--ds-color-ink);
+}
+
+.shelf-confirm-cancel:active {
+    scale: 0.98 0.98;
+}
+
+.shelf-confirm-confirm {
+    background-color: var(--ds-color-ink);
+    color: var(--ds-color-ink-on-stamp);
+    font-size: var(--ds-font-body);
+    -unity-font-style: bold;
+    letter-spacing: var(--ds-track-button);
+    padding-top: 9px;
+    padding-bottom: 9px;
+    padding-left: var(--ds-space-8);
+    padding-right: var(--ds-space-8);
+    border-radius: var(--ds-radius-xs);
+    border-width: 0;
+    transition-property: background-color, translate, scale;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-confirm-confirm:hover {
+    background-color: var(--ds-color-stamp);
+    translate: 0 -1px;
+}
+
+.shelf-confirm-confirm:active {
+    scale: 0.98 0.98;
+}

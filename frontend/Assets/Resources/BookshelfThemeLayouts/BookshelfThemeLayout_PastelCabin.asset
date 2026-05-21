@@ -1,0 +1,199 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 623fbb14f9a97964da3c2dfd1b4202db, type: 3}
+  m_Name: BookshelfThemeLayout_PastelCabin
+  m_EditorClassIdentifier: Assembly-CSharp::BookshelfPorting.Runtime.BookshelfThemeLayout
+  style: 1
+  bookshelfPrefab: {fileID: 6156902042414624892, guid: ea53231e651d3734ba625d3d26728f3a, type: 3}
+  prefabLocalPosition: {x: -0, y: -0, z: -0}
+  prefabLocalEulerAngles: {x: 0, y: 180, z: 0}
+  prefabLocalScale: {x: 0.16, y: 0.16, z: 0.16}
+  preservePrefabLocalTransform: 0
+  focusLocalPosition: {x: 0, y: 0.79999995, z: -0.2801928}
+  focusSize: {x: 1.5372815, y: 1.6999999, z: 0.18}
+  sections:
+  - row: 0
+    column: 0
+    leftBound: -0.57864076
+    rightBound: -0.31932038
+    shelfTopY: 0.15
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 0
+    column: 1
+    leftBound: -0.2793204
+    rightBound: -0.02000001
+    shelfTopY: 0.15
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 0
+    column: 2
+    leftBound: 0.019999996
+    rightBound: 0.27932036
+    shelfTopY: 0.15
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 0
+    column: 3
+    leftBound: 0.31932038
+    rightBound: 0.57864076
+    shelfTopY: 0.15
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 1
+    column: 0
+    leftBound: -0.57864076
+    rightBound: -0.31932038
+    shelfTopY: 0.486
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 1
+    column: 1
+    leftBound: -0.2793204
+    rightBound: -0.02000001
+    shelfTopY: 0.486
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 1
+    column: 2
+    leftBound: 0.019999996
+    rightBound: 0.27932036
+    shelfTopY: 0.486
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 1
+    column: 3
+    leftBound: 0.31932038
+    rightBound: 0.57864076
+    shelfTopY: 0.486
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 2
+    column: 0
+    leftBound: -0.57864076
+    rightBound: -0.31932038
+    shelfTopY: 0.822
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 2
+    column: 1
+    leftBound: -0.2793204
+    rightBound: -0.02000001
+    shelfTopY: 0.822
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 2
+    column: 2
+    leftBound: 0.019999996
+    rightBound: 0.27932036
+    shelfTopY: 0.822
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 2
+    column: 3
+    leftBound: 0.31932038
+    rightBound: 0.57864076
+    shelfTopY: 0.822
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 3
+    column: 0
+    leftBound: -0.57864076
+    rightBound: -0.31932038
+    shelfTopY: 1.157
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 3
+    column: 1
+    leftBound: -0.2793204
+    rightBound: -0.02000001
+    shelfTopY: 1.157
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 3
+    column: 2
+    leftBound: 0.019999996
+    rightBound: 0.27932036
+    shelfTopY: 1.157
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 0
+  - row: 3
+    column: 3
+    leftBound: 0.31932038
+    rightBound: 0.57864076
+    shelfTopY: 1.157
+    sectionHeight: 0.308
+    bookYOffset: 0.006
+    frontBoundZ: -0.19019279
+    backBoundZ: 0.19019279
+    alignment: 0
+    isAdvertisementSection: 1

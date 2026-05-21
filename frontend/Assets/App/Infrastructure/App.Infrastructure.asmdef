@@ -1,0 +1,18 @@
+{
+  "name": "App.Infrastructure",
+  "rootNamespace": "App.Infrastructure",
+  "references": [
+    "App.Domain",
+    "App.Application"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
+

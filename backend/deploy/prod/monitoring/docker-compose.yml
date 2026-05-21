@@ -1,0 +1,122 @@
+# DotShelf 모니터링 스택 (prod 호스트 전용).
+#
+# 구성: Prometheus (metrics) + Loki (logs) + Grafana (UI).
+# Promtail 은 SSAFY 앱 호스트의 docker-compose 에 들어감 ({backend}/deploy/app/docker-compose.yml).
+#
+# 배포:
+# - 최초 1회: scp 로 이 파일 + deploy/prod/monitoring/ 전체를 prod:/opt/dotshelf/monitoring/ 로 복사
+# - 이후: `cd /opt/dotshelf/monitoring && docker compose up -d`
+# - CI 자동 배포 대상 아님 (infra 성격). `docs/infra/2026-04-24-monitoring-stack.md` 참조.
+#
+# 네트워크:
+# - monitoring 내부: 같은 compose 네트워크로 prometheus <-> grafana <-> loki 통신
+# - 외부 접근:
+#     Grafana  → Nginx reverse proxy (grafana.dotshelf.digital)
+#     Prometheus / Loki → 외부 노출 X (Grafana 프록시 경유만)
+#     Promtail (SSAFY) → Loki 3100 포트로 push, Tailscale 100.86.247.88 경유
+#
+# 볼륨:
+# - prometheus-data: 메트릭 저장 (retention 14d)
+# - loki-data:       로그 청크 + 인덱스 (retention 7d)
+# - grafana-data:    대시보드 상태, alert rules, 사용자 계정
+
+name: dotshelf-monitoring
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: dotshelf-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=14d'
+      - '--web.enable-lifecycle'    # POST /-/reload 로 config 핫 리로드
+      - '--web.listen-address=0.0.0.0:9090'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # 외부 노출 X. Grafana 만 프록시로 접근.
+    expose:
+      - "9090"
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  loki:
+    image: grafana/loki:3.2.1
+    container_name: dotshelf-loki
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/config.yml"]
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    # SSAFY 앱 호스트의 Promtail 이 Tailscale 로 push → 100.86.247.88:3100
+    # 따라서 호스트 포트 3100 을 반드시 Tailscale 인터페이스에만 바인딩.
+    ports:
+      - "100.86.247.88:3100:3100"
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: dotshelf-grafana
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+    environment:
+      # --- 관리자 계정 ---
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme-on-first-deploy}
+
+      # --- 외부 URL (Nginx 가 https://grafana.dotshelf.digital 로 프록시) ---
+      GF_SERVER_ROOT_URL: "https://grafana.dotshelf.digital/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "false"
+
+      # --- 보안 ---
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: "lax"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+
+      # --- 로그 레벨 ---
+      GF_LOG_LEVEL: warn
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    # 외부 노출은 Nginx (dotshelf-nginx 컨테이너) 가 담당.
+    # docker bridge IP 에만 바인딩 → 외부/인터넷 공개 X, Nginx 컨테이너는 172.17.0.1:3000 으로 접근.
+    # (Blue-Green 배포에서도 동일 패턴으로 172.17.0.1 사용 — 자세한 배경은 docs/infra/2026-04-23-blue-green.md §7-bis 참조.)
+    ports:
+      - "172.17.0.1:3000:3000"
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  monitoring:
+    name: dotshelf-monitoring
+
+volumes:
+  prometheus-data:
+  loki-data:
+  grafana-data:

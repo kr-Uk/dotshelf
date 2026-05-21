@@ -1,0 +1,3 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <ui:VisualElement name="notebook-dashboard-placeholder" class="notebook-dashboard-placeholder" />
+</ui:UXML>

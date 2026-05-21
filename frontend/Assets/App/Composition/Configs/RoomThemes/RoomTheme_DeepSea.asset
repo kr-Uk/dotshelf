@@ -1,0 +1,113 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7fcf5d37657e94c1a8a0ff4244296f90, type: 3}
+  m_Name: RoomTheme_DeepSea
+  m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Catalogs.RoomThemeAsset
+  assetId: 300000
+  displayName: "\uAE4A\uC740\uBC14\uB2E4"
+  description: "\uAE4A\uC740 \uBC14\uB2E4 \uC9C8\uAC10\uACFC \uC0B0\uD638, \uD574\uC591
+    \uC0DD\uBB3C \uC18C\uD488\uC744 \uBC30\uCE58\uD558\uB294 \uB85C\uCEEC \uD504\uB9AC\uBDF0
+    \uD14C\uB9C8."
+  previewSprite: {fileID: 0}
+  bookshelfStyleIndex: 8
+  wallMaterial: {fileID: 2100000, guid: b4c52a8874e24d99994158ba2512e070, type: 2}
+  floorMaterial: {fileID: 2100000, guid: 40d482e3c24f4ef283fcb72880d2f0ec, type: 2}
+  bookshelfMaterial: {fileID: 2100000, guid: ec15496bf34a4da9b3490de1ec02630d, type: 2}
+  furnitureMaterial: {fileID: 2100000, guid: 9d959237ce1b4a739eb6f7b057dd4b4d, type: 2}
+  deskTopMaterial: {fileID: 2100000, guid: 9d959237ce1b4a739eb6f7b057dd4b4d, type: 2}
+  chairMaterial: {fileID: 2100000, guid: 9d959237ce1b4a739eb6f7b057dd4b4d, type: 2}
+  dashboardMaterial: {fileID: 2100000, guid: d38ee10761364288960444687177dec9, type: 2}
+  accentMaterial: {fileID: 2100000, guid: 0f7bab6a5f634cfe87e8029c89bae8d1, type: 2}
+  interiorLightColor: {r: 0.7411765, g: 0.9372549, b: 1, a: 1}
+  interiorLightKelvin: 7200
+  ambientTint: {r: 0.6627451, g: 0.9098039, b: 0.96862745, a: 1}
+  ambientIntensity: 1.12
+  exteriorLightColor: {r: 0.5372549, g: 0.8117647, b: 0.9098039, a: 1}
+  exteriorLightKelvin: 7600
+  exteriorLightIntensity: 1.25
+  defaultExterior: {fileID: 0}
+  allowsCustomization: 1
+  isLocalPreview: 1
+  accentPrimary: {r: 0.25882354, g: 0.7882353, b: 0.9098039, a: 1}
+  accentSecondary: {r: 0.9490196, g: 0.654902, b: 0.627451, a: 1}
+  accentTertiary: {r: 0.9019608, g: 0.8156863, b: 0.47843137, a: 1}
+  defaultEntries:
+  - category: 4
+    assetId: 300030
+  - category: 3
+    assetId: 300040
+  bookshelfDecoSpecs: []
+  floorDecoSpecs:
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: 3c9abeaaec3af2b4aa5f371a39a5a66f, type: 3}
+    wallSide: 0
+    localPosition: {x: 1.38, y: 0.46, z: 0.218}
+    localRotation: {x: 0, y: 180, z: 0}
+    localScale: {x: 1, y: 1, z: 1}
+    anchorTag: bed
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: cfb805f65fdf0b041bd07b983816d5a8, type: 3}
+    wallSide: 0
+    localPosition: {x: -1.355, y: 0.41, z: -0.244}
+    localRotation: {x: 0, y: 35, z: 0}
+    localScale: {x: 0.43, y: 0.43, z: 0.43}
+    anchorTag: chair
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: 2dfa169bd912e9840b97fb3080976139, type: 3}
+    wallSide: 0
+    localPosition: {x: -1.578657, y: 0.65, z: 0.9294204}
+    localRotation: {x: -0, y: 177.4861, z: -0}
+    localScale: {x: 0.68, y: 0.68, z: 0.68}
+    anchorTag: dreamLamp
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: c5b8897eaa4651d42a2fca3c7b9c73f2, type: 3}
+    wallSide: 0
+    localPosition: {x: 2.068, y: 0.52, z: -1.156}
+    localRotation: {x: -0, y: 340, z: -0}
+    localScale: {x: 0.28, y: 0.55, z: 0.28}
+    anchorTag: coralSmall
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: 17a80653c85e90a4f9f2146ee9622df4, type: 3}
+    wallSide: 0
+    localPosition: {x: 1.643, y: 0.23, z: -0.846}
+    localRotation: {x: 0, y: 35, z: 0}
+    localScale: {x: 0.24, y: 0.24, z: 0.24}
+    anchorTag: coralCluster
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: 7b6bec135cc82f348a39b6320834fe63, type: 3}
+    wallSide: 0
+    localPosition: {x: 0.893, y: 0.13, z: -0.72}
+    localRotation: {x: 0, y: 220.085, z: 0}
+    localScale: {x: 0.16, y: 0.16, z: 0.16}
+    anchorTag: shell
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: 633a6965f54189f4894a0acfc5f102c7, type: 3}
+    wallSide: 0
+    localPosition: {x: 2.2052, y: 0.826, z: -0.016}
+    localRotation: {x: -0, y: 270, z: -0}
+    localScale: {x: 0.98443604, y: 0.98443604, z: 0.98443604}
+    anchorTag: aquarium
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: a8947f853731f4d409eccca3530417a1, type: 3}
+    wallSide: 0
+    localPosition: {x: 1.811, y: 0.13, z: -1.102}
+    localRotation: {x: 0, y: 222.25253, z: 0}
+    localScale: {x: 0.28, y: 0.28, z: 0.28}
+    anchorTag: shark
+  - assetId: 0
+    prefab: {fileID: -8098169881513260187, guid: df959cf8c66228e4bb4c31df06d96633, type: 3}
+    wallSide: 0
+    localPosition: {x: 1.264, y: 0.145, z: -0.843}
+    localRotation: {x: -0, y: 228.05377, z: 0}
+    localScale: {x: 0.3, y: 0.3, z: 0.3}
+    anchorTag: dolphin
+  wallDecoSpecs: []

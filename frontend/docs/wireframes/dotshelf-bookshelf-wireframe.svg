@@ -1,0 +1,198 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1260" viewBox="0 0 1800 1260">
+  <defs>
+    <style>
+      .bg { fill: #f6f1e8; }
+      .board { fill: #fffdf8; stroke: #7b7168; stroke-width: 2; }
+      .panel { fill: #fbf8f1; stroke: #9b9185; stroke-width: 1.5; }
+      .soft { fill: #efe7da; stroke: #9b9185; stroke-width: 1.5; }
+      .shelf { fill: #e7d6bf; stroke: #6f6254; stroke-width: 3; }
+      .section { fill: #f8efe1; stroke: #877869; stroke-width: 1.4; }
+      .bookA { fill: #8a9b84; stroke: #4d584a; stroke-width: 1; }
+      .bookB { fill: #b98474; stroke: #765246; stroke-width: 1; }
+      .bookC { fill: #d6b15f; stroke: #8a6d2d; stroke-width: 1; }
+      .bookD { fill: #7d8fa9; stroke: #4d5e76; stroke-width: 1; }
+      .ghost { fill: #8fd694; fill-opacity: 0.35; stroke: #357a44; stroke-width: 2; stroke-dasharray: 7 5; }
+      .invalid { fill: #e88585; fill-opacity: 0.18; stroke: #b84d4d; stroke-width: 2; stroke-dasharray: 8 6; }
+      .accent { fill: #2f6f8f; }
+      .good { fill: #2f855a; }
+      .danger { fill: #b84d4d; }
+      .muted { fill: #665d55; }
+      .title { font: 700 30px "Pretendard", "Noto Sans KR", Arial, sans-serif; fill: #2d2925; }
+      .h2 { font: 700 20px "Pretendard", "Noto Sans KR", Arial, sans-serif; fill: #2d2925; }
+      .h3 { font: 700 16px "Pretendard", "Noto Sans KR", Arial, sans-serif; fill: #2d2925; }
+      .body { font: 400 14px "Pretendard", "Noto Sans KR", Arial, sans-serif; fill: #3b352f; }
+      .small { font: 400 12px "Pretendard", "Noto Sans KR", Arial, sans-serif; fill: #5f554d; }
+      .label { font: 700 12px "Pretendard", "Noto Sans KR", Arial, sans-serif; fill: #3b352f; }
+      .button { fill: #ffffff; stroke: #746a60; stroke-width: 1.5; }
+      .chip { fill: #ece2d4; stroke: #9b9185; stroke-width: 1; }
+      .line { stroke: #746a60; stroke-width: 1.5; fill: none; }
+      .dash { stroke: #746a60; stroke-width: 1.5; stroke-dasharray: 6 5; fill: none; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1800" height="1260"/>
+  <text class="title" x="64" y="58">dotshelf 책장 쪽 와이어프레임</text>
+  <text class="body" x="64" y="88">PC / 태블릿 우선. 벽면2 정면뷰, 책 드래그 gap preview, 책 포커싱 뷰를 기준으로 구성.</text>
+
+  <rect class="board" x="64" y="120" width="1060" height="660" rx="10"/>
+  <text class="h2" x="92" y="158">A. 벽면2 정면뷰 - 기본 책장 탐색</text>
+  <text class="small" x="92" y="182">카메라: 책장 정면 중앙, FOV 45도, 줌/팬은 정면뷰에서만 활성</text>
+
+  <rect class="panel" x="92" y="205" width="1004" height="50" rx="8"/>
+  <text class="h3" x="118" y="236">내 서재 / 벽면2</text>
+  <rect class="button" x="822" y="218" width="106" height="24" rx="6"/>
+  <text class="label" x="844" y="235">방 전체</text>
+  <rect class="button" x="942" y="218" width="64" height="24" rx="6"/>
+  <text class="label" x="963" y="235">편집</text>
+  <rect class="button" x="1018" y="218" width="54" height="24" rx="6"/>
+  <text class="label" x="1036" y="235">+</text>
+
+  <rect class="soft" x="92" y="274" width="162" height="430" rx="8"/>
+  <text class="h3" x="116" y="306">책장 목록</text>
+  <rect class="chip" x="114" y="326" width="116" height="32" rx="6"/>
+  <text class="label" x="140" y="347">책장 1</text>
+  <rect class="button" x="114" y="368" width="116" height="32" rx="6"/>
+  <text class="label" x="140" y="389">책장 2</text>
+  <rect class="button" x="114" y="410" width="116" height="32" rx="6"/>
+  <text class="label" x="140" y="431">책장 3</text>
+  <line class="line" x1="114" y1="468" x2="230" y2="468"/>
+  <text class="small" x="114" y="494">전환: 턴테이블</text>
+  <text class="small" x="114" y="516">연속 탭: 큐잉</text>
+  <text class="small" x="114" y="538">방문자: 편집 숨김</text>
+
+  <rect class="shelf" x="324" y="285" width="520" height="390" rx="6"/>
+  <rect class="section" x="346" y="307" width="116" height="78" rx="3"/>
+  <rect class="section" x="470" y="307" width="116" height="78" rx="3"/>
+  <rect class="section" x="594" y="307" width="116" height="78" rx="3"/>
+  <rect class="section" x="718" y="307" width="104" height="78" rx="3"/>
+  <rect class="section" x="346" y="393" width="116" height="78" rx="3"/>
+  <rect class="section" x="470" y="393" width="116" height="78" rx="3"/>
+  <rect class="section" x="594" y="393" width="116" height="78" rx="3"/>
+  <rect class="section" x="718" y="393" width="104" height="78" rx="3"/>
+  <rect class="section" x="346" y="479" width="116" height="78" rx="3"/>
+  <rect class="section" x="470" y="479" width="116" height="78" rx="3"/>
+  <rect class="section" x="594" y="479" width="116" height="78" rx="3"/>
+  <rect class="section" x="718" y="479" width="104" height="78" rx="3"/>
+  <rect class="section" x="346" y="565" width="116" height="88" rx="3"/>
+  <rect class="section" x="470" y="565" width="116" height="88" rx="3"/>
+  <rect class="section" x="594" y="565" width="116" height="88" rx="3"/>
+  <rect class="section" x="718" y="565" width="104" height="88" rx="3"/>
+  <text class="small" x="541" y="702">4행 x 4열 섹션. 내부 처리는 shelfId / row / col / slotIndex 기준.</text>
+
+  <rect class="bookA" x="360" y="322" width="12" height="48" rx="2"/>
+  <rect class="bookB" x="376" y="317" width="14" height="53" rx="2"/>
+  <rect class="bookC" x="394" y="329" width="10" height="41" rx="2"/>
+  <rect class="bookD" x="408" y="313" width="16" height="57" rx="2"/>
+  <rect class="bookB" x="485" y="412" width="15" height="44" rx="2"/>
+  <rect class="bookD" x="504" y="404" width="13" height="52" rx="2"/>
+  <rect class="bookA" x="522" y="417" width="11" height="39" rx="2"/>
+  <rect class="bookC" x="607" y="497" width="14" height="45" rx="2"/>
+  <rect class="bookA" x="625" y="490" width="13" height="52" rx="2"/>
+  <rect class="bookD" x="641" y="502" width="12" height="40" rx="2"/>
+  <rect class="bookB" x="735" y="584" width="12" height="54" rx="2"/>
+  <rect class="bookC" x="751" y="575" width="15" height="63" rx="2"/>
+  <rect class="bookA" x="770" y="594" width="10" height="44" rx="2"/>
+
+  <rect class="button" x="286" y="448" width="34" height="64" rx="16"/>
+  <text class="h2" x="299" y="488">‹</text>
+  <rect class="button" x="848" y="448" width="34" height="64" rx="16"/>
+  <text class="h2" x="861" y="488">›</text>
+
+  <rect class="panel" x="902" y="274" width="170" height="430" rx="8"/>
+  <text class="h3" x="926" y="306">섹션 액션</text>
+  <text class="small" x="926" y="334">빈 영역 탭</text>
+  <rect class="button" x="926" y="354" width="36" height="28" rx="6"/>
+  <text class="label" x="938" y="373">좌</text>
+  <rect class="button" x="968" y="354" width="36" height="28" rx="6"/>
+  <text class="label" x="980" y="373">중</text>
+  <rect class="button" x="1010" y="354" width="36" height="28" rx="6"/>
+  <text class="label" x="1022" y="373">우</text>
+  <line class="line" x1="926" y1="408" x2="1046" y2="408"/>
+  <text class="small" x="926" y="436">책 탭</text>
+  <text class="small" x="926" y="458">→ 책 포커싱 뷰</text>
+  <text class="small" x="926" y="492">책 드래그</text>
+  <text class="small" x="926" y="514">→ 슬롯 preview</text>
+  <text class="small" x="926" y="548">휠/핀치</text>
+  <text class="small" x="926" y="570">→ 줌 0.8m~4.5m</text>
+  <text class="small" x="926" y="604">빈 공간 드래그</text>
+  <text class="small" x="926" y="626">→ 팬 이동</text>
+
+  <rect class="board" x="1160" y="120" width="576" height="660" rx="10"/>
+  <text class="h2" x="1188" y="158">B. 드래그 + gap preview</text>
+  <text class="small" x="1188" y="182">preview는 화면 상태만 변경. Domain 데이터는 drop commit 순간에만 변경.</text>
+  <rect class="shelf" x="1228" y="240" width="390" height="292" rx="6"/>
+  <rect class="section" x="1250" y="262" width="78" height="56" rx="3"/>
+  <rect class="section" x="1336" y="262" width="78" height="56" rx="3"/>
+  <rect class="section" x="1422" y="262" width="78" height="56" rx="3"/>
+  <rect class="section" x="1508" y="262" width="88" height="56" rx="3"/>
+  <rect class="section" x="1250" y="326" width="78" height="56" rx="3"/>
+  <rect class="section" x="1336" y="326" width="78" height="56" rx="3"/>
+  <rect class="ghost" x="1422" y="326" width="78" height="56" rx="3"/>
+  <rect class="section" x="1508" y="326" width="88" height="56" rx="3"/>
+  <rect class="section" x="1250" y="390" width="78" height="56" rx="3"/>
+  <rect class="section" x="1336" y="390" width="78" height="56" rx="3"/>
+  <rect class="section" x="1422" y="390" width="78" height="56" rx="3"/>
+  <rect class="section" x="1508" y="390" width="88" height="56" rx="3"/>
+  <rect class="section" x="1250" y="454" width="78" height="56" rx="3"/>
+  <rect class="section" x="1336" y="454" width="78" height="56" rx="3"/>
+  <rect class="section" x="1422" y="454" width="78" height="56" rx="3"/>
+  <rect class="section" x="1508" y="454" width="88" height="56" rx="3"/>
+
+  <rect class="bookA" x="1438" y="338" width="10" height="34" rx="2"/>
+  <rect class="ghost" x="1455" y="334" width="15" height="40" rx="2"/>
+  <rect class="bookC" x="1478" y="338" width="10" height="34" rx="2"/>
+  <rect class="bookD" x="1493" y="340" width="9" height="32" rx="2"/>
+  <text class="small" x="1430" y="407">insertIndex = 1</text>
+
+  <rect class="bookB" x="1370" y="188" width="28" height="80" rx="5"/>
+  <path class="dash" d="M1384 270 C1392 300 1408 318 1458 334"/>
+  <text class="small" x="1328" y="176">드래그 중인 실제 책</text>
+
+  <rect class="invalid" x="1642" y="240" width="54" height="292" rx="8"/>
+  <text class="small" transform="translate(1677 342) rotate(90)">경계 0.6초 유지 → 다음 책장</text>
+  <circle cx="1668" cy="220" r="22" fill="#ffffff" stroke="#2f6f8f" stroke-width="4"/>
+  <path d="M1668 198 A22 22 0 0 1 1690 220" fill="none" stroke="#8fd694" stroke-width="5"/>
+  <text class="h2" x="1659" y="229">›</text>
+
+  <rect class="panel" x="1188" y="564" width="516" height="158" rx="8"/>
+  <text class="h3" x="1214" y="596">상태 규칙</text>
+  <text class="body" x="1214" y="624">Idle → Pressed → Dragging → Preview</text>
+  <text class="body" x="1214" y="650">Preview → CrossShelfPending → CrossShelfTransition → Preview</text>
+  <text class="body" x="1214" y="676">Drop 유효: Dropping → Idle / 무효: Returning → Idle</text>
+  <text class="body" x="1214" y="702">DragAnchor는 월드 고정. 책장은 턴테이블로만 회전.</text>
+
+  <rect class="board" x="64" y="820" width="1060" height="360" rx="10"/>
+  <text class="h2" x="92" y="858">C. 책 포커싱 뷰</text>
+  <text class="small" x="92" y="882">책 탭 시 책이 전면으로 이동하고, 표지가 보이도록 회전. 편집 권한은 MY_ROOM / VISITOR_MODE로 분기.</text>
+  <rect class="panel" x="102" y="918" width="392" height="210" rx="8"/>
+  <rect class="bookD" x="245" y="950" width="84" height="134" rx="8"/>
+  <text class="label" x="235" y="1112">포커싱된 책</text>
+  <rect class="panel" x="530" y="918" width="538" height="210" rx="8"/>
+  <text class="h3" x="558" y="952">책 상세 패널</text>
+  <rect class="soft" x="558" y="972" width="110" height="130" rx="6"/>
+  <text class="small" x="585" y="1042">표지</text>
+  <text class="body" x="690" y="982">제목 / 저자 / 출판사</text>
+  <line class="line" x1="690" y1="998" x2="1018" y2="998"/>
+  <rect class="button" x="690" y="1018" width="70" height="26" rx="6"/>
+  <text class="label" x="709" y="1036">읽음</text>
+  <rect class="button" x="770" y="1018" width="92" height="26" rx="6"/>
+  <text class="label" x="789" y="1036">읽는 중</text>
+  <rect class="button" x="872" y="1018" width="86" height="26" rx="6"/>
+  <text class="label" x="892" y="1036">안 읽음</text>
+  <text class="small" x="690" y="1072">평점, 한줄평, 공개/비공개, 독후감 진입</text>
+  <rect class="button" x="690" y="1086" width="132" height="26" rx="6"/>
+  <text class="label" x="718" y="1104">독후감 작성</text>
+  <rect class="button" x="936" y="1086" width="82" height="26" rx="6"/>
+  <text class="label" x="961" y="1104">뒤로</text>
+
+  <rect class="board" x="1160" y="820" width="576" height="360" rx="10"/>
+  <text class="h2" x="1188" y="858">D. 구현 메모</text>
+  <text class="body" x="1188" y="902">1. 책장 배치는 slot 기반: shelfId, sectionRow, sectionCol, slotIndex.</text>
+  <text class="body" x="1188" y="934">2. preview 중에는 Transform과 ghost만 변경한다.</text>
+  <text class="body" x="1188" y="966">3. commit 전 API 저장이나 Domain placement 변경은 금지.</text>
+  <text class="body" x="1188" y="998">4. Mock API와 Real API는 base URL만 다르게 유지한다.</text>
+  <text class="body" x="1188" y="1030">5. 방문자는 책 구경과 공개 독후감 열람 중심, 편집 UI는 숨긴다.</text>
+  <text class="body" x="1188" y="1062">6. 마지막 책장 삭제는 막고 최소 1개를 유지한다.</text>
+  <text class="body" x="1188" y="1094">7. 좌우 경계 cross-shelf는 Pending progress로 예고한다.</text>
+  <text class="body" x="1188" y="1126">8. 쿼터뷰는 진입점, 책장 세부 조작은 벽면2 정면뷰에서 처리한다.</text>
+</svg>

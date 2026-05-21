@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>dotshelf games</title>
+    <meta name="description" content="dotshelf.digital에서 플레이할 게임을 선택하세요." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23131518'/%3E%3Ccircle cx='23' cy='25' r='8' fill='%23ff7a3d'/%3E%3Cpath d='M43 16v32M27 32h32' stroke='%2318c8b9' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="hub">
+      <section class="hero" aria-labelledby="pageTitle">
+        <div class="hero-copy">
+          <p class="eyebrow">dotshelf.digital</p>
+          <h1 id="pageTitle">오늘 플레이할 게임을 선택하세요</h1>
+          <p>가볍게 피하고, 빠르게 조준하는 두 가지 미니게임을 바로 실행할 수 있습니다.</p>
+        </div>
+
+        <div class="game-grid" aria-label="게임 선택">
+          <a class="game-card crossing-card" href="./crossing-friends/">
+            <div class="game-preview crossing-preview" aria-hidden="true">
+              <span class="road"></span>
+              <span class="lane lane-one"></span>
+              <span class="lane lane-two"></span>
+              <span class="rabbit">
+                <i></i>
+              </span>
+              <span class="carrot carrot-one"></span>
+              <span class="carrot carrot-two"></span>
+            </div>
+            <div class="game-copy">
+              <span>Arcade</span>
+              <h2>길건너친구들</h2>
+              <p>도로와 강을 건너며 당근을 모으는 캐주얼 회피 게임입니다.</p>
+              <strong>플레이</strong>
+            </div>
+          </a>
+
+          <a class="game-card aim-card" href="./aim-master/">
+            <div class="game-preview aim-preview" aria-hidden="true">
+              <span class="grid-line horizontal"></span>
+              <span class="grid-line vertical"></span>
+              <span class="reticle"></span>
+              <span class="target target-one"></span>
+              <span class="target target-two"></span>
+              <span class="timer-ring"></span>
+            </div>
+            <div class="game-copy">
+              <span>FPS Trainer</span>
+              <h2>에임마스터</h2>
+              <p>2초 안에 랜덤 표적을 클릭하고 30개 완료 시간을 측정합니다.</p>
+              <strong>플레이</strong>
+            </div>
+          </a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

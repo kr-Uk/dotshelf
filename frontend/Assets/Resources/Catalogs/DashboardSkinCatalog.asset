@@ -1,0 +1,70 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b8208becc61d44fd921ccd9cf39c6c8, type: 3}
+  m_Name: DashboardSkinCatalog
+  m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Catalogs.CustomizationCatalogAsset
+  category: 3
+  entries:
+  - assetId: 300040
+    displayName: "\uAE4A\uC740\uBC14\uB2E4 \uB300\uC2DC\uBCF4\uB4DC"
+    description: "\uAE4A\uC740\uBC14\uB2E4 \uD14C\uB9C8 \uC804\uC6A9 \uB300\uC2DC\uBCF4\uB4DC
+      \uBCF4\uB4DC. \uAE30\uC874 GuestbookBoard \uC704\uCE58\uB97C \uAD50\uCCB4\uD55C\uB2E4."
+    previewSprite: {fileID: 21300000, guid: e608aa09c2ae8854a8b8b4f08d6ac7cc, type: 3}
+    themeTag: DeepSea
+    isLocalPreview: 1
+    materials: []
+    lightColor: {r: 1, g: 1, b: 1, a: 1}
+    lightIntensity: 1
+    colorTemperatureKelvin: 6500
+    prefab: {fileID: -8098169881513260187, guid: 0019d394fd84f4d45a30e6b5dfae0f4c, type: 3}
+    placementAnchor: {x: -2.38, y: 1.497, z: 0.12}
+    placementRotation: {x: 0, y: 90, z: 0}
+    placementScale: {x: 0.73, y: 0.72, z: 0.18}
+    usePlacementTransformAsWorld: 0
+    lockVisualTransform: 0
+    treatAsDeskSurface: 0
+    overrideNotebookStation: 1
+    lockNotebookStationToMonitor: 0
+    notebookStationPosition: {x: -2.38, y: 1.497, z: 0.12}
+    notebookStationRotation: {x: 0, y: 0, z: 0}
+    notebookStationScale: {x: 1, y: 1, z: 1}
+    monitorPrefab: {fileID: 0}
+    monitorPosition: {x: 0, y: 0, z: 0}
+    monitorRotation: {x: 0, y: 0, z: 0}
+    monitorScale: {x: 1, y: 1, z: 1}
+    skinScaleMultiplier: {x: 1, y: 1, z: 1}
+    preserveSkinNativeScale: 0
+    skinLocalPositionOverride: {x: 0, y: 0, z: 0}
+    hideLaptopRenderers: 0
+    notebookScreenLocalPosition: {x: 0, y: 0, z: 0}
+    notebookScreenLocalRotation: {x: 0, y: 0, z: 0}
+    notebookScreenScaleMultiplier: {x: 1, y: 1, z: 1}
+    stretchCanvasAdImageOnDesk: 0
+    adImageAnchorMin: {x: 0, y: 0}
+    adImageAnchorMax: {x: 1, y: 1}
+    adImagePivot: {x: 0.5, y: 0.5}
+    adImageOffsetMin: {x: 0, y: 0}
+    adImageOffsetMax: {x: 0, y: 0}
+    adImageLocalScale: {x: 1, y: 1, z: 1}
+    overrideScreenSaverCanvasTransform: 0
+    screenSaverCanvasLocalPosition: {x: 0, y: 0, z: 0}
+    screenSaverCanvasLocalRotation: {x: 0, y: 0, z: 0}
+    screenSaverCanvasLocalScale: {x: 1, y: 1, z: 1}
+    screenSaverCanvasSizeDelta: {x: 0, y: 0}
+    overrideScreenSaverCanvasAnchors: 0
+    screenSaverCanvasAnchorMin: {x: 0.5, y: 0.5}
+    screenSaverCanvasAnchorMax: {x: 0.5, y: 0.5}
+    screenSaverCanvasPivot: {x: 0.5, y: 0.5}
+    notebookFocusCameraMode: 0
+    notebookLocalPositionOverride: {x: 0, y: 0, z: 0}
+    notebookLocalRotationOverride: {x: 0, y: 0, z: 0}
+    notebookLocalScaleOverride: {x: 0, y: 0, z: 0}

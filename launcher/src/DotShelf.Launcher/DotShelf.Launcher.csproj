@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>DotShelfLauncher</AssemblyName>
+    <RootNamespace>DotShelf.Launcher</RootNamespace>
+    <ApplicationIcon>Assets\dotshelf.ico</ApplicationIcon>
+    <Version>0.1.4</Version>
+    <AssemblyVersion>0.1.4.0</AssemblyVersion>
+    <FileVersion>0.1.4.0</FileVersion>
+    <Company>DotShelf</Company>
+    <Product>DotShelf Launcher</Product>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DotShelf.Launcher.Core\DotShelf.Launcher.Core.csproj" />
+  </ItemGroup>
+
+</Project>

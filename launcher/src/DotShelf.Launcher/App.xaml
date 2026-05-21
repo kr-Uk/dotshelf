@@ -1,0 +1,43 @@
+<Application x:Class="DotShelf.Launcher.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:DotShelf.Launcher"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- ===== Wood-tone design tokens (launcher-design v0.1) ===== -->
+            <SolidColorBrush x:Key="BrandBrush" Color="#9F7E69" />
+            <SolidColorBrush x:Key="BrandHoverBrush" Color="#876653" />
+            <SolidColorBrush x:Key="BrandPressedBrush" Color="#6E5240" />
+            <SolidColorBrush x:Key="BrandSoftBrush" Color="#F4ECE3" />
+            <SolidColorBrush x:Key="BrandSecondaryBrush" Color="#D2BBA0" />
+            <SolidColorBrush x:Key="BrandSecondarySoftBrush" Color="#F7EFE5" />
+
+            <SolidColorBrush x:Key="InkTitleBrush" Color="#2A2018" />
+            <SolidColorBrush x:Key="InkBodyBrush" Color="#6B5C50" />
+            <SolidColorBrush x:Key="InkMuteBrush" Color="#A89B8E" />
+            <SolidColorBrush x:Key="OnBrandBrush" Color="#FFFFFF" />
+
+            <SolidColorBrush x:Key="PageBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="CardBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="SunkenBrush" Color="#FAF5EF" />
+            <SolidColorBrush x:Key="StrokeBrush" Color="#E7DFD4" />
+            <SolidColorBrush x:Key="StrokeStrongBrush" Color="#CFC1B0" />
+
+            <SolidColorBrush x:Key="SuccessBrush" Color="#5C9F6F" />
+            <SolidColorBrush x:Key="WarningBrush" Color="#C99450" />
+            <SolidColorBrush x:Key="DangerBrush" Color="#C26B57" />
+            <SolidColorBrush x:Key="NoticeBrush" Color="#6B5C50" />
+
+            <!-- Legacy aliases preserved for backwards compatibility -->
+            <SolidColorBrush x:Key="PaperBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="PaperPanelBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="CharcoalBrush" Color="#2A2018" />
+            <SolidColorBrush x:Key="MutedBrush" Color="#6B5C50" />
+            <SolidColorBrush x:Key="WoodBrush" Color="#9F7E69" />
+            <SolidColorBrush x:Key="WoodDarkBrush" Color="#6E5240" />
+            <SolidColorBrush x:Key="BeigeBrush" Color="#E7DFD4" />
+            <SolidColorBrush x:Key="SageBrush" Color="#5C9F6F" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
