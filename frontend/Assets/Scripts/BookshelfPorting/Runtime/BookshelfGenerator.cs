@@ -37,6 +37,7 @@ namespace BookshelfPorting.Runtime
         private const string BookCoverLabelsName = "BookCoverLabels";
         private const string BookPageEdgesName = "BookPageEdges";
         private const string BookPageEdgeTextureAssetPath = "Assets/Arts/Textures/Books/book_page_edge_texture.png";
+        private const string BookPageEdgeTextureResourcePath = "Books/book_page_edge_texture";
         private const float BookCoverSurfaceOffset = 0.506f;
         private const float BookPageEdgeInset = 0.012f;
         private const float BookPageEdgeSurfaceThickness = 0.006f;
@@ -2321,19 +2322,7 @@ namespace BookshelfPorting.Runtime
             var texture = LoadBookPageEdgeTexture();
             if (texture != null)
             {
-                texture.wrapMode = TextureWrapMode.Repeat;
-                texture.filterMode = FilterMode.Bilinear;
-                if (bookPageEdgeMaterial.HasProperty("_BaseMap"))
-                {
-                    bookPageEdgeMaterial.SetTexture("_BaseMap", texture);
-                    bookPageEdgeMaterial.SetTextureScale("_BaseMap", new Vector2(3f, 1f));
-                }
-
-                if (bookPageEdgeMaterial.HasProperty("_MainTex"))
-                {
-                    bookPageEdgeMaterial.SetTexture("_MainTex", texture);
-                    bookPageEdgeMaterial.SetTextureScale("_MainTex", new Vector2(3f, 1f));
-                }
+                ApplyBookPageEdgeTextureSettings(bookPageEdgeMaterial, texture);
             }
 
             bookPageEdgeMaterial.color = pageColor;
@@ -2355,6 +2344,37 @@ namespace BookshelfPorting.Runtime
             LogBookPageEdgeMaterialSettings(bookPageEdgeMaterial, texture);
 
             return bookPageEdgeMaterial;
+        }
+
+        private static void ApplyBookPageEdgeTextureSettings(Material material, Texture texture)
+        {
+            if (material == null || texture == null)
+            {
+                return;
+            }
+
+            texture.wrapMode = TextureWrapMode.Repeat;
+            texture.filterMode = FilterMode.Bilinear;
+            var tiling = new Vector2(3f, 1f);
+            var offset = Vector2.zero;
+
+            if (material.HasProperty("_BaseMap"))
+            {
+                material.SetTexture("_BaseMap", texture);
+                material.SetTextureScale("_BaseMap", tiling);
+                material.SetTextureOffset("_BaseMap", offset);
+            }
+
+            if (material.HasProperty("_MainTex"))
+            {
+                material.SetTexture("_MainTex", texture);
+                material.SetTextureScale("_MainTex", tiling);
+                material.SetTextureOffset("_MainTex", offset);
+            }
+
+            material.mainTexture = texture;
+            material.mainTextureScale = tiling;
+            material.mainTextureOffset = offset;
         }
 
         private static void LogBookPageEdgeMaterialSettings(Material material, Texture texture)
@@ -2383,14 +2403,23 @@ namespace BookshelfPorting.Runtime
 
         private Texture2D LoadBookPageEdgeTexture()
         {
+            var resourceTexture = Resources.Load<Texture2D>(BookPageEdgeTextureResourcePath);
+            if (resourceTexture != null)
+            {
+                Debug.Log($"[BookTexture] PageEdge texture source=Resources path={BookPageEdgeTextureResourcePath}");
+                return resourceTexture;
+            }
+
 #if UNITY_EDITOR
             var assetTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(BookPageEdgeTextureAssetPath);
             if (assetTexture != null)
             {
+                Debug.Log($"[BookTexture] PageEdge texture source=AssetDatabase path={BookPageEdgeTextureAssetPath}");
                 return assetTexture;
             }
 #endif
 
+            Debug.LogWarning($"[BookTexture] PageEdge texture missing at Resources path={BookPageEdgeTextureResourcePath}; using generated fallback.");
             return GetGeneratedBookPageEdgeTexture();
         }
 
@@ -2414,9 +2443,9 @@ namespace BookshelfPorting.Runtime
 
             for (var y = 0; y < textureHeight; y++)
             {
-                var isLine = y % 6 == 0 || y % 17 == 0;
                 for (var x = 0; x < textureWidth; x++)
                 {
+                    var isLine = x % 6 == 0 || x % 17 == 0;
                     var subtleNoise = ((x * 13 + y * 7) % 11) / 255f;
                     var color = isLine ? line : paper;
                     color.r = Mathf.Clamp01(color.r + subtleNoise);

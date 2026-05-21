@@ -86,7 +86,6 @@ namespace BookshelfPorting.Runtime
         private const float VisitedSpaceLoadingPageWidth = 124f;
         private const float VisitedSpaceLoadingPageHeight = 148f;
         private const float VisitedSpaceLoadingHalfPageWidth = VisitedSpaceLoadingPageWidth * 0.5f;
-        private const string LikeReactionIconPath = "Assets/App/UI/Icons/Reactions/icon_like_heart.png";
         private static readonly Color32 DeleteButtonBackground = new(196, 78, 72, 255);
         private static readonly Color32 DeleteButtonHighlighted = new(176, 62, 58, 255);
         private static readonly Color32 DeleteButtonConfirmBackground = new(176, 50, 48, 255);
@@ -160,8 +159,6 @@ namespace BookshelfPorting.Runtime
         private static Texture2D roundedUiTexture;
         private static Sprite searchIconRingSprite;
         private static Texture2D searchIconRingTexture;
-        private static Sprite visitedOwnerLikeSprite;
-        private static Texture2D visitedOwnerLikeFallbackTexture;
 
         private enum BookSearchFilter
         {
@@ -5484,9 +5481,7 @@ namespace BookshelfPorting.Runtime
             visitedOwnerLikeBackground.color = new Color32(247, 243, 238, 235);
             visitedOwnerLikeBackground.raycastTarget = false;
             visitedOwnerLikeIconImage = CreateHudImage(visitedOwnerLikeRect, "VisitedOwnerLikeIcon", Vector2.zero, new Vector2(18f, 18f), new Vector2(0f, 0.5f), Color.white);
-            visitedOwnerLikeIconImage.sprite = GetVisitedOwnerLikeSprite();
-            visitedOwnerLikeIconImage.preserveAspect = true;
-            visitedOwnerLikeIconImage.raycastTarget = false;
+            LikeHeartIconProvider.ApplyTo(visitedOwnerLikeIconImage, "VisitedOwnerBookFocusOwnerLikedIndicator", new Color32(232, 226, 235, 255));
             ConfigureFixedLayoutElement(visitedOwnerLikeIconImage.GetComponent<RectTransform>(), 18f, 18f);
             visitedOwnerLikeText = CreateLabel(visitedOwnerLikeRect, "VisitedOwnerLikeText", Vector2.zero, new Vector2(108f, 24f), TextAnchor.MiddleLeft);
             visitedOwnerLikeText.fontSize = 14;
@@ -13607,10 +13602,10 @@ namespace BookshelfPorting.Runtime
 
             if (visitedOwnerLikeIconImage != null)
             {
-                visitedOwnerLikeIconImage.sprite = GetVisitedOwnerLikeSprite();
-                visitedOwnerLikeIconImage.color = ownerLiked
-                    ? new Color32(247, 173, 194, 255)
-                    : new Color32(232, 226, 235, 255);
+                LikeHeartIconProvider.ApplyTo(
+                    visitedOwnerLikeIconImage,
+                    "VisitedOwnerBookFocusOwnerLikedIndicator",
+                    ownerLiked ? new Color32(247, 173, 194, 255) : new Color32(232, 226, 235, 255));
             }
 
             if (visitedOwnerLikeText != null)
@@ -16787,61 +16782,6 @@ namespace BookshelfPorting.Runtime
             }
 
             return searchIconRingSprite;
-        }
-
-        private static Sprite GetVisitedOwnerLikeSprite()
-        {
-            if (visitedOwnerLikeSprite != null)
-            {
-                return visitedOwnerLikeSprite;
-            }
-
-#if UNITY_EDITOR
-            visitedOwnerLikeSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(LikeReactionIconPath);
-            if (visitedOwnerLikeSprite != null)
-            {
-                return visitedOwnerLikeSprite;
-            }
-#endif
-
-            visitedOwnerLikeSprite = CreateFallbackVisitedOwnerLikeSprite();
-            return visitedOwnerLikeSprite;
-        }
-
-        private static Sprite CreateFallbackVisitedOwnerLikeSprite()
-        {
-            const int size = 64;
-            visitedOwnerLikeFallbackTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
-            {
-                name = "GeneratedVisitedOwnerLikeHeartIcon",
-                hideFlags = HideFlags.HideAndDontSave,
-                wrapMode = TextureWrapMode.Clamp,
-                filterMode = FilterMode.Bilinear
-            };
-
-            for (var y = 0; y < size; y++)
-            {
-                for (var x = 0; x < size; x++)
-                {
-                    var px = (x + 0.5f) / size * 2f - 1f;
-                    var py = (y + 0.5f) / size * 2f - 1f + 0.08f;
-                    var heart = Mathf.Pow(px * px + py * py - 0.42f, 3f) - px * px * py * py * py;
-                    var filledAlpha = Mathf.Clamp01((0.018f - heart) * 42f);
-                    var innerAlpha = Mathf.Clamp01((-0.045f - heart) * 42f);
-                    var alpha = Mathf.Clamp01(filledAlpha - innerAlpha);
-                    visitedOwnerLikeFallbackTexture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
-                }
-            }
-
-            visitedOwnerLikeFallbackTexture.Apply();
-            var sprite = Sprite.Create(
-                visitedOwnerLikeFallbackTexture,
-                new Rect(0f, 0f, size, size),
-                new Vector2(0.5f, 0.5f),
-                100f);
-            sprite.name = "GeneratedVisitedOwnerLikeHeartIcon";
-            sprite.hideFlags = HideFlags.HideAndDontSave;
-            return sprite;
         }
 
         private static void AddSoftShadow(GameObject target, Color color, Vector2 distance)

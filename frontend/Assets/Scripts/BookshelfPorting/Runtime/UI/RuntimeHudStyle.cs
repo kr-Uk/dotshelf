@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -290,6 +291,81 @@ namespace BookshelfPorting.Runtime
             }
 
             return roundedUiSprite;
+        }
+    }
+
+    internal static class LikeHeartIconProvider
+    {
+        private const string IconResourcePath = "App/UI/Icons/Reactions/icon_like_heart";
+        private const string IconAssetPath = "Assets/Resources/App/UI/Icons/Reactions/icon_like_heart.png";
+
+        private static readonly HashSet<string> LoggedRenderPoints = new();
+        private static Sprite cachedSprite;
+
+        public static Sprite GetSprite()
+        {
+            if (cachedSprite != null)
+            {
+                return cachedSprite;
+            }
+
+            cachedSprite = Resources.Load<Sprite>(IconResourcePath);
+
+#if UNITY_EDITOR
+            if (cachedSprite == null)
+            {
+                cachedSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(IconAssetPath);
+            }
+#endif
+
+            if (cachedSprite == null)
+            {
+                Debug.LogError($"[LikeHeartIconProvider] icon_like_heart sprite not found at Resources path '{IconResourcePath}'.");
+            }
+
+            return cachedSprite;
+        }
+
+        public static void ApplyTo(Image image, string renderPoint)
+        {
+            ApplyTo(image, renderPoint, Color.white);
+        }
+
+        public static void ApplyTo(Image image, string renderPoint, Color tint)
+        {
+            if (image == null)
+            {
+                return;
+            }
+
+            var sprite = GetSprite();
+            image.sprite = sprite;
+            image.type = Image.Type.Simple;
+            image.preserveAspect = true;
+            image.material = null;
+            image.color = tint;
+            image.raycastTarget = false;
+
+            LogRenderPointOnce(image, sprite, renderPoint);
+        }
+
+        private static void LogRenderPointOnce(Image image, Sprite sprite, string renderPoint)
+        {
+            var key = string.IsNullOrWhiteSpace(renderPoint) ? image.name : renderPoint;
+            if (!LoggedRenderPoints.Add(key))
+            {
+                return;
+            }
+
+            var texture = sprite != null ? sprite.texture : null;
+            var textureInfo = texture != null
+                ? $"{texture.name} {texture.width}x{texture.height} filter={texture.filterMode}"
+                : "null";
+            var materialName = image.material != null ? image.material.name : "null";
+            Debug.Log(
+                $"[LikeHeartIconProvider] {key}: sprite={(sprite != null ? sprite.name : "null")} " +
+                $"texture={textureInfo} type={image.type} preserveAspect={image.preserveAspect} " +
+                $"material={materialName} color={image.color}");
         }
     }
 }

@@ -99,8 +99,6 @@ namespace BookshelfPorting.Runtime
     internal sealed class BookDetailPanelController
     {
         private const float OverlayButtonBottomPaddingExtra = 12f;
-        private const string LikeReactionIconPath = "Assets/App/UI/Icons/Reactions/icon_like_heart.png";
-
         private static readonly Color32 DeleteButtonBackground = new(196, 78, 72, 255);
         private static readonly Color32 DeleteButtonHighlighted = new(176, 62, 58, 255);
         private static readonly Color32 DeleteButtonConfirmBackground = new(176, 50, 48, 255);
@@ -118,9 +116,6 @@ namespace BookshelfPorting.Runtime
         private static readonly Color32 LikeActiveColor = new(247, 173, 194, 255);
         private static readonly Color32 OwnerRatingBadgeBackground = new(255, 248, 236, 118);
         private static readonly Color32 OwnerRatingBadgeTextColor = new(151, 104, 64, 255);
-        private static Sprite cachedLikeReactionSprite;
-        private static Texture2D fallbackLikeReactionTexture;
-
         private readonly Text eyebrowText;
         private readonly Text titleText;
         private readonly Text metaText;
@@ -428,9 +423,7 @@ namespace BookshelfPorting.Runtime
             var iconObject = new GameObject("LikeHeartIcon");
             iconObject.transform.SetParent(contentRect, false);
             var icon = iconObject.AddComponent<Image>();
-            icon.sprite = GetLikeReactionSprite();
-            icon.preserveAspect = true;
-            icon.raycastTarget = false;
+            LikeHeartIconProvider.ApplyTo(icon, "OwnSpaceBookFocusLikeButton", LikeIconIdleColor);
             var iconLayout = iconObject.AddComponent<LayoutElement>();
             iconLayout.preferredWidth = 16f;
             iconLayout.preferredHeight = 16f;
@@ -468,11 +461,12 @@ namespace BookshelfPorting.Runtime
                 isLiked ? LikeActiveColor : LikeCountIdleColor,
                 true);
 
-            var iconColor = isLiked ? LikeActiveColor : LikeIconIdleColor;
             if (likeToggleIconImage != null)
             {
-                likeToggleIconImage.sprite = GetLikeReactionSprite();
-                likeToggleIconImage.color = iconColor;
+                LikeHeartIconProvider.ApplyTo(
+                    likeToggleIconImage,
+                    "OwnSpaceBookFocusLikeButton",
+                    isLiked ? LikeActiveColor : LikeIconIdleColor);
             }
 
             if (likeToggleCountText != null)
@@ -480,61 +474,6 @@ namespace BookshelfPorting.Runtime
                 likeToggleCountText.text = string.IsNullOrWhiteSpace(totalLikes) ? "0" : totalLikes;
                 likeToggleCountText.color = isLiked ? LikeActiveColor : LikeCountIdleColor;
             }
-        }
-
-        private static Sprite GetLikeReactionSprite()
-        {
-            if (cachedLikeReactionSprite != null)
-            {
-                return cachedLikeReactionSprite;
-            }
-
-#if UNITY_EDITOR
-            cachedLikeReactionSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(LikeReactionIconPath);
-            if (cachedLikeReactionSprite != null)
-            {
-                return cachedLikeReactionSprite;
-            }
-#endif
-
-            cachedLikeReactionSprite = CreateFallbackLikeReactionSprite();
-            return cachedLikeReactionSprite;
-        }
-
-        private static Sprite CreateFallbackLikeReactionSprite()
-        {
-            const int size = 64;
-            fallbackLikeReactionTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
-            {
-                name = "GeneratedLikeHeartIcon",
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            fallbackLikeReactionTexture.wrapMode = TextureWrapMode.Clamp;
-            fallbackLikeReactionTexture.filterMode = FilterMode.Bilinear;
-
-            for (var y = 0; y < size; y++)
-            {
-                for (var x = 0; x < size; x++)
-                {
-                    var px = (x + 0.5f) / size * 2f - 1f;
-                    var py = (y + 0.5f) / size * 2f - 1f + 0.08f;
-                    var heart = Mathf.Pow(px * px + py * py - 0.42f, 3f) - px * px * py * py * py;
-                    var filledAlpha = Mathf.Clamp01((0.018f - heart) * 42f);
-                    var innerAlpha = Mathf.Clamp01((-0.045f - heart) * 42f);
-                    var alpha = Mathf.Clamp01(filledAlpha - innerAlpha);
-                    fallbackLikeReactionTexture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
-                }
-            }
-
-            fallbackLikeReactionTexture.Apply();
-            var sprite = Sprite.Create(
-                fallbackLikeReactionTexture,
-                new Rect(0f, 0f, size, size),
-                new Vector2(0.5f, 0.5f),
-                100f);
-            sprite.name = "GeneratedLikeHeartIcon";
-            sprite.hideFlags = HideFlags.HideAndDontSave;
-            return sprite;
         }
 
         private void RefreshDescriptionScrollContent(bool resetToTop)
