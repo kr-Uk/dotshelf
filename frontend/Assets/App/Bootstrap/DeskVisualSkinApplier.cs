@@ -266,10 +266,7 @@ namespace App.Bootstrap
                 finalScreenLocalScale = screenTransform.localScale;
             }
 
-            if (entry.TreatAsDeskSurface)
-            {
-                MoveDefaultTableNaturalToBackup(deskTransform, go.transform);
-            }
+            MoveDefaultTableNaturalToBackup(deskTransform, go.transform);
 
             // laptop Y 재정렬 — skin world top 을 Desk-local 로 변환 후 LaptopBottomOffset 더함.
             // X / Z 는 native 그대로 보존 (놓이는 평면 anchor 의 designer 의도 유지).
