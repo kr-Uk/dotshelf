@@ -9,9 +9,20 @@ namespace BookshelfPorting.Editor
 {
     public sealed class BookshelfThemeLayoutTunerWindow : EditorWindow
     {
-        private const string UnderwaterLayoutPath = "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_UnderwaterShell.asset";
+        private const string DefaultLayoutPath = "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_UnderwaterShell.asset";
         private const float MinimumColumnWidth = 0.05f;
         private const float MinimumDepth = 0.05f;
+        private static readonly LayoutOption[] LayoutOptions =
+        {
+            new LayoutOption("Pastel Cabin", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_PastelCabin.asset"),
+            new LayoutOption("Underwater Shell", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_UnderwaterShell.asset"),
+            new LayoutOption("Vintage", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_VintageShelf.asset"),
+            new LayoutOption("Spooky", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_Spooky.asset"),
+            new LayoutOption("Fantasy", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_Fantasy.asset"),
+            new LayoutOption("Space", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_Space.asset"),
+            new LayoutOption("Good Vibes", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_GoodVibes.asset"),
+            new LayoutOption("Deep Sea", "Assets/Resources/BookshelfThemeLayouts/BookshelfThemeLayout_DeepSea.asset")
+        };
 
         private BookshelfThemeLayout layout;
         private readonly RowTuning[] rows = new RowTuning[4];
@@ -30,7 +41,13 @@ namespace BookshelfPorting.Editor
         {
             var window = GetWindow<BookshelfThemeLayoutTunerWindow>("Bookshelf Layout Tuner");
             window.minSize = new Vector2(520f, 640f);
-            window.LoadLayout(UnderwaterLayoutPath);
+            window.LoadInitialLayout();
+        }
+
+        [MenuItem("Tools/Dotshelf/Bookshelf/Open Layout Tuner")]
+        public static void OpenDotshelfAlias()
+        {
+            Open();
         }
 
         private void OnEnable()
@@ -50,7 +67,7 @@ namespace BookshelfPorting.Editor
 
             if (layout == null)
             {
-                LoadLayout(UnderwaterLayoutPath);
+                LoadInitialLayout();
             }
         }
 
@@ -63,9 +80,19 @@ namespace BookshelfPorting.Editor
         {
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Underwater Shell", GUILayout.Height(28f)))
+                for (var i = 0; i < LayoutOptions.Length; i++)
                 {
-                    LoadLayout(UnderwaterLayoutPath);
+                    if (i > 0 && i % 4 == 0)
+                    {
+                        EditorGUILayout.EndHorizontal();
+                        EditorGUILayout.BeginHorizontal();
+                    }
+
+                    var option = LayoutOptions[i];
+                    if (GUILayout.Button(option.Label, GUILayout.Height(28f)))
+                    {
+                        LoadLayout(option.Path);
+                    }
                 }
             }
 
@@ -325,6 +352,22 @@ namespace BookshelfPorting.Editor
             ReadTuningFromLayout();
             ClearPreview();
             Repaint();
+        }
+
+        private void LoadInitialLayout()
+        {
+            var selectedLayout = Selection.activeObject as BookshelfThemeLayout;
+            if (selectedLayout != null)
+            {
+                var selectedPath = AssetDatabase.GetAssetPath(selectedLayout);
+                if (!string.IsNullOrEmpty(selectedPath))
+                {
+                    LoadLayout(selectedPath);
+                    return;
+                }
+            }
+
+            LoadLayout(DefaultLayoutPath);
         }
 
         private void ReadTuningFromLayout()
@@ -623,6 +666,18 @@ namespace BookshelfPorting.Editor
         {
             public float FrontBoundZ;
             public float BackBoundZ;
+        }
+
+        private readonly struct LayoutOption
+        {
+            public readonly string Label;
+            public readonly string Path;
+
+            public LayoutOption(string label, string path)
+            {
+                Label = label;
+                Path = path;
+            }
         }
     }
 }

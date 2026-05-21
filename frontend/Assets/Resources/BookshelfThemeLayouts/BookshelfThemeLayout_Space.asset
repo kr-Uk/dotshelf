@@ -34,8 +34,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 0
     column: 1
-    leftBound: -0.34373856
-    rightBound: -0.057500023
+    leftBound: -0.33873856
+    rightBound: -0.052500024
     shelfTopY: 0.29500002
     sectionHeight: 0.305
     bookYOffset: 0.006
@@ -45,8 +45,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 0
     column: 2
-    leftBound: 0.0024999725
-    rightBound: 0.28873855
+    leftBound: 0.0074999724
+    rightBound: 0.29373854
     shelfTopY: 0.29500002
     sectionHeight: 0.305
     bookYOffset: 0.006
@@ -56,8 +56,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 0
     column: 3
-    leftBound: 0.35373855
-    rightBound: 0.6399771
+    leftBound: 0.35873854
+    rightBound: 0.6449771
     shelfTopY: 0.29500002
     sectionHeight: 0.305
     bookYOffset: 0.006
@@ -78,8 +78,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 1
     column: 1
-    leftBound: -0.34373856
-    rightBound: -0.057500023
+    leftBound: -0.33873856
+    rightBound: -0.052500024
     shelfTopY: 0.62499994
     sectionHeight: 0.295
     bookYOffset: 0.006
@@ -89,8 +89,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 1
     column: 2
-    leftBound: 0.0024999725
-    rightBound: 0.28873855
+    leftBound: 0.0074999724
+    rightBound: 0.29373854
     shelfTopY: 0.62499994
     sectionHeight: 0.295
     bookYOffset: 0.006
@@ -100,8 +100,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 1
     column: 3
-    leftBound: 0.35373855
-    rightBound: 0.6399771
+    leftBound: 0.35873854
+    rightBound: 0.6449771
     shelfTopY: 0.62499994
     sectionHeight: 0.295
     bookYOffset: 0.006
@@ -122,8 +122,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 2
     column: 1
-    leftBound: -0.34373856
-    rightBound: -0.057500023
+    leftBound: -0.33873856
+    rightBound: -0.052500024
     shelfTopY: 0.9299999
     sectionHeight: 0.31
     bookYOffset: 0.006
@@ -133,8 +133,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 2
     column: 2
-    leftBound: 0.0024999725
-    rightBound: 0.28873855
+    leftBound: 0.0074999724
+    rightBound: 0.29373854
     shelfTopY: 0.9299999
     sectionHeight: 0.31
     bookYOffset: 0.006
@@ -144,8 +144,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 2
     column: 3
-    leftBound: 0.35373855
-    rightBound: 0.6399771
+    leftBound: 0.35873854
+    rightBound: 0.6449771
     shelfTopY: 0.9299999
     sectionHeight: 0.31
     bookYOffset: 0.006
@@ -166,8 +166,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 3
     column: 1
-    leftBound: -0.34373856
-    rightBound: -0.057500023
+    leftBound: -0.33873856
+    rightBound: -0.052500024
     shelfTopY: 1.2349999
     sectionHeight: 0.315
     bookYOffset: 0.006
@@ -177,8 +177,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 3
     column: 2
-    leftBound: 0.0024999725
-    rightBound: 0.28873855
+    leftBound: 0.0074999724
+    rightBound: 0.29373854
     shelfTopY: 1.2349999
     sectionHeight: 0.315
     bookYOffset: 0.006
@@ -188,8 +188,8 @@ MonoBehaviour:
     isAdvertisementSection: 0
   - row: 3
     column: 3
-    leftBound: 0.35373855
-    rightBound: 0.6399771
+    leftBound: 0.35873854
+    rightBound: 0.6449771
     shelfTopY: 1.2349999
     sectionHeight: 0.315
     bookYOffset: 0.006
