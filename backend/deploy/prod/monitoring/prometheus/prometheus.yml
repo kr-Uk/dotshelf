@@ -1,0 +1,45 @@
+# DotShelf Prometheus scrape config.
+#
+# 배치: prod 호스트 (100.86.247.88).
+# 역할: SSAFY 앱 호스트(100.74.2.103) 의 blue(8080)/green(8081) 을 Tailscale 로 직접 스크레이프.
+# - 둘 다 항상 긁는다. 꺼져 있는 쪽은 up{}==0 으로 기록되며 이것 자체가 배포 이벤트의 증거가 된다.
+# - actuator /actuator/prometheus 엔드포인트는 Tailscale 내부에서만 접근 가능 (공개 Nginx 에서 /actuator 차단).
+# - color 라벨은 target_label 로 명시 주입. 앱 자체 metrics.tags.color 와 별개로 Prometheus 레벨에서 한 번 더 고정.
+#
+# 대시보드 쿼리 예:
+#   up{job="dotshelf-api", color="blue"}                                  # blue 살아있나
+#   sum(rate(http_server_requests_seconds_count[1m])) by (color)          # 색별 RPS
+#   histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[5m])) by (le, color))  # p95 지연
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    service: dotshelf
+    env: prod
+
+scrape_configs:
+  # ---------- Spring Boot (Blue/Green) ----------
+  - job_name: 'dotshelf-api'
+    metrics_path: /actuator/prometheus
+    scheme: http
+    static_configs:
+      - targets:
+          - '100.74.2.103:8080'
+        labels:
+          color: blue
+          instance_host: app
+      - targets:
+          - '100.74.2.103:8081'
+        labels:
+          color: green
+          instance_host: app
+
+  # ---------- Prometheus self-scrape ----------
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # ---------- Loki self-scrape (gauge: ingested bytes 등) ----------
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']

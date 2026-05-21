@@ -1,0 +1,78 @@
+# DotShelf Promtail 설정.
+#
+# 배치: SSAFY 앱 호스트 (100.74.2.103).
+# 역할: dotshelf-api-blue / dotshelf-api-green 의 Docker json-file 로그를 수집해
+#       prod 호스트 Loki(100.86.247.88:3100) 로 push.
+#
+# Docker 컨테이너는 항상 log-driver=json-file 로 /var/lib/docker/containers/<id>/<id>-json.log 에 기록된다.
+# (docker-compose.yml 에서 max-size=10m, max-file=3 설정됨.)
+#
+# 라벨링:
+# - container_name: 컨테이너 이름 (dotshelf-api-blue / -green / -test) → color/env 추출 기반
+# - color: container_name 에서 blue|green|test 추출 (test 는 환경 구분용으로 함께 라벨링)
+# - compose_service: compose 서비스명 (api-blue, api-green, api-test)
+#
+# 이 설정은 dotshelf-api-* 컨테이너만 수집한다. postgres/redis 로그는 무시.
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://100.86.247.88:3100/loki/api/v1/push
+    # 네트워크 일시 단절 시 최대 30초 큐잉
+    batchwait: 1s
+    batchsize: 1048576
+
+scrape_configs:
+  # ---------- dotshelf-api-* 컨테이너 로그만 수집 ----------
+  - job_name: dotshelf-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+        filters:
+          - name: name
+            values: ['dotshelf-api-blue', 'dotshelf-api-green', 'dotshelf-api-test']
+
+    relabel_configs:
+      # 컨테이너 이름에서 앞의 '/' 제거
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container_name'
+
+      # container_name 에서 color/env 추출 (dotshelf-api-blue -> blue, dotshelf-api-test -> test)
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/dotshelf-api-(blue|green|test)'
+        target_label: 'color'
+
+      # compose service 라벨 (promtail docker_sd 자동 제공)
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'compose_service'
+
+      # Loki 에 올릴 job 라벨 고정
+      - target_label: 'job'
+        replacement: 'dotshelf-api'
+
+      # log stream 경로
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'stream'
+
+    # Docker json-file 로그는 {"log":"...","stream":"stdout","time":"..."} 포맷
+    pipeline_stages:
+      - json:
+          expressions:
+            output: log
+            stream: stream
+            timestamp: time
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+      - output:
+          source: output
+      # Spring Boot 스택트레이스(여러 줄) 한 이벤트로 묶기
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+          max_wait_time: 3s

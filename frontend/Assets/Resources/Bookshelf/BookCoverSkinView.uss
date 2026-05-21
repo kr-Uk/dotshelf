@@ -1,0 +1,217 @@
+/* ============================================================================
+   책 표지 스킨 변경 overlay — "Card Catalog" 디자인.
+   디자인 토큰(공용): Resources/UI/DotshelfDesignTokens.uss 의 var(--ds-*).
+   셀렉터 prefix shelf-skin-* 로 분리 — 다른 overlay USS 와 광역 충돌 없음.
+   ============================================================================ */
+
+/* ----- Modal layer ----- */
+
+.shelf-skin-root {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.hidden { display: none; }
+
+.shelf-skin-backdrop {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: var(--ds-color-overlay-scrim);
+}
+
+.shelf-skin-frame {
+    width: var(--ds-modal-width-md);
+    max-width: 94%;
+    max-height: 90%;
+    background-color: var(--ds-color-paper);
+    border-radius: var(--ds-radius-md);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    padding-top: 30px;
+    padding-bottom: 28px;
+    padding-left: 38px;
+    padding-right: 38px;
+    flex-direction: column;
+}
+
+/* ----- Header ----- */
+
+.shelf-skin-header {
+    flex-direction: row;
+    align-items: flex-end;
+    margin-bottom: var(--ds-space-4);
+    flex-shrink: 0;
+}
+
+.shelf-skin-header-text {
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.shelf-skin-eyebrow {
+    font-size: var(--ds-font-eyebrow);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-display);
+    -unity-font-style: bold;
+    margin-bottom: var(--ds-space-1);
+}
+
+.shelf-skin-title {
+    font-size: var(--ds-font-display);
+    -unity-font-style: bold;
+    color: var(--ds-color-ink);
+}
+
+.shelf-skin-close-button {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-headline);
+    width: 40px;
+    height: 40px;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    padding-right: 0;
+    border-radius: var(--ds-radius-sm);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    transition-property: background-color, color;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-skin-close-button:hover {
+    background-color: var(--ds-color-ink);
+    color: var(--ds-color-ink-on-stamp);
+}
+
+.shelf-skin-close-button:active {
+    scale: 0.96 0.96;
+}
+
+/* ----- Rule ----- */
+
+.shelf-skin-rule {
+    height: 1px;
+    background-color: var(--ds-color-ink);
+    margin-bottom: var(--ds-space-5);
+    flex-shrink: 0;
+}
+
+/* ----- Body ----- */
+
+.shelf-skin-body {
+    flex-direction: column;
+}
+
+.shelf-skin-hint {
+    font-size: var(--ds-font-body);
+    color: var(--ds-color-ink-soft);
+    letter-spacing: var(--ds-track-loose);
+    margin-bottom: var(--ds-space-5);
+    white-space: normal;
+}
+
+/* ----- Option cards (3개 가로 배치) ----- */
+
+.shelf-skin-options {
+    flex-direction: row;
+    margin-left: -6px;
+    margin-right: -6px;
+}
+
+.shelf-skin-option {
+    flex-grow: 1;
+    flex-basis: 0;
+    flex-direction: column;
+    align-items: stretch;
+    margin-top: 0;
+    margin-bottom: 0;
+    margin-left: 6px;
+    margin-right: 6px;
+    background-color: var(--ds-color-paper-soft);
+    border-radius: var(--ds-radius-sm);
+    border-left-width: var(--ds-border-extra);
+    border-left-color: rgba(0, 0, 0, 0);
+    border-top-width: var(--ds-border-hairline);
+    border-right-width: var(--ds-border-hairline);
+    border-bottom-width: var(--ds-border-hairline);
+    border-top-color: var(--ds-color-rule-mute);
+    border-right-color: var(--ds-color-rule-mute);
+    border-bottom-color: var(--ds-color-rule-mute);
+    padding-top: var(--ds-space-3);
+    padding-bottom: var(--ds-space-3);
+    padding-left: var(--ds-space-3);
+    padding-right: var(--ds-space-3);
+    transition-property: background-color, border-left-color, translate, scale;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-skin-option:hover {
+    background-color: var(--ds-color-paper-warm);
+    border-left-color: rgba(28, 22, 18, 0.40);
+    translate: 0 -2px;
+}
+
+.shelf-skin-option:active {
+    scale: 0.98 0.98;
+}
+
+.shelf-skin-option.selected {
+    background-color: var(--ds-color-paper-warm);
+    border-left-color: var(--ds-color-stamp);
+    border-top-color: var(--ds-color-rule-soft);
+    border-right-color: var(--ds-color-rule-soft);
+    border-bottom-color: var(--ds-color-rule-soft);
+}
+
+.shelf-skin-option.selected:hover {
+    translate: 0 0;
+}
+
+/* 표지 미리보기 — 빈 path("기본")는 paper 톤 빈 사각형. */
+.shelf-skin-cover {
+    height: 116px;
+    border-radius: var(--ds-radius-xs);
+    background-color: var(--ds-color-paper-warm);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule-soft);
+    margin-bottom: var(--ds-space-3);
+}
+
+.shelf-skin-option-label {
+    font-size: var(--ds-font-body-strong);
+    color: var(--ds-color-ink);
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.shelf-skin-option.selected > .shelf-skin-option-label {
+    color: var(--ds-color-stamp-deep);
+}
+
+.shelf-skin-option-desc {
+    font-size: var(--ds-font-caption);
+    color: var(--ds-color-ink-mute);
+    letter-spacing: var(--ds-track-loose);
+    margin-top: 2px;
+    white-space: normal;
+}
+
+.shelf-skin-option-badge {
+    font-size: var(--ds-font-caption);
+    color: var(--ds-color-stamp);
+    -unity-font-style: bold;
+    letter-spacing: var(--ds-track-loose);
+    margin-top: var(--ds-space-2);
+    opacity: 0;
+    scale: 0.85 0.85;
+    transition-property: opacity, scale;
+    transition-duration: var(--ds-motion-medium);
+}
+
+.shelf-skin-option.selected > .shelf-skin-option-badge {
+    opacity: 1;
+    scale: 1 1;
+}

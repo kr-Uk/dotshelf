@@ -1,0 +1,270 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace BookshelfPorting.Runtime
+{
+    public enum BookshelfThemeStyle
+    {
+        Default,
+        Warm,
+        Dark,
+
+        Vintage,
+        // BookshelfThemeLayoutCatalog 의 TryGetLayout 이 enum 매칭 1:1 lookup 이라 각 RoomTheme
+        // 자체 책장 디자인을 카탈로그에 등록하려면 enum 항목이 필요. 끝에 추가해 기존 직렬화
+        // 인덱스 (Default=0/Warm=1/Dark=2/Vintage=3) 보존. switch 들은 모두 default → Default
+        // fallback 이라 회귀 없음.
+        Spooky,
+        Fantasy,
+        Space,
+        GoodVibes,
+        DeepSea
+    }
+
+    public class MaterialFactory : MonoBehaviour
+    {
+        [Header("Wood")]
+        [SerializeField] private Texture2D woodBaseMap = null;
+        [SerializeField] private Texture2D woodNormalMap = null;
+        [SerializeField] private Texture2D floorBaseMap = null;
+        [SerializeField] private Vector2 floorBaseMapTiling = new Vector2(3f, 3f);
+        [SerializeField] private float bookshelfSmoothness = 0.42f;
+        [SerializeField] private float floorSmoothness = 0.28f;
+        // 천장 smoothness — 거의 무광 기본값 0.05. 디자이너가 Inspector 에서 조정 가능.
+        // (MR 109 review — simonjiho #6: magic number → SerializeField)
+        [SerializeField, Range(0f, 1f)] private float ceilingSmoothness = 0.05f;
+
+        [Header("Flat Colors")]
+        [SerializeField] private Color wallColor = new Color(0.93f, 0.90f, 0.84f);
+        // 천장은 테마 무관 공통 머티리얼. 벽보다 살짝 밝은 중립 off-white — 실내 상부가 어둡게 깔리는 인상 회피.
+        [SerializeField] private Color ceilingColor = new Color(0.96f, 0.95f, 0.93f);
+        [SerializeField] private Color whiteboardFrameColor = new Color(0.34f, 0.26f, 0.18f);
+        [SerializeField] private Color whiteboardSurfaceColor = new Color(0.96f, 0.97f, 0.95f);
+        [SerializeField] private Color ghostColor = new Color(0.25f, 0.85f, 1f, 0.25f);
+        [SerializeField] private Color bookshelfTint = Color.white;
+
+        private Material bookshelfWoodMaterial;
+        private Material furnitureWoodMaterial;
+        private Material floorMaterial;
+        private Material wallMaterial;
+        private Material ceilingMaterial;
+        private Material whiteboardFrameMaterial;
+        private Material whiteboardSurfaceMaterial;
+        private Material ghostMaterial;
+        private readonly Dictionary<BookshelfThemeStyle, Material> bookshelfStyleMaterials = new Dictionary<BookshelfThemeStyle, Material>();
+        public BookshelfThemeStyle CurrentTheme { get; private set; } = BookshelfThemeStyle.Default;
+
+        public void Configure(Texture2D woodBase, Texture2D woodNormal)
+        {
+            woodBaseMap = woodBase;
+            woodNormalMap = woodNormal;
+        }
+
+        public Material GetBookshelfWoodMaterial()
+        {
+            return GetBookshelfWoodMaterial(CurrentTheme);
+        }
+
+        public Material GetBookshelfWoodMaterial(BookshelfThemeStyle style)
+        {
+            if (style == CurrentTheme)
+            {
+                bookshelfTint = ResolveBookshelfTint(style);
+            }
+
+            if (bookshelfStyleMaterials.TryGetValue(style, out var cached) && cached != null)
+            {
+                return cached;
+            }
+
+            var material = CreateLitMaterial($"BookshelfWood_{style}", woodBaseMap, woodNormalMap, ResolveBookshelfTint(style), bookshelfSmoothness, false);
+            bookshelfStyleMaterials[style] = material;
+
+            if (style == CurrentTheme)
+            {
+                bookshelfWoodMaterial = material;
+            }
+
+            return material;
+        }
+
+        public Color GetBookshelfStyleColor(BookshelfThemeStyle style)
+        {
+            return ResolveBookshelfTint(style);
+        }
+
+        public Material GetFloorMaterial()
+        {
+            if (floorMaterial == null)
+            {
+                var baseMap = floorBaseMap != null ? floorBaseMap : woodBaseMap;
+                var normalMap = floorBaseMap != null ? null : woodNormalMap;
+                floorMaterial = CreateLitMaterial("FloorWood", baseMap, normalMap, Color.white, floorSmoothness, false);
+                if (floorBaseMap != null)
+                {
+                    floorMaterial.SetTextureScale("_BaseMap", floorBaseMapTiling);
+                    floorMaterial.mainTextureScale = floorBaseMapTiling;
+                }
+            }
+
+            return floorMaterial;
+        }
+
+        public Material GetFurnitureWoodMaterial()
+        {
+            if (furnitureWoodMaterial == null)
+            {
+                furnitureWoodMaterial = CreateLitMaterial("FurnitureWood", woodBaseMap, woodNormalMap, Color.white, bookshelfSmoothness, false);
+            }
+
+            return furnitureWoodMaterial;
+        }
+
+        public Material GetWallMaterial()
+        {
+            if (wallMaterial == null)
+            {
+                // URP Lit 의 ForwardLit pass 에는 stencil block 자체가 없어 (XRMotionVectors
+                // 전용 + 하드코드) material property 로 stencil 동작 제어 불가.
+                // 우리 Dotshelf/WallStencilReader 가 URP Lit ForwardLit pass 그대로 + Stencil
+                // block 추가한 변형. PBR 톤 유지 + wall hole 동작.
+                var stencilShader = Shader.Find("Dotshelf/WallStencilReader");
+                if (stencilShader != null)
+                {
+                    wallMaterial = new Material(stencilShader) { name = "Wall" };
+                    wallMaterial.SetColor("_BaseColor", wallColor);
+                    wallMaterial.color = wallColor;
+                    wallMaterial.SetFloat("_Smoothness", 0.08f);
+                }
+                else
+                {
+                    Debug.LogWarning("[MaterialFactory] Dotshelf/WallStencilReader shader 못 찾음 — URP Lit fallback. wall hole 효과 비동작.");
+                    wallMaterial = CreateLitMaterial("Wall", null, null, wallColor, 0.08f, false);
+                }
+            }
+
+            return wallMaterial;
+        }
+
+        // 천장 전용 머티리얼. 테마 변경에도 영향받지 않는 공통 자원.
+        // smoothness 0.05 — 거의 무광. URP Lit 에서 IBL/직사광 반사가 과해 면이 번뜩이는 현상 회피.
+        public Material GetCeilingMaterial()
+        {
+            if (ceilingMaterial == null)
+            {
+                ceilingMaterial = CreateLitMaterial("Ceiling", null, null, ceilingColor, ceilingSmoothness, false);
+            }
+
+            return ceilingMaterial;
+        }
+
+        public Material GetWhiteboardFrameMaterial()
+        {
+            if (whiteboardFrameMaterial == null)
+            {
+                whiteboardFrameMaterial = CreateLitMaterial("WhiteboardFrame", null, null, whiteboardFrameColor, 0.32f, false);
+            }
+
+            return whiteboardFrameMaterial;
+        }
+
+        public Material GetWhiteboardSurfaceMaterial()
+        {
+            if (whiteboardSurfaceMaterial == null)
+            {
+                whiteboardSurfaceMaterial = CreateLitMaterial("WhiteboardSurface", null, null, whiteboardSurfaceColor, 0.62f, false);
+            }
+
+            return whiteboardSurfaceMaterial;
+        }
+
+        public Material GetGhostPreviewMaterial()
+        {
+            if (ghostMaterial == null)
+            {
+                ghostMaterial = CreateLitMaterial("GhostPreview", null, null, ghostColor, 0.1f, true);
+            }
+
+            return ghostMaterial;
+        }
+
+        public Material CreateBookMaterial(Color color)
+        {
+            return CreateLitMaterial("BookDynamic", null, null, color, 0.3f, false);
+        }
+
+        public Material CreateBookMaterial(Texture2D baseMap, Texture2D normalMap, Color color, float smoothness = 0.3f)
+        {
+            return CreateLitMaterial("BookTextured", baseMap, normalMap, color, smoothness, false);
+        }
+
+        public void ApplyTheme(BookshelfThemeStyle theme)
+        {
+            CurrentTheme = theme;
+            bookshelfTint = ResolveBookshelfTint(theme);
+            bookshelfWoodMaterial = GetBookshelfWoodMaterial(theme);
+
+            ApplyThemeToMaterial(bookshelfWoodMaterial, bookshelfTint, bookshelfSmoothness);
+        }
+
+        private static Color ResolveBookshelfTint(BookshelfThemeStyle theme)
+        {
+            switch (theme)
+            {
+                case BookshelfThemeStyle.Warm:
+                    return new Color(1f, 0.88f, 0.74f);
+                case BookshelfThemeStyle.Dark:
+                    return new Color(0.36f, 0.30f, 0.26f);
+                default:
+                    return Color.white;
+            }
+        }
+
+        private static void ApplyThemeToMaterial(Material material, Color color, float smoothness)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            material.SetColor("_BaseColor", color);
+            material.color = color;
+            material.SetFloat("_Smoothness", smoothness);
+        }
+
+        private static Material CreateLitMaterial(string name, Texture2D baseMap, Texture2D normalMap, Color color, float smoothness, bool transparent)
+        {
+            var shader = Shader.Find("Universal Render Pipeline/Lit") ??
+                         Shader.Find("Standard") ??
+                         Shader.Find("Diffuse");
+            var material = new Material(shader) { name = name };
+            material.SetColor("_BaseColor", color);
+            material.color = color;
+            material.SetFloat("_Smoothness", smoothness);
+
+            if (baseMap != null)
+            {
+                material.SetTexture("_BaseMap", baseMap);
+            }
+
+            if (normalMap != null)
+            {
+                material.EnableKeyword("_NORMALMAP");
+                material.SetTexture("_BumpMap", normalMap);
+                material.SetFloat("_BumpScale", 1f);
+            }
+
+            if (transparent)
+            {
+                material.SetFloat("_Surface", 1f);
+                material.SetFloat("_Blend", 0f);
+                material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                material.SetFloat("_ZWrite", 0f);
+                material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            }
+
+            return material;
+        }
+    }
+}

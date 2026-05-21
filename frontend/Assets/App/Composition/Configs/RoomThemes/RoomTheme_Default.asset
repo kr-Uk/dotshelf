@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7fcf5d37657e94c1a8a0ff4244296f90, type: 3}
+  m_Name: RoomTheme_Default
+  m_EditorClassIdentifier: App.Infrastructure::App.Infrastructure.Catalogs.RoomThemeAsset
+  assetId: 0
+  displayName: "\uAE30\uBCF8"
+  description: "\uAE30\uBCF8 \uC81C\uACF5 \uD14C\uB9C8. \uD604\uC7AC \uB8F8 \uC0C9\uAC10
+    \uADF8\uB300\uB85C."
+  previewSprite: {fileID: 0}
+  bookshelfStyleIndex: 0
+  wallMaterial: {fileID: 0}
+  floorMaterial: {fileID: 0}
+  bookshelfMaterial: {fileID: 0}
+  furnitureMaterial: {fileID: 0}
+  deskTopMaterial: {fileID: 0}
+  chairMaterial: {fileID: 0}
+  dashboardMaterial: {fileID: 0}
+  accentMaterial: {fileID: 0}
+  interiorLightColor: {r: 1, g: 1, b: 1, a: 1}
+  interiorLightKelvin: 6500
+  ambientTint: {r: 1, g: 1, b: 1, a: 1}
+  ambientIntensity: 1
+  exteriorLightColor: {r: 1, g: 1, b: 1, a: 1}
+  exteriorLightKelvin: 6500
+  exteriorLightIntensity: 1
+  defaultExterior: {fileID: 11400000, guid: 41b8aa5c74d014cbf9b737c20d2bf7e0, type: 2}
+  allowsCustomization: 1
+  isLocalPreview: 0
+  accentPrimary: {r: 0.84705883, g: 0.8, b: 0.7372549, a: 1}
+  accentSecondary: {r: 0.4862745, g: 0.41568628, b: 0.3372549, a: 1}
+  accentTertiary: {r: 1, g: 1, b: 1, a: 1}
+  defaultEntries: []
+  bookshelfDecoSpecs: []
+  floorDecoSpecs: []
+  wallDecoSpecs: []

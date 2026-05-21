@@ -1,0 +1,790 @@
+/* ============================================================================
+   책장관리 overlay — "Card Catalog" 디자인
+   디자인 토큰(공용): Resources/UI/DotshelfDesignTokens.uss 의 var(--ds-*).
+   ============================================================================ */
+
+/* ----- Modal layer ----- */
+
+.shelf-manage-root {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.hidden { display: none; }
+
+.shelf-manage-backdrop {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: var(--ds-color-overlay-scrim);
+}
+
+.shelf-manage-frame {
+    width: 680px;
+    max-width: 94%;
+    max-height: 90%;
+    background-color: var(--ds-color-paper);
+    border-radius: var(--ds-radius-md);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    padding-top: 30px;
+    padding-bottom: 28px;
+    padding-left: 38px;
+    padding-right: 38px;
+    flex-direction: column;
+}
+
+/* ----- Header ----- */
+
+.shelf-manage-header {
+    flex-direction: row;
+    align-items: flex-end;
+    margin-bottom: var(--ds-space-5);
+    flex-shrink: 0;
+}
+
+.shelf-manage-header-text {
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.shelf-manage-eyebrow {
+    font-size: var(--ds-font-eyebrow);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-display);
+    -unity-font-style: bold;
+    margin-bottom: var(--ds-space-1);
+}
+
+.shelf-manage-title {
+    font-size: var(--ds-font-display);
+    -unity-font-style: bold;
+    color: var(--ds-color-ink);
+}
+
+.shelf-manage-close-button {
+    background-color: var(--ds-color-ink);
+    color: var(--ds-color-ink-on-stamp);
+    font-size: var(--ds-font-button);
+    -unity-font-style: bold;
+    padding-top: 11px;
+    padding-bottom: 11px;
+    padding-left: 30px;
+    padding-right: 30px;
+    border-radius: var(--ds-radius-xs);
+    border-width: 0;
+    letter-spacing: var(--ds-track-button);
+    transition-property: background-color, translate, scale;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-manage-close-button:hover {
+    background-color: var(--ds-color-stamp);
+    translate: 0 -1px;
+}
+
+.shelf-manage-close-button:active {
+    scale: 0.98 0.98;
+}
+
+/* ----- Rule ----- */
+
+.shelf-manage-rule {
+    height: 1px;
+    background-color: var(--ds-color-ink);
+    margin-bottom: var(--ds-space-6);
+    flex-shrink: 0;
+}
+
+/* ----- Body ----- */
+
+.shelf-manage-body {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.shelf-manage-section-eyebrow {
+    font-size: var(--ds-font-eyebrow);
+    color: var(--ds-color-ink);
+    letter-spacing: var(--ds-track-eyebrow);
+    -unity-font-style: bold;
+    margin-bottom: 14px;
+    padding-bottom: var(--ds-space-2);
+    border-bottom-width: var(--ds-border-hairline);
+    border-bottom-color: var(--ds-color-rule);
+}
+
+.shelf-manage-section-eyebrow-spaced {
+    margin-top: var(--ds-space-6);
+}
+
+/* ============================================================================
+   Hero card
+   ============================================================================ */
+
+.shelf-manage-hero {
+    flex-direction: row;
+    background-color: var(--ds-color-paper-warm);
+    border-radius: var(--ds-radius-sm);
+    border-left-width: var(--ds-border-stamp);
+    border-left-color: var(--ds-color-stamp);
+    border-top-width: var(--ds-border-hairline);
+    border-right-width: var(--ds-border-hairline);
+    border-bottom-width: var(--ds-border-hairline);
+    border-top-color: var(--ds-color-rule-soft);
+    border-right-color: var(--ds-color-rule-soft);
+    border-bottom-color: var(--ds-color-rule-soft);
+    padding-top: 22px;
+    padding-bottom: var(--ds-space-5);
+    padding-left: var(--ds-space-6);
+    padding-right: var(--ds-space-6);
+}
+
+.shelf-manage-hero-left {
+    width: 104px;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-right: 10px;
+    padding-right: 14px;
+    border-right-width: var(--ds-border-hairline);
+    border-right-color: var(--ds-color-rule-soft);
+}
+
+.shelf-manage-hero-number {
+    font-size: var(--ds-font-numeric-hero);
+    -unity-font-style: bold;
+    color: var(--ds-color-ink);
+    letter-spacing: var(--ds-track-tight);
+    margin-top: -10px;
+    margin-bottom: 0;
+}
+
+.shelf-manage-hero-number-label {
+    font-size: var(--ds-font-eyebrow);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-eyebrow);
+    -unity-font-style: bold;
+}
+
+.shelf-manage-hero-content {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.shelf-manage-hero-name-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.shelf-manage-hero-name {
+    flex-grow: 1;
+    font-size: var(--ds-font-hero);
+    -unity-font-style: bold;
+    color: var(--ds-color-ink-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shelf-manage-hero-rename {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-body);
+    padding-top: 6px;
+    padding-bottom: 6px;
+    padding-left: var(--ds-space-3);
+    padding-right: var(--ds-space-3);
+    border-radius: var(--ds-radius-xs);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    transition-property: background-color, color, border-color;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-manage-hero-rename:hover {
+    background-color: var(--ds-color-ink);
+    color: var(--ds-color-ink-on-stamp);
+    border-color: var(--ds-color-ink);
+}
+
+.shelf-manage-hero-stats {
+    font-size: var(--ds-font-body);
+    color: var(--ds-color-ink-soft);
+    letter-spacing: var(--ds-track-loose);
+    margin-bottom: 18px;
+    white-space: normal;
+}
+
+/* ----- Sub-group ----- */
+
+.shelf-manage-subgroup {
+    flex-direction: column;
+    margin-bottom: 14px;
+}
+
+.shelf-manage-sub-label {
+    font-size: var(--ds-font-caption);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-button);
+    -unity-font-style: bold;
+    margin-bottom: var(--ds-space-2);
+}
+
+.shelf-manage-chip-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.shelf-manage-chip {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-body-strong);
+    padding-top: 6px;
+    padding-bottom: 6px;
+    padding-left: 0;
+    padding-right: 0;
+    margin-right: 22px;
+    margin-bottom: 4px;
+    border-width: 0;
+    border-bottom-width: var(--ds-border-thick);
+    border-bottom-color: rgba(0, 0, 0, 0);
+    border-radius: 0;
+    transition-property: color, border-bottom-color, translate;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-manage-chip:hover {
+    color: var(--ds-color-ink);
+    border-bottom-color: rgba(28, 22, 18, 0.30);
+}
+
+.shelf-manage-chip.selected {
+    color: var(--ds-color-stamp);
+    -unity-font-style: bold;
+    border-bottom-color: var(--ds-color-stamp);
+}
+
+.shelf-manage-chip:disabled {
+    opacity: var(--ds-opacity-disabled);
+}
+
+/* ----- Hero footer ----- */
+
+.shelf-manage-hero-footer {
+    flex-direction: row;
+    justify-content: flex-end;
+    margin-top: 6px;
+}
+
+.shelf-manage-delete-link {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-stamp);
+    font-size: var(--ds-font-body);
+    padding-top: 5px;
+    padding-bottom: 5px;
+    padding-left: 10px;
+    padding-right: 10px;
+    border-width: 0;
+    border-radius: 0;
+    transition-property: color, translate;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-manage-delete-link:hover {
+    color: var(--ds-color-stamp-deep);
+    translate: 0 -1px;
+}
+
+.shelf-manage-delete-link:disabled {
+    opacity: var(--ds-opacity-disabled);
+}
+
+/* ============================================================================
+   Hero · Inline name edit mode
+   ============================================================================ */
+
+.shelf-manage-hero-view {
+    flex-direction: column;
+}
+
+.shelf-manage-hero-edit {
+    flex-direction: column;
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+.shelf-manage-edit-eyebrow {
+    font-size: var(--ds-font-eyebrow);
+    color: var(--ds-color-stamp);
+    letter-spacing: var(--ds-track-eyebrow);
+    -unity-font-style: bold;
+    margin-bottom: 14px;
+}
+
+.shelf-manage-name-input {
+    margin-bottom: var(--ds-space-2);
+}
+
+.shelf-manage-name-input > .unity-base-text-field__input {
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    border-bottom-width: var(--ds-border-thick);
+    border-bottom-color: var(--ds-color-ink);
+    color: var(--ds-color-ink);
+    font-size: var(--ds-font-hero);
+    -unity-font-style: bold;
+    padding-top: 6px;
+    padding-bottom: var(--ds-space-2);
+    padding-left: 0;
+    padding-right: 0;
+    border-radius: 0;
+    transition-property: border-bottom-color;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-manage-name-input:focus > .unity-base-text-field__input {
+    border-bottom-color: var(--ds-color-stamp);
+}
+
+.shelf-manage-edit-hint {
+    font-size: var(--ds-font-caption);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-loose);
+    margin-bottom: var(--ds-space-4);
+}
+
+.shelf-manage-edit-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+}
+
+.shelf-manage-edit-cancel {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-body);
+    padding-top: var(--ds-space-2);
+    padding-bottom: var(--ds-space-2);
+    padding-left: 18px;
+    padding-right: 18px;
+    margin-right: var(--ds-space-2);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    border-radius: var(--ds-radius-xs);
+    transition-property: background-color, color, border-color;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-manage-edit-cancel:hover {
+    background-color: var(--ds-color-hover-ink);
+    color: var(--ds-color-ink);
+}
+
+.shelf-manage-edit-save {
+    background-color: var(--ds-color-ink);
+    color: var(--ds-color-ink-on-stamp);
+    font-size: var(--ds-font-body);
+    -unity-font-style: bold;
+    letter-spacing: var(--ds-track-meta);
+    padding-top: 9px;
+    padding-bottom: 9px;
+    padding-left: 22px;
+    padding-right: 22px;
+    border-radius: var(--ds-radius-xs);
+    border-width: 0;
+    transition-property: background-color, translate, scale;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-manage-edit-save:hover {
+    background-color: var(--ds-color-stamp);
+    translate: 0 -1px;
+}
+
+.shelf-manage-edit-save:active {
+    scale: 0.98 0.98;
+}
+
+.shelf-manage-edit-save:disabled {
+    opacity: var(--ds-opacity-disabled);
+}
+
+/* ============================================================================
+   책장 목록
+   ============================================================================ */
+
+.shelf-manage-rows {
+    flex-grow: 1;
+    min-height: 120px;
+    max-height: 240px;
+    margin-bottom: 14px;
+}
+
+.shelf-manage-row {
+    flex-direction: row;
+    align-items: center;
+    background-color: var(--ds-color-paper-soft);
+    border-radius: var(--ds-radius-xs);
+    border-left-width: var(--ds-border-extra);
+    border-left-color: rgba(0, 0, 0, 0);
+    border-top-width: var(--ds-border-hairline);
+    border-right-width: var(--ds-border-hairline);
+    border-bottom-width: var(--ds-border-hairline);
+    border-top-color: var(--ds-color-rule-mute);
+    border-right-color: var(--ds-color-rule-mute);
+    border-bottom-color: var(--ds-color-rule-mute);
+    /* grip 이 44x44 라 row inner 가 그만큼 차지. padding 보정. */
+    padding-top: var(--ds-space-2);
+    padding-bottom: var(--ds-space-2);
+    padding-left: var(--ds-space-2);
+    padding-right: var(--ds-space-4);
+    margin-bottom: 6px;
+    transition-property: background-color, border-left-color, translate;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-manage-row:hover {
+    background-color: var(--ds-color-paper-warm);
+    border-left-color: rgba(28, 22, 18, 0.40);
+    translate: 2px 0;
+}
+
+.shelf-manage-row.active {
+    background-color: var(--ds-color-paper-warm);
+    border-left-color: var(--ds-color-stamp);
+}
+
+.shelf-manage-row.dragging {
+    opacity: var(--ds-opacity-dim);
+    background-color: var(--ds-color-stamp-tint);
+    scale: 0.98 0.98;
+    transition-property: opacity, scale, background-color;
+    transition-duration: var(--ds-motion-medium);
+}
+
+.shelf-manage-row.arming {
+    scale: 1.015 1.015;
+    background-color: var(--ds-color-paper-warm);
+    border-left-color: rgba(178, 50, 38, 0.50);
+    transition-property: scale, background-color, border-left-color;
+    transition-duration: var(--ds-motion-slow);
+}
+
+.shelf-manage-row.drop-above {
+    border-top-width: var(--ds-border-extra);
+    border-top-color: var(--ds-color-stamp);
+    margin-top: -1px;
+}
+
+.shelf-manage-row.drop-below {
+    border-bottom-width: var(--ds-border-extra);
+    border-bottom-color: var(--ds-color-stamp);
+    margin-bottom: -1px;
+}
+
+.shelf-manage-row.dropped {
+    scale: 1.035 1.035;
+    background-color: var(--ds-color-stamp-soft-2);
+    transition-property: scale, background-color;
+    transition-duration: var(--ds-motion-bounce);
+}
+
+/* Grip hit-box (44x44 표준 터치 타겟) */
+.shelf-manage-row-grip {
+    width: 44px;
+    height: 44px;
+    margin-right: 6px;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--ds-radius-md);
+    background-color: rgba(0, 0, 0, 0);
+    transition-property: background-color, scale;
+    transition-duration: var(--ds-motion-fast);
+    flex-shrink: 0;
+}
+
+.shelf-manage-row-grip:hover {
+    background-color: var(--ds-color-hover-ink);
+}
+
+.shelf-manage-row-grip:active {
+    background-color: var(--ds-color-stamp-soft);
+    scale: 0.96 0.96;
+}
+
+.shelf-manage-row-grip-icon {
+    font-size: 20px;
+    color: var(--ds-color-ink-faint);
+    -unity-text-align: middle-center;
+}
+
+.shelf-manage-row-grip:hover > .shelf-manage-row-grip-icon {
+    color: var(--ds-color-ink-soft);
+}
+
+.shelf-manage-row-marker {
+    width: 20px;
+    font-size: var(--ds-font-body-strong);
+    color: var(--ds-color-ink-faint);
+    -unity-text-align: middle-center;
+    flex-shrink: 0;
+}
+
+.shelf-manage-row.active > .shelf-manage-row-marker {
+    color: var(--ds-color-stamp);
+    -unity-font-style: bold;
+}
+
+.shelf-manage-row-name {
+    flex-grow: 1;
+    flex-shrink: 1;
+    font-size: var(--ds-font-list);
+    color: var(--ds-color-ink);
+    -unity-text-align: middle-left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shelf-manage-row.active > .shelf-manage-row-name {
+    -unity-font-style: bold;
+}
+
+.shelf-manage-row-visibility {
+    font-size: var(--ds-font-meta);
+    color: var(--ds-color-ink-faint);
+    letter-spacing: var(--ds-track-meta);
+    -unity-font-style: bold;
+    margin-left: 10px;
+    flex-shrink: 0;
+}
+
+/* ============================================================================
+   Drag ghost
+   ============================================================================ */
+
+.shelf-manage-drag-ghost {
+    position: absolute;
+    flex-direction: row;
+    align-items: center;
+    background-color: var(--ds-color-paper-warm);
+    border-radius: var(--ds-radius-sm);
+    border-left-width: var(--ds-border-stamp);
+    border-left-color: var(--ds-color-stamp);
+    border-top-width: var(--ds-border-hairline);
+    border-right-width: var(--ds-border-hairline);
+    border-bottom-width: var(--ds-border-hairline);
+    border-top-color: rgba(28, 22, 18, 0.22);
+    border-right-color: rgba(28, 22, 18, 0.22);
+    border-bottom-color: rgba(28, 22, 18, 0.22);
+    padding-top: var(--ds-space-2);
+    padding-bottom: var(--ds-space-2);
+    padding-left: 14px;
+    padding-right: var(--ds-space-4);
+    rotate: -2deg;
+    opacity: 0.96;
+    max-width: 320px;
+}
+
+.shelf-manage-drag-ghost-number {
+    font-size: var(--ds-font-body);
+    color: var(--ds-color-stamp);
+    -unity-font-style: bold;
+    letter-spacing: var(--ds-track-loose);
+    margin-right: 10px;
+}
+
+.shelf-manage-drag-ghost-name {
+    font-size: var(--ds-font-body-strong);
+    color: var(--ds-color-ink);
+    -unity-font-style: bold;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 1;
+}
+
+/* ============================================================================
+   Add card
+   ============================================================================ */
+
+.shelf-manage-add-card {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-body-strong);
+    -unity-font-style: bold;
+    letter-spacing: var(--ds-track-button);
+    padding-top: var(--ds-space-4);
+    padding-bottom: var(--ds-space-4);
+    padding-left: 18px;
+    padding-right: 18px;
+    border-radius: var(--ds-radius-xs);
+    border-width: var(--ds-border-hairline);
+    border-color: rgba(95, 80, 65, 0.45);
+    transition-property: background-color, color, border-color, translate;
+    transition-duration: 0.16s;
+}
+
+.shelf-manage-add-card:hover {
+    background-color: var(--ds-color-ink);
+    color: var(--ds-color-ink-on-stamp);
+    border-color: var(--ds-color-ink);
+    translate: 0 -1px;
+}
+
+.shelf-manage-add-card:active {
+    scale: 0.99 0.99;
+}
+
+.shelf-manage-add-card:disabled {
+    opacity: var(--ds-opacity-disabled);
+}
+
+/* 추가 진행 중 — disabled 보다 강조된 시각 (옅은 stamp 배경 + stamp 좌측 line + 진행 텍스트).
+   disabled opacity 보다 명시적으로 색을 부여 (사용자가 "비활성"으로 인식 안 함). */
+.shelf-manage-add-card.is-adding {
+    opacity: 1.0;
+    background-color: var(--ds-color-stamp-tint);
+    color: var(--ds-color-stamp-deep);
+    border-color: var(--ds-color-stamp);
+    border-left-width: var(--ds-border-stamp);
+}
+
+.shelf-manage-add-card.is-adding:hover {
+    background-color: var(--ds-color-stamp-tint);
+    color: var(--ds-color-stamp-deep);
+    translate: 0 0;
+}
+
+/* ----- Status text ----- */
+
+.shelf-manage-status {
+    font-size: var(--ds-font-body);
+    color: var(--ds-color-ink-soft);
+    letter-spacing: var(--ds-track-loose);
+    margin-top: 12px;
+    white-space: normal;
+}
+
+.shelf-manage-status.error {
+    color: var(--ds-color-stamp);
+    -unity-font-style: bold;
+}
+
+/* ============================================================================
+   Sub-modal — modal 안 modal (삭제 확인 등 critical 액션 전 확인).
+   frame 전체를 덮어서 시각적 위계 명확. backdrop 진하게 + 작은 stamp 강조 카드.
+   ============================================================================ */
+
+.shelf-manage-sub-modal {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.shelf-manage-sub-modal-backdrop {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(28, 22, 18, 0.45);
+}
+
+.shelf-manage-sub-modal-card {
+    width: 380px;
+    max-width: 88%;
+    background-color: var(--ds-color-paper);
+    border-radius: var(--ds-radius-md);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    border-left-width: var(--ds-border-stamp);
+    border-left-color: var(--ds-color-stamp);
+    padding-top: var(--ds-space-6);
+    padding-bottom: var(--ds-space-5);
+    padding-left: var(--ds-space-6);
+    padding-right: var(--ds-space-6);
+    flex-direction: column;
+}
+
+.shelf-manage-sub-modal-eyebrow {
+    font-size: var(--ds-font-eyebrow);
+    color: var(--ds-color-stamp);
+    letter-spacing: var(--ds-track-eyebrow);
+    -unity-font-style: bold;
+    margin-bottom: var(--ds-space-2);
+}
+
+.shelf-manage-sub-modal-title {
+    font-size: var(--ds-font-headline);
+    -unity-font-style: bold;
+    color: var(--ds-color-ink);
+    margin-bottom: var(--ds-space-3);
+}
+
+.shelf-manage-sub-modal-message {
+    font-size: var(--ds-font-body-strong);
+    color: var(--ds-color-ink-soft);
+    margin-bottom: var(--ds-space-5);
+    white-space: normal;
+}
+
+.shelf-manage-sub-modal-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+}
+
+.shelf-manage-sub-modal-cancel {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--ds-color-ink-soft);
+    font-size: var(--ds-font-body);
+    padding-top: var(--ds-space-2);
+    padding-bottom: var(--ds-space-2);
+    padding-left: var(--ds-space-5);
+    padding-right: var(--ds-space-5);
+    margin-right: var(--ds-space-2);
+    border-width: var(--ds-border-hairline);
+    border-color: var(--ds-color-rule);
+    border-radius: var(--ds-radius-xs);
+    transition-property: background-color, color;
+    transition-duration: var(--ds-motion-fast);
+}
+
+.shelf-manage-sub-modal-cancel:hover {
+    background-color: var(--ds-color-hover-ink);
+    color: var(--ds-color-ink);
+}
+
+.shelf-manage-sub-modal-confirm {
+    background-color: var(--ds-color-stamp);
+    color: var(--ds-color-on-stamp);
+    font-size: var(--ds-font-body);
+    -unity-font-style: bold;
+    letter-spacing: var(--ds-track-meta);
+    padding-top: 9px;
+    padding-bottom: 9px;
+    padding-left: var(--ds-space-6);
+    padding-right: var(--ds-space-6);
+    border-width: 0;
+    border-radius: var(--ds-radius-xs);
+    transition-property: background-color, translate, scale;
+    transition-duration: var(--ds-motion-base);
+}
+
+.shelf-manage-sub-modal-confirm:hover {
+    background-color: var(--ds-color-stamp-deep);
+    translate: 0 -1px;
+}
+
+.shelf-manage-sub-modal-confirm:active {
+    scale: 0.98 0.98;
+}
+
+/* 결과 sub-modal 의 실패 variant — 좌측 사이드와 eyebrow 색을 진한 stamp 로 분기.
+   success 는 기본 stamp 색 그대로 유지 (눈에 거슬리지 않게). */
+.shelf-manage-result-card.is-failure {
+    border-left-color: var(--ds-color-stamp-deep);
+}
+
+.shelf-manage-result-card.is-failure > .shelf-manage-sub-modal-eyebrow {
+    color: var(--ds-color-stamp-deep);
+}

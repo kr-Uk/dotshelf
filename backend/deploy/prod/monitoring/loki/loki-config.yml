@@ -1,0 +1,53 @@
+# DotShelf Loki 설정 (single-binary 모드).
+#
+# 배치: prod 호스트.
+# 역할: SSAFY 호스트의 Promtail 이 push 하는 blue/green 컨테이너 로그를 저장/검색.
+# 경량 설정 — 단일 파일시스템 저장, retention 7일.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: warn
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # 대형 이벤트 (스택트레이스 등) 대비
+  max_query_series: 5000
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h  # 7 days
+  ingestion_rate_mb: 8
+  ingestion_burst_size_mb: 16
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+# 전체 로그 retention 7일 — 프로젝트 규모에 맞게 짧게. 디스크 여유 있으면 14d 로 늘려도 OK.
+table_manager:
+  retention_deletes_enabled: true
+  retention_period: 168h
+
+ruler:
+  alertmanager_url: http://localhost:9093

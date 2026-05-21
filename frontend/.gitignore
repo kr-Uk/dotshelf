@@ -1,0 +1,37 @@
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+UserSettings/
+MemoryCaptures/
+Assets/_Recovery/
+Assets/_Recovery.meta
+.vs/
+.idea/
+.appdata/
+.codex/
+.dotnet/
+.nuget/
+
+# .claude/ is gitignored globally; allow it for this project (skill definitions live here)
+!.claude/
+.claude/settings.local.json
+*.csproj
+*.sln
+*.slnx
+*.user
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity Performance Testing framework runtime artifacts (auto-regenerated on Play/Test)
+Assets/Resources/PerformanceTestRunInfo.json
+Assets/Resources/PerformanceTestRunInfo.json.meta
+Assets/Resources/PerformanceTestRunSettings.json
+Assets/Resources/PerformanceTestRunSettings.json.meta

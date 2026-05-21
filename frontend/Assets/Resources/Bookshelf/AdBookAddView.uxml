@@ -1,0 +1,25 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <ui:Style src="AdBookAddView.uss" />
+    <ui:VisualElement name="root" class="shelf-ad-root hidden" picking-mode="Position">
+        <ui:VisualElement name="backdrop" class="shelf-ad-backdrop" picking-mode="Position" />
+        <ui:VisualElement name="frame" class="shelf-ad-frame" picking-mode="Position">
+
+            <ui:VisualElement class="shelf-ad-header">
+                <ui:VisualElement class="shelf-ad-header-text">
+                    <ui:Label class="shelf-ad-eyebrow" text="ADD TO SHELF" />
+                    <ui:Label class="shelf-ad-title" text="책장에 추가하기" />
+                </ui:VisualElement>
+                <ui:Button name="close-button" class="shelf-ad-close-button" text="✕" />
+            </ui:VisualElement>
+
+            <ui:VisualElement class="shelf-ad-rule" />
+
+            <ui:VisualElement class="shelf-ad-body">
+                <ui:Label class="shelf-ad-hint" text="추가할 책장을 고른 뒤 빈 칸을 클릭해 위치를 선택하세요." />
+                <ui:ScrollView name="shelf-list" class="shelf-ad-list" mode="Vertical" horizontal-scroller-visibility="Hidden" />
+                <ui:Label name="status" class="shelf-ad-status" text="" />
+            </ui:VisualElement>
+
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

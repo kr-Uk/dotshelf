@@ -1,0 +1,258 @@
+using System;
+using System.Collections;
+using System.Text;
+using System.Text.RegularExpressions;
+using App.Domain;
+using App.Infrastructure.Api.Dtos;
+using Newtonsoft.Json;
+using UnityEngine;
+using UnityEngine.Networking;
+
+namespace App.Auth
+{
+    // Coroutine-based BE client for /v1/auth/* endpoints. Lives on its own
+    // because LoginScene does not host APIManager (APIManager spawns in
+    // MainScene and persists via DontDestroyOnLoad). Once login succeeds we
+    // hand the access token to AuthSession; APIManager picks it up later in
+    // MainScene.
+    public sealed class AuthApiClient : MonoBehaviour
+    {
+        public const string DefaultBaseUrl = ApiEndpointDefaults.DefaultBaseUrl;
+        public const int DefaultTimeoutSeconds = 10;
+
+        private string baseUrl = DefaultBaseUrl;
+        private int timeoutSeconds = DefaultTimeoutSeconds;
+
+        public static AuthApiClient EnsureInstance(string overrideBaseUrl = null, int overrideTimeoutSeconds = 0)
+        {
+            var existing = FindFirstObjectByType<AuthApiClient>();
+            if (existing == null)
+            {
+                var holder = new GameObject(nameof(AuthApiClient));
+                DontDestroyOnLoad(holder);
+                existing = holder.AddComponent<AuthApiClient>();
+            }
+
+            if (!string.IsNullOrWhiteSpace(overrideBaseUrl))
+            {
+                existing.baseUrl = overrideBaseUrl.Trim().TrimEnd('/');
+            }
+
+            if (overrideTimeoutSeconds > 0)
+            {
+                existing.timeoutSeconds = overrideTimeoutSeconds;
+            }
+
+            return existing;
+        }
+
+        public Coroutine PostSocialLogin(
+            SocialLoginRequestDto request,
+            Action<AuthTokenResponseDto> onSuccess,
+            Action<ApiErrorResponseDto> onError)
+        {
+            return StartCoroutine(SendJson("/v1/auth/social-login", request, onSuccess, onError));
+        }
+
+        // Desktop browser-OAuth code exchange. Posts to the same /social-login
+        // endpoint as the mobile token-flow above. BE disambiguates the two
+        // flows by `tokenType`: code-flow sends "AUTHORIZATION_CODE", token-
+        // flow sends ID_TOKEN / ACCESS_TOKEN. The wire body shapes differ
+        // (code/redirectUri/state vs token) so the client keeps separate
+        // DTOs and helper methods, but they share a single backend route.
+        //
+        // BE receives the authorization code in `token` and exchanges it
+        // server-side when tokenType is AUTHORIZATION_CODE. redirectUri must
+        // match the URI used at the provider authorize step; for Apple Desktop
+        // this is the hosted BE relay callback, not Unity's loopback URL.
+        public Coroutine PostSocialLoginCode(
+            SocialLoginByCodeRequestDto request,
+            Action<AuthTokenResponseDto> onSuccess,
+            Action<ApiErrorResponseDto> onError)
+        {
+            // Editor/Build 의 baseUrl 일관성 확인용 — code/state 등 민감 정보 노출 안 함
+            // (SendJson 내부 Redact 가 이미 다룸).
+            Debug.Log($"[Auth] POST /v1/auth/social-login baseUrl={baseUrl}");
+            return StartCoroutine(SendJson("/v1/auth/social-login", request, onSuccess, onError));
+        }
+
+        public Coroutine PostTokenRefresh(
+            string refreshToken,
+            Action<AuthTokenResponseDto> onSuccess,
+            Action<ApiErrorResponseDto> onError)
+        {
+            var body = new TokenRefreshRequestDto { RefreshToken = refreshToken };
+            return StartCoroutine(SendJson("/v1/auth/token/refresh", body, onSuccess, onError));
+        }
+
+        public Coroutine PostLogout(string refreshToken, Action onComplete)
+        {
+            var body = new LogoutRequestDto { RefreshToken = refreshToken };
+            return StartCoroutine(SendJson<LogoutRequestDto, object>(
+                "/v1/auth/logout",
+                body,
+                _ => onComplete?.Invoke(),
+                _ => onComplete?.Invoke()));
+        }
+
+        private IEnumerator SendJson<TRequest, TResponse>(
+            string path,
+            TRequest body,
+            Action<TResponse> onSuccess,
+            Action<ApiErrorResponseDto> onError)
+        {
+            var url = BuildUrl(path);
+            var request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST)
+            {
+                downloadHandler = new DownloadHandlerBuffer(),
+                timeout = Mathf.Max(1, timeoutSeconds)
+            };
+            request.SetRequestHeader("Accept", "application/json");
+            request.SetRequestHeader("Content-Type", "application/json");
+
+            string requestBodyJson = null;
+            if (body != null)
+            {
+                requestBodyJson = JsonConvert.SerializeObject(body);
+                request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(requestBodyJson));
+            }
+
+            Debug.Log($"[Auth] -> POST {url} body={Redact(requestBodyJson) ?? "(empty)"}");
+
+            using (request)
+            {
+                yield return request.SendWebRequest();
+
+                var responseText = request.downloadHandler != null ? request.downloadHandler.text : null;
+
+                Debug.Log($"[Auth] <- {request.responseCode} {url} body={Redact(responseText)}");
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    Debug.LogWarning($"[Auth] transport failure: result={request.result} error={request.error}");
+                    onError?.Invoke(ParseError(request.responseCode, responseText, request.error));
+                    yield break;
+                }
+
+                ApiEnvelopeDto<TResponse> envelope = null;
+                try
+                {
+                    envelope = string.IsNullOrWhiteSpace(responseText)
+                        ? null
+                        : JsonConvert.DeserializeObject<ApiEnvelopeDto<TResponse>>(responseText);
+                }
+                catch (Exception parseException)
+                {
+                    onError?.Invoke(new ApiErrorResponseDto
+                    {
+                        StatusCode = request.responseCode,
+                        Error = parseException.Message,
+                        Body = responseText
+                    });
+                    yield break;
+                }
+
+                if (envelope == null || !envelope.Succeeded)
+                {
+                    onError?.Invoke(new ApiErrorResponseDto
+                    {
+                        StatusCode = request.responseCode,
+                        Code = envelope != null ? envelope.Code : null,
+                        Message = envelope != null ? envelope.Message : null,
+                        Body = responseText
+                    });
+                    yield break;
+                }
+
+                onSuccess?.Invoke(envelope.Result);
+            }
+        }
+
+        private static ApiErrorResponseDto ParseError(long statusCode, string body, string fallback)
+        {
+            var error = new ApiErrorResponseDto
+            {
+                StatusCode = statusCode,
+                Error = fallback,
+                Body = body
+            };
+
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                return error;
+            }
+
+            try
+            {
+                var envelope = JsonConvert.DeserializeObject<ApiEnvelopeDto<object>>(body);
+                if (envelope != null && (!string.IsNullOrWhiteSpace(envelope.Code) || !string.IsNullOrWhiteSpace(envelope.Message)))
+                {
+                    error.Code = envelope.Code;
+                    error.Message = envelope.Message;
+                    return error;
+                }
+
+                var parsed = JsonConvert.DeserializeObject<ApiErrorResponseDto>(body);
+                if (parsed != null)
+                {
+                    error.Code = parsed.Code;
+                    error.Message = parsed.Message;
+                    error.HttpStatus = parsed.HttpStatus;
+                }
+            }
+            catch (Exception)
+            {
+                // Server returned a non-envelope body; keep the raw body for diagnostics.
+            }
+
+            return error;
+        }
+
+        private string BuildUrl(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return baseUrl;
+            }
+
+            // Mac/Linux Mono 버그 회피: Uri.TryCreate가 POSIX 절대 경로 "/v1/..."를 file:///v1/...
+            // 로 인식해 absolute로 통과시킴 → baseUrl prefix 없이 path만 반환 → UnityWebRequest가
+            // localhost로 fallback / 연결 실패. Windows .NET은 "/" 시작을 absolute로 안 봄.
+            // APIManager.BuildUrl과 동일 fix: HTTP 계열 known scheme만 absolute로 인정.
+            // 자세한 root cause는 MR #79 코멘트 참고.
+            if (Uri.TryCreate(path, UriKind.Absolute, out var parsed) && IsHttpLikeScheme(parsed.Scheme))
+            {
+                return path;
+            }
+
+            return $"{baseUrl}/{path.TrimStart('/')}";
+        }
+
+        private static bool IsHttpLikeScheme(string scheme)
+        {
+            return string.Equals(scheme, "http", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(scheme, "https", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(scheme, "ws", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(scheme, "wss", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Redact provider/access/refresh tokens, OIDC nonce, OAuth code/state, and PKCE codeVerifier
+        // from JSON bodies before they reach Debug.Log. Unity logs leak through editor consoles, device
+        // logcat, CI batchmode logs, and crash reports, so the raw values must never be written.
+        // PKCE codeVerifier (RFC 7636) — BE forwards it to the OAuth provider for code/challenge
+        // verification; if logged it lets an attacker reuse a stolen authorization code (MR 113 review skh1205 [P2]).
+        private static readonly Regex SensitiveFieldRegex = new Regex(
+            "\"(token|accessToken|refreshToken|idToken|access_token|refresh_token|id_token|nonce|guestSessionId|guest_session_id|code|state|codeVerifier|code_verifier)\"\\s*:\\s*\"[^\"]*\"",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static string Redact(string body)
+        {
+            if (string.IsNullOrEmpty(body))
+            {
+                return body;
+            }
+
+            return SensitiveFieldRegex.Replace(body, "\"$1\":\"***\"");
+        }
+    }
+}

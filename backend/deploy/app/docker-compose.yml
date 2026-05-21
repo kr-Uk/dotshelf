@@ -1,0 +1,197 @@
+services:
+  # Blue-Green 무중단 배포용 2-color 컨테이너.
+  # - 색당 포트: blue=8080, green=8081 (Tailscale IP 에 바인딩)
+  # - 어느 색이 트래픽을 받는지는 prod Nginx upstream.active.conf 로 결정
+  # - deploy-blue-green.sh 가 두 색 중 idle 쪽만 재시작하고 Nginx 스위칭 후 구 color stop
+  # - mem_limit=4g: JVM 2개 공존 시 호스트 15 GiB 중 8 GiB 점유로 OOM 방지 (MaxRAMPercentage=60 기준 heap ~2.4 GiB)
+  api-blue:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    image: dotshelf/api:latest
+    container_name: dotshelf-api-blue
+    restart: unless-stopped
+    extra_hosts:
+      - "dotshelf-prod:100.86.247.88"
+    ports:
+      - "100.74.2.103:8080:8080"
+    mem_limit: 4g
+    environment:
+      DEPLOY_COLOR: blue
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL}
+      GOOGLE_SERVER_CLIENT_ID: ${GOOGLE_SERVER_CLIENT_ID}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS}
+      # Desktop OAuth PKCE 흐름 (MR #90).
+      GOOGLE_DESKTOP_CLIENT_ID: ${GOOGLE_DESKTOP_CLIENT_ID:-}
+      GOOGLE_DESKTOP_CLIENT_SECRET: ${GOOGLE_DESKTOP_CLIENT_SECRET:-}
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID}
+      APPLE_CLIENT_IDS: ${APPLE_CLIENT_IDS}
+      APPLE_DESKTOP_CLIENT_ID: ${APPLE_DESKTOP_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
+      APPLE_DESKTOP_REDIRECT_URI: ${APPLE_DESKTOP_REDIRECT_URI:-}
+      # S3 업로드 — bucket 은 부팅 검증(@NotBlank) + compose substitution 양쪽에서 강제.
+      # ${...:?} 문법은 .env 에 변수 누락 시 docker-compose 가 컨테이너 시작 자체를 거부해
+      # "ApplicationContext failed" 보다 한 단계 빨리 진단된다 (운영자 휴먼 에러 차단).
+      # 자격증명(ACCESS/SECRET)은 비어도 OK — S3Config.credentialsProvider() 가
+      # hasText() 검사 후 DefaultCredentialsProvider 로 fallback (env / profile / EC2 IAM Role).
+      # SSAFY 호스트는 EC2 IAM Role 미사용이라 .env 에 IAM User 키를 박는 흐름.
+      S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required for prod boot - see /opt/dotshelf/.env}
+      S3_REGION: ${S3_REGION:-ap-northeast-2}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      S3_PRESIGN_TTL: ${S3_PRESIGN_TTL:-300}
+      S3_PRESIGN_BUNDLE_TTL: ${S3_PRESIGN_BUNDLE_TTL:-1800}
+      TZ: Asia/Seoul
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api-green:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    image: dotshelf/api:latest
+    container_name: dotshelf-api-green
+    restart: unless-stopped
+    extra_hosts:
+      - "dotshelf-prod:100.86.247.88"
+    ports:
+      - "100.74.2.103:8081:8080"
+    mem_limit: 4g
+    environment:
+      DEPLOY_COLOR: green
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL}
+      GOOGLE_SERVER_CLIENT_ID: ${GOOGLE_SERVER_CLIENT_ID}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS}
+      # Desktop OAuth PKCE 흐름 (MR #90).
+      GOOGLE_DESKTOP_CLIENT_ID: ${GOOGLE_DESKTOP_CLIENT_ID:-}
+      GOOGLE_DESKTOP_CLIENT_SECRET: ${GOOGLE_DESKTOP_CLIENT_SECRET:-}
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID}
+      APPLE_CLIENT_IDS: ${APPLE_CLIENT_IDS}
+      APPLE_DESKTOP_CLIENT_ID: ${APPLE_DESKTOP_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
+      APPLE_DESKTOP_REDIRECT_URI: ${APPLE_DESKTOP_REDIRECT_URI:-}
+      # S3 업로드 — bucket 은 부팅 검증(@NotBlank) + compose substitution 양쪽에서 강제.
+      # ${...:?} 문법은 .env 에 변수 누락 시 docker-compose 가 컨테이너 시작 자체를 거부해
+      # "ApplicationContext failed" 보다 한 단계 빨리 진단된다 (운영자 휴먼 에러 차단).
+      # 자격증명(ACCESS/SECRET)은 비어도 OK — S3Config.credentialsProvider() 가
+      # hasText() 검사 후 DefaultCredentialsProvider 로 fallback (env / profile / EC2 IAM Role).
+      # SSAFY 호스트는 EC2 IAM Role 미사용이라 .env 에 IAM User 키를 박는 흐름.
+      S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required for prod boot - see /opt/dotshelf/.env}
+      S3_REGION: ${S3_REGION:-ap-northeast-2}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      S3_PRESIGN_TTL: ${S3_PRESIGN_TTL:-300}
+      S3_PRESIGN_BUNDLE_TTL: ${S3_PRESIGN_BUNDLE_TTL:-1800}
+      TZ: Asia/Seoul
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------- service-web (공개 랜딩, dotshelf.digital / www) ----------
+  # Next.js 16 standalone 컨테이너. prod Nginx 가 Tailscale 로 :3002 로 프록시.
+  # api 와 다르게 Blue-Green 미적용 — 랜딩이라 짧은 다운타임(<5s) 허용.
+  service-web:
+    build:
+      context: ./service-web
+      dockerfile: Dockerfile
+    image: dotshelf/service-web:latest
+    container_name: dotshelf-service-web
+    restart: unless-stopped
+    ports:
+      - "100.74.2.103:3002:3000"
+    mem_limit: 512m
+    environment:
+      NODE_ENV: production
+      TZ: Asia/Seoul
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------- admin-web (운영자 백오피스, admin.dotshelf.digital) ----------
+  # Next.js 16 standalone 컨테이너. prod Nginx 가 Tailscale 로 :3001 로 프록시.
+  # Cloudflare Access(Zero Trust) 가 도메인 앞단에서 Google OAuth 인증을 강제 — 컨테이너 자체 인증 코드 없음 가정.
+  admin-web:
+    build:
+      context: ./admin-web
+      dockerfile: Dockerfile
+    image: dotshelf/admin-web:latest
+    container_name: dotshelf-admin-web
+    restart: unless-stopped
+    ports:
+      - "100.74.2.103:3001:3000"
+    mem_limit: 512m
+    environment:
+      NODE_ENV: production
+      TZ: Asia/Seoul
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------- Promtail (로그 수집기) ----------
+  # dotshelf-api-* 컨테이너의 Docker json-file 로그를 수집해 prod 호스트 Loki(100.86.247.88:3100) 로 push.
+  # - api-blue / api-green 과 독립 life-cycle (배포 시 재시작 안 됨)
+  # - promtail/promtail-config.yml 은 repo 에서 rsync 돼야 한다 (.gitlab-ci.yml 에 추가 예정)
+  promtail:
+    image: grafana/promtail:3.2.1
+    container_name: dotshelf-promtail
+    restart: unless-stopped
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      # 컨테이너 로그 & 메타데이터 read-only 마운트
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - promtail-positions:/tmp
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes:
+  promtail-positions:

@@ -1,0 +1,158 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: dotshelf-api
+
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:.env.local[.properties]
+
+  profiles:
+    default: local
+
+  jackson:
+    time-zone: UTC
+    default-property-inclusion: non_null
+
+  # multipart 기본 한도(1MB)는 Unity 자동 캡처 썸네일에는 부족.
+  # SpaceService.MAX_THUMBNAIL_SIZE_BYTES(2MB) 와 연동해 약간 여유를 둔다.
+  servlet:
+    multipart:
+      max-file-size: 4MB
+      max-request-size: 4MB
+
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  # OAuth2 client: add providers/registrations when needed
+  # security:
+  #   oauth2:
+  #     client:
+  #       registration:
+  #         google:
+  #           client-id: ${GOOGLE_CLIENT_ID}
+  #           client-secret: ${GOOGLE_CLIENT_SECRET}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    doc-expansion: none
+
+jwt:
+  secret: ${JWT_SECRET:local-dev-secret-change-me-32bytes-minimum-length}
+  access-token-validity-seconds: ${JWT_ACCESS_TTL:1800}
+  refresh-token-validity-seconds: ${JWT_REFRESH_TTL:2592000}
+  issuer: dotshelf
+
+admin:
+  test-auth:
+    enabled: ${ADMIN_TEST_AUTH_ENABLED:false}
+    header-name: ${ADMIN_TEST_AUTH_HEADER_NAME:X-Test-Admin-User-Id}
+
+social:
+  google:
+    server-client-id: ${GOOGLE_SERVER_CLIENT_ID:${GOOGLE_CLIENT_ID:}}
+    client-ids: ${GOOGLE_CLIENT_IDS:${GOOGLE_CLIENT_ID:}}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    # Desktop OAuth용 client_id (PKCE 흐름). FE가 authorize 시 사용한 값과 정확히 일치해야 함.
+    # 미설정 시 PKCE 흐름은 server-client-id로 시도 (Google이 거절할 수 있음).
+    desktop-client-id: ${GOOGLE_DESKTOP_CLIENT_ID:}
+    # Google Desktop app type client는 PKCE 사용해도 client_secret을 형식적으로 요구함
+    # (Google 정책 — 공개 secret이지만 token endpoint가 받음). 진짜 보안은 PKCE가 담당.
+    desktop-client-secret: ${GOOGLE_DESKTOP_CLIENT_SECRET:}
+    issuers:
+      - https://accounts.google.com
+      - accounts.google.com
+    jwks-uri: https://www.googleapis.com/oauth2/v3/certs
+    token-uri: https://oauth2.googleapis.com/token
+  kakao:
+    rest-api-key: ${KAKAO_REST_API_KEY:}
+    client-secret: ${KAKAO_CLIENT_SECRET:}
+    redirect-uri: ${KAKAO_REDIRECT_URI:}
+    user-info-uri: https://kapi.kakao.com/v2/user/me
+    token-uri: https://kauth.kakao.com/oauth/token
+  apple:
+    client-ids: ${APPLE_CLIENT_IDS:${APPLE_CLIENT_ID:}}
+    desktop-client-id: ${APPLE_DESKTOP_CLIENT_ID:}
+    team-id: ${APPLE_TEAM_ID:}
+    key-id: ${APPLE_KEY_ID:}
+    private-key: ${APPLE_PRIVATE_KEY:}
+    desktop-redirect-uri: ${APPLE_DESKTOP_REDIRECT_URI:}
+    issuers:
+      - https://appleid.apple.com
+    jwks-uri: https://appleid.apple.com/auth/keys
+    token-uri: https://appleid.apple.com/auth/token
+
+payment:
+  inicis:
+    mid: ${INICIS_MID:}
+    sign-key: ${INICIS_SIGN_KEY:}
+    return-url: ${INICIS_RETURN_URL:}
+    close-url: ${INICIS_CLOSE_URL:}
+    request-script-url: ${INICIS_REQUEST_SCRIPT_URL:https://stdpay.inicis.com/stdjs/INIStdPay.js}
+  # KG이니시스 충전업종 정책에 맞춘 결제 정책. 사업자/민원/약관 URL은
+  # 실제 값이 정해지면 GitLab Variables(prod) 또는 .env.local(local) 로 주입한다.
+  policy:
+    max-charge-krw: ${PAYMENT_MAX_CHARGE_KRW:100000}
+    # 페이지 단가. 1P = N원. 환율/프로모션/번들가 책정 시 env 한 곳에서 갱신.
+    page-unit-price-krw: ${PAYMENT_PAGE_UNIT_PRICE_KRW:1}
+    # 결제·내역·약관 화면 공통 유효기간 안내 문구. 변호사·KG 협의 결과 바뀌면 env 한 곳에서 갱신.
+    validity-notice: ${PAYMENT_VALIDITY_NOTICE:구매 포인트와 아이템 이용권한의 유효기간은 결제일로부터 1년이며, 서비스 운영 기간 동안 자동으로 갱신됩니다.}
+    # PG/DB/결제 내역 orderName 에 붙는 짧은 suffix. KG 결제창 goodname 100자 제한 안에서 끝나야 함.
+    order-name-suffix: ${PAYMENT_ORDER_NAME_SUFFIX:(유효기간 1년/자동갱신)}
+    responsibility-notice: ${PAYMENT_RESPONSIBILITY_NOTICE:DotShelf에서 운영되는 사이트 내 판매되는 모든 상품은 DotShelf에서 책임지고 있습니다.}
+    legal-urls:
+      payment-terms: ${LEGAL_URL_PAYMENT_TERMS:}
+      refund-policy: ${LEGAL_URL_REFUND_POLICY:}
+      privacy: ${LEGAL_URL_PRIVACY:}
+      business-info: ${LEGAL_URL_BUSINESS_INFO:}
+    merchant:
+      name: ${MERCHANT_NAME:}
+      registration-number: ${MERCHANT_REGISTRATION_NUMBER:}
+      representative: ${MERCHANT_REPRESENTATIVE:}
+      address: ${MERCHANT_ADDRESS:}
+      tel: ${MERCHANT_TEL:}
+      email: ${MERCHANT_EMAIL:}
+      mail-order-registration-number: ${MERCHANT_MAIL_ORDER_REGISTRATION_NUMBER:}
+    complaint-contact:
+      name: ${COMPLAINT_CONTACT_NAME:}
+      tel: ${COMPLAINT_CONTACT_TEL:}
+    # 카드사별 충전 한도 안내 (사용자에게 노출). 실 차단은 향후 BIN 매핑으로
+    # 카드사 자동 식별 + 카드사별 일/월 한도 검증 단계에서 추가한다.
+    card-limits:
+      - issuer: BC
+        description: "1일 20만원"
+      - issuer: 국민
+        description: "월 100만원 / 1일 4회"
+      - issuer: 삼성
+        description: "월 50만원 (할부불가)"
+      - issuer: 신한
+        description: "1일 5만원"
+      - issuer: 롯데
+        description: "1일 10만원 × 3회"
+      - issuer: 농협
+        description: "1일 20만원 / 1회 5만원 × 4회"
+      - issuer: 현대
+        description: "충전 금액 10만원 초과 시 등록 불가"
+
+# 이미지/에셋 업로드용 S3 설정. 자격증명은 .env(local) / GitLab Variables(prod) 경유.
+# public-base-url 은 CDN(CloudFront) 또는 버킷 public URL — 클라가 GET 으로 보는 호스트.
+app:
+  storage:
+    s3:
+      bucket: ${S3_BUCKET:}
+      region: ${S3_REGION:ap-northeast-2}
+      access-key: ${S3_ACCESS_KEY:}
+      secret-key: ${S3_SECRET_KEY:}
+      public-base-url: ${S3_PUBLIC_BASE_URL:}
+      presign-ttl-seconds: ${S3_PRESIGN_TTL:300}
+      presign-bundle-ttl-seconds: ${S3_PRESIGN_BUNDLE_TTL:1800}
