@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -290,6 +291,121 @@ namespace BookshelfPorting.Runtime
             }
 
             return roundedUiSprite;
+        }
+    }
+
+    internal static class LikeHeartIconProvider
+    {
+        private const string IconResourcePath = "App/UI/Icons/Reactions/icon_like_heart";
+        private const string IconAssetPath = "Assets/Resources/App/UI/Icons/Reactions/icon_like_heart.png";
+
+        private static readonly HashSet<string> LoggedRenderPoints = new();
+        private static Sprite cachedSprite;
+        private static Texture2D fallbackTexture;
+
+        public static Sprite GetSprite()
+        {
+            if (cachedSprite != null)
+            {
+                return cachedSprite;
+            }
+
+            cachedSprite = Resources.Load<Sprite>(IconResourcePath);
+
+#if UNITY_EDITOR
+            if (cachedSprite == null)
+            {
+                cachedSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(IconAssetPath);
+            }
+#endif
+
+            if (cachedSprite == null)
+            {
+                Debug.LogWarning($"[LikeHeartIconProvider] icon_like_heart sprite not found at Resources path '{IconResourcePath}'; using generated fallback.");
+                cachedSprite = CreateFallbackSprite();
+            }
+
+            return cachedSprite;
+        }
+
+        private static Sprite CreateFallbackSprite()
+        {
+            const int size = 64;
+            fallbackTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = "GeneratedLikeHeartIcon",
+                hideFlags = HideFlags.HideAndDontSave,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    var px = (x + 0.5f) / size * 2f - 1f;
+                    var py = (y + 0.5f) / size * 2f - 1f + 0.08f;
+                    var heart = Mathf.Pow(px * px + py * py - 0.42f, 3f) - px * px * py * py * py;
+                    var filledAlpha = Mathf.Clamp01((0.018f - heart) * 42f);
+                    var innerAlpha = Mathf.Clamp01((-0.045f - heart) * 42f);
+                    var alpha = Mathf.Clamp01(filledAlpha - innerAlpha);
+                    fallbackTexture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                }
+            }
+
+            fallbackTexture.Apply(false, false);
+            var sprite = Sprite.Create(
+                fallbackTexture,
+                new Rect(0f, 0f, size, size),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0,
+                SpriteMeshType.FullRect);
+            sprite.name = "GeneratedLikeHeartIcon";
+            sprite.hideFlags = HideFlags.HideAndDontSave;
+            return sprite;
+        }
+
+        public static void ApplyTo(Image image, string renderPoint)
+        {
+            ApplyTo(image, renderPoint, Color.white);
+        }
+
+        public static void ApplyTo(Image image, string renderPoint, Color tint)
+        {
+            if (image == null)
+            {
+                return;
+            }
+
+            var sprite = GetSprite();
+            image.sprite = sprite;
+            image.type = Image.Type.Simple;
+            image.preserveAspect = true;
+            image.material = null;
+            image.color = tint;
+            image.raycastTarget = false;
+
+            LogRenderPointOnce(image, sprite, renderPoint);
+        }
+
+        private static void LogRenderPointOnce(Image image, Sprite sprite, string renderPoint)
+        {
+            var key = string.IsNullOrWhiteSpace(renderPoint) ? image.name : renderPoint;
+            if (!LoggedRenderPoints.Add(key))
+            {
+                return;
+            }
+
+            var texture = sprite != null ? sprite.texture : null;
+            var textureInfo = texture != null
+                ? $"{texture.name} {texture.width}x{texture.height} filter={texture.filterMode}"
+                : "null";
+            var materialName = image.material != null ? image.material.name : "null";
+            Debug.Log(
+                $"[LikeHeartIconProvider] {key}: sprite={(sprite != null ? sprite.name : "null")} " +
+                $"texture={textureInfo} type={image.type} preserveAspect={image.preserveAspect} " +
+                $"material={materialName} color={image.color}");
         }
     }
 }
