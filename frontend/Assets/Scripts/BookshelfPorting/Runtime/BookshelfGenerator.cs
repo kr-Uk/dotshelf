@@ -36,7 +36,6 @@ namespace BookshelfPorting.Runtime
         private const string AdvertisementBookInstanceName = "AdvertisementBook_Section";
         private const string BookCoverLabelsName = "BookCoverLabels";
         private const string BookPageEdgesName = "BookPageEdges";
-        private const string BookPageEdgeTextureAssetPath = "Assets/Arts/Textures/Books/book_page_edge_texture.png";
         private const string BookPageEdgeTextureResourcePath = "Books/book_page_edge_texture";
         private const float BookCoverSurfaceOffset = 0.506f;
         private const float BookPageEdgeInset = 0.012f;
@@ -2409,15 +2408,6 @@ namespace BookshelfPorting.Runtime
                 Debug.Log($"[BookTexture] PageEdge texture source=Resources path={BookPageEdgeTextureResourcePath}");
                 return resourceTexture;
             }
-
-#if UNITY_EDITOR
-            var assetTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(BookPageEdgeTextureAssetPath);
-            if (assetTexture != null)
-            {
-                Debug.Log($"[BookTexture] PageEdge texture source=AssetDatabase path={BookPageEdgeTextureAssetPath}");
-                return assetTexture;
-            }
-#endif
 
             Debug.LogWarning($"[BookTexture] PageEdge texture missing at Resources path={BookPageEdgeTextureResourcePath}; using generated fallback.");
             return GetGeneratedBookPageEdgeTexture();
