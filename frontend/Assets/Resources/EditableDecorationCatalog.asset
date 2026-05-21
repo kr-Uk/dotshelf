@@ -16,6 +16,7 @@ MonoBehaviour:
   - DisplayName: Ads Book
     Prefab: {fileID: 6156902042414624892, guid: 804b03257239a6d43902dbab519aa185, type: 3}
     SourceAssetPath: Assets/Arts/Models/ads_book/ads_book.glb
+    PreviewSprite: {fileID: 21300000, guid: a78d1500cf04ea4478cb019202104292, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -23,6 +24,7 @@ MonoBehaviour:
   - DisplayName: Deepsea Aquarium
     Prefab: {fileID: -8098169881513260187, guid: 633a6965f54189f4894a0acfc5f102c7, type: 3}
     SourceAssetPath: Assets/Arts/Models/deepsea_aquarium.glb
+    PreviewSprite: {fileID: 21300000, guid: 518b1ce8c6414344fa5f84ba2924bc21, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -30,6 +32,7 @@ MonoBehaviour:
   - DisplayName: Deepsea Bed
     Prefab: {fileID: -8098169881513260187, guid: 3c9abeaaec3af2b4aa5f371a39a5a66f, type: 3}
     SourceAssetPath: Assets/Arts/Models/deepsea_bed.glb
+    PreviewSprite: {fileID: 21300000, guid: 186fdb74aa4e36646b2580dd6da2bd48, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 5
@@ -37,6 +40,7 @@ MonoBehaviour:
   - DisplayName: Deepsea Chair
     Prefab: {fileID: -8098169881513260187, guid: cfb805f65fdf0b041bd07b983816d5a8, type: 3}
     SourceAssetPath: Assets/Arts/Models/deepsea_chair.glb
+    PreviewSprite: {fileID: 21300000, guid: 0734d5e0840f212448da2eb6e0b2203a, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 2
@@ -44,6 +48,7 @@ MonoBehaviour:
   - DisplayName: Deepsea Coral
     Prefab: {fileID: -8098169881513260187, guid: c5b8897eaa4651d42a2fca3c7b9c73f2, type: 3}
     SourceAssetPath: Assets/Arts/Models/deepsea_coral.glb
+    PreviewSprite: {fileID: 21300000, guid: 42d9c02dbd505f544b9ac5afb0fc3fb1, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -51,6 +56,7 @@ MonoBehaviour:
   - DisplayName: Deepsea Coral2
     Prefab: {fileID: -8098169881513260187, guid: 17a80653c85e90a4f9f2146ee9622df4, type: 3}
     SourceAssetPath: Assets/Arts/Models/deepsea_coral2.glb
+    PreviewSprite: {fileID: 21300000, guid: 2c7397e6a10661245b9e9ef3e4e24d73, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -58,6 +64,7 @@ MonoBehaviour:
   - DisplayName: Deepsea Dolphin
     Prefab: {fileID: -8098169881513260187, guid: df959cf8c66228e4bb4c31df06d96633, type: 3}
     SourceAssetPath: Assets/Arts/Models/deepsea_dolphin.glb
+    PreviewSprite: {fileID: 21300000, guid: 55f68d425c8be4546abe6cdd00bb4e94, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -65,6 +72,7 @@ MonoBehaviour:
   - DisplayName: Deepsea Dreamlamp
     Prefab: {fileID: -8098169881513260187, guid: 2dfa169bd912e9840b97fb3080976139, type: 3}
     SourceAssetPath: Assets/Arts/Models/deepsea_dreamlamp.glb
+    PreviewSprite: {fileID: 21300000, guid: 1026873a465b07f4b97198cbcadb8c8e, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 7
@@ -72,6 +80,7 @@ MonoBehaviour:
   - DisplayName: Deepsea Shark
     Prefab: {fileID: -8098169881513260187, guid: a8947f853731f4d409eccca3530417a1, type: 3}
     SourceAssetPath: Assets/Arts/Models/deepsea_shark.glb
+    PreviewSprite: {fileID: 21300000, guid: 10b199a8067c0a646a0e2ef47a3c43be, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -79,6 +88,7 @@ MonoBehaviour:
   - DisplayName: Deepsea Shell
     Prefab: {fileID: -8098169881513260187, guid: 7b6bec135cc82f348a39b6320834fe63, type: 3}
     SourceAssetPath: Assets/Arts/Models/deepsea_shell.glb
+    PreviewSprite: {fileID: 21300000, guid: e36b41c481e0c9c48a40b5e08d618689, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -86,6 +96,7 @@ MonoBehaviour:
   - DisplayName: Default Book Stack
     Prefab: {fileID: -8098169881513260187, guid: c762a71677879be41a5a565fdad2dc71, type: 3}
     SourceAssetPath: Assets/Arts/Models/default_book_stack.glb
+    PreviewSprite: {fileID: 21300000, guid: 6e4690989baad2d4981b73d02300c144, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -93,6 +104,7 @@ MonoBehaviour:
   - DisplayName: Default Clock Hamham
     Prefab: {fileID: -8098169881513260187, guid: fdf1809f3a17b11449a355503137638d, type: 3}
     SourceAssetPath: Assets/Arts/Models/default_clock_hamham.glb
+    PreviewSprite: {fileID: 21300000, guid: b2033d87ee56e0141b6b99bbc450ba98, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -100,6 +112,7 @@ MonoBehaviour:
   - DisplayName: Default Lamp Floor
     Prefab: {fileID: -8098169881513260187, guid: 6386ddd70e8d2e7439c1961311c3bb2f, type: 3}
     SourceAssetPath: Assets/Arts/Models/default_lamp_floor.glb
+    PreviewSprite: {fileID: 21300000, guid: aa4ff55057e2a494e9f86d6e71ba950e, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 7
@@ -107,6 +120,7 @@ MonoBehaviour:
   - DisplayName: Default Rug Natural
     Prefab: {fileID: -8098169881513260187, guid: a68c359f967d6064685b042697219e3d, type: 3}
     SourceAssetPath: Assets/Arts/Models/default_rug_natural.glb
+    PreviewSprite: {fileID: 21300000, guid: 223cdb027e7050643a6acc8e214ac07e, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 6
@@ -114,6 +128,7 @@ MonoBehaviour:
   - DisplayName: Doll Hamham
     Prefab: {fileID: -8098169881513260187, guid: 4f9ca772872790543895cc1371706137, type: 3}
     SourceAssetPath: Assets/Arts/Models/doll_hamham.glb
+    PreviewSprite: {fileID: 21300000, guid: 5bfc581dd69ce064b992cd9d1892601c, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -121,6 +136,7 @@ MonoBehaviour:
   - DisplayName: Fantasy Bed
     Prefab: {fileID: -8098169881513260187, guid: d47b2633f2014e1a9d75002e533c49c3, type: 3}
     SourceAssetPath: Assets/Arts/Models/fantasy_bed.glb
+    PreviewSprite: {fileID: 21300000, guid: d4596d6974a4fd549976764f1e870a57, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 5
@@ -128,6 +144,7 @@ MonoBehaviour:
   - DisplayName: Fantasy Books
     Prefab: {fileID: -8098169881513260187, guid: d8c1653807804653813c5fb32c91ddb8, type: 3}
     SourceAssetPath: Assets/Arts/Models/fantasy_books.glb
+    PreviewSprite: {fileID: 21300000, guid: 38bb87582b85f8c4c920d180d8b6e9fd, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -135,6 +152,7 @@ MonoBehaviour:
   - DisplayName: Fantasy Candle
     Prefab: {fileID: -8098169881513260187, guid: 30a05569096c49029cf464ffd8a3aeb1, type: 3}
     SourceAssetPath: Assets/Arts/Models/fantasy_candle.glb
+    PreviewSprite: {fileID: 21300000, guid: 4963e70aeb46cd948a1169a975eda357, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 7
@@ -142,6 +160,7 @@ MonoBehaviour:
   - DisplayName: Fantasy Crystalball
     Prefab: {fileID: -8098169881513260187, guid: 2dbe743360574f198db0639df859b83f, type: 3}
     SourceAssetPath: Assets/Arts/Models/fantasy_crystalball.glb
+    PreviewSprite: {fileID: 21300000, guid: b94dca4745937ba41939e39e782b0335, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -149,6 +168,7 @@ MonoBehaviour:
   - DisplayName: Fantasy Lamp1
     Prefab: {fileID: -8098169881513260187, guid: fda37af71976429db1b8f095904dea42, type: 3}
     SourceAssetPath: Assets/Arts/Models/fantasy_lamp1.glb
+    PreviewSprite: {fileID: 21300000, guid: 0574708f36ed3f84c9d938aa7d19c1ca, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 7
@@ -156,6 +176,7 @@ MonoBehaviour:
   - DisplayName: Fantasy Lamp2
     Prefab: {fileID: -8098169881513260187, guid: cd14d0d6281541f187e79eab5e204dea, type: 3}
     SourceAssetPath: Assets/Arts/Models/fantasy_lamp2.glb
+    PreviewSprite: {fileID: 21300000, guid: 2122abf7dd1ee7b4bb205c1fa74c8614, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 7
@@ -163,6 +184,7 @@ MonoBehaviour:
   - DisplayName: Fantasy Window
     Prefab: {fileID: -8098169881513260187, guid: 712b814690124370bf720e61ce9d4365, type: 3}
     SourceAssetPath: Assets/Arts/Models/fantasy_window.glb
+    PreviewSprite: {fileID: 21300000, guid: 610963026fa4bda44bff0a23f8f73e3b, type: 3}
     PlacementCategory: 9
     AllowRotation: 0
     Kind: 12
@@ -170,6 +192,7 @@ MonoBehaviour:
   - DisplayName: Goodvibes Bed
     Prefab: {fileID: -8098169881513260187, guid: e1f2a3b4c5d6789012345678abcdef01, type: 3}
     SourceAssetPath: Assets/Arts/Models/goodvibes_Bed.glb
+    PreviewSprite: {fileID: 21300000, guid: bd14cd7c8721fb045b200a5c34de0d42, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 5
@@ -177,6 +200,7 @@ MonoBehaviour:
   - DisplayName: Goodvibes Neonsign
     Prefab: {fileID: -8098169881513260187, guid: e4f5a6b7c8d9012345678901abcdef04, type: 3}
     SourceAssetPath: Assets/Arts/Models/goodvibes_NeonSign.glb
+    PreviewSprite: {fileID: 21300000, guid: d1af3d62af8f2dc4eb072eb88baeebdd, type: 3}
     PlacementCategory: 9
     AllowRotation: 0
     Kind: 11
@@ -184,6 +208,7 @@ MonoBehaviour:
   - DisplayName: Goodvibes Rug
     Prefab: {fileID: -8098169881513260187, guid: e6f7a8b9c0d1234567890123abcdef06, type: 3}
     SourceAssetPath: Assets/Arts/Models/goodvibes_Rug.glb
+    PreviewSprite: {fileID: 21300000, guid: 0ed428e39f7a8f94b8747b5c5a5bfa44, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 6
@@ -191,6 +216,7 @@ MonoBehaviour:
   - DisplayName: Goodvibes Toastpillow
     Prefab: {fileID: -8098169881513260187, guid: e5f6a7b8c9d0123456789012abcdef05, type: 3}
     SourceAssetPath: Assets/Arts/Models/goodvibes_ToastPillow.glb
+    PreviewSprite: {fileID: 21300000, guid: 861db97fb6f0fbf40bc555ef1e2029f7, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 9
@@ -198,6 +224,7 @@ MonoBehaviour:
   - DisplayName: Goodvibes Window
     Prefab: {fileID: -8098169881513260187, guid: 8cf9f41845bae4aa1a85afdf0405e751, type: 3}
     SourceAssetPath: Assets/Arts/Models/goodvibes_Window.glb
+    PreviewSprite: {fileID: 21300000, guid: a33455c738eda43458548a9096499875, type: 3}
     PlacementCategory: 9
     AllowRotation: 0
     Kind: 12
@@ -205,6 +232,7 @@ MonoBehaviour:
   - DisplayName: Space Explorer
     Prefab: {fileID: -8098169881513260187, guid: c62352d438d24c7da7f840e5f398e193, type: 3}
     SourceAssetPath: Assets/Arts/Models/space_explorer.glb
+    PreviewSprite: {fileID: 21300000, guid: a380750c3721b1b40a764e6ba376a6c4, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -212,6 +240,7 @@ MonoBehaviour:
   - DisplayName: Space Rocket
     Prefab: {fileID: -8098169881513260187, guid: cef571fc59344c9b870c8ec769b39087, type: 3}
     SourceAssetPath: Assets/Arts/Models/space_rocket.glb
+    PreviewSprite: {fileID: 21300000, guid: 24f3e61b596f2ac429954cd3af8ef8c3, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -219,6 +248,7 @@ MonoBehaviour:
   - DisplayName: Space Window
     Prefab: {fileID: -8098169881513260187, guid: be40aa9cfed84e5abe4c941a6e84813f, type: 3}
     SourceAssetPath: Assets/Arts/Models/space_window.glb
+    PreviewSprite: {fileID: 21300000, guid: 271d93aedffe80043a9c1590e29d747d, type: 3}
     PlacementCategory: 9
     AllowRotation: 0
     Kind: 12
@@ -226,6 +256,7 @@ MonoBehaviour:
   - DisplayName: Space Woode
     Prefab: {fileID: -8098169881513260187, guid: d409863b6a184439be7342015b1aeacd, type: 3}
     SourceAssetPath: Assets/Arts/Models/space_woode.glb
+    PreviewSprite: {fileID: 21300000, guid: 435e8d6e95ba9d54584274da212cd0c9, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -233,6 +264,7 @@ MonoBehaviour:
   - DisplayName: Spooky Bed
     Prefab: {fileID: -8098169881513260187, guid: 05e2a466293e45b1a3e4081cf68ffa05, type: 3}
     SourceAssetPath: Assets/Arts/Models/spooky_bed.glb
+    PreviewSprite: {fileID: 21300000, guid: 00bd0072d2483cf4cabc39f761f43b83, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 5
@@ -240,6 +272,7 @@ MonoBehaviour:
   - DisplayName: Spooky Character
     Prefab: {fileID: 489627813733477026, guid: 3feba441bab54d29bd8c1dce6954d658, type: 3}
     SourceAssetPath: Assets/Arts/Models/spooky_character.glb
+    PreviewSprite: {fileID: 21300000, guid: ebe7c3263bb23d348b125741afdacc90, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -247,6 +280,7 @@ MonoBehaviour:
   - DisplayName: Spooky Lamp
     Prefab: {fileID: -8098169881513260187, guid: 9c19359bd6fc4a7ab6de939d4e42e59f, type: 3}
     SourceAssetPath: Assets/Arts/Models/spooky_lamp.glb
+    PreviewSprite: {fileID: 21300000, guid: 079a61f1494a2db4b9fe06ef50598ac2, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 7
@@ -254,6 +288,7 @@ MonoBehaviour:
   - DisplayName: Spooky Pumpkin
     Prefab: {fileID: -8098169881513260187, guid: 30ea1a3e4a09449eb5b0ec05e241b75c, type: 3}
     SourceAssetPath: Assets/Arts/Models/spooky_pumpkin.glb
+    PreviewSprite: {fileID: 21300000, guid: 62c051767e70a4e4792659c53d511a9e, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -261,6 +296,7 @@ MonoBehaviour:
   - DisplayName: Spooky Repeater
     Prefab: {fileID: -8098169881513260187, guid: 54da90f1cf0d4c41a1e5a98d4be5925a, type: 3}
     SourceAssetPath: Assets/Arts/Models/spooky_repeater.glb
+    PreviewSprite: {fileID: 21300000, guid: 795d4b3c353f6814ea0e943908215e8e, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -268,6 +304,7 @@ MonoBehaviour:
   - DisplayName: Spooky Skull
     Prefab: {fileID: -8098169881513260187, guid: 699fc0ee84d648c69cc6b4259018f980, type: 3}
     SourceAssetPath: Assets/Arts/Models/spooky_skull.glb
+    PreviewSprite: {fileID: 21300000, guid: 7a96a5deb8cb4104da8c8800b52b1a5f, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 11
@@ -275,6 +312,7 @@ MonoBehaviour:
   - DisplayName: Spooky Window
     Prefab: {fileID: -8098169881513260187, guid: f22da3ace91d4533a4d99ec4cac3170b, type: 3}
     SourceAssetPath: Assets/Arts/Models/spooky_window.glb
+    PreviewSprite: {fileID: 21300000, guid: 01b785f3ff6066346b8f418b0c1abf3f, type: 3}
     PlacementCategory: 9
     AllowRotation: 0
     Kind: 12
@@ -282,6 +320,7 @@ MonoBehaviour:
   - DisplayName: Vintage Lamp Mint
     Prefab: {fileID: -8098169881513260187, guid: fcb105d263d32fc458bfd05601e56cac, type: 3}
     SourceAssetPath: Assets/Arts/Models/vintage_lamp_mint.glb
+    PreviewSprite: {fileID: 21300000, guid: f1e3edb4c05320f4a8c9b49ebdb96976, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 7
@@ -289,6 +328,7 @@ MonoBehaviour:
   - DisplayName: Vintage Rug
     Prefab: {fileID: -8098169881513260187, guid: 1b2b2fbcd3d98ee4085a704b94c17eae, type: 3}
     SourceAssetPath: Assets/Arts/Models/vintage_rug.glb
+    PreviewSprite: {fileID: 21300000, guid: 700cc6e012ee8c749be973c31cb656c5, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 6
@@ -296,6 +336,7 @@ MonoBehaviour:
   - DisplayName: Vintage Table Mini
     Prefab: {fileID: -8098169881513260187, guid: 2ea81d849b8d72b47a1290a0e09f53f4, type: 3}
     SourceAssetPath: Assets/Arts/Models/vintage_table_mini.glb
+    PreviewSprite: {fileID: 21300000, guid: 5b55759bc9086fc4381dd39068445f4b, type: 3}
     PlacementCategory: 0
     AllowRotation: 1
     Kind: 1
