@@ -63,10 +63,10 @@
 - Prometheus/Grafana/Loki/Promtail 관찰성 스택 구축
 - 서버 보안 하드닝 (시크릿 권한 600, compose 640, Cloudflare allowlist)
 
-### 📦 백엔드 (협업)
+### 📦 백엔드
 - Java 21 · Spring Boot 4 기반 계층형 REST API (도메인 15개)
 - 팀 컨벤션 문서화·강제(`docs/architecture/patterns.md`) — `ApiResponse<T>` 통일 · Soft Delete · Cursor 페이징 · Instant(UTC)
-- OAuth 소셜 로그인, 독서 기록/책장/피드 등 (결제는 타 팀원 담당)
+- OAuth 소셜 로그인, 독서 기록/책장/피드 등
 
 ---
 
