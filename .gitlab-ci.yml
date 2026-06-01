@@ -20,31 +20,51 @@ variables:
 
 .backend-rules:
   # build: dev/master 어느 쪽이든 backend 변경되면 돈다 (test/prod 잡 모두 산출물 필요).
+  # infra/app·infra/db/nginx 변경도 포함 — deploy 잡(needs: backend:build)이 인프라 변경만으로
+  # 트리거될 때 JAR 산출물이 없으면 needs 가 깨지므로 build 도 같은 경로에서 돌게 한다.
+  # (이전엔 backend/deploy/** 가 backend/** 에 포함돼 자동 커버됐음 — infra/ 이동으로 명시 필요.)
   rules:
     - if: '$CI_COMMIT_BRANCH == "dev"'
       changes:
         - backend/**/*
         - .gitlab-ci.yml
         - .ci/**/*
+        - infra/app/docker-compose.yml
+        - infra/app/docker-compose.test.yml
+        - infra/app/promtail/**/*
+        - infra/db/nginx/conf.d/**/*
     - if: '$CI_COMMIT_BRANCH == "master"'
       changes:
         - backend/**/*
         - .gitlab-ci.yml
         - .ci/**/*
+        - infra/app/docker-compose.yml
+        - infra/app/docker-compose.test.yml
+        - infra/app/promtail/**/*
+        - infra/db/nginx/conf.d/**/*
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - backend/**/*
         - .gitlab-ci.yml
         - .ci/**/*
+        - infra/app/docker-compose.yml
+        - infra/app/docker-compose.test.yml
+        - infra/app/promtail/**/*
+        - infra/db/nginx/conf.d/**/*
 
 .deploy-rules:
   # backend prod 배포: master 트리거만.
+  # 앱 compose / promtail / prod nginx 변경도 트리거 (이전엔 backend/deploy/** 가 backend/** 에
+  # 포함됐으나 infra/ 이동으로 명시 필요). test compose 는 prod 배포 트리거 아님.
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
       changes:
         - backend/**/*
         - .gitlab-ci.yml
         - .ci/**/*
+        - infra/app/docker-compose.yml
+        - infra/app/promtail/**/*
+        - infra/db/nginx/conf.d/**/*
 
 .backend-test-rules:
   # backend test 배포: dev 트리거만.
@@ -55,8 +75,8 @@ variables:
         - backend/**/*
         - .gitlab-ci.yml
         - .ci/**/*
-        - backend/deploy/app/docker-compose.test.yml
-        - backend/deploy/prod/nginx/conf.d/**/*
+        - infra/app/docker-compose.test.yml
+        - infra/db/nginx/conf.d/**/*
 
 .service-web-rules:
   # service-web prod 배포: 출시 전 단계라 dev=prod 단일 스테이지 (admin-web 패턴과 동일).
@@ -71,15 +91,15 @@ variables:
         - .ci/**/*
         # service 컨테이너 정의(compose) 또는 root vhost(nginx) 만 변경된 경우에도
         # service-web:deploy 가 돌아 컨테이너 재빌드/기동까지 가도록 rule 에 포함.
-        - backend/deploy/app/docker-compose.yml
-        - backend/deploy/prod/nginx/conf.d/**/*
+        - infra/app/docker-compose.yml
+        - infra/db/nginx/conf.d/**/*
     - if: '$CI_COMMIT_BRANCH == "master"'
       changes:
         - web/service-web/**/*
         - .gitlab-ci.yml
         - .ci/**/*
-        - backend/deploy/app/docker-compose.yml
-        - backend/deploy/prod/nginx/conf.d/**/*
+        - infra/app/docker-compose.yml
+        - infra/db/nginx/conf.d/**/*
 
 .service-web-test-rules:
   # service-web test 배포: dev 트리거만.
@@ -89,8 +109,8 @@ variables:
         - web/service-web/**/*
         - .gitlab-ci.yml
         - .ci/**/*
-        - backend/deploy/app/docker-compose.test.yml
-        - backend/deploy/prod/nginx/conf.d/**/*
+        - infra/app/docker-compose.test.yml
+        - infra/db/nginx/conf.d/**/*
 
 .admin-web-rules:
   # admin-web 은 dev=prod 단일 스테이지 (test 환경 없음). 운영자 백오피스로 변경 빈도 낮음.
@@ -103,8 +123,8 @@ variables:
         # admin 컨테이너 정의(compose) 또는 nginx conf.d 의 어떤 파일이든 변경되면
         # admin-web:deploy 가 돌도록 — admin-vhost.conf 와 00-cf-allowlist.conf 같은
         # 전역 의존 파일도 자기 잡이 보내야 source-of-truth 동기화 보장.
-        - backend/deploy/app/docker-compose.yml
-        - backend/deploy/prod/nginx/conf.d/**/*
+        - infra/app/docker-compose.yml
+        - infra/db/nginx/conf.d/**/*
 
 .service-web-build-rules:
   # service-web 빌드 검증 (tsc + eslint + next build). MR 이벤트 + dev/master 푸시에서
@@ -133,13 +153,13 @@ variables:
         # nginx conf.d 의 어떤 파일이든 변경되면 launcher:publish 가 돌아야 하므로
         # build 도 같이 돌아야 함 (publish 가 build artifact 를 needs 로 요구).
         # launcher-publish-rules 와 동일 범위로 통일.
-        - backend/deploy/prod/nginx/conf.d/**/*
+        - infra/db/nginx/conf.d/**/*
         - .gitlab-ci.yml
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - launcher/**/*
         - web/service-web/app/(marketing)/download/page.tsx
-        - backend/deploy/prod/nginx/conf.d/**/*
+        - infra/db/nginx/conf.d/**/*
         - .gitlab-ci.yml
 
 # 출시 전: dev 가 사실상 메인이라 dev 머지 시 prod 배포까지 진행.
@@ -150,7 +170,7 @@ variables:
       changes:
         - launcher/**/*
         - web/service-web/app/(marketing)/download/page.tsx
-        - backend/deploy/prod/nginx/conf.d/**/*
+        - infra/db/nginx/conf.d/**/*
         - .gitlab-ci.yml
 
 cache:
@@ -280,10 +300,10 @@ backend:deploy:
     - chmod 600 ~/.ssh/known_hosts
   script:
     - JAR=$(ls $JAR_ARTIFACT_PATH/*-SNAPSHOT.jar | head -1)
-    - APP_COMPOSE=backend/deploy/app/docker-compose.yml
-    - APP_PROMTAIL=backend/deploy/app/promtail
+    - APP_COMPOSE=infra/app/docker-compose.yml
+    - APP_PROMTAIL=infra/app/promtail
     - DOCKERFILE=backend/Dockerfile
-    - NGINX_CONFD=backend/deploy/prod/nginx/conf.d
+    - NGINX_CONFD=infra/db/nginx/conf.d
     - echo "Staging payloads to app=$EC2_HOST prod=$PROD_HOST"
     # --- Stage JAR + Dockerfile + compose + promtail config to app ---
     - ssh "$EC2_USER@$EC2_HOST" "mkdir -p $EC2_DEPLOY_PATH/api/build/libs $EC2_DEPLOY_PATH/promtail && rm -f $EC2_DEPLOY_PATH/api/build/libs/*.jar"
@@ -330,8 +350,8 @@ service-web:deploy:
     - printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
     - chmod 600 ~/.ssh/known_hosts
   script:
-    - APP_COMPOSE=backend/deploy/app/docker-compose.yml
-    - NGINX_CONFD=backend/deploy/prod/nginx/conf.d
+    - APP_COMPOSE=infra/app/docker-compose.yml
+    - NGINX_CONFD=infra/db/nginx/conf.d
     - SERVICE_WEB_TARGET=$EC2_DEPLOY_PATH/service-web
     - echo "Deploying service-web to app=$EC2_HOST, nginx config to prod=$PROD_HOST"
     # --- Stage Next 소스 to SSAFY (node_modules/.next 는 .dockerignore + rsync exclude 로 제외) ---
@@ -387,7 +407,7 @@ launcher:publish:
   script:
     - MANIFEST=launcher/manifests/dev/windows/latest.json
     - EVENTS=launcher/manifests/dev/windows/events.json
-    - NGINX_CONFD=backend/deploy/prod/nginx/conf.d
+    - NGINX_CONFD=infra/db/nginx/conf.d
     - LAUNCHER_VERSION=$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' launcher/src/DotShelf.Launcher/DotShelf.Launcher.csproj | head -n 1)
     - PACKAGE_URL=$(jq -r '.packageUrl' "$MANIFEST")
     - PACKAGE_FILE=$(basename "$PACKAGE_URL")
@@ -499,8 +519,8 @@ admin-web:deploy:
     - printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
     - chmod 600 ~/.ssh/known_hosts
   script:
-    - APP_COMPOSE=backend/deploy/app/docker-compose.yml
-    - NGINX_CONFD=backend/deploy/prod/nginx/conf.d
+    - APP_COMPOSE=infra/app/docker-compose.yml
+    - NGINX_CONFD=infra/db/nginx/conf.d
     - ADMIN_WEB_TARGET=$EC2_DEPLOY_PATH/admin-web
     - echo "Deploying admin-web to app=$EC2_HOST, nginx config to prod=$PROD_HOST"
     # --- Stage Next 소스 to SSAFY ---
@@ -551,9 +571,9 @@ backend:test-deploy:
     - chmod 600 ~/.ssh/known_hosts
   script:
     - JAR=$(ls $JAR_ARTIFACT_PATH/*-SNAPSHOT.jar | head -1)
-    - APP_COMPOSE_TEST=backend/deploy/app/docker-compose.test.yml
+    - APP_COMPOSE_TEST=infra/app/docker-compose.test.yml
     - DOCKERFILE=backend/Dockerfile
-    - NGINX_CONFD=backend/deploy/prod/nginx/conf.d
+    - NGINX_CONFD=infra/db/nginx/conf.d
     - echo "Staging test payloads to app=$EC2_HOST"
     # --- Stage JAR + Dockerfile to api-test 디렉터리 (.env.test 는 서버에 미리 있어야 함) ---
     - ssh "$EC2_USER@$EC2_HOST" "mkdir -p $EC2_DEPLOY_PATH/api-test/build/libs && rm -f $EC2_DEPLOY_PATH/api-test/build/libs/*.jar"
@@ -594,8 +614,8 @@ service-web:test-deploy:
     - printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
     - chmod 600 ~/.ssh/known_hosts
   script:
-    - APP_COMPOSE_TEST=backend/deploy/app/docker-compose.test.yml
-    - NGINX_CONFD=backend/deploy/prod/nginx/conf.d
+    - APP_COMPOSE_TEST=infra/app/docker-compose.test.yml
+    - NGINX_CONFD=infra/db/nginx/conf.d
     - SERVICE_WEB_TEST_TARGET=$EC2_DEPLOY_PATH/service-web-test
     - echo "Deploying service-web-test to app=$EC2_HOST, nginx config to prod=$PROD_HOST"
     # --- Stage Next 소스 to SSAFY service-web-test 디렉터리 ---

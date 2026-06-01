@@ -1,0 +1,92 @@
+# DotShelf 코어 인프라 스택 (jihocompany / dotshelf-prod 호스트 전용).
+#
+# 구성: PostgreSQL 17 (데이터) + Redis 7.4 (캐시) + Nginx (공개 진입점 80/443).
+# 모니터링 스택(Prometheus/Loki/Grafana)은 ./monitoring/docker-compose.yml 로 분리.
+#
+# 배포 (CI 자동 배포 대상 아님 — infra 성격, 수동 관리):
+# - 서버 위치: /opt/dotshelf/docker-compose.yml
+# - 최초 1회: 이 파일 + nginx/ + .env 를 prod:/opt/dotshelf/ 로 복사 후 `docker compose up -d`
+# - .env 는 git 밖 (POSTGRES_*, 비밀번호). chmod 600 주의.
+#
+# 네트워크/바인딩:
+# - postgres/redis 는 Tailscale IP(100.86.247.88)에만 바인딩 → 외부 비공개, 앱 호스트만 접근.
+# - nginx 만 0.0.0.0:80/443 공개. /actuator 등 내부 엔드포인트는 nginx 에서 차단.
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: dotshelf-postgres
+    restart: unless-stopped
+    ports:
+      - "100.86.247.88:5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Seoul
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - dotshelf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7.4
+    container_name: dotshelf-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "100.86.247.88:6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - dotshelf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:1.28-alpine
+    container_name: dotshelf-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+      - ./nginx/logs:/var/log/nginx
+      - ./launcher:/var/www/dotshelf-launcher:ro
+      - /etc/ssl/cloudflare:/etc/ssl/cloudflare:ro
+    networks:
+      - dotshelf
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  dotshelf:
+    name: dotshelf
+    driver: bridge

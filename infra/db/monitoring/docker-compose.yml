@@ -1,10 +1,10 @@
 # DotShelf 모니터링 스택 (prod 호스트 전용).
 #
 # 구성: Prometheus (metrics) + Loki (logs) + Grafana (UI).
-# Promtail 은 SSAFY 앱 호스트의 docker-compose 에 들어감 ({backend}/deploy/app/docker-compose.yml).
+# Promtail 은 앱 호스트의 docker-compose 에 들어감 (infra/app/docker-compose.yml).
 #
 # 배포:
-# - 최초 1회: scp 로 이 파일 + deploy/prod/monitoring/ 전체를 prod:/opt/dotshelf/monitoring/ 로 복사
+# - 최초 1회: scp 로 이 파일 + infra/db/monitoring/ 전체를 prod:/opt/dotshelf/monitoring/ 로 복사
 # - 이후: `cd /opt/dotshelf/monitoring && docker compose up -d`
 # - CI 자동 배포 대상 아님 (infra 성격). `docs/infra/2026-04-24-monitoring-stack.md` 참조.
 #
