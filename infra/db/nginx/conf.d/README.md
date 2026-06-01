@@ -35,13 +35,13 @@ SSAFY app 서버의 `service-web` Next.js 컨테이너로 프록시한다(`upstr
 - 수정 후 가능하면 로컬에서 syntax 검증:
   ```bash
   # 먼저 active 파일을 임시로 만들고
-  cp backend/deploy/prod/nginx/conf.d/templates/upstream.blue.conf \
-     backend/deploy/prod/nginx/conf.d/upstream.active.conf
+  cp infra/db/nginx/conf.d/templates/upstream.blue.conf \
+     infra/db/nginx/conf.d/upstream.active.conf
   # 그 다음 docker 로 nginx -t
   docker run --rm \
-    -v $PWD/backend/deploy/prod/nginx/conf.d:/etc/nginx/conf.d:ro \
+    -v $PWD/infra/db/nginx/conf.d:/etc/nginx/conf.d:ro \
     nginx:1.28-alpine nginx -t
   # 검증 끝나면 임시 파일은 커밋하지 말고 삭제
-  rm backend/deploy/prod/nginx/conf.d/upstream.active.conf
+  rm infra/db/nginx/conf.d/upstream.active.conf
   ```
 - 실배포 검증은 `.ci/deploy-blue-green.sh` 가 `docker exec dotshelf-nginx nginx -t` 수행 후에만 `nginx -s reload` 한다.
