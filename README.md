@@ -22,10 +22,12 @@
 |:---:|---|
 | **기간** | 2026.04 ~ 2026.05 |
 | **형태** | 팀 프로젝트 (6인 · 백엔드 2명) · SSAFY 자율 프로젝트 |
-| **담당** | **인프라 총괄 + 백엔드 리더** — CI/CD · 배포 · 서버 운영/보안 · 모니터링 |
+| **담당** | **인프라 총괄 + 백엔드 구조 설계** — CI/CD · 무중단 배포 · 서버 운영/보안 · 관찰성 |
 | **한줄 소개** | 독서 기록과 가상 책장 꾸미기를 결합한, 웹·모바일·데스크톱 멀티플랫폼 독서 서비스 |
 
-> 백엔드 리더로서 API 일부와 **인프라 전반**(2-tier 배포 구조, CI/CD 파이프라인, 무중단 배포, 모니터링, 서버 보안 하드닝)을 설계·운영했습니다.
+> **인프라 전반**(2-tier 배포 구조 · CI/CD 파이프라인 · Blue-Green 무중단 배포 · 관찰성 스택 · 서버 보안 하드닝)을 혼자 설계·운영했고,
+> 백엔드는 **15개 도메인의 계층형 구조와 팀 컨벤션을 정의·문서화**해 BE 2인이 같은 규칙으로 작업하도록 했습니다.
+> 도메인 구현은 분담했으며, 제가 직접 구현한 것은 **인증 · 에셋 · 도서 · 책장** 중심입니다. (결제 등 일부 도메인은 다른 팀원 담당)
 
 ---
 
@@ -64,10 +66,14 @@
 - Prometheus/Grafana/Loki/Promtail 관찰성 스택 구축
 - 서버 보안 하드닝 (시크릿 권한 600, compose 640, Cloudflare allowlist)
 
-### 📦 백엔드
-- Java 21 · Spring Boot 4 기반 계층형 REST API (도메인 15개)
-- 팀 컨벤션 문서화·강제(`docs/architecture/patterns.md`) — `ApiResponse<T>` 통일 · Soft Delete · Cursor 페이징 · Instant(UTC)
-- OAuth 소셜 로그인, 독서 기록/책장/피드 등
+### 📦 백엔드 (BE 2인 협업)
+- **구조 설계 (담당)** — Java 21 · Spring Boot 4 기반 15개 도메인의 계층형 구조 정의
+- **팀 컨벤션 정의·문서화 (담당)** — [`docs/architecture/patterns.md`](backend/docs/architecture/patterns.md) 353줄 + [`checklist.md`](backend/docs/architecture/checklist.md)
+  `ApiResponse<T>` 통일 · Soft Delete(`status` + `deleted_at`) · Cursor 페이징 · Instant(UTC) ·
+  에러 코드 도메인 prefix · Repository Custom+Impl 패턴 · N+1 방지 규칙
+  → **프로젝트 첫날(2026-04-15)에 작성**해 코드보다 규약을 먼저 세웠습니다
+- **직접 구현** — OAuth 소셜 로그인 · 에셋 · 도서 · 책장 도메인
+  (독서 기록 · 피드 · 결제 등은 다른 팀원 담당)
 
 ---
 
@@ -84,6 +90,68 @@
 <summary><b>Blue-Green 무중단 배포 구축</b></summary>
 
 > 단일 `api` 컨테이너 배포는 재기동 동안 다운타임이 발생했습니다. `api-blue`(8080)·`api-green`(8081) 두 색을 공존시키고, 배포 시 비활성 색을 먼저 기동→헬스 통과 대기→**prod Nginx의 `upstream.active.conf`를 교체 후 `nginx -s reload`** 로 1~5초 내 graceful cutover하도록 설계했습니다. `deploy-blue-green.sh`가 활성 색 감지→반대 색 기동→스위칭→공개 smoke→2분 유예→구 색 stop까지 오케스트레이션하고, `poll-health.sh`로 전환 구간 health를 폴링해 5xx를 검출합니다.
+>
+> **실측 (2026-04-23 첫 성공 배포, CI job `#339277`)**
+> ```json
+> {"duration":30,"attempts":28,"ok":28,"fail":0,"codes":"200:28"}
+> ```
+> | 지표 | 실측 |
+> |---|---|
+> | 배포 중 공개 5xx | **0건** (28/28 200) |
+> | 색당 컨테이너 메모리 | **471 MiB** (limit 4 GiB의 11.5%) |
+> | 롤백 소요 (수동 리허설) | **27초** — 재빌드 없이 구 색 재기동, 45/45 200 |
+>
+> **한계** — 이 검증은 초당 1회 헬스체크 폴링 기준이라 **in-flight 요청이 있는 상태는 검증하지 못했습니다.**
+> Nginx reload는 기존 워커를 graceful하게 종료하므로 이론상 처리 중 요청은 완료되지만,
+> k6로 동시 요청을 걸고 재측정해야 확실합니다. 또한 **단일 호스트 제약**이 있어
+> 무중단 배포는 애플리케이션 배포 다운타임만 제거하지 호스트 장애는 해결하지 않습니다.
+> [`flyway-migration-rules.md`](backend/docs/architecture/flyway-migration-rules.md)의 expand-contract 규약을 어기면
+> contract 마이그레이션이 포함된 배포는 롤백 수단으로 작동하지 않습니다.
+</details>
+
+<details>
+<summary><b>첫 Blue-Green 배포가 2회 연속 실패 — 설계 리뷰에서 안 보이던 두 가지</b></summary>
+
+> 설계와 코드 리뷰를 마치고 실행한 첫 배포가 2회 연속 실패했습니다. **둘 다 코드 로직이 아니라 "실행 환경"** 문제였습니다.
+>
+> **함정 1 — CI 러너가 자기 자신을 public IP로 호출**
+> - 증상: `ssh: connect to host 3.38.240.110 port 22: Operation timed out`
+> - 원인: GitLab runner가 **prod 호스트 내부 컨테이너**에서 동작. 자신을 감싼 호스트의 Elastic IP로
+>   돌아가려 하자 EC2가 **hairpin NAT**를 막았습니다.
+> - 수정: `PROD_HOST`를 docker bridge(`172.17.0.1`)로 변경
+> - 방지: [`gitlab-ci-variables.md`](backend/docs/infra/gitlab-ci-variables.md)에 근거를 남기고 배포 체크리스트에 항목 추가
+>
+> **함정 2 — 자동 로드되는 디렉토리에 명시 `include`를 겹침**
+> - 증상: `nginx: [emerg] duplicate upstream "dotshelf_api"`
+> - 원인: `nginx.conf`가 이미 `conf.d/*.conf`를 전부 로드하는데 `default.conf`에서
+>   `upstream.active.conf`를 다시 `include`해 같은 파일이 두 번 파싱됨
+> - 수정: 명시 `include` 제거 + blue/green 템플릿을 `templates/` 서브디렉토리로 이동
+>   (서브디렉토리는 `*.conf` 와일드카드에 걸리지 않음)
+> - 방지: `conf.d/README.md`에 경고를 남기고, rsync에 `--delete`와 exclude를 걸어
+>   과거 오염 파일이 자동 정리되게 함
+>
+> **배운 것** — "자동 로드 디렉토리 + 명시 include" 조합은 nginx · systemd 등에서 반복되는 함정이고,
+> **CI 러너의 물리적 위치는 설계 변수**입니다. 설계 시점에는 보이지 않고 첫 실행에서만 드러나는
+> 종류의 문제라, 이후로는 신규 인프라를 도입할 때 **수동 리허설을 먼저 하고 자동화하는 순서**로 바꿨습니다.
+>
+> 상세: [`docs/infra/2026-04-23-blue-green.md` §7-bis](backend/docs/infra/2026-04-23-blue-green.md)
+</details>
+
+<details>
+<summary><b>헤더 한 줄로 남의 계정 행세가 가능하던 인증 구조 교체</b></summary>
+
+> `SecurityConfig`가 전 요청을 허용하고 `ArgumentResolver`가 `X-User-Id` 헤더를 그대로 신뢰해,
+> **헤더 한 줄이면 남의 계정으로 접근**할 수 있는 상태였습니다.
+> 토큰을 발급하는 쪽만 있고 요청에서 검증하는 필터가 없어 인증 체인이 끊겨 있었습니다.
+> 초기 도메인 골격을 세울 때 개발 편의로 넣은 헤더 주입이 인증 구현 전까지 남아 있던 것이고,
+> **같은 날 아키텍처 리뷰를 돌리다 발견해 즉시 교체**했습니다(둘 다 2026-04-21).
+>
+> `JwtAuthenticationFilter`로 Bearer 토큰을 검증해 `SecurityContext`에 `Principal`을 등록하고,
+> `ArgumentResolver`가 헤더 대신 `Principal`에서 `userId`를 꺼내도록 바꿨습니다.
+> 이제 `userId`는 **서버가 서명 검증한 토큰에서만** 나옵니다.
+>
+> 비공개 API 10개에 대해 **토큰 없음 · 헤더 위조 20건을 실측해 전부 401 차단**을 확인했고,
+> 회귀 방지 테스트 4건(`AuthBypassProbeTest`)을 남겼습니다.
 </details>
 
 <details>
