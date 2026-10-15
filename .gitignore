@@ -38,3 +38,9 @@ frontend/BookshelfThemeVerification/
 
 # Claude Code per-user permission grants (auto-generated)
 **/.claude/settings.local.json
+
+# Local Notion integration credentials (previously committed in history)
+/.claude/notion-config.json
+
+# Per-developer Android signing material
+/frontend/keystores/*.keystore

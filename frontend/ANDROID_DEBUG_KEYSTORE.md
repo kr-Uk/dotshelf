@@ -1,55 +1,19 @@
 # Android Debug Keystore
 
-Unity Android 개발 빌드에서 모든 개발자가 같은 Google OAuth SHA-1을 쓰기 위한 공용 debug keystore다.
+Android 개발 빌드용 keystore는 각 개발자가 로컬에서 생성한다. 파일과 비밀번호는 Git에 커밋하지 않는다.
 
-## 파일
-
-```text
-frontend/keystores/dotshelf-debug.keystore
+```shell
+keytool -genkeypair -keystore frontend/keystores/dotshelf-debug.keystore -alias dotshelfdebug -keyalg RSA -keysize 2048 -validity 10000
 ```
 
-## Keystore 정보
+`keytool`이 요청하는 keystore/key 비밀번호를 입력하고 안전하게 보관한다. Unity의 `Edit > Project Settings > Player > Android > Publishing Settings`에서 `Custom Keystore`를 선택하고 로컬 파일, alias, 비밀번호를 입력한다.
 
-```text
-Alias: dotshelfdebug
-Keystore password: android
-Key password: android
-SHA-1: 40:BB:69:92:B3:77:19:1F:99:6F:37:08:0B:E5:F4:92:4C:FC:D1:7E
-Kakao key hash: QLtpkrN3GR+ZbzcIC+X0kkz80X4=
+Google Android OAuth 클라이언트에는 이 keystore의 SHA-1과 앱 패키지명을 등록한다. SHA-1은 다음 명령으로 확인한다.
+
+```shell
+keytool -list -v -keystore frontend/keystores/dotshelf-debug.keystore -alias dotshelfdebug
 ```
 
-Google Cloud Console의 Android OAuth Client ID에는 아래 조합을 등록한다.
+Kakao Developers에도 이 keystore에서 구한 Android key hash를 등록한다. 이전에 저장소에 포함된 공용 debug keystore의 SHA-1과 key hash는 더 이상 새 빌드의 기준으로 사용하지 않는다.
 
-```text
-Package name: Unity Player Settings의 Android Package Name
-SHA-1: 40:BB:69:92:B3:77:19:1F:99:6F:37:08:0B:E5:F4:92:4C:FC:D1:7E
-```
-
-Kakao Developers의 Android 플랫폼에는 아래 조합을 등록한다.
-
-```text
-Package name: Unity Player Settings의 Android Package Name
-Key hash: QLtpkrN3GR+ZbzcIC+X0kkz80X4=
-```
-
-## Unity 설정
-
-```text
-Unity
-→ Edit
-→ Project Settings
-→ Player
-→ Android
-→ Publishing Settings
-→ Custom Keystore 체크
-→ Keystore: frontend/keystores/dotshelf-debug.keystore
-→ Keystore password: android
-→ Alias: dotshelfdebug
-→ Key password: android
-```
-
-## 주의
-
-- 이 keystore는 개발/디버그 빌드 전용이다.
-- Google Play 배포용 release signing key 또는 Play App Signing SHA-1은 별도로 등록해야 한다.
-- 이미 Google Console에 등록한 다른 SHA-1을 계속 쓰려면, 그 SHA-1을 만든 원본 keystore 파일을 사용해야 한다.
+Google Play 배포용 release signing key는 별도로 관리한다.

@@ -413,16 +413,16 @@ frontend/SOCIAL_LOGIN_SETUP_PRIVATE.md
 
 private 문서는 `.gitignore`에 포함되어 있으며, 실제 secret이 들어갈 수 있으므로 외부 공유/커밋 금지다.
 
-Android 개발 keystore:
+Android 개발 keystore는 각 개발자가 로컬에서 생성한다. 생성 방법은 `frontend/ANDROID_DEBUG_KEYSTORE.md`를 참고한다.
 
 | 항목 | 값 |
 | --- | --- |
 | 경로 | `frontend/keystores/dotshelf-debug.keystore` |
 | Alias | `dotshelfdebug` |
-| Keystore password | `android` |
-| Key password | `android` |
-| SHA-1 | `40:BB:69:92:B3:77:19:1F:99:6F:37:08:0B:E5:F4:92:4C:FC:D1:7E` |
-| Kakao key hash | `QLtpkrN3GR+ZbzcIC+X0kkz80X4=` |
+| Keystore password | 로컬에서 설정한 값 |
+| Key password | 로컬에서 설정한 값 |
+| SHA-1 | 로컬 keystore에서 확인한 값 |
+| Kakao key hash | 로컬 keystore에서 확인한 값 |
 
 Unity 설정 위치:
 
@@ -435,7 +435,7 @@ Edit > Project Settings > Player > Android > Publishing Settings
 - `Custom Keystore` 체크
 - Keystore: `frontend/keystores/dotshelf-debug.keystore`
 - Alias: `dotshelfdebug`
-- Password: `android`
+- Password: 로컬에서 설정한 값
 
 Desktop OAuth callback:
 

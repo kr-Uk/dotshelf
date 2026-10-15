@@ -22,13 +22,13 @@ Android mobile과 Android tablet은 같은 Android 설정을 사용한다.
 
 ## Android Debug Keystore
 
-Unity Android 개발 빌드는 아래 debug keystore를 사용한다.
+Unity Android 개발 빌드는 각 개발자가 로컬에서 생성한 debug keystore를 사용한다. 생성 및 SHA-1 확인 방법은 `ANDROID_DEBUG_KEYSTORE.md`를 참고한다.
 
 ```text
 Keystore path: frontend/keystores/dotshelf-debug.keystore
 Alias: dotshelfdebug
-Keystore password: android
-Key password: android
+Keystore password: 로컬에서 설정한 값
+Key password: 로컬에서 설정한 값
 ```
 
 Unity 설정 위치:
@@ -48,7 +48,7 @@ Unity
 ### Google Android SHA-1
 
 ```text
-40:BB:69:92:B3:77:19:1F:99:6F:37:08:0B:E5:F4:92:4C:FC:D1:7E
+로컬 debug keystore에서 확인한 SHA-1
 ```
 
 ### Google OAuth Client IDs
@@ -116,7 +116,7 @@ legacy server pair (`GOOGLE_CLIENT_SECRET`) fallback. Desktop client_id는 BE의
 Kakao Developers Android 플랫폼에는 SHA-1이 아니라 아래 key hash를 등록한다.
 
 ```text
-QLtpkrN3GR+ZbzcIC+X0kkz80X4=
+로컬 debug keystore에서 확인한 key hash
 ```
 
 ### Kakao Native App Key
