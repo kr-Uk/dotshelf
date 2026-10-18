@@ -14,6 +14,8 @@
   <img src="https://img.shields.io/badge/Grafana-F46800?style=flat-square&logo=grafana&logoColor=white"/>
 </p>
 
+![DotShelf 프로젝트 요약](docs/portfolio/overview.png)
+
 ---
 
 ## 📌 프로젝트 개요
@@ -85,6 +87,15 @@
 ---
 
 ## 🔧 트러블슈팅 & 기술적 의사결정
+
+<details>
+<summary><b>포트폴리오에서 핵심 작업 빠르게 보기</b></summary>
+
+| Blue-Green 무중단 배포 | S3 업로드 검증 |
+|---|---|
+| ![Blue-Green 배포](docs/portfolio/blue-green.png) | ![S3 업로드 검증](docs/portfolio/s3-verification.png) |
+
+</details>
 
 <details>
 <summary><b>Blue-Green 무중단 배포 구축</b></summary>
