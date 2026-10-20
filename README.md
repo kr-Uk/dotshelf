@@ -14,6 +14,8 @@
   <img src="https://img.shields.io/badge/Grafana-F46800?style=flat-square&logo=grafana&logoColor=white"/>
 </p>
 
+[화면 데모](https://dotshelf-demo.pages.dev/) · [포트폴리오 PDF](https://kr-uk.github.io/portfolio/portfolio-backend.pdf)
+
 ![DotShelf 프로젝트 요약](docs/portfolio/overview.png)
 
 ---
